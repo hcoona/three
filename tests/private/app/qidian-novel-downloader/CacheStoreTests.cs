@@ -100,6 +100,39 @@ public sealed class CacheStoreTests
             path => path.EndsWith(".tmp", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("请登录")]
+    [InlineData("需要登录")]
+    [InlineData("您还未登录")]
+    [InlineData("未登录")]
+    [InlineData("登录后阅读")]
+    [InlineData("请登录后继续阅读")]
+    public async Task GetChapterAsyncRejectsCachedChapterContainingInterstitialMarkerText(
+        string markerText)
+    {
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = GetCacheRoot(temporaryDirectory);
+        const string BookId = "1045928363";
+        const string ChapterId = "1";
+        await CacheStore.SaveChapterAsync(
+            root,
+            BookId,
+            new ChapterCacheEntry(
+                ChapterId,
+                ["legit paragraph", markerText],
+                IsPreview: false,
+                100),
+            CancellationToken.None);
+
+        ChapterCacheEntry? chapter = await CacheStore.GetChapterAsync(
+            root,
+            BookId,
+            ChapterId,
+            CancellationToken.None);
+
+        Assert.Null(chapter);
+    }
+
     [Fact]
     public async Task TrySaveChapterRejectsTraversalChapterIdsThatTargetAnotherBookCache()
     {
@@ -337,7 +370,8 @@ public sealed class CacheStoreTests
         File.WriteAllText(outsideFile, "{}");
         if (!CanCreateFileSymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         File.CreateSymbolicLink(linkPath, outsideFile);
@@ -384,7 +418,8 @@ public sealed class CacheStoreTests
         File.WriteAllText(protectedFile, "{}");
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         Directory.CreateSymbolicLink(linkPath, outsideDirectory);
@@ -470,8 +505,8 @@ public sealed class CacheStoreTests
         string linkPath = Path.Combine(root, "linked-book");
         Directory.CreateDirectory(Path.GetDirectoryName(catalogPath)!);
         Directory.CreateDirectory(outsideCatalogs);
-        File.WriteAllText(catalogPath, "{}");
-        File.WriteAllText(outsideCatalog, "{}");
+        File.WriteAllText(catalogPath, CreateValidCatalogJson("1045928363"));
+        File.WriteAllText(outsideCatalog, CreateValidCatalogJson("1045928363"));
         Directory.CreateDirectory(root);
         try
         {
@@ -481,7 +516,8 @@ public sealed class CacheStoreTests
             or UnauthorizedAccessException
             or PlatformNotSupportedException)
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         Assert.Throws<IOException>(() => CacheStore.Clear(
@@ -509,7 +545,7 @@ public sealed class CacheStoreTests
         string linkPath = Path.Combine(catalogsDirectory, "link");
         Directory.CreateDirectory(catalogsDirectory);
         Directory.CreateDirectory(outsideRoot);
-        File.WriteAllText(catalogPath, "{}");
+        File.WriteAllText(catalogPath, CreateValidCatalogJson(bookId));
         try
         {
             Directory.CreateSymbolicLink(linkPath, outsideRoot);
@@ -518,7 +554,8 @@ public sealed class CacheStoreTests
             or UnauthorizedAccessException
             or PlatformNotSupportedException)
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -558,10 +595,11 @@ public sealed class CacheStoreTests
         WriteClearGeneration(root, Generation.ToString());
         Directory.CreateDirectory(catalogsDirectory);
         Directory.CreateDirectory(outsideRoot);
-        File.WriteAllText(catalogPath, "{}");
+        File.WriteAllText(catalogPath, CreateValidCatalogJson(bookId));
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         Directory.CreateSymbolicLink(linkPath, outsideRoot);
@@ -608,7 +646,8 @@ public sealed class CacheStoreTests
             or UnauthorizedAccessException
             or PlatformNotSupportedException)
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -657,7 +696,8 @@ public sealed class CacheStoreTests
             or UnauthorizedAccessException
             or PlatformNotSupportedException)
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -689,7 +729,8 @@ public sealed class CacheStoreTests
         Directory.CreateDirectory(outsideRoot);
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         Directory.CreateSymbolicLink(root, outsideRoot);
@@ -728,7 +769,8 @@ public sealed class CacheStoreTests
         Directory.CreateDirectory(outsideTarget);
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         Directory.CreateSymbolicLink(targetDirectory, outsideTarget);
@@ -761,7 +803,8 @@ public sealed class CacheStoreTests
         File.WriteAllText(outsideChapter, "{}");
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         bool swapped = false;
@@ -810,7 +853,8 @@ public sealed class CacheStoreTests
         File.WriteAllText(outsideChapter, "{}");
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         bool swapped = false;
@@ -859,7 +903,8 @@ public sealed class CacheStoreTests
         File.WriteAllText(outsideChapter, "{}");
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         bool swapped = false;
@@ -903,7 +948,8 @@ public sealed class CacheStoreTests
         Directory.CreateDirectory(outsideStateRoot);
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         bool swapped = false;
@@ -957,7 +1003,8 @@ public sealed class CacheStoreTests
         File.WriteAllText(generationPath, "1");
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         bool swapped = false;
@@ -1078,7 +1125,8 @@ public sealed class CacheStoreTests
             or UnauthorizedAccessException
             or PlatformNotSupportedException)
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -1131,7 +1179,8 @@ public sealed class CacheStoreTests
             or UnauthorizedAccessException
             or PlatformNotSupportedException)
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -1175,7 +1224,8 @@ public sealed class CacheStoreTests
         Directory.CreateDirectory(outsideBookDirectory);
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -1224,7 +1274,8 @@ public sealed class CacheStoreTests
         Directory.CreateDirectory(outsideBookDirectory);
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -1273,7 +1324,8 @@ public sealed class CacheStoreTests
         Directory.CreateDirectory(outsideStagingDirectory);
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -1324,7 +1376,8 @@ public sealed class CacheStoreTests
         Directory.CreateDirectory(outsideStagingDirectory);
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -1372,7 +1425,8 @@ public sealed class CacheStoreTests
         File.WriteAllText(outsideFile, OutsideContent);
         if (!CanCreateFileSymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -1413,7 +1467,8 @@ public sealed class CacheStoreTests
         File.WriteAllText(outsideFile, OutsideContent);
         if (!CanCreateFileSymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -1452,7 +1507,8 @@ public sealed class CacheStoreTests
         File.WriteAllText(outsideFile, OutsideContent);
         if (!CanCreateFileSymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -1503,7 +1559,8 @@ public sealed class CacheStoreTests
         File.WriteAllText(outsideFile, OutsideContent);
         if (!CanCreateFileSymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -1743,7 +1800,8 @@ public sealed class CacheStoreTests
         using CancellationTokenSource cancellationTokenSource = new();
         if (!CanCreateFileSymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -1798,7 +1856,8 @@ public sealed class CacheStoreTests
         File.WriteAllText(outsideFile, "outside");
         if (!CanCreateFileSymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -1852,7 +1911,8 @@ public sealed class CacheStoreTests
         File.WriteAllText(outsideFile, "outside");
         if (!CanCreateFileSymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -1909,7 +1969,8 @@ public sealed class CacheStoreTests
         using CancellationTokenSource cancellationTokenSource = new();
         if (!CanCreateFileSymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -1957,7 +2018,8 @@ public sealed class CacheStoreTests
         using CancellationTokenSource cancellationTokenSource = new();
         if (!CanCreateFileSymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -2116,7 +2178,8 @@ public sealed class CacheStoreTests
             or UnauthorizedAccessException
             or PlatformNotSupportedException)
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         Assert.Throws<IOException>(() => CacheStore.GetClearGeneration(root));
@@ -2140,7 +2203,8 @@ public sealed class CacheStoreTests
             or UnauthorizedAccessException
             or PlatformNotSupportedException)
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         Assert.Throws<IOException>(() => CacheStore.Clear(
@@ -2326,6 +2390,78 @@ public sealed class CacheStoreTests
         Assert.Null(chapter);
     }
 
+    [Fact]
+    public async Task GetChapterAsyncReturnsNullForEmptyParagraphs()
+    {
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = GetCacheRoot(temporaryDirectory);
+        string cachePath = AppPaths.GetChapterCachePath(root, "1045928363", "1");
+        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+        await File.WriteAllTextAsync(
+            cachePath,
+            """
+            {
+                "chapterId": "1",
+                "paragraphs": [],
+                "isPreview": false,
+                "catalogWordCount": 100
+            }
+            """);
+
+        ChapterCacheEntry? chapter = await CacheStore.GetChapterAsync(
+            root,
+            "1045928363",
+            "1",
+            CancellationToken.None);
+        ChapterCacheProbe? probe = await CacheStore.GetChapterProbeAsync(
+            root,
+            "1045928363",
+            "1",
+            CancellationToken.None);
+
+        Assert.Null(chapter);
+        Assert.Null(probe);
+    }
+
+    [Theory]
+    [InlineData("[null]")]
+    [InlineData("[\"\"]")]
+    [InlineData("[\"   \"]")]
+    [InlineData("[\"Visible paragraph\", null]")]
+    [InlineData("[\"Visible paragraph\", \"\"]")]
+    [InlineData("[\"Visible paragraph\", \"   \"]")]
+    public async Task GetChapterAsyncAndProbeRejectInvalidParagraphValues(string paragraphsJson)
+    {
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = GetCacheRoot(temporaryDirectory);
+        string cachePath = AppPaths.GetChapterCachePath(root, "1045928363", "1");
+        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+        await File.WriteAllTextAsync(
+            cachePath,
+            $$"""
+            {
+                "chapterId": "1",
+                "paragraphs": {{paragraphsJson}},
+                "isPreview": false,
+                "catalogWordCount": 100
+            }
+            """);
+
+        ChapterCacheEntry? chapter = await CacheStore.GetChapterAsync(
+            root,
+            "1045928363",
+            "1",
+            CancellationToken.None);
+        ChapterCacheProbe? probe = await CacheStore.GetChapterProbeAsync(
+            root,
+            "1045928363",
+            "1",
+            CancellationToken.None);
+
+        Assert.Null(chapter);
+        Assert.Null(probe);
+    }
+
     [Theory]
     [InlineData("{ invalid json")]
     [InlineData("{\"bookId\":\"1045928363\"")]
@@ -2352,6 +2488,252 @@ public sealed class CacheStoreTests
         Assert.Null(catalog);
     }
 
+    [Theory]
+    [InlineData(false, "[]")]
+    [InlineData(true, "[]")]
+    [InlineData(false, "[{\"title\":\"Empty Volume\",\"isVip\":false,\"chapters\":[]}]")]
+    [InlineData(true, "[{\"title\":\"Empty Volume\",\"isVip\":false,\"chapters\":[]}]")]
+    public async Task GetCatalogAsyncRejectsEmptyCatalogStructures(
+        bool outputPrediction,
+        string volumesJson)
+    {
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = GetCacheRoot(temporaryDirectory);
+        string requestedBookId = "1045928363";
+        string cachePath = AppPaths.GetCatalogCachePath(
+            root,
+            requestedBookId,
+            CatalogCacheScope.Anonymous);
+        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+        await File.WriteAllTextAsync(
+            cachePath,
+            $$"""
+            {
+                "bookId": "{{requestedBookId}}",
+                "metadata": {
+                    "bookId": "{{requestedBookId}}",
+                    "title": "Title",
+                    "author": "Author",
+                    "estimatedWordCount": 123456
+                },
+                "volumes": {{volumesJson}},
+                "fetchedAtUtc": "2024-01-01T00:00:00+00:00",
+                "cacheScope": {
+                    "kind": "Anonymous"
+                },
+                "isKnownAnonymous": true
+            }
+            """);
+
+        CatalogSnapshot? catalog = outputPrediction
+            ? await CacheStore.GetCatalogForOutputPredictionAsync(
+                root,
+                requestedBookId,
+                CatalogCacheScope.Anonymous,
+                CancellationToken.None)
+            : await CacheStore.GetCatalogAsync(
+                root,
+                requestedBookId,
+                CatalogCacheScope.Anonymous,
+                CancellationToken.None);
+
+        Assert.Null(catalog);
+    }
+
+    [Theory]
+    [InlineData(false, "", "Author", "Volume", "Chapter One")]
+    [InlineData(false, " \t ", "Author", "Volume", "Chapter One")]
+    [InlineData(false, "Title", "", "Volume", "Chapter One")]
+    [InlineData(false, "Title", " \t ", "Volume", "Chapter One")]
+    [InlineData(false, "Title", "Author", "", "Chapter One")]
+    [InlineData(false, "Title", "Author", " \t ", "Chapter One")]
+    [InlineData(false, "Title", "Author", "Volume", "")]
+    [InlineData(false, "Title", "Author", "Volume", " \t ")]
+    [InlineData(true, "", "Author", "Volume", "Chapter One")]
+    [InlineData(true, " \t ", "Author", "Volume", "Chapter One")]
+    [InlineData(true, "Title", "", "Volume", "Chapter One")]
+    [InlineData(true, "Title", " \t ", "Volume", "Chapter One")]
+    [InlineData(true, "Title", "Author", "", "Chapter One")]
+    [InlineData(true, "Title", "Author", " \t ", "Chapter One")]
+    [InlineData(true, "Title", "Author", "Volume", "")]
+    [InlineData(true, "Title", "Author", "Volume", " \t ")]
+    public async Task GetCatalogAsyncRejectsBlankCatalogTextFields(
+        bool outputPrediction,
+        string metadataTitle,
+        string metadataAuthor,
+        string volumeTitle,
+        string chapterTitle)
+    {
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = GetCacheRoot(temporaryDirectory);
+        string requestedBookId = "1045928363";
+        string cachePath = AppPaths.GetCatalogCachePath(
+            root,
+            requestedBookId,
+            CatalogCacheScope.Anonymous);
+        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+        await File.WriteAllTextAsync(
+            cachePath,
+            $$"""
+            {
+                "bookId": {{JsonSerializer.Serialize(requestedBookId)}},
+                "metadata": {
+                    "bookId": {{JsonSerializer.Serialize(requestedBookId)}},
+                    "title": {{JsonSerializer.Serialize(metadataTitle)}},
+                    "author": {{JsonSerializer.Serialize(metadataAuthor)}},
+                    "estimatedWordCount": 123456
+                },
+                "volumes": [
+                    {
+                        "title": {{JsonSerializer.Serialize(volumeTitle)}},
+                        "isVip": false,
+                        "chapters": [
+                            {
+                                "chapterId": "1",
+                                "title": {{JsonSerializer.Serialize(chapterTitle)}},
+                                "url": "https://www.qidian.com/chapter/1045928363/1/",
+                                "isVip": false,
+                                "catalogWordCount": 100,
+                                "catalogAccessState": "Accessible"
+                            }
+                        ]
+                    }
+                ],
+                "fetchedAtUtc": "2024-01-01T00:00:00+00:00",
+                "cacheScope": {
+                    "kind": "Anonymous"
+                },
+                "isKnownAnonymous": true
+            }
+            """);
+
+        CatalogSnapshot? catalog = outputPrediction
+            ? await CacheStore.GetCatalogForOutputPredictionAsync(
+                root,
+                requestedBookId,
+                CatalogCacheScope.Anonymous,
+                CancellationToken.None)
+            : await CacheStore.GetCatalogAsync(
+                root,
+                requestedBookId,
+                CatalogCacheScope.Anonymous,
+                CancellationToken.None);
+
+        Assert.Null(catalog);
+    }
+
+    [Theory]
+    [InlineData(false, "1045928364", "1045928363")]
+    [InlineData(false, "1045928363", "1045928364")]
+    [InlineData(false, "1045928364", "1045928364")]
+    [InlineData(true, "1045928364", "1045928363")]
+    [InlineData(true, "1045928363", "1045928364")]
+    [InlineData(true, "1045928364", "1045928364")]
+    public async Task GetCatalogAsyncRejectsCatalogWhenCachedBookIdsDoNotMatchRequestedBookId(
+        bool outputPrediction,
+        string catalogBookId,
+        string metadataBookId)
+    {
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = GetCacheRoot(temporaryDirectory);
+        string requestedBookId = "1045928363";
+        string cachePath = AppPaths.GetCatalogCachePath(
+            root,
+            requestedBookId,
+            CatalogCacheScope.Anonymous);
+        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+        await File.WriteAllTextAsync(
+            cachePath,
+            CreateValidCatalogJson(
+                catalogBookId,
+                metadataBookId,
+                requestedBookId,
+                """
+                "cacheScope": {
+                    "kind": "Anonymous"
+                },
+                "isKnownAnonymous": true
+                """));
+
+        CatalogSnapshot? catalog = outputPrediction
+            ? await CacheStore.GetCatalogForOutputPredictionAsync(
+                root,
+                requestedBookId,
+                CatalogCacheScope.Anonymous,
+                CancellationToken.None)
+            : await CacheStore.GetCatalogAsync(
+                root,
+                requestedBookId,
+                CatalogCacheScope.Anonymous,
+                CancellationToken.None);
+
+        Assert.Null(catalog);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetCatalogAsyncRejectsCatalogWhenChapterUrlEmbedsDifferentBookId(
+        bool outputPrediction)
+    {
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = GetCacheRoot(temporaryDirectory);
+        string requestedBookId = "1045928363";
+        string cachePath = AppPaths.GetCatalogCachePath(
+            root,
+            requestedBookId,
+            CatalogCacheScope.Anonymous);
+        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+        await File.WriteAllTextAsync(
+            cachePath,
+            $$"""
+            {
+                "bookId": {{JsonSerializer.Serialize(requestedBookId)}},
+                "metadata": {
+                    "bookId": {{JsonSerializer.Serialize(requestedBookId)}},
+                    "title": "Title",
+                    "author": "Author",
+                    "estimatedWordCount": 123456
+                },
+                "volumes": [
+                    {
+                        "title": "Volume",
+                        "isVip": false,
+                        "chapters": [
+                            {
+                                "chapterId": "1",
+                                "title": "Chapter One",
+                                "url": "https://www.qidian.com/chapter/1045928364/1/",
+                                "isVip": false,
+                                "catalogWordCount": 100,
+                                "catalogAccessState": "Accessible"
+                            }
+                        ]
+                    }
+                ],
+                "fetchedAtUtc": "2024-01-01T00:00:00+00:00",
+                "cacheScope": {
+                    "kind": "Anonymous"
+                },
+                "isKnownAnonymous": true
+            }
+            """);
+
+        CatalogSnapshot? catalog = outputPrediction
+            ? await CacheStore.GetCatalogForOutputPredictionAsync(
+                root,
+                requestedBookId,
+                CatalogCacheScope.Anonymous,
+                CancellationToken.None)
+            : await CacheStore.GetCatalogAsync(
+                root,
+                requestedBookId,
+                CatalogCacheScope.Anonymous,
+                CancellationToken.None);
+
+        Assert.Null(catalog);
+    }
+
     [Fact]
     public async Task GetCatalogAsyncReturnsNullWhenCacheFileIsLocked()
     {
@@ -2362,24 +2744,7 @@ public sealed class CacheStoreTests
             "1045928363",
             CatalogCacheScope.Anonymous);
         Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
-        await File.WriteAllTextAsync(
-            cachePath,
-            """
-            {
-                "bookId": "1045928363",
-                "metadata": {
-                    "bookId": "1045928363",
-                    "title": "Title",
-                    "author": "Author",
-                    "estimatedWordCount": 123456
-                },
-                "volumes": [],
-                "fetchedAtUtc": "2024-01-01T00:00:00+00:00",
-                "cacheScope": {
-                    "kind": "Anonymous"
-                }
-            }
-            """);
+        await File.WriteAllTextAsync(cachePath, CreateValidCatalogJson("1045928363"));
 
         using FileStream _ = new(
             cachePath,
@@ -2410,27 +2775,11 @@ public sealed class CacheStoreTests
             AppConstants.CatalogCacheFileName);
         Directory.CreateDirectory(AppPaths.GetBookCacheDirectory(root, bookId));
         Directory.CreateDirectory(outsideCatalogsDirectory);
-        await File.WriteAllTextAsync(
-            outsideCatalogPath,
-            """
-            {
-                "bookId": "1045928363",
-                "metadata": {
-                    "bookId": "1045928363",
-                    "title": "Outside Title",
-                    "author": "Outside Author",
-                    "estimatedWordCount": 123456
-                },
-                "volumes": [],
-                "fetchedAtUtc": "2024-01-01T00:00:00+00:00",
-                "cacheScope": {
-                    "kind": "Anonymous"
-                }
-            }
-            """);
+        await File.WriteAllTextAsync(outsideCatalogPath, CreateValidCatalogJson(bookId));
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         Directory.CreateSymbolicLink(catalogsDirectory, outsideCatalogsDirectory);
@@ -2462,10 +2811,13 @@ public sealed class CacheStoreTests
     {
         using TemporaryDirectory temporaryDirectory = new();
         string root = GetCacheRoot(temporaryDirectory);
-        string outsideBookDirectory = Path.Combine(temporaryDirectory.FullPath, "outside-book");
+        string outsideCatalogBookId = "1045928363";
+        string outsideBookDirectory = Path.Combine(
+            temporaryDirectory.FullPath,
+            outsideCatalogBookId);
         string bookId = rootedBookId
             ? outsideBookDirectory
-            : Path.Combine("..", "..", "outside-book");
+            : Path.Combine("..", "..", outsideCatalogBookId);
         string outsideCatalogPath = AppPaths.GetCatalogCachePath(
             root,
             bookId,
@@ -2473,31 +2825,37 @@ public sealed class CacheStoreTests
         Directory.CreateDirectory(Path.GetDirectoryName(outsideCatalogPath)!);
         await File.WriteAllTextAsync(
             outsideCatalogPath,
-            """
+            CreateValidCatalogJson(outsideCatalogBookId));
+
+        string normalizedOutsideCatalogPath = Path.GetFullPath(outsideCatalogPath);
+        bool attemptedReadThrough = false;
+        try
+        {
+            CacheStore.BeforeCacheReadForTests = path =>
             {
-                "bookId": "outside",
-                "metadata": {
-                    "bookId": "outside",
-                    "title": "Outside Title",
-                    "author": "Outside Author",
-                    "estimatedWordCount": 123456
-                },
-                "volumes": [],
-                "fetchedAtUtc": "2024-01-01T00:00:00+00:00",
-                "cacheScope": {
-                    "kind": "Anonymous"
+                if (string.Equals(
+                    Path.GetFullPath(path),
+                    normalizedOutsideCatalogPath,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    attemptedReadThrough = true;
                 }
-            }
-            """);
+            };
 
-        CatalogSnapshot? catalog = await CacheStore.GetCatalogAsync(
-            root,
-            bookId,
-            CatalogCacheScope.Anonymous,
-            CancellationToken.None);
+            CatalogSnapshot? catalog = await CacheStore.GetCatalogAsync(
+                root,
+                bookId,
+                CatalogCacheScope.Anonymous,
+                CancellationToken.None);
 
-        Assert.Null(catalog);
-        Assert.True(File.Exists(outsideCatalogPath));
+            Assert.Null(catalog);
+            Assert.False(attemptedReadThrough);
+            Assert.True(File.Exists(outsideCatalogPath));
+        }
+        finally
+        {
+            CacheStore.BeforeCacheReadForTests = null;
+        }
     }
 
     [Fact]
@@ -2575,7 +2933,8 @@ public sealed class CacheStoreTests
             """);
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         Directory.CreateSymbolicLink(chaptersDirectory, outsideChaptersDirectory);
@@ -2735,7 +3094,8 @@ public sealed class CacheStoreTests
             """);
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         Directory.CreateSymbolicLink(chaptersDirectory, outsideChaptersDirectory);
@@ -2808,7 +3168,8 @@ public sealed class CacheStoreTests
         File.WriteAllText(outsideChapterPath, "{}");
         if (!CanCreateFileSymbolicLink(temporaryDirectory))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -2910,7 +3271,8 @@ public sealed class CacheStoreTests
                             CatalogChapterAccessState.PurchaseRequired),
                     ]),
             ],
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            IsKnownAnonymous: true);
 
         await CacheStore.SaveCatalogAsync(root, catalog, CancellationToken.None);
         CatalogSnapshot? roundTripped = await CacheStore.GetCatalogAsync(
@@ -2935,7 +3297,20 @@ public sealed class CacheStoreTests
         CatalogSnapshot catalog = new(
             "1045928363",
             new BookMetadata("1045928363", "Title", "Author", 123456),
-            [],
+            [
+                new VolumeDescriptor(
+                    "Volume",
+                    IsVip: false,
+                    [
+                        new ChapterDescriptor(
+                            "1",
+                            "Chapter One",
+                            "https://www.qidian.com/chapter/1045928363/1/",
+                            IsVip: false,
+                            CatalogWordCount: 100,
+                            CatalogAccessState: CatalogChapterAccessState.Accessible),
+                    ]),
+            ],
             DateTimeOffset.UtcNow,
             scope);
 
@@ -2962,6 +3337,76 @@ public sealed class CacheStoreTests
         Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
         await File.WriteAllTextAsync(
             cachePath,
+            CreateValidCatalogJson(
+                "1045928363",
+                "1045928363",
+                "1045928363",
+                """
+                "cacheScope": {
+                    "kind": "ValidatedUser",
+                    "userName": "tester"
+                },
+                "isKnownAnonymous": true
+                """));
+
+        CatalogSnapshot? catalog = await CacheStore.GetCatalogAsync(
+            root,
+            "1045928363",
+            CatalogCacheScope.Anonymous,
+            CancellationToken.None);
+
+        Assert.Null(catalog);
+    }
+
+    [Fact]
+    public async Task GetCatalogAsyncRejectsAnonymousCatalogWhenNotKnownAnonymous()
+    {
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = GetCacheRoot(temporaryDirectory);
+        string bookId = "1045928363";
+        CatalogSnapshot catalog = new(
+            bookId,
+            new BookMetadata(bookId, "Title", "Author", 123456),
+            [
+                new VolumeDescriptor(
+                    "Volume",
+                    IsVip: false,
+                    [
+                        new ChapterDescriptor(
+                            "1",
+                            "Chapter One",
+                            "https://www.qidian.com/chapter/1045928363/1/",
+                            IsVip: false,
+                            CatalogWordCount: 100,
+                            CatalogAccessState: CatalogChapterAccessState.Accessible),
+                    ]),
+            ],
+            DateTimeOffset.UtcNow,
+            CatalogCacheScope.Anonymous,
+            IsKnownAnonymous: false);
+
+        await CacheStore.SaveCatalogAsync(root, catalog, CancellationToken.None);
+        CatalogSnapshot? roundTripped = await CacheStore.GetCatalogAsync(
+            root,
+            bookId,
+            CatalogCacheScope.Anonymous,
+            CancellationToken.None);
+
+        Assert.Null(roundTripped);
+    }
+
+    [Fact]
+    public async Task GetCatalogAsyncRejectsAnonymousCatalogWhenKnownAnonymousFlagIsMissing()
+    {
+        using TemporaryDirectory temporaryDirectory = new();
+        string root = GetCacheRoot(temporaryDirectory);
+        string cachePath = AppPaths.GetCatalogCachePath(
+            root,
+            "1045928363",
+            CatalogCacheScope.Anonymous);
+        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+        await File.WriteAllTextAsync(
+            cachePath,
             """
             {
                 "bookId": "1045928363",
@@ -2971,11 +3416,25 @@ public sealed class CacheStoreTests
                     "author": "Author",
                     "estimatedWordCount": 123456
                 },
-                "volumes": [],
+                "volumes": [
+                    {
+                        "title": "Volume",
+                        "isVip": false,
+                        "chapters": [
+                            {
+                                "chapterId": "1",
+                                "title": "Chapter One",
+                                "url": "https://www.qidian.com/chapter/1045928363/1/",
+                                "isVip": false,
+                                "catalogWordCount": 100,
+                                "catalogAccessState": "Accessible"
+                            }
+                        ]
+                    }
+                ],
                 "fetchedAtUtc": "2024-01-01T00:00:00+00:00",
                 "cacheScope": {
-                    "kind": "ValidatedUser",
-                    "userName": "tester"
+                    "kind": "Anonymous"
                 }
             }
             """);
@@ -3014,7 +3473,8 @@ public sealed class CacheStoreTests
                     ]),
             ],
             DateTimeOffset.UtcNow,
-            CatalogCacheScope.Anonymous);
+            CatalogCacheScope.Anonymous,
+            IsKnownAnonymous: true);
         CatalogSnapshot validatedCatalog = anonymousCatalog with
         {
             Metadata = anonymousCatalog.Metadata with { Title = "Validated Title" },
@@ -3089,6 +3549,53 @@ public sealed class CacheStoreTests
             }
             """;
 
+    private static string CreateValidCatalogJson(string bookId)
+        => CreateValidCatalogJson(
+            bookId,
+            bookId,
+            bookId,
+            """
+            "cacheScope": {
+                "kind": "Anonymous"
+            },
+            "isKnownAnonymous": true
+            """);
+
+    private static string CreateValidCatalogJson(
+        string catalogBookId,
+        string metadataBookId,
+        string chapterBookId,
+        string scopeAndKnownAnonymousJson)
+        => $$"""
+            {
+                "bookId": {{JsonSerializer.Serialize(catalogBookId)}},
+                "metadata": {
+                    "bookId": {{JsonSerializer.Serialize(metadataBookId)}},
+                    "title": "Title",
+                    "author": "Author",
+                    "estimatedWordCount": 123456
+                },
+                "volumes": [
+                    {
+                        "title": "Volume",
+                        "isVip": false,
+                        "chapters": [
+                            {
+                                "chapterId": "1",
+                                "title": "Chapter One",
+                                "url": "https://www.qidian.com/chapter/{{chapterBookId}}/1/",
+                                "isVip": false,
+                                "catalogWordCount": 100,
+                                "catalogAccessState": "Accessible"
+                            }
+                        ]
+                    }
+                ],
+                "fetchedAtUtc": "2024-01-01T00:00:00+00:00",
+                {{scopeAndKnownAnonymousJson}}
+            }
+            """;
+
     private static void WriteClearGeneration(string cacheRoot, string generation)
     {
         string generationPath = CacheStore.GetClearGenerationFilePath(cacheRoot);
@@ -3152,7 +3659,8 @@ public sealed class CacheStoreTests
             or UnauthorizedAccessException
             or PlatformNotSupportedException)
         {
-            return false;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
     }
 
@@ -3171,7 +3679,8 @@ public sealed class CacheStoreTests
             or UnauthorizedAccessException
             or PlatformNotSupportedException)
         {
-            return false;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
     }
 

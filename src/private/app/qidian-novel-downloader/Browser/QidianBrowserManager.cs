@@ -558,25 +558,65 @@ internal sealed class QidianBrowserSession(
         if (navigate && url is not null)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await AwaitWithCancellationAsync(
-                primaryPage.GotoAsync(
-                    url,
-                    new PageGotoOptions
-                    {
-                        WaitUntil = WaitUntilState.DOMContentLoaded,
-                        Timeout = 60_000,
-                    }),
-                cancellationToken);
+            try
+            {
+                await AwaitWithCancellationAsync(
+                    primaryPage.GotoAsync(
+                        url,
+                        new PageGotoOptions
+                        {
+                            WaitUntil = WaitUntilState.DOMContentLoaded,
+                            Timeout = 60_000,
+                        }),
+                    cancellationToken);
+            }
+            catch (PlaywrightException exception)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (IsNonManualClosedPageProbeException(primaryPage, exception))
+                {
+                    return CreateIncompleteLoginState();
+                }
+
+                throw;
+            }
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         if (primaryPage.IsClosed)
         {
-            return new LoginState(false, null);
+            return CreateIncompleteLoginState();
         }
 
-        LoginState latestState = await EvaluateLoginStateAsync(cancellationToken);
-        if (probeMode == LoginStateProbeMode.CurrentStateOnly || latestState.IsValidated)
+        LoginState latestState;
+        try
+        {
+            latestState = await EvaluateLoginStateAsync(cancellationToken);
+        }
+        catch (PlaywrightException exception)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (IsNonManualClosedPageProbeException(primaryPage, exception))
+            {
+                return CreateIncompleteLoginState();
+            }
+
+            throw;
+        }
+
+        if (probeMode == LoginStateProbeMode.CurrentStateOnly)
+        {
+            return primaryPage.IsClosed
+                ? MarkIncompleteProbe(latestState)
+                : latestState;
+        }
+
+        if (primaryPage.IsClosed)
+        {
+            return MarkIncompleteProbe(latestState);
+        }
+
+        if (latestState.IsValidated)
         {
             return latestState;
         }
@@ -586,13 +626,51 @@ internal sealed class QidianBrowserSession(
             cancellationToken.ThrowIfCancellationRequested();
             if (primaryPage.IsClosed)
             {
-                return latestState;
+                return MarkIncompleteProbe(latestState);
             }
 
-            await AwaitWithCancellationAsync(
-                primaryPage.WaitForTimeoutAsync(LoginStateProbeDelayMilliseconds),
-                cancellationToken);
-            latestState = await EvaluateLoginStateAsync(cancellationToken);
+            try
+            {
+                await AwaitWithCancellationAsync(
+                    primaryPage.WaitForTimeoutAsync(LoginStateProbeDelayMilliseconds),
+                    cancellationToken);
+            }
+            catch (PlaywrightException exception)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (IsNonManualClosedPageProbeException(primaryPage, exception))
+                {
+                    return MarkIncompleteProbe(latestState);
+                }
+
+                throw;
+            }
+
+            if (primaryPage.IsClosed)
+            {
+                return MarkIncompleteProbe(latestState);
+            }
+
+            try
+            {
+                latestState = await EvaluateLoginStateAsync(cancellationToken);
+            }
+            catch (PlaywrightException exception)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (IsNonManualClosedPageProbeException(primaryPage, exception))
+                {
+                    return MarkIncompleteProbe(latestState);
+                }
+
+                throw;
+            }
+
+            if (primaryPage.IsClosed)
+            {
+                return MarkIncompleteProbe(latestState);
+            }
+
             if (latestState.IsValidated)
             {
                 return latestState;
@@ -601,6 +679,17 @@ internal sealed class QidianBrowserSession(
 
         return latestState;
     }
+
+    private static LoginState CreateIncompleteLoginState()
+        => new(false, null, IsProbeComplete: false);
+
+    private static LoginState MarkIncompleteProbe(LoginState loginState)
+        => loginState with { IsProbeComplete = false };
+
+    private static bool IsNonManualClosedPageProbeException(
+        IPage page,
+        PlaywrightException exception)
+        => page.IsClosed || IsPlaywrightClosedPageException(exception);
 
     public async Task<CatalogSnapshot> FetchCatalogAsync(
         string bookId,
@@ -625,7 +714,13 @@ internal sealed class QidianBrowserSession(
             cancellationToken);
         JsonElement root = document.RootElement;
 
-        string title = ReadString(root, "title") ?? bookId;
+        string? extractedBookId = ReadString(root, "bookId");
+        string fetchedBookId = !string.IsNullOrWhiteSpace(extractedBookId)
+            ? extractedBookId
+            : TryExtractBookIdFromBookUrl(primaryPage.Url)
+            ?? throw new OperationalException(
+                "Fetched catalog page book id could not be determined.");
+        string title = ReadString(root, "title") ?? fetchedBookId;
         string author = ReadString(root, "author") ?? "unknown";
         int? estimatedWordCount = ReadNullableInt(root, "estimatedWordCount");
 
@@ -663,8 +758,8 @@ internal sealed class QidianBrowserSession(
         }
 
         return new CatalogSnapshot(
-            bookId,
-            new BookMetadata(bookId, title, author, estimatedWordCount),
+            fetchedBookId,
+            new BookMetadata(fetchedBookId, title, author, estimatedWordCount),
             volumes,
             DateTimeOffset.UtcNow);
     }
@@ -675,9 +770,25 @@ internal sealed class QidianBrowserSession(
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        string canonicalUrl = $"{AppConstants.QidianBaseUrl}/chapter/{bookId}/{chapter.ChapterId}/";
+        if (!CatalogSnapshotValidation.TryGetUsableChapterUrlForBook(
+            canonicalUrl,
+            bookId,
+            chapter.ChapterId,
+            out string validatedCanonicalUrl))
+        {
+            throw new OperationalException(
+                $"Requested chapter URL '{canonicalUrl}' is not a safe canonical Qidian chapter URL.");
+        }
+
         string url = string.IsNullOrWhiteSpace(chapter.Url)
-            ? $"{AppConstants.QidianBaseUrl}/chapter/{bookId}/{chapter.ChapterId}/"
-            : chapter.Url;
+            || !CatalogSnapshotValidation.TryGetUsableChapterUrlForBook(
+                chapter.Url,
+                bookId,
+                chapter.ChapterId,
+                out string usableUrl)
+                ? validatedCanonicalUrl
+                : usableUrl;
         await AwaitWithCancellationAsync(
             primaryPage.GotoAsync(
                 url,
@@ -687,11 +798,12 @@ internal sealed class QidianBrowserSession(
                     Timeout = 60_000,
                 }),
             cancellationToken);
+        ValidateFetchedChapterUrl(bookId, chapter.ChapterId, primaryPage.Url);
         try
         {
             await AwaitWithCancellationAsync(
                 primaryPage.WaitForSelectorAsync(
-                    "span.content-text, main p, .read-content p, "
+                    "span.content-text, .read-content p, "
                     + ".chapter-content p, #j_chapterContent p",
                     new PageWaitForSelectorOptions { Timeout = 10_000 }),
                 cancellationToken);
@@ -701,10 +813,18 @@ internal sealed class QidianBrowserSession(
             // Content selectors did not appear; proceed with best-effort extraction.
         }
 
+        ValidateFetchedChapterUrl(bookId, chapter.ChapterId, primaryPage.Url);
         using JsonDocument document = await EvaluateJsonDocumentAsync(
             PageScripts.ChapterContentJson,
             cancellationToken);
         JsonElement root = document.RootElement;
+        ValidateFetchedChapterUrl(bookId, chapter.ChapterId, ReadString(root, "pageUrl"));
+        if (ReadBoolean(root, "rejected", defaultValue: false))
+        {
+            throw new OperationalException(
+                "Fetched chapter page contained login, captcha, error, or interstitial markers.");
+        }
+
         List<string> paragraphs = [];
         foreach (JsonElement paragraph in root.GetProperty("paragraphs").EnumerateArray())
         {
@@ -715,25 +835,222 @@ internal sealed class QidianBrowserSession(
             }
         }
 
+        ValidateFetchedChapterContentIdentity(ReadString(root, "contentSelector"), paragraphs);
+
         return new ChapterFetchResult(
             paragraphs,
             root.GetProperty("isPreview").GetBoolean());
     }
+
+    private static void ValidateFetchedChapterContentIdentity(
+        string? contentSelector,
+        List<string> paragraphs)
+    {
+        if (paragraphs.Count == 0)
+        {
+            return;
+        }
+
+        if (IsTrustedChapterContentSelector(contentSelector))
+        {
+            if (paragraphs.Any(IsRejectedInterstitialContentText))
+            {
+                throw new OperationalException(
+                    "Fetched chapter content contained login, captcha, error, or interstitial marker text.");
+            }
+
+            return;
+        }
+
+        throw new OperationalException(
+            "Fetched chapter content did not come from a recognized Qidian chapter content container.");
+    }
+
+    private static bool IsTrustedChapterContentSelector(string? contentSelector)
+        => string.Equals(contentSelector, "span.content-text", StringComparison.Ordinal)
+            || string.Equals(contentSelector, ".read-content p", StringComparison.Ordinal)
+            || string.Equals(contentSelector, ".chapter-content p", StringComparison.Ordinal)
+            || string.Equals(contentSelector, "#j_chapterContent p", StringComparison.Ordinal);
+
+    private static bool IsRejectedInterstitialContentText(string text)
+    {
+        string normalized = string.Join(
+            ' ',
+            text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (normalized.Length == 0)
+        {
+            return false;
+        }
+
+        return normalized.Contains("请先登录", StringComparison.Ordinal)
+            || ContainsLoginReadMarker(normalized)
+            || normalized.Contains("验证码", StringComparison.Ordinal)
+            || normalized.Contains("captcha", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("安全验证", StringComparison.Ordinal)
+            || normalized.Contains("人机验证", StringComparison.Ordinal)
+            || normalized.Contains("滑块验证", StringComparison.Ordinal)
+            || normalized.Contains("拖动滑块", StringComparison.Ordinal)
+            || normalized.Contains("访问过于频繁", StringComparison.Ordinal)
+            || normalized.Contains("操作过于频繁", StringComparison.Ordinal)
+            || normalized.Contains("检测到异常", StringComparison.Ordinal)
+            || normalized.Contains("系统繁忙", StringComparison.Ordinal)
+            || normalized.Contains("请稍后再试", StringComparison.Ordinal)
+            || normalized.Contains("页面不存在", StringComparison.Ordinal)
+            || normalized.Contains("章节不存在", StringComparison.Ordinal)
+            || normalized.Contains("内容不存在", StringComparison.Ordinal)
+            || normalized.Contains("访问受限", StringComparison.Ordinal)
+            || normalized.Contains("access denied", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("verify you are human", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("unusual traffic", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("interstitial", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("error page", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ContainsLoginReadMarker(string text)
+        => text.Contains("请登录", StringComparison.Ordinal)
+            || text.Contains("需要登录", StringComparison.Ordinal)
+            || text.Contains("您还未登录", StringComparison.Ordinal)
+            || text.Contains("未登录", StringComparison.Ordinal)
+            || (text.Contains("登录后", StringComparison.Ordinal)
+                && (text.Contains("阅读", StringComparison.Ordinal)
+                    || text.Contains("查看", StringComparison.Ordinal)
+                    || text.Contains("访问", StringComparison.Ordinal)));
+
+    private static void ValidateFetchedChapterUrl(
+        string bookId,
+        string chapterId,
+        string? fetchedUrl)
+    {
+        if (!string.IsNullOrWhiteSpace(fetchedUrl)
+            && CatalogSnapshotValidation.TryGetUsableChapterUrlForBook(
+                fetchedUrl,
+                bookId,
+                chapterId,
+                out _))
+        {
+            return;
+        }
+
+        throw new OperationalException(
+            $"Fetched chapter URL '{fetchedUrl ?? string.Empty}' did not match "
+            + $"requested chapter URL '{AppConstants.QidianBaseUrl}/chapter/{bookId}/{chapterId}/'.");
+    }
+
+    private static string? TryExtractBookIdFromBookUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return null;
+        }
+
+        string trimmed = url.Trim();
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out Uri? uri)
+            || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || !uri.IsDefaultPort
+            || !IsQidianHost(uri.Host)
+            || HasRawUserInfoInAuthority(trimmed)
+            || !string.IsNullOrEmpty(uri.UserInfo)
+            || !string.IsNullOrEmpty(uri.Query)
+            || !string.IsNullOrEmpty(uri.Fragment))
+        {
+            return null;
+        }
+
+        string originalPath = GetOriginalPath(trimmed);
+        const string bookRoutePrefix = "/book/";
+        if (!originalPath.StartsWith(bookRoutePrefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        int bookIdStart = bookRoutePrefix.Length;
+        int bookIdEnd = originalPath.IndexOf('/', bookIdStart);
+        string bookId = bookIdEnd < 0
+            ? originalPath[bookIdStart..]
+            : originalPath[bookIdStart..bookIdEnd];
+        if (bookId.Length == 0
+            || !bookId.All(static c => c is >= '0' and <= '9'))
+        {
+            return null;
+        }
+
+        return string.Equals(originalPath, $"/book/{bookId}/", StringComparison.Ordinal)
+            || string.Equals(originalPath, $"/book/{bookId}/catalog/", StringComparison.Ordinal)
+            ? bookId
+            : null;
+    }
+
+    private static bool HasRawUserInfoInAuthority(string absoluteUrl)
+    {
+        int authorityStart = absoluteUrl.IndexOf("://", StringComparison.Ordinal);
+        if (authorityStart < 0)
+        {
+            return false;
+        }
+
+        authorityStart += 3;
+        int authorityEnd = absoluteUrl.IndexOfAny(['/', '?', '#'], authorityStart);
+        ReadOnlySpan<char> authority = authorityEnd < 0
+            ? absoluteUrl.AsSpan(authorityStart)
+            : absoluteUrl.AsSpan(authorityStart, authorityEnd - authorityStart);
+        return authority.Contains('@');
+    }
+
+    private static string GetOriginalPath(string absoluteUrl)
+    {
+        int authorityStart = absoluteUrl.IndexOf("://", StringComparison.Ordinal);
+        if (authorityStart < 0)
+        {
+            return string.Empty;
+        }
+
+        authorityStart += 3;
+        int authorityEnd = absoluteUrl.IndexOfAny(['?', '#'], authorityStart);
+        int pathStart = absoluteUrl.IndexOf('/', authorityStart);
+        if (pathStart < 0
+            || (authorityEnd >= 0 && pathStart > authorityEnd))
+        {
+            return string.Empty;
+        }
+
+        int queryStart = absoluteUrl.IndexOfAny(['?', '#'], pathStart);
+        return queryStart < 0
+            ? absoluteUrl[pathStart..]
+            : absoluteUrl[pathStart..queryStart];
+    }
+
+    private static bool IsQidianHost(string host)
+        => string.Equals(host, "www.qidian.com", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(host, "qidian.com", StringComparison.OrdinalIgnoreCase);
 
     public async Task<LoginState> WaitForManualLoginAsync(
         CancellationToken cancellationToken,
         bool requireValidatedIdentity = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await AwaitWithCancellationAsync(
-            primaryPage.GotoAsync(
-                AppConstants.QidianBaseUrl,
-                new PageGotoOptions
-                {
-                    WaitUntil = WaitUntilState.DOMContentLoaded,
-                    Timeout = 60_000,
-                }),
-            cancellationToken);
+        try
+        {
+            await AwaitWithCancellationAsync(
+                primaryPage.GotoAsync(
+                    AppConstants.QidianBaseUrl,
+                    new PageGotoOptions
+                    {
+                        WaitUntil = WaitUntilState.DOMContentLoaded,
+                        Timeout = 60_000,
+                    }),
+                cancellationToken);
+        }
+        catch (PlaywrightException exception)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (primaryPage.IsClosed || IsPlaywrightClosedPageException(exception))
+            {
+                throw CreateManualLoginClosedException(requireValidatedIdentity, exception);
+            }
+
+            throw;
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
 
         while (!primaryPage.IsClosed)
@@ -747,12 +1064,12 @@ internal sealed class QidianBrowserSession(
                     return state;
                 }
             }
-            catch (PlaywrightException)
+            catch (PlaywrightException exception)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (primaryPage.IsClosed)
+                if (primaryPage.IsClosed || IsPlaywrightClosedPageException(exception))
                 {
-                    break;
+                    throw CreateManualLoginClosedException(requireValidatedIdentity, exception);
                 }
 
                 // The execution context can be destroyed when the user navigates
@@ -767,9 +1084,16 @@ internal sealed class QidianBrowserSession(
                         cancellationToken);
                     cancellationToken.ThrowIfCancellationRequested();
                 }
-                catch (PlaywrightException)
+                catch (PlaywrightException recoveryException)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    if (primaryPage.IsClosed || IsPlaywrightClosedPageException(recoveryException))
+                    {
+                        throw CreateManualLoginClosedException(
+                            requireValidatedIdentity,
+                            recoveryException);
+                    }
+
                     // Ignore timeout or further navigation; the outer loop will retry.
                 }
             }
@@ -779,19 +1103,48 @@ internal sealed class QidianBrowserSession(
                 break;
             }
 
-            await AwaitWithCancellationAsync(
-                primaryPage.WaitForTimeoutAsync(1000),
-                cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                await AwaitWithCancellationAsync(
+                    primaryPage.WaitForTimeoutAsync(1000),
+                    cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            catch (PlaywrightException exception)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (primaryPage.IsClosed || IsPlaywrightClosedPageException(exception))
+                {
+                    throw CreateManualLoginClosedException(requireValidatedIdentity, exception);
+                }
+
+                throw;
+            }
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        throw new OperationalException(
-            requireValidatedIdentity
-                ? "The login browser window was closed before "
-                    + "a validated account identity was established."
-                : "The login browser window was closed before "
-                    + "an authenticated session was established.");
+        throw CreateManualLoginClosedException(requireValidatedIdentity);
+    }
+
+    private static bool IsPlaywrightClosedPageException(PlaywrightException exception)
+        => (exception.Message.Contains("Target page", StringComparison.OrdinalIgnoreCase)
+            && exception.Message.Contains("closed", StringComparison.OrdinalIgnoreCase))
+        || exception.Message.Contains("Page closed", StringComparison.OrdinalIgnoreCase)
+        || exception.Message.Contains("browser has been closed", StringComparison.OrdinalIgnoreCase)
+        || exception.Message.Contains("context has been closed", StringComparison.OrdinalIgnoreCase);
+
+    private static OperationalException CreateManualLoginClosedException(
+        bool requireValidatedIdentity,
+        Exception? innerException = null)
+    {
+        string message = requireValidatedIdentity
+            ? "The login browser window was closed before "
+                + "a validated account identity was established."
+            : "The login browser window was closed before "
+                + "an authenticated session was established.";
+        return innerException is null
+            ? new OperationalException(message)
+            : new OperationalException(message, innerException);
     }
 
     public Task PersistSessionStateAsync() => DisposeCoreAsync(swallowBrowserCloseFailure: false);
@@ -932,7 +1285,8 @@ internal sealed class QidianBrowserSession(
         JsonElement root = document.RootElement;
         return new LoginState(
             root.GetProperty("isLoggedIn").GetBoolean(),
-            ReadString(root, "userName")).WithNormalizedUserName();
+            ReadString(root, "userName"),
+            ReadBoolean(root, "isProbeComplete", defaultValue: true)).WithNormalizedUserName();
     }
 
     private async Task<JsonDocument> EvaluateJsonDocumentAsync(
@@ -1010,6 +1364,12 @@ internal sealed class QidianBrowserSession(
             && property.ValueKind == JsonValueKind.String
                 ? property.GetString()
                 : null;
+
+    private static bool ReadBoolean(JsonElement element, string propertyName, bool defaultValue)
+        => element.TryGetProperty(propertyName, out JsonElement property)
+            && property.ValueKind is JsonValueKind.True or JsonValueKind.False
+                ? property.GetBoolean()
+                : defaultValue;
 
     private static int? ReadNullableInt(JsonElement element, string propertyName)
         => element.TryGetProperty(propertyName, out JsonElement property)

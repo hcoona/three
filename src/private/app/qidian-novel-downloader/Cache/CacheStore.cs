@@ -20,6 +20,8 @@ internal static class CacheStore
     private static readonly AsyncLocal<Func<string, CancellationToken, Task>?>
         BeforeChapterCacheCommitHook = new();
 
+    private static readonly AsyncLocal<Action<string>?> AfterChapterCacheProbeReadHook = new();
+
     private static readonly AsyncLocal<Func<string, CancellationToken, Task>?>
         BeforeCatalogCacheCommitHook = new();
 
@@ -34,10 +36,18 @@ internal static class CacheStore
 
     private static readonly AsyncLocal<Action<string>?> BeforeCacheTemporaryWriteHook = new();
 
+    private static readonly AsyncLocal<Action<string>?> BeforeCacheReadHook = new();
+
     internal static Func<string, CancellationToken, Task>? BeforeChapterCacheCommitForTests
     {
         get => BeforeChapterCacheCommitHook.Value;
         set => BeforeChapterCacheCommitHook.Value = value;
+    }
+
+    internal static Action<string>? AfterChapterCacheProbeReadForTests
+    {
+        get => AfterChapterCacheProbeReadHook.Value;
+        set => AfterChapterCacheProbeReadHook.Value = value;
     }
 
     internal static Func<string, CancellationToken, Task>? BeforeCatalogCacheCommitForTests
@@ -76,6 +86,12 @@ internal static class CacheStore
         set => BeforeCacheTemporaryWriteHook.Value = value;
     }
 
+    internal static Action<string>? BeforeCacheReadForTests
+    {
+        get => BeforeCacheReadHook.Value;
+        set => BeforeCacheReadHook.Value = value;
+    }
+
     public static async Task<CatalogSnapshot?> GetCatalogAsync(
         string cacheRoot,
         string bookId,
@@ -91,7 +107,27 @@ internal static class CacheStore
         return await ReadCacheAsync(
             cachePath,
             AppJsonSerializerContext.Default.CatalogSnapshot,
-            catalog => IsUsableCatalog(catalog, scope),
+            catalog => IsUsableCatalog(catalog, bookId, scope),
+            cancellationToken,
+            cacheRoot);
+    }
+
+    internal static async Task<CatalogSnapshot?> GetCatalogForOutputPredictionAsync(
+        string cacheRoot,
+        string bookId,
+        CatalogCacheScope scope,
+        CancellationToken cancellationToken)
+    {
+        string cachePath = AppPaths.GetCatalogCachePath(cacheRoot, bookId, scope);
+        if (!SafeCacheFileExists(cacheRoot, cachePath))
+        {
+            return null;
+        }
+
+        return await ReadCacheAsync(
+            cachePath,
+            AppJsonSerializerContext.Default.CatalogSnapshot,
+            catalog => IsUsableCatalogForOutputPrediction(catalog, bookId, scope),
             cancellationToken,
             cacheRoot);
     }
@@ -232,8 +268,7 @@ internal static class CacheStore
         return await ReadCacheAsync(
             cachePath,
             AppJsonSerializerContext.Default.ChapterCacheEntry,
-            chapter => chapter is { Paragraphs: not null }
-                && string.Equals(chapter.ChapterId, chapterId, StringComparison.Ordinal),
+            chapter => IsUsableChapter(chapter, chapterId),
             cancellationToken,
             normalizedCacheRoot);
     }
@@ -252,14 +287,71 @@ internal static class CacheStore
         }
 
         EnsureChapterCachePathUnderChapterDirectory(normalizedCacheRoot, bookId, cachePath);
-        return await ReadCacheAsync(
+        ChapterCacheProbe? probe = await ReadCacheAsync(
             cachePath,
             AppJsonSerializerContext.Default.ChapterCacheProbe,
             chapter => chapter is { Paragraphs: not null }
                 && string.Equals(chapter.ChapterId, chapterId, StringComparison.Ordinal),
             cancellationToken,
             normalizedCacheRoot);
+        if (probe is not null)
+        {
+            AfterChapterCacheProbeReadForTests?.Invoke(cachePath);
+        }
+
+        return probe;
     }
+
+    private static bool IsUsableChapter(ChapterCacheEntry? chapter, string expectedChapterId)
+        => chapter is { Paragraphs.Count: > 0 }
+            && string.Equals(chapter.ChapterId, expectedChapterId, StringComparison.Ordinal)
+            && chapter.Paragraphs.All(
+                static paragraph => !string.IsNullOrWhiteSpace(paragraph)
+                    && !IsRejectedCachedChapterParagraph(paragraph));
+
+    private static bool IsRejectedCachedChapterParagraph(string paragraph)
+    {
+        string normalized = string.Join(
+            ' ',
+            paragraph.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (normalized.Length == 0)
+        {
+            return false;
+        }
+
+        return normalized.Contains("请先登录", StringComparison.Ordinal)
+            || ContainsLoginReadMarker(normalized)
+            || normalized.Contains("验证码", StringComparison.Ordinal)
+            || normalized.Contains("captcha", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("安全验证", StringComparison.Ordinal)
+            || normalized.Contains("人机验证", StringComparison.Ordinal)
+            || normalized.Contains("滑块验证", StringComparison.Ordinal)
+            || normalized.Contains("拖动滑块", StringComparison.Ordinal)
+            || normalized.Contains("访问过于频繁", StringComparison.Ordinal)
+            || normalized.Contains("操作过于频繁", StringComparison.Ordinal)
+            || normalized.Contains("检测到异常", StringComparison.Ordinal)
+            || normalized.Contains("系统繁忙", StringComparison.Ordinal)
+            || normalized.Contains("请稍后再试", StringComparison.Ordinal)
+            || normalized.Contains("页面不存在", StringComparison.Ordinal)
+            || normalized.Contains("章节不存在", StringComparison.Ordinal)
+            || normalized.Contains("内容不存在", StringComparison.Ordinal)
+            || normalized.Contains("访问受限", StringComparison.Ordinal)
+            || normalized.Contains("access denied", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("verify you are human", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("unusual traffic", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("interstitial", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("error page", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ContainsLoginReadMarker(string text)
+        => text.Contains("请登录", StringComparison.Ordinal)
+            || text.Contains("需要登录", StringComparison.Ordinal)
+            || text.Contains("您还未登录", StringComparison.Ordinal)
+            || text.Contains("未登录", StringComparison.Ordinal)
+            || (text.Contains("登录后", StringComparison.Ordinal)
+                && (text.Contains("阅读", StringComparison.Ordinal)
+                    || text.Contains("查看", StringComparison.Ordinal)
+                    || text.Contains("访问", StringComparison.Ordinal)));
 
     public static async Task SaveChapterAsync(
         string cacheRoot,
@@ -1094,6 +1186,7 @@ internal static class CacheStore
                 EnsureSafeCacheReadPath(cacheRoot, cachePath);
             }
 
+            BeforeCacheReadForTests?.Invoke(cachePath);
             await using FileStream stream = File.OpenRead(cachePath);
             T? value = await JsonSerializer.DeserializeAsync(
                 stream,
@@ -1131,7 +1224,23 @@ internal static class CacheStore
             && File.Exists(cachePath);
     }
 
-    private static bool IsUsableCatalog(CatalogSnapshot? catalog, CatalogCacheScope expectedScope)
+    private static bool IsUsableCatalog(
+        CatalogSnapshot? catalog,
+        string expectedBookId,
+        CatalogCacheScope expectedScope)
+        => IsUsableCatalogCore(catalog, expectedBookId, expectedScope)
+        && (expectedScope != CatalogCacheScope.Anonymous || catalog!.IsKnownAnonymous);
+
+    private static bool IsUsableCatalogForOutputPrediction(
+        CatalogSnapshot? catalog,
+        string expectedBookId,
+        CatalogCacheScope expectedScope)
+        => IsUsableCatalogCore(catalog, expectedBookId, expectedScope);
+
+    private static bool IsUsableCatalogCore(
+        CatalogSnapshot? catalog,
+        string expectedBookId,
+        CatalogCacheScope expectedScope)
         => catalog is
         {
             BookId.Length: > 0,
@@ -1139,24 +1248,36 @@ internal static class CacheStore
             Metadata:
             {
                 BookId.Length: > 0,
-                Title: not null,
-                Author: not null,
             },
-            Volumes: not null,
+            Volumes.Count: > 0,
         }
+        && CatalogSnapshotValidation.IsSafeCanonicalBookId(expectedBookId)
+        && CatalogSnapshotValidation.IsSafeCanonicalBookId(catalog.BookId)
+        && CatalogSnapshotValidation.IsSafeCanonicalBookId(catalog.Metadata.BookId)
+        && IsNonBlankString(catalog.Metadata.Title)
+        && IsNonBlankString(catalog.Metadata.Author)
+        && string.Equals(catalog.BookId, expectedBookId, StringComparison.Ordinal)
+        && string.Equals(catalog.Metadata.BookId, expectedBookId, StringComparison.Ordinal)
         && catalog.CacheScope.IsUsable
         && catalog.CacheScope == expectedScope
         && catalog.Volumes.All(
             volume => volume is
             {
-                Title: not null,
-                Chapters: not null,
+                Chapters.Count: > 0,
             }
+            && IsNonBlankString(volume.Title)
             && volume.Chapters.All(
                 chapter => chapter is
                 {
                     ChapterId.Length: > 0,
-                    Title: not null,
                     Url: not null,
-                }));
+                }
+                && IsNonBlankString(chapter.Title)
+                && CatalogSnapshotValidation.IsChapterUrlUsableForBook(
+                    chapter.Url,
+                    expectedBookId,
+                    chapter.ChapterId)));
+
+    private static bool IsNonBlankString(string? value)
+        => !string.IsNullOrWhiteSpace(value);
 }

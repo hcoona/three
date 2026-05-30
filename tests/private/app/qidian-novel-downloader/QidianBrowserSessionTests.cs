@@ -12,6 +12,8 @@ public sealed class QidianBrowserSessionTests
     private const string ChapterJson =
         """
         {
+            "pageUrl": "https://www.qidian.com/chapter/100/1/",
+            "contentSelector": "span.content-text",
             "paragraphs": ["Paragraph 1"],
             "isPreview": false
         }
@@ -50,6 +52,126 @@ public sealed class QidianBrowserSessionTests
         Assert.Null(loginState.UserName);
         Assert.Equal(QidianBrowserSession.LoginStateProbeAttempts, page.EvaluateLoginStateCalls);
         Assert.Equal(QidianBrowserSession.LoginStateProbeAttempts - 1, page.WaitForTimeoutCalls);
+    }
+
+    [Fact]
+    public async Task GetLoginStateAsyncMarksValidatedIdentityProbeIncompleteWhenPageCloses()
+    {
+        FakePage page = new(new LoginState(false, null));
+        page.OnEvaluate = () => page.IsClosed = true;
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        LoginState loginState = await session.GetLoginStateAsync(
+            null,
+            CancellationToken.None,
+            navigate: false);
+
+        Assert.False(loginState.IsLoggedIn);
+        Assert.False(loginState.IsProbeComplete);
+        Assert.Equal(1, page.EvaluateLoginStateCalls);
+        Assert.Equal(0, page.WaitForTimeoutCalls);
+    }
+
+    [Fact]
+    public async Task GetLoginStateAsyncReturnsIncompleteWhenPageClosesDuringNavigation()
+    {
+        FakePage page = new(new LoginState(false, null))
+        {
+            GotoTask = Task.FromException<IResponse>(
+                new PlaywrightException("Target page has been closed.")),
+        };
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        LoginState loginState = await session.GetLoginStateAsync(
+            AppConstants.QidianBaseUrl,
+            CancellationToken.None);
+
+        Assert.False(loginState.IsLoggedIn);
+        Assert.False(loginState.IsProbeComplete);
+        Assert.Equal(AppConstants.QidianBaseUrl, page.LastNavigatedUrl);
+        Assert.Equal(0, page.EvaluateLoginStateCalls);
+    }
+
+    [Fact]
+    public async Task GetLoginStateAsyncReturnsIncompleteWhenPageClosesDuringEvaluation()
+    {
+        FakePage page = new(new LoginState(false, null))
+        {
+            EvaluateTask = Task.FromException<string>(
+                new PlaywrightException("Target page has been closed.")),
+        };
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        LoginState loginState = await session.GetLoginStateAsync(
+            null,
+            CancellationToken.None,
+            navigate: false);
+
+        Assert.False(loginState.IsLoggedIn);
+        Assert.False(loginState.IsProbeComplete);
+        Assert.Equal(0, page.WaitForTimeoutCalls);
+    }
+
+    [Fact]
+    public async Task GetLoginStateAsyncReturnsIncompleteWhenPageClosesDuringProbeDelay()
+    {
+        FakePage page = new(new LoginState(false, null))
+        {
+            WaitForTimeoutTask = Task.FromException(
+                new PlaywrightException("Target page has been closed.")),
+        };
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        LoginState loginState = await session.GetLoginStateAsync(
+            null,
+            CancellationToken.None,
+            navigate: false);
+
+        Assert.False(loginState.IsLoggedIn);
+        Assert.False(loginState.IsProbeComplete);
+        Assert.Equal(1, page.EvaluateLoginStateCalls);
+        Assert.Equal(1, page.WaitForTimeoutCalls);
+    }
+
+    [Fact]
+    public async Task GetLoginStateAsyncMarksCurrentStateProbeIncompleteForAlreadyClosedPage()
+    {
+        FakePage page = new(new LoginState(true, "tester"))
+        {
+            IsClosed = true,
+        };
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        LoginState loginState = await session.GetLoginStateAsync(
+            null,
+            CancellationToken.None,
+            navigate: false,
+            probeMode: LoginStateProbeMode.CurrentStateOnly);
+
+        Assert.False(loginState.IsLoggedIn);
+        Assert.False(loginState.IsProbeComplete);
+        Assert.False(loginState.IsValidated);
+        Assert.Equal(0, page.EvaluateLoginStateCalls);
+    }
+
+    [Fact]
+    public async Task GetLoginStateAsyncMarksCurrentStateProbeIncompleteWhenPageClosesAfterEvaluation()
+    {
+        FakePage page = new(new LoginState(true, "tester"));
+        page.OnEvaluate = () => page.IsClosed = true;
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        LoginState loginState = await session.GetLoginStateAsync(
+            null,
+            CancellationToken.None,
+            navigate: false,
+            probeMode: LoginStateProbeMode.CurrentStateOnly);
+
+        Assert.True(loginState.IsLoggedIn);
+        Assert.Equal("tester", loginState.UserName);
+        Assert.False(loginState.IsProbeComplete);
+        Assert.False(loginState.IsValidated);
+        Assert.Equal(1, page.EvaluateLoginStateCalls);
     }
 
     [Fact]
@@ -104,10 +226,70 @@ public sealed class QidianBrowserSessionTests
 
         OperationCanceledException exception =
             await Assert.ThrowsAsync<OperationCanceledException>(
-                () => session.WaitForManualLoginAsync(cancellationTokenSource.Token));
+                () => session.WaitForManualLoginAsync(cancellationTokenSource.Token)
+                    .WaitAsync(TimeSpan.FromSeconds(5)));
 
         Assert.Equal(cancellationTokenSource.Token, exception.CancellationToken);
         Assert.Null(page.LastNavigatedUrl);
+    }
+
+    [Fact]
+    public async Task WaitForManualLoginAsyncTranslatesClosedPageDuringInitialNavigation()
+    {
+        FakePage page = new(new LoginState(false, null))
+        {
+            GotoTask = Task.FromException<IResponse>(
+                new PlaywrightException("Target page has been closed.")),
+        };
+        page.OnGoto = () => page.IsClosed = true;
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        OperationalException exception = await Assert.ThrowsAsync<OperationalException>(
+            () => session.WaitForManualLoginAsync(CancellationToken.None));
+
+        Assert.IsType<PlaywrightException>(exception.InnerException);
+        Assert.Equal(AppConstants.QidianBaseUrl, page.LastNavigatedUrl);
+        Assert.Equal(0, page.EvaluateLoginStateCalls);
+    }
+
+    [Fact]
+    public async Task WaitForManualLoginAsyncTranslatesClosedPageDuringLoginProbe()
+    {
+        FakePage page = new(new LoginState(false, null))
+        {
+            EvaluateTask = Task.FromException<string>(
+                new PlaywrightException("Target page has been closed.")),
+        };
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        OperationalException exception = await Assert.ThrowsAsync<OperationalException>(
+            () => session.WaitForManualLoginAsync(CancellationToken.None));
+
+        Assert.IsType<PlaywrightException>(exception.InnerException);
+        Assert.False(page.IsClosed);
+        Assert.Equal(AppConstants.QidianBaseUrl, page.LastNavigatedUrl);
+        Assert.Equal(0, page.WaitForLoadStateCalls);
+        Assert.Equal(0, page.WaitForTimeoutCalls);
+    }
+
+    [Fact]
+    public async Task WaitForManualLoginAsyncTranslatesClosedPageDuringPollingDelay()
+    {
+        FakePage page = new(new LoginState(false, null))
+        {
+            WaitForTimeoutTask = Task.FromException(
+                new PlaywrightException("Target page has been closed.")),
+        };
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        OperationalException exception = await Assert.ThrowsAsync<OperationalException>(
+            () => session.WaitForManualLoginAsync(CancellationToken.None));
+
+        Assert.IsType<PlaywrightException>(exception.InnerException);
+        Assert.False(page.IsClosed);
+        Assert.Equal(AppConstants.QidianBaseUrl, page.LastNavigatedUrl);
+        Assert.Equal(1, page.EvaluateLoginStateCalls);
+        Assert.Equal(1, page.WaitForTimeoutCalls);
     }
 
     [Fact]
@@ -160,6 +342,168 @@ public sealed class QidianBrowserSessionTests
     }
 
     [Fact]
+    public async Task FetchCatalogAsyncUsesFetchedPageBookIdFromCurrentUrl()
+    {
+        FakePage page = new(
+            catalogJson:
+            """
+            {
+                "title": "Redirected Book",
+                "author": "Author",
+                "volumes": [
+                    {
+                        "title": "Volume",
+                        "isVip": false,
+                        "chapters": [
+                            {
+                                "chapterId": "1",
+                                "title": "Chapter",
+                                "url": "https://www.qidian.com/chapter/200/1/",
+                                "isVip": false,
+                                "catalogAccessState": "Accessible"
+                            }
+                        ]
+                    }
+                ]
+            }
+            """)
+        {
+            RedirectedUrl = "https://www.qidian.com/book/200/catalog/",
+        };
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        CatalogSnapshot catalog = await session.FetchCatalogAsync("100", CancellationToken.None);
+
+        Assert.Equal("200", catalog.BookId);
+        Assert.Equal("200", catalog.Metadata.BookId);
+    }
+
+    [Fact]
+    public async Task FetchCatalogAsyncPrefersCatalogJsonBookIdOverFallbackUrl()
+    {
+        FakePage page = new(
+            catalogJson:
+            """
+            {
+                "bookId": "300",
+                "title": "Script Book",
+                "author": "Author",
+                "volumes": [
+                    {
+                        "title": "Volume",
+                        "isVip": false,
+                        "chapters": [
+                            {
+                                "chapterId": "1",
+                                "title": "Chapter",
+                                "url": "https://www.qidian.com/chapter/300/1/",
+                                "isVip": false,
+                                "catalogAccessState": "Accessible"
+                            }
+                        ]
+                    }
+                ]
+            }
+            """)
+        {
+            RedirectedUrl = "https://www.qidian.com/book/999/catalog/",
+        };
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        CatalogSnapshot catalog = await session.FetchCatalogAsync("100", CancellationToken.None);
+
+        Assert.Equal("300", catalog.BookId);
+        Assert.Equal("300", catalog.Metadata.BookId);
+        Assert.Equal("Script Book", catalog.Metadata.Title);
+    }
+
+    [Fact]
+    public async Task FetchCatalogAsyncFailsClosedWhenFetchedPageBookIdCannotBeDetermined()
+    {
+        FakePage page = new(
+            catalogJson:
+            """
+            {
+                "title": "Unknown Book",
+                "author": "Author",
+                "volumes": [
+                    {
+                        "title": "Volume",
+                        "isVip": false,
+                        "chapters": [
+                            {
+                                "chapterId": "1",
+                                "title": "Chapter",
+                                "url": "https://www.qidian.com/chapter/100/1/",
+                                "isVip": false,
+                                "catalogAccessState": "Accessible"
+                            }
+                        ]
+                    }
+                ]
+            }
+            """)
+        {
+            RedirectedUrl = "https://www.qidian.com/",
+        };
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        OperationalException exception = await Assert.ThrowsAsync<OperationalException>(
+            () => session.FetchCatalogAsync("100", CancellationToken.None));
+
+        Assert.Contains("book id could not be determined", exception.Message);
+    }
+
+    [Theory]
+    [InlineData("https://www.qidian.com:444/book/200/catalog/")]
+    [InlineData("https://qidian.com:444/book/200/catalog/")]
+    [InlineData("https://www.qidian.com/Book/200/catalog/")]
+    [InlineData("https://www.qidian.com?next=/book/200/catalog/")]
+    [InlineData("https://www.qidian.com#/book/200/catalog/")]
+    [InlineData("https://www.qidian.com/book/200/catalog/?from=app")]
+    [InlineData("https://www.qidian.com/book/200/catalog/#content")]
+    [InlineData("https://www.qidian.com/book/%32%30%30/catalog/")]
+    [InlineData("https://www.qidian.com/book/２００/catalog/")]
+    [InlineData("https://@www.qidian.com/book/200/catalog/")]
+    [InlineData("https://attacker@www.qidian.com/book/200/catalog/")]
+    [InlineData("https://attacker:password@www.qidian.com/book/200/catalog/")]
+    public async Task FetchCatalogAsyncRejectsNonCanonicalFallbackBookUrls(string redirectedUrl)
+    {
+        FakePage page = new(
+            catalogJson:
+            """
+            {
+                "title": "Redirected Book",
+                "author": "Author",
+                "volumes": [
+                    {
+                        "title": "Volume",
+                        "isVip": false,
+                        "chapters": [
+                            {
+                                "chapterId": "1",
+                                "title": "Chapter",
+                                "url": "https://www.qidian.com/chapter/200/1/",
+                                "isVip": false,
+                                "catalogAccessState": "Accessible"
+                            }
+                        ]
+                    }
+                ]
+            }
+            """)
+        {
+            RedirectedUrl = redirectedUrl,
+        };
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        OperationalException exception = await Assert.ThrowsAsync<OperationalException>(
+            () => session.FetchCatalogAsync("100", CancellationToken.None));
+
+        Assert.Contains("book id could not be determined", exception.Message);
+    }
+
+    [Fact]
     public async Task GetLoginStateAsyncHonorsCancellationDuringNavigation()
     {
         TaskCompletionSource<IResponse> navigation = new(
@@ -176,7 +520,8 @@ public sealed class QidianBrowserSessionTests
             cancellationTokenSource.Token);
         cancellationTokenSource.Cancel();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => loginState);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => loginState.WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
     [Fact]
@@ -196,7 +541,8 @@ public sealed class QidianBrowserSessionTests
             navigate: false);
         cancellationTokenSource.Cancel();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => loginState);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => loginState.WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
     [Fact]
@@ -216,7 +562,8 @@ public sealed class QidianBrowserSessionTests
             cancellationTokenSource.Token);
         cancellationTokenSource.Cancel();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => fetch);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => fetch.WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
     [Fact]
@@ -233,6 +580,27 @@ public sealed class QidianBrowserSessionTests
             () => session.FetchCatalogAsync("100", CancellationToken.None));
 
         Assert.IsType<OperationCanceledException>(exception.InnerException);
+    }
+
+    [Theory]
+    [InlineData("1?x=")]
+    [InlineData("1%2F2")]
+    [InlineData("1/2")]
+    public async Task FetchChapterAsyncRejectsUnsafeChapterIdBeforeNavigation(string chapterId)
+    {
+        FakePage page = new(
+            chapterJson: ChapterJson,
+            gotoTask: Task.FromException<IResponse>(
+                new InvalidOperationException("Navigation should not start.")),
+            waitForSelectorTask: Task.FromResult<IElementHandle?>(null));
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        OperationalException exception = await Assert.ThrowsAsync<OperationalException>(
+            () => session.FetchChapterAsync("100", Chapter(chapterId), CancellationToken.None));
+
+        Assert.Contains("safe canonical Qidian chapter URL", exception.Message);
+        Assert.Null(page.LastNavigatedUrl);
+        Assert.Equal(0, page.EvaluateChapterContentCalls);
     }
 
     [Fact]
@@ -253,7 +621,8 @@ public sealed class QidianBrowserSessionTests
             cancellationTokenSource.Token);
         cancellationTokenSource.Cancel();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => fetch);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => fetch.WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
     [Fact]
@@ -274,7 +643,217 @@ public sealed class QidianBrowserSessionTests
             cancellationTokenSource.Token);
         cancellationTokenSource.Cancel();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => fetch);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => fetch.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
+    public async Task FetchChapterAsyncIgnoresCatalogUrlWhenEmbeddedBookIdDoesNotMatch()
+    {
+        FakePage page = new(
+            chapterJson: ChapterJson,
+            gotoTask: Task.FromResult<IResponse>(null!),
+            waitForSelectorTask: Task.FromResult<IElementHandle?>(null));
+        QidianBrowserSession session = CreateSession(page.Page);
+        ChapterDescriptor chapter = Chapter("1") with
+        {
+            Url = "https://www.qidian.com/chapter/200/1/",
+        };
+
+        await session.FetchChapterAsync("100", chapter, CancellationToken.None);
+
+        Assert.Equal("https://www.qidian.com/chapter/100/1/", page.LastNavigatedUrl);
+    }
+
+    [Theory]
+    [InlineData("https://evil.example/chapter/100/1/")]
+    [InlineData("https://www.qidian.com/book/100/catalog/")]
+    [InlineData("https://www.qidian.com/chapter/100/2/")]
+    [InlineData("https://www.qidian.com:444/chapter/100/1/")]
+    [InlineData("https://qidian.com:444/chapter/100/1/")]
+    [InlineData("https://www.qidian.com/Chapter/100/1/")]
+    [InlineData("https://www.qidian.com?next=/chapter/100/1/")]
+    [InlineData("https://www.qidian.com#/chapter/100/1/")]
+    [InlineData("https://www.qidian.com/chapter/100/1/?from=app")]
+    [InlineData("https://www.qidian.com/chapter/100/1/#content")]
+    [InlineData("https://www.qidian.com/chapter/100/%31/")]
+    [InlineData("https://www.qidian.com/chapter/%31%30%30/1/")]
+    [InlineData("\u0001https://@www.qidian.com/chapter/100/1/")]
+    [InlineData("\u0001https:////www.qidian.com/chapter/100/1/")]
+    [InlineData("https:////www.qidian.com/chapter/100/1/")]
+    [InlineData("///www.qidian.com/chapter/100/1/")]
+    [InlineData("////www.qidian.com/chapter/100/1/")]
+    [InlineData("https://attacker@www.qidian.com/chapter/100/1/")]
+    [InlineData("https://attacker:password@www.qidian.com/chapter/100/1/")]
+    public async Task FetchChapterAsyncIgnoresUnsafeOrWrongChapterCatalogUrls(string catalogUrl)
+    {
+        FakePage page = new(
+            chapterJson: ChapterJson,
+            gotoTask: Task.FromResult<IResponse>(null!),
+            waitForSelectorTask: Task.FromResult<IElementHandle?>(null));
+        QidianBrowserSession session = CreateSession(page.Page);
+        ChapterDescriptor chapter = Chapter("1") with
+        {
+            Url = catalogUrl,
+        };
+
+        await session.FetchChapterAsync("100", chapter, CancellationToken.None);
+
+        Assert.Equal("https://www.qidian.com/chapter/100/1/", page.LastNavigatedUrl);
+    }
+
+    [Theory]
+    [InlineData(" https://www.qidian.com/chapter/100/1/ ")]
+    [InlineData("https://www.qidian.com:443/chapter/100/1/")]
+    [InlineData("https://qidian.com/chapter/100/1/")]
+    public async Task FetchChapterAsyncNavigatesCanonicalUrlForUsableCatalogUrl(string catalogUrl)
+    {
+        FakePage page = new(
+            chapterJson: ChapterJson,
+            gotoTask: Task.FromResult<IResponse>(null!),
+            waitForSelectorTask: Task.FromResult<IElementHandle?>(null));
+        QidianBrowserSession session = CreateSession(page.Page);
+        ChapterDescriptor chapter = Chapter("1") with
+        {
+            Url = catalogUrl,
+        };
+
+        await session.FetchChapterAsync("100", chapter, CancellationToken.None);
+
+        Assert.Equal("https://www.qidian.com/chapter/100/1/", page.LastNavigatedUrl);
+    }
+
+    [Theory]
+    [InlineData("https://www.qidian.com/chapter/100/2/")]
+    [InlineData("https://www.qidian.com/chapter/200/1/")]
+    public async Task FetchChapterAsyncRejectsMismatchedFinalUrlBeforeExtractingContent(
+        string redirectedUrl)
+    {
+        FakePage page = new(
+            chapterJson: ChapterJson,
+            gotoTask: Task.FromResult<IResponse>(null!),
+            waitForSelectorTask: Task.FromResult<IElementHandle?>(null))
+        {
+            RedirectedUrl = redirectedUrl,
+        };
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        OperationalException exception = await Assert.ThrowsAsync<OperationalException>(
+            () => session.FetchChapterAsync("100", Chapter("1"), CancellationToken.None));
+
+        Assert.Contains("did not match requested chapter URL", exception.Message);
+        Assert.Equal("https://www.qidian.com/chapter/100/1/", page.LastNavigatedUrl);
+        Assert.Equal(0, page.EvaluateChapterContentCalls);
+    }
+
+    [Fact]
+    public async Task FetchChapterAsyncRejectsUrlChangedAfterInitialValidationBeforeExtraction()
+    {
+        FakePage page = new(
+            chapterJson: ChapterJson,
+            gotoTask: Task.FromResult<IResponse>(null!),
+            waitForSelectorTask: Task.FromResult<IElementHandle?>(null));
+        page.OnWaitForSelector =
+            () => page.CurrentUrl = "https://www.qidian.com/chapter/100/2/";
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        OperationalException exception = await Assert.ThrowsAsync<OperationalException>(
+            () => session.FetchChapterAsync("100", Chapter("1"), CancellationToken.None));
+
+        Assert.Contains("did not match requested chapter URL", exception.Message);
+        Assert.Equal("https://www.qidian.com/chapter/100/1/", page.LastNavigatedUrl);
+        Assert.Equal(0, page.EvaluateChapterContentCalls);
+    }
+
+    [Theory]
+    [InlineData(
+        """
+        {
+            "pageUrl": "https://www.qidian.com/chapter/100/2/",
+            "contentSelector": "span.content-text",
+            "paragraphs": ["Wrong chapter"],
+            "isPreview": false
+        }
+        """)]
+    [InlineData(
+        """
+        {
+            "contentSelector": "span.content-text",
+            "paragraphs": ["Missing page URL"],
+            "isPreview": false
+        }
+        """)]
+    public async Task FetchChapterAsyncRejectsScriptReturnedPageUrlMismatch(string chapterJson)
+    {
+        FakePage page = new(
+            chapterJson,
+            gotoTask: Task.FromResult<IResponse>(null!),
+            waitForSelectorTask: Task.FromResult<IElementHandle?>(null));
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        OperationalException exception = await Assert.ThrowsAsync<OperationalException>(
+            () => session.FetchChapterAsync("100", Chapter("1"), CancellationToken.None));
+
+        Assert.Contains("did not match requested chapter URL", exception.Message);
+        Assert.Equal("https://www.qidian.com/chapter/100/1/", page.CurrentUrl);
+        Assert.Equal(1, page.EvaluateChapterContentCalls);
+    }
+
+    [Fact]
+    public async Task FetchChapterAsyncRejectsGenericSameUrlChapterContent()
+    {
+        FakePage page = new(
+            chapterJson:
+            """
+            {
+                "pageUrl": "https://www.qidian.com/chapter/100/1/",
+                "contentSelector": "main p",
+                "paragraphs": ["error/login/captcha"],
+                "isPreview": false
+            }
+            """,
+            gotoTask: Task.FromResult<IResponse>(null!),
+            waitForSelectorTask: Task.FromResult<IElementHandle?>(null));
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        OperationalException exception = await Assert.ThrowsAsync<OperationalException>(
+            () => session.FetchChapterAsync("100", Chapter("1"), CancellationToken.None));
+
+        Assert.Contains("recognized Qidian chapter content container", exception.Message);
+        Assert.Equal("https://www.qidian.com/chapter/100/1/", page.CurrentUrl);
+        Assert.Equal(1, page.EvaluateChapterContentCalls);
+    }
+
+    [Theory]
+    [InlineData("span.content-text", "请登录")]
+    [InlineData("span.content-text", "请登录后继续阅读")]
+    [InlineData(".read-content p", "captcha")]
+    [InlineData(".chapter-content p", "access denied")]
+    [InlineData("#j_chapterContent p", "interstitial")]
+    public async Task FetchChapterAsyncRejectsMarkerTextInRecognizedContentContainer(
+        string contentSelector,
+        string markerText)
+    {
+        FakePage page = new(
+            chapterJson:
+            $$"""
+            {
+                "pageUrl": "https://www.qidian.com/chapter/100/1/",
+                "contentSelector": "{{contentSelector}}",
+                "paragraphs": ["{{markerText}}"],
+                "isPreview": false
+            }
+            """,
+            gotoTask: Task.FromResult<IResponse>(null!),
+            waitForSelectorTask: Task.FromResult<IElementHandle?>(null));
+        QidianBrowserSession session = CreateSession(page.Page);
+
+        OperationalException exception = await Assert.ThrowsAsync<OperationalException>(
+            () => session.FetchChapterAsync("100", Chapter("1"), CancellationToken.None));
+
+        Assert.Contains("login, captcha, error, or interstitial marker text", exception.Message);
+        Assert.Equal("https://www.qidian.com/chapter/100/1/", page.CurrentUrl);
+        Assert.Equal(1, page.EvaluateChapterContentCalls);
     }
 
     [Fact]
@@ -292,7 +871,8 @@ public sealed class QidianBrowserSessionTests
             cancellationTokenSource.Token);
         cancellationTokenSource.Cancel();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => loginState);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => loginState.WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
     [Fact]
@@ -313,7 +893,8 @@ public sealed class QidianBrowserSessionTests
         await WaitUntilAsync(() => page.WaitForLoadStateCalls > 0);
         cancellationTokenSource.Cancel();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => loginState);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => loginState.WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
     [Fact]
@@ -349,7 +930,8 @@ public sealed class QidianBrowserSessionTests
         cancellationTokenSource.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => session.WaitForManualLoginAsync(cancellationTokenSource.Token));
+            () => session.WaitForManualLoginAsync(cancellationTokenSource.Token)
+                .WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
     [Fact]
@@ -369,7 +951,8 @@ public sealed class QidianBrowserSessionTests
         QidianBrowserSession session = CreateSession(page.Page);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => session.WaitForManualLoginAsync(cancellationTokenSource.Token));
+            () => session.WaitForManualLoginAsync(cancellationTokenSource.Token)
+                .WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
     [Fact]
@@ -389,7 +972,8 @@ public sealed class QidianBrowserSessionTests
                 cancellationTokenSource.Cancel;
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(
-                () => session.WaitForManualLoginAsync(cancellationTokenSource.Token));
+                () => session.WaitForManualLoginAsync(cancellationTokenSource.Token)
+                    .WaitAsync(TimeSpan.FromSeconds(5)));
         }
         finally
         {
@@ -573,11 +1157,17 @@ public sealed class QidianBrowserSessionTests
 
         public int EvaluateLoginStateCalls { get; private set; }
 
+        public int EvaluateChapterContentCalls { get; private set; }
+
         public int WaitForTimeoutCalls { get; private set; }
 
         public int WaitForLoadStateCalls { get; private set; }
 
         public string? LastNavigatedUrl { get; private set; }
+
+        public string? CurrentUrl { get; set; }
+
+        public string? RedirectedUrl { get; set; }
 
         public Task<IResponse>? GotoTask { get; set; }
 
@@ -590,6 +1180,10 @@ public sealed class QidianBrowserSessionTests
         public Task<string>? EvaluateTask { get; set; }
 
         public Action? OnEvaluate { get; set; }
+
+        public Action? OnGoto { get; set; }
+
+        public Action? OnWaitForSelector { get; set; }
 
         public Action? OnWaitForLoadState { get; set; }
 
@@ -657,17 +1251,21 @@ public sealed class QidianBrowserSessionTests
                 nameof(IPage.WaitForLoadStateAsync) => HandleWaitForLoadState(),
                 nameof(IPage.EvaluateAsync) => HandleEvaluate(method, arguments),
                 "get_IsClosed" => IsClosed,
+                "get_Url" => CurrentUrl ?? LastNavigatedUrl ?? string.Empty,
                 _ => throw new NotSupportedException($"Unexpected IPage call: {method.Name}"),
             };
 
         private Task<IResponse> HandleGoto(object?[]? arguments)
         {
             LastNavigatedUrl = arguments is [string url, ..] ? url : null;
+            CurrentUrl = RedirectedUrl ?? LastNavigatedUrl;
+            OnGoto?.Invoke();
             return GotoTask ?? Task.FromResult<IResponse>(null!);
         }
 
         private Task<IElementHandle?> HandleWaitForSelector()
         {
+            OnWaitForSelector?.Invoke();
             return WaitForSelectorTask ?? Task.FromResult<IElementHandle?>(null);
         }
 
@@ -708,6 +1306,7 @@ public sealed class QidianBrowserSessionTests
 
             if (string.Equals(script, PageScripts.ChapterContentJson, StringComparison.Ordinal))
             {
+                EvaluateChapterContentCalls++;
                 return Task.FromResult(
                     chapterJson
                     ?? throw new NotSupportedException("ChapterContentJson was not configured."));
@@ -724,6 +1323,7 @@ public sealed class QidianBrowserSessionTests
             {
                 isLoggedIn = latestState.IsLoggedIn,
                 userName = latestState.UserName,
+                isProbeComplete = latestState.IsProbeComplete,
             });
             return Task.FromResult(json);
         }

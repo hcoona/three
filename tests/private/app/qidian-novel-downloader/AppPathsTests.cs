@@ -60,7 +60,8 @@ public sealed class AppPathsTests
             Directory.CreateDirectory(outsideRoot);
             if (!CanCreateDirectorySymbolicLink(root))
             {
-                return;
+                throw Xunit.Sdk.SkipException.ForSkip(
+                    "Symbolic link creation is unavailable; reparse-point coverage skipped.");
             }
 
             Directory.CreateSymbolicLink(linkRoot, outsideRoot);
@@ -106,7 +107,8 @@ public sealed class AppPathsTests
             or UnauthorizedAccessException
             or PlatformNotSupportedException)
         {
-            return false;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
     }
 }

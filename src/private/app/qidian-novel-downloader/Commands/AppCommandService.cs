@@ -17,10 +17,22 @@ internal sealed class AppCommandService(
 {
     private static readonly AsyncLocal<Action<string>?> BeforeOutputWriteHook = new();
 
+    private static readonly StringComparer OutputPathComparer = OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase
+        : StringComparer.Ordinal;
+
     internal static Action<string>? BeforeOutputWriteForTests
     {
         get => BeforeOutputWriteHook.Value;
         set => BeforeOutputWriteHook.Value = value;
+    }
+
+    private static readonly AsyncLocal<Action<string>?> AfterPendingCacheCommitsHook = new();
+
+    internal static Action<string>? AfterPendingCacheCommitsForTests
+    {
+        get => AfterPendingCacheCommitsHook.Value;
+        set => AfterPendingCacheCommitsHook.Value = value;
     }
 
     public async Task<int> DownloadAsync(
@@ -126,7 +138,9 @@ internal sealed class AppCommandService(
                     if (forceRefresh
                         || loginState is null
                         || (probeMode == LoginStateProbeMode.WaitForValidatedIdentity
-                            && !loginState.IsValidated))
+                            && (!loginState.IsValidated
+                                || loginStateProbeMode
+                                    != LoginStateProbeMode.WaitForValidatedIdentity)))
                     {
                         LoginState probedLoginState =
                             await ProbeLoginStateWithRunUncertaintyAsync(probeMode);
@@ -154,7 +168,9 @@ internal sealed class AppCommandService(
                     && GetValidatedLoginState(loginState) is null
                     && (loginStateProbeFailedInRun
                         || authenticatedUnknownIdentityDiscoveredInRun
-                        || currentState is { IsLoggedIn: true });
+                        || currentState is { IsLoggedIn: true }
+                        || currentState is { IsProbeComplete: false }
+                        || loginState is { IsProbeComplete: false });
 
                 async Task<LoginState?> TryGetCurrentLoginStateAsync(
                     Action<ILogger, Exception?> logFailure,
@@ -162,9 +178,19 @@ internal sealed class AppCommandService(
                 {
                     try
                     {
-                        return await GetCurrentLoginStateAsync(
+                        LoginState currentState = await GetCurrentLoginStateAsync(
                             forceRefresh: true,
                             probeMode: probeMode);
+                        if (probeMode == LoginStateProbeMode.WaitForValidatedIdentity
+                            && !currentState.IsProbeComplete)
+                        {
+                            loginStateProbeFailedInRun = true;
+                            loginState = null;
+                            loginStateProbeMode = null;
+                            return null;
+                        }
+
+                        return currentState;
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
@@ -236,59 +262,49 @@ internal sealed class AppCommandService(
                     List<ChapterPlan> Plans,
                     LoginState? LoginState,
                     bool LoginStateProbeFailed,
-                    bool VipFullContentClassificationProbeCompleted)>
-                    ResolveCatalogAndPlansForDownloadAsync(BookReference target)
+                    bool VipFullContentClassificationProbeCompleted,
+                    bool CatalogResolvedFromProvenAnonymousOrigin,
+                    bool RegularBrowserAnonymousCatalogFetchHadStrongLoggedOutProof,
+                    bool CurrentBookStrongAnonymousProof,
+                    CatalogSnapshot? RawAnonymousCatalogEvidence,
+                    List<ChapterPlan>? RawAnonymousPlanEvidence,
+                    long? CatalogClearGeneration)>
+                    ResolveCatalogAndPlansForDownloadAsync(
+                        BookReference target,
+                        List<PendingCatalogCacheSave> pendingCatalogCacheSaves)
                 {
                     LoginState? currentLoginState = loginState;
                     LoginStateProbeMode? currentLoginStateProbeMode = loginStateProbeMode;
                     bool hasProbedCurrentLoginState = currentLoginState is not null
                         || loginStateProbeFailedInRun;
                     bool vipFullContentClassificationProbeCompleted = false;
+                    bool catalogFetchedWithIsolatedAnonymousBrowser = false;
+                    bool catalogResolvedFromProvenAnonymousOrigin = false;
+                    bool regularBrowserAnonymousCatalogFetchHadStrongLoggedOutProof = false;
+                    bool currentBookStrongAnonymousProof = false;
+                    CatalogSnapshot? rawAnonymousCatalogEvidence = null;
+                    List<ChapterPlan>? rawAnonymousPlanEvidence = null;
+                    long? catalogClearGeneration = null;
+                    CatalogSnapshot? catalog = null;
+                    List<ChapterPlan>? plans = null;
 
-                    async Task<(CatalogSnapshot Catalog, List<ChapterPlan> Plans)>
-                        GetValidatedCatalogAndPlansAsync(
-                            LoginState validatedLoginState,
-                            bool forceRefresh)
-                    {
-                        (
-                            CatalogSnapshot validatedCatalog,
-                            bool reusedCachedValidatedCatalog) = await GetCatalogAsync(
-                            target.BookId,
-                            settings,
-                            paths,
-                            GetBrowserAsync,
-                            CatalogCacheScope.ForValidatedUser(
-                                validatedLoginState.UserName!),
-                            forceRefresh,
-                            cancellationToken);
-                        List<ChapterPlan> validatedPlans = await BuildChapterPlansAsync(
-                            validatedCatalog,
-                            paths.CacheRoot,
-                            validatedLoginState,
-                            cancellationToken);
-                        if (reusedCachedValidatedCatalog
-                            && RequiresValidatedCatalogRefreshForEntitlementMismatch(
-                                validatedPlans,
-                                validatedLoginState))
-                        {
-                            (validatedCatalog, _) = await GetCatalogAsync(
-                                target.BookId,
-                                settings,
-                                paths,
-                                GetBrowserAsync,
-                                CatalogCacheScope.ForValidatedUser(
-                                    validatedLoginState.UserName!),
-                                forceRefresh: true,
-                                cancellationToken);
-                            validatedPlans = await BuildChapterPlansAsync(
-                                validatedCatalog,
-                                paths.CacheRoot,
-                                validatedLoginState,
-                                cancellationToken);
-                        }
+                    bool IsCurrentSessionKnownAnonymous()
+                        => IsCompleteLoggedOutProof(currentLoginState)
+                        && !loginStateProbeFailedInRun
+                        && !authenticatedUnknownIdentityDiscoveredInRun;
 
-                        return (validatedCatalog, validatedPlans);
-                    }
+                    bool IsCurrentSessionProvenAnonymous()
+                        => IsCurrentSessionKnownAnonymous()
+                            && currentBookStrongAnonymousProof
+                            && currentLoginStateProbeMode
+                                == LoginStateProbeMode.WaitForValidatedIdentity;
+
+                    static bool HasVipAccessibleCatalogEvidence(CatalogSnapshot candidate)
+                        => candidate.Volumes
+                            .SelectMany(volume => volume.Chapters)
+                            .Any(chapter => chapter.IsVip
+                                && chapter.CatalogAccessState
+                                    == CatalogChapterAccessState.Accessible);
 
                     async Task<LoginState?> ProbeCurrentLoginStateAsync(
                         LoginStateProbeMode probeMode)
@@ -300,7 +316,10 @@ internal sealed class AppCommandService(
                         if (probedLoginState is not null)
                         {
                             currentLoginState = probedLoginState;
-                            currentLoginStateProbeMode = loginStateProbeMode;
+                            currentLoginStateProbeMode = probeMode;
+                            currentBookStrongAnonymousProof =
+                                probeMode == LoginStateProbeMode.WaitForValidatedIdentity
+                                && IsCompleteLoggedOutProof(probedLoginState);
                         }
 
                         return currentLoginState;
@@ -313,11 +332,238 @@ internal sealed class AppCommandService(
                         CatalogCacheScope.Anonymous,
                         cancellationToken);
                     bool isFreshAnonymousCatalog = anonymousCatalog is not null;
+                    catalogResolvedFromProvenAnonymousOrigin =
+                        anonymousCatalog is { IsKnownAnonymous: true };
+                    CatalogSnapshot? trustedAnonymousCatalog = anonymousCatalog
+                        ?? await CacheStore.GetCatalogAsync(
+                            paths.CacheRoot,
+                            target.BookId,
+                            CatalogCacheScope.Anonymous,
+                            cancellationToken);
                     LoginState? knownValidatedLoginState = GetValidatedLoginState(
                         currentLoginState);
 
-                    CatalogSnapshot? catalog = anonymousCatalog;
-                    List<ChapterPlan>? plans = null;
+                    async Task<LoginState?> RefreshKnownValidatedLoginStateForUserCacheAsync()
+                    {
+                        LoginState? refreshedLoginState = await TryGetCurrentLoginStateAsync(
+                            LogMessages.IgnoreAuthenticatedCacheReuseProbeFailure,
+                            LoginStateProbeMode.WaitForValidatedIdentity);
+                        if (refreshedLoginState is null)
+                        {
+                            currentLoginState = null;
+                            loginState = null;
+                            loginStateProbeMode = null;
+                            knownValidatedLoginState = null;
+                            return null;
+                        }
+
+                        currentLoginState = refreshedLoginState;
+                        currentLoginStateProbeMode = LoginStateProbeMode.WaitForValidatedIdentity;
+                        currentBookStrongAnonymousProof =
+                            IsCompleteLoggedOutProof(refreshedLoginState);
+                        knownValidatedLoginState = GetValidatedLoginState(refreshedLoginState);
+                        return knownValidatedLoginState;
+                    }
+
+                    if (knownValidatedLoginState is not null)
+                    {
+                        knownValidatedLoginState =
+                            await RefreshKnownValidatedLoginStateForUserCacheAsync();
+                    }
+
+                    async Task TrustFetchedAnonymousCatalogIfKnownAnonymousAsync()
+                    {
+                        if (catalog is null
+                            || isFreshAnonymousCatalog
+                            || catalog.CacheScope != CatalogCacheScope.Anonymous
+                            || catalog.IsKnownAnonymous
+                            || !IsCurrentSessionProvenAnonymous())
+                        {
+                            return;
+                        }
+
+                        if (!regularBrowserAnonymousCatalogFetchHadStrongLoggedOutProof)
+                        {
+                            if (!options.DryRun || !HasVipAccessibleCatalogEvidence(catalog))
+                            {
+                                return;
+                            }
+
+                            catalog = await FetchCatalogAsync(
+                                target.BookId,
+                                paths,
+                                GetBrowserAsync,
+                                CatalogCacheScope.Anonymous,
+                                isKnownAnonymousFetch: false,
+                                cancellationToken,
+                                pendingCatalogCacheSaves,
+                                clearGenerationCaptured:
+                                    clearGeneration => catalogClearGeneration = clearGeneration);
+                            plans = await BuildChapterPlansAsync(
+                                catalog,
+                                paths.CacheRoot,
+                                validatedLoginState: null,
+                                cancellationToken);
+                            await ProbeCurrentLoginStateAsync(
+                                LoginStateProbeMode.WaitForValidatedIdentity);
+                            regularBrowserAnonymousCatalogFetchHadStrongLoggedOutProof =
+                                IsCurrentSessionProvenAnonymous();
+                            if (!regularBrowserAnonymousCatalogFetchHadStrongLoggedOutProof)
+                            {
+                                RemovePendingAnonymousCatalogSaves(
+                                    pendingCatalogCacheSaves,
+                                    target.BookId);
+                                return;
+                            }
+                        }
+
+                        if (!catalogResolvedFromProvenAnonymousOrigin)
+                        {
+                            catalog = catalog with { IsKnownAnonymous = true };
+                            if (CanSaveCatalogSnapshot(CatalogCacheScope.Anonymous, catalog))
+                            {
+                                StagePendingCatalogCacheSave(
+                                    paths.CacheRoot,
+                                    pendingCatalogCacheSaves,
+                                    catalog,
+                                    catalogClearGeneration);
+                            }
+
+                            catalogResolvedFromProvenAnonymousOrigin = true;
+                            plans = await BuildChapterPlansAsync(
+                                catalog,
+                                paths.CacheRoot,
+                                validatedLoginState: null,
+                                cancellationToken);
+                            rawAnonymousCatalogEvidence = catalog;
+                            rawAnonymousPlanEvidence = plans;
+                            return;
+                        }
+
+                        CatalogSnapshot knownAnonymousCatalog = catalog with
+                        {
+                            IsKnownAnonymous = true,
+                        };
+                        catalog = knownAnonymousCatalog;
+                        rawAnonymousCatalogEvidence = catalog;
+                        rawAnonymousPlanEvidence = plans;
+                        if (CanSaveCatalogSnapshot(
+                            CatalogCacheScope.Anonymous,
+                            knownAnonymousCatalog))
+                        {
+                            StagePendingCatalogCacheSave(
+                                paths.CacheRoot,
+                                pendingCatalogCacheSaves,
+                                knownAnonymousCatalog,
+                                catalogClearGeneration);
+                        }
+                    }
+
+                    async Task<(CatalogSnapshot Catalog, List<ChapterPlan> Plans)>
+                        GetValidatedCatalogAndPlansAsync(
+                            LoginState validatedLoginState,
+                            bool forceRefresh)
+                    {
+                        async Task<bool> ConfirmValidatedCatalogScopeAsync(
+                            CatalogCacheScope requestedScope)
+                        {
+                            LoginState? confirmedLoginState = await TryGetCurrentLoginStateAsync(
+                                LogMessages.IgnoreAuthenticatedCacheReuseProbeFailure,
+                                LoginStateProbeMode.WaitForValidatedIdentity);
+                            if (confirmedLoginState is null)
+                            {
+                                currentLoginState = null;
+                                knownValidatedLoginState = null;
+                                return false;
+                            }
+
+                            currentLoginState = confirmedLoginState;
+                            currentLoginStateProbeMode = LoginStateProbeMode.WaitForValidatedIdentity;
+                            currentBookStrongAnonymousProof =
+                                IsCompleteLoggedOutProof(confirmedLoginState);
+                            knownValidatedLoginState = GetValidatedLoginState(confirmedLoginState);
+                            return requestedScope.Kind
+                                    == CatalogCacheScopeKind.ValidatedUser
+                                && IsSameValidatedUser(
+                                    confirmedLoginState,
+                                    requestedScope.UserName);
+                        }
+
+                        bool HasValidatedCatalogScopeProof(CatalogCacheScope requestedScope)
+                            => currentLoginStateProbeMode
+                                == LoginStateProbeMode.WaitForValidatedIdentity
+                                && IsSameValidatedUser(
+                                    currentLoginState,
+                                    requestedScope.UserName);
+
+                        (
+                            CatalogSnapshot validatedCatalog,
+                            bool reusedCachedValidatedCatalog) = await GetCatalogAsync(
+                            target.BookId,
+                            settings,
+                            paths,
+                            GetBrowserAsync,
+                            CatalogCacheScope.ForValidatedUser(
+                                validatedLoginState.UserName!),
+                            forceRefresh,
+                            cancellationToken,
+                            pendingCatalogCacheSaves: pendingCatalogCacheSaves,
+                            confirmValidatedScopeAsync: ConfirmValidatedCatalogScopeAsync,
+                            hasValidatedScopeProof: HasValidatedCatalogScopeProof);
+                        List<ChapterPlan> validatedPlans = await BuildChapterPlansAsync(
+                            validatedCatalog,
+                            paths.CacheRoot,
+                            validatedLoginState,
+                            cancellationToken);
+                        if (reusedCachedValidatedCatalog
+                            && (RequiresValidatedCatalogRefreshForEntitlementMismatch(
+                                    validatedPlans,
+                                    validatedLoginState)
+                                || RequiresValidatedCatalogRefreshForAnonymousVipConflict(
+                                    plans,
+                                    anonymousCatalog,
+                                    validatedCatalog)))
+                        {
+                            (validatedCatalog, _) = await GetCatalogAsync(
+                                target.BookId,
+                                settings,
+                                paths,
+                                GetBrowserAsync,
+                                CatalogCacheScope.ForValidatedUser(
+                                    validatedLoginState.UserName!),
+                                forceRefresh: true,
+                                cancellationToken,
+                                pendingCatalogCacheSaves: pendingCatalogCacheSaves,
+                                confirmValidatedScopeAsync: ConfirmValidatedCatalogScopeAsync,
+                                hasValidatedScopeProof: HasValidatedCatalogScopeProof);
+                            validatedPlans = await BuildChapterPlansAsync(
+                                validatedCatalog,
+                                paths.CacheRoot,
+                                validatedLoginState,
+                                cancellationToken);
+                        }
+
+                        if (HasAnonymousVipValidatedFreeConflict(
+                            plans,
+                            anonymousCatalog,
+                            validatedCatalog))
+                        {
+                            RemovePendingValidatedCatalogSaves(
+                                pendingCatalogCacheSaves,
+                                target.BookId,
+                                validatedLoginState.UserName);
+                            (validatedCatalog, validatedPlans) =
+                                FailClosedValidatedCatalogForAnonymousVipConflicts(
+                                    validatedCatalog,
+                                    validatedPlans,
+                                    plans!,
+                                    validatedLoginState);
+                        }
+
+                        return DeduplicateCatalogAndPlans(validatedCatalog, validatedPlans);
+                    }
+
+                    catalog = anonymousCatalog;
                     if (isFreshAnonymousCatalog)
                     {
                         plans = await BuildChapterPlansAsync(
@@ -330,12 +576,21 @@ internal sealed class AppCommandService(
                                 plans,
                                 isFreshAnonymousCatalog))
                         {
+                            rawAnonymousCatalogEvidence = catalog;
+                            rawAnonymousPlanEvidence = plans;
+                            (catalog, plans) = DeduplicateCatalogAndPlans(catalog!, plans);
                             return (
-                                catalog!,
+                                catalog,
                                 plans,
                                 currentLoginState,
                                 HasAuthenticatedCacheIdentityUncertainty(currentLoginState),
-                                vipFullContentClassificationProbeCompleted);
+                                vipFullContentClassificationProbeCompleted,
+                                catalogResolvedFromProvenAnonymousOrigin,
+                                regularBrowserAnonymousCatalogFetchHadStrongLoggedOutProof,
+                                currentBookStrongAnonymousProof,
+                                rawAnonymousCatalogEvidence,
+                                rawAnonymousPlanEvidence,
+                                catalogClearGeneration);
                         }
                     }
 
@@ -352,17 +607,69 @@ internal sealed class AppCommandService(
                             validatedPlans,
                             currentLoginState,
                             HasAuthenticatedCacheIdentityUncertainty(currentLoginState),
-                            vipFullContentClassificationProbeCompleted);
+                            vipFullContentClassificationProbeCompleted,
+                            catalogResolvedFromProvenAnonymousOrigin,
+                            regularBrowserAnonymousCatalogFetchHadStrongLoggedOutProof,
+                            currentBookStrongAnonymousProof,
+                            rawAnonymousCatalogEvidence,
+                            rawAnonymousPlanEvidence,
+                            catalogClearGeneration);
                     }
 
                     if (catalog is null)
                     {
-                        catalog = await FetchCatalogAsync(
-                            target.BookId,
-                            paths,
-                            GetBrowserAsync,
-                            CatalogCacheScope.Anonymous,
-                            cancellationToken);
+                        bool isCurrentSessionProvenAnonymous =
+                            IsCurrentSessionProvenAnonymous();
+                        bool regularCatalogFetchHadPreFetchLoggedOutProof =
+                            isCurrentSessionProvenAnonymous;
+                        catalog = !isCurrentSessionProvenAnonymous
+                            && trustedAnonymousCatalog is { IsKnownAnonymous: true }
+                                ? await FetchCatalogWithIsolatedAnonymousBrowserAsync(
+                                    target.BookId,
+                                    settings,
+                                    paths,
+                                    cancellationToken,
+                                    pendingCatalogCacheSaves,
+                                    clearGeneration => catalogClearGeneration = clearGeneration)
+                                : await FetchCatalogAsync(
+                                    target.BookId,
+                                    paths,
+                                    GetBrowserAsync,
+                                    CatalogCacheScope.Anonymous,
+                                    isKnownAnonymousFetch: false,
+                                    cancellationToken,
+                                    pendingCatalogCacheSaves,
+                                    clearGenerationCaptured:
+                                        clearGeneration =>
+                                            catalogClearGeneration = clearGeneration);
+                        regularBrowserAnonymousCatalogFetchHadStrongLoggedOutProof = false;
+                        catalogFetchedWithIsolatedAnonymousBrowser =
+                            !isCurrentSessionProvenAnonymous
+                            && trustedAnonymousCatalog is { IsKnownAnonymous: true };
+                        catalogResolvedFromProvenAnonymousOrigin =
+                            catalogFetchedWithIsolatedAnonymousBrowser
+                            || catalog.IsKnownAnonymous;
+                        if (regularCatalogFetchHadPreFetchLoggedOutProof)
+                        {
+                            await ProbeCurrentLoginStateAsync(
+                                LoginStateProbeMode.WaitForValidatedIdentity);
+                            if (currentLoginState is { IsLoggedIn: true })
+                            {
+                                RemovePendingAnonymousCatalogSaves(
+                                    pendingCatalogCacheSaves,
+                                    target.BookId);
+                            }
+
+                            regularBrowserAnonymousCatalogFetchHadStrongLoggedOutProof =
+                                IsCurrentSessionProvenAnonymous();
+                            await TrustFetchedAnonymousCatalogIfKnownAnonymousAsync();
+                        }
+
+                        if (catalogFetchedWithIsolatedAnonymousBrowser)
+                        {
+                            anonymousCatalog = catalog;
+                        }
+
                         plans = null;
                     }
 
@@ -371,6 +678,26 @@ internal sealed class AppCommandService(
                         paths.CacheRoot,
                         validatedLoginState: null,
                         cancellationToken);
+                    if (catalog.CacheScope == CatalogCacheScope.Anonymous)
+                    {
+                        if (!catalog.IsKnownAnonymous
+                            && !plans.Any(plan => plan.Chapter.IsVip)
+                            && !loginStateProbeFailedInRun
+                            && !authenticatedUnknownIdentityDiscoveredInRun
+                            && (catalogFetchedWithIsolatedAnonymousBrowser
+                                || IsCurrentSessionProvenAnonymous()))
+                        {
+                            catalog = catalog with { IsKnownAnonymous = true };
+                            StagePendingCatalogCacheSave(
+                                paths.CacheRoot,
+                                pendingCatalogCacheSaves,
+                                catalog,
+                                catalogClearGeneration);
+                        }
+
+                        rawAnonymousCatalogEvidence = catalog;
+                        rawAnonymousPlanEvidence = plans;
+                    }
 
                     if (RequiresCurrentSessionCatalogEvaluation(
                         plans,
@@ -389,36 +716,19 @@ internal sealed class AppCommandService(
                                     ? LoginStateProbeMode.WaitForValidatedIdentity
                                     : LoginStateProbeMode.CurrentStateOnly;
                             await ProbeCurrentLoginStateAsync(probeMode);
+                            await TrustFetchedAnonymousCatalogIfKnownAnonymousAsync();
                         }
 
                         LoginState? initialValidatedLoginState = GetValidatedLoginState(
                             currentLoginState);
-                        if (initialValidatedLoginState is not null)
+                        bool suppressValidatedCatalogUseForUnprovenAnonymousCatalog =
+                            !isFreshAnonymousCatalog
+                            && !catalogFetchedWithIsolatedAnonymousBrowser
+                            && !catalogResolvedFromProvenAnonymousOrigin
+                            && catalog.CacheScope == CatalogCacheScope.Anonymous;
+                        if (initialValidatedLoginState is not null
+                            && !suppressValidatedCatalogUseForUnprovenAnonymousCatalog)
                         {
-                            if (!isFreshAnonymousCatalog)
-                            {
-                                catalog = catalog with
-                                {
-                                    CacheScope = CatalogCacheScope.ForValidatedUser(
-                                        initialValidatedLoginState.UserName!),
-                                };
-                                await CacheStore.SaveCatalogAsync(
-                                    paths.CacheRoot,
-                                    catalog,
-                                    cancellationToken);
-                                plans = await BuildChapterPlansAsync(
-                                    catalog,
-                                    paths.CacheRoot,
-                                    initialValidatedLoginState,
-                                    cancellationToken);
-                                return (
-                                    catalog,
-                                    plans,
-                                    currentLoginState,
-                                    HasAuthenticatedCacheIdentityUncertainty(currentLoginState),
-                                    vipFullContentClassificationProbeCompleted);
-                            }
-
                             (
                                 CatalogSnapshot validatedCatalog,
                                 List<ChapterPlan> validatedPlans) =
@@ -430,7 +740,13 @@ internal sealed class AppCommandService(
                                 validatedPlans,
                                 currentLoginState,
                                 HasAuthenticatedCacheIdentityUncertainty(currentLoginState),
-                                vipFullContentClassificationProbeCompleted);
+                                vipFullContentClassificationProbeCompleted,
+                                catalogResolvedFromProvenAnonymousOrigin,
+                                regularBrowserAnonymousCatalogFetchHadStrongLoggedOutProof,
+                                currentBookStrongAnonymousProof,
+                                rawAnonymousCatalogEvidence,
+                                rawAnonymousPlanEvidence,
+                                catalogClearGeneration);
                         }
 
                         if (RequiresAuthenticatedPlanEvaluation(plans)
@@ -451,13 +767,20 @@ internal sealed class AppCommandService(
                                     plans,
                                     currentLoginState,
                                     HasAuthenticatedCacheIdentityUncertainty(currentLoginState),
-                                    vipFullContentClassificationProbeCompleted);
+                                    vipFullContentClassificationProbeCompleted,
+                                    catalogResolvedFromProvenAnonymousOrigin,
+                                    regularBrowserAnonymousCatalogFetchHadStrongLoggedOutProof,
+                                    currentBookStrongAnonymousProof,
+                                    rawAnonymousCatalogEvidence,
+                                    rawAnonymousPlanEvidence,
+                                    catalogClearGeneration);
                             }
                         }
 
                         LoginState? validatedLoginState = GetValidatedLoginState(
                             currentLoginState);
-                        if (validatedLoginState is not null)
+                        if (validatedLoginState is not null
+                            && !suppressValidatedCatalogUseForUnprovenAnonymousCatalog)
                         {
                             (catalog, plans) = await GetValidatedCatalogAndPlansAsync(
                                 validatedLoginState,
@@ -469,13 +792,26 @@ internal sealed class AppCommandService(
                         plans,
                         currentLoginState,
                         HasAuthenticatedCacheIdentityUncertainty(currentLoginState));
+                    if (catalog.CacheScope == CatalogCacheScope.Anonymous)
+                    {
+                        rawAnonymousCatalogEvidence = catalog;
+                        rawAnonymousPlanEvidence = plans;
+                    }
+
+                    (catalog, plans) = DeduplicateCatalogAndPlans(catalog, plans);
 
                     return (
                         catalog,
                         plans,
                         currentLoginState,
                         HasAuthenticatedCacheIdentityUncertainty(currentLoginState),
-                        vipFullContentClassificationProbeCompleted);
+                        vipFullContentClassificationProbeCompleted,
+                        catalogResolvedFromProvenAnonymousOrigin,
+                        regularBrowserAnonymousCatalogFetchHadStrongLoggedOutProof,
+                        currentBookStrongAnonymousProof,
+                        rawAnonymousCatalogEvidence,
+                        rawAnonymousPlanEvidence,
+                        catalogClearGeneration);
                 }
 
                 for (int bookIndex = 0; bookIndex < targets.Count; bookIndex++)
@@ -487,17 +823,79 @@ internal sealed class AppCommandService(
 
                     try
                     {
+                        HashSet<string> overwriteApprovedPaths = new(OutputPathComparer);
+                        List<PendingCatalogCacheSave> pendingCatalogCacheSaves = [];
+
+                        async Task<bool> ConfirmOutputPathForWriteAsync(string path)
+                        {
+                            AppPaths.EnsureNotReparsePathIfExists(path);
+                            if (File.Exists(path)
+                                && !options.Overwrite
+                                && !overwriteApprovedPaths.Contains(path))
+                            {
+                                bool approved = await interactiveConsole.ConfirmAsync(
+                                    $"The output file '{path}' already exists. Overwrite it?",
+                                    cancellationToken);
+                                if (!approved)
+                                {
+                                    Console.WriteLine(
+                                        $"Skipped '{path}' because overwrite was not approved.");
+                                    return false;
+                                }
+
+                                overwriteApprovedPaths.Add(path);
+                            }
+
+                            return true;
+                        }
+
+                        LoginState? earlyOutputPredictionLoginState =
+                            bookIndex > 0 && loginState is { IsValidated: true }
+                                ? null
+                                : loginState;
+                        string? earlyOutputPath = options.DryRun
+                            ? null
+                            : await TryGetCachedOutputPathForOverwriteCheckAsync(
+                                target,
+                                settings,
+                                paths,
+                                earlyOutputPredictionLoginState,
+                                loginStateProbeMode,
+                                loginStateProbeFailedInRun
+                                    || authenticatedUnknownIdentityDiscoveredInRun,
+                                timeProvider,
+                                cancellationToken);
+                        if (earlyOutputPath is not null
+                            && !await ConfirmOutputPathForWriteAsync(earlyOutputPath))
+                        {
+                            skippedBooks++;
+                            continue;
+                        }
+
                         (
                             CatalogSnapshot catalog,
                             List<ChapterPlan> plans,
                             LoginState? currentLoginState,
                             bool loginStateProbeFailed,
-                            bool vipFullContentClassificationProbeCompleted) =
-                            await ResolveCatalogAndPlansForDownloadAsync(target);
+                            bool vipFullContentClassificationProbeCompleted,
+                            bool catalogWasResolvedFromProvenAnonymousOrigin,
+                            bool regularBrowserAnonymousCatalogFetchHadStrongLoggedOutProof,
+                            bool currentBookStrongAnonymousProof,
+                            CatalogSnapshot? rawAnonymousCatalogEvidence,
+                            List<ChapterPlan>? rawAnonymousPlanEvidence,
+                            long? catalogClearGeneration) =
+                            await ResolveCatalogAndPlansForDownloadAsync(
+                                target,
+                                pendingCatalogCacheSaves);
 
                         if (options.DryRun)
                         {
                             PrintDryRun(catalog, plans);
+                            await CommitPendingCatalogCacheSavesAsync(
+                                paths.CacheRoot,
+                                pendingCatalogCacheSaves,
+                                currentLoginState,
+                                cancellationToken);
                             completedBooks++;
                             reusedChapters += plans.Count(
                                 plan => plan.Status == ChapterPlanStatus.Cached);
@@ -510,31 +908,196 @@ internal sealed class AppCommandService(
                             catalog.Metadata.Title,
                             catalog.Metadata.Author);
 
-                        AppPaths.EnsureNotReparsePathIfExists(outputPath);
-                        if (File.Exists(outputPath) && !options.Overwrite)
+                        string confirmedOutputPath = outputPath;
+                        bool deferInitialOutputPathConfirmation =
+                            catalog.CacheScope == CatalogCacheScope.Anonymous
+                            && plans.Any(plan => plan.Chapter.IsVip)
+                            && GetValidatedLoginState(currentLoginState) is null;
+                        if (!deferInitialOutputPathConfirmation
+                            && !await ConfirmOutputPathForWriteAsync(outputPath))
                         {
-                            bool approved = await interactiveConsole.ConfirmAsync(
-                                $"The output file '{outputPath}' already exists. Overwrite it?",
+                            skippedBooks++;
+                            continue;
+                        }
+
+                        int downloadedChaptersBeforeBook = downloadedChapters;
+                        int reusedChaptersBeforeBook = reusedChapters;
+                        int failedChaptersBeforeBook = failedChapters;
+                        Dictionary<string, RenderedChapter> renderedChapters =
+                            new(StringComparer.Ordinal);
+                        List<PendingChapterCacheSave> pendingChapterCacheSaves = [];
+                        List<ChapterPlan> authenticatedSensitiveRenderedCachePlans = [];
+                        List<(ChapterPlan Plan, string? UserName)>
+                            authenticatedSensitiveRenderedFreshPlans = [];
+                        List<ChapterPlan> orderedPlans = plans;
+                        bool validatedCatalogReplanRequested = false;
+                        bool validatedCatalogReplanCompleted = false;
+                        bool skipBookAfterOutputPathDenied = false;
+                        bool validatedCatalogIdentityUncertainAfterConfirmationFailure = false;
+
+                        async Task<(CatalogSnapshot Catalog, List<ChapterPlan> Plans)>
+                            ResolveValidatedCatalogAndPlansForOutputAsync(
+                                LoginState validatedLoginState,
+                                CatalogSnapshot anonymousCatalogEvidence,
+                                IReadOnlyList<ChapterPlan> anonymousPlanEvidence)
+                        {
+                            (
+                                CatalogSnapshot validatedCatalog,
+                                bool reusedCachedValidatedCatalog) = await GetCatalogAsync(
+                                target.BookId,
+                                settings,
+                                paths,
+                                GetBrowserAsync,
+                                CatalogCacheScope.ForValidatedUser(
+                                    validatedLoginState.UserName!),
+                                forceRefresh: false,
+                                cancellationToken,
+                                pendingCatalogCacheSaves: pendingCatalogCacheSaves,
+                                confirmValidatedScopeAsync: async requestedScope =>
+                                {
+                                    LoginState? confirmedLoginState =
+                                        await TryGetCurrentLoginStateAsync(
+                                            LogMessages
+                                                .IgnoreAuthenticatedCacheReuseProbeFailure,
+                                            LoginStateProbeMode
+                                                .WaitForValidatedIdentity);
+                                    if (confirmedLoginState is null)
+                                    {
+                                        currentLoginState = null;
+                                        return false;
+                                    }
+
+                                    currentLoginState = confirmedLoginState;
+                                    loginStateProbeFailed =
+                                        HasAuthenticatedCacheIdentityUncertainty(
+                                            currentLoginState);
+                                    currentBookStrongAnonymousProof =
+                                        IsCompleteLoggedOutProof(confirmedLoginState);
+                                    return requestedScope.Kind
+                                            == CatalogCacheScopeKind.ValidatedUser
+                                        && IsSameValidatedUser(
+                                            confirmedLoginState,
+                                            requestedScope.UserName);
+                                },
+                                hasValidatedScopeProof: requestedScope =>
+                                    loginStateProbeMode
+                                        == LoginStateProbeMode.WaitForValidatedIdentity
+                                    && IsSameValidatedUser(
+                                        currentLoginState,
+                                        requestedScope.UserName));
+                            List<ChapterPlan> validatedPlans = await BuildChapterPlansAsync(
+                                validatedCatalog,
+                                paths.CacheRoot,
+                                validatedLoginState,
                                 cancellationToken);
-                            if (!approved)
+                            if (reusedCachedValidatedCatalog
+                                && (RequiresValidatedCatalogRefreshForEntitlementMismatch(
+                                        validatedPlans,
+                                        validatedLoginState)
+                                    || RequiresValidatedCatalogRefreshForAnonymousVipConflict(
+                                        anonymousPlanEvidence,
+                                        anonymousCatalogEvidence,
+                                        validatedCatalog)))
                             {
-                                Console.WriteLine(
-                                    $"Skipped '{outputPath}' because overwrite was not approved.");
-                                skippedBooks++;
-                                continue;
+                                (validatedCatalog, _) = await GetCatalogAsync(
+                                    target.BookId,
+                                    settings,
+                                    paths,
+                                    GetBrowserAsync,
+                                    CatalogCacheScope.ForValidatedUser(
+                                        validatedLoginState.UserName!),
+                                    forceRefresh: true,
+                                    cancellationToken,
+                                    pendingCatalogCacheSaves: pendingCatalogCacheSaves,
+                                    confirmValidatedScopeAsync: async requestedScope =>
+                                    {
+                                        LoginState? confirmedLoginState =
+                                            await TryGetCurrentLoginStateAsync(
+                                                LogMessages
+                                                    .IgnoreAuthenticatedCacheReuseProbeFailure,
+                                                LoginStateProbeMode
+                                                    .WaitForValidatedIdentity);
+                                        if (confirmedLoginState is null)
+                                        {
+                                            currentLoginState = null;
+                                            return false;
+                                        }
+
+                                        currentLoginState = confirmedLoginState;
+                                        loginStateProbeFailed =
+                                            HasAuthenticatedCacheIdentityUncertainty(
+                                                currentLoginState);
+                                        currentBookStrongAnonymousProof =
+                                            IsCompleteLoggedOutProof(confirmedLoginState);
+                                        return requestedScope.Kind
+                                                == CatalogCacheScopeKind.ValidatedUser
+                                            && IsSameValidatedUser(
+                                                confirmedLoginState,
+                                                requestedScope.UserName);
+                                    },
+                                    hasValidatedScopeProof: requestedScope =>
+                                        loginStateProbeMode
+                                            == LoginStateProbeMode.WaitForValidatedIdentity
+                                        && IsSameValidatedUser(
+                                            currentLoginState,
+                                            requestedScope.UserName));
+                                validatedPlans = await BuildChapterPlansAsync(
+                                    validatedCatalog,
+                                    paths.CacheRoot,
+                                    validatedLoginState,
+                                    cancellationToken);
+                            }
+
+                            if (HasAnonymousVipValidatedFreeConflict(
+                                anonymousPlanEvidence,
+                                anonymousCatalogEvidence,
+                                validatedCatalog))
+                            {
+                                RemovePendingValidatedCatalogSaves(
+                                    pendingCatalogCacheSaves,
+                                    target.BookId,
+                                    validatedLoginState.UserName);
+                                (validatedCatalog, validatedPlans) =
+                                    FailClosedValidatedCatalogForAnonymousVipConflicts(
+                                        validatedCatalog,
+                                        validatedPlans,
+                                        anonymousPlanEvidence,
+                                        validatedLoginState);
+                            }
+
+                            return DeduplicateCatalogAndPlans(validatedCatalog, validatedPlans);
+                        }
+
+                        void TrustResolvedAnonymousCatalogIfKnownAnonymous()
+                        {
+                            if (catalog.CacheScope != CatalogCacheScope.Anonymous
+                                || catalog.IsKnownAnonymous
+                                || !regularBrowserAnonymousCatalogFetchHadStrongLoggedOutProof
+                                || !IsCompleteLoggedOutProof(currentLoginState)
+                                || !currentBookStrongAnonymousProof
+                                || loginStateProbeFailed
+                                || loginStateProbeFailedInRun
+                                || authenticatedUnknownIdentityDiscoveredInRun)
+                            {
+                                return;
+                            }
+
+                            catalog = catalog with { IsKnownAnonymous = true };
+                            if (CanSaveCatalogSnapshot(CatalogCacheScope.Anonymous, catalog))
+                            {
+                                StagePendingCatalogCacheSave(
+                                    paths.CacheRoot,
+                                    pendingCatalogCacheSaves,
+                                    catalog,
+                                    catalogClearGeneration);
                             }
                         }
 
-                        Dictionary<string, RenderedChapter> renderedChapters =
-                            new(StringComparer.Ordinal);
-                        List<ChapterPlan> authenticatedSensitiveRenderedCachePlans = [];
-                        List<ChapterPlan> orderedPlans = plans;
-
-                        async Task RefetchAuthenticatedSensitiveRenderedCacheAsync(string reason)
+                        async Task<bool> RefetchAuthenticatedSensitiveRenderedCacheAsync(string reason)
                         {
                             if (authenticatedSensitiveRenderedCachePlans.Count == 0)
                             {
-                                return;
+                                return true;
                             }
 
                             List<ChapterPlan> plansToRefetch =
@@ -550,17 +1113,80 @@ internal sealed class AppCommandService(
                                 Console.WriteLine(
                                     $"  Refetching {planToRefetch.Chapter.Title} "
                                     + reason);
-                                await FetchAndRenderChapterAsync(planToRefetch);
+                                if (!await FetchAndRenderChapterAsync(planToRefetch))
+                                {
+                                    return false;
+                                }
+                            }
+
+                            return true;
+                        }
+
+                        void FailClosedAuthenticatedSensitiveRenderedCache()
+                        {
+                            if (authenticatedSensitiveRenderedCachePlans.Count == 0)
+                            {
+                                return;
+                            }
+
+                            List<ChapterPlan> plansToFailClosed =
+                                [.. authenticatedSensitiveRenderedCachePlans];
+                            authenticatedSensitiveRenderedCachePlans.Clear();
+                            foreach (ChapterPlan planToFailClosed in plansToFailClosed)
+                            {
+                                if (renderedChapters.Remove(
+                                    planToFailClosed.Chapter.ChapterId))
+                                {
+                                    reusedChapters--;
+                                    failedChapters++;
+                                }
+
+                                renderedChapters[planToFailClosed.Chapter.ChapterId] =
+                                    new RenderedChapter(
+                                        planToFailClosed.Chapter.Title,
+                                        [AppConstants.FailedChapterPlaceholder]);
                             }
                         }
 
-                        async Task
+                        void FailClosedAuthenticatedSensitiveRenderedFresh(string? userName)
+                        {
+                            if (authenticatedSensitiveRenderedFreshPlans.Count == 0)
+                            {
+                                return;
+                            }
+
+                            List<(ChapterPlan Plan, string? UserName)> plansToFailClosed =
+                                [.. authenticatedSensitiveRenderedFreshPlans.Where(
+                                    renderedPlan => IsSameNormalizedUser(
+                                        renderedPlan.UserName,
+                                        userName))];
+                            authenticatedSensitiveRenderedFreshPlans.RemoveAll(
+                                renderedPlan => IsSameNormalizedUser(
+                                    renderedPlan.UserName,
+                                    userName));
+                            foreach ((ChapterPlan planToFailClosed, _) in plansToFailClosed)
+                            {
+                                if (renderedChapters.Remove(
+                                    planToFailClosed.Chapter.ChapterId))
+                                {
+                                    downloadedChapters--;
+                                    failedChapters++;
+                                }
+
+                                renderedChapters[planToFailClosed.Chapter.ChapterId] =
+                                    new RenderedChapter(
+                                        planToFailClosed.Chapter.Title,
+                                        [AppConstants.FailedChapterPlaceholder]);
+                            }
+                        }
+
+                        async Task<bool>
                             RefetchAuthenticatedSensitiveRenderedCacheAfterLoginStateUpdateIfNeededAsync()
                         {
                             if (GetValidatedLoginState(currentLoginState) is not null)
                             {
                                 loginStateProbeFailed = false;
-                                await RefetchAuthenticatedSensitiveRenderedCacheAsync(
+                                return await RefetchAuthenticatedSensitiveRenderedCacheAsync(
                                     "after login-state validation");
                             }
                             else
@@ -569,16 +1195,69 @@ internal sealed class AppCommandService(
                                     HasAuthenticatedCacheIdentityUncertainty(currentLoginState);
                                 if (loginStateProbeFailed)
                                 {
-                                    await RefetchAuthenticatedSensitiveRenderedCacheAsync(
+                                    return await RefetchAuthenticatedSensitiveRenderedCacheAsync(
                                         loginStateProbeFailedInRun
                                             ? "after login-state probe failure"
                                             : "after login-state identity uncertainty");
                                 }
                             }
+
+                            return true;
                         }
 
-                        async Task FetchAndRenderChapterAsync(ChapterPlan plan)
+                        async Task<bool> FetchAndRenderChapterAsync(ChapterPlan plan)
                         {
+                            async Task<bool> HandlePostFetchLoginStateUpdateAsync(
+                                bool hadValidatedLoginState)
+                            {
+                                if (hadValidatedLoginState)
+                                {
+                                    return true;
+                                }
+
+                                if (currentLoginState is { IsLoggedIn: true })
+                                {
+                                    RemovePendingAnonymousCatalogSaves(
+                                        pendingCatalogCacheSaves,
+                                        catalog.Metadata.BookId);
+                                    if (GetValidatedLoginState(currentLoginState) is not null
+                                        && catalog.CacheScope == CatalogCacheScope.Anonymous
+                                        && !validatedCatalogReplanCompleted)
+                                    {
+                                        validatedCatalogReplanRequested = true;
+                                        return false;
+                                    }
+                                }
+
+                                return await RefetchAuthenticatedSensitiveRenderedCacheAfterLoginStateUpdateIfNeededAsync();
+                            }
+
+                            long clearGeneration = CacheStore.GetClearGeneration(paths.CacheRoot);
+                            bool hadStrongLoggedOutProofBeforeFetch =
+                                currentBookStrongAnonymousProof
+                                && IsCompleteLoggedOutProof(currentLoginState)
+                                && !loginStateProbeFailedInRun
+                                && !authenticatedUnknownIdentityDiscoveredInRun;
+                            bool hadAuthenticatedLoginStateBeforeFetch =
+                                currentLoginState is { IsLoggedIn: true }
+                                || validatedCatalogIdentityUncertainAfterConfirmationFailure;
+                            bool hadValidatedLoginStateBeforeFetch =
+                                GetValidatedLoginState(currentLoginState) is not null;
+                            string? preFetchValidatedUserName =
+                                GetValidatedLoginState(currentLoginState)?.UserName;
+                            string? expectedValidatedScopeUserName = preFetchValidatedUserName
+                                ?? (catalog.CacheScope.Kind == CatalogCacheScopeKind.ValidatedUser
+                                    ? catalog.CacheScope.UserName
+                                    : null);
+                            bool requiresSameUserPostFetchConfirmation =
+                                hadValidatedLoginStateBeforeFetch
+                                || (validatedCatalogIdentityUncertainAfterConfirmationFailure
+                                    && catalog.CacheScope.Kind
+                                        == CatalogCacheScopeKind.ValidatedUser
+                                    && LoginState.NormalizeUserName(
+                                        expectedValidatedScopeUserName) is not null);
+                            string? authenticatedSensitiveScopeUserName =
+                                preFetchValidatedUserName ?? expectedValidatedScopeUserName;
                             ChapterFetchResult? chapterResult = await FetchChapterWithRetryAsync(
                                 await GetBrowserAsync(),
                                 catalog.Metadata.BookId,
@@ -591,16 +1270,24 @@ internal sealed class AppCommandService(
                                     plan.Chapter.Title,
                                     [AppConstants.FailedChapterPlaceholder]);
                                 failedChapters++;
-                                return;
+                                return true;
                             }
 
                             IReadOnlyList<string> paragraphs =
                                 NormalizeFetchedParagraphs(chapterResult);
+                            bool hasFreshPostFetchLoggedOutConfirmation = false;
+                            bool postFetchValidatedIdentityProbeAttempted = false;
+                            bool hasFreshPostFetchValidatedIdentityConfirmation = false;
+                            bool hasFreshPostFetchValidatedUserConfirmation = false;
+                            bool vipFullContentIdentityClassificationFailed = false;
+                            bool requiresAnonymousSafeFreeFullContentProof =
+                                catalog.CacheScope == CatalogCacheScope.Anonymous
+                                && catalog.IsKnownAnonymous
+                                && !plan.Chapter.IsVip
+                                && !chapterResult.IsPreview;
                             if (plan.Chapter.IsVip
                                 && !chapterResult.IsPreview)
                             {
-                                bool hadValidatedLoginState =
-                                    GetValidatedLoginState(currentLoginState) is not null;
                                 if (currentLoginState is not { IsValidated: true }
                                     && !vipFullContentClassificationProbeCompleted)
                                 {
@@ -609,28 +1296,297 @@ internal sealed class AppCommandService(
                                             LogMessages
                                                 .IgnoreVipFullContentClassificationProbeFailure,
                                             LoginStateProbeMode.WaitForValidatedIdentity);
+                                    postFetchValidatedIdentityProbeAttempted = true;
                                     if (classificationLoginState is not null)
                                     {
                                         currentLoginState = classificationLoginState;
+                                        currentBookStrongAnonymousProof =
+                                            IsCompleteLoggedOutProof(classificationLoginState);
                                         loginStateProbeFailed =
                                             HasAuthenticatedCacheIdentityUncertainty(
                                                 currentLoginState);
                                         vipFullContentClassificationProbeCompleted = true;
-                                        if (!hadValidatedLoginState)
+                                        hasFreshPostFetchLoggedOutConfirmation =
+                                            IsCompleteLoggedOutProof(classificationLoginState)
+                                            && !loginStateProbeFailedInRun
+                                            && !authenticatedUnknownIdentityDiscoveredInRun;
+                                        hasFreshPostFetchValidatedIdentityConfirmation =
+                                            classificationLoginState.IsValidated;
+                                        hasFreshPostFetchValidatedUserConfirmation =
+                                            IsSameValidatedUser(
+                                                classificationLoginState,
+                                                expectedValidatedScopeUserName);
+                                        if (!await HandlePostFetchLoginStateUpdateAsync(
+                                            hadValidatedLoginStateBeforeFetch))
                                         {
-                                            await RefetchAuthenticatedSensitiveRenderedCacheAfterLoginStateUpdateIfNeededAsync();
+                                            return false;
                                         }
                                     }
                                     else
                                     {
-                                        await RefetchAuthenticatedSensitiveRenderedCacheAfterLoginStateUpdateIfNeededAsync();
+                                        if (!await RefetchAuthenticatedSensitiveRenderedCacheAfterLoginStateUpdateIfNeededAsync())
+                                        {
+                                            return false;
+                                        }
+
+                                        vipFullContentIdentityClassificationFailed = true;
+                                    }
+                                }
+
+                                if (hadStrongLoggedOutProofBeforeFetch
+                                    && !hasFreshPostFetchLoggedOutConfirmation
+                                    && !postFetchValidatedIdentityProbeAttempted)
+                                {
+                                    LoginState? postFetchLoginState =
+                                        await TryGetCurrentLoginStateAsync(
+                                            LogMessages
+                                                .IgnoreVipFullContentClassificationProbeFailure,
+                                            LoginStateProbeMode.WaitForValidatedIdentity);
+                                    if (postFetchLoginState is not null)
+                                    {
+                                        currentLoginState = postFetchLoginState;
+                                        currentBookStrongAnonymousProof =
+                                            IsCompleteLoggedOutProof(postFetchLoginState);
+                                        loginStateProbeFailed =
+                                            HasAuthenticatedCacheIdentityUncertainty(
+                                                currentLoginState);
+                                        hasFreshPostFetchLoggedOutConfirmation =
+                                            IsCompleteLoggedOutProof(postFetchLoginState)
+                                            && !loginStateProbeFailedInRun
+                                            && !authenticatedUnknownIdentityDiscoveredInRun;
+                                        hasFreshPostFetchValidatedIdentityConfirmation =
+                                            postFetchLoginState.IsValidated;
+                                        hasFreshPostFetchValidatedUserConfirmation =
+                                            IsSameValidatedUser(
+                                                postFetchLoginState,
+                                                expectedValidatedScopeUserName);
+                                        if (!await HandlePostFetchLoginStateUpdateAsync(
+                                            hadValidatedLoginStateBeforeFetch))
+                                        {
+                                            return false;
+                                        }
+                                    }
+                                    else if (!await RefetchAuthenticatedSensitiveRenderedCacheAfterLoginStateUpdateIfNeededAsync())
+                                    {
+                                        currentBookStrongAnonymousProof = false;
+                                        return false;
+                                    }
+                                    else
+                                    {
+                                        currentBookStrongAnonymousProof = false;
+                                        vipFullContentIdentityClassificationFailed = true;
+                                    }
+                                }
+
+                                if (requiresSameUserPostFetchConfirmation
+                                    && !hasFreshPostFetchValidatedUserConfirmation)
+                                {
+                                    LoginState? postFetchLoginState =
+                                        await TryGetCurrentLoginStateAsync(
+                                            LogMessages
+                                                .IgnoreVipFullContentClassificationProbeFailure,
+                                            LoginStateProbeMode.WaitForValidatedIdentity);
+                                    if (postFetchLoginState is not null)
+                                    {
+                                        currentLoginState = postFetchLoginState;
+                                        currentBookStrongAnonymousProof =
+                                            IsCompleteLoggedOutProof(postFetchLoginState);
+                                        loginStateProbeFailed =
+                                            HasAuthenticatedCacheIdentityUncertainty(
+                                                currentLoginState);
+                                        hasFreshPostFetchLoggedOutConfirmation =
+                                            IsCompleteLoggedOutProof(postFetchLoginState)
+                                            && !loginStateProbeFailedInRun
+                                            && !authenticatedUnknownIdentityDiscoveredInRun;
+                                        hasFreshPostFetchValidatedIdentityConfirmation =
+                                            postFetchLoginState.IsValidated;
+                                        hasFreshPostFetchValidatedUserConfirmation =
+                                            IsSameValidatedUser(
+                                                postFetchLoginState,
+                                                expectedValidatedScopeUserName);
+                                    }
+
+                                    if (!hasFreshPostFetchValidatedUserConfirmation)
+                                    {
+                                        currentLoginState = null;
+                                        loginState = null;
+                                        loginStateProbeMode = null;
+                                        loginStateProbeFailed = true;
+                                        validatedCatalogIdentityUncertainAfterConfirmationFailure = true;
+                                        RemovePendingValidatedCatalogSaves(
+                                            pendingCatalogCacheSaves,
+                                            catalog.Metadata.BookId,
+                                            authenticatedSensitiveScopeUserName);
+                                        RemovePendingAuthenticatedSensitiveChapterSaves(
+                                            pendingChapterCacheSaves,
+                                            catalog.Metadata.BookId,
+                                            authenticatedSensitiveScopeUserName);
+                                        FailClosedAuthenticatedSensitiveRenderedCache();
+                                        FailClosedAuthenticatedSensitiveRenderedFresh(
+                                            authenticatedSensitiveScopeUserName);
+                                        renderedChapters[plan.Chapter.ChapterId] =
+                                            new RenderedChapter(
+                                                plan.Chapter.Title,
+                                                [AppConstants.FailedChapterPlaceholder]);
+                                        failedChapters++;
+                                        return true;
                                     }
                                 }
                             }
 
+                            if (requiresAnonymousSafeFreeFullContentProof
+                                && hadStrongLoggedOutProofBeforeFetch
+                                && !hasFreshPostFetchLoggedOutConfirmation)
+                            {
+                                LoginState? postFetchLoginState =
+                                    await TryGetCurrentLoginStateAsync(
+                                        LogMessages
+                                            .IgnoreVipFullContentClassificationProbeFailure,
+                                        LoginStateProbeMode.WaitForValidatedIdentity);
+                                if (postFetchLoginState is not null)
+                                {
+                                    currentLoginState = postFetchLoginState;
+                                    currentBookStrongAnonymousProof =
+                                        IsCompleteLoggedOutProof(postFetchLoginState);
+                                    loginStateProbeFailed =
+                                        HasAuthenticatedCacheIdentityUncertainty(
+                                            currentLoginState);
+                                    hasFreshPostFetchLoggedOutConfirmation =
+                                        IsCompleteLoggedOutProof(postFetchLoginState)
+                                        && !loginStateProbeFailedInRun
+                                        && !authenticatedUnknownIdentityDiscoveredInRun;
+                                    hasFreshPostFetchValidatedIdentityConfirmation =
+                                        postFetchLoginState.IsValidated;
+                                    if (currentLoginState is { IsLoggedIn: true })
+                                    {
+                                        RemovePendingAnonymousCatalogSaves(
+                                            pendingCatalogCacheSaves,
+                                            catalog.Metadata.BookId);
+                                    }
+
+                                    if (!hasFreshPostFetchLoggedOutConfirmation
+                                        && !await HandlePostFetchLoginStateUpdateAsync(
+                                            hadValidatedLoginStateBeforeFetch))
+                                    {
+                                        return false;
+                                    }
+                                }
+                                else
+                                {
+                                    currentBookStrongAnonymousProof = false;
+                                    loginStateProbeFailed =
+                                        HasAuthenticatedCacheIdentityUncertainty(
+                                            currentLoginState);
+                                    if (!await RefetchAuthenticatedSensitiveRenderedCacheAfterLoginStateUpdateIfNeededAsync())
+                                    {
+                                        return false;
+                                    }
+                                }
+                            }
+
+                            bool canAttributeVipFullContentAsPublic =
+                                hadStrongLoggedOutProofBeforeFetch
+                                && hasFreshPostFetchLoggedOutConfirmation;
+                            bool canAttributeFreeFullContentAsPublic =
+                                !plan.Chapter.IsVip
+                                && !chapterResult.IsPreview
+                                && HasAnonymousSafeFreeFullContentProof(
+                                    plan.Chapter,
+                                    catalog,
+                                    rawAnonymousCatalogEvidence,
+                                    rawAnonymousPlanEvidence,
+                                    hadStrongLoggedOutProofBeforeFetch
+                                        && hasFreshPostFetchLoggedOutConfirmation,
+                                    hadAuthenticatedLoginStateBeforeFetch);
+
+                            if (vipFullContentIdentityClassificationFailed)
+                            {
+                                renderedChapters[plan.Chapter.ChapterId] =
+                                    new RenderedChapter(
+                                       plan.Chapter.Title,
+                                       [AppConstants.FailedChapterPlaceholder]);
+                                failedChapters++;
+                                return true;
+                            }
+
+                            if (plan.Chapter.IsVip
+                                && !chapterResult.IsPreview
+                                && !hasFreshPostFetchLoggedOutConfirmation
+                                && !(hasFreshPostFetchValidatedIdentityConfirmation
+                                    && (!requiresSameUserPostFetchConfirmation
+                                        || hasFreshPostFetchValidatedUserConfirmation)))
+                            {
+                                renderedChapters[plan.Chapter.ChapterId] =
+                                    new RenderedChapter(
+                                       plan.Chapter.Title,
+                                       [AppConstants.FailedChapterPlaceholder]);
+                                failedChapters++;
+                                return true;
+                            }
+
+                            if (!plan.Chapter.IsVip
+                                && !chapterResult.IsPreview
+                                && !canAttributeFreeFullContentAsPublic
+                                && requiresSameUserPostFetchConfirmation
+                                && !hasFreshPostFetchValidatedUserConfirmation)
+                            {
+                                LoginState? postFetchLoginState =
+                                    await TryGetCurrentLoginStateAsync(
+                                        LogMessages
+                                            .IgnoreVipFullContentClassificationProbeFailure,
+                                        LoginStateProbeMode.WaitForValidatedIdentity);
+                                if (postFetchLoginState is not null)
+                                {
+                                    currentLoginState = postFetchLoginState;
+                                    currentBookStrongAnonymousProof =
+                                        IsCompleteLoggedOutProof(postFetchLoginState);
+                                    loginStateProbeFailed =
+                                        HasAuthenticatedCacheIdentityUncertainty(
+                                            currentLoginState);
+                                    hasFreshPostFetchLoggedOutConfirmation =
+                                        IsCompleteLoggedOutProof(postFetchLoginState)
+                                        && !loginStateProbeFailedInRun
+                                        && !authenticatedUnknownIdentityDiscoveredInRun;
+                                    hasFreshPostFetchValidatedUserConfirmation =
+                                        IsSameValidatedUser(
+                                            postFetchLoginState,
+                                            expectedValidatedScopeUserName);
+                                }
+
+                                if (!hasFreshPostFetchValidatedUserConfirmation)
+                                {
+                                    currentLoginState = null;
+                                    loginState = null;
+                                    loginStateProbeMode = null;
+                                    loginStateProbeFailed = true;
+                                    validatedCatalogIdentityUncertainAfterConfirmationFailure = true;
+                                    RemovePendingValidatedCatalogSaves(
+                                        pendingCatalogCacheSaves,
+                                        catalog.Metadata.BookId,
+                                        authenticatedSensitiveScopeUserName);
+                                    RemovePendingAuthenticatedSensitiveChapterSaves(
+                                        pendingChapterCacheSaves,
+                                        catalog.Metadata.BookId,
+                                        authenticatedSensitiveScopeUserName);
+                                    FailClosedAuthenticatedSensitiveRenderedCache();
+                                    FailClosedAuthenticatedSensitiveRenderedFresh(
+                                        authenticatedSensitiveScopeUserName);
+                                    renderedChapters[plan.Chapter.ChapterId] =
+                                        new RenderedChapter(
+                                            plan.Chapter.Title,
+                                            [AppConstants.FailedChapterPlaceholder]);
+                                    failedChapters++;
+                                    return true;
+                                }
+                            }
+
                             LoginState? vipFullContentAttributionLoginState =
-                                currentLoginState is { IsValidated: true }
-                                || vipFullContentClassificationProbeCompleted
+                                !plan.Chapter.IsVip
+                                || chapterResult.IsPreview
+                                || (currentLoginState is { IsValidated: true }
+                                    && hasFreshPostFetchValidatedUserConfirmation)
+                                || (canAttributeVipFullContentAsPublic
+                                    && IsCompleteLoggedOutProof(currentLoginState))
                                     ? currentLoginState
                                     : null;
 
@@ -646,72 +1602,206 @@ internal sealed class AppCommandService(
                                 GetVisibleToUserName(
                                     plan.Chapter,
                                     chapterResult,
-                                    vipFullContentAttributionLoginState),
+                                    vipFullContentAttributionLoginState,
+                                    canAttributeFreeFullContentAsPublic),
                                 GetVipFullContentCacheProvenance(
                                     plan.Chapter,
                                     chapterResult,
-                                    vipFullContentAttributionLoginState),
-                                plan.Chapter.IsVip);
-                            await CacheStore.SaveChapterAsync(
-                                paths.CacheRoot,
-                                catalog.Metadata.BookId,
-                                cacheEntry,
-                                cancellationToken);
+                                    vipFullContentAttributionLoginState,
+                                    canAttributeVipFullContentAsPublic),
+                                plan.Chapter.IsVip,
+                                canAttributeFreeFullContentAsPublic ? true : null);
+                            bool hasAnonymousSafeFreeFullContentProof =
+                                !requiresAnonymousSafeFreeFullContentProof
+                                || (hadStrongLoggedOutProofBeforeFetch
+                                    && hasFreshPostFetchLoggedOutConfirmation);
+                            if (CanSaveFetchedChapterCacheEntry(
+                                plan.Chapter,
+                                catalog,
+                                chapterResult,
+                                hasAnonymousSafeFreeFullContentProof))
+                            {
+                                StagePendingChapterCacheSave(
+                                    paths.CacheRoot,
+                                    pendingChapterCacheSaves,
+                                    catalog.Metadata.BookId,
+                                    cacheEntry,
+                                    clearGeneration);
+                            }
+
                             renderedChapters[plan.Chapter.ChapterId] = new RenderedChapter(
                                 plan.Chapter.Title,
                                 paragraphs);
+                            if (IsAuthenticatedSensitiveFreshRenderedChapter(
+                                cacheEntry,
+                                authenticatedSensitiveScopeUserName))
+                            {
+                                authenticatedSensitiveRenderedFreshPlans.Add(
+                                    (plan, authenticatedSensitiveScopeUserName));
+                            }
+
                             downloadedChapters++;
+                            return true;
                         }
 
-                        for (
-                            int chapterIndex = 0;
-                            chapterIndex < orderedPlans.Count;
-                            chapterIndex++)
+                        bool restartRendering;
+                        do
                         {
-                            ChapterPlan plan = orderedPlans[chapterIndex];
-                            bool canReuseCachedPlan = CanReuseCachedPlanForCurrentLoginState(
-                                plan,
-                                currentLoginState,
-                                loginStateProbeFailed);
-                            string chapterAction = canReuseCachedPlan
-                                ? "Reusing"
-                                : "Fetching";
-                            Console.WriteLine(
-                                $"  [{chapterIndex + 1}/{orderedPlans.Count}] "
-                                + $"{chapterAction} "
-                                + $"{plan.Chapter.Title}");
-
-                            if (canReuseCachedPlan)
+                            restartRendering = false;
+                            int downloadedChaptersBeforeAttempt = downloadedChapters;
+                            int reusedChaptersBeforeAttempt = reusedChapters;
+                            int failedChaptersBeforeAttempt = failedChapters;
+                            for (
+                                int chapterIndex = 0;
+                                chapterIndex < orderedPlans.Count;
+                                chapterIndex++)
                             {
-                                renderedChapters[plan.Chapter.ChapterId] = new RenderedChapter(
-                                    plan.Chapter.Title,
-                                    plan.CachedEntry!.Paragraphs);
-                                if (IsAuthenticatedSensitiveCachedPlan(plan))
+                                ChapterPlan plan = orderedPlans[chapterIndex];
+                                bool canReuseCachedPlan = CanReuseCachedPlanForCurrentLoginState(
+                                    plan,
+                                    currentLoginState,
+                                    loginStateProbeFailed);
+                                string chapterAction = canReuseCachedPlan
+                                    ? "Reusing"
+                                    : "Fetching";
+                                Console.WriteLine(
+                                    $"  [{chapterIndex + 1}/{orderedPlans.Count}] "
+                                    + $"{chapterAction} "
+                                    + $"{plan.Chapter.Title}");
+
+                                if (canReuseCachedPlan)
                                 {
-                                    authenticatedSensitiveRenderedCachePlans.Add(plan);
+                                    renderedChapters[plan.Chapter.ChapterId] =
+                                        new RenderedChapter(
+                                            plan.Chapter.Title,
+                                            plan.CachedEntry!.Paragraphs);
+                                    if (IsAuthenticatedSensitiveCachedPlan(plan))
+                                    {
+                                        authenticatedSensitiveRenderedCachePlans.Add(plan);
+                                    }
+
+                                    reusedChapters++;
+                                    continue;
                                 }
 
-                                reusedChapters++;
-                                continue;
-                            }
+                                bool rendered = await FetchAndRenderChapterAsync(plan);
+                                if (!rendered && validatedCatalogReplanRequested)
+                                {
+                                    LoginState validatedLoginState =
+                                        GetValidatedLoginState(currentLoginState)
+                                        ?? throw new InvalidOperationException(
+                                            "Validated catalog replan was requested without a validated login state.");
+                                    CatalogSnapshot anonymousCatalogEvidence = catalog;
+                                    List<ChapterPlan> anonymousPlanEvidence = orderedPlans;
+                                    if (rawAnonymousCatalogEvidence is not null
+                                        && rawAnonymousPlanEvidence is not null)
+                                    {
+                                        anonymousCatalogEvidence = rawAnonymousCatalogEvidence;
+                                        anonymousPlanEvidence = rawAnonymousPlanEvidence;
+                                    }
 
-                            await FetchAndRenderChapterAsync(plan);
+                                    (catalog, orderedPlans) =
+                                        await ResolveValidatedCatalogAndPlansForOutputAsync(
+                                            validatedLoginState,
+                                            anonymousCatalogEvidence,
+                                            anonymousPlanEvidence);
+                                    outputPath = AppPaths.BuildDefaultOutputPath(
+                                        paths.OutputRoot,
+                                        catalog.Metadata.BookId,
+                                        catalog.Metadata.Title,
+                                        catalog.Metadata.Author);
+                                    if (!OutputPathComparer.Equals(
+                                            outputPath,
+                                            confirmedOutputPath)
+                                        && !await ConfirmOutputPathForWriteAsync(outputPath))
+                                    {
+                                        downloadedChapters = downloadedChaptersBeforeBook;
+                                        reusedChapters = reusedChaptersBeforeBook;
+                                        failedChapters = failedChaptersBeforeBook;
+                                        skippedBooks++;
+                                        skipBookAfterOutputPathDenied = true;
+                                        restartRendering = false;
+                                        break;
+                                    }
 
-                            if (chapterIndex < orderedPlans.Count - 1)
-                            {
-                                TimeSpan delay = RequestDelayPlanner.CalculateDelay(
-                                    plan.Chapter.CatalogWordCount,
-                                    settings);
-                                await Task.Delay(delay, cancellationToken);
+                                    confirmedOutputPath = outputPath;
+                                    renderedChapters.Clear();
+                                    pendingChapterCacheSaves.Clear();
+                                    authenticatedSensitiveRenderedCachePlans.Clear();
+                                    authenticatedSensitiveRenderedFreshPlans.Clear();
+                                    downloadedChapters = downloadedChaptersBeforeAttempt;
+                                    reusedChapters = reusedChaptersBeforeAttempt;
+                                    failedChapters = failedChaptersBeforeAttempt;
+                                    loginStateProbeFailed = false;
+                                    validatedCatalogReplanCompleted = true;
+                                    validatedCatalogReplanRequested = false;
+                                    restartRendering = true;
+                                    break;
+                                }
+
+                                if (chapterIndex < orderedPlans.Count - 1)
+                                {
+                                    TimeSpan delay = RequestDelayPlanner.CalculateDelay(
+                                        plan.Chapter.CatalogWordCount,
+                                        settings);
+                                    await Task.Delay(delay, cancellationToken);
+                                }
                             }
                         }
+                        while (restartRendering);
+
+                        if (skipBookAfterOutputPathDenied)
+                        {
+                            continue;
+                        }
+
+                        TrustResolvedAnonymousCatalogIfKnownAnonymous();
 
                         BeforeOutputWriteForTests?.Invoke(outputPath);
                         AppPaths.CreateDirectoryRejectingReparseAncestors(paths.OutputRoot);
                         AppPaths.CreateDirectoryRejectingReparseAncestors(
                             Path.GetDirectoryName(outputPath)!);
-                        AppPaths.EnsureNotReparsePathIfExists(outputPath);
+
                         string markdown = MarkdownRenderer.Render(catalog, renderedChapters);
+                        if (!await ConfirmOutputPathForWriteAsync(outputPath))
+                        {
+                            downloadedChapters = downloadedChaptersBeforeBook;
+                            reusedChapters = reusedChaptersBeforeBook;
+                            failedChapters = failedChaptersBeforeBook;
+                            skippedBooks++;
+                            continue;
+                        }
+
+                        await CommitPendingCatalogCacheSavesAsync(
+                            paths.CacheRoot,
+                            pendingCatalogCacheSaves,
+                            currentLoginState,
+                            cancellationToken);
+
+                        foreach (PendingChapterCacheSave pendingSave in pendingChapterCacheSaves)
+                        {
+                            await CacheStore.TrySaveChapterIfClearGenerationUnchangedAsync(
+                                paths.CacheRoot,
+                                pendingSave.BookId,
+                                pendingSave.Entry,
+                                ChapterCacheExpectedState.PresentOrAbsent,
+                                pendingSave.ClearGeneration,
+                                cancellationToken);
+                        }
+
+                        AfterPendingCacheCommitsForTests?.Invoke(outputPath);
+                        AppPaths.CreateDirectoryRejectingReparseAncestors(paths.OutputRoot);
+                        AppPaths.CreateDirectoryRejectingReparseAncestors(
+                            Path.GetDirectoryName(outputPath)!);
+                        if (!await ConfirmOutputPathForWriteAsync(outputPath))
+                        {
+                            downloadedChapters = downloadedChaptersBeforeBook;
+                            reusedChapters = reusedChaptersBeforeBook;
+                            failedChapters = failedChaptersBeforeBook;
+                            skippedBooks++;
+                            continue;
+                        }
+
                         await File.WriteAllTextAsync(
                             outputPath,
                             markdown,
@@ -973,7 +2063,12 @@ internal sealed class AppCommandService(
                 GetBrowserAsync,
                 CatalogCacheScope.Anonymous,
                 forceRefresh: false,
-                cancellationToken);
+                cancellationToken,
+                fetchKnownAnonymousCatalogAsync: () => FetchCatalogWithIsolatedAnonymousBrowserAsync(
+                    target.BookId,
+                    settings,
+                    paths,
+                    cancellationToken));
 
             int totalChapters = catalog.Volumes.Sum(volume => volume.Chapters.Count);
             int cachedChapters = CacheStore.CountCachedChapters(paths.CacheRoot, catalog.BookId);
@@ -1037,11 +2132,16 @@ internal sealed class AppCommandService(
         Func<Task<IQidianBrowserSession>> getBrowserAsync,
         CatalogCacheScope scope,
         bool forceRefresh,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<Task<CatalogSnapshot>>? fetchKnownAnonymousCatalogAsync = null,
+        List<PendingCatalogCacheSave>? pendingCatalogCacheSaves = null,
+        Func<CatalogCacheScope, Task<bool>>? confirmValidatedScopeAsync = null,
+        Func<CatalogCacheScope, bool>? hasValidatedScopeProof = null)
     {
+        CatalogSnapshot? cachedCatalog = null;
         if (!forceRefresh)
         {
-            CatalogSnapshot? cachedCatalog = await CacheStore.GetCatalogAsync(
+            cachedCatalog = await CacheStore.GetCatalogAsync(
                 paths.CacheRoot,
                 bookId,
                 scope,
@@ -1051,16 +2151,40 @@ internal sealed class AppCommandService(
                     settings.CatalogCacheTtlHours,
                     timeProvider))
             {
-                return (cachedCatalog, ReusedCache: true);
+                if (scope.Kind != CatalogCacheScopeKind.ValidatedUser
+                    || (hasValidatedScopeProof is not null
+                        && hasValidatedScopeProof(scope))
+                    || confirmValidatedScopeAsync is null
+                    || await confirmValidatedScopeAsync(scope))
+                {
+                    return (cachedCatalog, ReusedCache: true);
+                }
             }
         }
 
+        if (scope == CatalogCacheScope.Anonymous
+            && fetchKnownAnonymousCatalogAsync is not null)
+        {
+            CatalogSnapshot knownAnonymousCatalog = await fetchKnownAnonymousCatalogAsync();
+            knownAnonymousCatalog = CatalogSnapshotValidation.ValidateAndNormalizeForRequestedBook(
+                knownAnonymousCatalog,
+                bookId);
+            return (knownAnonymousCatalog, ReusedCache: false);
+        }
+
+        long clearGeneration = pendingCatalogCacheSaves is not null
+            ? CacheStore.GetClearGeneration(paths.CacheRoot)
+            : 0;
         CatalogSnapshot fetchedCatalog = await FetchCatalogAsync(
             bookId,
             paths,
             getBrowserAsync,
             scope,
-            cancellationToken);
+            isKnownAnonymousFetch: false,
+            cancellationToken,
+            pendingCatalogCacheSaves,
+            clearGeneration,
+            confirmValidatedScopeAsync: confirmValidatedScopeAsync);
         return (fetchedCatalog, ReusedCache: false);
     }
 
@@ -1069,18 +2193,119 @@ internal sealed class AppCommandService(
         AppStoragePaths paths,
         Func<Task<IQidianBrowserSession>> getBrowserAsync,
         CatalogCacheScope scope,
-        CancellationToken cancellationToken)
+        bool isKnownAnonymousFetch,
+        CancellationToken cancellationToken,
+        List<PendingCatalogCacheSave>? pendingCatalogCacheSaves = null,
+        long? clearGeneration = null,
+        Action<long>? clearGenerationCaptured = null,
+        Func<CatalogCacheScope, Task<bool>>? confirmValidatedScopeAsync = null)
     {
+        clearGeneration ??= pendingCatalogCacheSaves is not null
+            ? CacheStore.GetClearGeneration(paths.CacheRoot)
+            : null;
+        if (clearGeneration is not null)
+        {
+            clearGenerationCaptured?.Invoke(clearGeneration.Value);
+        }
+
         CatalogSnapshot fetchedCatalog = await (await getBrowserAsync()).FetchCatalogAsync(
             bookId,
             cancellationToken);
-        fetchedCatalog = fetchedCatalog with { CacheScope = scope };
+        fetchedCatalog = CatalogSnapshotValidation.ValidateAndNormalizeForRequestedBook(
+            fetchedCatalog,
+            bookId);
+        if (scope.Kind == CatalogCacheScopeKind.ValidatedUser
+            && confirmValidatedScopeAsync is not null
+            && !await confirmValidatedScopeAsync(scope))
+        {
+            throw new OperationalException(
+                "Validated catalog fetch was not confirmed for the same signed-in user.");
+        }
+
+        fetchedCatalog = fetchedCatalog with
+        {
+            CacheScope = scope,
+            IsKnownAnonymous = scope == CatalogCacheScope.Anonymous
+                && isKnownAnonymousFetch,
+        };
         if (CanSaveCatalogSnapshot(scope, fetchedCatalog))
         {
-            await CacheStore.SaveCatalogAsync(paths.CacheRoot, fetchedCatalog, cancellationToken);
+            if (pendingCatalogCacheSaves is null)
+            {
+                await CacheStore.SaveCatalogAsync(paths.CacheRoot, fetchedCatalog, cancellationToken);
+            }
+            else
+            {
+                StagePendingCatalogCacheSave(
+                    paths.CacheRoot,
+                    pendingCatalogCacheSaves,
+                    fetchedCatalog,
+                    clearGeneration);
+            }
         }
 
         return fetchedCatalog;
+    }
+
+    private async Task<CatalogSnapshot> FetchCatalogWithIsolatedAnonymousBrowserAsync(
+        string bookId,
+        ResolvedAppSettings settings,
+        AppStoragePaths paths,
+        CancellationToken cancellationToken,
+        List<PendingCatalogCacheSave>? pendingCatalogCacheSaves = null,
+        Action<long>? clearGenerationCaptured = null)
+    {
+        IQidianBrowserSession? isolatedBrowser = null;
+        try
+        {
+            long clearGeneration = pendingCatalogCacheSaves is not null
+                ? CacheStore.GetClearGeneration(paths.CacheRoot)
+                : 0;
+            if (pendingCatalogCacheSaves is not null)
+            {
+                clearGenerationCaptured?.Invoke(clearGeneration);
+            }
+
+            isolatedBrowser = await browserManager.OpenAsync(
+                settings,
+                paths,
+                headless: true,
+                cancellationToken,
+                isolatedAnonymous: true);
+            CatalogSnapshot fetchedCatalog =
+                await isolatedBrowser.FetchCatalogAsync(bookId, cancellationToken);
+            fetchedCatalog = CatalogSnapshotValidation.ValidateAndNormalizeForRequestedBook(
+                fetchedCatalog,
+                bookId);
+            fetchedCatalog = fetchedCatalog with
+            {
+                CacheScope = CatalogCacheScope.Anonymous,
+                IsKnownAnonymous = true,
+            };
+            if (pendingCatalogCacheSaves is null)
+            {
+                await CacheStore.SaveCatalogAsync(
+                    paths.CacheRoot,
+                    fetchedCatalog,
+                    cancellationToken);
+            }
+            else
+            {
+                StagePendingCatalogCacheSave(
+                    paths.CacheRoot,
+                    pendingCatalogCacheSaves,
+                    fetchedCatalog,
+                    clearGeneration);
+            }
+            return fetchedCatalog;
+        }
+        finally
+        {
+            if (isolatedBrowser is not null)
+            {
+                await isolatedBrowser.DisposeBestEffortAsync();
+            }
+        }
     }
 
     private async Task<CatalogSnapshot?> TryGetFreshCatalogAsync(
@@ -1104,14 +2329,282 @@ internal sealed class AppCommandService(
             : null;
     }
 
+    internal static async Task<string?> TryGetCachedOutputPathForOverwriteCheckAsync(
+        BookReference target,
+        ResolvedAppSettings settings,
+        AppStoragePaths paths,
+        LoginState? loginState,
+        LoginStateProbeMode? loginStateProbeMode,
+        bool hasRunIdentityUncertainty,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
+    {
+        async Task<CatalogSnapshot?> GetFreshCachedCatalogForPredictionAsync(
+            CatalogCacheScope scope)
+        {
+            CatalogSnapshot? cachedCatalog =
+                await CacheStore.GetCatalogForOutputPredictionAsync(
+                    paths.CacheRoot,
+                    target.BookId,
+                    scope,
+                    cancellationToken);
+            return cachedCatalog is not null
+                && CacheStore.IsCatalogFresh(
+                    cachedCatalog,
+                    settings.CatalogCacheTtlHours,
+                    timeProvider)
+                ? cachedCatalog
+                : null;
+        }
+
+        async Task<CatalogSnapshot?> GetFreshTrustedCatalogAsync(CatalogCacheScope scope)
+        {
+            CatalogSnapshot? cachedCatalog = await CacheStore.GetCatalogAsync(
+                paths.CacheRoot,
+                target.BookId,
+                scope,
+                cancellationToken);
+            return cachedCatalog is not null
+                && CacheStore.IsCatalogFresh(
+                    cachedCatalog,
+                    settings.CatalogCacheTtlHours,
+                    timeProvider)
+                ? cachedCatalog
+                : null;
+        }
+
+        LoginState? validatedLoginState = GetValidatedLoginState(loginState);
+        if (validatedLoginState is { IsValidated: true }
+            && loginStateProbeMode == LoginStateProbeMode.WaitForValidatedIdentity
+            && !hasRunIdentityUncertainty)
+        {
+            CatalogSnapshot? cachedAnonymousFreeCatalog =
+                await GetFreshTrustedCatalogAsync(CatalogCacheScope.Anonymous);
+            if (cachedAnonymousFreeCatalog is not null)
+            {
+                List<ChapterPlan> anonymousFreePlans = await BuildChapterPlansAsync(
+                    cachedAnonymousFreeCatalog,
+                    paths.CacheRoot,
+                    validatedLoginState,
+                    cancellationToken);
+                if (!anonymousFreePlans.Any(plan => plan.Chapter.IsVip)
+                    && !RequiresCurrentSessionCatalogEvaluation(
+                        anonymousFreePlans,
+                        isFreshAnonymousCatalog: true))
+                {
+                    return BuildOutputPath(cachedAnonymousFreeCatalog, paths);
+                }
+            }
+
+            CatalogSnapshot? cachedValidatedCatalog =
+                await GetFreshCachedCatalogForPredictionAsync(
+                    CatalogCacheScope.ForValidatedUser(validatedLoginState.UserName!));
+            if (cachedValidatedCatalog is not null)
+            {
+                List<ChapterPlan> validatedPlans = await BuildChapterPlansAsync(
+                    cachedValidatedCatalog,
+                    paths.CacheRoot,
+                    validatedLoginState,
+                    cancellationToken);
+                if (RequiresValidatedCatalogRefreshForEntitlementMismatch(
+                    validatedPlans,
+                    validatedLoginState))
+                {
+                    return null;
+                }
+
+                CatalogSnapshot? cachedAnonymousConflictCatalog =
+                   await GetFreshTrustedCatalogAsync(CatalogCacheScope.Anonymous);
+                if (cachedAnonymousConflictCatalog is not null)
+                {
+                    List<ChapterPlan> anonymousPlans = await BuildChapterPlansAsync(
+                        cachedAnonymousConflictCatalog,
+                        paths.CacheRoot,
+                        validatedLoginState: null,
+                        cancellationToken);
+                    if (RequiresValidatedCatalogRefreshForAnonymousVipConflict(
+                        anonymousPlans,
+                        cachedAnonymousConflictCatalog,
+                        cachedValidatedCatalog))
+                    {
+                        return null;
+                    }
+                }
+
+                return BuildOutputPath(cachedValidatedCatalog, paths);
+            }
+        }
+
+        if (hasRunIdentityUncertainty
+            || !IsCompleteLoggedOutProof(loginState)
+            || loginStateProbeMode != LoginStateProbeMode.WaitForValidatedIdentity)
+        {
+            return null;
+        }
+
+        CatalogSnapshot? cachedAnonymousCatalog =
+            await GetFreshTrustedCatalogAsync(CatalogCacheScope.Anonymous);
+        if (cachedAnonymousCatalog is not null)
+        {
+            List<ChapterPlan> anonymousPlans = await BuildChapterPlansAsync(
+                cachedAnonymousCatalog,
+                paths.CacheRoot,
+                validatedLoginState: null,
+                cancellationToken);
+            if (anonymousPlans.Any(plan => plan.Chapter.IsVip)
+                || RequiresAuthenticatedPlanEvaluation(anonymousPlans))
+            {
+                return null;
+            }
+
+            return BuildOutputPath(cachedAnonymousCatalog, paths);
+        }
+
+        return null;
+
+        static string BuildOutputPath(CatalogSnapshot catalog, AppStoragePaths paths)
+            => AppPaths.BuildDefaultOutputPath(
+                paths.OutputRoot,
+                catalog.Metadata.BookId,
+                catalog.Metadata.Title,
+                catalog.Metadata.Author);
+    }
+
+    private static async Task CommitPendingCatalogCacheSavesAsync(
+        string cacheRoot,
+        List<PendingCatalogCacheSave> pendingCatalogCacheSaves,
+        LoginState? currentLoginState,
+        CancellationToken cancellationToken)
+    {
+        foreach (PendingCatalogCacheSave pendingSave in pendingCatalogCacheSaves)
+        {
+            if (pendingSave.Catalog.CacheScope.Kind == CatalogCacheScopeKind.ValidatedUser
+                && !IsSameValidatedUser(
+                    currentLoginState,
+                    pendingSave.Catalog.CacheScope.UserName))
+            {
+                continue;
+            }
+
+            await CacheStore.TrySaveCatalogIfClearGenerationUnchangedAsync(
+                cacheRoot,
+                pendingSave.Catalog,
+                pendingSave.ClearGeneration,
+                cancellationToken);
+        }
+
+        pendingCatalogCacheSaves.Clear();
+    }
+
+    private static void StagePendingCatalogCacheSave(
+        string cacheRoot,
+        List<PendingCatalogCacheSave> pendingCatalogCacheSaves,
+        CatalogSnapshot catalog,
+        long? clearGeneration = null)
+        => pendingCatalogCacheSaves.Add(new PendingCatalogCacheSave(
+            catalog,
+            clearGeneration ?? CacheStore.GetClearGeneration(cacheRoot)));
+
+    private static void RemovePendingAnonymousCatalogSaves(
+        List<PendingCatalogCacheSave> pendingCatalogCacheSaves,
+        string bookId)
+        => pendingCatalogCacheSaves.RemoveAll(
+            pendingSave => pendingSave.Catalog.Metadata.BookId == bookId
+                && pendingSave.Catalog.CacheScope == CatalogCacheScope.Anonymous);
+
+    private static void RemovePendingValidatedCatalogSaves(
+        List<PendingCatalogCacheSave> pendingCatalogCacheSaves,
+        string bookId,
+        string? userName)
+        => pendingCatalogCacheSaves.RemoveAll(
+            pendingSave => pendingSave.Catalog.Metadata.BookId == bookId
+                && pendingSave.Catalog.CacheScope.Kind == CatalogCacheScopeKind.ValidatedUser
+                && string.Equals(
+                    pendingSave.Catalog.CacheScope.UserName,
+                    LoginState.NormalizeUserName(userName),
+                    StringComparison.Ordinal));
+
+    private static void StagePendingChapterCacheSave(
+        string cacheRoot,
+        List<PendingChapterCacheSave> pendingChapterCacheSaves,
+        string bookId,
+        ChapterCacheEntry entry,
+        long? clearGeneration = null)
+        => pendingChapterCacheSaves.Add(new PendingChapterCacheSave(
+            bookId,
+            entry,
+            clearGeneration ?? CacheStore.GetClearGeneration(cacheRoot)));
+
+    private static void RemovePendingAuthenticatedSensitiveChapterSaves(
+        List<PendingChapterCacheSave> pendingChapterCacheSaves,
+        string bookId,
+        string? userName)
+        => pendingChapterCacheSaves.RemoveAll(
+            pendingSave => pendingSave.BookId == bookId
+                && IsAuthenticatedSensitivePendingChapterSave(pendingSave.Entry, userName));
+
+    private static bool IsAuthenticatedSensitivePendingChapterSave(
+        ChapterCacheEntry entry,
+        string? userName)
+        => (entry.CatalogIsVip == true && entry.IsPreview)
+            || IsUserSensitiveFullContentCache(
+                entry.IsPreview,
+                entry.CatalogAccessState,
+                entry.VisibleToUserName,
+                entry.VipFullContentProvenance,
+                entry.CatalogIsVip,
+                entry.IsAnonymousSafeFullContent)
+            || (entry.CatalogIsVip == true
+                && !entry.IsPreview
+                && entry.VipFullContentProvenance != VipFullContentCacheProvenance.Public)
+            || (LoginState.NormalizeUserName(userName) is { Length: > 0 } normalizedUserName
+                && string.Equals(
+                    LoginState.NormalizeUserName(entry.VisibleToUserName),
+                    normalizedUserName,
+                    StringComparison.Ordinal)
+                && entry.VipFullContentProvenance
+                    != VipFullContentCacheProvenance.Public);
+
+    private static bool IsAuthenticatedSensitiveFreshRenderedChapter(
+        ChapterCacheEntry entry,
+        string? userName)
+        => !entry.IsPreview
+            && IsAuthenticatedSensitivePendingChapterSave(entry, userName);
+
+    private sealed record PendingChapterCacheSave(
+        string BookId,
+        ChapterCacheEntry Entry,
+        long ClearGeneration);
+
+    private sealed record PendingCatalogCacheSave(CatalogSnapshot Catalog, long ClearGeneration);
+
     private static bool CanSaveCatalogSnapshot(CatalogCacheScope scope, CatalogSnapshot catalog)
         => scope != CatalogCacheScope.Anonymous
-            || !catalog.Volumes.SelectMany(volume => volume.Chapters).Any(
-                chapter => chapter is
-                {
-                    IsVip: true,
-                    CatalogAccessState: CatalogChapterAccessState.Accessible,
-                });
+            || catalog.IsKnownAnonymous;
+
+    private static bool IsSameValidatedUser(LoginState? loginState, string? userName)
+        => loginState is { IsValidated: true }
+            && LoginState.NormalizeUserName(loginState.UserName) is { } normalizedLoginUserName
+            && LoginState.NormalizeUserName(userName) is { } normalizedUserName
+            && string.Equals(normalizedLoginUserName, normalizedUserName, StringComparison.Ordinal);
+
+    internal static bool CanSaveChapterCacheEntry(
+        ChapterDescriptor chapter,
+        CatalogSnapshot catalog)
+        => chapter.IsVip
+            || catalog.CacheScope != CatalogCacheScope.Anonymous
+            || catalog.IsKnownAnonymous;
+
+    private static bool CanSaveFetchedChapterCacheEntry(
+        ChapterDescriptor chapter,
+        CatalogSnapshot catalog,
+        ChapterFetchResult chapterResult,
+        bool hasAnonymousSafeFreeFullContentProof)
+        => CanSaveChapterCacheEntry(chapter, catalog)
+            && (catalog.CacheScope != CatalogCacheScope.Anonymous
+                || chapter.IsVip
+                || chapterResult.IsPreview
+                || hasAnonymousSafeFreeFullContentProof);
 
     internal static async Task<List<ChapterPlan>> BuildChapterPlansAsync(
         CatalogSnapshot catalog,
@@ -1152,6 +2645,7 @@ internal sealed class AppCommandService(
                 cachedProbe.VisibleToUserName,
                 cachedProbe.VipFullContentProvenance,
                 cachedProbe.CatalogIsVip,
+                cachedProbe.IsAnonymousSafeFullContent,
                 validatedLoginState))
             {
                 cachedEntry = await CacheStore.GetChapterAsync(
@@ -1159,9 +2653,19 @@ internal sealed class AppCommandService(
                     catalog.BookId,
                     chapter.ChapterId,
                     cancellationToken);
-                status = cachedEntry is null
-                    ? ChapterPlanStatus.FetchRequired
-                    : ChapterPlanStatus.Cached;
+                if (cachedEntry is null
+                    || !CanReuseFullChapterCacheEntry(
+                        chapter,
+                        cachedEntry,
+                        validatedLoginState))
+                {
+                    status = ChapterPlanStatus.FetchRequired;
+                }
+                else
+                {
+                    cachedProbe = CreateChapterCacheProbe(cachedEntry);
+                    status = ChapterPlanStatus.Cached;
+                }
             }
             else
             {
@@ -1173,6 +2677,47 @@ internal sealed class AppCommandService(
 
         return plans;
     }
+
+    private static ChapterCacheProbe CreateChapterCacheProbe(ChapterCacheEntry cachedEntry)
+        => new(
+            cachedEntry.ChapterId,
+            (ParagraphsProbe?)null,
+            cachedEntry.IsPreview,
+            cachedEntry.CatalogWordCount,
+            cachedEntry.CatalogAccessState,
+            cachedEntry.VisibleToUserName,
+            cachedEntry.VipFullContentProvenance,
+            cachedEntry.CatalogIsVip,
+            cachedEntry.IsAnonymousSafeFullContent);
+
+    private static bool CanReuseFullChapterCacheEntry(
+        ChapterDescriptor chapter,
+        ChapterCacheEntry cachedEntry,
+        LoginState? validatedLoginState)
+        => cachedEntry.CatalogWordCount == chapter.CatalogWordCount
+            && (cachedEntry.CatalogAccessState == chapter.CatalogAccessState
+                || CanIgnoreCatalogAccessStateMismatchForReusableVipFullCache(
+                    chapter,
+                    new ChapterCacheProbe(
+                        cachedEntry.ChapterId,
+                        (ParagraphsProbe?)null,
+                        cachedEntry.IsPreview,
+                        cachedEntry.CatalogWordCount,
+                        cachedEntry.CatalogAccessState,
+                        cachedEntry.VisibleToUserName,
+                        cachedEntry.VipFullContentProvenance,
+                        cachedEntry.CatalogIsVip,
+                        cachedEntry.IsAnonymousSafeFullContent),
+                    validatedLoginState))
+            && CanReuseCachedChapter(
+                chapter,
+                cachedEntry.IsPreview,
+                cachedEntry.CatalogAccessState,
+                cachedEntry.VisibleToUserName,
+                cachedEntry.VipFullContentProvenance,
+                cachedEntry.CatalogIsVip,
+                cachedEntry.IsAnonymousSafeFullContent,
+                validatedLoginState);
 
     private async Task<ChapterFetchResult?> FetchChapterWithRetryAsync(
         IQidianBrowserSession browser,
@@ -1229,12 +2774,13 @@ internal sealed class AppCommandService(
     private static LoginState? GetValidatedLoginState(LoginState? loginState)
         => loginState is { IsValidated: true } ? loginState : null;
 
+    private static bool IsCompleteLoggedOutProof(LoginState? loginState)
+        => loginState is { IsLoggedIn: false, IsProbeComplete: true };
+
     internal static LoginState SelectCachedLoginStateForProbe(
         LoginState? cachedLoginState,
         LoginState probedLoginState)
-        => cachedLoginState is { IsValidated: true } && !probedLoginState.IsValidated
-            ? cachedLoginState
-            : probedLoginState;
+        => probedLoginState;
 
     private static bool RequiresCurrentSessionCatalogEvaluation(
         IReadOnlyList<ChapterPlan> plans,
@@ -1288,6 +2834,497 @@ internal sealed class AppCommandService(
                         userName,
                         StringComparison.Ordinal));
 
+    internal static bool RequiresValidatedCatalogRefreshForAnonymousVipConflict(
+        IReadOnlyList<ChapterPlan>? anonymousPlans,
+        CatalogSnapshot? anonymousCatalog,
+        CatalogSnapshot validatedCatalog)
+    {
+        if (anonymousPlans is null
+            || anonymousCatalog is null
+            || validatedCatalog.FetchedAtUtc >= anonymousCatalog.FetchedAtUtc)
+        {
+            return false;
+        }
+
+        return HasValidatedCatalogAnonymousVipConflict(
+            anonymousPlans,
+            anonymousCatalog,
+            validatedCatalog);
+    }
+
+    internal static bool HasValidatedCatalogAnonymousVipConflict(
+        IReadOnlyList<ChapterPlan>? anonymousPlans,
+        CatalogSnapshot? anonymousCatalog,
+        CatalogSnapshot validatedCatalog)
+    {
+        if (anonymousPlans is null || anonymousCatalog is null)
+        {
+            return false;
+        }
+
+        Dictionary<string, int> anonymousCounts = anonymousPlans
+            .GroupBy(static plan => plan.Chapter.ChapterId, StringComparer.Ordinal)
+            .ToDictionary(
+                static group => group.Key,
+                static group => group.Count(),
+                StringComparer.Ordinal);
+        Dictionary<string, List<ChapterDescriptor>> validatedById = validatedCatalog.Volumes
+            .SelectMany(static volume => volume.Chapters)
+            .GroupBy(static chapter => chapter.ChapterId, StringComparer.Ordinal)
+            .ToDictionary(
+                static group => group.Key,
+                static group => group.ToList(),
+                StringComparer.Ordinal);
+        Dictionary<string, List<ChapterPlan>> anonymousByTitle = anonymousPlans
+            .GroupBy(
+                static plan => NormalizeChapterTitleKey(plan.Chapter.Title),
+                StringComparer.Ordinal)
+            .Where(static group => group.Key.Length > 0)
+            .ToDictionary(
+                static group => group.Key,
+                static group => group.ToList(),
+                StringComparer.Ordinal);
+        Dictionary<string, List<ChapterDescriptor>> validatedByTitle = validatedCatalog.Volumes
+            .SelectMany(static volume => volume.Chapters)
+            .GroupBy(
+                static chapter => NormalizeChapterTitleKey(chapter.Title),
+                StringComparer.Ordinal)
+            .Where(static group => group.Key.Length > 0)
+            .ToDictionary(
+                static group => group.Key,
+                static group => group.ToList(),
+                StringComparer.Ordinal);
+
+        return anonymousPlans.Any(plan =>
+        {
+            validatedById.TryGetValue(
+                plan.Chapter.ChapterId,
+                out List<ChapterDescriptor>? matchingValidatedChapters);
+            matchingValidatedChapters ??= [];
+            if (!plan.Chapter.IsVip)
+            {
+                return IsAnonymousFreeValidatedVipConflict(
+                    plan,
+                    matchingValidatedChapters,
+                    anonymousByTitle,
+                    validatedByTitle);
+            }
+
+            if (matchingValidatedChapters.Count != 1)
+            {
+                return true;
+            }
+
+            if (anonymousCounts[plan.Chapter.ChapterId] != 1
+                || IsAnonymousVipValidatedFreeConflict(matchingValidatedChapters[0]))
+            {
+                return true;
+            }
+
+            string titleKey = NormalizeChapterTitleKey(plan.Chapter.Title);
+            return titleKey.Length > 0
+                && anonymousByTitle.TryGetValue(
+                    titleKey,
+                    out List<ChapterPlan>? matchingAnonymousTitlePlans)
+                && validatedByTitle.TryGetValue(
+                    titleKey,
+                    out List<ChapterDescriptor>? matchingValidatedTitleChapters)
+                && IsAnonymousVipValidatedFreeTitleConflict(
+                    plan,
+                    matchingAnonymousTitlePlans,
+                    matchingValidatedTitleChapters);
+        });
+    }
+
+    private static bool HasAnonymousVipValidatedFreeConflict(
+        IReadOnlyList<ChapterPlan>? anonymousPlans,
+        CatalogSnapshot? anonymousCatalog,
+        CatalogSnapshot validatedCatalog)
+    {
+        if (anonymousPlans is null || anonymousCatalog is null)
+        {
+            return false;
+        }
+
+        Dictionary<string, List<ChapterDescriptor>> validatedById = validatedCatalog.Volumes
+            .SelectMany(static volume => volume.Chapters)
+            .GroupBy(static chapter => chapter.ChapterId, StringComparer.Ordinal)
+            .ToDictionary(
+                static group => group.Key,
+                static group => group.ToList(),
+                StringComparer.Ordinal);
+        Dictionary<string, List<ChapterPlan>> anonymousByTitle = anonymousPlans
+            .GroupBy(
+                static plan => NormalizeChapterTitleKey(plan.Chapter.Title),
+                StringComparer.Ordinal)
+            .Where(static group => group.Key.Length > 0)
+            .ToDictionary(
+                static group => group.Key,
+                static group => group.ToList(),
+                StringComparer.Ordinal);
+        Dictionary<string, List<ChapterDescriptor>> validatedByTitle = validatedCatalog.Volumes
+            .SelectMany(static volume => volume.Chapters)
+            .GroupBy(
+                static chapter => NormalizeChapterTitleKey(chapter.Title),
+                StringComparer.Ordinal)
+            .Where(static group => group.Key.Length > 0)
+            .ToDictionary(
+                static group => group.Key,
+                static group => group.ToList(),
+                StringComparer.Ordinal);
+
+        return anonymousPlans.Any(plan =>
+        {
+            if (!plan.Chapter.IsVip)
+            {
+                return false;
+            }
+
+            bool hasIdConflict = validatedById.TryGetValue(
+                    plan.Chapter.ChapterId,
+                    out List<ChapterDescriptor>? matchingValidatedChapters)
+                && matchingValidatedChapters.Any(IsAnonymousVipValidatedFreeConflict);
+            if (hasIdConflict)
+            {
+                return true;
+            }
+
+            string titleKey = NormalizeChapterTitleKey(plan.Chapter.Title);
+            return titleKey.Length > 0
+                && anonymousByTitle.TryGetValue(
+                    titleKey,
+                    out List<ChapterPlan>? matchingAnonymousTitlePlans)
+                && validatedByTitle.TryGetValue(
+                    titleKey,
+                    out List<ChapterDescriptor>? matchingValidatedTitleChapters)
+                && IsAnonymousVipValidatedFreeTitleConflict(
+                    plan,
+                    matchingAnonymousTitlePlans,
+                    matchingValidatedTitleChapters);
+        });
+    }
+
+    private static (CatalogSnapshot Catalog, List<ChapterPlan> Plans)
+        FailClosedValidatedCatalogForAnonymousVipConflicts(
+            CatalogSnapshot validatedCatalog,
+            List<ChapterPlan> validatedPlans,
+            IReadOnlyList<ChapterPlan> anonymousPlans,
+            LoginState validatedLoginState)
+    {
+        HashSet<string> anonymousVipChapterIds = anonymousPlans
+            .Where(static plan => plan.Chapter.IsVip)
+            .Select(static plan => plan.Chapter.ChapterId)
+            .ToHashSet(StringComparer.Ordinal);
+        HashSet<string> anonymousVipTitleKeys = anonymousPlans
+            .Where(static plan => plan.Chapter.IsVip)
+            .Select(static plan => NormalizeChapterTitleKey(plan.Chapter.Title))
+            .Where(static titleKey => titleKey.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Dictionary<string, ChapterDescriptor> failClosedChaptersById = [];
+        Dictionary<string, ChapterPlan> failClosedPlansById = [];
+        foreach (ChapterPlan plan in validatedPlans)
+        {
+            ChapterDescriptor chapter = plan.Chapter;
+            string titleKey = NormalizeChapterTitleKey(chapter.Title);
+            if (!IsAnonymousVipValidatedFreeConflict(chapter)
+                || (!anonymousVipChapterIds.Contains(chapter.ChapterId)
+                    && (titleKey.Length == 0
+                        || !anonymousVipTitleKeys.Contains(titleKey))))
+            {
+                failClosedPlansById[chapter.ChapterId] = plan;
+                continue;
+            }
+
+            ChapterDescriptor failClosedChapter = chapter with
+            {
+                IsVip = true,
+                CatalogAccessState = CatalogChapterAccessState.PurchaseRequired,
+            };
+            ChapterPlan failClosedPlan = plan with
+            {
+                Chapter = failClosedChapter,
+            };
+            if (plan.CachedEntry is not null
+                && !CanReuseCachedChapter(
+                    failClosedChapter,
+                    plan.CachedProbe?.IsPreview ?? plan.CachedEntry.IsPreview,
+                    plan.CachedProbe?.CatalogAccessState
+                        ?? plan.CachedEntry.CatalogAccessState,
+                    plan.CachedProbe?.VisibleToUserName
+                        ?? plan.CachedEntry.VisibleToUserName,
+                    plan.CachedProbe?.VipFullContentProvenance
+                        ?? plan.CachedEntry.VipFullContentProvenance,
+                    plan.CachedProbe?.CatalogIsVip ?? plan.CachedEntry.CatalogIsVip,
+                    plan.CachedProbe?.IsAnonymousSafeFullContent
+                        ?? plan.CachedEntry.IsAnonymousSafeFullContent,
+                    validatedLoginState))
+            {
+                failClosedPlan = failClosedPlan with
+                {
+                    Status = ChapterPlanStatus.FetchRequired,
+                    CachedEntry = null,
+                };
+            }
+
+            failClosedChaptersById[chapter.ChapterId] = failClosedChapter;
+            failClosedPlansById[chapter.ChapterId] = failClosedPlan;
+        }
+
+        CatalogSnapshot failClosedCatalog = validatedCatalog with
+        {
+            Volumes = validatedCatalog.Volumes
+                .Select(volume => volume with
+                {
+                    IsVip = volume.IsVip
+                        || volume.Chapters.Any(chapter =>
+                            failClosedChaptersById.ContainsKey(chapter.ChapterId)),
+                    Chapters = volume.Chapters
+                        .Select(chapter => failClosedChaptersById.TryGetValue(
+                                chapter.ChapterId,
+                                out ChapterDescriptor? failClosedChapter)
+                            ? failClosedChapter
+                            : chapter)
+                        .ToArray(),
+                })
+                .ToArray(),
+        };
+        List<ChapterPlan> failClosedPlans = validatedPlans
+            .Select(plan => failClosedPlansById.TryGetValue(
+                    plan.Chapter.ChapterId,
+                    out ChapterPlan? failClosedPlan)
+                ? failClosedPlan
+                : plan)
+            .ToList();
+
+        return (failClosedCatalog, failClosedPlans);
+    }
+
+    private static bool IsAnonymousFreeValidatedVipConflict(
+        ChapterPlan anonymousFreePlan,
+        IReadOnlyList<ChapterDescriptor> matchingValidatedChapters,
+        Dictionary<string, List<ChapterPlan>> anonymousByTitle,
+        Dictionary<string, List<ChapterDescriptor>> validatedByTitle)
+    {
+        if (anonymousFreePlan.Chapter.CatalogAccessState
+            == CatalogChapterAccessState.PurchaseRequired)
+        {
+            return false;
+        }
+
+        if (matchingValidatedChapters.Any(static chapter => chapter.IsVip))
+        {
+            return true;
+        }
+
+        string titleKey = NormalizeChapterTitleKey(anonymousFreePlan.Chapter.Title);
+        return titleKey.Length > 0
+            && anonymousByTitle.TryGetValue(
+                titleKey,
+                out List<ChapterPlan>? matchingAnonymousTitlePlans)
+            && matchingAnonymousTitlePlans.Any(plan => !plan.Chapter.IsVip
+                && plan.Chapter.CatalogAccessState
+                    != CatalogChapterAccessState.PurchaseRequired)
+            && validatedByTitle.TryGetValue(
+                titleKey,
+                out List<ChapterDescriptor>? matchingValidatedTitleChapters)
+            && matchingValidatedTitleChapters.Any(static chapter => chapter.IsVip);
+    }
+
+    private static bool IsAnonymousVipValidatedFreeConflict(ChapterDescriptor validatedChapter)
+        => !validatedChapter.IsVip
+            && (validatedChapter.CatalogAccessState == CatalogChapterAccessState.Accessible
+                || validatedChapter.CatalogAccessState == CatalogChapterAccessState.Unknown);
+
+    private static bool IsAnonymousVipValidatedFreeTitleConflict(
+        ChapterPlan anonymousVipPlan,
+        List<ChapterPlan> matchingAnonymousTitlePlans,
+        IReadOnlyList<ChapterDescriptor> matchingValidatedTitleChapters)
+    {
+        bool hasConcreteAnonymousTitleConflict =
+            matchingAnonymousTitlePlans.Count == 1
+            || matchingAnonymousTitlePlans.Any(plan =>
+                !string.Equals(
+                    plan.Chapter.ChapterId,
+                    anonymousVipPlan.Chapter.ChapterId,
+                    StringComparison.Ordinal)
+                && !plan.Chapter.IsVip
+                && (plan.Chapter.CatalogAccessState == CatalogChapterAccessState.Accessible
+                    || plan.Chapter.CatalogAccessState == CatalogChapterAccessState.Unknown))
+            || (matchingAnonymousTitlePlans.Count > 1
+                && matchingAnonymousTitlePlans.All(static plan => plan.Chapter.IsVip));
+        return hasConcreteAnonymousTitleConflict
+            && matchingValidatedTitleChapters.Any(chapter =>
+                !string.Equals(
+                    chapter.ChapterId,
+                    anonymousVipPlan.Chapter.ChapterId,
+                    StringComparison.Ordinal)
+                && IsAnonymousVipValidatedFreeConflict(chapter));
+    }
+
+    private static (CatalogSnapshot Catalog, List<ChapterPlan> Plans) DeduplicateCatalogAndPlans(
+        CatalogSnapshot catalog,
+        List<ChapterPlan> plans)
+    {
+        Dictionary<string, ChapterPlan> selectedPlans = [];
+        Dictionary<string, int> selectedPlanIndexes = [];
+        for (int planIndex = 0; planIndex < plans.Count; planIndex++)
+        {
+            ChapterPlan plan = plans[planIndex];
+            if (!selectedPlans.TryGetValue(
+                    plan.Chapter.ChapterId,
+                    out ChapterPlan? existingPlan)
+                || IsMoreConservativePlan(plan, existingPlan))
+            {
+                selectedPlans[plan.Chapter.ChapterId] = plan;
+                selectedPlanIndexes[plan.Chapter.ChapterId] = planIndex;
+            }
+        }
+
+        Dictionary<string, string> safeTitleKeysByChapterId = selectedPlans.Values
+            .GroupBy(
+                static plan => NormalizeChapterTitleKey(plan.Chapter.Title),
+                StringComparer.Ordinal)
+            .Where(static group => IsConcreteSameTitleDuplicateGroup(group.ToArray()))
+            .SelectMany(static group => group.Select(plan => new
+            {
+                plan.Chapter.ChapterId,
+                TitleKey = group.Key,
+            }))
+            .ToDictionary(
+                static entry => entry.ChapterId,
+                static entry => entry.TitleKey,
+                StringComparer.Ordinal);
+
+        Dictionary<string, ChapterPlan> finalSelectedPlans = [];
+        Dictionary<string, int> finalSelectedPlanIndexes = [];
+        foreach ((string chapterId, ChapterPlan plan) in selectedPlans)
+        {
+            string dedupeKey = GetChapterDedupeKey(chapterId, safeTitleKeysByChapterId);
+            int planIndex = selectedPlanIndexes[chapterId];
+            if (!finalSelectedPlans.TryGetValue(dedupeKey, out ChapterPlan? existingPlan)
+                || IsMoreConservativePlan(plan, existingPlan))
+            {
+                finalSelectedPlans[dedupeKey] = plan;
+                finalSelectedPlanIndexes[dedupeKey] = planIndex;
+            }
+        }
+
+        List<VolumeDescriptor> volumes = [];
+        int chapterIndex = 0;
+        foreach (VolumeDescriptor volume in catalog.Volumes)
+        {
+            List<ChapterDescriptor> chapters = [];
+            foreach (ChapterDescriptor chapter in volume.Chapters)
+            {
+                int currentChapterIndex = chapterIndex++;
+                string dedupeKey = GetChapterDedupeKey(
+                    chapter.ChapterId,
+                    safeTitleKeysByChapterId);
+                if (finalSelectedPlans.TryGetValue(
+                        dedupeKey,
+                        out ChapterPlan? selectedPlan)
+                    && finalSelectedPlanIndexes.TryGetValue(
+                        dedupeKey,
+                        out int selectedPlanIndex)
+                    && currentChapterIndex == selectedPlanIndex)
+                {
+                    chapters.Add(selectedPlan.Chapter);
+                }
+            }
+
+            if (chapters.Count > 0)
+            {
+                volumes.Add(volume with { Chapters = chapters.ToArray() });
+            }
+        }
+
+        CatalogSnapshot deduplicatedCatalog = catalog with { Volumes = volumes };
+
+        List<ChapterPlan> orderedPlans = [];
+        HashSet<string> emittedPlanKeys = new(StringComparer.Ordinal);
+        foreach (ChapterDescriptor chapter in deduplicatedCatalog.Volumes.SelectMany(
+            static volume => volume.Chapters))
+        {
+            string dedupeKey = GetChapterDedupeKey(
+                chapter.ChapterId,
+                safeTitleKeysByChapterId);
+            if (emittedPlanKeys.Add(dedupeKey)
+                && finalSelectedPlans.TryGetValue(dedupeKey, out ChapterPlan? selectedPlan))
+            {
+                orderedPlans.Add(selectedPlan);
+            }
+        }
+
+        return (deduplicatedCatalog, orderedPlans);
+    }
+
+    private static string GetChapterDedupeKey(
+        string chapterId,
+        Dictionary<string, string> safeTitleKeysByChapterId)
+        => safeTitleKeysByChapterId.TryGetValue(chapterId, out string? titleKey)
+            ? "title:" + titleKey
+            : "id:" + chapterId;
+
+    private static bool IsConcreteSameTitleDuplicateGroup(ChapterPlan[] group)
+    {
+        if (group.Length != 2
+            || NormalizeChapterTitleKey(group[0].Chapter.Title).Length == 0)
+        {
+            return false;
+        }
+
+        string firstUrlKey = NormalizeChapterUrlKey(group[0].Chapter.Url);
+        return firstUrlKey.Length > 0
+            && string.Equals(
+                firstUrlKey,
+                NormalizeChapterUrlKey(group[1].Chapter.Url),
+                StringComparison.Ordinal);
+    }
+
+    private static string NormalizeChapterTitleKey(string title)
+        => title.Trim();
+
+    private static string NormalizeChapterUrlKey(string url)
+        => url.Trim();
+
+    private static bool IsMoreConservativePlan(ChapterPlan plan, ChapterPlan existingPlan)
+    {
+        int planRank = GetConservativeChapterRank(plan.Chapter);
+        int existingPlanRank = GetConservativeChapterRank(existingPlan.Chapter);
+        if (planRank != existingPlanRank)
+        {
+            return planRank > existingPlanRank;
+        }
+
+        return GetConservativeStatusRank(plan.Status)
+            > GetConservativeStatusRank(existingPlan.Status);
+    }
+
+    private static int GetConservativeChapterRank(ChapterDescriptor chapter)
+    {
+        int rank = 0;
+        if (chapter.IsVip)
+        {
+            rank += 2;
+        }
+
+        if (chapter.CatalogAccessState != CatalogChapterAccessState.Accessible)
+        {
+            rank++;
+        }
+
+        return rank;
+    }
+
+    private static int GetConservativeStatusRank(ChapterPlanStatus status)
+        => status switch
+        {
+            ChapterPlanStatus.FetchRequired => 2,
+            ChapterPlanStatus.Changed => 1,
+            _ => 0,
+        };
+
     private static bool CanReuseCachedChapter(
         ChapterDescriptor chapter,
         bool isPreview,
@@ -1295,6 +3332,7 @@ internal sealed class AppCommandService(
         string? visibleToUserName,
         VipFullContentCacheProvenance? vipFullContentProvenance,
         bool? cachedCatalogIsVip,
+        bool? isAnonymousSafeFullContent,
         LoginState? validatedLoginState)
     {
         if (!chapter.IsVip)
@@ -1309,16 +3347,17 @@ internal sealed class AppCommandService(
                 cachedCatalogAccessState,
                 visibleToUserName,
                 vipFullContentProvenance,
-                cachedCatalogIsVip))
+                cachedCatalogIsVip,
+                isAnonymousSafeFullContent))
             {
                 return true;
             }
 
             return validatedLoginState is
-                {
-                    IsValidated: true,
-                    UserName: { Length: > 0 } freeCatalogUserName,
-                }
+            {
+                IsValidated: true,
+                UserName: { Length: > 0 } freeCatalogUserName,
+            }
                 && IsSameNormalizedUser(visibleToUserName, freeCatalogUserName);
         }
 
@@ -1379,6 +3418,8 @@ internal sealed class AppCommandService(
             cachedProbe?.VisibleToUserName ?? plan.CachedEntry.VisibleToUserName,
             cachedProbe?.VipFullContentProvenance ?? plan.CachedEntry.VipFullContentProvenance,
             cachedProbe?.CatalogIsVip ?? plan.CachedEntry.CatalogIsVip,
+            cachedProbe?.IsAnonymousSafeFullContent
+                ?? plan.CachedEntry.IsAnonymousSafeFullContent,
             GetValidatedLoginState(currentLoginState));
     }
 
@@ -1439,7 +3480,9 @@ internal sealed class AppCommandService(
                 cachedCatalogAccessState,
                 visibleToUserName,
                 provenance,
-                cachedCatalogIsVip)
+                cachedCatalogIsVip,
+                plan.CachedProbe?.IsAnonymousSafeFullContent
+                    ?? plan.CachedEntry?.IsAnonymousSafeFullContent)
             || (plan.Chapter.IsVip
                 && !isPreview
                 && provenance != VipFullContentCacheProvenance.Public);
@@ -1450,7 +3493,8 @@ internal sealed class AppCommandService(
         CatalogChapterAccessState cachedCatalogAccessState,
         string? visibleToUserName,
         VipFullContentCacheProvenance? vipFullContentProvenance,
-        bool? cachedCatalogIsVip)
+        bool? cachedCatalogIsVip,
+        bool? isAnonymousSafeFullContent)
     {
         if (isPreview || vipFullContentProvenance == VipFullContentCacheProvenance.Public)
         {
@@ -1466,7 +3510,8 @@ internal sealed class AppCommandService(
             false => !IsAnonymousSafeFreeOriginFullContentCache(
                 cachedCatalogAccessState,
                 visibleToUserName,
-                vipFullContentProvenance),
+                vipFullContentProvenance,
+                isAnonymousSafeFullContent),
             // Legacy entries have unknown origin and must fail closed unless another
             // caller-visible trust signal (public provenance or same validated user) applies.
             null => true,
@@ -1476,25 +3521,26 @@ internal sealed class AppCommandService(
     private static bool IsAnonymousSafeFreeOriginFullContentCache(
         CatalogChapterAccessState cachedCatalogAccessState,
         string? visibleToUserName,
-        VipFullContentCacheProvenance? vipFullContentProvenance)
+        VipFullContentCacheProvenance? vipFullContentProvenance,
+        bool? isAnonymousSafeFullContent)
         => cachedCatalogAccessState == CatalogChapterAccessState.Accessible
             && LoginState.NormalizeUserName(visibleToUserName) is not { Length: > 0 }
-            && vipFullContentProvenance is null;
+            && vipFullContentProvenance is null
+            && isAnonymousSafeFullContent == true;
 
-    private static bool IsSameNormalizedUser(string? left, string right)
-        => string.Equals(
-            LoginState.NormalizeUserName(left),
-            LoginState.NormalizeUserName(right),
-            StringComparison.Ordinal);
+    private static bool IsSameNormalizedUser(string? left, string? right)
+        => LoginState.NormalizeUserName(left) is { } normalizedLeft
+            && LoginState.NormalizeUserName(right) is { } normalizedRight
+            && string.Equals(normalizedLeft, normalizedRight, StringComparison.Ordinal);
 
     private static bool CanIgnoreCatalogAccessStateMismatchForReusableVipFullCache(
         ChapterDescriptor chapter,
         ChapterCacheProbe cachedProbe,
         LoginState? validatedLoginState)
         => cachedProbe is
-            {
-                IsPreview: false,
-            }
+        {
+            IsPreview: false,
+        }
             && (chapter.IsVip
                 || cachedProbe.CatalogAccessState == CatalogChapterAccessState.PurchaseRequired
                 || cachedProbe.CatalogIsVip == true
@@ -1507,17 +3553,69 @@ internal sealed class AppCommandService(
                 cachedProbe.VisibleToUserName,
                 cachedProbe.VipFullContentProvenance,
                 cachedProbe.CatalogIsVip,
+                cachedProbe.IsAnonymousSafeFullContent,
                 validatedLoginState);
 
     private static string? GetVisibleToUserName(
         ChapterDescriptor chapter,
         ChapterFetchResult chapterResult,
-        LoginState? validatedLoginState)
-        => chapter.IsVip
-            && !chapterResult.IsPreview
+        LoginState? validatedLoginState,
+        bool canAttributeFreeFullContentAsPublic)
+        => !chapterResult.IsPreview
+            && (chapter.IsVip || !canAttributeFreeFullContentAsPublic)
             && validatedLoginState is { IsValidated: true, UserName: { Length: > 0 } userName }
             ? userName
             : null;
+
+    internal static bool HasAnonymousSafeFreeFullContentProof(
+        ChapterDescriptor chapter,
+        CatalogSnapshot catalog,
+        CatalogSnapshot? rawAnonymousCatalogEvidence,
+        IReadOnlyList<ChapterPlan>? rawAnonymousPlanEvidence,
+        bool fetchedWithLoggedOutProof,
+        bool fetchedFromAuthenticatedContext)
+    {
+        if (chapter.IsVip)
+        {
+            return false;
+        }
+
+        if (fetchedWithLoggedOutProof)
+        {
+            return true;
+        }
+
+        if (fetchedFromAuthenticatedContext)
+        {
+            return false;
+        }
+
+        if (catalog is
+            {
+                CacheScope.Kind: CatalogCacheScopeKind.Anonymous,
+                IsKnownAnonymous: true,
+            })
+        {
+            return true;
+        }
+
+        if (rawAnonymousCatalogEvidence is not
+            {
+                CacheScope.Kind: CatalogCacheScopeKind.Anonymous,
+                IsKnownAnonymous: true,
+            })
+        {
+            return false;
+        }
+
+        return rawAnonymousPlanEvidence?.Any(
+            plan => string.Equals(
+                    plan.Chapter.ChapterId,
+                    chapter.ChapterId,
+                    StringComparison.Ordinal)
+                && !plan.Chapter.IsVip
+                && plan.Chapter.CatalogAccessState == CatalogChapterAccessState.Accessible) == true;
+    }
 
     private static CatalogChapterAccessState GetCachedCatalogAccessState(
         ChapterDescriptor chapter,
@@ -1532,16 +3630,17 @@ internal sealed class AppCommandService(
     private static VipFullContentCacheProvenance? GetVipFullContentCacheProvenance(
         ChapterDescriptor chapter,
         ChapterFetchResult chapterResult,
-        LoginState? validatedLoginState)
+        LoginState? attributionLoginState,
+        bool canAttributePublic)
     {
         if (!chapter.IsVip || chapterResult.IsPreview)
         {
             return null;
         }
 
-        return validatedLoginState is { IsValidated: true, UserName: { Length: > 0 } }
+        return attributionLoginState is { IsValidated: true, UserName: { Length: > 0 } }
             ? VipFullContentCacheProvenance.ValidatedUser
-            : validatedLoginState is { IsLoggedIn: false }
+            : canAttributePublic && IsCompleteLoggedOutProof(attributionLoginState)
                 ? VipFullContentCacheProvenance.Public
                 : null;
     }

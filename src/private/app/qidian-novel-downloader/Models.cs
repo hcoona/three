@@ -248,6 +248,182 @@ internal sealed record CatalogSnapshot
     public bool IsKnownAnonymous { get; init; }
 }
 
+internal static class CatalogSnapshotValidation
+{
+    public static CatalogSnapshot ValidateAndNormalizeForRequestedBook(
+        CatalogSnapshot catalog,
+        string expectedBookId)
+    {
+        if (!IsSafeCanonicalBookId(expectedBookId)
+            || !IsSafeCanonicalBookId(catalog.BookId)
+            || !IsSafeCanonicalBookId(catalog.Metadata.BookId)
+            || !string.Equals(catalog.BookId, expectedBookId, StringComparison.Ordinal)
+            || !string.Equals(catalog.Metadata.BookId, expectedBookId, StringComparison.Ordinal))
+        {
+            throw new OperationalException(
+                $"Fetched catalog book ids '{catalog.BookId}'/'{catalog.Metadata.BookId}' "
+                + $"did not match requested book id '{expectedBookId}'.");
+        }
+
+        return NormalizeChapterUrlsForBook(catalog, expectedBookId);
+    }
+
+    public static CatalogSnapshot NormalizeChapterUrlsForBook(
+        CatalogSnapshot catalog,
+        string expectedBookId)
+    {
+        if (!IsSafeCanonicalBookId(expectedBookId)
+            || !IsSafeCanonicalBookId(catalog.BookId)
+            || !IsSafeCanonicalBookId(catalog.Metadata.BookId)
+            || !string.Equals(catalog.BookId, expectedBookId, StringComparison.Ordinal)
+            || !string.Equals(catalog.Metadata.BookId, expectedBookId, StringComparison.Ordinal))
+        {
+            throw new OperationalException(
+                $"Catalog book ids '{catalog.BookId}'/'{catalog.Metadata.BookId}' "
+                + $"are not safe canonical book ids for requested book id '{expectedBookId}'.");
+        }
+
+        bool changed = false;
+        VolumeDescriptor[] volumes = catalog.Volumes.Select(volume =>
+        {
+            ChapterDescriptor[] chapters = volume.Chapters.Select(chapter =>
+            {
+                if (!IsSafeCanonicalChapterId(chapter.ChapterId))
+                {
+                    throw new OperationalException(
+                        $"Catalog chapter id '{chapter.ChapterId}' is not a safe canonical chapter id.");
+                }
+
+                if (TryGetUsableChapterUrlForBook(
+                    chapter.Url,
+                    expectedBookId,
+                    chapter.ChapterId,
+                    out string usableUrl))
+                {
+                    if (string.Equals(chapter.Url, usableUrl, StringComparison.Ordinal))
+                    {
+                        return chapter;
+                    }
+
+                    changed = true;
+                    return chapter with { Url = usableUrl };
+                }
+
+                changed = true;
+                return chapter with
+                {
+                    Url = $"{AppConstants.QidianBaseUrl}/chapter/{expectedBookId}/{chapter.ChapterId}/",
+                };
+            }).ToArray();
+
+            return changed ? volume with { Chapters = chapters } : volume;
+        }).ToArray();
+
+        return changed ? catalog with { Volumes = volumes } : catalog;
+    }
+
+    public static bool IsChapterUrlUsableForBook(
+        string url,
+        string expectedBookId,
+        string expectedChapterId)
+        => TryGetUsableChapterUrlForBook(url, expectedBookId, expectedChapterId, out _);
+
+    public static bool TryGetUsableChapterUrlForBook(
+        string url,
+        string expectedBookId,
+        string expectedChapterId,
+        out string usableUrl)
+    {
+        usableUrl = string.Empty;
+        if (!IsSafeCanonicalBookId(expectedBookId)
+            || !IsSafeCanonicalChapterId(expectedChapterId))
+        {
+            return false;
+        }
+
+        string trimmed = url.Trim();
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out Uri? uri)
+            || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || !uri.IsDefaultPort
+            || (!string.Equals(uri.Host, "www.qidian.com", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(uri.Host, "qidian.com", StringComparison.OrdinalIgnoreCase))
+            || HasRawUserInfoInAuthority(trimmed)
+            || !string.IsNullOrEmpty(uri.UserInfo)
+            || !string.IsNullOrEmpty(uri.Query)
+            || !string.IsNullOrEmpty(uri.Fragment))
+        {
+            return false;
+        }
+
+        string originalPath = GetOriginalPath(trimmed);
+        string[] segments = originalPath.Split('/');
+        if (segments.Length == 5
+            && segments[0].Length == 0
+            && string.Equals(segments[1], "chapter", StringComparison.Ordinal)
+            && string.Equals(segments[2], expectedBookId, StringComparison.Ordinal)
+            && string.Equals(segments[3], expectedChapterId, StringComparison.Ordinal)
+            && segments[4].Length == 0)
+        {
+            usableUrl = $"{AppConstants.QidianBaseUrl}/chapter/{expectedBookId}/{expectedChapterId}/";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool HasRawUserInfoInAuthority(string absoluteUrl)
+    {
+        int authorityStart = absoluteUrl.IndexOf("://", StringComparison.Ordinal);
+        if (authorityStart < 0)
+        {
+            return false;
+        }
+
+        authorityStart += 3;
+        int authorityEnd = absoluteUrl.IndexOfAny(['/', '?', '#'], authorityStart);
+        ReadOnlySpan<char> authority = authorityEnd < 0
+            ? absoluteUrl.AsSpan(authorityStart)
+            : absoluteUrl.AsSpan(authorityStart, authorityEnd - authorityStart);
+        return authority.Contains('@');
+    }
+
+    private static string GetOriginalPath(string absoluteUrl)
+    {
+        int authorityStart = absoluteUrl.IndexOf("://", StringComparison.Ordinal);
+        if (authorityStart < 0)
+        {
+            return string.Empty;
+        }
+
+        authorityStart += 3;
+        int authorityEnd = absoluteUrl.IndexOfAny(['?', '#'], authorityStart);
+        int pathStart = absoluteUrl.IndexOf('/', authorityStart);
+        if (pathStart < 0
+            || (authorityEnd >= 0 && pathStart > authorityEnd))
+        {
+            return string.Empty;
+        }
+
+        int queryStart = absoluteUrl.IndexOfAny(['?', '#'], pathStart);
+        return queryStart < 0
+            ? absoluteUrl[pathStart..]
+            : absoluteUrl[pathStart..queryStart];
+    }
+
+    private static bool IsSafeCanonicalChapterId(string id)
+        => id.Length > 0
+        && id.All(static c => c is >= '0' and <= '9');
+
+    internal static bool IsSafeCanonicalBookId(string id)
+        => id.Length > 0
+        && id.All(static c => c is >= '0' and <= '9');
+}
+
 internal sealed record ChapterCacheEntry(
     string ChapterId,
     IReadOnlyList<string> Paragraphs,
@@ -256,7 +432,8 @@ internal sealed record ChapterCacheEntry(
     CatalogChapterAccessState CatalogAccessState = CatalogChapterAccessState.Unknown,
     string? VisibleToUserName = null,
     VipFullContentCacheProvenance? VipFullContentProvenance = null,
-    bool? CatalogIsVip = null)
+    bool? CatalogIsVip = null,
+    bool? IsAnonymousSafeFullContent = null)
 {
     [JsonPropertyOrder(-1)]
     public int ParagraphCount => Paragraphs.Count;
@@ -270,7 +447,8 @@ internal sealed record ChapterCacheProbe(
     CatalogChapterAccessState CatalogAccessState = CatalogChapterAccessState.Unknown,
     string? VisibleToUserName = null,
     VipFullContentCacheProvenance? VipFullContentProvenance = null,
-    bool? CatalogIsVip = null);
+    bool? CatalogIsVip = null,
+    bool? IsAnonymousSafeFullContent = null);
 
 internal enum VipFullContentCacheProvenance
 {
@@ -298,14 +476,22 @@ internal sealed class ParagraphsProbeJsonConverter : JsonConverter<ParagraphsPro
             throw new JsonException();
         }
 
+        bool hasParagraph = false;
         while (reader.Read())
         {
             switch (reader.TokenType)
             {
                 case JsonTokenType.EndArray:
-                    return new ParagraphsProbe();
+                    return hasParagraph ? new ParagraphsProbe() : null;
                 case JsonTokenType.Null:
+                    return null;
                 case JsonTokenType.String:
+                    if (string.IsNullOrWhiteSpace(reader.GetString()))
+                    {
+                        return null;
+                    }
+
+                    hasParagraph = true;
                     break;
                 default:
                     throw new JsonException();
@@ -324,11 +510,14 @@ internal sealed class ParagraphsProbeJsonConverter : JsonConverter<ParagraphsPro
 
 internal sealed record ChapterFetchResult(IReadOnlyList<string> Paragraphs, bool IsPreview);
 
-internal sealed record LoginState(bool IsLoggedIn, string? UserName)
+internal sealed record LoginState(
+    bool IsLoggedIn,
+    string? UserName,
+    bool IsProbeComplete = true)
 {
     public bool HasUsableUserName => NormalizeUserName(UserName) is { Length: > 0 };
 
-    public bool IsValidated => IsLoggedIn && HasUsableUserName;
+    public bool IsValidated => IsProbeComplete && IsLoggedIn && HasUsableUserName;
 
     public LoginState WithNormalizedUserName()
         => this with

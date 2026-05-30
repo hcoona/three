@@ -14,6 +14,15 @@
         "resolved": "2.0.2",
         "contentHash": "VaHoEN6YHp0jXucxm67vfuRy8zo9ufiKSuaZ4ZudRi8xmWcEFMKxfCsg2nvYNvdISFTURDu+IHqADGh53+Bamw=="
       },
+      "Jint": {
+        "type": "Direct",
+        "requested": "[4.9.2, )",
+        "resolved": "4.9.2",
+        "contentHash": "dEBge1IXsWrNefhc9mwYKQPmvzGhO9n/L7aMHobiXVkkvmeyPVYuthZ0i0hXy+JXJSP3K75hu/F51y5fXjtLzg==",
+        "dependencies": {
+          "Acornima": "1.6.2"
+        }
+      },
       "Microsoft.NET.Test.Sdk": {
         "type": "Direct",
         "requested": "[17.14.1, )",
@@ -56,6 +65,11 @@
         "requested": "[3.1.5, )",
         "resolved": "3.1.5",
         "contentHash": "tKi7dSTwP4m5m9eXPM2Ime4Kn7xNf4x4zT9sdLO/G4hZVnQCRiMTWoSZqI/pYTVeI27oPPqHBKYI/DjJ9GsYgA=="
+      },
+      "Acornima": {
+        "type": "Transitive",
+        "resolved": "1.6.2",
+        "contentHash": "laakpDHzMwHr5C8+q5RlRf0XJJshUvghNeo4xDerICrYR3iEuGvwfpauCmXuU3RE437XDaQO5ZxieWDpADuD+w=="
       },
       "Microsoft.Bcl.AsyncInterfaces": {
         "type": "Transitive",

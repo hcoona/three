@@ -18,7 +18,8 @@ public sealed class FileLoggerProviderTests
         Directory.CreateDirectory(outsideRoot);
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory.FullPath))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -50,7 +51,8 @@ public sealed class FileLoggerProviderTests
         Directory.CreateDirectory(logsRoot);
         if (!CanCreateFileSymbolicLink(temporaryDirectory.FullPath))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         string danglingTarget = Path.Combine(temporaryDirectory.FullPath, "missing-target.log");
@@ -91,7 +93,8 @@ public sealed class FileLoggerProviderTests
             or UnauthorizedAccessException
             or PlatformNotSupportedException)
         {
-            return false;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
     }
 
@@ -110,7 +113,8 @@ public sealed class FileLoggerProviderTests
             or UnauthorizedAccessException
             or PlatformNotSupportedException)
         {
-            return false;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
     }
 

@@ -28,4 +28,12 @@ public sealed class BookReferenceParserTests
         Assert.Throws<CliInputException>(
             () => BookReferenceParser.Parse("https://book.qidian.com/info/1045928363"));
     }
+
+    [Theory]
+    [InlineData("１０４５９２８３６３")]
+    [InlineData("https://www.qidian.com/book/１０４５９２８３６３/")]
+    public void ParseRejectsNonAsciiBookIds(string rawValue)
+    {
+        Assert.Throws<CliInputException>(() => BookReferenceParser.Parse(rawValue));
+    }
 }

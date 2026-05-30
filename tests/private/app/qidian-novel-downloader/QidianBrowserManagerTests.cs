@@ -935,6 +935,62 @@ public sealed class QidianBrowserManagerTests
     }
 
     [Fact]
+    public async Task FetchChapterAsyncFailsClosedWhenPageScriptReportsRejection()
+    {
+        const string chapterUrl = "https://www.qidian.com/chapter/100/1/";
+        const string rejectedChapterJson = """
+            {
+                "pageUrl": "https://www.qidian.com/chapter/100/1/",
+                "contentSelector": ".chapter-content p",
+                "isPreview": false,
+                "rejected": true,
+                "paragraphs": ["clean paragraph"]
+            }
+            """;
+        IPage page = CreateStub<IPage>(
+            (method, _) => method.Name switch
+            {
+                "get_Url" => chapterUrl,
+                nameof(IPage.GotoAsync) => Task.FromResult<IResponse?>(null),
+                nameof(IPage.WaitForTimeoutAsync) => Task.CompletedTask,
+                nameof(IPage.WaitForSelectorAsync) => Task.FromResult<IElementHandle?>(null),
+                nameof(IPage.EvaluateAsync) => Task.FromResult(rejectedChapterJson),
+                _ => throw new NotSupportedException(method.Name),
+            });
+        IBrowserContext context = CreateBrowserContext(
+            pages: [page],
+            newPageTask: null,
+            closeHandler: () => Task.CompletedTask);
+        IPlaywright playwright = CreatePlaywright(
+            CreateStub<IBrowserType>((method, _) => throw new NotSupportedException(method.Name)),
+            () => { });
+        QidianBrowserSession session = new(
+            NullLogger<QidianBrowserManager>.Instance,
+            playwright,
+            context,
+            page,
+            new BrowserLaunchPlan(
+                BrowserRuntimeKind.PlaywrightChromium,
+                Channel: null,
+                ExecutablePath: null,
+                DisplayName: "Test"));
+
+        OperationalException exception = await Assert.ThrowsAsync<OperationalException>(
+            () => session.FetchChapterAsync(
+                "100",
+                new ChapterDescriptor(
+                    "1",
+                    "Chapter One",
+                    chapterUrl,
+                    IsVip: false,
+                    CatalogWordCount: 100,
+                    CatalogChapterAccessState.Accessible),
+                CancellationToken.None));
+
+        Assert.Contains("contained login, captcha, error, or interstitial markers", exception.Message);
+    }
+
+    [Fact]
     public async Task OpenAsyncPrefersCancellationWhenStartupFailureRacesWithCancellation()
     {
         using TemporaryDirectory temporaryDirectory = new();
@@ -996,7 +1052,8 @@ public sealed class QidianBrowserManagerTests
         Directory.CreateDirectory(outsideRoot);
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory.FullPath))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -1052,7 +1109,8 @@ public sealed class QidianBrowserManagerTests
         File.WriteAllText(Path.Combine(outsideProfileDirectory, "Preferences"), "{}");
         if (!CanCreateDirectorySymbolicLink(temporaryDirectory.FullPath))
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
 
         try
@@ -1216,7 +1274,8 @@ public sealed class QidianBrowserManagerTests
             or UnauthorizedAccessException
             or PlatformNotSupportedException)
         {
-            return false;
+            throw Xunit.Sdk.SkipException.ForSkip(
+                "Symbolic link creation is unavailable; reparse-point coverage skipped.");
         }
     }
 

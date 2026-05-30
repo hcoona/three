@@ -4,11 +4,11 @@ namespace Hcoona.QidianNovelDownloader;
 
 internal static partial class BookReferenceParser
 {
-    [GeneratedRegex(@"^\d+$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[0-9]+$", RegexOptions.CultureInvariant)]
     private static partial Regex NumericBookIdRegex();
 
     [GeneratedRegex(
-        @"^https://www\.qidian\.com/book/(?<bookId>\d+)/?$",
+        @"^https://www\.qidian\.com/book/(?<bookId>[0-9]+)/?$",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex CanonicalBookUrlRegex();
 
