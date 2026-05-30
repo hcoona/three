@@ -295,36 +295,36 @@ version = "0.31.1"
 backend = "aqua:apple/pkl"
 
 [[tools.pnpm]]
-version = "10.34.0"
+version = "10.34.1"
 backend = "aqua:pnpm/pnpm"
 
 [tools.pnpm."platforms.linux-arm64"]
-checksum = "sha256:e5a5140330e6251c0bf76f2e52e3ac7d6ba9cc26f08f39ccf0a7900ea41e1c90"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.0/pnpm-linux-arm64"
+checksum = "sha256:a91a72e6ac0f30e5354af9a1c15eff1a9448b5471f572f3109863da928e5699f"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.1/pnpm-linux-arm64"
 
 [tools.pnpm."platforms.linux-arm64-musl"]
-checksum = "sha256:e5a5140330e6251c0bf76f2e52e3ac7d6ba9cc26f08f39ccf0a7900ea41e1c90"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.0/pnpm-linux-arm64"
+checksum = "sha256:a91a72e6ac0f30e5354af9a1c15eff1a9448b5471f572f3109863da928e5699f"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.1/pnpm-linux-arm64"
 
 [tools.pnpm."platforms.linux-x64"]
-checksum = "sha256:a079c25f1adedc7b6343de25647db273a29720db4aaef1ff9c60aa248d37f220"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.0/pnpm-linux-x64"
+checksum = "sha256:25dec6207e51ea4c8335dc1d8b203c9274f0bdcf630b998e0df46060dde65dba"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.1/pnpm-linux-x64"
 
 [tools.pnpm."platforms.linux-x64-musl"]
-checksum = "sha256:a079c25f1adedc7b6343de25647db273a29720db4aaef1ff9c60aa248d37f220"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.0/pnpm-linux-x64"
+checksum = "sha256:25dec6207e51ea4c8335dc1d8b203c9274f0bdcf630b998e0df46060dde65dba"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.1/pnpm-linux-x64"
 
 [tools.pnpm."platforms.macos-arm64"]
-checksum = "sha256:d098932a3050afeabd99c0076eafe70c8c417feaea53b2d217b31344ca3e808b"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.0/pnpm-macos-arm64"
+checksum = "sha256:a33fd791e3c152d0056ecf073b69654818b1f9c6c0851d36cb53275be9efaad7"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.1/pnpm-macos-arm64"
 
 [tools.pnpm."platforms.macos-x64"]
-checksum = "sha256:66541f293b06d28f8302a5ed97c8cb3a8f2d632073e289ebb913ceb48516cdad"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.0/pnpm-macos-x64"
+checksum = "sha256:41ebbe92d39812307fef898a297ff2a8253e7f3bb0d5973882dfb11c62983507"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.1/pnpm-macos-x64"
 
 [tools.pnpm."platforms.windows-x64"]
-checksum = "sha256:dccfe77eb97800dca47c8a80ab5b6d8303749a09b3d8aeccf3c11ee6ccb8a2ff"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.0/pnpm-win-x64.exe"
+checksum = "sha256:d686165405e14ae722ff116e29516ddcc30b56f0382e4360aa8623e83553cfee"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.1/pnpm-win-x64.exe"
 
 [[tools.powershell]]
 version = "7.5.4"
