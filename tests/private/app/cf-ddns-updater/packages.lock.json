@@ -438,11 +438,10 @@
       "cf-ddns-updater": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Extensions.Configuration.Binder": "[10.0.8, )",
           "Microsoft.Extensions.Configuration.EnvironmentVariables": "[10.0.8, )",
           "Microsoft.Extensions.Hosting": "[10.0.8, )",
-          "Microsoft.Extensions.Logging": "[10.0.8, )",
-          "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.8, )"
+          "Microsoft.Extensions.Http": "[10.0.8, )",
+          "Microsoft.Extensions.Logging": "[10.0.8, )"
         }
       },
       "Microsoft.Extensions.Configuration.Binder": {
@@ -492,6 +491,20 @@
           "Microsoft.Extensions.Logging.Debug": "10.0.8",
           "Microsoft.Extensions.Logging.EventLog": "10.0.8",
           "Microsoft.Extensions.Logging.EventSource": "10.0.8",
+          "Microsoft.Extensions.Options": "10.0.8"
+        }
+      },
+      "Microsoft.Extensions.Http": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.8, )",
+        "resolved": "10.0.8",
+        "contentHash": "/9LU/KWJOrtZJB9ymPjcARDyjp679BvBA/aSncv2Kt84WlSKz767HtxHg8EFsu8n21BMLZi+5XxlkKbLwfn4iA==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.8",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.8",
+          "Microsoft.Extensions.Diagnostics": "10.0.8",
+          "Microsoft.Extensions.Logging": "10.0.8",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.8",
           "Microsoft.Extensions.Options": "10.0.8"
         }
       },

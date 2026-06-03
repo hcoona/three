@@ -3,6 +3,7 @@ using Xunit;
 
 namespace Hcoona.CfDdnsUpdater.Tests;
 
+[Collection(TestCollectionDefinition.Name)]
 public sealed class CloudflareConfigurationValidatorTests
 {
     [Fact]
@@ -37,6 +38,19 @@ public sealed class CloudflareConfigurationValidatorTests
         Assert.Equal(["example.com", "example.org"], configuration.Domains);
     }
 
+    [Fact]
+    public void CreateRejectsMixedValidAndInvalidDomains()
+    {
+        CloudflareOptions options = new()
+        {
+            ApiToken = "token",
+            DomainsCsv = "example.com, bad host name",
+            DisableIpv6Raw = "false",
+        };
+
+        Assert.Throws<OptionsValidationException>(() => CloudflareConfiguration.Create(options));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
@@ -51,6 +65,23 @@ public sealed class CloudflareConfigurationValidatorTests
         };
 
         Assert.Throws<OptionsValidationException>(() => CloudflareConfiguration.Create(options));
+    }
+
+    [Theory]
+    [InlineData("true")]
+    [InlineData("TRUE")]
+    public void CreateAcceptsDisableIpv6TrueValue(string disableIpv6Raw)
+    {
+        CloudflareOptions options = new()
+        {
+            ApiToken = "token",
+            DomainsCsv = "example.com",
+            DisableIpv6Raw = disableIpv6Raw,
+        };
+
+        CloudflareConfiguration configuration = CloudflareConfiguration.Create(options);
+
+        Assert.True(configuration.DisableIpv6);
     }
 
     [Fact]
