@@ -87,11 +87,12 @@ internal sealed partial class TraceIpDiscoveryService(
 
         if (!response.IsSuccessStatusCode)
         {
-                string responseText = await response.Content.ReadAsStringAsync(
+            string responseText = await response.Content.ReadAsStringAsync(
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            string error = $"Cloudflare Trace returned HTTP {(int)response.StatusCode} for {family}.";
+            string error =
+                $"Cloudflare Trace returned HTTP {(int)response.StatusCode} for {family}.";
             if (!string.IsNullOrWhiteSpace(responseText))
             {
                 error += $" Response: {responseText.Trim()}";
@@ -163,14 +164,17 @@ internal sealed partial class TraceIpDiscoveryService(
             if (parsedAddress.AddressFamily != family)
             {
                 error =
-                    $"Cloudflare Trace returned a {parsedAddress.AddressFamily} address for {family}.";
+                    $"Cloudflare Trace returned a {parsedAddress.AddressFamily} "
+                    + $"address for {family}.";
                 return false;
             }
 
             if (family == AddressFamily.InterNetworkV6 &&
                 IsIPv4EmbeddedOrMappedIpv6(parsedAddress))
             {
-                error = $"Cloudflare Trace returned an IPv4-embedded IPv6 address: {parsedAddress}.";
+                error =
+                    $"Cloudflare Trace returned an IPv4-embedded IPv6 address: "
+                    + $"{parsedAddress}.";
                 return false;
             }
 
@@ -295,14 +299,41 @@ internal sealed partial class TraceIpDiscoveryService(
             IsIPv6LinkLocal(bytes) ||
             IsIPv6SiteLocal(bytes) ||
             HasPrefix(bytes, stackalloc byte[] { 0x20, 0x01, 0x00 }, 23) ||
-            HasPrefix(bytes, stackalloc byte[] { 0x00, 0x64, 0xFF, 0x9B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }, 96) ||
-            HasPrefix(bytes, stackalloc byte[] { 0x00, 0x64, 0xFF, 0x9B, 0x00, 0x01 }, 48) ||
-            HasPrefix(bytes, stackalloc byte[] { 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }, 64) ||
-            HasPrefix(bytes, stackalloc byte[] { 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01 }, 64) ||
+            HasPrefix(
+                bytes,
+                stackalloc byte[] { 0x00, 0x64, 0xFF, 0x9B, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00 },
+                96) ||
+            HasPrefix(
+                bytes,
+                stackalloc byte[] { 0x00, 0x64, 0xFF, 0x9B, 0x00, 0x01 },
+                48) ||
+            HasPrefix(
+                bytes,
+                stackalloc byte[] { 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00 },
+                64) ||
+            HasPrefix(
+                bytes,
+                stackalloc byte[] { 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x01 },
+                64) ||
             HasPrefix(bytes, stackalloc byte[] { 0x20, 0x01, 0x00, 0x00 }, 32) ||
-            HasPrefix(bytes, stackalloc byte[] { 0x20, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01 }, 128) ||
-            HasPrefix(bytes, stackalloc byte[] { 0x20, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02 }, 128) ||
-            HasPrefix(bytes, stackalloc byte[] { 0x20, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03 }, 128) ||
+            HasPrefix(
+                bytes,
+                stackalloc byte[] { 0x20, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01 },
+                128) ||
+            HasPrefix(
+                bytes,
+                stackalloc byte[] { 0x20, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02 },
+                128) ||
+            HasPrefix(
+                bytes,
+                stackalloc byte[] { 0x20, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03 },
+                128) ||
             HasPrefix(bytes, stackalloc byte[] { 0x20, 0x01, 0x00, 0x02, 0x00, 0x00 }, 48) ||
             HasPrefix(bytes, stackalloc byte[] { 0x20, 0x01, 0x00, 0x03 }, 32) ||
             HasPrefix(bytes, stackalloc byte[] { 0x20, 0x01, 0x00, 0x04, 0x01, 0x12 }, 48) ||
@@ -391,7 +422,10 @@ internal sealed partial class TraceIpDiscoveryService(
     private static bool IsIPv6SiteLocal(ReadOnlySpan<byte> bytes)
         => bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0xC0;
 
-    private static bool HasPrefix(ReadOnlySpan<byte> address, ReadOnlySpan<byte> prefix, int prefixLengthBits)
+    private static bool HasPrefix(
+        ReadOnlySpan<byte> address,
+        ReadOnlySpan<byte> prefix,
+        int prefixLengthBits)
     {
         int fullBytes = prefixLengthBits / 8;
         for (int index = 0; index < fullBytes; index++)
@@ -455,7 +489,8 @@ internal sealed class CloudflareTraceRetryHandler : DelegatingHandler
                         cancellationToken)
                     .ConfigureAwait(false);
 
-                await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+                await response.Content.ReadAsByteArrayAsync(cancellationToken)
+                    .ConfigureAwait(false);
                 CloudflareTelemetry.CaptureCloudflareResponseMetadata(
                     Activity.Current,
                     response);
@@ -476,7 +511,8 @@ internal sealed class CloudflareTraceRetryHandler : DelegatingHandler
                 lastException = ex;
                 response?.Dispose();
                 response = null;
-                await Task.Delay(GetJitterDelay(attempt), cancellationToken).ConfigureAwait(false);
+                await Task.Delay(GetJitterDelay(attempt), cancellationToken)
+                    .ConfigureAwait(false);
             }
             catch (IOException ex)
             {
@@ -489,7 +525,8 @@ internal sealed class CloudflareTraceRetryHandler : DelegatingHandler
                 if (attempt < MaxAttempts)
                 {
                     lastException = wrapped;
-                    await Task.Delay(GetJitterDelay(attempt), cancellationToken).ConfigureAwait(false);
+                    await Task.Delay(GetJitterDelay(attempt), cancellationToken)
+                        .ConfigureAwait(false);
                     continue;
                 }
 
@@ -565,4 +602,5 @@ internal sealed class CloudflareTraceRetryHandler : DelegatingHandler
     }
 }
 
-internal sealed class TraceIpDiscoveryException(string message) : InvalidOperationException(message);
+internal sealed class TraceIpDiscoveryException(string message)
+    : InvalidOperationException(message);

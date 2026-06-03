@@ -9,10 +9,12 @@ public sealed class CloudflareTelemetryTests
     [Fact]
     public void MarkRunExitCodeMarksErrorForNonZeroExit()
     {
-        using ActivityRecorder recorder = ActivityRecorder.Start(CloudflareTelemetry.ActivitySourceName);
-        using (Activity? activity = CloudflareTelemetry.ActivitySource.StartActivity(
-                   CloudflareTelemetry.RunActivityName,
-                   ActivityKind.Internal))
+        using ActivityRecorder recorder =
+            ActivityRecorder.Start(CloudflareTelemetry.ActivitySourceName);
+        using (
+            Activity? activity = CloudflareTelemetry.ActivitySource.StartActivity(
+                CloudflareTelemetry.RunActivityName,
+                ActivityKind.Internal))
         {
             CloudflareTelemetry.MarkRunExitCode(activity, 1);
         }
@@ -24,10 +26,12 @@ public sealed class CloudflareTelemetryTests
     [Fact]
     public void MarkRunExitCodeLeavesSuccessPathUntouched()
     {
-        using ActivityRecorder recorder = ActivityRecorder.Start(CloudflareTelemetry.ActivitySourceName);
-        using (Activity? activity = CloudflareTelemetry.ActivitySource.StartActivity(
-                   CloudflareTelemetry.RunActivityName,
-                   ActivityKind.Internal))
+        using ActivityRecorder recorder =
+            ActivityRecorder.Start(CloudflareTelemetry.ActivitySourceName);
+        using (
+            Activity? activity = CloudflareTelemetry.ActivitySource.StartActivity(
+                CloudflareTelemetry.RunActivityName,
+                ActivityKind.Internal))
         {
             CloudflareTelemetry.MarkRunExitCode(activity, 0);
             CloudflareTelemetry.MarkOutcome(activity, "success");

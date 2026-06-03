@@ -44,9 +44,12 @@ public sealed class ProgramBootstrapTests
                 "CreateHost",
                 BindingFlags.NonPublic | BindingFlags.Static)!;
 
-            using IHost host = (IHost)createHost.Invoke(null, new object?[] { Array.Empty<string>() })!;
+            using IHost host = (IHost)createHost.Invoke(
+                null,
+                new object?[] { Array.Empty<string>() })!;
 
-            CloudflareConfiguration configuration = host.Services.GetRequiredService<CloudflareConfiguration>();
+            CloudflareConfiguration configuration =
+                host.Services.GetRequiredService<CloudflareConfiguration>();
 
             Assert.Equal("token", configuration.ApiToken);
             Assert.Equal(["example.com", "host.example.com"], configuration.Domains);
@@ -55,8 +58,20 @@ public sealed class ProgramBootstrapTests
     }
 
     [Theory]
-    [InlineData("HCOONA_CLOUDFLARE_DDNS_UPDATER_API_TOKEN", null, "HCOONA_CLOUDFLARE_DDNS_UPDATER_DOMAINS", "example.com", "HCOONA_CLOUDFLARE_DDNS_UPDATER_DISABLE_IPV6", null)]
-    [InlineData("HCOONA_CLOUDFLARE_DDNS_UPDATER_API_TOKEN", "token", "HCOONA_CLOUDFLARE_DDNS_UPDATER_DOMAINS", "example.com", "HCOONA_CLOUDFLARE_DDNS_UPDATER_DISABLE_IPV6", "maybe")]
+    [InlineData(
+        "HCOONA_CLOUDFLARE_DDNS_UPDATER_API_TOKEN",
+        null,
+        "HCOONA_CLOUDFLARE_DDNS_UPDATER_DOMAINS",
+        "example.com",
+        "HCOONA_CLOUDFLARE_DDNS_UPDATER_DISABLE_IPV6",
+        null)]
+    [InlineData(
+        "HCOONA_CLOUDFLARE_DDNS_UPDATER_API_TOKEN",
+        "token",
+        "HCOONA_CLOUDFLARE_DDNS_UPDATER_DOMAINS",
+        "example.com",
+        "HCOONA_CLOUDFLARE_DDNS_UPDATER_DISABLE_IPV6",
+        "maybe")]
     public async Task MainReturnsFailureForInvalidEnvironmentAndSkipsReconciliationWork(
         string key1,
         string? value1,
@@ -69,7 +84,8 @@ public sealed class ProgramBootstrapTests
         string?[] values = [value1, value2, value3];
         string?[] previousValues = new string?[keys.Length];
 
-        using ActivityRecorder recorder = ActivityRecorder.Start(CloudflareTelemetry.ActivitySourceName);
+        using ActivityRecorder recorder = ActivityRecorder.Start(
+            CloudflareTelemetry.ActivitySourceName);
 
         try
         {
@@ -84,7 +100,8 @@ public sealed class ProgramBootstrapTests
             Assert.Equal(1, exitCode);
             Assert.DoesNotContain(
                 recorder.StoppedActivities,
-                activity => activity.OperationName == CloudflareTelemetry.ReconciliationTargetActivityName);
+                activity =>
+                    activity.OperationName == CloudflareTelemetry.ReconciliationTargetActivityName);
         }
         finally
         {
@@ -103,7 +120,8 @@ public sealed class ProgramBootstrapTests
         string? previousApiToken = Environment.GetEnvironmentVariable(apiTokenName);
         string? previousDomains = Environment.GetEnvironmentVariable(domainsName);
 
-        using ActivityRecorder recorder = ActivityRecorder.Start(CloudflareTelemetry.ActivitySourceName);
+        using ActivityRecorder recorder = ActivityRecorder.Start(
+            CloudflareTelemetry.ActivitySourceName);
 
         try
         {
@@ -115,7 +133,8 @@ public sealed class ProgramBootstrapTests
             Assert.Equal(1, exitCode);
             Assert.DoesNotContain(
                 recorder.StoppedActivities,
-                activity => activity.OperationName == CloudflareTelemetry.ReconciliationTargetActivityName);
+                activity =>
+                    activity.OperationName == CloudflareTelemetry.ReconciliationTargetActivityName);
         }
         finally
         {

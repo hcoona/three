@@ -153,7 +153,10 @@ internal static class CloudflareTelemetry
 
     private static bool ContainsTagValue(string existingValue, string value)
     {
-        foreach (string candidate in existingValue.Split(", ", StringSplitOptions.RemoveEmptyEntries))
+        foreach (
+            string candidate in existingValue.Split(
+                ", ",
+                StringSplitOptions.RemoveEmptyEntries))
         {
             if (string.Equals(candidate, value, StringComparison.Ordinal))
             {

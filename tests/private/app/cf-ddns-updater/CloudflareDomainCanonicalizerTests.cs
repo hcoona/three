@@ -21,7 +21,10 @@ public sealed class CloudflareDomainCanonicalizerTests
     [Fact]
     public void EnumerateSuffixesWalksFromMostSpecificToLeastSpecific()
     {
-        string[] suffixes = [.. CloudflareDomainCanonicalizer.EnumerateSuffixes("host.example.com")];
+        string[] suffixes =
+        [
+            ..CloudflareDomainCanonicalizer.EnumerateSuffixes("host.example.com"),
+        ];
 
         Assert.Equal(["host.example.com", "example.com", "com"], suffixes);
     }

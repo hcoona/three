@@ -135,7 +135,12 @@ internal sealed partial class ReconciliationApp(
 
             LogRecordSnapshot(logger, domain, zone.Name, family, address, records.Count);
 
-            if (records.Any(existingRecord => string.Equals(existingRecord.Type, "CNAME", StringComparison.OrdinalIgnoreCase)))
+            if (
+                records.Any(
+                    existingRecord => string.Equals(
+                        existingRecord.Type,
+                        "CNAME",
+                        StringComparison.OrdinalIgnoreCase)))
             {
                 throw new InvalidOperationException(
                     $"CNAME record exists at \"{domain}\" in zone \"{zone.Name}\".");
@@ -153,7 +158,8 @@ internal sealed partial class ReconciliationApp(
             if (matchingTypeRecords.Count > 1)
             {
                 throw new InvalidOperationException(
-                    $"Cloudflare returned multiple {recordType} records for \"{domain}\" in zone \"{zone.Name}\".");
+                    $"Cloudflare returned multiple {recordType} records for \"{domain}\" "
+                    + $"in zone \"{zone.Name}\".");
             }
 
             if (matchingTypeRecords.Count == 0)
@@ -175,7 +181,8 @@ internal sealed partial class ReconciliationApp(
             if (matchingRecord.Proxied)
             {
                 throw new InvalidOperationException(
-                    $"Matching {recordType} record for \"{domain}\" in zone \"{zone.Name}\" is proxied.");
+                    $"Matching {recordType} record for \"{domain}\" in zone "
+                    + $"\"{zone.Name}\" is proxied.");
             }
 
             if (IsContentEqual(matchingRecord.Content, address))
@@ -209,7 +216,8 @@ internal sealed partial class ReconciliationApp(
     }
 
     private static bool IsContentEqual(string? content, IPAddress address)
-        => IPAddress.TryParse(content, out IPAddress? parsedAddress) && parsedAddress.Equals(address);
+        => IPAddress.TryParse(content, out IPAddress? parsedAddress)
+        && parsedAddress.Equals(address);
 
     private static string GetRecordType(AddressFamily family)
         => family switch
@@ -242,7 +250,9 @@ internal sealed partial class ReconciliationApp(
     [LoggerMessage(
         EventId = 2,
         Level = LogLevel.Information,
-        Message = "Cloudflare DDNS updater finished: {CreatedCount} created, {UpdatedCount} updated, {NoOpCount} no-op, {FailedCount} failed.")]
+        Message =
+            "Cloudflare DDNS updater finished: {CreatedCount} created, "
+            + "{UpdatedCount} updated, {NoOpCount} no-op, {FailedCount} failed.")]
     private static partial void LogCompleted(
         ILogger logger,
         int createdCount,
@@ -253,7 +263,9 @@ internal sealed partial class ReconciliationApp(
     [LoggerMessage(
         EventId = 3,
         Level = LogLevel.Information,
-        Message = "Prepared reconciliation snapshot for domain {Domain} in zone {ZoneName}: {AddressFamily} {Address} with {RecordCount} exact record(s).")]
+        Message =
+            "Prepared reconciliation snapshot for domain {Domain} in zone {ZoneName}: "
+            + "{AddressFamily} {Address} with {RecordCount} exact record(s).")]
     private static partial void LogRecordSnapshot(
         ILogger logger,
         string domain,
@@ -274,7 +286,9 @@ internal sealed partial class ReconciliationApp(
     [LoggerMessage(
         EventId = 5,
         Level = LogLevel.Warning,
-        Message = "Failed to reconcile {Domain} in zone {ZoneName} for {AddressFamily}: {ErrorMessage}")]
+        Message =
+            "Failed to reconcile {Domain} in zone {ZoneName} for {AddressFamily}: "
+            + "{ErrorMessage}")]
     private static partial void LogTargetFailed(
         ILogger logger,
         string domain,
@@ -285,7 +299,9 @@ internal sealed partial class ReconciliationApp(
     [LoggerMessage(
         EventId = 6,
         Level = LogLevel.Information,
-        Message = "Created DNS record for {Domain} in zone {ZoneName} for {AddressFamily}.")]
+        Message =
+            "Created DNS record for {Domain} in zone {ZoneName} for "
+            + "{AddressFamily}.")]
     private static partial void LogCreated(
         ILogger logger,
         string domain,
@@ -295,7 +311,9 @@ internal sealed partial class ReconciliationApp(
     [LoggerMessage(
         EventId = 7,
         Level = LogLevel.Information,
-        Message = "Updated DNS record for {Domain} in zone {ZoneName} for {AddressFamily}.")]
+        Message =
+            "Updated DNS record for {Domain} in zone {ZoneName} for "
+            + "{AddressFamily}.")]
     private static partial void LogUpdated(
         ILogger logger,
         string domain,
@@ -305,7 +323,9 @@ internal sealed partial class ReconciliationApp(
     [LoggerMessage(
         EventId = 8,
         Level = LogLevel.Information,
-        Message = "No DNS change required for {Domain} in zone {ZoneName} for {AddressFamily}.")]
+        Message =
+            "No DNS change required for {Domain} in zone {ZoneName} for "
+            + "{AddressFamily}.")]
     private static partial void LogNoOp(
         ILogger logger,
         string domain,

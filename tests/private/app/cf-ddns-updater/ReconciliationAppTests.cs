@@ -21,10 +21,80 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-txt","name":"host.example.com","type":"TXT","content":"hello","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":{"id":"record-1","name":"host.example.com","type":"A","content":"8.8.8.8","proxied":false,"ttl":1},"errors":[],"messages":[]}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-txt",
+            "name": "host.example.com",
+            "type": "TXT",
+            "content": "hello",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": {
+        "id": "record-1",
+        "name": "host.example.com",
+        "type": "A",
+        "content": "8.8.8.8",
+        "proxied": false,
+        "ttl": 1
+    },
+    "errors": [],
+    "messages": []
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: true).RunAsync(
@@ -41,17 +111,79 @@ public sealed class ReconciliationAppTests
     [Fact]
     public async Task RunAsyncEmitsTargetSpanWithOutcomeTags()
     {
-        using ActivityRecorder recorder = ActivityRecorder.Start(CloudflareTelemetry.ActivitySourceName);
+        using ActivityRecorder recorder = ActivityRecorder.Start(
+            CloudflareTelemetry.ActivitySourceName);
 
         RecordingHttpMessageHandler traceHandler = new([
             _ => TraceResponse(HttpStatusCode.OK, "ip=8.8.8.8"),
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":{"id":"record-1","name":"host.example.com","type":"A","content":"8.8.8.8","proxied":false,"ttl":1},"errors":[],"messages":[]}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": {
+        "id": "record-1",
+        "name": "host.example.com",
+        "type": "A",
+        "content": "8.8.8.8",
+        "proxied": false,
+        "ttl": 1
+    },
+    "errors": [],
+    "messages": []
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: true).RunAsync(
@@ -61,12 +193,17 @@ public sealed class ReconciliationAppTests
 
         Activity targetActivity = Assert.Single(
             recorder.StoppedActivities,
-            activity => activity.OperationName == CloudflareTelemetry.ReconciliationTargetActivityName);
-        Assert.Equal("host.example.com", targetActivity.GetTagItem(CloudflareTelemetry.DomainTagName));
+            activity =>
+                activity.OperationName == CloudflareTelemetry.ReconciliationTargetActivityName);
+        Assert.Equal(
+            "host.example.com",
+            targetActivity.GetTagItem(CloudflareTelemetry.DomainTagName));
         Assert.Equal("example.com", targetActivity.GetTagItem(CloudflareTelemetry.ZoneNameTagName));
         Assert.Equal("zone-1", targetActivity.GetTagItem(CloudflareTelemetry.ZoneIdTagName));
         Assert.Equal("A", targetActivity.GetTagItem(CloudflareTelemetry.RecordTypeTagName));
-        Assert.Equal("InterNetwork", targetActivity.GetTagItem(CloudflareTelemetry.TargetFamilyTagName));
+        Assert.Equal(
+            "InterNetwork",
+            targetActivity.GetTagItem(CloudflareTelemetry.TargetFamilyTagName));
         Assert.Equal("8.8.8.8", targetActivity.GetTagItem(CloudflareTelemetry.AddressTagName));
         Assert.Equal("created", targetActivity.GetTagItem(CloudflareTelemetry.OutcomeTagName));
     }
@@ -79,10 +216,108 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-1","name":"host.example.com","type":"A","content":"8.8.8.8","comment":"keep me","tags":["prod","managed"],"settings":{"flatten_cname":true,"ipv4_only":false,"ipv6_only":true},"proxied":false,"ttl":120},{"id":"record-txt","name":"host.example.com","type":"TXT","content":"hello","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":2,"total_count":2,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":{"id":"record-1","name":"host.example.com","type":"A","content":"8.8.4.4","comment":"keep me","tags":["prod","managed"],"settings":{"flatten_cname":true,"ipv4_only":false,"ipv6_only":true},"proxied":false,"ttl":120},"errors":[],"messages":[]}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-1",
+            "name": "host.example.com",
+            "type": "A",
+            "content": "8.8.8.8",
+            "comment": "keep me",
+            "tags": [
+                "prod",
+                "managed"
+            ],
+            "settings": {
+                "flatten_cname": true,
+                "ipv4_only": false,
+                "ipv6_only": true
+            },
+            "proxied": false,
+            "ttl": 120
+        },
+        {
+            "id": "record-txt",
+            "name": "host.example.com",
+            "type": "TXT",
+            "content": "hello",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 2,
+        "total_count": 2,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": {
+        "id": "record-1",
+        "name": "host.example.com",
+        "type": "A",
+        "content": "8.8.4.4",
+        "comment": "keep me",
+        "tags": [
+            "prod",
+            "managed"
+        ],
+        "settings": {
+            "flatten_cname": true,
+            "ipv4_only": false,
+            "ipv6_only": true
+        },
+        "proxied": false,
+        "ttl": 120
+    },
+    "errors": [],
+    "messages": []
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: true).RunAsync(
@@ -93,7 +328,9 @@ public sealed class ReconciliationAppTests
         Assert.Contains("\"content\":\"8.8.4.4\"", apiHandler.Requests[^1].Body);
         Assert.Contains("\"comment\":\"keep me\"", apiHandler.Requests[^1].Body);
         Assert.Contains("\"tags\":[\"prod\",\"managed\"]", apiHandler.Requests[^1].Body);
-        Assert.Contains("\"settings\":{\"flatten_cname\":true,\"ipv4_only\":false,\"ipv6_only\":true}", apiHandler.Requests[^1].Body);
+        Assert.Contains(
+            "\"settings\":{\"flatten_cname\":true,\"ipv4_only\":false,\"ipv6_only\":true}",
+            apiHandler.Requests[^1].Body);
         Assert.Contains("\"proxied\":false", apiHandler.Requests[^1].Body);
         Assert.Contains("\"ttl\":120", apiHandler.Requests[^1].Body);
     }
@@ -106,9 +343,73 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-1","name":"host.example.com","type":"A","content":"8.8.8.8","proxied":false,"ttl":120},{"id":"record-2","name":"host.example.com","type":"TXT","content":"hello","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":2,"total_count":2,"total_pages":1}}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-1",
+            "name": "host.example.com",
+            "type": "A",
+            "content": "8.8.8.8",
+            "proxied": false,
+            "ttl": 120
+        },
+        {
+            "id": "record-2",
+            "name": "host.example.com",
+            "type": "TXT",
+            "content": "hello",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 2,
+        "total_count": 2,
+        "total_pages": 1
+    }
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: true).RunAsync(
@@ -116,7 +417,9 @@ public sealed class ReconciliationAppTests
 
         Assert.Equal(0, exitCode);
         Assert.Equal(3, apiHandler.Requests.Count);
-        Assert.DoesNotContain(apiHandler.Requests, request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
+        Assert.DoesNotContain(
+            apiHandler.Requests,
+            request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
     }
 
     [Fact]
@@ -128,10 +431,89 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-a","name":"host.example.com","type":"A","content":"8.8.8.8","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-aaaa","name":"host.example.com","type":"AAAA","content":"2001:4860:4860:0:0:0:0:8888","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-a",
+            "name": "host.example.com",
+            "type": "A",
+            "content": "8.8.8.8",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-aaaa",
+            "name": "host.example.com",
+            "type": "AAAA",
+            "content": "2001:4860:4860:0:0:0:0:8888",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: false).RunAsync(
@@ -152,7 +534,9 @@ public sealed class ReconciliationAppTests
         Assert.Equal(
             "/client/v4/zones/zone-1/dns_records",
             apiHandler.Requests[3].RequestUri!.AbsolutePath);
-        Assert.DoesNotContain(apiHandler.Requests, request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
+        Assert.DoesNotContain(
+            apiHandler.Requests,
+            request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
     }
 
     [Fact]
@@ -163,9 +547,65 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-1","name":"host.example.com","type":"CNAME","content":"alias.example.net","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-1",
+            "name": "host.example.com",
+            "type": "CNAME",
+            "content": "alias.example.net",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: true).RunAsync(
@@ -173,7 +613,9 @@ public sealed class ReconciliationAppTests
 
         Assert.Equal(1, exitCode);
         Assert.Equal(3, apiHandler.Requests.Count);
-        Assert.DoesNotContain(apiHandler.Requests, request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
+        Assert.DoesNotContain(
+            apiHandler.Requests,
+            request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
     }
 
     [Fact]
@@ -184,9 +626,73 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-1","name":"host.example.com","type":"CNAME","content":"alias.example.net","proxied":false,"ttl":1},{"id":"record-2","name":"host.example.com","type":"TXT","content":"hello","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":2,"total_count":2,"total_pages":1}}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-1",
+            "name": "host.example.com",
+            "type": "CNAME",
+            "content": "alias.example.net",
+            "proxied": false,
+            "ttl": 1
+        },
+        {
+            "id": "record-2",
+            "name": "host.example.com",
+            "type": "TXT",
+            "content": "hello",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 2,
+        "total_count": 2,
+        "total_pages": 1
+    }
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: true).RunAsync(
@@ -194,7 +700,9 @@ public sealed class ReconciliationAppTests
 
         Assert.Equal(1, exitCode);
         Assert.Equal(3, apiHandler.Requests.Count);
-        Assert.DoesNotContain(apiHandler.Requests, request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
+        Assert.DoesNotContain(
+            apiHandler.Requests,
+            request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
     }
 
     [Fact]
@@ -206,10 +714,89 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-1","name":"host.example.com","type":"CNAME","content":"alias.example.net","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-2","name":"host.example.com","type":"CNAME","content":"alias.example.net","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-1",
+            "name": "host.example.com",
+            "type": "CNAME",
+            "content": "alias.example.net",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-2",
+            "name": "host.example.com",
+            "type": "CNAME",
+            "content": "alias.example.net",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: false).RunAsync(
@@ -217,7 +804,9 @@ public sealed class ReconciliationAppTests
 
         Assert.Equal(1, exitCode);
         Assert.Equal(4, apiHandler.Requests.Count);
-        Assert.DoesNotContain(apiHandler.Requests, request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
+        Assert.DoesNotContain(
+            apiHandler.Requests,
+            request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
     }
 
     [Fact]
@@ -229,21 +818,119 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-1","name":"host.example.com","type":"A","content":"8.8.8.7","proxied":false,"ttl":1},{"id":"record-2","name":"host.example.com","type":"A","content":"8.8.8.6","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":2,"total_count":2,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":{"id":"record-2","name":"host.example.com","type":"AAAA","content":"2001:4860:4860::8888","proxied":false,"ttl":1},"errors":[],"messages":[]}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-1",
+            "name": "host.example.com",
+            "type": "A",
+            "content": "8.8.8.7",
+            "proxied": false,
+            "ttl": 1
+        },
+        {
+            "id": "record-2",
+            "name": "host.example.com",
+            "type": "A",
+            "content": "8.8.8.6",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 2,
+        "total_count": 2,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": {
+        "id": "record-2",
+        "name": "host.example.com",
+        "type": "AAAA",
+        "content": "2001:4860:4860::8888",
+        "proxied": false,
+        "ttl": 1
+    },
+    "errors": [],
+    "messages": []
+}
+"""),
         ]);
         RecordingLogger<ReconciliationApp> logger = new();
 
-        int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: false, logger: logger).RunAsync(
+        int exitCode = await CreateApp(
+            apiHandler,
+            traceHandler,
+            disableIpv6: false,
+            logger: logger).RunAsync(
             CancellationToken.None);
 
         Assert.Equal(1, exitCode);
         Assert.Contains(
             logger.Messages,
-            message => message.Contains("finished: 1 created, 0 updated, 0 no-op, 1 failed.", StringComparison.Ordinal));
+            message => message.Contains(
+                "finished: 1 created, 0 updated, 0 no-op, 1 failed.",
+                StringComparison.Ordinal));
         Assert.Equal(5, apiHandler.Requests.Count);
         Assert.Contains(apiHandler.Requests, request => request.Method == HttpMethod.Post);
         Assert.Equal(HttpMethod.Post, apiHandler.Requests[^1].Method);
@@ -259,13 +946,130 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-1","name":"failed.example.com","type":"CNAME","content":"alias.example.net","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-2","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":{"id":"record-2","name":"succeed.example.com","type":"A","content":"8.8.8.8","proxied":false,"ttl":1},"errors":[],"messages":[]}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-1",
+            "name": "failed.example.com",
+            "type": "CNAME",
+            "content": "alias.example.net",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-2",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": {
+        "id": "record-2",
+        "name": "succeed.example.com",
+        "type": "A",
+        "content": "8.8.8.8",
+        "proxied": false,
+        "ttl": 1
+    },
+    "errors": [],
+    "messages": []
+}
+"""),
         ]);
         RecordingLogger<ReconciliationApp> logger = new();
 
@@ -280,7 +1084,9 @@ public sealed class ReconciliationAppTests
         Assert.Equal(1, exitCode);
         Assert.Contains(
             logger.Messages,
-            message => message.Contains("finished: 1 created, 0 updated, 0 no-op, 1 failed.", StringComparison.Ordinal));
+            message => message.Contains(
+                "finished: 1 created, 0 updated, 0 no-op, 1 failed.",
+                StringComparison.Ordinal));
         Assert.Equal(7, apiHandler.Requests.Count);
         Assert.Contains(apiHandler.Requests, request => request.Method == HttpMethod.Post);
         Assert.DoesNotContain(apiHandler.Requests, request => request.Method == HttpMethod.Put);
@@ -295,20 +1101,87 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":{"id":"record-1","name":"host.example.com","type":"A","content":"8.8.8.8","proxied":false,"ttl":1},"errors":[],"messages":[]}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": {
+        "id": "record-1",
+        "name": "host.example.com",
+        "type": "A",
+        "content": "8.8.8.8",
+        "proxied": false,
+        "ttl": 1
+    },
+    "errors": [],
+    "messages": []
+}
+"""),
         ]);
         RecordingLogger<ReconciliationApp> logger = new();
 
-        int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: false, logger: logger).RunAsync(
+        int exitCode = await CreateApp(
+            apiHandler,
+            traceHandler,
+            disableIpv6: false,
+            logger: logger).RunAsync(
             CancellationToken.None);
 
         Assert.Equal(1, exitCode);
         Assert.Contains(
             logger.Messages,
-            message => message.Contains("finished: 1 created, 0 updated, 0 no-op, 1 failed.", StringComparison.Ordinal));
+            message => message.Contains(
+                "finished: 1 created, 0 updated, 0 no-op, 1 failed.",
+                StringComparison.Ordinal));
         Assert.Equal(2, traceHandler.Requests.Count);
         Assert.Equal(4, apiHandler.Requests.Count);
         Assert.Equal(HttpMethod.Post, apiHandler.Requests[^1].Method);
@@ -324,20 +1197,87 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":{"id":"record-1","name":"host.example.com","type":"AAAA","content":"2001:4860:4860::8888","proxied":false,"ttl":1},"errors":[],"messages":[]}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": {
+        "id": "record-1",
+        "name": "host.example.com",
+        "type": "AAAA",
+        "content": "2001:4860:4860::8888",
+        "proxied": false,
+        "ttl": 1
+    },
+    "errors": [],
+    "messages": []
+}
+"""),
         ]);
         RecordingLogger<ReconciliationApp> logger = new();
 
-        int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: false, logger: logger).RunAsync(
+        int exitCode = await CreateApp(
+            apiHandler,
+            traceHandler,
+            disableIpv6: false,
+            logger: logger).RunAsync(
             CancellationToken.None);
 
         Assert.Equal(1, exitCode);
         Assert.Contains(
             logger.Messages,
-            message => message.Contains("finished: 1 created, 0 updated, 0 no-op, 1 failed.", StringComparison.Ordinal));
+            message => message.Contains(
+                "finished: 1 created, 0 updated, 0 no-op, 1 failed.",
+                StringComparison.Ordinal));
         Assert.Equal(2, traceHandler.Requests.Count);
         Assert.Equal(4, apiHandler.Requests.Count);
         Assert.Equal(HttpMethod.Post, apiHandler.Requests[^1].Method);
@@ -353,13 +1293,116 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":{"id":"record-1","name":"host-a.example.com","type":"A","content":"8.8.8.8","proxied":false,"ttl":1},"errors":[],"messages":[]}"""),
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": {
+        "id": "record-1",
+        "name": "host-a.example.com",
+        "type": "A",
+        "content": "8.8.8.8",
+        "proxied": false,
+        "ttl": 1
+    },
+    "errors": [],
+    "messages": []
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
         ]);
         RecordingLogger<ReconciliationApp> logger = new();
 
@@ -374,7 +1417,9 @@ public sealed class ReconciliationAppTests
         Assert.Equal(1, exitCode);
         Assert.Contains(
             logger.Messages,
-            message => message.Contains("finished: 1 created, 0 updated, 0 no-op, 1 failed.", StringComparison.Ordinal));
+            message => message.Contains(
+                "finished: 1 created, 0 updated, 0 no-op, 1 failed.",
+                StringComparison.Ordinal));
         Assert.Equal(7, apiHandler.Requests.Count);
         Assert.Contains(apiHandler.Requests, request => request.Method == HttpMethod.Post);
     }
@@ -388,13 +1433,154 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-a","name":"host-a.example.com","type":"A","content":"8.8.8.8","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-aaaa","name":"host-a.example.com","type":"AAAA","content":"2001:4860:4860::8844","comment":"keep me","tags":["prod","managed"],"settings":{"flatten_cname":true,"ipv4_only":false,"ipv6_only":true},"proxied":false,"ttl":120}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":{"id":"record-aaaa","name":"host-a.example.com","type":"AAAA","content":"2001:4860:4860::8888","comment":"keep me","tags":["prod","managed"],"settings":{"flatten_cname":true,"ipv4_only":false,"ipv6_only":true},"proxied":false,"ttl":120},"errors":[],"messages":[]}"""),
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-a",
+            "name": "host-a.example.com",
+            "type": "A",
+            "content": "8.8.8.8",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-aaaa",
+            "name": "host-a.example.com",
+            "type": "AAAA",
+            "content": "2001:4860:4860::8844",
+            "comment": "keep me",
+            "tags": [
+                "prod",
+                "managed"
+            ],
+            "settings": {
+                "flatten_cname": true,
+                "ipv4_only": false,
+                "ipv6_only": true
+            },
+            "proxied": false,
+            "ttl": 120
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": {
+        "id": "record-aaaa",
+        "name": "host-a.example.com",
+        "type": "AAAA",
+        "content": "2001:4860:4860::8888",
+        "comment": "keep me",
+        "tags": [
+            "prod",
+            "managed"
+        ],
+        "settings": {
+            "flatten_cname": true,
+            "ipv4_only": false,
+            "ipv6_only": true
+        },
+        "proxied": false,
+        "ttl": 120
+    },
+    "errors": [],
+    "messages": []
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
         ]);
         RecordingLogger<ReconciliationApp> logger = new();
 
@@ -409,14 +1595,18 @@ public sealed class ReconciliationAppTests
         Assert.Equal(1, exitCode);
         Assert.Contains(
             logger.Messages,
-            message => message.Contains("finished: 0 created, 1 updated, 1 no-op, 2 failed.", StringComparison.Ordinal));
+            message => message.Contains(
+                "finished: 0 created, 1 updated, 1 no-op, 2 failed.",
+                StringComparison.Ordinal));
         CapturedHttpRequest updateRequest = Assert.Single(
             apiHandler.Requests,
             request => request.Method == HttpMethod.Put);
         Assert.Contains("\"content\":\"2001:4860:4860::8888\"", updateRequest.Body);
         Assert.Contains("\"comment\":\"keep me\"", updateRequest.Body);
         Assert.Contains("\"tags\":[\"prod\",\"managed\"]", updateRequest.Body);
-        Assert.Contains("\"settings\":{\"flatten_cname\":true,\"ipv4_only\":false,\"ipv6_only\":true}", updateRequest.Body);
+        Assert.Contains(
+            "\"settings\":{\"flatten_cname\":true,\"ipv4_only\":false,\"ipv6_only\":true}",
+            updateRequest.Body);
         Assert.Contains("\"proxied\":false", updateRequest.Body);
         Assert.Contains("\"ttl\":120", updateRequest.Body);
     }
@@ -429,16 +1619,90 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-1","name":"host.example.com","type":"A","content":"8.8.8.7","proxied":false,"ttl":1},{"id":"record-2","name":"host.example.com","type":"A","content":"8.8.8.6","proxied":false,"ttl":1},{"id":"record-3","name":"host.example.com","type":"TXT","content":"keep me","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":3,"total_count":3,"total_pages":1}}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-1",
+            "name": "host.example.com",
+            "type": "A",
+            "content": "8.8.8.7",
+            "proxied": false,
+            "ttl": 1
+        },
+        {
+            "id": "record-2",
+            "name": "host.example.com",
+            "type": "A",
+            "content": "8.8.8.6",
+            "proxied": false,
+            "ttl": 1
+        },
+        {
+            "id": "record-3",
+            "name": "host.example.com",
+            "type": "TXT",
+            "content": "keep me",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 3,
+        "total_count": 3,
+        "total_pages": 1
+    }
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: true).RunAsync(
             CancellationToken.None);
 
         Assert.Equal(1, exitCode);
-        Assert.DoesNotContain(apiHandler.Requests, request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
+        Assert.DoesNotContain(
+            apiHandler.Requests,
+            request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
     }
 
     [Fact]
@@ -450,10 +1714,97 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-a","name":"host.example.com","type":"A","content":"8.8.8.8","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-aaaa-1","name":"host.example.com","type":"AAAA","content":"2001:4860:4860::8844","proxied":false,"ttl":1},{"id":"record-aaaa-2","name":"host.example.com","type":"AAAA","content":"2001:4860:4860::8888","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":2,"total_count":2,"total_pages":1}}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-a",
+            "name": "host.example.com",
+            "type": "A",
+            "content": "8.8.8.8",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-aaaa-1",
+            "name": "host.example.com",
+            "type": "AAAA",
+            "content": "2001:4860:4860::8844",
+            "proxied": false,
+            "ttl": 1
+        },
+        {
+            "id": "record-aaaa-2",
+            "name": "host.example.com",
+            "type": "AAAA",
+            "content": "2001:4860:4860::8888",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 2,
+        "total_count": 2,
+        "total_pages": 1
+    }
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: false).RunAsync(
@@ -461,7 +1812,9 @@ public sealed class ReconciliationAppTests
 
         Assert.Equal(1, exitCode);
         Assert.Equal(4, apiHandler.Requests.Count);
-        Assert.DoesNotContain(apiHandler.Requests, request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
+        Assert.DoesNotContain(
+            apiHandler.Requests,
+            request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
     }
 
     [Fact]
@@ -472,16 +1825,74 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-1","name":"host.example.com","type":"A","content":"8.8.8.8","proxied":true,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-1",
+            "name": "host.example.com",
+            "type": "A",
+            "content": "8.8.8.8",
+            "proxied": true,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: true).RunAsync(
             CancellationToken.None);
 
         Assert.Equal(1, exitCode);
-        Assert.DoesNotContain(apiHandler.Requests, request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
+        Assert.DoesNotContain(
+            apiHandler.Requests,
+            request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
     }
 
     [Fact]
@@ -493,10 +1904,89 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-a","name":"host.example.com","type":"A","content":"8.8.8.8","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-aaaa","name":"host.example.com","type":"AAAA","content":"2001:4860:4860::8888","proxied":true,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-a",
+            "name": "host.example.com",
+            "type": "A",
+            "content": "8.8.8.8",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-aaaa",
+            "name": "host.example.com",
+            "type": "AAAA",
+            "content": "2001:4860:4860::8888",
+            "proxied": true,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: false).RunAsync(
@@ -504,7 +1994,9 @@ public sealed class ReconciliationAppTests
 
         Assert.Equal(1, exitCode);
         Assert.Equal(4, apiHandler.Requests.Count);
-        Assert.DoesNotContain(apiHandler.Requests, request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
+        Assert.DoesNotContain(
+            apiHandler.Requests,
+            request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
     }
 
     [Fact]
@@ -529,7 +2021,9 @@ public sealed class ReconciliationAppTests
         Assert.Empty(apiHandler.Requests);
         Assert.Contains(
             logger.Messages,
-            message => message.Contains("finished: 0 created, 0 updated, 0 no-op, 2 failed.", StringComparison.Ordinal));
+            message => message.Contains(
+                "finished: 0 created, 0 updated, 0 no-op, 2 failed.",
+                StringComparison.Ordinal));
     }
 
     [Fact]
@@ -565,17 +2059,181 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-a","name":"host.example.com","type":"A","content":"8.8.8.8","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-a",
+            "name": "host.example.com",
+            "type": "A",
+            "content": "8.8.8.8",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
             _ => JsonResponse(createAaaaRecord
-                ? """{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""
+                ? """
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""
                 : updateAaaaRecord
-                    ? """{"success":true,"result":[{"id":"record-aaaa","name":"host.example.com","type":"AAAA","content":"2001:4860:4860::8844","comment":"keep me","tags":["prod","managed"],"settings":{"flatten_cname":true,"ipv4_only":false,"ipv6_only":true},"proxied":false,"ttl":120}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""
-                    : """{"success":true,"result":[{"id":"record-aaaa","name":"host.example.com","type":"AAAA","content":"2001:4860:4860::8888","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
+                    ? """
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-aaaa",
+            "name": "host.example.com",
+            "type": "AAAA",
+            "content": "2001:4860:4860::8844",
+            "comment": "keep me",
+            "tags": [
+                "prod",
+                "managed"
+            ],
+            "settings": {
+                "flatten_cname": true,
+                "ipv4_only": false,
+                "ipv6_only": true
+            },
+            "proxied": false,
+            "ttl": 120
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""
+                    : """
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-aaaa",
+            "name": "host.example.com",
+            "type": "AAAA",
+            "content": "2001:4860:4860::8888",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
             _ => JsonResponse(updateAaaaRecord
-                ? """{"success":true,"result":{"id":"record-aaaa","name":"host.example.com","type":"AAAA","content":"2001:4860:4860::8888","comment":"keep me","tags":["prod","managed"],"settings":{"flatten_cname":true,"ipv4_only":false,"ipv6_only":true},"proxied":false,"ttl":120},"errors":[],"messages":[]}"""
-                : """{"success":true,"result":{"id":"record-aaaa","name":"host.example.com","type":"AAAA","content":"2001:4860:4860::8888","proxied":false,"ttl":1},"errors":[],"messages":[]}"""),
+                ? """
+{
+    "success": true,
+    "result": {
+        "id": "record-aaaa",
+        "name": "host.example.com",
+        "type": "AAAA",
+        "content": "2001:4860:4860::8888",
+        "comment": "keep me",
+        "tags": [
+            "prod",
+            "managed"
+        ],
+        "settings": {
+            "flatten_cname": true,
+            "ipv4_only": false,
+            "ipv6_only": true
+        },
+        "proxied": false,
+        "ttl": 120
+    },
+    "errors": [],
+    "messages": []
+}
+"""
+                : """
+{
+    "success": true,
+    "result": {
+        "id": "record-aaaa",
+        "name": "host.example.com",
+        "type": "AAAA",
+        "content": "2001:4860:4860::8888",
+        "proxied": false,
+        "ttl": 1
+    },
+    "errors": [],
+    "messages": []
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: false).RunAsync(
@@ -591,7 +2249,9 @@ public sealed class ReconciliationAppTests
             Assert.Contains("\"content\":\"2001:4860:4860::8888\"", apiHandler.Requests[^1].Body);
             Assert.Contains("\"comment\":\"keep me\"", apiHandler.Requests[^1].Body);
             Assert.Contains("\"tags\":[\"prod\",\"managed\"]", apiHandler.Requests[^1].Body);
-            Assert.Contains("\"settings\":{\"flatten_cname\":true,\"ipv4_only\":false,\"ipv6_only\":true}", apiHandler.Requests[^1].Body);
+            Assert.Contains(
+            "\"settings\":{\"flatten_cname\":true,\"ipv4_only\":false,\"ipv6_only\":true}",
+            apiHandler.Requests[^1].Body);
             Assert.Contains("\"proxied\":false", apiHandler.Requests[^1].Body);
             Assert.Contains("\"ttl\":120", apiHandler.Requests[^1].Body);
         }
@@ -605,7 +2265,9 @@ public sealed class ReconciliationAppTests
         else
         {
             Assert.Equal(4, apiHandler.Requests.Count);
-            Assert.DoesNotContain(apiHandler.Requests, request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
+            Assert.DoesNotContain(
+            apiHandler.Requests,
+            request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
         }
     }
 
@@ -618,11 +2280,95 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":{"id":"record-a","name":"host.example.com","type":"A","content":"8.8.8.8","proxied":false,"ttl":1},"errors":[],"messages":[]}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-aaaa","name":"host.example.com","type":"AAAA","content":"2001:4860:4860::8888","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": {
+        "id": "record-a",
+        "name": "host.example.com",
+        "type": "A",
+        "content": "8.8.8.8",
+        "proxied": false,
+        "ttl": 1
+    },
+    "errors": [],
+    "messages": []
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-aaaa",
+            "name": "host.example.com",
+            "type": "AAAA",
+            "content": "2001:4860:4860::8888",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: false).RunAsync(
@@ -632,8 +2378,12 @@ public sealed class ReconciliationAppTests
         Assert.Equal(5, apiHandler.Requests.Count);
         Assert.Single(apiHandler.Requests, request => request.Method == HttpMethod.Post);
         Assert.DoesNotContain(apiHandler.Requests, request => request.Method == HttpMethod.Put);
-        Assert.Contains("\"type\":\"A\"", apiHandler.Requests.Single(request => request.Method == HttpMethod.Post).Body);
-        Assert.Contains("\"content\":\"8.8.8.8\"", apiHandler.Requests.Single(request => request.Method == HttpMethod.Post).Body);
+        Assert.Contains(
+            "\"type\":\"A\"",
+            apiHandler.Requests.Single(request => request.Method == HttpMethod.Post).Body);
+        Assert.Contains(
+            "\"content\":\"8.8.8.8\"",
+            apiHandler.Requests.Single(request => request.Method == HttpMethod.Post).Body);
     }
 
     [Fact]
@@ -645,11 +2395,124 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-a","name":"host.example.com","type":"A","content":"8.8.8.8","comment":"keep me","tags":["prod","managed"],"settings":{"flatten_cname":true,"ipv4_only":false,"ipv6_only":true},"proxied":false,"ttl":120}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":{"id":"record-a","name":"host.example.com","type":"A","content":"8.8.4.4","comment":"keep me","tags":["prod","managed"],"settings":{"flatten_cname":true,"ipv4_only":false,"ipv6_only":true},"proxied":false,"ttl":120},"errors":[],"messages":[]}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-aaaa","name":"host.example.com","type":"AAAA","content":"2001:4860:4860::8888","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-a",
+            "name": "host.example.com",
+            "type": "A",
+            "content": "8.8.8.8",
+            "comment": "keep me",
+            "tags": [
+                "prod",
+                "managed"
+            ],
+            "settings": {
+                "flatten_cname": true,
+                "ipv4_only": false,
+                "ipv6_only": true
+            },
+            "proxied": false,
+            "ttl": 120
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": {
+        "id": "record-a",
+        "name": "host.example.com",
+        "type": "A",
+        "content": "8.8.4.4",
+        "comment": "keep me",
+        "tags": [
+            "prod",
+            "managed"
+        ],
+        "settings": {
+            "flatten_cname": true,
+            "ipv4_only": false,
+            "ipv6_only": true
+        },
+        "proxied": false,
+        "ttl": 120
+    },
+    "errors": [],
+    "messages": []
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-aaaa",
+            "name": "host.example.com",
+            "type": "AAAA",
+            "content": "2001:4860:4860::8888",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: false).RunAsync(
@@ -662,7 +2525,9 @@ public sealed class ReconciliationAppTests
         Assert.Contains("\"content\":\"8.8.4.4\"", apiHandler.Requests[3].Body);
         Assert.Contains("\"comment\":\"keep me\"", apiHandler.Requests[3].Body);
         Assert.Contains("\"tags\":[\"prod\",\"managed\"]", apiHandler.Requests[3].Body);
-        Assert.Contains("\"settings\":{\"flatten_cname\":true,\"ipv4_only\":false,\"ipv6_only\":true}", apiHandler.Requests[3].Body);
+        Assert.Contains(
+            "\"settings\":{\"flatten_cname\":true,\"ipv4_only\":false,\"ipv6_only\":true}",
+            apiHandler.Requests[3].Body);
         Assert.Contains("\"proxied\":false", apiHandler.Requests[3].Body);
         Assert.Contains("\"ttl\":120", apiHandler.Requests[3].Body);
     }
@@ -676,12 +2541,130 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-a","name":"host.example.com","type":"A","content":"8.8.8.8","comment":"keep me","tags":["prod","managed"],"settings":{"flatten_cname":true,"ipv4_only":false,"ipv6_only":true},"proxied":false,"ttl":120}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":{"id":"record-a","name":"host.example.com","type":"A","content":"8.8.4.4","comment":"keep me","tags":["prod","managed"],"settings":{"flatten_cname":true,"ipv4_only":false,"ipv6_only":true},"proxied":false,"ttl":120},"errors":[],"messages":[]}"""),
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":{"id":"record-aaaa","name":"host.example.com","type":"AAAA","content":"2001:4860:4860::8888","proxied":false,"ttl":1},"errors":[],"messages":[]}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-a",
+            "name": "host.example.com",
+            "type": "A",
+            "content": "8.8.8.8",
+            "comment": "keep me",
+            "tags": [
+                "prod",
+                "managed"
+            ],
+            "settings": {
+                "flatten_cname": true,
+                "ipv4_only": false,
+                "ipv6_only": true
+            },
+            "proxied": false,
+            "ttl": 120
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": {
+        "id": "record-a",
+        "name": "host.example.com",
+        "type": "A",
+        "content": "8.8.4.4",
+        "comment": "keep me",
+        "tags": [
+            "prod",
+            "managed"
+        ],
+        "settings": {
+            "flatten_cname": true,
+            "ipv4_only": false,
+            "ipv6_only": true
+        },
+        "proxied": false,
+        "ttl": 120
+    },
+    "errors": [],
+    "messages": []
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": {
+        "id": "record-aaaa",
+        "name": "host.example.com",
+        "type": "AAAA",
+        "content": "2001:4860:4860::8888",
+        "proxied": false,
+        "ttl": 1
+    },
+    "errors": [],
+    "messages": []
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: false).RunAsync(
@@ -706,11 +2689,95 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-a","name":"host.example.com","type":"A","content":"8.8.8.8","proxied":false,"ttl":1}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":{"id":"record-aaaa","name":"host.example.com","type":"AAAA","content":"2001:4860:4860::8888","proxied":false,"ttl":1},"errors":[],"messages":[]}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-a",
+            "name": "host.example.com",
+            "type": "A",
+            "content": "8.8.8.8",
+            "proxied": false,
+            "ttl": 1
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": {
+        "id": "record-aaaa",
+        "name": "host.example.com",
+        "type": "AAAA",
+        "content": "2001:4860:4860::8888",
+        "proxied": false,
+        "ttl": 1
+    },
+    "errors": [],
+    "messages": []
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(apiHandler, traceHandler, disableIpv6: false).RunAsync(
@@ -732,9 +2799,73 @@ public sealed class ReconciliationAppTests
         ]);
 
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"zone-1","name":"example.com"}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[{"id":"record-a","name":"host.example.com","type":"A","content":"8.8.8.8","proxied":false,"ttl":120},{"id":"record-aaaa","name":"host.example.com","type":"AAAA","content":"2001:4860:4860::8844","proxied":false,"ttl":120}],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":2,"total_count":2,"total_pages":1}}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "zone-1",
+            "name": "example.com"
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 1,
+        "total_count": 1,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [
+        {
+            "id": "record-a",
+            "name": "host.example.com",
+            "type": "A",
+            "content": "8.8.8.8",
+            "proxied": false,
+            "ttl": 120
+        },
+        {
+            "id": "record-aaaa",
+            "name": "host.example.com",
+            "type": "AAAA",
+            "content": "2001:4860:4860::8844",
+            "proxied": false,
+            "ttl": 120
+        }
+    ],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 2,
+        "total_count": 2,
+        "total_pages": 1
+    }
+}
+"""),
         ]);
         RecordingLogger<ReconciliationApp> logger = new();
 
@@ -748,10 +2879,14 @@ public sealed class ReconciliationAppTests
         Assert.Equal(0, exitCode);
         Assert.Single(traceHandler.Requests);
         Assert.Equal(3, apiHandler.Requests.Count);
-        Assert.DoesNotContain(apiHandler.Requests, request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
+        Assert.DoesNotContain(
+            apiHandler.Requests,
+            request => request.Method == HttpMethod.Post || request.Method == HttpMethod.Put);
         Assert.Contains(
             logger.Messages,
-            message => message.Contains("finished: 0 created, 0 updated, 1 no-op, 0 failed.", StringComparison.Ordinal));
+            message => message.Contains(
+                "finished: 0 created, 0 updated, 1 no-op, 0 failed.",
+                StringComparison.Ordinal));
     }
 
     [Fact]
@@ -764,9 +2899,51 @@ public sealed class ReconciliationAppTests
 
         RecordingLogger<ReconciliationApp> logger = new();
         RecordingHttpMessageHandler apiHandler = new([
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
-            _ => JsonResponse("""{"success":true,"result":[],"errors":[],"messages":[],"result_info":{"page":1,"per_page":100,"count":0,"total_count":0,"total_pages":1}}"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
+            _ => JsonResponse("""
+{
+    "success": true,
+    "result": [],
+    "errors": [],
+    "messages": [],
+    "result_info": {
+        "page": 1,
+        "per_page": 100,
+        "count": 0,
+        "total_count": 0,
+        "total_pages": 1
+    }
+}
+"""),
         ]);
 
         int exitCode = await CreateApp(
@@ -780,10 +2957,15 @@ public sealed class ReconciliationAppTests
         Assert.Equal(3, apiHandler.Requests.Count);
         Assert.All(
             apiHandler.Requests,
-            request => Assert.DoesNotContain("/dns_records", request.RequestUri!.AbsolutePath, StringComparison.Ordinal));
+            request => Assert.DoesNotContain(
+                "/dns_records",
+                request.RequestUri!.AbsolutePath,
+                StringComparison.Ordinal));
         Assert.Contains(
             logger.Messages,
-            message => message.Contains("finished: 0 created, 0 updated, 0 no-op, 2 failed.", StringComparison.Ordinal));
+            message => message.Contains(
+                "finished: 0 created, 0 updated, 0 no-op, 2 failed.",
+                StringComparison.Ordinal));
     }
 
     private static ReconciliationApp CreateApp(
@@ -805,7 +2987,9 @@ public sealed class ReconciliationAppTests
         };
 
         CloudflareApiClient apiClient = new(apiHttpClient, configuration);
-        CloudflareZoneResolver zoneResolver = new(apiClient, NullLogger<CloudflareZoneResolver>.Instance);
+        CloudflareZoneResolver zoneResolver = new(
+            apiClient,
+            NullLogger<CloudflareZoneResolver>.Instance);
         CloudflareDnsRecordClient dnsRecordClient = new(apiClient);
 
         HttpClient traceHttpClient = new(new CloudflareTraceRetryHandler
@@ -851,10 +3035,12 @@ public sealed class ReconciliationAppTests
         };
 }
 
-internal sealed class RecordingHttpMessageHandler(IEnumerable<Func<HttpRequestMessage, HttpResponseMessage>> responses)
+internal sealed class RecordingHttpMessageHandler(
+    IEnumerable<Func<HttpRequestMessage, HttpResponseMessage>> responses)
     : HttpMessageHandler
 {
-    private readonly Queue<Func<HttpRequestMessage, HttpResponseMessage>> responses = new(responses);
+    private readonly Queue<Func<HttpRequestMessage, HttpResponseMessage>> responses =
+        new(responses);
 
     public List<CapturedHttpRequest> Requests { get; } = [];
 

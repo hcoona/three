@@ -38,7 +38,8 @@ internal sealed class CloudflareApiClient(
                 {
                     response = await SendAsync(
                             HttpMethod.Get,
-                            $"zones?name={Uri.EscapeDataString(exactName)}&page={page}&per_page={DefaultPageSize}",
+                            $"zones?name={Uri.EscapeDataString(exactName)}"
+                            + $"&page={page}&per_page={DefaultPageSize}",
                             CloudflareJsonContext.Default.CloudflareZonesResponseDto,
                             pageActivity,
                             cancellationToken)
@@ -119,15 +120,22 @@ internal sealed class CloudflareApiClient(
                 CloudflareDnsRecordsResponseDto response;
                 try
                 {
+                    string relativeUri =
+                        $"zones/{Uri.EscapeDataString(zoneId)}/dns_records"
+                        + $"?name={Uri.EscapeDataString(exactName)}"
+                        + $"&page={page}&per_page={DefaultPageSize}";
+
                     response = await SendAsync(
                             HttpMethod.Get,
-                            $"zones/{Uri.EscapeDataString(zoneId)}/dns_records?name={Uri.EscapeDataString(exactName)}&page={page}&per_page={DefaultPageSize}",
+                            relativeUri,
                             CloudflareJsonContext.Default.CloudflareDnsRecordsResponseDto,
                             pageActivity,
                             cancellationToken)
                         .ConfigureAwait(false);
 
-                    ThrowIfFailed(response, $"DNS record lookup for \"{exactName}\" in zone \"{zoneId}\"");
+                    ThrowIfFailed(
+                        response,
+                        $"DNS record lookup for \"{exactName}\" in zone \"{zoneId}\"");
                 }
                 catch (Exception ex)
                 {
@@ -205,13 +213,17 @@ internal sealed class CloudflareApiClient(
             CloudflareDnsRecordMutationResponseDto response = await SendAsync(
                     HttpMethod.Post,
                     $"zones/{Uri.EscapeDataString(zoneId)}/dns_records",
-                    JsonContent.Create(request, CloudflareJsonContext.Default.CloudflareDnsRecordMutationRequestDto),
+                    JsonContent.Create(
+                        request,
+                        CloudflareJsonContext.Default.CloudflareDnsRecordMutationRequestDto),
                     CloudflareJsonContext.Default.CloudflareDnsRecordMutationResponseDto,
-                activity,
-                cancellationToken)
+                    activity,
+                    cancellationToken)
             .ConfigureAwait(false);
 
-            ThrowIfFailed(response, $"DNS record create in zone \"{zoneId}\"");
+            ThrowIfFailed(
+            response,
+            $"DNS record create in zone \"{zoneId}\"");
 
             CloudflareDnsRecord record = ToCloudflareDnsRecord(response.Result);
             CloudflareTelemetry.MarkOutcome(activity, "created");
@@ -244,16 +256,23 @@ internal sealed class CloudflareApiClient(
 
         try
         {
+            string zonePath = $"zones/{Uri.EscapeDataString(zoneId)}/dns_records";
+            string relativeUri = zonePath + "/" + Uri.EscapeDataString(recordId);
+
             CloudflareDnsRecordMutationResponseDto response = await SendAsync(
                     HttpMethod.Put,
-                    $"zones/{Uri.EscapeDataString(zoneId)}/dns_records/{Uri.EscapeDataString(recordId)}",
-                    JsonContent.Create(request, CloudflareJsonContext.Default.CloudflareDnsRecordMutationRequestDto),
+                    relativeUri,
+                    JsonContent.Create(
+                        request,
+                        CloudflareJsonContext.Default.CloudflareDnsRecordMutationRequestDto),
                     CloudflareJsonContext.Default.CloudflareDnsRecordMutationResponseDto,
-                activity,
-                cancellationToken)
+                    activity,
+                    cancellationToken)
             .ConfigureAwait(false);
 
-            ThrowIfFailed(response, $"DNS record update for \"{recordId}\" in zone \"{zoneId}\"");
+            ThrowIfFailed(
+            response,
+            $"DNS record update for \"{recordId}\" in zone \"{zoneId}\"");
 
             CloudflareDnsRecord record = ToCloudflareDnsRecord(response.Result);
             CloudflareTelemetry.MarkOutcome(activity, "updated");
@@ -277,7 +296,14 @@ internal sealed class CloudflareApiClient(
         Activity? activity,
         CancellationToken cancellationToken)
         where TResponse : CloudflareApiResponseBase
-        => await SendAsync(method, relativeUri, null, jsonTypeInfo, activity, cancellationToken).ConfigureAwait(false);
+        => await SendAsync(
+                method,
+                relativeUri,
+                null,
+                jsonTypeInfo,
+                activity,
+                cancellationToken)
+            .ConfigureAwait(false);
 
     private async Task<TResponse> SendAsync<TResponse>(
         HttpMethod method,
@@ -289,7 +315,8 @@ internal sealed class CloudflareApiClient(
         where TResponse : CloudflareApiResponseBase
     {
         using HttpRequestMessage request = new(method, relativeUri);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", configuration.ApiToken);
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Bearer", configuration.ApiToken);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         request.Content = content;
 
@@ -310,7 +337,8 @@ internal sealed class CloudflareApiClient(
                 BuildHttpFailureMessage(relativeUri, response.StatusCode, responseText));
         }
 
-        await using Stream responseStream = await response.Content.ReadAsStreamAsync(cancellationToken)
+        await using Stream responseStream =
+            await response.Content.ReadAsStreamAsync(cancellationToken)
             .ConfigureAwait(false);
 
         TResponse? payload = await JsonSerializer.DeserializeAsync(
@@ -330,7 +358,8 @@ internal sealed class CloudflareApiClient(
             recordDto.Name is null ||
             recordDto.Type is null)
         {
-            throw new CloudflareApiException("Cloudflare API returned an invalid DNS record payload.");
+            throw new CloudflareApiException(
+                "Cloudflare API returned an invalid DNS record payload.");
         }
 
         return new CloudflareDnsRecord(

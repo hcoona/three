@@ -31,7 +31,9 @@ internal sealed partial class CloudflareZoneResolver(
 
             activity?.SetTag(CloudflareTelemetry.DomainTagName, canonicalDomain);
 
-            foreach (string candidate in CloudflareDomainCanonicalizer.EnumerateSuffixes(canonicalDomain))
+            foreach (
+                string candidate in
+                CloudflareDomainCanonicalizer.EnumerateSuffixes(canonicalDomain))
             {
                 IReadOnlyList<CloudflareZone> zones = await apiClient.ListZonesByExactNameAsync(
                         candidate,
@@ -46,7 +48,8 @@ internal sealed partial class CloudflareZoneResolver(
                 if (zones.Count > 1)
                 {
                     throw new CloudflareZoneResolutionException(
-                        $"Cloudflare returned multiple exact matches for zone \"{candidate}\".");
+                        $"Cloudflare returned multiple exact matches for zone "
+                        + $"\"{candidate}\".");
                 }
 
                 CloudflareZone zone = zones[0];
@@ -57,8 +60,8 @@ internal sealed partial class CloudflareZoneResolver(
                 return zone;
             }
 
-            CloudflareZoneResolutionException noZoneException = new(
-                $"No Cloudflare zone was visible for \"{canonicalDomain}\".");
+            CloudflareZoneResolutionException noZoneException =
+                new($"No Cloudflare zone was visible for \"{canonicalDomain}\".");
             CloudflareTelemetry.MarkFailure(activity, noZoneException);
             throw noZoneException;
         }

@@ -299,9 +299,11 @@ public sealed class TraceIpDiscoveryServiceTests
 
         TraceIpDiscoveryService service = CreateService(handler);
 
-        HttpRequestException exception = await Assert.ThrowsAsync<HttpRequestException>(() => service.DiscoverAsync(
-            AddressFamily.InterNetwork,
-            CancellationToken.None).AsTask());
+        HttpRequestException exception =
+            await Assert.ThrowsAsync<HttpRequestException>(
+                () => service.DiscoverAsync(
+                    AddressFamily.InterNetwork,
+                    CancellationToken.None).AsTask());
 
         Assert.IsType<IOException>(exception.InnerException);
         Assert.Equal(3, handler.Requests.Count);
@@ -376,7 +378,8 @@ public sealed class TraceIpDiscoveryServiceTests
 
 }
 
-internal sealed class RecordingTraceHttpMessageHandler(IEnumerable<Func<HttpResponseMessage>> responses)
+internal sealed class RecordingTraceHttpMessageHandler(
+    IEnumerable<Func<HttpResponseMessage>> responses)
     : HttpMessageHandler
 {
     private readonly Queue<Func<HttpResponseMessage>> responses = new(responses);

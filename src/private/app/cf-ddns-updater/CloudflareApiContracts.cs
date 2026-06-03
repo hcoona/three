@@ -181,4 +181,5 @@ internal sealed partial class CloudflareJsonContext : JsonSerializerContext
 
 internal sealed class CloudflareApiException(string message) : InvalidOperationException(message);
 
-internal sealed class CloudflareZoneResolutionException(string message) : InvalidOperationException(message);
+internal sealed class CloudflareZoneResolutionException(string message)
+    : InvalidOperationException(message);
