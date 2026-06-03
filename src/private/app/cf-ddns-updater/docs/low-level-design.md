@@ -43,11 +43,11 @@ No JSON files, command-line overrides, user secrets, or alternative providers ar
 
 ### 3.2 Environment Variables
 
-| Variable | Required | Binding |
-| --- | --- | --- |
-| `HCOONA_CLOUDFLARE_DDNS_UPDATER_API_TOKEN` | Yes | `CloudflareOptions.ApiToken` |
-| `HCOONA_CLOUDFLARE_DDNS_UPDATER_DOMAINS` | Yes | `CloudflareOptions.DomainsCsv` |
-| `HCOONA_CLOUDFLARE_DDNS_UPDATER_DISABLE_IPV6` | No | `CloudflareOptions.DisableIpv6` |
+| Variable                                      | Required | Binding                         |
+| --------------------------------------------- | -------- | ------------------------------- |
+| `HCOONA_CLOUDFLARE_DDNS_UPDATER_API_TOKEN`    | Yes      | `CloudflareOptions.ApiToken`    |
+| `HCOONA_CLOUDFLARE_DDNS_UPDATER_DOMAINS`      | Yes      | `CloudflareOptions.DomainsCsv`  |
+| `HCOONA_CLOUDFLARE_DDNS_UPDATER_DISABLE_IPV6` | No       | `CloudflareOptions.DisableIpv6` |
 
 The `DOMAINS` value is a comma-separated list of fully qualified domain names.
 
@@ -72,12 +72,12 @@ Canonical domain form means:
 Use a small options model rather than binding directly into business services:
 
 - `CloudflareOptions`
-  - `string ApiToken`
-  - `string DomainsCsv`
-  - `bool DisableIpv6`
+    - `string ApiToken`
+    - `string DomainsCsv`
+    - `bool DisableIpv6`
 - `CloudflareApiOptions`
-  - `Uri BaseAddress`
-  - `TimeSpan Timeout`
+    - `Uri BaseAddress`
+    - `TimeSpan Timeout`
 
 The Trace endpoints are internal constants owned by the IP discovery service. They are not configurable and do not appear in the options model.
 
@@ -369,14 +369,14 @@ The implementation must keep the following out of scope:
 
 ## 14. Design Decisions at a Glance
 
-| Decision | Choice | Rationale |
-| --- | --- | --- |
-| Configuration source | Environment variables only | Matches the MVP scope and avoids extra configuration surfaces |
-| Config library | Microsoft.Extensions.Configuration | Keeps binding and validation standard and testable |
-| Runtime model | Single-run CLI | Matches the external-scheduler deployment model |
-| IP source | Cloudflare Trace only | Avoids provider fallback and keeps behavior deterministic |
-| Zone input | User-supplied domain names | Removes zone ID management from the MVP |
-| Conflict policy | Fail closed | Prevents unsafe DNS mutations |
-| Record ownership | Only A/AAAA at the exact owner name | Preserves unrelated DNS records |
-| Update semantics | Preserve non-owned fields | Minimizes accidental drift |
-| AOT strategy | Trim-safe, explicit DTOs | Supports NativeAOT publishing |
+| Decision             | Choice                              | Rationale                                                     |
+| -------------------- | ----------------------------------- | ------------------------------------------------------------- |
+| Configuration source | Environment variables only          | Matches the MVP scope and avoids extra configuration surfaces |
+| Config library       | Microsoft.Extensions.Configuration  | Keeps binding and validation standard and testable            |
+| Runtime model        | Single-run CLI                      | Matches the external-scheduler deployment model               |
+| IP source            | Cloudflare Trace only               | Avoids provider fallback and keeps behavior deterministic     |
+| Zone input           | User-supplied domain names          | Removes zone ID management from the MVP                       |
+| Conflict policy      | Fail closed                         | Prevents unsafe DNS mutations                                 |
+| Record ownership     | Only A/AAAA at the exact owner name | Preserves unrelated DNS records                               |
+| Update semantics     | Preserve non-owned fields           | Minimizes accidental drift                                    |
+| AOT strategy         | Trim-safe, explicit DTOs            | Supports NativeAOT publishing                                 |

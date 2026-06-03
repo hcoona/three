@@ -42,11 +42,11 @@ Periodic execution is owned by the host environment. On Linux, the supported dep
 
 The MVP uses environment variables only.
 
-| Variable | Required | Description |
-| --- | --- | --- |
-| `HCOONA_CLOUDFLARE_DDNS_UPDATER_API_TOKEN` | Yes | Cloudflare API token used for zone lookup and DNS record updates. |
-| `HCOONA_CLOUDFLARE_DDNS_UPDATER_DOMAINS` | Yes | Comma-separated fully qualified domain names to update. |
-| `HCOONA_CLOUDFLARE_DDNS_UPDATER_DISABLE_IPV6` | No | When set to `true`, disables IPv6 discovery and AAAA reconciliation. |
+| Variable                                      | Required | Description                                                          |
+| --------------------------------------------- | -------- | -------------------------------------------------------------------- |
+| `HCOONA_CLOUDFLARE_DDNS_UPDATER_API_TOKEN`    | Yes      | Cloudflare API token used for zone lookup and DNS record updates.    |
+| `HCOONA_CLOUDFLARE_DDNS_UPDATER_DOMAINS`      | Yes      | Comma-separated fully qualified domain names to update.              |
+| `HCOONA_CLOUDFLARE_DDNS_UPDATER_DISABLE_IPV6` | No       | When set to `true`, disables IPv6 discovery and AAAA reconciliation. |
 
 Example:
 
