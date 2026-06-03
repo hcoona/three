@@ -78,6 +78,17 @@
       "automerge": true
     },
     {
+      "description": "Refresh tracked pnpm lockfiles after lock file maintenance updates.",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "postUpgradeTasks": {
+        "commands": ["mise install pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
+        "fileFilters": ["pnpm-lock.yaml", "**/pnpm-lock.yaml"],
+        "executionMode": "branch"
+      },
+      "automerge": true
+    },
+    {
       "description": "Group GitHub Actions setup and CI tooling updates.",
       "matchManagers": ["github-actions"],
       "matchPackageNames": [
