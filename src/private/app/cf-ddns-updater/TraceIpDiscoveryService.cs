@@ -482,6 +482,7 @@ internal sealed class CloudflareTraceRetryHandler : DelegatingHandler
             HttpRequestMessage retryRequest = attempt == 1 ? request : CloneRequest(request);
             HttpResponseMessage? response = null;
             bool returnResponse = false;
+            bool disposeRequest = attempt > 1;
             try
             {
                 response = await base.SendAsync(
@@ -543,6 +544,11 @@ internal sealed class CloudflareTraceRetryHandler : DelegatingHandler
             }
             finally
             {
+                if (disposeRequest)
+                {
+                    retryRequest.Dispose();
+                }
+
                 if (!returnResponse)
                 {
                     response?.Dispose();
