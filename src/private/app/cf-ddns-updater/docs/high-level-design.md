@@ -67,6 +67,8 @@ Failures are target-scoped where possible. The application must attempt remainin
 
 Observability uses standard .NET logging abstractions. The CLI host may route those logs to console output, but the implementation must not rely on ad hoc console-only logging.
 
+The implementation should also emit .NET-native tracing spans for the reconciliation flow. Those spans are for diagnosis and performance analysis, while logs remain the primary human-readable output. Cloudflare request identifiers such as `cf-ray` may be attached as span attributes or log fields when available, but they are not the tracing model itself.
+
 The MVP requires clear console-oriented logging for:
 
 - Configuration validation failures
