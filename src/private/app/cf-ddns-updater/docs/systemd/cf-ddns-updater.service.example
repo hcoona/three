@@ -1,0 +1,13 @@
+[Unit]
+Description=Cloudflare DDNS updater
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+TimeoutStartSec=10min
+User=cf-ddns-updater
+Group=cf-ddns-updater
+# See cf-ddns-updater.env.example for the required environment variables.
+EnvironmentFile=/etc/cf-ddns-updater/cf-ddns-updater.env
+ExecStart=/usr/local/bin/cf-ddns-updater

@@ -71,7 +71,7 @@ jobs:
       - name: Install pkl
         uses: pkl-community/setup-pkl@a862c198115338598d769aaf03f5fa8c5123036e # v0
         with:
-          pkl-version: 0.30.0
+          pkl-version: 0.31.1
 
       - name: Mise Install Tools
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
