@@ -15,10 +15,13 @@ The Azure Document Translation SDK for .NET provides:
 - `Azure.AI.Translation.Document` package.
 - `SingleDocumentTranslationClient` for synchronous single-document translation.
 - `AzureKeyCredential` for API key authentication.
+- `TokenCredential` constructors for Entra ID authentication through Azure Identity.
 - `MultipartFormFileData` and `DocumentTranslateContent` for sending local document content.
 - `TranslateAsync(targetLanguage, content)` returning `Response<BinaryData>`.
 
 The batch `DocumentTranslationClient` requires Azure Blob Storage source and target containers. It is out of scope for the MVP.
+
+Although the SDK natively supports Entra ID through `TokenCredential`, the MVP uses API key authentication only to keep setup and command behavior small. Entra ID support can be added later without changing the translation flow.
 
 ## Proposed Project Location
 
@@ -51,6 +54,10 @@ Required:
 Optional only if needed by implementation:
 
 - `Microsoft.Extensions.Configuration.EnvironmentVariables`
+
+Future Entra ID support would add:
+
+- `Azure.Identity`
 
 Repository integration notes:
 
@@ -190,7 +197,7 @@ Set `<AssemblyName>document-translator</AssemblyName>` so the produced executabl
 - Multiple input files.
 - Multiple target languages.
 - Markdown-aware mode.
-- Azure Identity authentication.
+- Entra ID authentication through Azure Identity.
 - Glossary support.
 - Custom translation model support.
 - Packaging as a local or published .NET tool.

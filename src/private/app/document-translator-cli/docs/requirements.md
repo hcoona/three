@@ -98,6 +98,7 @@ Excluded:
 
 - Batch translation.
 - Azure Blob Storage source or target containers.
+- Entra ID authentication.
 - Multiple input files.
 - Multiple target languages.
 - Markdown files.
@@ -121,7 +122,7 @@ Excluded:
 ## Open Questions Deferred Past MVP
 
 1. Whether to add batch mode with Blob Storage.
-2. Whether to support Azure Identity authentication.
+2. Whether to support Entra ID authentication through Azure Identity.
 3. Whether to add a Markdown-aware mode that parses Markdown structure and translates only human-readable prose.
 4. Whether to add an explicit `--source-language` option.
 5. Whether to infer output file names when `--output` is omitted.
