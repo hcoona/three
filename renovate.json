@@ -40,7 +40,10 @@
     {
       "description": "Repository-level tooling may update lower bounds normally.",
       "matchFileNames": ["package.json", "pyproject.toml", "global.json", "mise.toml", ".config/dotnet-tools.json"],
-      "rangeStrategy": "replace"
+      "rangeStrategy": "replace",
+      "lockFileMaintenance": {
+        "enabled": false
+      }
     },
     {
       "description": "Keep pnpm on v10 while Node 20 remains in the support matrix.",
