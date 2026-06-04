@@ -87,7 +87,7 @@ Environment fallback:
 
 `--force` is the only overwrite mechanism. Without it, an existing output file is a validation error.
 
-The endpoint value must be the Document Translation custom domain endpoint shown on the Azure Translator resource page, for example `https://<resource-name>.cognitiveservices.azure.com`.
+The endpoint value must be the Document Translation endpoint accepted by `SingleDocumentTranslationClient`. The SDK constructor documentation shows the credential-based endpoint form as `https://<resource-name>.cognitiveservices.azure.com/translator`.
 
 Authentication mode behavior:
 

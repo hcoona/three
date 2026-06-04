@@ -42,7 +42,7 @@ Configuration comes from environment variables by default:
 - `AZURE_TRANSLATOR_AUTH_MODE`, optional, either `api-key` or `entra-id`, defaulting to `api-key`
 - `AZURE_TRANSLATOR_KEY`, required only when using `api-key` authentication
 
-The endpoint must be the Document Translation custom domain endpoint shown on the Azure Translator resource page, for example `https://<resource-name>.cognitiveservices.azure.com`.
+The endpoint must be the Document Translation endpoint accepted by `SingleDocumentTranslationClient`. The SDK constructor documentation shows the credential-based endpoint form as `https://<resource-name>.cognitiveservices.azure.com/translator`.
 
 Command-line overrides are included in the MVP:
 
@@ -54,7 +54,7 @@ document-translator translate \
   --output ./source.zh-Hans.docx \
   --target-language zh-Hans \
   --auth-mode api-key \
-  --endpoint https://<resource-name>.cognitiveservices.azure.com \
+  --endpoint https://<resource-name>.cognitiveservices.azure.com/translator \
   --key <api-key>
 ```
 
@@ -66,7 +66,7 @@ document-translator translate \
   --output ./source.zh-Hans.docx \
   --target-language zh-Hans \
   --auth-mode entra-id \
-  --endpoint https://<resource-name>.cognitiveservices.azure.com
+  --endpoint https://<resource-name>.cognitiveservices.azure.com/translator
 ```
 
 ## Functional Requirements
@@ -130,14 +130,29 @@ Excluded:
 - Secret storage integration.
 - Custom Entra ID credential selection beyond Azure Identity defaults.
 
-## Assumptions
+## Verified Assumptions and Evidence
 
-1. The Azure resource endpoint is a custom Translator endpoint accepted by the Document Translation SDK.
-2. The Azure SDK supports the input document format and the selected target language.
-3. The service response preserves the translated document format when the service supports that format.
-4. The caller is responsible for managing Azure credentials outside the CLI.
-5. The MVP relies on Azure automatic source-language detection.
-6. For Entra ID authentication, the caller has already authenticated through a supported Azure Identity source, such as Azure CLI, environment variables, Visual Studio Code, or managed identity.
+These assumptions were checked against official Microsoft documentation.
+
+1. **Endpoint.** Use a Translator resource custom domain endpoint accepted by `SingleDocumentTranslationClient`.
+   - Evidence: The Document Translation overview lists a synchronous prerequisite as "A Translator resource with a custom domain endpoint" ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/ai-services/translator/document-translation/overview)).
+   - Evidence: The `SingleDocumentTranslationClient(Uri, AzureKeyCredential)` and `SingleDocumentTranslationClient(Uri, TokenCredential)` constructor docs describe the endpoint parameter as "Supported document Translation endpoint" and give `https://{TranslatorResourceName}.cognitiveservices.azure.com/translator` as the example ([.NET API reference](https://learn.microsoft.com/en-us/dotnet/api/azure.ai.translation.document.singledocumenttranslationclient.-ctor?view=azure-dotnet)).
+   - Evidence: Microsoft Entra authentication docs state that regional endpoints do not support Microsoft Entra authentication ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/ai-services/translator/how-to/microsoft-entra-id-auth)).
+2. **Format and language support.** The service accepts only supported synchronous document formats and supported target language codes.
+   - Evidence: The synchronous REST guide says `targetLanguage` "must be one of the supported languages included in the translation scope" and the `document` body must be "Any one of the supported document formats" ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/ai-services/translator/document-translation/reference/translate-document)).
+   - Evidence: The Document Translation overview lists the synchronous supported formats used by the MVP allowlist, including `.txt`, `.csv`, `.html`, `.docx`, `.pptx`, `.xlsx`, `.msg`, and `.xlf` ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/ai-services/translator/document-translation/overview#supported-document-and-glossary-formats)).
+   - Evidence: The language support page says "Cloud translation is available in all languages for the `Translate` operation of Text translation and for Document translation" ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/ai-services/translator/language-support)).
+3. **Format preservation.** Azure Document Translation preserves layout and format for supported documents, but this is not a pixel-perfect guarantee and only applies within service-supported formats.
+   - Evidence: The overview says Document Translation translates supported documents "while preserving original document structure and data format" and lists "Preserve source file presentation" for synchronous translation as preserving "the original layout and format" ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/ai-services/translator/document-translation/overview)).
+   - Evidence: The synchronous REST guide says the final response "contains the translated document and is returned directly to the calling client" ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/ai-services/translator/document-translation/reference/translate-document)).
+   - Caveat: The overview documents legacy file type conversion exceptions for batch translation; those legacy formats are outside this synchronous MVP allowlist ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/ai-services/translator/document-translation/overview#supported-document-and-glossary-formats)).
+4. **Credential management.** The CLI consumes externally supplied credentials or an externally configured Azure Identity context; it does not store, rotate, or provision credentials itself.
+   - Evidence: The overview advises storing subscription keys in a secure location such as Azure Key Vault and avoiding source control ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/ai-services/translator/document-translation/overview)).
+   - Evidence: .NET authentication guidance says most Foundry tools support key-based authentication and Microsoft Entra ID, and `DefaultAzureCredential` "automatically discovers available Azure credentials based on the current environment and tooling available" ([Microsoft Learn](https://learn.microsoft.com/en-us/dotnet/ai/azure-ai-services-authentication)).
+   - Evidence: Azure SDK authentication guidance says "The Azure Identity library acquires and manages Microsoft Entra tokens for you" and that managed identity avoids needing to manage credentials ([Microsoft Learn](https://learn.microsoft.com/en-us/dotnet/azure/sdk/authentication/)).
+5. **Source-language detection.** The MVP omits a source-language option and relies on Azure automatic source-language detection, with a documented quality caveat.
+   - Evidence: The synchronous REST guide says that if `sourceLanguage` is not specified, "automatic language detection is applied to determine the source language" ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/ai-services/translator/document-translation/reference/translate-document)).
+   - Evidence: The same guide says Microsoft "strongly recommend[s] specifying it explicitly" because providing source language produces better quality translations than relying on automatic detection ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/ai-services/translator/document-translation/reference/translate-document)).
 
 ## Open Questions Deferred Past MVP
 
