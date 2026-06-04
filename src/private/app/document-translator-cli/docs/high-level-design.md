@@ -108,7 +108,7 @@ The endpoint value must be the Document Translation custom domain endpoint shown
 
 ## Content-Type Strategy
 
-Use a small allowlist for common document types:
+Use a small allowlist for document types natively supported by Azure synchronous single-document translation:
 
 | Extension | Content type |
 | --- | --- |
@@ -126,6 +126,8 @@ Use a small allowlist for common document types:
 Unknown extensions fail validation in the MVP. This keeps behavior explicit and avoids submitting files with incorrect content types.
 
 PDF is not included because the MVP uses synchronous single-document translation; PDF support belongs to a future batch/Blob Storage workflow.
+
+Markdown is not included in the MVP. Do not submit `.md` files as `text/plain` by default because that would translate code fences, front matter, links, MDX directives, and placeholders. Markdown support should be added later as a Markdown-aware mode that preserves structure and translates only human-readable prose.
 
 ## Error Handling
 
@@ -187,6 +189,7 @@ Set `<AssemblyName>document-translator</AssemblyName>` so the produced executabl
 - Batch mode using `DocumentTranslationClient` and Azure Blob Storage.
 - Multiple input files.
 - Multiple target languages.
+- Markdown-aware mode.
 - Azure Identity authentication.
 - Glossary support.
 - Custom translation model support.

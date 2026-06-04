@@ -100,6 +100,7 @@ Excluded:
 - Azure Blob Storage source or target containers.
 - Multiple input files.
 - Multiple target languages.
+- Markdown files.
 - Glossaries.
 - Custom translation models.
 - Automatic language detection override controls.
@@ -121,10 +122,11 @@ Excluded:
 
 1. Whether to add batch mode with Blob Storage.
 2. Whether to support Azure Identity authentication.
-3. Whether to add an explicit `--source-language` option.
-4. Whether to infer output file names when `--output` is omitted.
-5. Whether to add glossary and custom model support.
-6. Whether to package as a .NET tool.
+3. Whether to add a Markdown-aware mode that parses Markdown structure and translates only human-readable prose.
+4. Whether to add an explicit `--source-language` option.
+5. Whether to infer output file names when `--output` is omitted.
+6. Whether to add glossary and custom model support.
+7. Whether to package as a .NET tool.
 
 ## Acceptance Criteria
 
