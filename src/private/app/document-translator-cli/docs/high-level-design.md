@@ -21,7 +21,7 @@ The Azure Document Translation SDK for .NET provides:
 
 The batch `DocumentTranslationClient` requires Azure Blob Storage source and target containers. It is out of scope for the MVP.
 
-Although the SDK natively supports Entra ID through `TokenCredential`, the MVP uses API key authentication only to keep setup and command behavior small. Entra ID support can be added later without changing the translation flow.
+The MVP supports both SDK authentication paths: API key authentication through `AzureKeyCredential` and Entra ID authentication through Azure Identity's `DefaultAzureCredential`.
 
 ## Proposed Project Location
 
@@ -49,15 +49,12 @@ src/private/app/document-translator-cli/
 Required:
 
 - `Azure.AI.Translation.Document`
+- `Azure.Identity`
 - `System.CommandLine`
 
 Optional only if needed by implementation:
 
 - `Microsoft.Extensions.Configuration.EnvironmentVariables`
-
-Future Entra ID support would add:
-
-- `Azure.Identity`
 
 Repository integration notes:
 
@@ -71,6 +68,7 @@ document-translator translate \
   --input <path> \
   --output <path> \
   --target-language <language-code> \
+  [--auth-mode <api-key|entra-id>] \
   [--endpoint <uri>] \
   [--key <api-key>] \
   [--force]
@@ -81,7 +79,8 @@ Environment fallback:
 | Option | Environment variable | Required |
 | --- | --- | --- |
 | `--endpoint` | `AZURE_TRANSLATOR_ENDPOINT` | Yes |
-| `--key` | `AZURE_TRANSLATOR_KEY` | Yes |
+| `--auth-mode` | `AZURE_TRANSLATOR_AUTH_MODE` | No; defaults to `api-key` |
+| `--key` | `AZURE_TRANSLATOR_KEY` | Only when auth mode is `api-key` |
 | `--target-language` | None | Yes |
 | `--input` | None | Yes |
 | `--output` | None | Yes |
@@ -90,10 +89,16 @@ Environment fallback:
 
 The endpoint value must be the Document Translation custom domain endpoint shown on the Azure Translator resource page, for example `https://<resource-name>.cognitiveservices.azure.com`.
 
+Authentication mode behavior:
+
+- `api-key` uses `AzureKeyCredential` and requires `--key` or `AZURE_TRANSLATOR_KEY`.
+- `entra-id` uses `DefaultAzureCredential` from Azure Identity and does not require an API key.
+- If `--auth-mode` is omitted, the CLI uses `api-key`.
+
 ## Runtime Flow
 
 1. Parse command-line options.
-2. Resolve endpoint and key from options or environment variables.
+2. Resolve endpoint, authentication mode, and API key from options or environment variables.
 3. Validate inputs:
    - input file exists,
    - input file is no larger than 10 MB,
@@ -102,12 +107,13 @@ The endpoint value must be the Document Translation custom domain endpoint shown
    - output file does not exist unless `--force` is set,
    - output path is not the same file as the input path,
    - endpoint is an absolute URI,
-   - key is non-empty,
+   - authentication mode is `api-key` or `entra-id`,
+   - key is non-empty when authentication mode is `api-key`,
    - target language is non-empty.
 4. Create the output directory if needed.
 5. Detect content type from file extension using a small static mapping.
 6. Open the input file as a read-only stream.
-7. Create `SingleDocumentTranslationClient`.
+7. Create `SingleDocumentTranslationClient` with `AzureKeyCredential` for `api-key` mode or `DefaultAzureCredential` for `entra-id` mode.
 8. Build `MultipartFormFileData` with original file name, stream, and content type.
 9. Call `TranslateAsync(targetLanguage, content, cancellationToken)`.
 10. Write response content bytes to a temporary file in the output directory, then move it to the output path.
@@ -163,6 +169,7 @@ Handling rules:
 - Prefer environment variables for credentials in normal usage.
 - Do not include keys in logs, exceptions, or success messages.
 - If command-line `--key` is implemented, document that shells may persist command history.
+- Entra ID mode must not require or log an API key.
 - Do not send files other than the explicit input path.
 - Do not create telemetry for document content in the MVP.
 - Do not use a global temporary directory for translated content.
@@ -173,6 +180,7 @@ Unit tests:
 
 - option parsing,
 - environment fallback,
+- authentication mode selection,
 - validation failures,
 - content-type mapping,
 - output overwrite behavior,
@@ -197,7 +205,6 @@ Set `<AssemblyName>document-translator</AssemblyName>` so the produced executabl
 - Multiple input files.
 - Multiple target languages.
 - Markdown-aware mode.
-- Entra ID authentication through Azure Identity.
 - Glossary support.
 - Custom translation model support.
 - Packaging as a local or published .NET tool.
