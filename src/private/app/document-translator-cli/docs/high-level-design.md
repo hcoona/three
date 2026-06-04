@@ -76,14 +76,14 @@ document-translator translate \
 
 Environment fallback:
 
-| Option | Environment variable | Required |
-| --- | --- | --- |
-| `--endpoint` | `AZURE_TRANSLATOR_ENDPOINT` | Yes |
-| `--auth-mode` | `AZURE_TRANSLATOR_AUTH_MODE` | No; defaults to `api-key` |
-| `--key` | `AZURE_TRANSLATOR_KEY` | Only when auth mode is `api-key` |
-| `--target-language` | None | Yes |
-| `--input` | None | Yes |
-| `--output` | None | Yes |
+| Option              | Environment variable         | Required                         |
+| ------------------- | ---------------------------- | -------------------------------- |
+| `--endpoint`        | `AZURE_TRANSLATOR_ENDPOINT`  | Yes                              |
+| `--auth-mode`       | `AZURE_TRANSLATOR_AUTH_MODE` | No; defaults to `api-key`        |
+| `--key`             | `AZURE_TRANSLATOR_KEY`       | Only when auth mode is `api-key` |
+| `--target-language` | None                         | Yes                              |
+| `--input`           | None                         | Yes                              |
+| `--output`          | None                         | Yes                              |
 
 `--force` is the only overwrite mechanism. Without it, an existing output file is a validation error.
 
@@ -100,16 +100,16 @@ Authentication mode behavior:
 1. Parse command-line options.
 2. Resolve endpoint, authentication mode, and API key from options or environment variables.
 3. Validate inputs:
-   - input file exists,
-   - input file is no larger than 10 MB,
-   - input extension is in the MVP supported-format allowlist,
-   - output path is not a directory,
-   - output file does not exist unless `--force` is set,
-   - output path is not the same file as the input path,
-   - endpoint is an absolute URI,
-   - authentication mode is `api-key` or `entra-id`,
-   - key is non-empty when authentication mode is `api-key`,
-   - target language is non-empty.
+    - input file exists,
+    - input file is no larger than 10 MB,
+    - input extension is in the MVP supported-format allowlist,
+    - output path is not a directory,
+    - output file does not exist unless `--force` is set,
+    - output path is not the same file as the input path,
+    - endpoint is an absolute URI,
+    - authentication mode is `api-key` or `entra-id`,
+    - key is non-empty when authentication mode is `api-key`,
+    - target language is non-empty.
 4. Create the output directory if needed.
 5. Detect content type from file extension using a small static mapping.
 6. Open the input file as a read-only stream.
@@ -123,18 +123,18 @@ Authentication mode behavior:
 
 Use a small allowlist for document types natively supported by Azure synchronous single-document translation:
 
-| Extension | Content type |
-| --- | --- |
-| `.txt` | `text/plain` |
-| `.tsv`, `.tab` | `text/tab-separated-values` |
-| `.csv` | `text/csv` |
-| `.html`, `.htm` | `text/html` |
-| `.mhtml`, `.mht` | `message/rfc822` |
-| `.docx` | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` |
-| `.pptx` | `application/vnd.openxmlformats-officedocument.presentationml.presentation` |
-| `.xlsx` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` |
-| `.msg` | `application/vnd.ms-outlook` |
-| `.xlf` | `application/xliff+xml` |
+| Extension        | Content type                                                                |
+| ---------------- | --------------------------------------------------------------------------- |
+| `.txt`           | `text/plain`                                                                |
+| `.tsv`, `.tab`   | `text/tab-separated-values`                                                 |
+| `.csv`           | `text/csv`                                                                  |
+| `.html`, `.htm`  | `text/html`                                                                 |
+| `.mhtml`, `.mht` | `message/rfc822`                                                            |
+| `.docx`          | `application/vnd.openxmlformats-officedocument.wordprocessingml.document`   |
+| `.pptx`          | `application/vnd.openxmlformats-officedocument.presentationml.presentation` |
+| `.xlsx`          | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`         |
+| `.msg`           | `application/vnd.ms-outlook`                                                |
+| `.xlf`           | `application/xliff+xml`                                                     |
 
 Unknown extensions fail validation in the MVP. This keeps behavior explicit and avoids submitting files with incorrect content types.
 
@@ -148,13 +148,13 @@ The CLI writes errors to stderr and returns non-zero exit codes.
 
 Suggested exit codes:
 
-| Code | Meaning |
-| --- | --- |
-| `0` | Success |
-| `2` | Command-line or validation error |
-| `3` | Azure service error |
-| `4` | File I/O error |
-| `1` | Unexpected error |
+| Code | Meaning                          |
+| ---- | -------------------------------- |
+| `0`  | Success                          |
+| `2`  | Command-line or validation error |
+| `3`  | Azure service error              |
+| `4`  | File I/O error                   |
+| `1`  | Unexpected error                 |
 
 Handling rules:
 
