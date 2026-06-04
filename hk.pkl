@@ -25,6 +25,7 @@ local general_exclude_list =
     "package-lock.json",
     "PklProject.deps.json",
     "pnpm-lock.yaml",
+    "**/pnpm-lock.yaml",
     "uv.lock",
     ".mise.lock",
     "**/.github/**",
