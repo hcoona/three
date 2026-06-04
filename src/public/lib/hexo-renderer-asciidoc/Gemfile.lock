@@ -5,10 +5,11 @@ GEM
 
 PLATFORMS
   ruby
+  x64-mingw-ucrt
   x86_64-linux
 
 DEPENDENCIES
   asciidoctor (~> 2.0)
 
 BUNDLED WITH
-   2.7.2
+   2.6.9
