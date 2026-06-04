@@ -150,7 +150,7 @@ jobs:
           JSON
 
       - name: Upload empty SARIF
-        uses: github/codeql-action/upload-sarif@87557b9c84dde89fdd9b10e88954ac2f4248e463 # v4
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
         with:
           sarif_file: empty-csharp.sarif
           category: '/language:csharp'
@@ -189,7 +189,7 @@ jobs:
           dotnet restore dirs.proj -p:RestoreLockedMode=true
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@87557b9c84dde89fdd9b10e88954ac2f4248e463 # v4
+        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
         with:
           config-file: .github/codeql/codeql-config.yml
           languages: ${{ matrix.language }}
@@ -205,9 +205,9 @@ jobs:
 
       - if: ${{ matrix.build_mode == 'autobuild' }}
         name: Autobuild
-        uses: github/codeql-action/autobuild@87557b9c84dde89fdd9b10e88954ac2f4248e463 # v4
+        uses: github/codeql-action/autobuild@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@87557b9c84dde89fdd9b10e88954ac2f4248e463 # v4
+        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
         with:
           category: '/language:${{ matrix.language }}'
