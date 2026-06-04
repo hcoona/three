@@ -26,6 +26,11 @@
     "commitMessageAction": "Refresh",
     "commitMessageTopic": "Dependency Lock Files"
   },
+  "postUpgradeTasks": {
+    "commands": ["mise install pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
+    "fileFilters": ["pnpm-lock.yaml", "**/pnpm-lock.yaml"],
+    "executionMode": "branch"
+  },
   "vulnerabilityAlerts": {
     "enabled": true,
     "labels": ["security"]
@@ -73,16 +78,6 @@
           "pwsh -NoLogo -NoProfile -NonInteractive -File eng/scripts/Update-RenovateGlobalJsonArtifacts.ps1"
         ],
         "fileFilters": ["mise.lock", "global.pkl", "global.json", "**/packages.lock.json"],
-        "executionMode": "branch"
-      },
-      "automerge": true
-    },
-    {
-      "description": "Refresh tracked pnpm lockfiles after npm updates.",
-      "matchManagers": ["npm"],
-      "postUpgradeTasks": {
-        "commands": ["mise install pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
-        "fileFilters": ["pnpm-lock.yaml", "**/pnpm-lock.yaml"],
         "executionMode": "branch"
       },
       "automerge": true
