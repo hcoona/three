@@ -26,11 +26,6 @@
     "commitMessageAction": "Refresh",
     "commitMessageTopic": "Dependency Lock Files"
   },
-  "postUpgradeTasks": {
-    "commands": ["mise install pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
-    "fileFilters": ["pnpm-lock.yaml", "**/pnpm-lock.yaml"],
-    "executionMode": "branch"
-  },
   "vulnerabilityAlerts": {
     "enabled": true,
     "labels": ["security"]
@@ -238,6 +233,18 @@
       "matchPackageNames": ["hexo", "/^hexo-/"],
       "groupName": "Hexo Demo Ecosystem",
       "postUpdateOptions": ["pnpmDedupe"],
+      "automerge": true
+    },
+    {
+      "description": "Refresh Hexo demo pnpm lockfiles after lock file maintenance.",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["src/public/lib/hexo-renderer-asciidoc/examples/**/package.json"],
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "postUpgradeTasks": {
+        "commands": ["mise install pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
+        "fileFilters": ["pnpm-lock.yaml", "src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/pnpm-lock.yaml"],
+        "executionMode": "branch"
+      },
       "automerge": true
     },
     {
