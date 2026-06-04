@@ -40,10 +40,7 @@
     {
       "description": "Repository-level tooling may update lower bounds normally.",
       "matchFileNames": ["package.json", "pyproject.toml", "global.json", "mise.toml", ".config/dotnet-tools.json"],
-      "rangeStrategy": "replace",
-      "lockFileMaintenance": {
-        "enabled": false
-      }
+      "rangeStrategy": "replace"
     },
     {
       "description": "Keep pnpm on v10 while Node 20 remains in the support matrix.",
@@ -248,13 +245,6 @@
         "executionMode": "branch"
       },
       "automerge": true
-    },
-    {
-      "description": "Disable lock file maintenance for the Hexo demo workspace.",
-      "matchFileNames": ["src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/package.json"],
-      "lockFileMaintenance": {
-        "enabled": false
-      }
     },
     {
       "description": "Do not resolve the internal uv workspace package from PyPI.",
