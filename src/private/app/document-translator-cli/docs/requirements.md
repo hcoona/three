@@ -21,7 +21,7 @@ Given:
 - a target language code,
 - a local output file path,
 - an Azure Document Translation endpoint, and
-- an Azure API key,
+- selected authentication credentials: either an Azure API key or an available Entra ID credential,
 
 the CLI sends the file to Azure Translator, waits for the synchronous response, and writes the translated bytes to the output path.
 
