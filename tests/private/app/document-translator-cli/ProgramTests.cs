@@ -1,3 +1,4 @@
+using Azure.AI.Translation.Document;
 using Xunit;
 
 namespace Hcoona.DocumentTranslatorCli.Tests;
@@ -680,6 +681,124 @@ public sealed class ProgramTests
         Assert.NotEmpty(result.Errors);
     }
 
+    [Fact]
+    public async Task AzureDocumentTranslatorUsesApiKeyClientAndPassesDocumentMetadata()
+    {
+        using MemoryStream inputStream = new([1, 2, 3]);
+        TranslationOptions options = ValidOptions("source.docx") with
+        {
+            AuthMode = AuthMode.ApiKey,
+            ApiKey = "secret",
+        };
+        CapturingSingleDocumentTranslationClient client = new(BinaryData.FromString("translated"));
+        CapturingSingleDocumentTranslationClientFactory factory = new(client);
+        AzureDocumentTranslator translator = new(factory);
+        using CancellationTokenSource cancellationTokenSource = new();
+
+        BinaryData translatedContent = await translator.TranslateAsync(
+            options,
+            inputStream,
+            cancellationTokenSource.Token);
+
+        Assert.Same(client.TranslatedContent, translatedContent);
+        Assert.Equal(options.Endpoint, factory.ApiKeyEndpoint);
+        Assert.Equal("secret", factory.ApiKey);
+        Assert.False(factory.EntraIdClientCreated);
+        Assert.Equal("fr", client.TargetLanguage);
+        Assert.Equal(cancellationTokenSource.Token, client.CancellationToken);
+        Assert.NotNull(client.Content);
+        MultipartFormFileData document = client.Content.MultipartDocument;
+        Assert.Equal("source.docx", document.Name);
+        Assert.Equal(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            document.ContentType);
+        Assert.Same(inputStream, document.Content);
+    }
+
+    [Fact]
+    public async Task AzureDocumentTranslatorUsesEntraIdClientWithoutApiKey()
+    {
+        using MemoryStream inputStream = new([1, 2, 3]);
+        TranslationOptions options = ValidOptions("source.txt") with
+        {
+            AuthMode = AuthMode.EntraId,
+            ApiKey = null,
+        };
+        CapturingSingleDocumentTranslationClient client = new(BinaryData.FromString("translated"));
+        CapturingSingleDocumentTranslationClientFactory factory = new(client);
+        AzureDocumentTranslator translator = new(factory);
+
+        await translator.TranslateAsync(options, inputStream, CancellationToken.None);
+
+        Assert.Equal(options.Endpoint, factory.EntraIdEndpoint);
+        Assert.True(factory.EntraIdClientCreated);
+        Assert.Null(factory.ApiKey);
+    }
+
+    [Fact]
+    public void AzureClientFactoryCreatesApiKeyAndEntraIdSdkClients()
+    {
+        AzureSingleDocumentTranslationClientFactory factory = new();
+        Uri endpoint = new("https://resource.cognitiveservices.azure.com");
+
+        ISingleDocumentTranslationClient apiKeyClient = factory.CreateApiKeyClient(
+            endpoint,
+            "secret");
+        ISingleDocumentTranslationClient entraIdClient = factory.CreateEntraIdClient(endpoint);
+
+        Assert.NotNull(apiKeyClient);
+        Assert.NotNull(entraIdClient);
+        Assert.NotSame(apiKeyClient, entraIdClient);
+    }
+
+    [Fact]
+    public async Task TranslationCommandUsesFakeTranslatorWithValidatedInputMetadata()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.TXT", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath))
+            .Options!;
+        CapturingDocumentTranslator translator = new(BinaryData.FromString("translated"));
+        using CancellationTokenSource cancellationTokenSource = new();
+
+        BinaryData translatedContent = await TranslationCommand.TranslateValidatedInputAsync(
+            options,
+            translator,
+            cancellationTokenSource.Token);
+
+        Assert.Same(translator.TranslatedContent, translatedContent);
+        Assert.Same(options, translator.Options);
+        Assert.NotNull(translator.InputStream);
+        Assert.True(translator.InputStreamWasReadable);
+        TranslationOptions capturedOptions = translator.Options!;
+        Assert.Equal("source.TXT", capturedOptions.OriginalFileName);
+        Assert.Equal("text/plain", capturedOptions.ContentType);
+        Assert.Equal(cancellationTokenSource.Token, translator.CancellationToken);
+    }
+
+    [Fact]
+    public async Task TranslationCommandHonorsPreCanceledTokenBeforeCallingTranslator()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath))
+            .Options!;
+        CapturingDocumentTranslator translator = new(BinaryData.FromString("translated"));
+        using CancellationTokenSource cancellationTokenSource = new();
+        await cancellationTokenSource.CancelAsync();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            async () => await TranslationCommand.TranslateValidatedInputAsync(
+                options,
+                translator,
+                cancellationTokenSource.Token));
+        Assert.Null(translator.Options);
+    }
+
     private static RawTranslationOptions ValidRawOptions(string inputPath, string outputPath) =>
         new(
             inputPath,
@@ -689,6 +808,22 @@ public sealed class ProgramTests
             "https://resource.cognitiveservices.azure.com/translator",
             "secret",
             Force: false);
+
+    private static TranslationOptions ValidOptions(string originalFileName) =>
+        new(
+            "input",
+            "output",
+            "fr",
+            new Uri("https://resource.cognitiveservices.azure.com"),
+            AuthMode.ApiKey,
+            "secret",
+            Force: false,
+            originalFileName,
+            DocumentTranslationContentTypes.TryGetContentType(
+                Path.GetExtension(originalFileName),
+                out string contentType)
+                ? contentType
+                : "text/plain");
 
     private static async Task<int> RunAsync(
         string[] args,
@@ -759,6 +894,82 @@ public sealed class ProgramTests
             catch (UnauthorizedAccessException)
             {
             }
+        }
+    }
+
+    private sealed class CapturingSingleDocumentTranslationClient(BinaryData translatedContent)
+        : ISingleDocumentTranslationClient
+    {
+        public BinaryData TranslatedContent { get; } = translatedContent;
+
+        public string? TargetLanguage { get; private set; }
+
+        public DocumentTranslateContent? Content { get; private set; }
+
+        public CancellationToken CancellationToken { get; private set; }
+
+        public ValueTask<BinaryData> TranslateAsync(
+            string targetLanguage,
+            DocumentTranslateContent content,
+            CancellationToken cancellationToken)
+        {
+            TargetLanguage = targetLanguage;
+            Content = content;
+            CancellationToken = cancellationToken;
+            return new ValueTask<BinaryData>(TranslatedContent);
+        }
+    }
+
+    private sealed class CapturingSingleDocumentTranslationClientFactory(
+        ISingleDocumentTranslationClient client)
+        : ISingleDocumentTranslationClientFactory
+    {
+        public Uri? ApiKeyEndpoint { get; private set; }
+
+        public string? ApiKey { get; private set; }
+
+        public Uri? EntraIdEndpoint { get; private set; }
+
+        public bool EntraIdClientCreated { get; private set; }
+
+        public ISingleDocumentTranslationClient CreateApiKeyClient(Uri endpoint, string apiKey)
+        {
+            ApiKeyEndpoint = endpoint;
+            ApiKey = apiKey;
+            return client;
+        }
+
+        public ISingleDocumentTranslationClient CreateEntraIdClient(Uri endpoint)
+        {
+            EntraIdEndpoint = endpoint;
+            EntraIdClientCreated = true;
+            return client;
+        }
+    }
+
+    private sealed class CapturingDocumentTranslator(BinaryData translatedContent)
+        : IDocumentTranslator
+    {
+        public BinaryData TranslatedContent { get; } = translatedContent;
+
+        public TranslationOptions? Options { get; private set; }
+
+        public Stream? InputStream { get; private set; }
+
+        public bool InputStreamWasReadable { get; private set; }
+
+        public CancellationToken CancellationToken { get; private set; }
+
+        public ValueTask<BinaryData> TranslateAsync(
+            TranslationOptions options,
+            Stream inputStream,
+            CancellationToken cancellationToken)
+        {
+            Options = options;
+            InputStream = inputStream;
+            InputStreamWasReadable = inputStream.CanRead;
+            CancellationToken = cancellationToken;
+            return new ValueTask<BinaryData>(TranslatedContent);
         }
     }
 }
