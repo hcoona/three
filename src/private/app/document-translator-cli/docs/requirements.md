@@ -42,7 +42,7 @@ Configuration comes from environment variables by default:
 - `AZURE_TRANSLATOR_AUTH_MODE`, optional, either `api-key` or `entra-id`, defaulting to `api-key`
 - `AZURE_TRANSLATOR_KEY`, required only when using `api-key` authentication
 
-The endpoint must be the Document Translation endpoint accepted by `SingleDocumentTranslationClient`. The SDK constructor documentation shows the credential-based endpoint form as `https://<resource-name>.cognitiveservices.azure.com/translator`.
+The endpoint must be the root custom-domain Document Translation endpoint: `https://<resource-name>.cognitiveservices.azure.com`. The legacy SDK example input with a trailing `/translator` path is accepted for compatibility and normalized internally to the root endpoint.
 
 Command-line overrides are included in the MVP:
 
@@ -54,7 +54,7 @@ document-translator translate \
   --output ./source.zh-Hans.docx \
   --target-language zh-Hans \
   --auth-mode api-key \
-  --endpoint https://<resource-name>.cognitiveservices.azure.com/translator \
+  --endpoint https://<resource-name>.cognitiveservices.azure.com \
   --key <api-key>
 ```
 
@@ -66,7 +66,7 @@ document-translator translate \
   --output ./source.zh-Hans.docx \
   --target-language zh-Hans \
   --auth-mode entra-id \
-  --endpoint https://<resource-name>.cognitiveservices.azure.com/translator
+  --endpoint https://<resource-name>.cognitiveservices.azure.com
 ```
 
 ## Functional Requirements
