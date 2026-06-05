@@ -2,6 +2,8 @@
 <!-- Please sort the items in each group in alphabetical order. -->
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="Direct">
+    <PackageVersion Include="Azure.AI.Translation.Document" Version="2.0.0" />
+    <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <PackageVersion Include="CommandLineParser" Version="2.9.1" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="FileSignatures" Version="7.2.1" />
