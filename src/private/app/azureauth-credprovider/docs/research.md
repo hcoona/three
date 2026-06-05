@@ -1,4 +1,4 @@
-# AzureAuth Credential Provider Research Notes
+# Unified Azure DevOps Credential Provider Research Notes
 
 Status: **Draft research baseline**
 
@@ -19,7 +19,7 @@ The following implementation references are available under `/workspace/public/`
 | Python keyring                 | `/workspace/public/artifacts-keyring`              | Python keyring backend source for pip and twine Azure Artifacts authentication.                                                                    |
 | npm and pnpm                   | `/workspace/public/artifacts-npm-credprovider`     | Extracted `@microsoft/artifacts-npm-credprovider` package version `1.1.3`.                                                                         |
 | Node wrapper for the provider  | `/workspace/public/artifacts-credprovider-wrapper` | Extracted `@microsoft/artifacts-credprovider-wrapper` package version `1.1.4`; its installer downloaded the Linux x64 Credential Provider payload. |
-| AzureAuth helper               | `/workspace/public/microsoft-authentication-cli`   | Related Microsoft authentication CLI; not the primary implementation for these integrations.                                                       |
+| AzureAuth helper               | `/workspace/public/microsoft-authentication-cli`   | Related Microsoft MSAL-based authentication CLI with Azure DevOps token commands; candidate identity substrate, not a host-tool protocol adapter.  |
 
 `uv` and `MicrosoftDocs/azure-devops-docs` are useful references, but they are not credential-provider implementation source trees for this project.
 
@@ -56,30 +56,30 @@ Azure Repos supports current `dev.azure.com` HTTPS clone URLs and legacy `*.visu
 Git credential helper discovery is sensitive to command form. Local experiments confirmed:
 
 ```text
-credential.helper=company
-  -> Git invokes git-credential-company get
+credential.helper=<helper-name>
+  -> Git invokes git-credential-<helper-name> get
 
-credential.helper=!company-auth git credential-helper
-  -> Git invokes company-auth git credential-helper get
+credential.helper=!<primary-cli> git credential-helper
+  -> Git invokes <primary-cli> git credential-helper get
 
-credential.helper=/abs/path/company-auth git credential-helper
-  -> Git invokes /abs/path/company-auth git credential-helper get
+credential.helper=/abs/path/<primary-cli> git credential-helper
+  -> Git invokes /abs/path/<primary-cli> git credential-helper get
 
-credential.helper=company-auth git credential-helper
-  -> Git attempts git credential-company-auth ...
-  -> This fails unless a git-credential-company-auth helper exists.
+credential.helper=<primary-cli> git credential-helper
+  -> Git attempts git credential-<primary-cli> ...
+  -> This fails unless a git-credential-<primary-cli> helper exists.
 ```
 
 Implication: a single CLI can implement the logic, but a production installation should provide a Git helper-shaped entry point or configure an absolute helper command carefully. The recommended user configuration is the standard helper shorthand plus explicit `dev.azure.com` path forwarding:
 
 ```powershell
-git config --global credential.helper company
+git config --global credential.helper <helper-name>
 git config --global credential.https://dev.azure.com.useHttpPath true
 ```
 
-with an installed `git-credential-company` executable that delegates to the shared core. The `useHttpPath` setting is required for `dev.azure.com` because the Azure DevOps organization is in the URL path. Legacy `<org>.visualstudio.com` remotes carry the organization in the host name and do not need the same setting.
+with an installed `git-credential-<helper-name>` executable that delegates to the shared core. The `useHttpPath` setting is required for `dev.azure.com` because the Azure DevOps organization is in the URL path. Legacy `<org>.visualstudio.com` remotes carry the organization in the host name and do not need the same setting.
 
-The configure command must either install the helper into a location Git itself can discover or configure a carefully quoted absolute helper path. The doctor command should validate discovery through Git, not only through the current shell, because GUI Git clients may run with a different `PATH`.
+The angle-bracketed values in the previous snippet are substitution placeholders, not literal command text. The configure command must either install the helper into a location Git itself can discover or configure a carefully quoted absolute helper path. The doctor command should validate discovery through Git, not only through the current shell, because GUI Git clients may run with a different `PATH`.
 
 Git identity flows should be treated as separate support levels rather than a single generic authentication mode:
 
@@ -112,7 +112,7 @@ NUGET_PLUGIN_PATHS="/tmp/nuget-plugin-probe nuget"
   -> plugin was not launched
 ```
 
-Implication: NuGet cannot be configured to call `company-auth nuget plugin` through `NUGET_PLUGIN_PATHS`. The product needs one of these shapes:
+Implication: NuGet cannot be configured to call a normal `<primary-cli> nuget plugin` subcommand through `NUGET_PLUGIN_PATHS`. The product needs one of these shapes:
 
 1. A top-level executable that itself handles NuGet's `-Plugin` invocation.
 2. A NuGet plugin-shaped executable or DLL that delegates to the shared core.
@@ -155,7 +155,7 @@ keyring get <service> --mode creds  # stdout is newline-separated username and p
 
 pip and uv both have subprocess keyring modes, but their discovery semantics differ. uv invokes `keyring` from `PATH` directly. pip subprocess mode calls `keyring get <service> <username>` and requires a username in the index URL. pip also avoids the current Python environment's scripts directory when selecting a subprocess `keyring` executable, so a shim installed only into a project virtual environment may be ignored by pip subprocess mode.
 
-Implication: `company-auth python keyring` is not directly discoverable by all Python tools. A robust product needs:
+Implication: a normal `<primary-cli> python keyring` subcommand is not directly discoverable by all Python tools. A robust product needs:
 
 - a Python keyring backend package for import-mode tools such as twine and pip import mode,
 - a `keyring` executable-compatible shim for uv and subprocess-mode tools,
@@ -194,9 +194,11 @@ pnpm:devPreinstall -> arbitrary command before pnpm install
 
 Implication: npm-compatible tooling can use a standard CLI subcommand such as:
 
-```powershell
-company-auth npm
+```text
+<primary-cli> npm
 ```
+
+`<primary-cli>` is a substitution placeholder for the final executable name, not a literal command.
 
 An npm-specific alias is optional for clearer documentation and compatibility with existing scripts, but it is not required by npm, pnpm, or Yarn mechanics.
 
@@ -220,11 +222,11 @@ Minimum recommended machine-facing surfaces:
 
 | Surface                        | Reason                                                     |
 | ------------------------------ | ---------------------------------------------------------- |
-| `git-credential-company`       | Stable Git helper discovery.                               |
+| `git-credential-<helper-name>` | Stable Git helper discovery.                               |
 | NuGet plugin entry point       | NuGet launches plugin files with fixed `-Plugin` behavior. |
 | Python keyring backend package | Required for twine and pip import mode.                    |
 | `keyring` executable shim      | Required for uv and pip subprocess mode.                   |
-| `company-auth npm`             | Sufficient for npm, pnpm, and Yarn config-file workflows.  |
+| `<primary-cli> npm`            | Sufficient for npm, pnpm, and Yarn config-file workflows.  |
 
 ## Security Findings
 

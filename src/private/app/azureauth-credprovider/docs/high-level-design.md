@@ -1,26 +1,26 @@
-# AzureAuth Credential Provider High-Level Design
+# Unified Azure DevOps Credential Provider High-Level Design
 
 Status: **Draft design baseline**
 
 ## Design Summary
 
-AzureAuth Credential Provider should be one product with one shared credential core and one human-facing CLI. It should expose additional machine-facing entry points only where host tools require a specific executable name, package entry point, file layout, or protocol invocation.
+The credential provider should be one product with one shared credential core and one human-facing CLI. It should expose additional machine-facing entry points only where host tools require a specific executable name, package entry point, file layout, or protocol invocation.
 
 The design intentionally separates implementation ownership from host-tool discovery. Git, NuGet, Python keyring, and npm-compatible tooling should not receive four independent credential implementations. They should receive thin adapters that delegate to the same credential core.
 
 ## Target Command Model
 
-The primary user-facing command is a standard CLI:
+The primary user-facing command is a standard CLI. The executable name is intentionally provisional in this document:
 
-```powershell
-azureauth-credprovider login
-azureauth-credprovider logout
-azureauth-credprovider status
-azureauth-credprovider configure git
-azureauth-credprovider configure nuget
-azureauth-credprovider configure python
-azureauth-credprovider configure npm
-azureauth-credprovider doctor
+```text
+<primary-cli> login
+<primary-cli> logout
+<primary-cli> status
+<primary-cli> configure git
+<primary-cli> configure nuget
+<primary-cli> configure python
+<primary-cli> configure npm
+<primary-cli> doctor
 ```
 
 The human-facing CLI owns:
@@ -34,11 +34,13 @@ The human-facing CLI owns:
 
 Protocol adapters are installed and configured by the CLI, but they are not the primary interface users interact with.
 
+The design should explicitly evaluate AzureAuth, also known as `microsoft-authentication-cli`, as a candidate identity substrate. AzureAuth is an MSAL-based CLI for Microsoft Entra authentication and includes Azure DevOps token-oriented commands. If reused, it should sit below the shared credential core or behind a well-defined identity-provider abstraction; it should not replace the Git, NuGet, Python keyring, or npm protocol adapters.
+
 ## High-Level Components
 
 ```text
                       +-----------------------------+
-                      | azureauth-credprovider CLI  |
+                      | Primary CLI                 |
                       | login/configure/doctor      |
                       +--------------+--------------+
                                      |
@@ -81,17 +83,19 @@ The shared core owns credential behavior that must not diverge between ecosystem
 - policy enforcement,
 - diagnostic event generation.
 
+The shared core may use AzureAuth (`microsoft-authentication-cli`) for Microsoft Entra token acquisition and MSAL cache reuse if it satisfies the required token audiences, non-interactive behavior, installation model, logging policy, and protocol-adapter isolation constraints. The design should also permit a direct MSAL integration if shelling out to AzureAuth would make protocol adapters harder to secure or test.
+
 The core must not assume a single protocol output format. Protocol adapters are responsible for host-tool input and output.
 
 ## Machine-Facing Entrypoints
 
 | Entrypoint                     |                       Requirement level | Integration contract                                                         |
 | ------------------------------ | --------------------------------------: | ---------------------------------------------------------------------------- |
-| `git-credential-azureauth`     |                    Strongly recommended | Git credential helper stdin/stdout protocol.                                 |
+| `git-credential-<helper-name>` |                    Strongly recommended | Git credential helper stdin/stdout protocol.                                 |
 | NuGet plugin entry point       |                                Required | NuGet plugin handshake and authentication messages; launched with `-Plugin`. |
 | Python keyring backend package |                                Required | Python `keyring.backends` discovery and backend API.                         |
 | `keyring` executable shim      | Required for uv and pip subprocess mode | Keyring CLI-compatible `get` behavior.                                       |
-| `azureauth-credprovider npm`   |                                Required | Reads and updates npm/Yarn registry config.                                  |
+| `<primary-cli> npm`            |                                Required | Reads and updates npm/Yarn registry config.                                  |
 | npm alias binary               |                                Optional | Compatibility wrapper for documentation or existing scripts.                 |
 
 ## Git Adapter
@@ -99,30 +103,30 @@ The core must not assume a single protocol output format. Protocol adapters are 
 The Git adapter should support the Git credential helper protocol:
 
 ```text
-git-credential-azureauth get
-git-credential-azureauth store
-git-credential-azureauth erase
+git-credential-<helper-name> get
+git-credential-<helper-name> store
+git-credential-<helper-name> erase
 ```
 
 The adapter reads credential records from stdin and writes only Git credential fields to stdout. It delegates account selection and token acquisition to the shared core.
 
 Recommended configuration:
 
-```powershell
-git config --global credential.helper azureauth
+```text
+git config --global credential.helper <helper-name>
 git config --global credential.https://dev.azure.com.useHttpPath true
 ```
 
 The `useHttpPath` setting is required for `dev.azure.com` because the organization is in the URL path. Legacy `<org>.visualstudio.com` remotes carry the organization in the host name and do not require the same setting.
 
-The configuration command should avoid shell snippets as the default. Shell snippets are useful for development, but they are harder to quote safely on Windows and less reliable in GUI Git clients. The installer must either place `git-credential-azureauth` where Git itself can discover it or configure a carefully quoted absolute helper path. `doctor` should validate helper discovery by invoking Git, not just by checking the current shell's `PATH`.
+The angle-bracketed helper name is a substitution placeholder. The configuration command should avoid shell snippets as the default. Shell snippets are useful for development, but they are harder to quote safely on Windows and less reliable in GUI Git clients. The installer must either place `git-credential-<helper-name>` where Git itself can discover it or configure a carefully quoted absolute helper path. `doctor` should validate helper discovery by invoking Git, not just by checking the current shell's `PATH`.
 
 ## NuGet Adapter
 
 The NuGet adapter must be structured as a NuGet plugin because NuGet launches plugin files and passes fixed plugin arguments. It should not rely on a standard subcommand such as:
 
-```powershell
-azureauth-credprovider nuget plugin
+```text
+<primary-cli> nuget plugin
 ```
 
 unless the top-level executable itself is the plugin path and can enter plugin mode when launched with NuGet's arguments.
@@ -186,8 +190,8 @@ The adapter should:
 
 Recommended explicit invocation:
 
-```powershell
-azureauth-credprovider npm
+```text
+<primary-cli> npm
 ```
 
 Optional package-manager script:
@@ -195,7 +199,7 @@ Optional package-manager script:
 ```json
 {
     "scripts": {
-        "pnpm:devPreinstall": "azureauth-credprovider npm"
+        "pnpm:devPreinstall": "<primary-cli> npm"
     }
 }
 ```
@@ -240,7 +244,7 @@ CI behavior must:
 
 ## Diagnostics
 
-`azureauth-credprovider doctor` should validate:
+`<primary-cli> doctor` should validate:
 
 - Git helper executable discovery and `credential.useHttpPath` behavior for Azure Repos hosts,
 - NuGet plugin discovery and runtime compatibility,

@@ -1,4 +1,4 @@
-# AzureAuth Credential Provider Requirements
+# Unified Azure DevOps Credential Provider Requirements
 
 Status: **Draft requirements baseline**
 
@@ -57,7 +57,8 @@ Host tools own:
 9. Preserve host-tool protocol boundaries: protocol adapters must write only protocol-valid content to stdout.
 10. Provide configuration commands that can install, verify, and remove each ecosystem integration.
 11. Support non-interactive CI operation without persisting secrets by default.
-12. Provide a `doctor` command that validates Git helper configuration, NuGet plugin discovery, Python keyring availability, npm registry configuration, credential cache health, and common CI misconfigurations.
+12. Evaluate AzureAuth, also known as `microsoft-authentication-cli`, as a candidate identity substrate for Microsoft Entra token acquisition, MSAL cache reuse, and Azure DevOps token-oriented flows.
+13. Provide a `doctor` command that validates Git helper configuration, NuGet plugin discovery, Python keyring availability, npm registry configuration, credential cache health, and common CI misconfigurations.
 
 ## Non-Functional Requirements
 
@@ -124,7 +125,7 @@ Host tools own:
 1. Whether the shared credential core should be a library, a local broker process, or a single executable invoked by adapters.
 2. Whether the NuGet adapter should ship as one multi-target package, separate netcore/netfx artifacts, or a top-level executable that also supports `-Plugin`.
 3. Whether the Python keyring backend should call an absolute external helper path or use an embedded shared library.
-4. Whether npm compatibility aliases should be provided in addition to the primary `company-auth npm` command.
+4. Whether npm compatibility aliases should be provided in addition to the primary npm credential refresh command.
 5. Which identity flows are mandatory for MVP: interactive browser, device code, PAT, service principal, managed identity, workload identity federation, or Azure Pipelines system access token.
 
 ## Acceptance Criteria for the Design Phase
