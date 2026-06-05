@@ -20,6 +20,10 @@ The primary user-facing command is a standard CLI. The executable name is intent
 <primary-cli> configure nuget
 <primary-cli> configure python
 <primary-cli> configure npm
+<primary-cli> unconfigure git
+<primary-cli> unconfigure nuget
+<primary-cli> unconfigure python
+<primary-cli> unconfigure npm
 <primary-cli> doctor
 ```
 
@@ -30,7 +34,8 @@ The human-facing CLI owns:
 - diagnostics,
 - cache inspection and cleanup,
 - CI guidance,
-- installation verification.
+- installation verification,
+- integration removal.
 
 Protocol adapters are installed and configured by the CLI, but they are not the primary interface users interact with.
 
@@ -91,7 +96,7 @@ The core must not assume a single protocol output format. Protocol adapters are 
 
 | Entrypoint                     |                       Requirement level | Integration contract                                                         |
 | ------------------------------ | --------------------------------------: | ---------------------------------------------------------------------------- |
-| `git-credential-<helper-name>` |                    Strongly recommended | Git credential helper stdin/stdout protocol.                                 |
+| `git-credential-<helper-name>` |                                Required | Git credential helper stdin/stdout protocol.                                 |
 | NuGet plugin entry point       |                                Required | NuGet plugin handshake and authentication messages; launched with `-Plugin`. |
 | Python keyring backend package |                                Required | Python `keyring.backends` discovery and backend API.                         |
 | `keyring` executable shim      | Required for uv and pip subprocess mode | Keyring CLI-compatible `get` behavior.                                       |
@@ -123,13 +128,13 @@ The angle-bracketed helper name is a substitution placeholder. The configuration
 
 ## NuGet Adapter
 
-The NuGet adapter must be structured as a NuGet plugin because NuGet launches plugin files and passes fixed plugin arguments. It should not rely on a standard subcommand such as:
+The NuGet adapter must be structured as a NuGet plugin because NuGet launches plugin files and passes fixed plugin arguments. The default packaging model should be a plugin-shaped entry point that delegates to the shared core. The primary CLI may also implement plugin mode only if NuGet is configured to launch that executable directly as the plugin path; NuGet will not discover an arbitrary standard subcommand such as:
 
 ```text
 <primary-cli> nuget plugin
 ```
 
-unless the top-level executable itself is the plugin path and can enter plugin mode when launched with NuGet's arguments.
+as a command with arguments.
 
 The NuGet adapter must:
 
@@ -148,6 +153,8 @@ NuGet discovery options should be documented and diagnosed explicitly:
 | Direct plugin path   | Full path to the plugin entry point                                                     | Advanced override; cannot include extra subcommand arguments; can shadow convention discovery. |
 | Convention discovery | `.nuget/plugins/netcore/<name>/<name>.dll` and `.nuget/plugins/netfx/<name>/<name>.exe` | Preferred for broad developer-machine compatibility.                                           |
 | PATH discovery       | `nuget-plugin-*` executable where supported                                             | Still must enter NuGet plugin mode and speak the NuGet plugin protocol.                        |
+
+Default setup should prefer conventional plugin discovery. `NUGET_PLUGIN_PATHS` should remain an advanced diagnostic or explicit override path, not a global default, because mixed `dotnet` and NuGet.exe/MSBuild environments may require different plugin shapes.
 
 Interactive behavior is controlled by the invoking NuGet client. `dotnet restore` should require `--interactive` before the plugin initiates first-time user interaction. MSBuild restore should require `/p:NuGetInteractive=true`. NuGet.exe may prompt by default. The plugin must honor NuGet protocol `NonInteractive` and `CanShowDialog` values and must not prompt or block when `NonInteractive` is true.
 
@@ -214,13 +221,14 @@ Credential cache keys must include:
 - Azure DevOps host,
 - organization,
 - project when relevant,
+- feed identity for package-feed adapters,
 - service identity,
 - account,
 - tenant,
 - token audience,
 - credential type.
 
-Package-feed cache entries should include feed identity. Azure Repos Git should normally key credential storage by host and organization rather than by full repository path unless an explicit per-repository policy requires finer partitioning. No adapter should read a generic "current token" without ecosystem and audience validation.
+Azure Repos Git should normally key credential storage by host and organization rather than by full repository path unless an explicit per-repository policy requires finer partitioning. No adapter should read a generic "current token" without ecosystem and audience validation.
 
 ## CI Model
 
@@ -256,6 +264,17 @@ CI behavior must:
 - CI mode and secret handling.
 
 Diagnostics should never print access tokens, refresh tokens, PATs, Basic auth headers, npm tokens, NuGet API keys, or generated passwords.
+
+## Integration Removal
+
+`<primary-cli> unconfigure <ecosystem>` should remove only configuration and adapter registrations owned by this product. It must not delete unrelated user configuration, unrelated credential helpers, package source declarations, or credentials owned by other tools.
+
+Removal behavior should include:
+
+- Git: remove this product's configured helper entry and `dev.azure.com` path-forwarding setting only when it was installed by this product or explicitly selected by the user.
+- NuGet: remove this product's plugin installation or explicit plugin-path override without deleting unrelated NuGet package sources.
+- Python: remove this product's keyring backend or shim registration from the targeted Python environment without uninstalling unrelated keyring backends.
+- npm: remove this product's generated credential entries while preserving registry declarations and unrelated npm or Yarn configuration.
 
 ## Explicitly Deferred
 

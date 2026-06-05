@@ -231,12 +231,23 @@ Minimum recommended machine-facing surfaces:
 ## Security Findings
 
 1. Protocol adapters must never print human diagnostics to protocol stdout.
-2. Token caches must be partitioned by ecosystem, account, tenant, host/feed identity, token audience, and credential type.
+2. Token caches must be partitioned by ecosystem, host, organization, project when relevant, service identity, feed identity for package-feed adapters, account, tenant, token audience, and credential type.
 3. Git shell snippets are convenient but should not be the default production configuration on Windows or GUI Git clients.
 4. NuGet plugin mode must not emit banners, update notices, prompts, or non-protocol JSON to stdout.
 5. Python keyring adapters should be small and should avoid importing a large trusted authentication implementation from arbitrary project virtual environments.
 6. npm config updates must avoid writing raw long-lived secrets into repository-local `.npmrc` files by default.
 7. CI mode should be explicit, non-interactive, ephemeral, and log-safe.
+
+## Integration Removal Implications
+
+The same host-tool discovery mechanisms that require explicit configuration also require explicit teardown semantics. Removal should be scoped to configuration and adapter registrations owned by this product, not to all related host-tool state.
+
+Research implications by ecosystem:
+
+- Git removal should remove only this product's credential helper configuration and any `dev.azure.com` path-forwarding setting installed by this product or explicitly selected by the user.
+- NuGet removal should remove this product's plugin installation or explicit plugin-path override without deleting unrelated NuGet package sources or package source credentials.
+- Python removal should remove this product's keyring backend or shim registration from the targeted Python environment without uninstalling unrelated keyring backends.
+- npm removal should remove generated credential entries while preserving registry declarations and unrelated npm or Yarn configuration.
 
 ## Monorepo Integration Notes
 

@@ -58,7 +58,7 @@ Host tools own:
 10. Provide configuration commands that can install, verify, and remove each ecosystem integration.
 11. Support non-interactive CI operation without persisting secrets by default.
 12. Evaluate AzureAuth, also known as `microsoft-authentication-cli`, as a candidate identity substrate for Microsoft Entra token acquisition, MSAL cache reuse, and Azure DevOps token-oriented flows.
-13. Provide a `doctor` command that validates Git helper configuration, NuGet plugin discovery, Python keyring availability, npm registry configuration, credential cache health, and common CI misconfigurations.
+13. Provide a `doctor` command that validates Git helper configuration through Git's own discovery behavior, NuGet plugin discovery, Python keyring availability, npm registry configuration, credential cache health, and common CI misconfigurations.
 
 ## Non-Functional Requirements
 
@@ -91,6 +91,7 @@ Host tools own:
 3. Support .NET Core plugin discovery for `dotnet restore`.
 4. Support .NET Framework-compatible plugin discovery where Visual Studio, MSBuild, or NuGet.exe scenarios require it.
 5. Respect NuGet's interactive and non-interactive restore settings.
+6. Prefer NuGet's conventional plugin installation locations for default setup, with `NUGET_PLUGIN_PATHS` reserved for advanced diagnostics or explicit overrides.
 
 ### Python
 
@@ -99,6 +100,7 @@ Host tools own:
 3. Support pip, twine, and uv without requiring credentials in source-controlled project files.
 4. Keep trusted credential logic outside arbitrary project virtual environments where practical.
 5. Support Azure Artifacts Python simple-index and upload endpoints in both organization-scoped and project-scoped forms.
+6. Provide supported bootstrap paths that make the Python keyring backend discoverable in the exact Python environment running pip or twine, including virtual environments, pipx-managed tools, and isolated CI environments.
 
 ### npm, pnpm, and Yarn
 
