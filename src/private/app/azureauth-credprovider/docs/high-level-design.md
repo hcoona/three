@@ -254,7 +254,7 @@ CI behavior must:
 
 `<primary-cli> doctor` should validate:
 
-- Git helper executable discovery and `credential.useHttpPath` behavior for Azure Repos hosts,
+- Git helper executable discovery and `credential.https://dev.azure.com.useHttpPath` behavior for Azure Repos hosts,
 - NuGet plugin discovery and runtime compatibility,
 - Python keyring backend discovery,
 - `keyring` shim availability for uv,
