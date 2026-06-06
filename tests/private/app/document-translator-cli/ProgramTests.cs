@@ -811,6 +811,52 @@ public sealed class ProgramTests
         Assert.False(executed);
     }
 
+    [Theory]
+    [InlineData(DocumentedValidationCase.MissingInput, "The --input option is required.")]
+    [InlineData(DocumentedValidationCase.MissingOutput, "The --output option is required.")]
+    [InlineData(DocumentedValidationCase.MissingEndpoint, "AZURE_TRANSLATOR_ENDPOINT")]
+    [InlineData(DocumentedValidationCase.MalformedEndpoint, "Endpoint must match")]
+    [InlineData(DocumentedValidationCase.InvalidAuthMode, "Authentication mode must be")]
+    [InlineData(
+        DocumentedValidationCase.MissingTargetLanguage,
+        "The --target-language option is required.")]
+    [InlineData(
+        DocumentedValidationCase.InvalidTargetLanguage,
+        "Target language must be a syntactically valid language tag.")]
+    [InlineData(DocumentedValidationCase.MissingApiKey, "AZURE_TRANSLATOR_KEY")]
+    public async Task DocumentedValidationFailuresReturnExitCodeTwoAndDoNotExecute(
+        DocumentedValidationCase validationCase,
+        string expectedErrorFragment)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        bool executed = false;
+
+        int exitCode = await Program.RunAsync(
+            BuildDocumentedValidationFailureArgs(validationCase, inputPath, outputPath),
+            standardOutput,
+            standardError,
+            _ => null,
+            (_, _, _) =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(Program.ValidationErrorExitCode, exitCode);
+        Assert.False(executed);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains(expectedErrorFragment, standardError.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "secret",
+            standardError.ToString(),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     public static IEnumerable<object[]> ValidationFileIoExceptions()
     {
         yield return [new IOException("input metadata failed")];
@@ -2302,6 +2348,69 @@ public sealed class ProgramTests
                 out string contentType)
                 ? contentType
                 : "text/plain");
+
+    private static string[] BuildDocumentedValidationFailureArgs(
+        DocumentedValidationCase validationCase,
+        string inputPath,
+        string outputPath)
+    {
+        string? effectiveInputPath = validationCase == DocumentedValidationCase.MissingInput
+            ? null
+            : inputPath;
+        string? effectiveOutputPath = validationCase == DocumentedValidationCase.MissingOutput
+            ? null
+            : outputPath;
+        string? effectiveTargetLanguage = validationCase switch
+        {
+            DocumentedValidationCase.MissingTargetLanguage => null,
+            DocumentedValidationCase.InvalidTargetLanguage => "pt_BR",
+            _ => "fr",
+        };
+        string? effectiveEndpoint = validationCase switch
+        {
+            DocumentedValidationCase.MissingEndpoint => null,
+            DocumentedValidationCase.MalformedEndpoint => "https://example.com",
+            _ => "https://resource.cognitiveservices.azure.com",
+        };
+        string effectiveAuthMode = validationCase == DocumentedValidationCase.InvalidAuthMode
+            ? "managed-identity"
+            : "api-key";
+        string? effectiveApiKey = validationCase == DocumentedValidationCase.MissingApiKey
+            ? null
+            : "secret";
+
+        List<string> args = ["translate"];
+        AddOption(args, "--input", effectiveInputPath);
+        AddOption(args, "--output", effectiveOutputPath);
+        AddOption(args, "--target-language", effectiveTargetLanguage);
+        AddOption(args, "--endpoint", effectiveEndpoint);
+        AddOption(args, "--auth-mode", effectiveAuthMode);
+        AddOption(args, "--key", effectiveApiKey);
+        return [.. args];
+    }
+
+    private static void AddOption(List<string> args, string optionName, string? value)
+    {
+        if (value is null)
+        {
+            return;
+        }
+
+        args.Add(optionName);
+        args.Add(value);
+    }
+
+    public enum DocumentedValidationCase
+    {
+        MissingInput,
+        MissingOutput,
+        MissingEndpoint,
+        MalformedEndpoint,
+        InvalidAuthMode,
+        MissingTargetLanguage,
+        InvalidTargetLanguage,
+        MissingApiKey,
+    }
 
     private static FileStream CreatePreflightTempFile(string tempPath) =>
         new(
