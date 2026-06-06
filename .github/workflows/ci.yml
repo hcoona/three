@@ -2905,9 +2905,10 @@ jobs:
           if [ -n "$FACT_SNAPSHOT_ARTIFACT_ID" ]; then
             aggregate_args+=(--expected-fact-snapshot-artifact-id "$FACT_SNAPSHOT_ARTIFACT_ID")
           fi
-          if [ "$AGGREGATE_EVIDENCE_MANIFEST_PRODUCER_VERIFIED" = "true" ]; then
-            aggregate_args+=(--aggregate-evidence-manifest-producer-verified)
-          fi
+          aggregate_args+=(
+            --aggregate-evidence-manifest-producer-verified
+            "$AGGREGATE_EVIDENCE_MANIFEST_PRODUCER_VERIFIED"
+          )
           uv run python eng/scripts/workflow_release_control.py aggregate-ci-evidence "${aggregate_args[@]}"
       - name: Upload aggregate summary
         if: always()
@@ -2946,12 +2947,24 @@ jobs:
           $(uv run python - <<'PY'
           import hashlib
           import json
+          import os
           from pathlib import Path
 
           summary = json.loads(Path('.three-ci-validation/aggregate/aggregate-summary.json').read_text(encoding='utf-8'))
-          aggregate_manifest = summary.get('aggregate-evidence-manifest', {})
-          aggregate_manifest_digest = aggregate_manifest.get('content-digest') or ''
-          aggregate_summary_digest = hashlib.sha256(Path('.three-ci-validation/aggregate/aggregate-summary.json').read_bytes()).hexdigest()
+          aggregate_manifest_path = Path('.three-ci-validation/final-uploaded/aggregate-evidence-manifest/aggregate-evidence-manifest.json')
+          aggregate_summary_path = Path('.three-ci-validation/final-uploaded/aggregate-summary/aggregate-summary.json')
+          aggregate_manifest_artifact_id = os.environ.get('AGGREGATE_EVIDENCE_MANIFEST_ARTIFACT_ID', '')
+          aggregate_summary_artifact_id = os.environ.get('AGGREGATE_SUMMARY_ARTIFACT_ID', '')
+          aggregate_manifest_digest = (
+              hashlib.sha256(aggregate_manifest_path.read_bytes()).hexdigest()
+              if aggregate_manifest_artifact_id and aggregate_manifest_path.is_file()
+              else ''
+          )
+          aggregate_summary_digest = (
+              hashlib.sha256(aggregate_summary_path.read_bytes()).hexdigest()
+              if aggregate_summary_artifact_id and aggregate_summary_path.is_file()
+              else ''
+          )
           print(summary['budgets']['expected-actual-validation-artifacts'], aggregate_manifest_digest, aggregate_summary_digest)
           PY
           )
@@ -2969,6 +2982,8 @@ jobs:
            --changed-files-snapshot .three-ci-validation/plan/changed-files.json \
            --fact-snapshot .three-ci-validation/plan/fact-snapshot.json \
            --execution-batch-manifest .three-ci-validation/materialize/execution-batch-manifest.json \
+           --observed-artifacts-dir .three-ci-validation/observed-artifacts \
            --max-prefixed-validation-artifacts 20 \
            --expected-prefixed-validation-artifacts "$expected_prefixed_validation_artifacts" \
+           --verify-final-uploaded-bytes \
            "${expected_artifacts[@]}"

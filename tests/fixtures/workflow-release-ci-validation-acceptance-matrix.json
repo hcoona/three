@@ -971,6 +971,46 @@
           {
             "type": "test",
             "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_freezer_replaces_invalid_plan_failures"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_invalid_plan_accepts_retained_projection_with_snapshot_companion_fallback"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_plan_duplicate_retains_bound_plan_projection"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_retained_invalid_plan_rejects_missing_projection_authority"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_invalid_plan_unbound_manifest_rejects_self_authority_diagnostics"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_forged_authority_diagnostic_shape"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_manifest_rejects_request_context_projection_conflict"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_invalid_plan_rejects_retained_projection_with_bound_snapshot_companion_fallback"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_invalid_plan_rejects_retained_projection_with_noncanonical_snapshot_companion_fallback"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_invalid_plan_rejects_retained_projection_with_forged_snapshot_companion_fallback"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_invalid_plan_rejects_retained_projection_with_mismatched_snapshot_companion_fallback"
           }
         ],
         "no-publication-boundary": [
@@ -3582,7 +3622,7 @@
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_batch_missing_manifest_preserves_authority_diagnostics"
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_missing_manifest_uses_missing_manifest_authority"
           },
           {
             "type": "test",
@@ -3640,7 +3680,7 @@
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_batch_missing_manifest_preserves_authority_diagnostics"
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_missing_manifest_uses_missing_manifest_authority"
           },
           {
             "type": "test",

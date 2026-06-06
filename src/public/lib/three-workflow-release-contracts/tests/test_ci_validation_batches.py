@@ -11,13 +11,18 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import pytest
+import three_workflow_release_contracts as three_workflow_release_contracts_pkg
 from three_workflow_release_contracts import (
     API_VERSIONS_BY_KIND,
+    CI_VALIDATION_AGGREGATE_MANIFEST_AUTHORITY_MESSAGES,
+    CI_VALIDATION_INVALID_PLAN_MISSING_MESSAGE,
+    CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE,
     DETAILS_BY_DIAGNOSTIC_CODE,
     REGISTERED_CI_VALIDATION_DIAGNOSTIC_CODES,
     REGISTERED_CI_VALIDATION_DIAGNOSTIC_DETAILS,
     CiValidationKind,
     ContractValidationError,
+    ValidationIssue,
     artifact_physical_name,
     canonical_json_bytes,
     canonical_json_digest,
@@ -64,10 +69,12 @@ from three_workflow_release_contracts.ci_validation_batches import (
     _materializer_budget,
     _materializer_compatibility_key,
     _materializer_compatibility_profile,
+    _projection_authority_from_plan,
     _validate_admitted_bundles_topologically,
     _validate_budget,
     _validate_ci_validation_aggregate_evidence_manifest,
     _validate_ci_validation_execution_batch_manifest,
+    _validate_summary_manifest_projection_authority,
     _validate_supplied_summary_execution_manifest,
 )
 
@@ -160,14 +167,26 @@ def _diagnostic(  # noqa: PLR0913
     message: str | None = None,
     severity: str = "blocking-failure",
     verdict_effect: str = "failed",
+    source_id: str | None = None,
 ) -> dict[str, object]:
     diagnostic_code = code or diagnostic_id
+    diagnostic_message = message
+    if (
+        diagnostic_message is None
+        and diagnostic_code == "final-evidence-failure"
+        and detail in CI_VALIDATION_AGGREGATE_MANIFEST_AUTHORITY_MESSAGES
+    ):
+        diagnostic_message = (
+            CI_VALIDATION_AGGREGATE_MANIFEST_AUTHORITY_MESSAGES[detail]
+        )
     return {
         "diagnostic-id": diagnostic_id,
         "code": diagnostic_code,
         "detail": detail or diagnostic_code,
-        "message": diagnostic_id if message is None else message,
-        "source": {"type": "aggregation", "id": None},
+        "message": diagnostic_id
+        if diagnostic_message is None
+        else diagnostic_message,
+        "source": {"type": "aggregation", "id": source_id},
         "severity": severity,
         "verdict-effect": verdict_effect,
     }
@@ -567,7 +586,7 @@ def test_release_shaped_batch_rejects_missing_obligation_results() -> None:
 
     assert any(
         "artifact-obligation-results" in issue.path
-        for issue in exc_info.value.issues
+        for issue in cast("ContractValidationError", exc_info.value).issues
     )
 
 
@@ -703,6 +722,59 @@ def test_release_batch_allows_blocking_unavailable_shape() -> None:
     receipt["diagnostics"] = [diagnostic]
 
     _validate_release_bundle(bundle)
+
+
+def test_release_batch_rejects_blocking_available_malformed_digest() -> None:
+    """Available non-success release-shaped digests must still be valid."""
+    bundle = _release_batch_bundle()
+    selector = cast(
+        "dict[str, object]",
+        cast("list[object]", bundle["selector-results"])[0],
+    )
+    evidence = cast("dict[str, object]", selector["evidence"])
+    category_result = cast("dict[str, object]", evidence["category-result"])
+    detail = cast("dict[str, object]", category_result["detail"])
+    result = cast(
+        "dict[str, object]",
+        cast("list[object]", detail["artifact-obligation-results"])[0],
+    )
+    diagnostic = _diagnostic(
+        "release-shaped/artifact-shape-unconfirmed",
+        code="artifact-shape-unconfirmed",
+        detail="unconfirmed-provenance",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    selector["outcome"] = "blocking-failure"
+    selector["diagnostics"] = [diagnostic]
+    evidence["artifact-refs"] = []
+    category_result["outcome"] = "blocking-failure"
+    category_result["diagnostics"] = [diagnostic]
+    category_result["artifact-refs"] = []
+    detail.pop("evidence-source", None)
+    detail.pop("source-proof", None)
+    result["outcome"] = "blocking-failure"
+    result["diagnostics"] = [diagnostic]
+    artifact = cast("dict[str, object]", result["artifact"])
+    artifact["outcome"] = "blocking-failure"
+    artifact["diagnostics"] = [diagnostic]
+    observed = cast("dict[str, object]", artifact["observed"])
+    for item in cast("list[dict[str, object]]", observed["digests"]):
+        item["digest"] = "not-a-digest"
+        item["digest-available"] = True
+        item["diagnostics"] = [diagnostic]
+    receipt = cast("dict[str, object]", result["release-receipt"])
+    receipt["schema-checked"] = False
+    receipt["outcome"] = "blocking-failure"
+    receipt["diagnostics"] = [diagnostic]
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        issue.path.endswith(".digest") and issue.message == "must be a digest"
+        for issue in exc_info.value.issues
+    )
 
 
 def _compatibility_profile() -> dict[str, object]:
@@ -1444,7 +1516,9 @@ def _writer_with_observed_identity(
     return writer
 
 
-@pytest.mark.parametrize("writer_context", ["direct", "orchestrator"])
+@pytest.mark.parametrize(
+    "writer_context", ["direct", "orchestrator"], ids=["direct", "orchestrator"]
+)
 def test_batch_bundle_rejects_forged_observed_writer_identity(
     writer_context: str,
 ) -> None:
@@ -1545,7 +1619,9 @@ def test_batch_bundle_rejects_direct_writer_with_slot_index() -> None:
     )
 
 
-@pytest.mark.parametrize("writer_context", ["direct", "orchestrator"])
+@pytest.mark.parametrize(
+    "writer_context", ["direct", "orchestrator"], ids=["direct", "orchestrator"]
+)
 def test_batch_bundle_freeze_rejects_forged_observed_writer_identity(
     writer_context: str,
 ) -> None:
@@ -1810,6 +1886,17 @@ def _sort_summary_failures(summary: dict[str, object]) -> None:
     )
 
 
+def _without_final_producer_diagnostics(
+    summary: Mapping[str, object],
+) -> list[dict[str, object]]:
+    diagnostics = cast("list[dict[str, object]]", summary["diagnostics"])
+    return [
+        diagnostic
+        for diagnostic in diagnostics
+        if diagnostic["code"] != "final-producer-unverified"
+    ]
+
+
 def _aggregate_summary(
     plan: dict[str, object],
     aggregate_manifest: dict[str, object],
@@ -1841,9 +1928,11 @@ def _aggregate_summary(
                 "producer-verified": True,
             },
             "aggregate-summary": {
-                "artifact-ref": ci_validation_aggregate_summary_artifact_ref(
-                    run_id=RUN_ID,
-                    run_attempt=RUN_ATTEMPT,
+                "artifact-ref": (
+                    ci_validation_aggregate_summary_artifact_ref(
+                        run_id=RUN_ID,
+                        run_attempt=RUN_ATTEMPT,
+                    )
                 ),
             },
         },
@@ -1975,17 +2064,15 @@ def _fail_closed_aggregate_manifest(
             admissibility="valid",
         ),
     }
-    cast("dict[str, object]", input_artifacts["request"])[
-        "content-digest"
-    ] = cast("dict[str, object]", plan["request"])["request-digest"]
+    cast("dict[str, object]", input_artifacts["request"])["content-digest"] = (
+        cast("dict[str, object]", plan["request"])["request-digest"]
+    )
     cast("dict[str, object]", input_artifacts["validation-plan"])[
         "content-digest"
     ] = plan["plan-digest"]
     cast("dict[str, object]", input_artifacts["changed-files-snapshot"])[
         "content-digest"
-    ] = cast("dict[str, object]", plan["affected-range"])[
-        "changed-files-hash"
-    ]
+    ] = cast("dict[str, object]", plan["affected-range"])["changed-files-hash"]
     cast("dict[str, object]", input_artifacts["execution-batch-manifest"])[
         "content-digest"
     ] = ci_validation_execution_batch_manifest_payload_digest(manifest)
@@ -2193,11 +2280,19 @@ def _invalid_planning_input_manifest(
     invalid_artifact["admissibility"] = "inadmissible"
     invalid_artifact["diagnostics"] = [
         _diagnostic(
-            f"invalid-plan/{detail}",
+            "invalid-plan"
+            if detail == "plan-missing"
+            else f"invalid-plan/{detail}",
             code="invalid-plan",
             detail=detail,
+            message=(
+                CI_VALIDATION_INVALID_PLAN_MISSING_MESSAGE
+                if detail == "plan-missing"
+                else CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE
+            ),
             severity="fail-closed",
             verdict_effect="fail-closed",
+            source_id=cast("str | None", invalid_artifact["artifact-ref"]),
         )
     ]
     return {
@@ -2235,8 +2330,47 @@ def _invalid_planning_input_manifest(
     }
 
 
+def _authoritative_invalid_planning_input_manifest(
+    plan: dict[str, object],
+    input_name: str,
+    detail: str,
+) -> dict[str, object]:
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    _mark_aggregate_manifest_retained_authority(aggregate_manifest)
+    invalid_artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            input_name
+        ],
+    )
+    invalid_artifact["admissibility"] = "inadmissible"
+    invalid_artifact["diagnostics"] = [
+        _diagnostic(
+            "invalid-plan"
+            if detail == "plan-missing"
+            else f"invalid-plan/{detail}",
+            code="invalid-plan",
+            detail=detail,
+            message=(
+                CI_VALIDATION_INVALID_PLAN_MISSING_MESSAGE
+                if detail == "plan-missing"
+                else CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE
+            ),
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+            source_id=cast("str | None", invalid_artifact["artifact-ref"]),
+        )
+    ]
+    return aggregate_manifest
+
+
 def _freeze_invalid_planning_input_summary(
     aggregate_manifest: dict[str, object],
+    *,
+    plan: dict[str, object] | None = None,
+    final_manifest_producer_verified: bool = True,
 ) -> dict[str, object]:
     manifest_digest = ci_validation_aggregate_evidence_manifest_payload_digest(
         aggregate_manifest,
@@ -2259,7 +2393,7 @@ def _freeze_invalid_planning_input_summary(
                 "artifact-ref": manifest_ref,
                 "artifact-instance-id": "3001",
                 "content-digest": manifest_digest,
-                "producer-verified": True,
+                "producer-verified": final_manifest_producer_verified,
             },
             "aggregate-summary": {
                 "artifact-ref": ci_validation_aggregate_summary_artifact_ref(
@@ -2313,8 +2447,11 @@ def _freeze_invalid_planning_input_summary(
             "required-missing": 0,
             "terminal-aggregation": "present",
         },
+        plan=plan,
         aggregate_evidence_manifest_document=aggregate_manifest,
         request_document=_request_document(),
+        changed_files_snapshot=_changed_files_snapshot_document(),
+        fact_snapshot=_fact_snapshot_document(),
     )
 
 
@@ -2356,8 +2493,14 @@ def _zero_batch_execution_manifest(
 def _mark_aggregate_manifest_no_authority(
     aggregate_manifest: dict[str, object],
 ) -> None:
-    aggregate_manifest["batch-bundles"] = []
+    _mark_aggregate_manifest_retained_authority(aggregate_manifest)
     aggregate_manifest["projection-authority"] = None
+
+
+def _mark_aggregate_manifest_retained_authority(
+    aggregate_manifest: dict[str, object],
+) -> None:
+    aggregate_manifest["batch-bundles"] = []
     aggregate_manifest["pre-final-validation-artifacts"] = 5
     cast("dict[str, object]", aggregate_manifest["namespace-overflow"])[
         "observed-prefixed-artifact-count-lower-bound"
@@ -2614,6 +2757,8 @@ def test_summary_without_authority_rejects_stale_plan_identity() -> None:
     aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
     summary = _aggregate_summary(plan, aggregate_manifest, bundle)
     _mark_summary_missing_aggregate_manifest(summary)
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
 
     with pytest.raises(ContractValidationError) as exc_info:
         validate_ci_validation_aggregate_summary(
@@ -2881,14 +3026,145 @@ def _mark_summary_invalid_plan(summary: dict[str, object]) -> None:
             "diagnostic": _diagnostic(
                 "invalid-plan",
                 detail="plan-missing",
-                message="No authoritative validation plan was available.",
+                message=CI_VALIDATION_INVALID_PLAN_MISSING_MESSAGE,
                 severity="fail-closed",
                 verdict_effect="fail-closed",
             ),
-            "message": "No authoritative validation plan was available.",
+            "message": CI_VALIDATION_INVALID_PLAN_MISSING_MESSAGE,
         }
     )
+    cast("list[dict[str, object]]", summary["diagnostics"]).sort(
+        key=lambda item: str(item.get("diagnostic-id")),
+    )
     _sort_summary_failures(summary)
+
+
+def _mark_summary_bound_final_producer_unverified(
+    summary: dict[str, object],
+    *,
+    bind_final_manifest: bool = True,
+    include_derived_final_evidence: bool = True,
+) -> None:
+    cast("dict[str, object]", summary["reason"])[
+        "final-producer-unverified"
+    ] = True
+    manifest_claim = cast(
+        "dict[str, object]", summary["aggregate-evidence-manifest"]
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    if bind_final_manifest:
+        manifest_claim["artifact-instance-id"] = "3001"
+        manifest_claim["content-digest"] = "0" * 64
+        final_manifest["artifact-instance-id"] = "3001"
+        final_manifest["content-digest"] = "0" * 64
+    final_manifest["producer-verified"] = False
+    final_producer_diagnostic = _diagnostic(
+        "final-producer-unverified",
+        code="final-producer-unverified",
+        detail="final-producer-unverified",
+        message=(
+            "Aggregate evidence manifest producer boundary was not verified "
+            "before summary generation."
+        ),
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    cast("list[dict[str, object]]", summary["diagnostics"]).append(
+        final_producer_diagnostic
+    )
+    cast("list[dict[str, object]]", summary["failures"]).append(
+        {
+            "kind": "final-producer-unverified",
+            "batch-id": None,
+            "work-group-id": None,
+            "evidence-expectation-id": None,
+            "bundle-id": None,
+            "diagnostic": final_producer_diagnostic,
+            "message": final_producer_diagnostic["message"],
+        }
+    )
+    if include_derived_final_evidence:
+        final_evidence_diagnostic = _diagnostic(
+            "final-evidence-failure/final-producer-unverified",
+            code="final-evidence-failure",
+            detail="final-producer-unverified",
+            message="Aggregate evidence manifest producer was unverified.",
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+        )
+        cast("dict[str, object]", summary["reason"])[
+            "final-evidence-failure"
+        ] = True
+        cast("list[dict[str, object]]", summary["diagnostics"]).append(
+            final_evidence_diagnostic
+        )
+        cast("list[dict[str, object]]", summary["failures"]).append(
+            {
+                "kind": "final-evidence-failure",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": final_evidence_diagnostic,
+                "message": final_evidence_diagnostic["message"],
+            }
+        )
+    cast("list[dict[str, object]]", summary["diagnostics"]).sort(
+        key=lambda item: str(item.get("diagnostic-id")),
+    )
+    _sort_summary_failures(summary)
+
+
+def _set_invalid_plan_partial_projection(
+    summary: dict[str, object],
+    plan: Mapping[str, object],
+    field: str,
+) -> None:
+    summary["plan-id"] = None
+    summary["plan-digest"] = None
+    summary["mode"] = "unknown"
+    summary["validation-tree"] = {"commit-sha": None, "ref": None}
+    summary["affected-range"] = {
+        "status": "unknown",
+        "base-sha": None,
+        "base-tip-sha": None,
+        "head-sha": None,
+        "changed-files-hash": None,
+    }
+    summary["request"] = {"artifact-ref": None, "request-digest": None}
+    summary["scheduled-full"] = {"enabled": False}
+    if field in {
+        "plan-id",
+        "plan-digest",
+        "mode",
+        "validation-tree",
+        "request",
+        "scheduled-full",
+    }:
+        summary[field] = deepcopy(plan[field])
+    elif field == "affected-range":
+        summary[field] = _summary_affected_range(plan)
+    elif field == "request.artifact-ref":
+        summary["request"] = {
+            "artifact-ref": cast("Mapping[str, object]", plan["request"])[
+                "artifact-ref"
+            ],
+            "request-digest": None,
+        }
+    elif field == "request-digest":
+        summary["request"] = {
+            "artifact-ref": None,
+            "request-digest": cast("Mapping[str, object]", plan["request"])[
+                "request-digest"
+            ],
+        }
+    else:
+        raise AssertionError(field)
 
 
 def _mark_summary_missing_evidence(summary: dict[str, object]) -> None:
@@ -3007,6 +3283,15 @@ def _append_summary_kind_failure(
     diagnostic: dict[str, object],
     message: str,
 ) -> None:
+    if kind in {
+        "aggregate-summary-without-manifest",
+        "final-evidence-failure",
+        "final-producer-unverified",
+        "required-input-artifact-failure",
+    }:
+        reason = summary.get("reason")
+        if isinstance(reason, dict):
+            reason["fail-closed"] = True
     cast("list[dict[str, object]]", summary["failures"]).append(
         {
             "kind": kind,
@@ -3714,7 +3999,6 @@ def test_diagnostic_source_rejects_extra_keys() -> None:
     [
         "aggregate-summary-without-manifest",
         "required-input-artifact-failure",
-        "final-producer-unverified",
         "namespace-overflow",
         "aggregate-without-manifest",
         "final-manifest-missing",
@@ -3735,6 +4019,21 @@ def test_shared_final_evidence_registry_rejects_non_authority_details(
                 verdict_effect="fail-closed",
             )
         )
+
+
+def test_shared_final_evidence_registry_accepts_final_producer_unverified() -> (
+    None
+):
+    """Final-evidence failures may derive final producer boundary failures."""
+    validate_ci_validation_diagnostic_record(
+        _diagnostic(
+            "final-evidence",
+            code="final-evidence-failure",
+            detail="final-producer-unverified",
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+        )
+    )
 
 
 @pytest.mark.parametrize(
@@ -5767,17 +6066,33 @@ def test_batch_evidence_bundle_rejects_execution_tree_commit_mismatch() -> None:
 @pytest.mark.parametrize(
     "diagnostic",
     [
-        {"diagnostic-id": "legacy-only"},
-        _diagnostic("bad-code", code="unregistered-code"),
-        _diagnostic("bad-detail", code="invalid-plan", detail="build"),
-        {
-            **_diagnostic("missing-source"),
-            "source": {"type": "aggregation"},
-        },
-        {
-            **_diagnostic("extra-source-key"),
-            "source": {"type": "aggregation", "id": None, "extra": "forged"},
-        },
+        pytest.param({"diagnostic-id": "legacy-only"}, id="legacy-only"),
+        pytest.param(
+            _diagnostic("bad-code", code="unregistered-code"),
+            id="unregistered-code",
+        ),
+        pytest.param(
+            _diagnostic("bad-detail", code="invalid-plan", detail="build"),
+            id="invalid-detail",
+        ),
+        pytest.param(
+            {
+                **_diagnostic("missing-source"),
+                "source": {"type": "aggregation"},
+            },
+            id="missing-source-id",
+        ),
+        pytest.param(
+            {
+                **_diagnostic("extra-source-key"),
+                "source": {
+                    "type": "aggregation",
+                    "id": None,
+                    "extra": "forged",
+                },
+            },
+            id="extra-source-key",
+        ),
     ],
 )
 def test_batch_evidence_bundle_rejects_malformed_diagnostics(
@@ -5807,7 +6122,11 @@ def test_batch_evidence_bundle_rejects_malformed_diagnostics(
         )
 
 
-@pytest.mark.parametrize("field", ["source", "severity", "verdict-effect"])
+@pytest.mark.parametrize(
+    "field",
+    ["source", "severity", "verdict-effect"],
+    ids=["source", "severity", "verdict-effect"],
+)
 def test_batch_evidence_bundle_rejects_missing_required_diagnostic_fields(
     field: str,
 ) -> None:
@@ -6958,15 +7277,22 @@ def test_aggregate_manifest_rejects_contradictory_request_with_plan() -> None:
     bundle = _bundle(plan, manifest)
     aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
     request = _request_document()
-    request["mode"] = "push"
+    cast("dict[str, object]", request["event"])["actor"] = "mona"
 
-    with pytest.raises(ContractValidationError):
+    with pytest.raises(ContractValidationError) as exc_info:
         validate_ci_validation_aggregate_evidence_manifest(
             aggregate_manifest,
             plan=plan,
             execution_batch_manifest=manifest,
             request=request,
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
         )
+    assert any(
+        issue.path == "request.ci-validation-request"
+        and issue.message == "request-digest-mismatch"
+        for issue in exc_info.value.issues
+    )
 
 
 def test_aggregate_manifest_accepts_canonical_changed_files_snapshot() -> None:
@@ -8758,10 +9084,15 @@ def test_aggregate_manifest_rejects_supplied_context_absent_input_artifact(
             fact_snapshot=fact_snapshot_context,
         )
 
-    assert any(
-        issue.path == f"$.input-artifacts.{input_name}.admissibility"
-        for issue in exc_info.value.issues
-    )
+    if input_name == "request":
+        assert not any(
+            issue.path.startswith("request.") for issue in exc_info.value.issues
+        )
+    else:
+        assert any(
+            issue.path == f"$.input-artifacts.{input_name}.admissibility"
+            for issue in exc_info.value.issues
+        )
 
 
 @pytest.mark.parametrize("stale_field", ["run-id", "run-attempt"])
@@ -9130,13 +9461,12 @@ def test_standalone_manifest_rejects_planless_valid_plan_authority() -> None:
         )
 
     assert any(
-        issue.path in {"$.plan-id", "$.plan-digest"}
+        issue.path == "$.projection-authority"
         and "without an authoritative plan" in issue.message
         for issue in exc_info.value.issues
     )
-    assert any(
-        issue.path == "$.projection-authority"
-        and "without an authoritative plan" in issue.message
+    assert all(
+        issue.path not in {"$.plan-id", "$.plan-digest"}
         for issue in exc_info.value.issues
     )
 
@@ -10104,6 +10434,7 @@ def test_aggregate_manifest_rejects_plan_required_snapshot_downgrade(
 @pytest.mark.parametrize(
     ("input_name", "plan_mutation"),
     [
+        ("changed-files-snapshot", "changed-files"),
         ("fact-snapshot", "fact"),
     ],
 )
@@ -10112,26 +10443,21 @@ def test_aggregate_manifest_rejects_invalid_plan_not_required_snapshot_state(
     plan_mutation: str,
 ) -> None:
     """Invalid supplied plan snapshot fails before no-authority fallback."""
-    plan = _plan()
+    original_plan = _plan()
     if plan_mutation == "changed-files":
-        snapshot = _scheduled_full_plan_snapshot()
-        plan = cast("dict[str, object]", deepcopy(snapshot.plan))
+        plan = cast("dict[str, object]", deepcopy(original_plan))
         affected_range = cast("dict[str, object]", plan["affected-range"])
         affected_range["status"] = "not-applicable"
         affected_range["changed-files-hash"] = None
     else:
+        plan = cast("dict[str, object]", deepcopy(original_plan))
         cast("dict[str, object]", plan["fact-snapshot"])["status"] = (
             "unavailable"
         )
     plan["plan-digest"] = ci_validation_plan_digest(plan)
-    manifest = _manifest(_plan())
+    original_manifest = _manifest(original_plan)
+    manifest = cast("dict[str, object]", deepcopy(original_manifest))
     manifest["plan-digest"] = plan["plan-digest"]
-    original_plan = plan if input_name == "changed-files-snapshot" else _plan()
-    original_manifest = (
-        manifest
-        if input_name == "changed-files-snapshot"
-        else _manifest(original_plan)
-    )
     bundle = _bundle(original_plan, original_manifest)
     aggregate_manifest = _aggregate_evidence_manifest(
         original_plan, original_manifest, bundle
@@ -10195,9 +10521,13 @@ def test_aggregate_manifest_rejects_invalid_plan_not_required_snapshot_state(
             _require_authoritative_snapshot_inputs=False,
         )
 
+    expected_issue_path = (
+        "$.affected-range.status"
+        if input_name == "changed-files-snapshot"
+        else "$.fact-snapshot.status"
+    )
     assert any(
-        issue.path == "$.fact-snapshot.status"
-        for issue in exc_info.value.issues
+        issue.path == expected_issue_path for issue in exc_info.value.issues
     )
 
 
@@ -10343,6 +10673,226 @@ def test_aggregate_summary_freezes_and_validates() -> None:
     )
     assert ci_validation_aggregate_summary_payload_digest(summary) == (
         canonical_json_digest(summary)
+    )
+
+
+@pytest.mark.parametrize(
+    "container_path",
+    [
+        ("schema-diagnostics",),
+        ("diagnostics",),
+        (
+            "final-artifacts",
+            "aggregate-evidence-manifest",
+            "authority-diagnostics",
+        ),
+        ("batch-bundles", 0, "diagnostics"),
+        ("evidence-results", 0, "diagnostics"),
+    ],
+    ids=[
+        "schema-diagnostics",
+        "diagnostics",
+        "authority-diagnostics",
+        "batch-bundles",
+        "evidence-results",
+    ],
+)
+def test_aggregate_summary_rejects_forged_neutral_invalid_plan_diagnostic(
+    container_path: tuple[str | int, ...],
+) -> None:
+    """Neutral invalid-plan diagnostics still require canonical binding."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    container: object = summary
+    for key in container_path:
+        if isinstance(key, int):
+            container = cast("list[object]", container)[key]
+        else:
+            mapping = cast("dict[str, object]", container)
+            if key == "authority-diagnostics" and key not in mapping:
+                mapping[key] = []
+            container = mapping[key]
+    cast("list[dict[str, object]]", container).append(
+        {
+            "diagnostic-id": "invalid-plan/forged",
+            "code": "invalid-plan",
+            "detail": "malformed-plan",
+            "message": CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE,
+            "source": {"type": "aggregation", "id": None},
+            "severity": "warning",
+            "verdict-effect": "none",
+        }
+    )
+
+    with pytest.raises(ContractValidationError):
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            admitted_batch_evidence_bundles=[bundle],
+            execution_batch_manifest=manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+
+@pytest.mark.parametrize(
+    "container_path",
+    [
+        ("schema-diagnostics",),
+        ("diagnostics",),
+        ("batch-bundles", 0, "diagnostics"),
+    ],
+    ids=[
+        "schema-diagnostics",
+        "diagnostics",
+        "batch-bundles",
+    ],
+)
+def test_aggregate_summary_rejects_unbound_neutral_invalid_plan_diagnostic(
+    container_path: tuple[str | int, ...],
+) -> None:
+    """Neutral invalid-plan diagnostics still require invalid-plan binding."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    container: object = summary
+    for key in container_path:
+        if isinstance(key, int):
+            container = cast("list[object]", container)[key]
+        else:
+            mapping = cast("dict[str, object]", container)
+            if key == "authority-diagnostics" and key not in mapping:
+                mapping[key] = []
+            container = mapping[key]
+    cast("list[dict[str, object]]", container).append(
+        {
+            "diagnostic-id": "invalid-plan/malformed-plan",
+            "code": "invalid-plan",
+            "detail": "malformed-plan",
+            "message": CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE,
+            "source": {"type": "aggregation", "id": "forged"},
+            "severity": "warning",
+            "verdict-effect": "none",
+        }
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            admitted_batch_evidence_bundles=[bundle],
+            execution_batch_manifest=manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        "canonical bound invalid-plan diagnostic" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    "container_path",
+    [
+        ("schema-diagnostics",),
+        ("diagnostics",),
+        ("batch-bundles", 0, "diagnostics"),
+    ],
+    ids=[
+        "schema-diagnostics",
+        "diagnostics",
+        "batch-bundles",
+    ],
+)
+def test_aggregate_summary_accepts_bound_neutral_invalid_plan_diagnostic(
+    container_path: tuple[str | int, ...],
+) -> None:
+    """Non-invalid summaries may carry bound neutral plan diagnostics."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    container: object = summary
+    for key in container_path:
+        if isinstance(key, int):
+            container = cast("list[object]", container)[key]
+        else:
+            mapping = cast("dict[str, object]", container)
+            if key == "authority-diagnostics" and key not in mapping:
+                mapping[key] = []
+            container = mapping[key]
+    cast("list[dict[str, object]]", container).append(
+        {
+            "diagnostic-id": "invalid-plan/malformed-plan",
+            "code": "invalid-plan",
+            "detail": "malformed-plan",
+            "message": "Human-readable invalid-plan text may vary.",
+            "source": {"type": "aggregation", "id": None},
+            "severity": "warning",
+            "verdict-effect": "none",
+        }
+    )
+
+    validate_ci_validation_aggregate_summary(
+        summary,
+        plan=plan,
+        aggregate_evidence_manifest=aggregate_manifest,
+        admitted_batch_evidence_bundles=[bundle],
+        execution_batch_manifest=manifest,
+        request=_request_document(),
+        changed_files_snapshot=_changed_files_snapshot_document(),
+        fact_snapshot=_fact_snapshot_document(),
+    )
+
+
+def test_aggregate_summary_rejects_fail_closed_invalid_plan_diagnostic() -> (
+    None
+):
+    """Non-invalid summaries cannot carry effectful invalid-plan diagnostics."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    cast("list[dict[str, object]]", summary["diagnostics"]).append(
+        {
+            "diagnostic-id": "fail-closed/invalid-plan/plan-missing",
+            "code": "invalid-plan",
+            "detail": "plan-missing",
+            "message": "Validation planning failed closed.",
+            "source": {"type": "aggregation", "id": None},
+            "severity": "fail-closed",
+            "verdict-effect": "fail-closed",
+        }
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            admitted_batch_evidence_bundles=[bundle],
+            execution_batch_manifest=manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path == "$.diagnostics[0]"
+        and "canonical bound invalid-plan diagnostic" in issue.message
+        for issue in exc_info.value.issues
     )
 
 
@@ -10493,16 +11043,34 @@ def test_aggregate_summary_rejects_extra_satisfied_evidence_row() -> None:
 @pytest.mark.parametrize(
     "diagnostic",
     [
-        {"diagnostic-id": "legacy-only"},
-        _diagnostic("unknown-code", code="unknown-code"),
-        _diagnostic(
-            "wrong-detail", code="namespace-closure-failure", detail="build"
+        pytest.param({"diagnostic-id": "legacy-only"}, id="legacy-only"),
+        pytest.param(
+            _diagnostic("unknown-code", code="unknown-code"),
+            id="unknown-code",
         ),
-        {**_diagnostic("missing-severity"), "severity": None},
-        {
-            **_diagnostic("extra-source-key"),
-            "source": {"type": "aggregation", "id": None, "extra": "forged"},
-        },
+        pytest.param(
+            _diagnostic(
+                "wrong-detail",
+                code="namespace-closure-failure",
+                detail="build",
+            ),
+            id="wrong-detail",
+        ),
+        pytest.param(
+            {**_diagnostic("missing-severity"), "severity": None},
+            id="missing-severity",
+        ),
+        pytest.param(
+            {
+                **_diagnostic("extra-source-key"),
+                "source": {
+                    "type": "aggregation",
+                    "id": None,
+                    "extra": "forged",
+                },
+            },
+            id="extra-source-key",
+        ),
     ],
 )
 def test_aggregate_summary_rejects_malformed_failure_diagnostics(
@@ -10532,7 +11100,11 @@ def test_aggregate_summary_rejects_malformed_failure_diagnostics(
         )
 
 
-@pytest.mark.parametrize("field", ["source", "severity", "verdict-effect"])
+@pytest.mark.parametrize(
+    "field",
+    ["source", "severity", "verdict-effect"],
+    ids=["source", "severity", "verdict-effect"],
+)
 def test_aggregate_summary_rejects_missing_required_failure_diagnostic_fields(
     field: str,
 ) -> None:
@@ -10728,7 +11300,11 @@ def test_aggregate_summary_failure_json_unsafe_fails_closed() -> None:
     assert any(issue.path == "$" for issue in exc_info.value.issues)
 
 
-@pytest.mark.parametrize("terminal_aggregation", [None, "legacy-aggregate"])
+@pytest.mark.parametrize(
+    "terminal_aggregation",
+    [None, "legacy-aggregate"],
+    ids=["missing-terminal-aggregation", "legacy-terminal-aggregation"],
+)
 def test_aggregate_summary_rejects_invalid_terminal_aggregation(
     terminal_aggregation: str | None,
 ) -> None:
@@ -10818,7 +11394,7 @@ def test_freezer_json_unsafe_projection_authority_fails_closed() -> None:
     authority["request"] = {"not-json"}
 
     with pytest.raises(ContractValidationError) as exc_info:
-        freeze_ci_validation_aggregate_summary(
+        ci_validation_batches.freeze_ci_validation_aggregate_summary(
             created_at=CREATED_AT,
             repository_owner="hcoona",
             repository_name="three",
@@ -10893,7 +11469,10 @@ def test_aggregate_summary_freezer_emits_canonical_failure_order() -> None:
         aggregate_evidence_manifest=cast(
             "dict[str, object]", summary["aggregate-evidence-manifest"]
         ),
-        final_artifacts=cast("dict[str, object]", summary["final-artifacts"]),
+        final_artifacts=cast(
+            "dict[str, object]",
+            summary["final-artifacts"],
+        ),
         validation_tree=cast("dict[str, object]", summary["validation-tree"]),
         affected_range=cast("dict[str, object]", summary["affected-range"]),
         request=cast("dict[str, object]", summary["request"]),
@@ -11095,9 +11674,7 @@ def test_aggregate_summary_rejects_wrong_fail_closed_plan_cause() -> None:
         changed_files_snapshot,
     )
     failure = cast("list[dict[str, object]]", summary["failures"])[0]
-    cast("dict[str, object]", failure["diagnostic"])[
-        "detail"
-    ] = "inconsistent"
+    cast("dict[str, object]", failure["diagnostic"])["detail"] = "inconsistent"
 
     with pytest.raises(ContractValidationError) as exc_info:
         validate_ci_validation_aggregate_summary(
@@ -11143,14 +11720,16 @@ def test_aggregate_summary_rejects_unbound_supplied_plan_projection() -> None:
             fact_snapshot=_fact_snapshot_document(),
         )
 
-    assert any(
-        issue.path == "$.projection-authority"
-        for issue in exc_info.value.issues
-    )
+    assert {
+        "$.mode",
+        "$.validation-tree",
+        "$.affected-range",
+        "$.request",
+    } <= {issue.path for issue in exc_info.value.issues}
 
 
 def test_freeze_aggregate_summary_requires_fail_closed_unbound_plan() -> None:
-    """Freezing rejects plan projection without bound plan provenance."""
+    """Freezing forces zero-state projection without bound plan provenance."""
     plan = _plan()
     manifest = _manifest(plan)
     bundle = _bundle(plan, manifest)
@@ -11175,48 +11754,53 @@ def test_freeze_aggregate_summary_requires_fail_closed_unbound_plan() -> None:
     _make_summary_batch_evidence_missing(fail_closed, aggregate_manifest)
     _mark_summary_required_input_failure(fail_closed)
     _set_summary_unknown_projection(fail_closed)
-    frozen = freeze_ci_validation_aggregate_summary(
-        created_at=CREATED_AT,
-        repository_owner="hcoona",
-        repository_name="three",
-        workflow="CI Validation",
-        run_id=RUN_ID,
-        run_attempt=RUN_ATTEMPT,
-        aggregate_evidence_manifest=cast(
-            "dict[str, object]",
-            fail_closed["aggregate-evidence-manifest"],
-        ),
-        final_artifacts=cast(
-            "dict[str, object]", fail_closed["final-artifacts"]
-        ),
-        validation_tree=cast(
-            "dict[str, object]", fail_closed["validation-tree"]
-        ),
-        affected_range=cast("dict[str, object]", fail_closed["affected-range"]),
-        request=cast("dict[str, object]", fail_closed["request"]),
-        scheduled_full=cast("dict[str, object]", fail_closed["scheduled-full"]),
-        verdict=cast("str", fail_closed["verdict"]),
-        reason=cast("dict[str, object]", fail_closed["reason"]),
-        budgets=cast("dict[str, object]", fail_closed["budgets"]),
-        diagnostics=cast("list[dict[str, object]]", fail_closed["diagnostics"]),
-        batch_bundles=cast(
-            "list[dict[str, object]]", fail_closed["batch-bundles"]
-        ),
-        evidence_results=cast(
-            "list[dict[str, object]]",
-            fail_closed["evidence-results"],
-        ),
-        failures=cast("list[dict[str, object]]", fail_closed["failures"]),
-        work_groups=cast("dict[str, object]", fail_closed["work-groups"]),
-        plan=plan,
-        aggregate_evidence_manifest_document=aggregate_manifest,
-        execution_batch_manifest=manifest,
-        request_document=_request_document(),
-        changed_files_snapshot=_changed_files_snapshot_document(),
-        fact_snapshot=_fact_snapshot_document(),
-    )
-
-    assert frozen["mode"] == plan["mode"]
+    with pytest.raises(ContractValidationError):
+        ci_validation_batches.freeze_ci_validation_aggregate_summary(
+            created_at=CREATED_AT,
+            repository_owner="hcoona",
+            repository_name="three",
+            workflow="CI Validation",
+            run_id=RUN_ID,
+            run_attempt=RUN_ATTEMPT,
+            aggregate_evidence_manifest=cast(
+                "dict[str, object]",
+                fail_closed["aggregate-evidence-manifest"],
+            ),
+            final_artifacts=cast(
+                "dict[str, object]", fail_closed["final-artifacts"]
+            ),
+            validation_tree=cast(
+                "dict[str, object]", fail_closed["validation-tree"]
+            ),
+            affected_range=cast(
+                "dict[str, object]", fail_closed["affected-range"]
+            ),
+            request=cast("dict[str, object]", fail_closed["request"]),
+            scheduled_full=cast(
+                "dict[str, object]", fail_closed["scheduled-full"]
+            ),
+            verdict=cast("str", fail_closed["verdict"]),
+            reason=cast("dict[str, object]", fail_closed["reason"]),
+            budgets=cast("dict[str, object]", fail_closed["budgets"]),
+            diagnostics=cast(
+                "list[dict[str, object]]", fail_closed["diagnostics"]
+            ),
+            batch_bundles=cast(
+                "list[dict[str, object]]", fail_closed["batch-bundles"]
+            ),
+            evidence_results=cast(
+                "list[dict[str, object]]",
+                fail_closed["evidence-results"],
+            ),
+            failures=cast("list[dict[str, object]]", fail_closed["failures"]),
+            work_groups=cast("dict[str, object]", fail_closed["work-groups"]),
+            plan=plan,
+            aggregate_evidence_manifest_document=aggregate_manifest,
+            execution_batch_manifest=manifest,
+            request_document=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
 
 
 def test_aggregate_summary_accepts_bound_supplied_plan_projection() -> None:
@@ -11500,7 +12084,7 @@ def test_aggregate_summary_requires_manifest_without_plan_context() -> None:
     work_groups["required-succeeded"] = 0
 
     with pytest.raises(ContractValidationError):
-        validate_ci_validation_aggregate_summary(summary)
+        validate_ci_validation_aggregate_summary(summary, plan=plan)
 
 
 @pytest.mark.parametrize(
@@ -11637,7 +12221,7 @@ def test_aggregate_summary_freezer_requires_manifest_document() -> None:
     summary = _aggregate_summary(plan, aggregate_manifest, bundle)
 
     with pytest.raises(ContractValidationError):
-        freeze_ci_validation_aggregate_summary(
+        ci_validation_batches.freeze_ci_validation_aggregate_summary(
             created_at=CREATED_AT,
             repository_owner="hcoona",
             repository_name="three",
@@ -11697,7 +12281,10 @@ def test_aggregate_summary_freezer_accepts_missing_manifest_fail_closed() -> (
         aggregate_evidence_manifest=cast(
             "dict[str, object]", summary["aggregate-evidence-manifest"]
         ),
-        final_artifacts=cast("dict[str, object]", summary["final-artifacts"]),
+        final_artifacts=cast(
+            "dict[str, object]",
+            summary["final-artifacts"],
+        ),
         validation_tree=cast("dict[str, object]", summary["validation-tree"]),
         affected_range=cast("dict[str, object]", summary["affected-range"]),
         request=cast("dict[str, object]", summary["request"]),
@@ -11740,7 +12327,7 @@ def test_aggregate_summary_freezer_rejects_no_authority_missing_manifest() -> (
     summary = _aggregate_summary(plan, aggregate_manifest, bundle)
 
     with pytest.raises(ContractValidationError):
-        freeze_ci_validation_aggregate_summary(
+        ci_validation_batches.freeze_ci_validation_aggregate_summary(
             created_at=CREATED_AT,
             repository_owner="hcoona",
             repository_name="three",
@@ -12513,6 +13100,10 @@ def test_aggregate_summary_allows_observed_duration_overrun_telemetry() -> None:
         ("forged-failure-kind", "forged-failure-kind"),
         ("final-evidence-failure", "stale-final-evidence-failure"),
     ],
+    ids=[
+        "forged-failure-kind-forged-failure-kind",
+        "final-evidence-failure-stale-final-evidence-failure",
+    ],
 )
 def test_aggregate_summary_rejects_unknown_or_extra_failure_kind(
     kind: str,
@@ -12780,6 +13371,9 @@ def test_aggregate_summary_rejects_wrong_failure_attribution(
         validate_ci_validation_aggregate_summary(
             summary,
             plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            admitted_batch_evidence_bundles=[bundle],
+            execution_batch_manifest=manifest,
             request=_request_document(),
             changed_files_snapshot=_changed_files_snapshot_document(),
             fact_snapshot=_fact_snapshot_document(),
@@ -12802,6 +13396,9 @@ def test_aggregate_summary_rejects_extra_exact_failure_attribution() -> None:
         validate_ci_validation_aggregate_summary(
             summary,
             plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            admitted_batch_evidence_bundles=[bundle],
+            execution_batch_manifest=manifest,
             request=_request_document(),
             changed_files_snapshot=_changed_files_snapshot_document(),
             fact_snapshot=_fact_snapshot_document(),
@@ -13015,12 +13612,56 @@ def test_aggregate_summary_accepts_invalid_plan_mode() -> None:
     summary = _aggregate_summary(plan, aggregate_manifest, bundle)
     _mark_summary_invalid_plan(summary)
 
-    validate_ci_validation_aggregate_summary(summary)
+    validate_ci_validation_aggregate_summary(
+        summary,
+        request=_request_document(),
+        changed_files_snapshot=_changed_files_snapshot_document(),
+        fact_snapshot=_fact_snapshot_document(),
+    )
+
+
+def test_invalid_plan_rejects_unbound_retained_root_diagnostic() -> None:
+    """No-authority invalid-plan summaries cannot add retained details."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    cast("list[dict[str, object]]", summary["diagnostics"]).append(
+        _diagnostic(
+            "invalid-plan/schema-invalid",
+            code="invalid-plan",
+            detail="schema-invalid",
+            message=CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE,
+            severity="warning",
+            verdict_effect="none",
+        )
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            _require_aggregate_evidence_manifest=False,
+        )
+
+    assert any(
+        issue.path == "$.diagnostics[0]"
+        and "canonical bound invalid-plan diagnostic" in issue.message
+        for issue in exc_info.value.issues
+    )
 
 
 @pytest.mark.parametrize(
     "mutation",
     [
+        "passed",
+        "evidence-result",
+        "execution-count",
+        "work-group-count",
+        "failure",
+    ],
+    ids=[
         "passed",
         "evidence-result",
         "execution-count",
@@ -13064,7 +13705,10 @@ def test_aggregate_summary_rejects_invalid_plan_mode_mismatch(
         cast("list[dict[str, object]]", summary["failures"]).clear()
 
     with pytest.raises(ContractValidationError):
-        validate_ci_validation_aggregate_summary(summary)
+        validate_ci_validation_aggregate_summary(
+            summary,
+            aggregate_evidence_manifest=aggregate_manifest,
+        )
 
 
 @pytest.mark.parametrize(
@@ -13124,14 +13768,16 @@ def test_aggregate_summary_rejects_stale_invalid_plan_fields(
     summary[field] = stale_values[field]
 
     with pytest.raises(ContractValidationError):
-        validate_ci_validation_aggregate_summary(summary)
+        validate_ci_validation_aggregate_summary(
+            summary,
+            aggregate_evidence_manifest=aggregate_manifest,
+        )
 
 
 @pytest.mark.parametrize(
     ("field", "value"),
     [
         ("diagnostic", {"diagnostic-id": "forged-invalid-plan"}),
-        ("message", "Forged invalid plan message."),
         ("batch-id", _BATCH_ID),
         ("work-group-id", "wg-python-gate"),
         ("evidence-expectation-id", "evidence-python-gate"),
@@ -13149,10 +13795,69 @@ def test_aggregate_summary_rejects_forged_invalid_plan_failure_fields(
     aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
     summary = _aggregate_summary(plan, aggregate_manifest, bundle)
     _mark_summary_invalid_plan(summary)
-    cast("list[dict[str, object]]", summary["failures"])[0][field] = value
+    invalid_plan_failure = next(
+        failure
+        for failure in cast("list[dict[str, object]]", summary["failures"])
+        if failure["kind"] == "invalid-plan"
+    )
+    invalid_plan_failure[field] = value
 
     with pytest.raises(ContractValidationError):
-        validate_ci_validation_aggregate_summary(summary)
+        validate_ci_validation_aggregate_summary(
+            summary,
+            aggregate_evidence_manifest=aggregate_manifest,
+        )
+
+
+@pytest.mark.parametrize(
+    ("failure_kind", "message"),
+    [
+        pytest.param(
+            "invalid-plan",
+            "Alternate invalid-plan text.",
+            id="invalid-plan",
+        ),
+        pytest.param(
+            "fail-closed",
+            "Alternate fail-closed text.",
+            id="fail-closed",
+        ),
+    ],
+)
+def test_invalid_plan_summary_accepts_message_only_variations(
+    failure_kind: str,
+    message: str,
+) -> None:
+    """Invalid-plan failure identity excludes human-readable message text."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    failure = next(
+        failure
+        for failure in cast("list[dict[str, object]]", summary["failures"])
+        if failure["kind"] == "invalid-plan"
+    )
+    if failure_kind == "fail-closed":
+        failure["kind"] = "fail-closed"
+        diagnostic = cast("dict[str, object]", failure["diagnostic"])
+        diagnostic.update(
+            {
+                "diagnostic-id": "fail-closed/invalid-plan/plan-missing",
+                "severity": "fail-closed",
+                "verdict-effect": "fail-closed",
+            }
+        )
+        reason = cast("dict[str, object]", summary["reason"])
+        reason["invalid-plan"] = False
+        reason["fail-closed"] = True
+    failure["message"] = message
+    cast("dict[str, object]", failure["diagnostic"])["message"] = message
+    _sort_summary_failures(summary)
+
+    validate_ci_validation_aggregate_summary(summary)
 
 
 def test_aggregate_summary_rejects_extra_invalid_plan_failure() -> None:
@@ -13188,7 +13893,6 @@ def test_aggregate_summary_rejects_extra_invalid_plan_failure() -> None:
     [
         ("artifact-instance-id", "3001", "artifact-instance-id", "3001"),
         ("content-digest", "0" * 64, "content-digest", "0" * 64),
-        ("content-digest", None, "producer-verified", True),
     ],
 )
 def test_invalid_plan_summary_without_manifest_rejects_authoritative_claims(
@@ -13216,6 +13920,398 @@ def test_invalid_plan_summary_without_manifest_rejects_authoritative_claims(
 
     with pytest.raises(ContractValidationError):
         validate_ci_validation_aggregate_summary(summary)
+
+
+def test_invalid_plan_rejects_verified_no_authority_final_manifest() -> None:
+    """No-authority invalid-plan summaries cannot self-verify final manifest."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    cast("dict[str, object]", summary["aggregate-evidence-manifest"])[
+        "content-digest"
+    ] = None
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    final_manifest["producer-verified"] = True
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(summary)
+
+    assert any(
+        issue.path
+        == "$.final-artifacts.aggregate-evidence-manifest.producer-verified"
+        and "must be false without bound aggregate evidence manifest"
+        in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_bound_manifest_rejects_null_identity() -> None:
+    """Bound no-authority invalid-plan manifests require final identity."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            aggregate_evidence_manifest=aggregate_manifest,
+        )
+
+    assert any(
+        issue.path
+        in {
+            "$.aggregate-evidence-manifest.artifact-instance-id",
+            "$.aggregate-evidence-manifest.content-digest",
+            "$.final-artifacts.aggregate-evidence-manifest.artifact-instance-id",
+            "$.final-artifacts.aggregate-evidence-manifest.content-digest",
+        }
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_unbound_manifest_allows_unverified_producer() -> None:
+    """Unbound no-authority invalid-plan manifests stay unverified."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    final_manifest["producer-verified"] = False
+
+    validate_ci_validation_aggregate_summary(summary)
+
+
+def test_invalid_plan_unbound_manifest_rejects_forged_preserved_identity() -> (
+    None
+):
+    """Self-matching summary manifest claims do not prove bound evidence."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    manifest_claim = cast(
+        "dict[str, object]", summary["aggregate-evidence-manifest"]
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    manifest_claim["artifact-instance-id"] = "forged-aggregate-manifest"
+    manifest_claim["content-digest"] = "0123456789abcdef" * 4
+    final_manifest["artifact-instance-id"] = "forged-aggregate-manifest"
+    final_manifest["content-digest"] = "0123456789abcdef" * 4
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(summary)
+
+    assert any(
+        issue.path
+        in {
+            "$.aggregate-evidence-manifest.artifact-instance-id",
+            "$.aggregate-evidence-manifest.content-digest",
+            "$.final-artifacts.aggregate-evidence-manifest.artifact-instance-id",
+            "$.final-artifacts.aggregate-evidence-manifest.content-digest",
+        }
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_unbound_manifest_rejects_self_authority_diagnostics() -> (
+    None
+):
+    """Summary-local authority diagnostics do not prove manifest authority."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    invalid_plan_failure = cast("dict[str, object]", summary["failures"][0])
+    invalid_plan_diagnostic = cast(
+        "dict[str, object]", invalid_plan_failure["diagnostic"]
+    )
+    invalid_plan_diagnostic["diagnostic-id"] = "invalid-plan/malformed-plan"
+    invalid_plan_diagnostic["detail"] = "malformed-plan"
+    invalid_plan_diagnostic["message"] = (
+        CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE
+    )
+    invalid_plan_failure["message"] = invalid_plan_diagnostic["message"]
+    manifest_claim = cast(
+        "dict[str, object]", summary["aggregate-evidence-manifest"]
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    manifest_claim["artifact-instance-id"] = "forged-aggregate-manifest"
+    manifest_claim["content-digest"] = "0123456789abcdef" * 4
+    final_manifest["artifact-instance-id"] = "forged-aggregate-manifest"
+    final_manifest["content-digest"] = "0123456789abcdef" * 4
+    authority_diagnostic = _diagnostic(
+        "final-evidence-failure/aggregate-evidence-manifest-malformed",
+        code="final-evidence-failure",
+        detail="aggregate-evidence-manifest-malformed",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    final_manifest["authority-diagnostics"] = [authority_diagnostic]
+    cast("dict[str, object]", summary["reason"])["final-evidence-failure"] = (
+        True
+    )
+    cast("list[dict[str, object]]", summary["failures"]).append(
+        {
+            "kind": "final-evidence-failure",
+            "batch-id": None,
+            "work-group-id": None,
+            "evidence-expectation-id": None,
+            "bundle-id": None,
+            "diagnostic": _diagnostic(
+                "final-evidence-failure/aggregate-evidence-manifest-malformed",
+                code="final-evidence-failure",
+                detail="aggregate-evidence-manifest-malformed",
+                severity="fail-closed",
+                verdict_effect="fail-closed",
+            ),
+            "message": "Self-authorized aggregate evidence manifest failure.",
+        }
+    )
+    _sort_summary_failures(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            _require_aggregate_evidence_manifest=False,
+        )
+
+    assert any(
+        issue.path
+        in {
+            "$.aggregate-evidence-manifest.artifact-instance-id",
+            "$.aggregate-evidence-manifest.content-digest",
+            "$.final-artifacts.aggregate-evidence-manifest.artifact-instance-id",
+            "$.final-artifacts.aggregate-evidence-manifest.content-digest",
+            "$.failures",
+        }
+        or "final evidence failure causes" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_rejects_self_authorized_final_producer_evidence() -> None:
+    """Final producer evidence failures require bound manifest authority."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    final_evidence_diagnostic = _diagnostic(
+        "final-evidence-failure/final-producer-unverified",
+        code="final-evidence-failure",
+        detail="final-producer-unverified",
+        message="Aggregate evidence manifest producer was unverified.",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    cast("dict[str, object]", summary["reason"])["final-evidence-failure"] = (
+        True
+    )
+    cast("list[dict[str, object]]", summary["diagnostics"]).append(
+        final_evidence_diagnostic
+    )
+    cast("list[dict[str, object]]", summary["failures"]).append(
+        {
+            "kind": "final-evidence-failure",
+            "batch-id": None,
+            "work-group-id": None,
+            "evidence-expectation-id": None,
+            "bundle-id": None,
+            "diagnostic": final_evidence_diagnostic,
+            "message": final_evidence_diagnostic["message"],
+        }
+    )
+    cast("list[dict[str, object]]", summary["diagnostics"]).sort(
+        key=lambda item: str(item.get("diagnostic-id")),
+    )
+    _sort_summary_failures(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            _require_aggregate_evidence_manifest=False,
+        )
+
+    assert any(
+        issue.path in {"$.reason.final-evidence-failure", "$.failures"}
+        or "final evidence failure causes" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_retained_invalid_plan_summary_requires_bound_manifest_identity() -> (
+    None
+):
+    """Retained invalid-plan projection cannot self-claim manifest identity."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "changed-files-snapshot",
+        "changed-files-snapshot-schema-invalid",
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    manifest_claim = cast(
+        "dict[str, object]", summary["aggregate-evidence-manifest"]
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    manifest_claim["artifact-instance-id"] = "forged-aggregate-manifest"
+    manifest_claim["content-digest"] = "f" * 64
+    final_manifest["artifact-instance-id"] = "forged-aggregate-manifest"
+    final_manifest["content-digest"] = "f" * 64
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(summary)
+
+    assert any(
+        issue.path
+        in {
+            "$.aggregate-evidence-manifest.artifact-instance-id",
+            "$.aggregate-evidence-manifest.content-digest",
+            "$.projection-authority",
+        }
+        or "no-authority fail-closed projection" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_retained_invalid_plan_external_binding_blocks_projection() -> None:
+    """Externally bound manifest bytes do not authorize retained projection."""
+    plan = _plan()
+    aggregate_ref = ci_validation_aggregate_evidence_manifest_artifact_ref(
+        run_id=RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+    )
+    detail = "changed-files-snapshot-schema-invalid"
+    invalid_plan_diagnostic = _diagnostic(
+        f"invalid-plan/{detail}",
+        code="invalid-plan",
+        detail=detail,
+        message=CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE,
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    with pytest.raises(ContractValidationError) as exc_info:
+        freeze_ci_validation_aggregate_summary(
+            created_at=CREATED_AT,
+            repository_owner="hcoona",
+            repository_name="three",
+            workflow="CI Validation",
+            run_id=RUN_ID,
+            run_attempt=RUN_ATTEMPT,
+            aggregate_evidence_manifest={
+                "artifact-ref": aggregate_ref,
+                "artifact-instance-id": "3001",
+                "content-digest": "0" * 64,
+            },
+            final_artifacts={
+                "aggregate-evidence-manifest": {
+                    "artifact-ref": aggregate_ref,
+                    "artifact-instance-id": "3001",
+                    "content-digest": "0" * 64,
+                    "producer-verified": True,
+                    "authority-diagnostics": [],
+                },
+                "aggregate-summary": {
+                    "artifact-ref": ci_validation_aggregate_summary_artifact_ref(  # noqa: E501
+                        run_id=RUN_ID,
+                        run_attempt=RUN_ATTEMPT,
+                    ),
+                },
+            },
+            validation_tree=cast("dict[str, object]", plan["validation-tree"]),
+            affected_range=_summary_affected_range(plan),
+            request=cast("dict[str, object]", plan["request"]),
+            scheduled_full=cast("dict[str, object]", plan["scheduled-full"]),
+            verdict="failed",
+            reason={"invalid-plan": True},
+            budgets={
+                "pre-final-validation-artifacts": 5,
+                "expected-final-validation-artifacts": 2,
+                "expected-actual-validation-artifacts": 7,
+                "max-validation-artifacts": 20,
+                "actual-execution-batches": 0,
+                "actual-total-jobs": 0,
+                "actual-windows-jobs": 0,
+                "aggregate-duration-seconds": 10,
+                "aggregate-target-duration-seconds": 60,
+                "aggregate-max-duration-seconds": 120,
+            },
+            diagnostics=[invalid_plan_diagnostic],
+            batch_bundles=[],
+            evidence_results=[],
+            failures=[
+                {
+                    "kind": "invalid-plan",
+                    "batch-id": None,
+                    "work-group-id": None,
+                    "evidence-expectation-id": None,
+                    "bundle-id": None,
+                    "diagnostic": invalid_plan_diagnostic,
+                    "message": invalid_plan_diagnostic["message"],
+                }
+            ],
+            work_groups={
+                "executable-required": 0,
+                "required-succeeded": 0,
+                "required-failed": 0,
+                "required-skipped": 0,
+                "required-missing": 0,
+                "terminal-aggregation": "present",
+            },
+            plan=plan,
+            aggregate_evidence_manifest_bound=True,
+            aggregate_evidence_manifest_external_binding_verified=True,
+        )
+
+    assert any(
+        (
+            issue.path == "$.projection-authority"
+            and "aggregate manifest input authority" in issue.message
+        )
+        or issue.message == "must match invalid-plan context"
+        for issue in exc_info.value.issues
+    )
 
 
 def test_aggregate_summary_freezer_replaces_invalid_plan_failures() -> None:
@@ -13331,8 +14427,7 @@ def test_aggregate_summary_freezer_replaces_invalid_plan_failures() -> None:
     )
 
     failures = cast("list[dict[str, object]]", summary["failures"])
-    assert len(failures) == 1
-    assert failures[0] == {
+    assert {
         "kind": "invalid-plan",
         "batch-id": None,
         "work-group-id": None,
@@ -13341,19 +14436,19 @@ def test_aggregate_summary_freezer_replaces_invalid_plan_failures() -> None:
         "diagnostic": _diagnostic(
             "invalid-plan",
             detail="plan-missing",
-            message="No authoritative validation plan was available.",
+            message=CI_VALIDATION_INVALID_PLAN_MISSING_MESSAGE,
             severity="fail-closed",
             verdict_effect="fail-closed",
         ),
-        "message": "No authoritative validation plan was available.",
-    }
+        "message": CI_VALIDATION_INVALID_PLAN_MISSING_MESSAGE,
+    } in failures
+    assert all(failure["kind"] == "invalid-plan" for failure in failures)
     reason = cast("dict[str, object]", summary["reason"])
     assert reason["invalid-plan"] is True
     assert reason["fail-closed"] is False
+    assert reason["final-producer-unverified"] is False
     assert all(
-        value is False
-        for key, value in reason.items()
-        if key not in {"invalid-plan"}
+        value is False for key, value in reason.items() if key != "invalid-plan"
     )
     assert (
         cast("dict[str, object]", summary["aggregate-evidence-manifest"])[
@@ -13372,7 +14467,7 @@ def test_aggregate_summary_freezer_replaces_invalid_plan_failures() -> None:
 
 
 def test_freezer_drops_invalid_plan_authority_fail_closed() -> None:
-    """The freezer keeps authority final rows but not fail-closed rows."""
+    """The freezer drops unbound summary-local final authority rows."""
     plan = _plan()
     manifest = _manifest(plan)
     bundle = _bundle(plan, manifest)
@@ -13440,11 +14535,9 @@ def test_freezer_drops_invalid_plan_authority_fail_closed() -> None:
     frozen_reason = cast("dict[str, object]", frozen["reason"])
     frozen_failures = cast("list[dict[str, object]]", frozen["failures"])
     assert frozen_reason["fail-closed"] is False
-    assert frozen_reason["final-evidence-failure"] is True
-    assert any(
+    assert frozen_reason["final-evidence-failure"] is False
+    assert not any(
         failure["kind"] == "final-evidence-failure"
-        and cast("dict[str, object]", failure["diagnostic"])["detail"]
-        == "aggregate-evidence-manifest-malformed"
         for failure in frozen_failures
     )
     assert not any(
@@ -13478,17 +14571,89 @@ def test_invalid_plan_summary_rejects_missing_authority_final_failure() -> None:
     reason["final-evidence-failure"] = True
 
     with pytest.raises(ContractValidationError) as exc_info:
-        validate_ci_validation_aggregate_summary(summary)
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            admitted_batch_evidence_bundles=[bundle],
+            execution_batch_manifest=manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
 
     assert any(
-        issue.path == "$.failures"
-        and "final evidence failure causes" in issue.message
+        issue.path == "$.final-artifacts.aggregate-evidence-manifest."
+        "authority-diagnostics"
         for issue in exc_info.value.issues
     )
 
 
-def test_invalid_plan_accepts_authority_final_without_fail_closed() -> None:
-    """Authority final rows do not make invalid plans fail-closed."""
+def test_invalid_plan_rejects_unbound_authority_final_without_fail_closed() -> (
+    None
+):
+    """Authority final rows require independently bound manifest evidence."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    final_manifest["authority-diagnostics"] = [
+        _diagnostic(
+            "final-evidence-failure/aggregate-evidence-manifest-missing",
+            code="final-evidence-failure",
+            detail="aggregate-evidence-manifest-missing",
+            message="Preserved aggregate evidence manifest was missing.",
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+        )
+    ]
+    reason = cast("dict[str, object]", summary["reason"])
+    reason["final-evidence-failure"] = True
+    failure_diagnostic = _diagnostic(
+        "final-evidence-failure/aggregate-evidence-manifest-missing",
+        code="final-evidence-failure",
+        detail="aggregate-evidence-manifest-missing",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    cast("list[dict[str, object]]", summary["diagnostics"]).append(
+        failure_diagnostic
+    )
+    cast("list[dict[str, object]]", summary["failures"]).append(
+        {
+            "kind": "final-evidence-failure",
+            "batch-id": None,
+            "work-group-id": None,
+            "evidence-expectation-id": None,
+            "bundle-id": None,
+            "diagnostic": failure_diagnostic,
+            "message": "Missing aggregate evidence manifest authority.",
+        }
+    )
+    cast("list[dict[str, object]]", summary["diagnostics"]).sort(
+        key=lambda item: str(item.get("diagnostic-id")),
+    )
+    _sort_summary_failures(summary)
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(summary)
+
+    assert any(
+        issue.path == "$.final-artifacts.aggregate-evidence-manifest."
+        "authority-diagnostics"
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_rejects_bool_only_authority_final_failure() -> None:
+    """Caller bools alone do not authorize final manifest authority rows."""
     plan = _plan()
     manifest = _manifest(plan)
     bundle = _bundle(plan, manifest)
@@ -13531,12 +14696,997 @@ def test_invalid_plan_accepts_authority_final_without_fail_closed() -> None:
     )
     _sort_summary_failures(summary)
 
-    validate_ci_validation_aggregate_summary(summary)
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            _aggregate_evidence_manifest_bound=True,
+        )
 
-    assert reason["fail-closed"] is False
+    assert any(
+        issue.path
+        == "$.final-artifacts.aggregate-evidence-manifest.authority-diagnostics"
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_rejects_bool_details_authority_final_failure() -> None:
+    """Caller bool plus details do not authorize final authority rows."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    manifest_claim = cast(
+        "dict[str, object]", summary["aggregate-evidence-manifest"]
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    manifest_claim["artifact-instance-id"] = "forged-aggregate-manifest"
+    manifest_claim["content-digest"] = "0123456789abcdef" * 4
+    final_manifest["artifact-instance-id"] = manifest_claim[
+        "artifact-instance-id"
+    ]
+    final_manifest["content-digest"] = manifest_claim["content-digest"]
+    authority_diagnostic = _diagnostic(
+        "authority/aggregate-evidence-manifest-malformed",
+        code="final-evidence-failure",
+        detail="aggregate-evidence-manifest-malformed",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    final_manifest["authority-diagnostics"] = [authority_diagnostic]
+    reason = cast("dict[str, object]", summary["reason"])
+    reason["final-evidence-failure"] = True
+    cast("list[dict[str, object]]", summary["failures"]).append(
+        {
+            "kind": "final-evidence-failure",
+            "batch-id": None,
+            "work-group-id": None,
+            "evidence-expectation-id": None,
+            "bundle-id": None,
+            "diagnostic": authority_diagnostic,
+            "message": "Forged aggregate evidence manifest authority.",
+        }
+    )
+    _sort_summary_failures(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            _aggregate_evidence_manifest_bound=True,
+            _aggregate_manifest_authority_failure_details={
+                "aggregate-evidence-manifest-malformed"
+            },
+        )
+
+    assert any(
+        issue.path
+        == "$.final-artifacts.aggregate-evidence-manifest.authority-diagnostics"
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_rejects_forged_authority_with_valid_manifest() -> None:
+    """Valid manifest input does not authorize caller-forged details."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    authority_diagnostic = _diagnostic(
+        "authority/aggregate-evidence-manifest-malformed",
+        code="final-evidence-failure",
+        detail="aggregate-evidence-manifest-malformed",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    final_manifest["authority-diagnostics"] = [authority_diagnostic]
+    reason = cast("dict[str, object]", summary["reason"])
+    reason["final-evidence-failure"] = True
+    cast("list[dict[str, object]]", summary["failures"]).append(
+        {
+            "kind": "final-evidence-failure",
+            "batch-id": None,
+            "work-group-id": None,
+            "evidence-expectation-id": None,
+            "bundle-id": None,
+            "diagnostic": authority_diagnostic,
+            "message": "Forged aggregate evidence manifest authority.",
+        }
+    )
+    _sort_summary_failures(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            admitted_batch_evidence_bundles=[bundle],
+            execution_batch_manifest=manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+            _aggregate_manifest_authority_failure_details={
+                "aggregate-evidence-manifest-malformed"
+            },
+        )
+
+    assert any(
+        issue.path
+        == "$.final-artifacts.aggregate-evidence-manifest.authority-diagnostics"
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_rejects_summary_local_authority_by_default() -> None:
+    """Default validation does not let summaries bind final authority."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+    failure = cast("dict[str, object]", summary["failures"][0])
+    diagnostic = cast("dict[str, object]", failure["diagnostic"])
+    diagnostic["diagnostic-id"] = (
+        "invalid-plan/changed-files-snapshot-schema-invalid"
+    )
+    diagnostic["detail"] = "changed-files-snapshot-schema-invalid"
+    diagnostic["message"] = CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE
+    failure["message"] = diagnostic["message"]
+    summary["diagnostics"] = [diagnostic]
+    manifest_claim = cast(
+        "dict[str, object]", summary["aggregate-evidence-manifest"]
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    manifest_claim["artifact-instance-id"] = "forged-aggregate-manifest"
+    manifest_claim["content-digest"] = "0123456789abcdef" * 4
+    final_manifest["artifact-instance-id"] = manifest_claim[
+        "artifact-instance-id"
+    ]
+    final_manifest["content-digest"] = manifest_claim["content-digest"]
+    final_manifest["producer-verified"] = False
+    authority_diagnostic = _diagnostic(
+        "final-evidence-failure/aggregate-evidence-manifest-malformed",
+        code="final-evidence-failure",
+        detail="aggregate-evidence-manifest-malformed",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    final_manifest["authority-diagnostics"] = [authority_diagnostic]
+    reason = cast("dict[str, object]", summary["reason"])
+    reason["final-evidence-failure"] = True
+    reason["final-producer-unverified"] = True
+    cast("list[dict[str, object]]", summary["failures"]).extend(
+        [
+            {
+                "kind": "final-evidence-failure",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": authority_diagnostic,
+                "message": "Forged final manifest authority.",
+            },
+            {
+                "kind": "final-producer-unverified",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": _diagnostic(
+                    "final-producer-unverified",
+                    code="final-producer-unverified",
+                    detail="final-producer-unverified",
+                    severity="fail-closed",
+                    verdict_effect="fail-closed",
+                ),
+                "message": (
+                    "Aggregate evidence manifest producer was unverified."
+                ),
+            },
+        ]
+    )
+    _sort_summary_failures(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(summary, plan=plan)
+
+    assert any(
+        issue.path
+        == "$.final-artifacts.aggregate-evidence-manifest.authority-diagnostics"
+        or "retained invalid-plan projection requires" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_retained_invalid_plan_rejects_unbound_manifest_authority() -> None:
+    """Retained projection requires independently bound manifest authority."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "changed-files-snapshot",
+        "changed-files-snapshot-schema-invalid",
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+            _aggregate_evidence_manifest_bound=False,
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        or issue.path in {"$.plan-id", "$.plan-digest"}
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_freezer_ignores_bool_only_authority_final_failure() -> (
+    None
+):
+    """Freezing does not preserve final authority from a caller bool alone."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    final_manifest["artifact-instance-id"] = "forged-aggregate-manifest"
+    final_manifest["content-digest"] = "0123456789abcdef" * 4
+    final_manifest["producer-verified"] = False
+    final_manifest["authority-diagnostics"] = [
+        _diagnostic(
+            "authority/aggregate-evidence-manifest-malformed",
+            code="final-evidence-failure",
+            detail="aggregate-evidence-manifest-malformed",
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+        )
+    ]
+
+    frozen = freeze_ci_validation_aggregate_summary(
+        created_at=CREATED_AT,
+        repository_owner="hcoona",
+        repository_name="three",
+        workflow="CI Validation",
+        run_id=RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+        aggregate_evidence_manifest=cast(
+            "dict[str, object]",
+            summary["aggregate-evidence-manifest"],
+        ),
+        final_artifacts=cast(
+            "dict[str, object]",
+            summary["final-artifacts"],
+        ),
+        validation_tree=cast("dict[str, object]", summary["validation-tree"]),
+        affected_range=cast("dict[str, object]", summary["affected-range"]),
+        request=cast("dict[str, object]", summary["request"]),
+        scheduled_full=cast("dict[str, object]", summary["scheduled-full"]),
+        verdict=cast("str", summary["verdict"]),
+        reason=cast("dict[str, object]", summary["reason"]),
+        budgets=cast("dict[str, object]", summary["budgets"]),
+        diagnostics=cast("list[dict[str, object]]", summary["diagnostics"]),
+        batch_bundles=cast("list[dict[str, object]]", summary["batch-bundles"]),
+        evidence_results=cast(
+            "list[dict[str, object]]",
+            summary["evidence-results"],
+        ),
+        failures=cast("list[dict[str, object]]", summary["failures"]),
+        work_groups=cast("dict[str, object]", summary["work-groups"]),
+        aggregate_evidence_manifest_bound=True,
+    )
+
+    frozen_final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", frozen["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    assert frozen_final_manifest["producer-verified"] is False
+    assert frozen_final_manifest["authority-diagnostics"] == []
+    assert (
+        cast("dict[str, object]", frozen["reason"])["final-evidence-failure"]
+        is False
+    )
+
+
+def test_freezer_ignores_matching_summary_local_authority_failure() -> None:
+    """Matching summary claims do not prove final manifest authority."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    raw_digest = "0123456789abcdef" * 4
+    manifest_claim = cast(
+        "dict[str, object]", summary["aggregate-evidence-manifest"]
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    manifest_claim["artifact-instance-id"] = "bound-aggregate-manifest"
+    manifest_claim["content-digest"] = raw_digest
+    final_manifest["artifact-instance-id"] = "bound-aggregate-manifest"
+    final_manifest["content-digest"] = raw_digest
+    final_manifest["producer-verified"] = False
+    authority_diagnostic = _diagnostic(
+        "final-evidence-failure/aggregate-evidence-manifest-malformed",
+        code="final-evidence-failure",
+        detail="aggregate-evidence-manifest-malformed",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    final_manifest["authority-diagnostics"] = [authority_diagnostic]
+    reason = cast("dict[str, object]", summary["reason"])
+    reason["final-evidence-failure"] = True
+    reason["final-producer-unverified"] = True
+    cast("list[dict[str, object]]", summary["failures"]).extend(
+        [
+            {
+                "kind": "final-evidence-failure",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": authority_diagnostic,
+                "message": "Bound aggregate evidence manifest is malformed.",
+            },
+            {
+                "kind": "final-producer-unverified",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": _diagnostic(
+                    "final-producer-unverified",
+                    code="final-producer-unverified",
+                    detail="final-producer-unverified",
+                    severity="fail-closed",
+                    verdict_effect="fail-closed",
+                ),
+                "message": (
+                    "Aggregate evidence manifest producer was unverified."
+                ),
+            },
+        ]
+    )
+    _sort_summary_failures(summary)
+
+    frozen = freeze_ci_validation_aggregate_summary(
+        created_at=CREATED_AT,
+        repository_owner="hcoona",
+        repository_name="three",
+        workflow="CI Validation",
+        run_id=RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+        aggregate_evidence_manifest=manifest_claim,
+        final_artifacts=cast("dict[str, object]", summary["final-artifacts"]),
+        validation_tree=cast("dict[str, object]", summary["validation-tree"]),
+        affected_range=cast("dict[str, object]", summary["affected-range"]),
+        request=cast("dict[str, object]", summary["request"]),
+        scheduled_full=cast("dict[str, object]", summary["scheduled-full"]),
+        verdict=cast("str", summary["verdict"]),
+        reason=reason,
+        budgets=cast("dict[str, object]", summary["budgets"]),
+        diagnostics=cast("list[dict[str, object]]", summary["diagnostics"]),
+        batch_bundles=cast("list[dict[str, object]]", summary["batch-bundles"]),
+        evidence_results=cast(
+            "list[dict[str, object]]",
+            summary["evidence-results"],
+        ),
+        failures=cast("list[dict[str, object]]", summary["failures"]),
+        work_groups=cast("dict[str, object]", summary["work-groups"]),
+        aggregate_evidence_manifest_bound=True,
+    )
+
+    frozen_final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", frozen["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    frozen_manifest_claim = cast(
+        "dict[str, object]", frozen["aggregate-evidence-manifest"]
+    )
+    assert frozen_manifest_claim["artifact-instance-id"] is None
+    assert frozen_manifest_claim["content-digest"] is None
+    assert frozen_final_manifest["artifact-instance-id"] is None
+    assert frozen_final_manifest["content-digest"] is None
+    assert frozen_final_manifest["authority-diagnostics"] == []
+    assert frozen_final_manifest["producer-verified"] is False
+    assert (
+        cast("dict[str, object]", frozen["reason"])["final-evidence-failure"]
+        is False
+    )
+
+
+def test_invalid_plan_freezer_rejects_external_authority_without_context() -> (
+    None
+):
+    """External failure details still require manifest authority context."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    raw_digest = "0123456789abcdef" * 4
+    manifest_claim = cast(
+        "dict[str, object]", summary["aggregate-evidence-manifest"]
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    manifest_claim["artifact-instance-id"] = "bound-aggregate-manifest"
+    manifest_claim["content-digest"] = raw_digest
+    final_manifest["artifact-instance-id"] = "bound-aggregate-manifest"
+    final_manifest["content-digest"] = raw_digest
+    final_manifest["producer-verified"] = False
+    authority_diagnostic = _diagnostic(
+        "final-evidence-failure/aggregate-evidence-manifest-malformed",
+        code="final-evidence-failure",
+        detail="aggregate-evidence-manifest-malformed",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    final_manifest["authority-diagnostics"] = [authority_diagnostic]
+    reason = cast("dict[str, object]", summary["reason"])
+    reason["final-evidence-failure"] = True
+    reason["final-producer-unverified"] = True
+    cast("list[dict[str, object]]", summary["failures"]).extend(
+        [
+            {
+                "kind": "final-evidence-failure",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": authority_diagnostic,
+                "message": "Bound aggregate evidence manifest is malformed.",
+            },
+            {
+                "kind": "final-producer-unverified",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": _diagnostic(
+                    "final-producer-unverified",
+                    code="final-producer-unverified",
+                    detail="final-producer-unverified",
+                    severity="fail-closed",
+                    verdict_effect="fail-closed",
+                ),
+                "message": (
+                    "Aggregate evidence manifest producer was unverified."
+                ),
+            },
+        ]
+    )
+    _sort_summary_failures(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        freeze_ci_validation_aggregate_summary(
+            created_at=CREATED_AT,
+            repository_owner="hcoona",
+            repository_name="three",
+            workflow="CI Validation",
+            run_id=RUN_ID,
+            run_attempt=RUN_ATTEMPT,
+            aggregate_evidence_manifest=manifest_claim,
+            final_artifacts=cast(
+                "dict[str, object]", summary["final-artifacts"]
+            ),
+            validation_tree=cast(
+                "dict[str, object]", summary["validation-tree"]
+            ),
+            affected_range=cast("dict[str, object]", summary["affected-range"]),
+            request=cast("dict[str, object]", summary["request"]),
+            scheduled_full=cast("dict[str, object]", summary["scheduled-full"]),
+            verdict=cast("str", summary["verdict"]),
+            reason=reason,
+            budgets=cast("dict[str, object]", summary["budgets"]),
+            diagnostics=cast("list[dict[str, object]]", summary["diagnostics"]),
+            batch_bundles=cast(
+                "list[dict[str, object]]", summary["batch-bundles"]
+            ),
+            evidence_results=cast(
+                "list[dict[str, object]]",
+                summary["evidence-results"],
+            ),
+            failures=cast("list[dict[str, object]]", summary["failures"]),
+            work_groups=cast("dict[str, object]", summary["work-groups"]),
+            aggregate_evidence_manifest_document=aggregate_manifest,
+            aggregate_evidence_manifest_bound=True,
+            aggregate_evidence_manifest_external_binding_verified=True,
+            aggregate_manifest_authority_failure_details=[
+                "aggregate-evidence-manifest-malformed"
+            ],
+        )
+
+    assert any(
+        "requires" in issue.message or "must match" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_freezer_requires_document_for_external_binding() -> None:
+    """External binding alone does not authorize the invalid-plan summary."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    raw_digest = "0123456789abcdef" * 4
+    manifest_claim = cast(
+        "dict[str, object]", summary["aggregate-evidence-manifest"]
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    manifest_claim["artifact-instance-id"] = "bound-aggregate-manifest"
+    manifest_claim["content-digest"] = raw_digest
+    final_manifest["artifact-instance-id"] = "bound-aggregate-manifest"
+    final_manifest["content-digest"] = raw_digest
+    final_manifest["producer-verified"] = False
+    final_manifest["authority-diagnostics"] = []
+
+    frozen = ci_validation_batches.freeze_ci_validation_aggregate_summary(
+        created_at=CREATED_AT,
+        repository_owner="hcoona",
+        repository_name="three",
+        workflow="CI Validation",
+        run_id=RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+        aggregate_evidence_manifest=manifest_claim,
+        final_artifacts=cast("dict[str, object]", summary["final-artifacts"]),
+        validation_tree=cast("dict[str, object]", summary["validation-tree"]),
+        affected_range=cast("dict[str, object]", summary["affected-range"]),
+        request=cast("dict[str, object]", summary["request"]),
+        scheduled_full=cast("dict[str, object]", summary["scheduled-full"]),
+        verdict=cast("str", summary["verdict"]),
+        reason=cast("dict[str, object]", summary["reason"]),
+        budgets=cast("dict[str, object]", summary["budgets"]),
+        diagnostics=cast("list[dict[str, object]]", summary["diagnostics"]),
+        batch_bundles=cast("list[dict[str, object]]", summary["batch-bundles"]),
+        evidence_results=cast(
+            "list[dict[str, object]]",
+            summary["evidence-results"],
+        ),
+        failures=cast("list[dict[str, object]]", summary["failures"]),
+        work_groups=cast("dict[str, object]", summary["work-groups"]),
+        aggregate_evidence_manifest_bound=True,
+        aggregate_evidence_manifest_external_binding_verified=True,
+    )
+
+    frozen_final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", frozen["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    assert frozen_final_manifest["artifact-instance-id"] is None
+    assert frozen_final_manifest["content-digest"] is None
+    assert frozen_final_manifest["producer-verified"] is False
     assert not any(
-        failure["kind"] == "fail-closed"
-        for failure in cast("list[dict[str, object]]", summary["failures"])
+        failure.get("kind") == "final-producer-unverified"
+        for failure in cast("list[dict[str, object]]", frozen["failures"])
+    )
+
+
+@pytest.mark.parametrize(
+    "target",
+    ["validator", "freezer"],
+    ids=["validator", "freezer"],
+)
+def test_invalid_plan_bound_external_authority_rejects_null_manifest_identity(
+    target: str,
+) -> None:
+    """Verified external authority requires preserved manifest identity."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    manifest_claim = cast(
+        "dict[str, object]", summary["aggregate-evidence-manifest"]
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    manifest_claim["artifact-instance-id"] = None
+    manifest_claim["content-digest"] = None
+    final_manifest["artifact-instance-id"] = None
+    final_manifest["content-digest"] = None
+    final_manifest["producer-verified"] = False
+    authority_diagnostic = _diagnostic(
+        "final-evidence-failure/aggregate-evidence-manifest-malformed",
+        code="final-evidence-failure",
+        detail="aggregate-evidence-manifest-malformed",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    final_manifest["authority-diagnostics"] = [authority_diagnostic]
+    reason = cast("dict[str, object]", summary["reason"])
+    reason["final-evidence-failure"] = True
+    reason["final-producer-unverified"] = True
+    cast("list[dict[str, object]]", summary["failures"]).extend(
+        [
+            {
+                "kind": "final-evidence-failure",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": authority_diagnostic,
+                "message": "Bound aggregate evidence manifest is malformed.",
+            },
+            {
+                "kind": "final-producer-unverified",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": _diagnostic(
+                    "final-producer-unverified",
+                    code="final-producer-unverified",
+                    detail="final-producer-unverified",
+                    severity="fail-closed",
+                    verdict_effect="fail-closed",
+                ),
+                "message": (
+                    "Aggregate evidence manifest producer was unverified."
+                ),
+            },
+        ]
+    )
+    _sort_summary_failures(summary)
+
+    if target == "validator":
+        with pytest.raises(ContractValidationError) as exc_info:
+            validate_ci_validation_aggregate_summary(
+                summary,
+                aggregate_evidence_manifest=aggregate_manifest,
+                _aggregate_evidence_manifest_bound=True,
+                _aggregate_evidence_manifest_external_binding_verified=True,
+                _aggregate_manifest_authority_failure_details={
+                    "aggregate-evidence-manifest-malformed"
+                },
+            )
+    else:
+        with pytest.raises(ContractValidationError) as exc_info:
+            freeze_ci_validation_aggregate_summary(
+                created_at=CREATED_AT,
+                repository_owner="hcoona",
+                repository_name="three",
+                workflow="CI Validation",
+                run_id=RUN_ID,
+                run_attempt=RUN_ATTEMPT,
+                aggregate_evidence_manifest=manifest_claim,
+                final_artifacts=cast(
+                    "dict[str, object]", summary["final-artifacts"]
+                ),
+                validation_tree=cast(
+                    "dict[str, object]", summary["validation-tree"]
+                ),
+                affected_range=cast(
+                    "dict[str, object]", summary["affected-range"]
+                ),
+                request=cast("dict[str, object]", summary["request"]),
+                scheduled_full=cast(
+                    "dict[str, object]", summary["scheduled-full"]
+                ),
+                verdict=cast("str", summary["verdict"]),
+                reason=reason,
+                budgets=cast("dict[str, object]", summary["budgets"]),
+                diagnostics=cast(
+                    "list[dict[str, object]]", summary["diagnostics"]
+                ),
+                batch_bundles=cast(
+                    "list[dict[str, object]]", summary["batch-bundles"]
+                ),
+                evidence_results=cast(
+                    "list[dict[str, object]]",
+                    summary["evidence-results"],
+                ),
+                failures=cast("list[dict[str, object]]", summary["failures"]),
+                work_groups=cast("dict[str, object]", summary["work-groups"]),
+                aggregate_evidence_manifest_document=aggregate_manifest,
+                aggregate_evidence_manifest_bound=True,
+                aggregate_evidence_manifest_external_binding_verified=True,
+                aggregate_manifest_authority_failure_details=[
+                    "aggregate-evidence-manifest-malformed"
+                ],
+            )
+
+    assert any(
+        issue.path
+        in {
+            "$.aggregate-evidence-manifest.artifact-instance-id",
+            "$.aggregate-evidence-manifest.content-digest",
+            "$.final-artifacts.aggregate-evidence-manifest.artifact-instance-id",
+            "$.final-artifacts.aggregate-evidence-manifest.content-digest",
+        }
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_freezer_marks_bound_manifest_external_binding_verified(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bound aggregate manifests must stay externally verified in validation."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )["producer-verified"] = True
+    captured_kwargs: dict[str, object] = {}
+
+    def fake_validate(_summary: object, **kwargs: object) -> None:
+        captured_kwargs.update(kwargs)
+
+    monkeypatch.setattr(
+        ci_validation_batches,
+        "validate_ci_validation_aggregate_summary",
+        fake_validate,
+    )
+    monkeypatch.setattr(
+        three_workflow_release_contracts_pkg,
+        "validate_ci_validation_aggregate_summary",
+        fake_validate,
+    )
+
+    ci_validation_batches.freeze_ci_validation_aggregate_summary(
+        created_at=CREATED_AT,
+        repository_owner="hcoona",
+        repository_name="three",
+        workflow="CI Validation",
+        run_id=RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+        aggregate_evidence_manifest=cast(
+            "dict[str, object]",
+            summary["aggregate-evidence-manifest"],
+        ),
+        final_artifacts=cast("dict[str, object]", summary["final-artifacts"]),
+        validation_tree=cast("dict[str, object]", summary["validation-tree"]),
+        affected_range=cast("dict[str, object]", summary["affected-range"]),
+        request=cast("dict[str, object]", summary["request"]),
+        scheduled_full=cast("dict[str, object]", summary["scheduled-full"]),
+        verdict=cast("str", summary["verdict"]),
+        reason=cast("dict[str, object]", summary["reason"]),
+        budgets=cast("dict[str, object]", summary["budgets"]),
+        diagnostics=cast("list[dict[str, object]]", summary["diagnostics"]),
+        batch_bundles=cast("list[dict[str, object]]", summary["batch-bundles"]),
+        evidence_results=cast(
+            "list[dict[str, object]]", summary["evidence-results"]
+        ),
+        failures=cast("list[dict[str, object]]", summary["failures"]),
+        work_groups=cast("dict[str, object]", summary["work-groups"]),
+        aggregate_evidence_manifest_document=aggregate_manifest,
+        aggregate_evidence_manifest_bound=True,
+        aggregate_evidence_manifest_external_binding_verified=True,
+        aggregate_manifest_authority_failure_details=[
+            "aggregate-evidence-manifest-malformed",
+        ],
+    )
+
+    assert captured_kwargs["_aggregate_evidence_manifest_bound"] is True
+    assert (
+        captured_kwargs[
+            "_aggregate_evidence_manifest_external_binding_verified"
+        ]
+        is True
+    )
+
+
+def test_invalid_plan_freezer_ignores_bool_details_authority_failure() -> None:
+    """Freezing ignores final authority from bool plus details alone."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    raw_digest = "0123456789abcdef" * 4
+    manifest_claim = cast(
+        "dict[str, object]", summary["aggregate-evidence-manifest"]
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    manifest_claim["artifact-instance-id"] = "forged-aggregate-manifest"
+    manifest_claim["content-digest"] = raw_digest
+    final_manifest["artifact-instance-id"] = "forged-aggregate-manifest"
+    final_manifest["content-digest"] = raw_digest
+    final_manifest["producer-verified"] = False
+    final_manifest["authority-diagnostics"] = [
+        _diagnostic(
+            "authority/aggregate-evidence-manifest-malformed",
+            code="final-evidence-failure",
+            detail="aggregate-evidence-manifest-malformed",
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+        )
+    ]
+    reason = cast("dict[str, object]", summary["reason"])
+    reason["final-evidence-failure"] = True
+    reason["final-producer-unverified"] = True
+
+    frozen = freeze_ci_validation_aggregate_summary(
+        created_at=CREATED_AT,
+        repository_owner="hcoona",
+        repository_name="three",
+        workflow="CI Validation",
+        run_id=RUN_ID,
+        run_attempt=RUN_ATTEMPT,
+        aggregate_evidence_manifest=manifest_claim,
+        final_artifacts=cast("dict[str, object]", summary["final-artifacts"]),
+        validation_tree=cast("dict[str, object]", summary["validation-tree"]),
+        affected_range=cast("dict[str, object]", summary["affected-range"]),
+        request=cast("dict[str, object]", summary["request"]),
+        scheduled_full=cast("dict[str, object]", summary["scheduled-full"]),
+        verdict=cast("str", summary["verdict"]),
+        reason=reason,
+        budgets=cast("dict[str, object]", summary["budgets"]),
+        diagnostics=cast("list[dict[str, object]]", summary["diagnostics"]),
+        batch_bundles=cast("list[dict[str, object]]", summary["batch-bundles"]),
+        evidence_results=cast(
+            "list[dict[str, object]]",
+            summary["evidence-results"],
+        ),
+        failures=cast("list[dict[str, object]]", summary["failures"]),
+        work_groups=cast("dict[str, object]", summary["work-groups"]),
+        aggregate_evidence_manifest_bound=True,
+        aggregate_manifest_authority_failure_details=[
+            "aggregate-evidence-manifest-malformed"
+        ],
+    )
+
+    frozen_final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", frozen["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    frozen_manifest_claim = cast(
+        "dict[str, object]", frozen["aggregate-evidence-manifest"]
+    )
+    assert frozen_manifest_claim["artifact-instance-id"] is None
+    assert frozen_manifest_claim["content-digest"] is None
+    assert frozen_final_manifest["artifact-instance-id"] is None
+    assert frozen_final_manifest["content-digest"] is None
+    assert frozen_final_manifest["authority-diagnostics"] == []
+    assert frozen_final_manifest["producer-verified"] is False
+    assert (
+        cast("dict[str, object]", frozen["reason"])["final-evidence-failure"]
+        is False
+    )
+
+
+def test_invalid_plan_rejects_uncovered_final_evidence_failure() -> None:
+    """Invalid-plan final evidence rows must be covered by root diagnostics."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    final_manifest["authority-diagnostics"] = [
+        _diagnostic(
+            "authority/aggregate-evidence-manifest-missing",
+            code="final-evidence-failure",
+            detail="aggregate-evidence-manifest-missing",
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+        )
+    ]
+    reason = cast("dict[str, object]", summary["reason"])
+    reason["final-evidence-failure"] = True
+    cast("list[dict[str, object]]", summary["failures"]).append(
+        {
+            "kind": "final-evidence-failure",
+            "batch-id": None,
+            "work-group-id": None,
+            "evidence-expectation-id": None,
+            "bundle-id": None,
+            "diagnostic": _diagnostic(
+                "final-evidence-failure/aggregate-evidence-manifest-missing",
+                code="final-evidence-failure",
+                detail="aggregate-evidence-manifest-missing",
+                severity="fail-closed",
+                verdict_effect="fail-closed",
+            ),
+            "message": "Missing aggregate evidence manifest authority.",
+        }
+    )
+    _sort_summary_failures(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path.endswith(".diagnostic")
+        and "covered by root diagnostics" in issue.message
+        for issue in exc_info.value.issues
     )
 
 
@@ -13587,23 +15737,3233 @@ def test_invalid_plan_rejects_unverified_manifest_final_failure() -> None:
         validate_ci_validation_aggregate_summary(summary)
 
 
+def test_invalid_plan_rejects_summary_local_manifest_authority() -> None:
+    """Summary-local manifest identity cannot bind final authority failures."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    manifest_claim = cast(
+        "dict[str, object]", summary["aggregate-evidence-manifest"]
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    manifest_claim["artifact-instance-id"] = "forged-upload"
+    manifest_claim["content-digest"] = "0123456789abcdef" * 4
+    final_manifest["artifact-instance-id"] = "forged-upload"
+    final_manifest["content-digest"] = "0123456789abcdef" * 4
+    final_manifest["producer-verified"] = False
+    authority_diagnostic = _diagnostic(
+        "final-evidence-failure/aggregate-evidence-manifest-malformed",
+        code="final-evidence-failure",
+        detail="aggregate-evidence-manifest-malformed",
+        message="Preserved aggregate evidence manifest was malformed.",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    final_manifest["authority-diagnostics"] = [authority_diagnostic]
+    reason = cast("dict[str, object]", summary["reason"])
+    reason["final-producer-unverified"] = True
+    reason["final-evidence-failure"] = True
+    final_producer_diagnostic = _diagnostic(
+        "final-producer-unverified",
+        code="final-producer-unverified",
+        detail="final-producer-unverified",
+        message=(
+            "Aggregate evidence manifest producer boundary was not verified "
+            "before summary generation."
+        ),
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    final_producer_evidence_diagnostic = _diagnostic(
+        "final-evidence-failure/final-producer-unverified",
+        code="final-evidence-failure",
+        detail="final-producer-unverified",
+        message="Aggregate evidence manifest producer was unverified.",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    cast("list[dict[str, object]]", summary["diagnostics"]).extend(
+        [
+            authority_diagnostic,
+            final_producer_diagnostic,
+            final_producer_evidence_diagnostic,
+        ]
+    )
+    cast("list[dict[str, object]]", summary["failures"]).extend(
+        [
+            {
+                "kind": "final-evidence-failure",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": authority_diagnostic,
+                "message": authority_diagnostic["message"],
+            },
+            {
+                "kind": "final-evidence-failure",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": final_producer_evidence_diagnostic,
+                "message": final_producer_evidence_diagnostic["message"],
+            },
+            {
+                "kind": "final-producer-unverified",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": final_producer_diagnostic,
+                "message": final_producer_diagnostic["message"],
+            },
+        ]
+    )
+    cast("list[dict[str, object]]", summary["diagnostics"]).sort(
+        key=lambda item: str(item.get("diagnostic-id")),
+    )
+    _sort_summary_failures(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            _require_aggregate_evidence_manifest=False,
+        )
+
+    assert any(
+        issue.path.startswith("$.final-artifacts.aggregate-evidence-manifest")
+        or issue.path == "$.failures"
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_rejects_summary_local_missing_manifest_authority() -> (
+    None
+):
+    """Summary-local missing-manifest diagnostics cannot bind authority."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    manifest_claim = cast(
+        "dict[str, object]", summary["aggregate-evidence-manifest"]
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    manifest_claim["artifact-instance-id"] = "forged-upload"
+    manifest_claim["content-digest"] = "0123456789abcdef" * 4
+    final_manifest["artifact-instance-id"] = "forged-upload"
+    final_manifest["content-digest"] = "0123456789abcdef" * 4
+    final_manifest["producer-verified"] = False
+    authority_diagnostic = _diagnostic(
+        "final-evidence-failure/aggregate-evidence-manifest-missing",
+        code="final-evidence-failure",
+        detail="aggregate-evidence-manifest-missing",
+        message="Missing aggregate evidence manifest authority.",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    final_manifest["authority-diagnostics"] = [authority_diagnostic]
+    reason = cast("dict[str, object]", summary["reason"])
+    reason["final-producer-unverified"] = True
+    reason["final-evidence-failure"] = True
+    final_producer_diagnostic = _diagnostic(
+        "final-producer-unverified",
+        code="final-producer-unverified",
+        detail="final-producer-unverified",
+        message=(
+            "Aggregate evidence manifest producer boundary was not verified "
+            "before summary generation."
+        ),
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    final_producer_evidence_diagnostic = _diagnostic(
+        "final-evidence-failure/final-producer-unverified",
+        code="final-evidence-failure",
+        detail="final-producer-unverified",
+        message="Aggregate evidence manifest producer was unverified.",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    cast("list[dict[str, object]]", summary["diagnostics"]).extend(
+        [
+            authority_diagnostic,
+            final_producer_diagnostic,
+            final_producer_evidence_diagnostic,
+        ]
+    )
+    cast("list[dict[str, object]]", summary["failures"]).extend(
+        [
+            {
+                "kind": "final-evidence-failure",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": authority_diagnostic,
+                "message": authority_diagnostic["message"],
+            },
+            {
+                "kind": "final-evidence-failure",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": final_producer_evidence_diagnostic,
+                "message": final_producer_evidence_diagnostic["message"],
+            },
+            {
+                "kind": "final-producer-unverified",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": final_producer_diagnostic,
+                "message": final_producer_diagnostic["message"],
+            },
+        ]
+    )
+    cast("list[dict[str, object]]", summary["diagnostics"]).sort(
+        key=lambda item: str(item.get("diagnostic-id")),
+    )
+    _sort_summary_failures(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            _require_aggregate_evidence_manifest=False,
+        )
+
+    assert any(
+        issue.path.startswith("$.final-artifacts.aggregate-evidence-manifest")
+        or issue.path == "$.failures"
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_rejects_unbound_final_producer() -> None:
+    """Final producer failures require external manifest binding."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    _mark_summary_bound_final_producer_unverified(
+        summary,
+        bind_final_manifest=False,
+        include_derived_final_evidence=False,
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(summary)
+
+    assert any(
+        issue.path == "$.failures"
+        and "bound unverified final manifest producer" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_rejects_uncovered_final_producer_failure() -> None:
+    """Invalid-plan final producer rows must be covered by root diagnostics."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    _mark_summary_bound_final_producer_unverified(
+        summary,
+        bind_final_manifest=False,
+        include_derived_final_evidence=False,
+    )
+    summary["diagnostics"] = _without_final_producer_diagnostics(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(summary)
+
+    assert any(
+        issue.path.endswith(".diagnostic")
+        and "covered by root diagnostics" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_accepts_canonical_fail_closed_invalid_plan() -> None:
+    """Canonical fail-closed invalid-plan rows preserve fail-closed reason."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    failure = next(
+        failure
+        for failure in cast("list[dict[str, object]]", summary["failures"])
+        if failure["kind"] == "invalid-plan"
+    )
+    failure["kind"] = "fail-closed"
+    failure["message"] = "Validation planning failed closed."
+    diagnostic = cast("dict[str, object]", failure["diagnostic"])
+    diagnostic.update(
+        {
+            "diagnostic-id": "fail-closed/invalid-plan/plan-missing",
+            "code": "invalid-plan",
+            "detail": "plan-missing",
+            "message": "Validation planning failed closed.",
+            "source": {"type": "aggregation", "id": None},
+            "severity": "fail-closed",
+            "verdict-effect": "fail-closed",
+        }
+    )
+    reason = cast("dict[str, object]", summary["reason"])
+    reason["invalid-plan"] = False
+    reason["fail-closed"] = True
+    _sort_summary_failures(summary)
+
+    validate_ci_validation_aggregate_summary(summary)
+
+
+def test_invalid_plan_accepts_nonzero_actual_total_jobs() -> None:
+    """Invalid-plan summaries may preserve physical job counts."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    cast("dict[str, object]", summary["budgets"])["actual-total-jobs"] = 1
+
+    validate_ci_validation_aggregate_summary(summary)
+
+
+def test_invalid_plan_rejects_unverified_final_producer_without_failure() -> (
+    None
+):
+    """producer-verified false requires matching failure state."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )["producer-verified"] = False
+    cast("dict[str, object]", summary["reason"])[
+        "final-producer-unverified"
+    ] = False
+    summary["failures"] = [
+        failure
+        for failure in cast("list[dict[str, object]]", summary["failures"])
+        if failure["kind"] != "final-producer-unverified"
+    ]
+    summary["diagnostics"] = _without_final_producer_diagnostics(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            admitted_batch_evidence_bundles=[bundle],
+            execution_batch_manifest=manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        (
+            issue.path == "$.failures"
+            and "final-producer-unverified" in issue.message
+            and ("failure" in issue.message or "must include" in issue.message)
+        )
+        or (
+            issue.path == "$.final-artifacts.aggregate-evidence-manifest"
+            and (
+                "unverified producer requires bound artifact instance "
+                "and digest"
+            )
+            in issue.message
+        )
+        for issue in exc_info.value.issues
+    )
+
+
+def test_retained_invalid_plan_rejects_unbound_final_producer_unverified() -> (
+    None
+):
+    """Retained invalid-plan summaries require bound final producer failures."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "changed-files-snapshot",
+        "changed-files-snapshot-schema-invalid",
+    )
+    with pytest.raises(ContractValidationError) as exc_info:
+        _freeze_invalid_planning_input_summary(
+            aggregate_manifest,
+            plan=plan,
+            final_manifest_producer_verified=False,
+        )
+
+    assert any(
+        issue.path
+        == "$.final-artifacts.aggregate-evidence-manifest.producer-verified"
+        and "final-producer-unverified" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_mixed_retained_invalid_plan_details_keep_authority() -> None:
+    """Mixed retained invalid-plan details cannot downgrade to no authority."""
+    detail_from_set = vars(ci_validation_batches)[
+        "_invalid_plan_failure_detail_from_detail_set"
+    ]
+    selected_detail = detail_from_set(
+        {"plan-duplicate", "plan-producer-unverified"}
+    )
+
+    assert selected_detail == "plan-duplicate"
+    assert selected_detail != "malformed-plan"
+
+
+@pytest.mark.parametrize(
+    ("detail", "message"),
+    [
+        pytest.param(
+            "plan-missing",
+            CI_VALIDATION_INVALID_PLAN_MISSING_MESSAGE,
+            id="plan-missing",
+        ),
+        pytest.param(
+            "malformed-plan",
+            CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE,
+            id="malformed-plan",
+        ),
+        pytest.param(
+            "plan-unreadable",
+            CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE,
+            id="plan-unreadable",
+        ),
+    ],
+)
+def test_invalid_plan_rejects_no_authority_preserved_projection(
+    detail: str,
+    message: str,
+) -> None:
+    """No-authority details reject preserved projection context."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    failure = cast("dict[str, object]", summary["failures"][0])
+    failure["message"] = message
+    diagnostic = cast("dict[str, object]", failure["diagnostic"])
+    diagnostic["diagnostic-id"] = (
+        "invalid-plan" if detail == "plan-missing" else f"invalid-plan/{detail}"
+    )
+    diagnostic["detail"] = detail
+    diagnostic["message"] = message
+    summary["diagnostics"] = [diagnostic]
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(summary, plan=plan)
+
+    assert any(
+        (
+            issue.path == "$.projection-authority"
+            and "no-authority projection context" in issue.message
+        )
+        or "must match invalid-plan context" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert all(
+        issue.path not in {"$.plan-id", "$.plan-digest"}
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail"),
+    [
+        pytest.param(
+            "changed-files-snapshot",
+            "changed-files-snapshot-malformed",
+            id="changed-files-snapshot-malformed",
+        ),
+        pytest.param(
+            "fact-snapshot",
+            "fact-snapshot-malformed",
+            id="fact-snapshot-malformed",
+        ),
+    ],
+)
+def test_invalid_plan_rejects_malformed_snapshot_without_projection_authority(
+    input_name: str,
+    detail: str,
+) -> None:
+    """Retained malformed snapshots require projection authority."""
+    aggregate_manifest = _invalid_planning_input_manifest(
+        input_name,
+        detail,
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _freeze_invalid_planning_input_summary(aggregate_manifest)
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "retained invalid-plan details" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail"),
+    [
+        pytest.param(
+            "changed-files-snapshot",
+            "changed-files-snapshot-malformed",
+            id="changed-files-snapshot-malformed",
+        ),
+        pytest.param(
+            "fact-snapshot",
+            "fact-snapshot-malformed",
+            id="fact-snapshot-malformed",
+        ),
+    ],
+)
+def test_standalone_aggregate_manifest_rejects_malformed_snapshot_no_authority(
+    input_name: str,
+    detail: str,
+) -> None:
+    """Retained malformed snapshots require manifest projection authority."""
+    aggregate_manifest = _invalid_planning_input_manifest(
+        input_name,
+        detail,
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_evidence_manifest(aggregate_manifest)
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "retained invalid-plan details" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail"),
+    [
+        pytest.param(
+            "changed-files-snapshot",
+            "changed-files-snapshot-malformed",
+            id="changed-files-snapshot-malformed",
+        ),
+        pytest.param(
+            "fact-snapshot",
+            "fact-snapshot-malformed",
+            id="fact-snapshot-malformed",
+        ),
+    ],
+)
+def test_standalone_malformed_snapshot_rejects_unbound_projection(
+    input_name: str,
+    detail: str,
+) -> None:
+    """Retained malformed snapshots reject unproven projection authority."""
+    aggregate_manifest = _invalid_planning_input_manifest(
+        input_name,
+        detail,
+    )
+    aggregate_manifest["projection-authority"] = (
+        _projection_authority_from_plan(_plan())
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_evidence_manifest(aggregate_manifest)
+
+    assert any(
+        issue.path == "$.projection-authority"
+        for issue in exc_info.value.issues
+    )
+
+
+def test_standalone_malformed_snapshot_does_not_hide_retained_detail() -> None:
+    """Malformed snapshot collapse cannot mask retained invalid-plan detail."""
+    aggregate_manifest = _invalid_planning_input_manifest(
+        "changed-files-snapshot",
+        "changed-files-snapshot-malformed",
+    )
+    validation_plan = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            "validation-plan"
+        ],
+    )
+    validation_plan["admissibility"] = "inadmissible"
+    validation_plan["diagnostics"] = [
+        _diagnostic(
+            "invalid-plan/schema-invalid",
+            code="invalid-plan",
+            detail="schema-invalid",
+            message=CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE,
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+            source_id=cast("str | None", validation_plan["artifact-ref"]),
+        )
+    ]
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_evidence_manifest(aggregate_manifest)
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "retained invalid-plan details" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_standalone_invalid_plan_rejects_ambiguous_retained_diagnostics() -> (
+    None
+):
+    """Multiple invalid-plan diagnostics cannot collapse to no-authority."""
+    aggregate_manifest = _invalid_planning_input_manifest(
+        "validation-plan",
+        "malformed-plan",
+    )
+    validation_plan = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            "validation-plan"
+        ],
+    )
+    diagnostics = cast(
+        "list[dict[str, object]]",
+        validation_plan["diagnostics"],
+    )
+    diagnostics.append(
+        _diagnostic(
+            "invalid-plan/plan-duplicate",
+            code="invalid-plan",
+            detail="plan-duplicate",
+            message=CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE,
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+            source_id=cast("str | None", validation_plan["artifact-ref"]),
+        )
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_evidence_manifest(aggregate_manifest)
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "retained invalid-plan details" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail"),
+    [
+        pytest.param(
+            "changed-files-snapshot",
+            "changed-files-snapshot-malformed",
+            id="changed-files-snapshot-malformed",
+        ),
+        pytest.param(
+            "fact-snapshot",
+            "fact-snapshot-malformed",
+            id="fact-snapshot-malformed",
+        ),
+    ],
+)
+def test_malformed_snapshot_invalid_plan_rejects_retained_projection(
+    input_name: str,
+    detail: str,
+) -> None:
+    """Malformed snapshot details reject missing retained authority."""
+    plan = _plan()
+    aggregate_manifest = _invalid_planning_input_manifest(
+        input_name,
+        detail,
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _freeze_invalid_planning_input_summary(
+            aggregate_manifest,
+            plan=plan,
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "retained invalid-plan details" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail"),
+    [
+        pytest.param(
+            "changed-files-snapshot",
+            "changed-files-snapshot-malformed",
+            id="changed-files-snapshot-malformed",
+        ),
+        pytest.param(
+            "fact-snapshot",
+            "fact-snapshot-malformed",
+            id="fact-snapshot-malformed",
+        ),
+    ],
+)
+def test_malformed_snapshot_invalid_plan_rejects_no_authority_projection(
+    input_name: str,
+    detail: str,
+) -> None:
+    """Retained malformed snapshot details cannot use no authority."""
+    aggregate_manifest = _invalid_planning_input_manifest(
+        input_name,
+        detail,
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _freeze_invalid_planning_input_summary(aggregate_manifest)
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "retained invalid-plan details" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail"),
+    [
+        pytest.param(
+            "changed-files-snapshot",
+            "changed-files-snapshot-malformed",
+            id="changed-files-snapshot-malformed",
+        ),
+        pytest.param(
+            "fact-snapshot",
+            "fact-snapshot-malformed",
+            id="fact-snapshot-malformed",
+        ),
+    ],
+)
+def test_malformed_snapshot_invalid_plan_rejects_ambiguous_retained_diagnostics(
+    input_name: str,
+    detail: str,
+) -> None:
+    """Retained malformed snapshot diagnostics must be unambiguous."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        input_name,
+        detail,
+    )
+    input_artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            input_name
+        ],
+    )
+    diagnostics = cast("list[dict[str, object]]", input_artifact["diagnostics"])
+    diagnostics.append(dict(diagnostics[0]))
+
+    with pytest.raises(ContractValidationError):
+        _freeze_invalid_planning_input_summary(
+            aggregate_manifest,
+            plan=plan,
+        )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail"),
+    [
+        pytest.param(
+            "changed-files-snapshot",
+            "changed-files-snapshot-malformed",
+            id="changed-files-snapshot-malformed",
+        ),
+        pytest.param(
+            "fact-snapshot",
+            "fact-snapshot-malformed",
+            id="fact-snapshot-malformed",
+        ),
+    ],
+)
+def test_malformed_snapshot_freezer_rejects_no_authority_projection(
+    input_name: str,
+    detail: str,
+) -> None:
+    """Snapshot-malformed details require retained projection authority."""
+    aggregate_manifest = _invalid_planning_input_manifest(
+        input_name,
+        detail,
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _freeze_invalid_planning_input_summary(aggregate_manifest)
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "retained invalid-plan details" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_no_authority_invalid_plan_freezer_clears_manifest_claim() -> None:
+    """No-authority invalid-plan summaries do not publish manifest identity."""
+    aggregate_manifest = _invalid_planning_input_manifest(
+        "validation-plan",
+        "plan-missing",
+    )
+
+    summary = _freeze_invalid_planning_input_summary(aggregate_manifest)
+
+    manifest_claim = cast(
+        "dict[str, object]", summary["aggregate-evidence-manifest"]
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    assert manifest_claim["artifact-instance-id"] is None
+    assert manifest_claim["content-digest"] is None
+    assert final_manifest["artifact-instance-id"] is None
+    assert final_manifest["content-digest"] is None
+    assert final_manifest["producer-verified"] is False
+    validate_ci_validation_aggregate_summary(summary)
+
+
+def test_no_authority_invalid_plan_strips_unbound_producer_unverified() -> None:
+    """No-authority invalid plans strip unbound producer-unverified state."""
+    aggregate_manifest = _invalid_planning_input_manifest(
+        "validation-plan",
+        "plan-missing",
+    )
+
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        final_manifest_producer_verified=False,
+    )
+
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    assert final_manifest["artifact-instance-id"] is None
+    assert final_manifest["content-digest"] is None
+    assert final_manifest["producer-verified"] is False
+    assert not any(
+        failure.get("kind") == "final-producer-unverified"
+        for failure in cast("list[dict[str, object]]", summary["failures"])
+    )
+
+
+def test_no_authority_invalid_plan_rejects_summary_only_authority() -> None:
+    """Summary-local final authority cannot bind no-authority invalid plans."""
+    aggregate_manifest = _invalid_planning_input_manifest(
+        "validation-plan",
+        "plan-missing",
+    )
+    summary = _freeze_invalid_planning_input_summary(aggregate_manifest)
+    forged_digest = "0123456789abcdef" * 4
+    manifest_claim = cast(
+        "dict[str, object]", summary["aggregate-evidence-manifest"]
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    manifest_claim["artifact-instance-id"] = "forged-aggregate-manifest"
+    manifest_claim["content-digest"] = forged_digest
+    final_manifest["artifact-instance-id"] = "forged-aggregate-manifest"
+    final_manifest["content-digest"] = forged_digest
+    final_manifest["producer-verified"] = False
+    authority_diagnostic = _diagnostic(
+        "final-evidence-failure/aggregate-evidence-manifest-malformed",
+        code="final-evidence-failure",
+        detail="aggregate-evidence-manifest-malformed",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    final_manifest["authority-diagnostics"] = [authority_diagnostic]
+    producer_diagnostic = _diagnostic(
+        "final-producer-unverified",
+        code="final-producer-unverified",
+        detail="final-producer-unverified",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    reason = cast("dict[str, object]", summary["reason"])
+    reason["final-evidence-failure"] = True
+    reason["final-producer-unverified"] = True
+    failures = cast("list[dict[str, object]]", summary["failures"])
+    failures.extend(
+        [
+            {
+                "kind": "final-evidence-failure",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": authority_diagnostic,
+                "message": authority_diagnostic["message"],
+            },
+            {
+                "kind": "final-producer-unverified",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": producer_diagnostic,
+                "message": producer_diagnostic["message"],
+            },
+        ]
+    )
+    cast("list[dict[str, object]]", summary["diagnostics"]).extend(
+        [authority_diagnostic, producer_diagnostic]
+    )
+    _sort_summary_failures(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(summary)
+
+    issue_paths = {issue.path for issue in exc_info.value.issues}
+    assert "$.aggregate-evidence-manifest.content-digest" in issue_paths
+    assert (
+        "$.final-artifacts.aggregate-evidence-manifest.content-digest"
+        in issue_paths
+    )
+
+
+@pytest.mark.parametrize(
+    "detail", ["plan-missing", "malformed-plan", "plan-unreadable"]
+)
+def test_no_authority_invalid_plan_manifest_accepts_original_plan_context(
+    detail: str,
+) -> None:
+    """Original context cannot make null no-authority identity stale."""
+    aggregate_manifest = _invalid_planning_input_manifest(
+        "validation-plan",
+        detail,
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_evidence_manifest(
+            aggregate_manifest,
+            plan=_plan(),
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+            expected_run_id=RUN_ID,
+            expected_run_attempt=RUN_ATTEMPT,
+        )
+
+    issue_paths = {issue.path for issue in exc_info.value.issues}
+    assert "$.plan-id" not in issue_paths
+    assert "$.plan-digest" not in issue_paths
+
+
+@pytest.mark.parametrize(
+    "detail",
+    ["plan-missing", "malformed-plan", "plan-unreadable"],
+    ids=["plan-missing", "malformed-plan", "plan-unreadable"],
+)
+def test_no_authority_invalid_plan_fact_snapshot_mismatch_requires_proof(
+    detail: str,
+) -> None:
+    """No-authority details do not compare facts to supplied plan context."""
+    aggregate_manifest = _invalid_planning_input_manifest(
+        "validation-plan",
+        detail,
+    )
+    fact_snapshot = _fact_snapshot_document()
+    fact_snapshot["plan-id"] = "other-plan"
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_evidence_manifest(
+            aggregate_manifest,
+            plan=_plan(),
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=fact_snapshot,
+            expected_run_id=RUN_ID,
+            expected_run_attempt=RUN_ATTEMPT,
+        )
+
+    issue_pairs = {
+        (issue.path, issue.message) for issue in exc_info.value.issues
+    }
+    assert (
+        "fact_snapshot.plan-id",
+        "requires proven plan identity",
+    ) in issue_pairs
+    assert (
+        "fact_snapshot.plan-id",
+        "must match plan",
+    ) not in issue_pairs
+
+
+def test_summary_rejects_null_manifest_identity_with_bound_authority() -> None:
+    """Authority diagnostics skip digest equality, not bound field presence."""
+    aggregate_manifest = _invalid_planning_input_manifest(
+        "validation-plan",
+        "plan-missing",
+    )
+    summary = _freeze_invalid_planning_input_summary(aggregate_manifest)
+    authority_diagnostic = _diagnostic(
+        "final-evidence/aggregate-evidence-manifest-malformed",
+        code="final-evidence",
+        detail="aggregate-evidence-manifest-malformed",
+        message="Preserved aggregate evidence manifest is malformed.",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    final_manifest["authority-diagnostics"] = [authority_diagnostic]
+    final_manifest["producer-verified"] = False
+    for claim in (
+        cast("dict[str, object]", summary["aggregate-evidence-manifest"]),
+        final_manifest,
+    ):
+        claim["artifact-instance-id"] = None
+        claim["content-digest"] = None
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            aggregate_evidence_manifest=aggregate_manifest,
+        )
+
+    issue_paths = {issue.path for issue in exc_info.value.issues}
+    assert any(
+        path.startswith(
+            "$.final-artifacts.aggregate-evidence-manifest.authority-diagnostics"
+        )
+        for path in issue_paths
+    )
+
+
+def test_invalid_plan_freezer_downgrades_malformed_supplied_plan() -> None:
+    """Malformed supplied plans are downgraded before projection reads."""
+    aggregate_manifest = _invalid_planning_input_manifest(
+        "validation-plan",
+        "malformed-plan",
+    )
+
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan={"plan-id": "malformed-plan"},
+    )
+
+    failure = cast("dict[str, object]", summary["failures"][0])
+    diagnostic = cast("dict[str, object]", failure["diagnostic"])
+    assert diagnostic["detail"] == "malformed-plan"
+    assert summary["plan-id"] is None
+    validate_ci_validation_aggregate_summary(
+        summary,
+        aggregate_evidence_manifest=aggregate_manifest,
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail"),
+    [
+        ("validation-plan", "schema-invalid"),
+        ("fact-snapshot", "fact-snapshot-producer-unverified"),
+    ],
+)
+def test_invalid_plan_freezer_downgrades_unauthorized_complete_supplied_plan(
+    input_name: str,
+    detail: str,
+) -> None:
+    """A complete supplied plan cannot downgrade retained projection details."""
+    plan = _plan()
+    aggregate_manifest = _invalid_planning_input_manifest(input_name, detail)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _freeze_invalid_planning_input_summary(
+            aggregate_manifest,
+            plan=plan,
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "retained invalid-plan details" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_rejects_schema_invalid_no_authority_projection() -> None:
+    """Schema-invalid plan details must preserve producer projection context."""
+    aggregate_manifest = _invalid_planning_input_manifest(
+        "validation-plan",
+        "plan-unreadable",
+    )
+    summary = _freeze_invalid_planning_input_summary(aggregate_manifest)
+    failure = cast("dict[str, object]", summary["failures"][0])
+    diagnostic = cast("dict[str, object]", failure["diagnostic"])
+    diagnostic["diagnostic-id"] = "invalid-plan/schema-invalid"
+    diagnostic["detail"] = "schema-invalid"
+    failure["message"] = CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(summary)
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "complete producer-compatible projection context" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_rejects_retained_projection_without_authority() -> None:
+    """Retained details require authoritative producer context."""
+    plan = _plan()
+    aggregate_manifest = _invalid_planning_input_manifest(
+        "validation-plan",
+        "plan-unreadable",
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+    )
+    input_artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            "validation-plan"
+        ],
+    )
+    diagnostic = cast("dict[str, object]", input_artifact["diagnostics"][0])
+    diagnostic["diagnostic-id"] = "invalid-plan/schema-invalid"
+    diagnostic["detail"] = "schema-invalid"
+    cast("dict[str, object]", summary["aggregate-evidence-manifest"])[
+        "artifact-instance-id"
+    ] = None
+    cast("dict[str, object]", summary["aggregate-evidence-manifest"])[
+        "content-digest"
+    ] = None
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    final_manifest["artifact-instance-id"] = None
+    final_manifest["content-digest"] = None
+    failure = cast("dict[str, object]", summary["failures"][0])
+    failure_diagnostic = cast("dict[str, object]", failure["diagnostic"])
+    failure_diagnostic["diagnostic-id"] = "invalid-plan/schema-invalid"
+    failure_diagnostic["detail"] = "schema-invalid"
+    summary["diagnostics"] = [failure_diagnostic]
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            aggregate_evidence_manifest=aggregate_manifest,
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "producer-compatible projection context" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_rejects_corrupted_retained_plan_digest_authority() -> (
+    None
+):
+    """Retained projection authority uses producer-bound digest context."""
+    plan = _plan()
+    corrupted_plan = deepcopy(plan)
+    corrupted_plan["plan-digest"] = "0" * 64
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "changed-files-snapshot",
+        "changed-files-snapshot-schema-invalid",
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    validation_plan_artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            "validation-plan"
+        ],
+    )
+    validation_plan_artifact["content-digest"] = corrupted_plan["plan-digest"]
+    _refresh_summary_manifest_digest(summary, aggregate_manifest)
+    summary["plan-id"] = corrupted_plan["plan-id"]
+    summary["plan-digest"] = corrupted_plan["plan-digest"]
+    summary["mode"] = corrupted_plan["mode"]
+    summary["validation-tree"] = corrupted_plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(corrupted_plan)
+    summary["request"] = corrupted_plan["request"]
+    summary["scheduled-full"] = corrupted_plan["scheduled-full"]
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=corrupted_plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "producer-compatible projection context" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("_input_name", "detail"),
+    [
+        pytest.param(
+            "validation-plan",
+            "schema-invalid",
+            id="validation-plan-schema-invalid",
+        ),
+        pytest.param(
+            "fact-snapshot",
+            "fact-snapshot-producer-unverified",
+            id="fact-snapshot-fact-snapshot-producer-unverified",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "partial_field",
+    [
+        "plan-id",
+        "plan-digest",
+        "mode",
+        "validation-tree",
+        "affected-range",
+        "request.artifact-ref",
+        "request-digest",
+        "scheduled-full",
+    ],
+    ids=[
+        "plan-id",
+        "plan-digest",
+        "mode",
+        "validation-tree",
+        "affected-range",
+        "request.artifact-ref",
+        "request-digest",
+        "scheduled-full",
+    ],
+)
+def test_invalid_plan_rejects_partial_retained_projection(
+    _input_name: str,
+    detail: str,
+    partial_field: str,
+) -> None:
+    """A single forged projection field is not retained authority."""
+    plan = _plan()
+    aggregate_manifest = _invalid_planning_input_manifest(
+        "validation-plan",
+        "plan-unreadable",
+    )
+    summary = _freeze_invalid_planning_input_summary(aggregate_manifest)
+    failure = cast("dict[str, object]", summary["failures"][0])
+    diagnostic = cast("dict[str, object]", failure["diagnostic"])
+    diagnostic["diagnostic-id"] = f"invalid-plan/{detail}"
+    diagnostic["detail"] = detail
+    failure["message"] = CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE
+    _set_invalid_plan_partial_projection(summary, plan, partial_field)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(summary, plan=plan)
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "complete producer-compatible projection context" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail"),
+    [
+        (
+            "validation-plan",
+            "schema-invalid",
+        ),
+        (
+            "changed-files-snapshot",
+            "changed-files-snapshot-schema-invalid",
+        ),
+        ("fact-snapshot", "fact-snapshot-producer-unverified"),
+    ],
+    ids=[
+        "validation-plan-schema-invalid",
+        "changed-files-snapshot-changed-files-snapshot-schema-invalid",
+        "fact-snapshot-fact-snapshot-producer-unverified",
+    ],
+)
+def test_invalid_plan_accepts_retained_plan_projection(
+    input_name: str,
+    detail: str,
+) -> None:
+    """Retained details preserve producer-compatible projection context."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        input_name,
+        detail,
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+
+    validate_ci_validation_aggregate_summary(
+        summary,
+        plan=plan,
+        aggregate_evidence_manifest=aggregate_manifest,
+        request=_request_document(),
+        changed_files_snapshot=_changed_files_snapshot_document(),
+        fact_snapshot=_fact_snapshot_document(),
+    )
+
+
+def test_invalid_plan_rejects_retained_projection_with_inadmissible_request_summary(  # noqa: E501
+) -> None:
+    """Retained plan request summaries require valid request artifacts."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "changed-files-snapshot",
+        "changed-files-snapshot-schema-invalid",
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+    request_artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            "request"
+        ],
+    )
+    request_artifact["admissibility"] = "inadmissible"
+    request_artifact["diagnostics"] = [
+        _diagnostic(
+            "required-input-artifact-failure/snapshot-companion-unproven",
+            code="required-input-artifact-failure",
+            detail="snapshot-companion-unproven",
+            message="Snapshot companion input artifact was not proven.",
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+            source_id=cast("str | None", request_artifact["artifact-ref"]),
+        )
+    ]
+    _refresh_summary_manifest_digest(summary, aggregate_manifest)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "producer-compatible projection context" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_rejects_retained_projection_without_request_context() -> (
+    None
+):
+    """Retained plan request summaries do not replace request documents."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "changed-files-snapshot",
+        "changed-files-snapshot-schema-invalid",
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_manifest_requires_request_context() -> None:
+    """Retained aggregate projection requires supplied request context."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "changed-files-snapshot",
+        "changed-files-snapshot-schema-invalid",
+    )
+    aggregate_manifest["projection-authority"] = (
+        _projection_authority_from_plan(plan)
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_evidence_manifest(
+            aggregate_manifest,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and (
+            "retained invalid-plan details require aggregate manifest input "
+            "authority"
+        )
+        in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail", "companion_input_name"),
+    [
+        pytest.param(
+            "changed-files-snapshot",
+            "changed-files-snapshot-schema-invalid",
+            "fact-snapshot",
+            id="changed-files-with-fact-companion",
+        ),
+        pytest.param(
+            "fact-snapshot",
+            "fact-snapshot-producer-unverified",
+            "changed-files-snapshot",
+            id="fact-with-changed-files-companion",
+        ),
+    ],
+)
+def test_invalid_plan_accepts_retained_projection_with_snapshot_companion_fallback(  # noqa: E501
+    input_name: str,
+    detail: str,
+    companion_input_name: str,
+) -> None:
+    """Snapshot companion fallback preserves retained projection authority."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        input_name,
+        detail,
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+    companion_artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            companion_input_name
+        ],
+    )
+    companion_artifact["artifact-ref"] = None
+    companion_artifact["artifact-instance-id"] = None
+    companion_artifact["content-digest"] = None
+    companion_artifact["admissibility"] = "missing"
+    companion_artifact["diagnostics"] = [
+        _diagnostic(
+            "required-input-artifact-failure/snapshot-companion-unproven",
+            code="required-input-artifact-failure",
+            detail="snapshot-companion-unproven",
+            message="Snapshot companion input artifact was not proven.",
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+            source_id=cast("str | None", companion_artifact["artifact-ref"]),
+        )
+    ]
+    _refresh_summary_manifest_digest(summary, aggregate_manifest)
+
+    validate_ci_validation_aggregate_summary(
+        summary,
+        plan=plan,
+        aggregate_evidence_manifest=aggregate_manifest,
+        request=_request_document(),
+        changed_files_snapshot=_changed_files_snapshot_document(),
+        fact_snapshot=_fact_snapshot_document(),
+    )
+    assert [
+        diagnostic["diagnostic-id"]
+        for diagnostic in cast(
+            "list[dict[str, object]]",
+            companion_artifact["diagnostics"],
+        )
+    ] == [
+        "required-input-artifact-failure/snapshot-companion-unproven",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail", "companion_input_name"),
+    [
+        pytest.param(
+            "changed-files-snapshot",
+            "changed-files-snapshot-schema-invalid",
+            "fact-snapshot",
+            id="changed-files-with-fact-companion",
+        ),
+        pytest.param(
+            "fact-snapshot",
+            "fact-snapshot-producer-unverified",
+            "changed-files-snapshot",
+            id="fact-with-changed-files-companion",
+        ),
+    ],
+)
+def test_invalid_plan_accepts_retained_projection_with_inadmissible_snapshot_companion_fallback(  # noqa: E501
+    input_name: str,
+    detail: str,
+    companion_input_name: str,
+) -> None:
+    """Inadmissible no-binding fallback preserves retained authority."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        input_name,
+        detail,
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+    companion_artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            companion_input_name
+        ],
+    )
+    companion_artifact["artifact-ref"] = None
+    companion_artifact["artifact-instance-id"] = None
+    companion_artifact["content-digest"] = None
+    companion_artifact["admissibility"] = "inadmissible"
+    companion_artifact["diagnostics"] = [
+        _diagnostic(
+            "required-input-artifact-failure/snapshot-companion-unproven",
+            code="required-input-artifact-failure",
+            detail="snapshot-companion-unproven",
+            message="Snapshot companion input artifact was not proven.",
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+            source_id=None,
+        )
+    ]
+    _refresh_summary_manifest_digest(summary, aggregate_manifest)
+
+    validate_ci_validation_aggregate_summary(
+        summary,
+        plan=plan,
+        aggregate_evidence_manifest=aggregate_manifest,
+        request=_request_document(),
+        changed_files_snapshot=_changed_files_snapshot_document(),
+        fact_snapshot=_fact_snapshot_document(),
+    )
+    assert [
+        diagnostic["diagnostic-id"]
+        for diagnostic in cast(
+            "list[dict[str, object]]",
+            companion_artifact["diagnostics"],
+        )
+    ] == [
+        "required-input-artifact-failure/snapshot-companion-unproven",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail", "companion_input_name"),
+    [
+        pytest.param(
+            "changed-files-snapshot",
+            "changed-files-snapshot-schema-invalid",
+            "fact-snapshot",
+            id="changed-files-with-fact-companion",
+        ),
+        pytest.param(
+            "fact-snapshot",
+            "fact-snapshot-producer-unverified",
+            "changed-files-snapshot",
+            id="fact-with-changed-files-companion",
+        ),
+    ],
+)
+def test_invalid_plan_rejects_retained_projection_with_bound_snapshot_companion_fallback(  # noqa: E501
+    input_name: str,
+    detail: str,
+    companion_input_name: str,
+) -> None:
+    """Snapshot unavailable fallback must not carry bound artifact fields."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        input_name,
+        detail,
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+    companion_artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            companion_input_name
+        ],
+    )
+    companion_artifact["admissibility"] = "inadmissible"
+    companion_artifact["diagnostics"] = [
+        _diagnostic(
+            "required-input-artifact-failure/snapshot-companion-unproven",
+            code="required-input-artifact-failure",
+            detail="snapshot-companion-unproven",
+            message="Snapshot companion input artifact was not proven.",
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+            source_id=cast("str | None", companion_artifact["artifact-ref"]),
+        )
+    ]
+    _refresh_summary_manifest_digest(summary, aggregate_manifest)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "producer-compatible projection context" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail", "companion_input_name"),
+    [
+        pytest.param(
+            "changed-files-snapshot",
+            "changed-files-snapshot-schema-invalid",
+            "fact-snapshot",
+            id="changed-files-with-fact-companion",
+        ),
+        pytest.param(
+            "fact-snapshot",
+            "fact-snapshot-producer-unverified",
+            "changed-files-snapshot",
+            id="fact-with-changed-files-companion",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "diagnostic_case",
+    [
+        pytest.param("other-id", id="other-id"),
+        pytest.param("wrong-detail", id="wrong-detail"),
+        pytest.param(
+            "with-unrelated-diagnostic", id="with-unrelated-diagnostic"
+        ),
+    ],
+)
+def test_invalid_plan_rejects_retained_projection_with_noncanonical_snapshot_companion_fallback(  # noqa: E501
+    input_name: str,
+    detail: str,
+    companion_input_name: str,
+    diagnostic_case: str,
+) -> None:
+    """Snapshot fallback requires the canonical diagnostic identity."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        input_name,
+        detail,
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+    companion_artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            companion_input_name
+        ],
+    )
+    companion_artifact["artifact-ref"] = None
+    companion_artifact["artifact-instance-id"] = None
+    companion_artifact["content-digest"] = None
+    companion_artifact["admissibility"] = "missing"
+    companion_artifact["diagnostics"] = [
+        _diagnostic(
+            "required-input-artifact-failure/snapshot-companion-unproven",
+            code="required-input-artifact-failure",
+            detail="snapshot-companion-unproven",
+            message="Snapshot companion input artifact was not proven.",
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+            source_id=None,
+        )
+    ]
+    if diagnostic_case == "other-id":
+        companion_artifact["diagnostics"] = [
+            _diagnostic(
+                "required-input-artifact-failure/other",
+                code="required-input-artifact-failure",
+                detail="required-input-artifact-failure",
+                message="Snapshot companion input artifact was not proven.",
+                severity="fail-closed",
+                verdict_effect="fail-closed",
+                source_id=None,
+            )
+        ]
+    elif diagnostic_case == "wrong-detail":
+        companion_artifact["diagnostics"] = [
+            _diagnostic(
+                "required-input-artifact-failure/snapshot-companion-unproven",
+                code="required-input-artifact-failure",
+                detail="required-input-artifact-failure",
+                message="Snapshot companion input artifact was not proven.",
+                severity="fail-closed",
+                verdict_effect="fail-closed",
+                source_id=None,
+            )
+        ]
+    elif diagnostic_case == "with-unrelated-diagnostic":
+        diagnostics = cast(
+            "list[dict[str, object]]",
+            companion_artifact["diagnostics"],
+        )
+        diagnostics.append(
+            _diagnostic(
+                "required-input-artifact-failure/zz-unrelated",
+                code="required-input-artifact-failure",
+                detail="required-input-artifact-failure",
+                message="A different required input artifact was not proven.",
+                severity="fail-closed",
+                verdict_effect="fail-closed",
+                source_id=None,
+            )
+        )
+    _refresh_summary_manifest_digest(summary, aggregate_manifest)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "producer-compatible projection context" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail", "companion_input_name"),
+    [
+        pytest.param(
+            "changed-files-snapshot",
+            "changed-files-snapshot-schema-invalid",
+            "fact-snapshot",
+            id="changed-files-with-fact-companion",
+        ),
+        pytest.param(
+            "fact-snapshot",
+            "fact-snapshot-producer-unverified",
+            "changed-files-snapshot",
+            id="fact-with-changed-files-companion",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "diagnostic_case",
+    [
+        pytest.param("other-id", id="other-id"),
+        pytest.param("wrong-detail", id="wrong-detail"),
+        pytest.param(
+            "with-unrelated-diagnostic", id="with-unrelated-diagnostic"
+        ),
+    ],
+)
+def test_invalid_plan_rejects_retained_projection_with_noncanonical_inadmissible_snapshot_companion_fallback(  # noqa: E501
+    input_name: str,
+    detail: str,
+    companion_input_name: str,
+    diagnostic_case: str,
+) -> None:
+    """Inadmissible no-binding fallback rejects noncanonical identity."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        input_name,
+        detail,
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+    companion_artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            companion_input_name
+        ],
+    )
+    companion_artifact["artifact-ref"] = None
+    companion_artifact["artifact-instance-id"] = None
+    companion_artifact["content-digest"] = None
+    companion_artifact["admissibility"] = "inadmissible"
+    companion_artifact["diagnostics"] = [
+        _diagnostic(
+            "required-input-artifact-failure/snapshot-companion-unproven",
+            code="required-input-artifact-failure",
+            detail="snapshot-companion-unproven",
+            message="Snapshot companion input artifact was not proven.",
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+            source_id=None,
+        )
+    ]
+    if diagnostic_case == "other-id":
+        companion_artifact["diagnostics"] = [
+            _diagnostic(
+                "required-input-artifact-failure/other",
+                code="required-input-artifact-failure",
+                detail="required-input-artifact-failure",
+                message="Snapshot companion input artifact was not proven.",
+                severity="fail-closed",
+                verdict_effect="fail-closed",
+                source_id=None,
+            )
+        ]
+    elif diagnostic_case == "wrong-detail":
+        companion_artifact["diagnostics"] = [
+            _diagnostic(
+                "required-input-artifact-failure/snapshot-companion-unproven",
+                code="required-input-artifact-failure",
+                detail="required-input-artifact-failure",
+                message="Snapshot companion input artifact was not proven.",
+                severity="fail-closed",
+                verdict_effect="fail-closed",
+                source_id=None,
+            )
+        ]
+    elif diagnostic_case == "with-unrelated-diagnostic":
+        diagnostics = cast(
+            "list[dict[str, object]]",
+            companion_artifact["diagnostics"],
+        )
+        diagnostics.append(
+            _diagnostic(
+                "required-input-artifact-failure/zz-unrelated",
+                code="required-input-artifact-failure",
+                detail="required-input-artifact-failure",
+                message="A different required input artifact was not proven.",
+                severity="fail-closed",
+                verdict_effect="fail-closed",
+                source_id=None,
+            )
+        )
+    _refresh_summary_manifest_digest(summary, aggregate_manifest)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "producer-compatible projection context" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail", "companion_input_name"),
+    [
+        pytest.param(
+            "changed-files-snapshot",
+            "changed-files-snapshot-schema-invalid",
+            "fact-snapshot",
+            id="changed-files-with-fact-companion",
+        ),
+        pytest.param(
+            "fact-snapshot",
+            "fact-snapshot-producer-unverified",
+            "changed-files-snapshot",
+            id="fact-with-changed-files-companion",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "diagnostic_mutation",
+    [
+        pytest.param("source", id="source"),
+        pytest.param("severity", id="severity"),
+        pytest.param("verdict-effect", id="verdict-effect"),
+        pytest.param("extra-field", id="extra-field"),
+    ],
+)
+def test_invalid_plan_rejects_retained_projection_with_forged_snapshot_companion_fallback(  # noqa: E501
+    input_name: str,
+    detail: str,
+    companion_input_name: str,
+    diagnostic_mutation: str,
+) -> None:
+    """Snapshot companion fallback requires exact canonical diagnostics."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        input_name,
+        detail,
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+    companion_artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            companion_input_name
+        ],
+    )
+    companion_artifact["artifact-ref"] = None
+    companion_artifact["artifact-instance-id"] = None
+    companion_artifact["content-digest"] = None
+    companion_artifact["admissibility"] = "missing"
+    diagnostic = _diagnostic(
+        "required-input-artifact-failure/snapshot-companion-unproven",
+        code="required-input-artifact-failure",
+        detail="snapshot-companion-unproven",
+        message="Snapshot companion input artifact was not proven.",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+        source_id=None,
+    )
+    if diagnostic_mutation == "source":
+        diagnostic["source"] = {
+            "type": "aggregation",
+            "id": "ci-validation/forged/input.json",
+        }
+    elif diagnostic_mutation == "severity":
+        diagnostic["severity"] = "warning"
+    elif diagnostic_mutation == "verdict-effect":
+        diagnostic["verdict-effect"] = "none"
+    else:
+        diagnostic["extra"] = "forged"
+    companion_artifact["diagnostics"] = [diagnostic]
+    _refresh_summary_manifest_digest(summary, aggregate_manifest)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "producer-compatible projection context" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail", "companion_input_name"),
+    [
+        pytest.param(
+            "changed-files-snapshot",
+            "changed-files-snapshot-schema-invalid",
+            "fact-snapshot",
+            id="changed-files-with-fact-companion",
+        ),
+        pytest.param(
+            "fact-snapshot",
+            "fact-snapshot-producer-unverified",
+            "changed-files-snapshot",
+            id="fact-with-changed-files-companion",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "diagnostic_mutation",
+    [
+        pytest.param("source", id="source"),
+        pytest.param("severity", id="severity"),
+        pytest.param("verdict-effect", id="verdict-effect"),
+        pytest.param("extra-field", id="extra-field"),
+    ],
+)
+def test_invalid_plan_rejects_retained_projection_with_forged_inadmissible_snapshot_companion_fallback(  # noqa: E501
+    input_name: str,
+    detail: str,
+    companion_input_name: str,
+    diagnostic_mutation: str,
+) -> None:
+    """Inadmissible no-binding fallback rejects forged diagnostics."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        input_name,
+        detail,
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+    companion_artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            companion_input_name
+        ],
+    )
+    companion_artifact["artifact-ref"] = None
+    companion_artifact["artifact-instance-id"] = None
+    companion_artifact["content-digest"] = None
+    companion_artifact["admissibility"] = "inadmissible"
+    diagnostic = _diagnostic(
+        "required-input-artifact-failure/snapshot-companion-unproven",
+        code="required-input-artifact-failure",
+        detail="snapshot-companion-unproven",
+        message="Snapshot companion input artifact was not proven.",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+        source_id=None,
+    )
+    if diagnostic_mutation == "source":
+        diagnostic["source"] = {
+            "type": "aggregation",
+            "id": "ci-validation/forged/input.json",
+        }
+    elif diagnostic_mutation == "severity":
+        diagnostic["severity"] = "warning"
+    elif diagnostic_mutation == "verdict-effect":
+        diagnostic["verdict-effect"] = "none"
+    else:
+        diagnostic["extra"] = "forged"
+    companion_artifact["diagnostics"] = [diagnostic]
+    _refresh_summary_manifest_digest(summary, aggregate_manifest)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "producer-compatible projection context" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail", "companion_input_name"),
+    [
+        pytest.param(
+            "changed-files-snapshot",
+            "changed-files-snapshot-schema-invalid",
+            "fact-snapshot",
+            id="changed-files-with-fact-companion",
+        ),
+        pytest.param(
+            "fact-snapshot",
+            "fact-snapshot-producer-unverified",
+            "changed-files-snapshot",
+            id="fact-with-changed-files-companion",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "companion_admissibility",
+    [
+        pytest.param("missing", id="missing"),
+        pytest.param("inadmissible", id="inadmissible"),
+    ],
+)
+def test_invalid_plan_accepts_retained_projection_with_snapshot_companion_message_change(  # noqa: E501
+    input_name: str,
+    detail: str,
+    companion_input_name: str,
+    companion_admissibility: str,
+) -> None:
+    """Snapshot companion fallback identity ignores human-readable wording."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        input_name,
+        detail,
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+    companion_artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            companion_input_name
+        ],
+    )
+    companion_artifact["artifact-ref"] = None
+    companion_artifact["artifact-instance-id"] = None
+    companion_artifact["content-digest"] = None
+    companion_artifact["admissibility"] = companion_admissibility
+    companion_artifact["diagnostics"] = [
+        _diagnostic(
+            "required-input-artifact-failure/snapshot-companion-unproven",
+            code="required-input-artifact-failure",
+            detail="snapshot-companion-unproven",
+            message="Updated snapshot companion fallback wording.",
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+            source_id=None,
+        )
+    ]
+    _refresh_summary_manifest_digest(summary, aggregate_manifest)
+
+    validate_ci_validation_aggregate_summary(
+        summary,
+        plan=plan,
+        aggregate_evidence_manifest=aggregate_manifest,
+        request=_request_document(),
+        changed_files_snapshot=_changed_files_snapshot_document(),
+        fact_snapshot=_fact_snapshot_document(),
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail", "companion_input_name"),
+    [
+        pytest.param(
+            "changed-files-snapshot",
+            "changed-files-snapshot-schema-invalid",
+            "fact-snapshot",
+            id="changed-files-with-fact-companion",
+        ),
+        pytest.param(
+            "fact-snapshot",
+            "fact-snapshot-producer-unverified",
+            "changed-files-snapshot",
+            id="fact-with-changed-files-companion",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "mutated_field",
+    [
+        pytest.param("artifact-ref", id="artifact-ref"),
+        pytest.param("artifact-instance-id", id="artifact-instance-id"),
+        pytest.param("content-digest", id="content-digest"),
+    ],
+)
+def test_invalid_plan_rejects_retained_projection_with_mismatched_snapshot_companion_fallback(  # noqa: E501
+    input_name: str,
+    detail: str,
+    companion_input_name: str,
+    mutated_field: str,
+) -> None:
+    """Snapshot fallback does not bypass retained companion binding."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        input_name,
+        detail,
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+    companion_artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            companion_input_name
+        ],
+    )
+    companion_artifact["admissibility"] = "inadmissible"
+    companion_artifact["diagnostics"] = [
+        _diagnostic(
+            "required-input-artifact-failure/snapshot-companion-unproven",
+            code="required-input-artifact-failure",
+            detail="snapshot-companion-unproven",
+            message="Snapshot companion input artifact was not proven.",
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+            source_id=cast("str | None", companion_artifact["artifact-ref"]),
+        )
+    ]
+    companion_artifact[mutated_field] = (
+        "0" * 64
+        if mutated_field == "content-digest"
+        else (
+            None
+            if mutated_field == "artifact-instance-id"
+            else "ci-validation/forged/input.json"
+        )
+    )
+    _refresh_summary_manifest_digest(summary, aggregate_manifest)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "producer-compatible projection context" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_name", "detail"),
+    [
+        (
+            "changed-files-snapshot",
+            "changed-files-snapshot-schema-invalid",
+        ),
+        ("fact-snapshot", "fact-snapshot-producer-unverified"),
+    ],
+    ids=[
+        "changed-files-snapshot-changed-files-snapshot-schema-invalid",
+        "fact-snapshot-fact-snapshot-producer-unverified",
+    ],
+)
+@pytest.mark.parametrize(
+    "mutated_field",
+    ["artifact-ref", "artifact-instance-id", "content-digest"],
+    ids=["artifact-ref", "artifact-instance-id", "content-digest"],
+)
+def test_invalid_plan_rejects_retained_snapshot_projection_mismatched_input_artifact(  # noqa: E501
+    input_name: str,
+    detail: str,
+    mutated_field: str,
+) -> None:
+    """Retained snapshot projection requires exact producer input binding."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        input_name,
+        detail,
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+    input_artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            input_name
+        ],
+    )
+    input_artifact[mutated_field] = (
+        "0" * 64
+        if mutated_field == "content-digest"
+        else (
+            None
+            if mutated_field == "artifact-instance-id"
+            else "ci-validation/forged/input.json"
+        )
+    )
+    _refresh_summary_manifest_digest(summary, aggregate_manifest)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    "identity_field", ["plan-id", "plan-digest"], ids=["plan-id", "plan-digest"]
+)
+def test_invalid_plan_rejects_retained_projection_forged_plan_identity(
+    identity_field: str,
+) -> None:
+    """Retained projection identity must match authoritative plan context."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "changed-files-snapshot",
+        "changed-files-snapshot-schema-invalid",
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+    summary[identity_field] = (
+        "forged-plan-id" if identity_field == "plan-id" else "0" * 64
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path == f"$.{identity_field}"
+        and "must match plan" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_accepts_fact_snapshot_producer_unverified_projection() -> (  # noqa: E501
+    None
+):
+    """Fact snapshot producer-unverified details retain plan context."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "fact-snapshot",
+        "fact-snapshot-producer-unverified",
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+
+    validate_ci_validation_aggregate_summary(
+        summary,
+        plan=plan,
+        aggregate_evidence_manifest=aggregate_manifest,
+        request=_request_document(),
+        changed_files_snapshot=_changed_files_snapshot_document(),
+        fact_snapshot=_fact_snapshot_document(),
+    )
+
+
+def test_invalid_plan_rejects_retained_projection_without_manifest_context() -> (  # noqa: E501
+    None
+):
+    """Retained projection requires supplied aggregate manifest authority."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "fact-snapshot",
+        "fact-snapshot-producer-unverified",
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "require aggregate manifest input authority" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_freezer_rejects_retained_projection_without_manifest_context() -> (  # noqa: E501
+    None
+):
+    """The freezer rejects retained details without manifest authority."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "fact-snapshot",
+        "fact-snapshot-producer-unverified",
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        freeze_ci_validation_aggregate_summary(
+            created_at=CREATED_AT,
+            repository_owner="hcoona",
+            repository_name="three",
+            workflow="CI Validation",
+            run_id=RUN_ID,
+            run_attempt=RUN_ATTEMPT,
+            aggregate_evidence_manifest=cast(
+                "dict[str, object]",
+                summary["aggregate-evidence-manifest"],
+            ),
+            final_artifacts=cast(
+                "dict[str, object]",
+                summary["final-artifacts"],
+            ),
+            validation_tree=cast("dict[str, object]", plan["validation-tree"]),
+            affected_range=_summary_affected_range(plan),
+            request=cast("dict[str, object]", plan["request"]),
+            scheduled_full=cast("dict[str, object]", plan["scheduled-full"]),
+            verdict=cast("str", summary["verdict"]),
+            reason=cast("dict[str, object]", summary["reason"]),
+            budgets=cast("dict[str, object]", summary["budgets"]),
+            diagnostics=cast("list[dict[str, object]]", summary["diagnostics"]),
+            batch_bundles=cast(
+                "list[dict[str, object]]",
+                summary["batch-bundles"],
+            ),
+            evidence_results=cast(
+                "list[dict[str, object]]",
+                summary["evidence-results"],
+            ),
+            failures=cast("list[dict[str, object]]", summary["failures"]),
+            work_groups=cast("dict[str, object]", summary["work-groups"]),
+            plan=plan,
+            request_document=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+            aggregate_evidence_manifest_document=None,
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and "require aggregate manifest input authority" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_retained_projection_validates_aggregate_manifest_authority() -> (  # noqa: E501
+    None
+):
+    """Retained invalid-plan summaries validate manifest input authority."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "fact-snapshot",
+        "fact-snapshot-producer-unverified",
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+    summary["mode"] = plan["mode"]
+    summary["validation-tree"] = plan["validation-tree"]
+    summary["affected-range"] = _summary_affected_range(plan)
+    summary["request"] = plan["request"]
+    summary["scheduled-full"] = plan["scheduled-full"]
+    request_artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            "request"
+        ],
+    )
+    request_artifact["content-digest"] = "0" * 64
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path.startswith("$.input-artifacts.request")
+        or issue.path.startswith("$.aggregate-evidence-manifest")
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("failure_kind", "mutation"),
+    [
+        ("final-evidence-failure", "source"),
+        ("final-evidence-failure", "severity"),
+        ("final-evidence-failure", "verdict-effect"),
+        ("final-producer-unverified", "source"),
+        ("final-producer-unverified", "severity"),
+        ("final-producer-unverified", "verdict-effect"),
+    ],
+    ids=[
+        "final-evidence-failure-source",
+        "final-evidence-failure-severity",
+        "final-evidence-failure-verdict-effect",
+        "final-producer-unverified-source",
+        "final-producer-unverified-severity",
+        "final-producer-unverified-verdict-effect",
+    ],
+)
+def test_invalid_plan_rejects_final_failure_diagnostic_semantics(
+    failure_kind: str,
+    mutation: str,
+) -> None:
+    """Invalid-plan final failures retain fail-closed diagnostic semantics."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    final_manifest["producer-verified"] = False
+    final_manifest.setdefault("authority-diagnostics", [])
+    if failure_kind == "final-evidence-failure":
+        diagnostic = _diagnostic(
+            "final-evidence-failure/aggregate-evidence-manifest-unreadable",
+            code="final-evidence-failure",
+            detail="aggregate-evidence-manifest-unreadable",
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+        )
+        cast(
+            "list[dict[str, object]]",
+            final_manifest["authority-diagnostics"],
+        ).append(diagnostic)
+        cast("dict[str, object]", summary["reason"])[
+            "final-evidence-failure"
+        ] = True
+    else:
+        diagnostic = _diagnostic(
+            "final-producer-unverified",
+            code="final-producer-unverified",
+            detail="final-producer-unverified",
+            message=(
+                "Aggregate evidence manifest producer boundary was not "
+                "verified before summary generation."
+            ),
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+        )
+        cast("dict[str, object]", summary["reason"])[
+            "final-producer-unverified"
+        ] = True
+    if mutation == "source":
+        diagnostic["source"] = {"type": "work-group", "id": "wg-forged"}
+    elif mutation == "severity":
+        diagnostic["severity"] = "blocking-failure"
+    else:
+        diagnostic["verdict-effect"] = "failed"
+    cast("list[dict[str, object]]", summary["diagnostics"]).append(diagnostic)
+    cast("list[dict[str, object]]", summary["failures"]).append(
+        {
+            "kind": failure_kind,
+            "batch-id": None,
+            "work-group-id": None,
+            "evidence-expectation-id": None,
+            "bundle-id": None,
+            "diagnostic": diagnostic,
+            "message": diagnostic["message"],
+        }
+    )
+    _sort_summary_failures(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            aggregate_evidence_manifest=aggregate_manifest,
+        )
+
+    expected_issue_suffix = {
+        "source": ".diagnostic.source",
+        "severity": ".diagnostic.severity",
+        "verdict-effect": ".diagnostic.verdict-effect",
+    }[mutation]
+    expected_message = (
+        "must be aggregate"
+        if mutation == "source"
+        else "must be fail-closed for fail-closed failures"
+    )
+    assert any(
+        issue.path.startswith("$.failures[")
+        and issue.path.endswith(expected_issue_suffix)
+        and expected_message in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "diagnostic-id",
+        "code",
+        "message",
+        "source",
+        "severity",
+        "verdict-effect",
+        "missing-message",
+        "null-diagnostic",
+    ],
+    ids=[
+        "diagnostic-id",
+        "code",
+        "message",
+        "source",
+        "severity",
+        "verdict-effect",
+        "missing-message",
+        "null-diagnostic",
+    ],
+)
+def test_aggregate_summary_rejects_forged_authority_diagnostic_shape(
+    mutation: str,
+) -> None:
+    """Authority diagnostics must match canonical aggregate evidence shape."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    summary["verdict"] = "failed"
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    final_manifest["producer-verified"] = False
+    canonical_diagnostic = _diagnostic(
+        "final-evidence-failure/aggregate-evidence-manifest-unreadable",
+        code="final-evidence-failure",
+        detail="aggregate-evidence-manifest-unreadable",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    forged_diagnostic = dict(canonical_diagnostic)
+    if mutation == "diagnostic-id":
+        forged_diagnostic["diagnostic-id"] = "authority/forged"
+    elif mutation == "code":
+        forged_diagnostic["code"] = "blocking-validation-failure"
+    elif mutation == "message":
+        forged_diagnostic["message"] = "Forged matching detail."
+    elif mutation == "source":
+        forged_diagnostic["source"] = {"type": "work-group", "id": "wg"}
+    elif mutation == "severity":
+        forged_diagnostic["severity"] = "blocking-failure"
+    elif mutation == "verdict-effect":
+        forged_diagnostic["verdict-effect"] = "failed"
+    elif mutation == "missing-message":
+        del forged_diagnostic["message"]
+    else:
+        final_manifest["authority-diagnostics"] = [None]
+    if mutation != "null-diagnostic":
+        final_manifest["authority-diagnostics"] = [forged_diagnostic]
+    cast("dict[str, object]", summary["reason"])["final-evidence-failure"] = (
+        True
+    )
+    cast("list[dict[str, object]]", summary["diagnostics"]).append(
+        canonical_diagnostic
+    )
+    cast("list[dict[str, object]]", summary["failures"]).append(
+        {
+            "kind": "final-evidence-failure",
+            "batch-id": None,
+            "work-group-id": None,
+            "evidence-expectation-id": None,
+            "bundle-id": None,
+            "diagnostic": canonical_diagnostic,
+            "message": canonical_diagnostic["message"],
+        }
+    )
+    _sort_summary_failures(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            admitted_batch_evidence_bundles=[bundle],
+            execution_batch_manifest=manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+            _aggregate_manifest_authority_failure_details={
+                "aggregate-evidence-manifest-unreadable",
+            },
+        )
+
+    assert any(
+        issue.path.startswith(
+            "$.final-artifacts.aggregate-evidence-manifest."
+            "authority-diagnostics",
+        )
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_rejects_final_producer_verified_manifest() -> None:
+    """Final producer-boundary rows require an unverified final manifest."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    diagnostic = _diagnostic(
+        "final-producer-unverified",
+        code="final-producer-unverified",
+        detail="final-producer-unverified",
+        message=(
+            "Aggregate evidence manifest producer boundary was not verified "
+            "before summary generation."
+        ),
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    cast("list[dict[str, object]]", summary["diagnostics"]).append(diagnostic)
+    cast("dict[str, object]", summary["reason"])[
+        "final-producer-unverified"
+    ] = True
+    cast("list[dict[str, object]]", summary["failures"]).append(
+        {
+            "kind": "final-producer-unverified",
+            "batch-id": None,
+            "work-group-id": None,
+            "evidence-expectation-id": None,
+            "bundle-id": None,
+            "diagnostic": diagnostic,
+            "message": diagnostic["message"],
+        }
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    final_manifest["producer-verified"] = True
+    _sort_summary_failures(summary)
+
+    with pytest.raises(ContractValidationError):
+        validate_ci_validation_aggregate_summary(summary)
+
+
+def test_aggregate_summary_accepts_bound_final_producer_unverified() -> None:
+    """Bound normal summaries derive final-producer-unverified from manifest."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    final_manifest["producer-verified"] = False
+    summary["verdict"] = "failed"
+    cast("dict[str, object]", summary["reason"])[
+        "final-producer-unverified"
+    ] = True
+    cast("dict[str, object]", summary["reason"])["final-evidence-failure"] = (
+        True
+    )
+    diagnostic = _diagnostic(
+        "final-producer-unverified",
+        code="final-producer-unverified",
+        detail="final-producer-unverified",
+        message=(
+            "Aggregate evidence manifest producer boundary was not verified "
+            "before summary generation."
+        ),
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    cast("list[dict[str, object]]", summary["diagnostics"]).append(diagnostic)
+    _append_summary_kind_failure(
+        summary,
+        "final-producer-unverified",
+        diagnostic,
+        cast("str", diagnostic["message"]),
+    )
+    final_evidence_diagnostic = _diagnostic(
+        "final-evidence-failure/final-producer-unverified",
+        code="final-evidence-failure",
+        detail="final-producer-unverified",
+        message="Aggregate evidence manifest producer was unverified.",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    cast("list[dict[str, object]]", summary["diagnostics"]).append(
+        final_evidence_diagnostic
+    )
+    _append_summary_kind_failure(
+        summary,
+        "final-evidence-failure",
+        final_evidence_diagnostic,
+        cast("str", final_evidence_diagnostic["message"]),
+    )
+    cast("list[dict[str, object]]", summary["diagnostics"]).sort(
+        key=lambda item: str(item.get("diagnostic-id")),
+    )
+
+    validate_ci_validation_aggregate_summary(
+        summary,
+        plan=plan,
+        aggregate_evidence_manifest=aggregate_manifest,
+        admitted_batch_evidence_bundles=[bundle],
+        execution_batch_manifest=manifest,
+        request=_request_document(),
+        changed_files_snapshot=_changed_files_snapshot_document(),
+        fact_snapshot=_fact_snapshot_document(),
+    )
+
+
+@pytest.mark.parametrize(
+    "failure_kind",
+    ["fail-closed", "final-evidence-failure", "final-producer-unverified"],
+    ids=["fail-closed", "final-evidence-failure", "final-producer-unverified"],
+)
+@pytest.mark.parametrize(
+    "attribution_key",
+    ["batch-id", "work-group-id", "evidence-expectation-id", "bundle-id"],
+    ids=["batch-id", "work-group-id", "evidence-expectation-id", "bundle-id"],
+)
+def test_invalid_plan_rejects_final_failure_attribution(
+    failure_kind: str,
+    attribution_key: str,
+) -> None:
+    """Invalid-plan final failure rows must not retain execution attribution."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_invalid_plan(summary)
+    if failure_kind == "fail-closed":
+        diagnostic = _diagnostic(
+            "fail-closed/incomplete",
+            code="unknown-change",
+            detail="incomplete",
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+        )
+        cast("dict[str, object]", summary["reason"])["fail-closed"] = True
+    elif failure_kind == "final-evidence-failure":
+        diagnostic = _diagnostic(
+            "final-evidence-failure/aggregate-evidence-manifest-missing",
+            code="final-evidence-failure",
+            detail="aggregate-evidence-manifest-missing",
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+        )
+        cast("dict[str, object]", summary["reason"])[
+            "final-evidence-failure"
+        ] = True
+    else:
+        diagnostic = _diagnostic(
+            "final-producer-unverified",
+            code="final-producer-unverified",
+            detail="final-producer-unverified",
+            message=(
+                "Aggregate evidence manifest producer boundary was not "
+                "verified before summary generation."
+            ),
+            severity="fail-closed",
+            verdict_effect="fail-closed",
+        )
+        cast("list[dict[str, object]]", summary["diagnostics"]).append(
+            diagnostic
+        )
+        cast("dict[str, object]", summary["reason"])[
+            "final-producer-unverified"
+        ] = True
+    failure = {
+        "kind": failure_kind,
+        "batch-id": None,
+        "work-group-id": None,
+        "evidence-expectation-id": None,
+        "bundle-id": None,
+        "diagnostic": diagnostic,
+        "message": diagnostic["message"],
+    }
+    failure[attribution_key] = f"stale-{attribution_key}"
+    cast("list[dict[str, object]]", summary["failures"]).append(failure)
+    _sort_summary_failures(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(summary)
+
+    assert any(
+        issue.path.endswith(f".{attribution_key}")
+        and "must be null for protected fail-closed failure rows"
+        in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    "failure_kind",
+    ["fail-closed", "final-evidence-failure", "final-producer-unverified"],
+    ids=[
+        "fail-closed",
+        "final-evidence-failure",
+        "final-producer-unverified",
+    ],
+)
+@pytest.mark.parametrize(
+    "attribution_key",
+    ["batch-id", "work-group-id", "evidence-expectation-id", "bundle-id"],
+    ids=["batch-id", "work-group-id", "evidence-expectation-id", "bundle-id"],
+)
+def test_aggregate_summary_rejects_non_invalid_protected_attribution(
+    failure_kind: str,
+    attribution_key: str,
+) -> None:
+    """Non-invalid final failure rows must not retain execution attribution."""
+    if failure_kind == "fail-closed":
+        plan, changed_files_snapshot, manifest = _fail_closed_plan_context()
+        aggregate_manifest = _fail_closed_aggregate_manifest(
+            plan,
+            manifest,
+            changed_files_snapshot,
+        )
+        summary = _fail_closed_aggregate_summary(
+            plan,
+            manifest,
+            aggregate_manifest,
+            changed_files_snapshot,
+        )
+        validation_context = {
+            "plan": plan,
+            "aggregate_evidence_manifest": aggregate_manifest,
+            "admitted_batch_evidence_bundles": [],
+            "execution_batch_manifest": manifest,
+            "request": _request_document(),
+            "changed_files_snapshot": changed_files_snapshot,
+            "fact_snapshot": None,
+        }
+    else:
+        plan = _plan()
+        manifest = _manifest(plan)
+        bundle = _bundle(plan, manifest)
+        aggregate_manifest = _aggregate_evidence_manifest(
+            plan, manifest, bundle
+        )
+        summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+        summary["verdict"] = "failed"
+        final_manifest = cast(
+            "dict[str, object]",
+            cast("dict[str, object]", summary["final-artifacts"])[
+                "aggregate-evidence-manifest"
+            ],
+        )
+        final_manifest["producer-verified"] = False
+        final_manifest.setdefault("authority-diagnostics", [])
+        validation_context = {
+            "plan": plan,
+            "admitted_batch_evidence_bundles": [bundle],
+            "execution_batch_manifest": manifest,
+            "request": _request_document(),
+            "changed_files_snapshot": _changed_files_snapshot_document(),
+            "fact_snapshot": _fact_snapshot_document(),
+        }
+        if failure_kind == "final-evidence-failure":
+            diagnostic = _diagnostic(
+                "final-evidence-failure/aggregate-evidence-manifest-unreadable",
+                code="final-evidence-failure",
+                detail="aggregate-evidence-manifest-unreadable",
+                severity="fail-closed",
+                verdict_effect="fail-closed",
+            )
+            cast(
+                "list[dict[str, object]]",
+                final_manifest["authority-diagnostics"],
+            ).append(diagnostic)
+            cast("dict[str, object]", summary["reason"])[
+                "final-evidence-failure"
+            ] = True
+        else:
+            diagnostic = _diagnostic(
+                "final-producer-unverified",
+                code="final-producer-unverified",
+                detail="final-producer-unverified",
+                message=(
+                    "Aggregate evidence manifest producer boundary was not "
+                    "verified before summary generation."
+                ),
+                severity="fail-closed",
+                verdict_effect="fail-closed",
+            )
+            cast("dict[str, object]", summary["reason"])[
+                "final-producer-unverified"
+            ] = True
+        cast("list[dict[str, object]]", summary["diagnostics"]).append(
+            diagnostic
+        )
+        _append_summary_kind_failure(
+            summary,
+            failure_kind,
+            diagnostic,
+            cast("str", diagnostic["message"]),
+        )
+    failure = next(
+        item
+        for item in cast("list[dict[str, object]]", summary["failures"])
+        if item["kind"] == failure_kind
+    )
+    failure[attribution_key] = f"stale-{attribution_key}"
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(summary, **validation_context)
+
+    assert any(
+        issue.path.endswith(f".{attribution_key}")
+        and "must be null for protected fail-closed failure rows"
+        in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
 @pytest.mark.parametrize(
     "detail",
     [
-        "plan-duplicate",
-        "plan-producer-unverified",
+        pytest.param("plan-duplicate", id="plan-duplicate"),
+        pytest.param(
+            "plan-producer-unverified",
+            id="plan-producer-unverified",
+        ),
     ],
 )
 def test_aggregate_summary_classifies_invalid_validation_plan_input(
     detail: str,
 ) -> None:
     """Non-authoritative validation-plan input forces invalid-plan summary."""
-    aggregate_manifest = _invalid_planning_input_manifest(
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
         "validation-plan",
         detail,
     )
 
-    summary = _freeze_invalid_planning_input_summary(aggregate_manifest)
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
 
     reason = cast("dict[str, object]", summary["reason"])
     failures = cast("list[dict[str, object]]", summary["failures"])
@@ -13615,6 +18975,141 @@ def test_aggregate_summary_classifies_invalid_validation_plan_input(
     )
 
 
+def test_aggregate_summary_rejects_mismatched_input_detail() -> None:
+    """Manifest-derived invalid-plan detail remains authoritative."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "validation-plan",
+        "plan-duplicate",
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    replacement = _diagnostic(
+        "invalid-plan/plan-producer-unverified",
+        code="invalid-plan",
+        detail="plan-producer-unverified",
+        message=CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE,
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+        source_id=None,
+    )
+    cast("list[dict[str, object]]", summary["diagnostics"])[0] = replacement
+    failures = cast("list[dict[str, object]]", summary["failures"])
+    failures[0]["diagnostic"] = replacement
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path == "$.failures"
+        and "canonical invalid-plan failure" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_plan_duplicate_retains_bound_plan_projection() -> None:
+    """Bound plan-duplicate evidence preserves the retained plan projection."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "validation-plan",
+        "plan-duplicate",
+    )
+
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+
+    assert summary["plan-id"] == plan["plan-id"]
+    assert summary["plan-digest"] == plan["plan-digest"]
+    assert summary["mode"] == plan["mode"]
+    assert summary["validation-tree"] == plan["validation-tree"]
+    assert summary["affected-range"] == _summary_affected_range(plan)
+    assert summary["request"] == plan["request"]
+    assert summary["scheduled-full"] == plan["scheduled-full"]
+    validate_ci_validation_aggregate_summary(
+        summary,
+        plan=plan,
+        aggregate_evidence_manifest=aggregate_manifest,
+        request=_request_document(),
+        changed_files_snapshot=_changed_files_snapshot_document(),
+        fact_snapshot=_fact_snapshot_document(),
+    )
+
+
+@pytest.mark.parametrize(
+    "authority_case",
+    [
+        pytest.param("null", id="null"),
+        pytest.param("missing", id="missing"),
+        pytest.param("incomplete-payload", id="incomplete-payload"),
+        pytest.param("digest-mismatch", id="digest-mismatch"),
+        pytest.param("mismatched-field", id="mismatched-field"),
+    ],
+)
+def test_retained_invalid_plan_rejects_missing_projection_authority(
+    authority_case: str,
+) -> None:
+    """Retained invalid-plan evidence requires retained projection authority."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "validation-plan",
+        "plan-duplicate",
+    )
+    if authority_case == "null":
+        aggregate_manifest["projection-authority"] = None
+    elif authority_case == "missing":
+        aggregate_manifest.pop("projection-authority")
+    else:
+        authority = dict(
+            cast(
+                "dict[str, object]",
+                aggregate_manifest["projection-authority"],
+            )
+        )
+        if authority_case == "incomplete-payload":
+            authority.pop("request")
+        elif authority_case == "digest-mismatch":
+            authority["projection-digest"] = "0" * 64
+        elif authority_case == "mismatched-field":
+            authority["mode"] = "push"
+            _refresh_projection_authority_digest(authority)
+        else:
+            raise AssertionError(authority_case)
+        aggregate_manifest["projection-authority"] = authority
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_evidence_manifest(
+            aggregate_manifest,
+            plan=plan,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path == "$.projection-authority"
+        and (
+            "retained invalid-plan details require" in issue.message
+            or "must match plan projection authority" in issue.message
+            or "must match canonical digest" in issue.message
+        )
+        for issue in exc_info.value.issues
+    )
+
+
 def test_invalid_plan_summary_derives_standalone_detail() -> None:
     """Standalone validation derives canonical invalid-plan detail."""
     aggregate_manifest = _invalid_planning_input_manifest(
@@ -13623,14 +19118,17 @@ def test_invalid_plan_summary_derives_standalone_detail() -> None:
     )
     summary = _freeze_invalid_planning_input_summary(aggregate_manifest)
 
-    validate_ci_validation_aggregate_summary(summary)
+    validate_ci_validation_aggregate_summary(
+        summary,
+        aggregate_evidence_manifest=aggregate_manifest,
+    )
 
 
 def test_invalid_plan_summary_enforces_context_detail() -> None:
     """Manifest context fixes the expected canonical invalid-plan detail."""
     aggregate_manifest = _invalid_planning_input_manifest(
         "validation-plan",
-        "plan-digest-mismatch",
+        "malformed-plan",
     )
     summary = _freeze_invalid_planning_input_summary(aggregate_manifest)
     failures = cast("list[dict[str, object]]", summary["failures"])
@@ -13652,15 +19150,27 @@ def test_invalid_plan_summary_enforces_context_detail() -> None:
         ("changed-files-snapshot", "changed-files-snapshot-digest-mismatch"),
         ("fact-snapshot", "fact-snapshot-producer-unverified"),
     ],
+    ids=[
+        "changed-files-snapshot-changed-files-snapshot-digest-mismatch",
+        "fact-snapshot-fact-snapshot-producer-unverified",
+    ],
 )
 def test_aggregate_summary_classifies_invalid_companion_snapshot_input(
     input_name: str,
     detail: str,
 ) -> None:
     """Non-authoritative companion snapshots force invalid-plan summary."""
-    aggregate_manifest = _invalid_planning_input_manifest(input_name, detail)
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        input_name,
+        detail,
+    )
 
-    summary = _freeze_invalid_planning_input_summary(aggregate_manifest)
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
 
     reason = cast("dict[str, object]", summary["reason"])
     failures = cast("list[dict[str, object]]", summary["failures"])
@@ -13669,6 +19179,85 @@ def test_aggregate_summary_classifies_invalid_companion_snapshot_input(
     assert [failure["kind"] for failure in failures] == ["invalid-plan"]
     assert cast("dict[str, object]", failures[0]["diagnostic"])["detail"] == (
         detail
+    )
+
+
+def test_aggregate_summary_rejects_forged_invalid_plan_input_diagnostic() -> (
+    None
+):
+    """Input invalid-plan diagnostics must be canonical and input-bound."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "fact-snapshot",
+        "fact-snapshot-schema-invalid",
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            "fact-snapshot"
+        ],
+    )
+    diagnostic = cast(
+        "dict[str, object]",
+        cast("list[dict[str, object]]", artifact["diagnostics"])[0],
+    )
+    diagnostic["source"] = {"type": "work-group", "id": "wg-forged"}
+    _refresh_summary_manifest_digest(summary, aggregate_manifest)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path == "$.input-artifacts.fact-snapshot.diagnostics[0]"
+        and "canonical bound invalid-plan input diagnostic" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_invalid_plan_input_diagnostic_message_edit_accepted() -> None:
+    """Input invalid-plan diagnostic identity excludes display message text."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "fact-snapshot",
+        "fact-snapshot-schema-invalid",
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    artifact = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            "fact-snapshot"
+        ],
+    )
+    diagnostic = cast(
+        "dict[str, object]",
+        cast("list[dict[str, object]]", artifact["diagnostics"])[0],
+    )
+    diagnostic["message"] = "Human-readable invalid-plan text may vary."
+    _refresh_summary_manifest_digest(summary, aggregate_manifest)
+
+    validate_ci_validation_aggregate_summary(
+        summary,
+        plan=plan,
+        aggregate_evidence_manifest=aggregate_manifest,
+        request=_request_document(),
+        changed_files_snapshot=_changed_files_snapshot_document(),
+        fact_snapshot=_fact_snapshot_document(),
     )
 
 
@@ -13810,6 +19399,7 @@ def test_contextual_summary_rejects_self_authorized_final_failure() -> None:
             verdict_effect="fail-closed",
         )
     ]
+    summary["verdict"] = "failed"
     reason = cast("dict[str, object]", summary["reason"])
     reason["final-evidence-failure"] = True
     cast("list[dict[str, object]]", summary["failures"]).append(
@@ -13849,6 +19439,119 @@ def test_contextual_summary_rejects_self_authorized_final_failure() -> None:
     assert any(
         issue.path == "$.failures"
         and "final evidence failure causes" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_contextual_summary_rejects_unrelated_manifest_authority_failure() -> (
+    None
+):
+    """External manifest authority must correspond to accepted final details."""
+    plan = _plan()
+    aggregate_manifest = _authoritative_invalid_planning_input_manifest(
+        plan,
+        "fact-snapshot",
+        "fact-snapshot-producer-unverified",
+    )
+    summary = _freeze_invalid_planning_input_summary(
+        aggregate_manifest,
+        plan=plan,
+    )
+    forged_digest = "0123456789abcdef" * 4
+    manifest_claim = cast(
+        "dict[str, object]", summary["aggregate-evidence-manifest"]
+    )
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    for claim in (manifest_claim, final_manifest):
+        claim["artifact-instance-id"] = "forged-aggregate-manifest"
+        claim["content-digest"] = forged_digest
+    final_manifest["producer-verified"] = False
+    authority_diagnostic = _diagnostic(
+        "final-evidence-failure/aggregate-evidence-manifest-malformed",
+        code="final-evidence-failure",
+        detail="aggregate-evidence-manifest-malformed",
+        message="Preserved aggregate evidence manifest was malformed.",
+        severity="fail-closed",
+        verdict_effect="fail-closed",
+    )
+    final_manifest["authority-diagnostics"] = [authority_diagnostic]
+    reason = cast("dict[str, object]", summary["reason"])
+    reason["final-evidence-failure"] = True
+    reason["final-producer-unverified"] = True
+    failures = cast("list[dict[str, object]]", summary["failures"])
+    failures.extend(
+        [
+            {
+                "kind": "final-evidence-failure",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": authority_diagnostic,
+                "message": authority_diagnostic["message"],
+            },
+            {
+                "kind": "final-producer-unverified",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": _diagnostic(
+                    "final-producer-unverified",
+                    code="final-producer-unverified",
+                    detail="final-producer-unverified",
+                    severity="fail-closed",
+                    verdict_effect="fail-closed",
+                ),
+                "message": (
+                    "Aggregate evidence manifest producer boundary was not "
+                    "verified before summary generation."
+                ),
+            },
+            {
+                "kind": "final-evidence-failure",
+                "batch-id": None,
+                "work-group-id": None,
+                "evidence-expectation-id": None,
+                "bundle-id": None,
+                "diagnostic": _diagnostic(
+                    "final-evidence-failure/final-producer-unverified",
+                    code="final-evidence-failure",
+                    detail="final-producer-unverified",
+                    severity="fail-closed",
+                    verdict_effect="fail-closed",
+                ),
+                "message": (
+                    "Aggregate evidence manifest producer was unverified."
+                ),
+            },
+        ]
+    )
+    _sort_summary_failures(summary)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=aggregate_manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    assert any(
+        issue.path
+        in {
+            "$.aggregate-evidence-manifest.content-digest",
+            "$.final-artifacts.aggregate-evidence-manifest.content-digest",
+            "$.final-artifacts.aggregate-evidence-manifest."
+            "authority-diagnostics",
+        }
         for issue in exc_info.value.issues
     )
 
@@ -13986,29 +19689,52 @@ def test_aggregate_manifest_supplied_plan_rejects_forged_projection() -> None:
         )
 
 
-@pytest.mark.parametrize("admissibility", ["missing", "inadmissible"])
-def test_aggregate_manifest_rejects_supplied_plan_contradicting_input_row(
-    admissibility: str,
-) -> None:
-    """Non-valid plan rows cannot authorize supplied-plan projection."""
+def test_aggregate_manifest_rejects_supplied_plan_missing_input_row() -> None:
+    """Missing plan rows use no-authority projection diagnostics."""
     plan = _plan()
     manifest = _manifest(plan)
     bundle = _bundle(plan, manifest)
     aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
-    if admissibility == "missing":
-        _set_input_absent(
+    _set_input_absent(
+        aggregate_manifest,
+        "validation-plan",
+        required=True,
+        admissibility="missing",
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_evidence_manifest(
             aggregate_manifest,
-            "validation-plan",
-            required=True,
-            admissibility="missing",
+            plan=plan,
+            execution_batch_manifest=manifest,
         )
-    else:
-        cast(
-            "dict[str, object]",
-            cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
-                "validation-plan"
-            ],
-        )["admissibility"] = "inadmissible"
+
+    assert any(
+        issue.path in {"$.plan-id", "$.plan-digest"}
+        and "without an authoritative plan" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        issue.path == "$.projection-authority"
+        and "without an authoritative plan" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_aggregate_manifest_rejects_supplied_plan_inadmissible_input_row() -> (
+    None
+):
+    """Inadmissible present plan rows cannot authorize supplied projection."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    cast(
+        "dict[str, object]",
+        cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
+            "validation-plan"
+        ],
+    )["admissibility"] = "inadmissible"
 
     with pytest.raises(ContractValidationError) as exc_info:
         validate_ci_validation_aggregate_evidence_manifest(
@@ -15177,6 +20903,10 @@ def test_aggregate_manifest_rejects_stale_authority_request_ref() -> None:
         and "without an authoritative plan" in issue.message
         for issue in exc_info.value.issues
     )
+    assert all(
+        issue.path not in {"$.plan-id", "$.plan-digest"}
+        for issue in exc_info.value.issues
+    )
 
 
 def test_aggregate_manifest_rejects_request_context_projection_conflict() -> (
@@ -15310,13 +21040,12 @@ def test_aggregate_manifest_rejects_matching_request_context_without_plan() -> (
         )
 
     assert any(
-        issue.path in {"$.plan-id", "$.plan-digest"}
+        issue.path == "$.projection-authority"
         and "without an authoritative plan" in issue.message
         for issue in exc_info.value.issues
     )
-    assert any(
-        issue.path == "$.projection-authority"
-        and "without an authoritative plan" in issue.message
+    assert all(
+        issue.path not in {"$.plan-id", "$.plan-digest"}
         for issue in exc_info.value.issues
     )
 
@@ -15700,6 +21429,25 @@ def test_summary_rejects_manifest_projection_authority_without_plan() -> None:
         )
 
 
+def test_summary_accepts_manifest_projection_authority_when_plan_unbound() -> (
+    None
+):
+    """Manifest authority may authorize a matching summary projection."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    issues: list[ValidationIssue] = []
+
+    assert _validate_summary_manifest_projection_authority(
+        summary,
+        aggregate_manifest,
+        issues,
+    )
+    assert issues == []
+
+
 def test_freezer_validates_malformed_projection_authority() -> None:
     """Freezing reports malformed manifest authority as contract validation."""
     plan = _plan()
@@ -16005,10 +21753,21 @@ def test_aggregate_summary_rejects_forged_fact_snapshot_input_digest() -> None:
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("content-digest", "0" * 64),
-        (
+        pytest.param(
+            "content-digest",
+            "0" * 64,
+            id=(
+                "content-digest-"
+                "0000000000000000000000000000000000000000000000000000000000000000"
+            ),
+        ),
+        pytest.param(
             "artifact-ref",
             "ci-validation/execution-batches/999/1/execution-batch-manifest.json",
+            id=(
+                "artifact-ref-ci-validation/execution-batches/999/1/"
+                "execution-batch-manifest.json"
+            ),
         ),
     ],
 )
@@ -16277,12 +22036,36 @@ def test_execution_batch_manifest_rejects_cross_group_evidence() -> None:
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("expected-job-identity", "github-actions-job:" + "9" * 64),
-        ("identity-source", "forged-source"),
-        ("expected-boundary", "forged-boundary"),
-        ("observed-workflow", "Forged Workflow"),
-        ("observed-job", "forged-job"),
-        ("observed-matrix", {"batch-id": "batch-forged"}),
+        pytest.param(
+            "expected-job-identity",
+            "github-actions-job:" + "9" * 64,
+            id="expected-job-identity-mismatch",
+        ),
+        pytest.param(
+            "identity-source",
+            "forged-source",
+            id="identity-source-mismatch",
+        ),
+        pytest.param(
+            "expected-boundary",
+            "forged-boundary",
+            id="expected-boundary-mismatch",
+        ),
+        pytest.param(
+            "observed-workflow",
+            "Forged Workflow",
+            id="observed-workflow-mismatch",
+        ),
+        pytest.param(
+            "observed-job",
+            "forged-job",
+            id="observed-job-mismatch",
+        ),
+        pytest.param(
+            "observed-matrix",
+            {"batch-id": "batch-forged"},
+            id="observed-matrix-mismatch",
+        ),
     ],
 )
 def test_batch_evidence_bundle_rejects_writer_mismatch(
@@ -16373,6 +22156,8 @@ def _mark_summary_missing_aggregate_manifest(
     summary: dict[str, object],
 ) -> None:
     summary["verdict"] = "failed"
+    summary["plan-id"] = None
+    summary["plan-digest"] = None
     _set_summary_unknown_projection(summary)
     manifest_claim = cast(
         "dict[str, object]",
@@ -16400,7 +22185,9 @@ def _mark_summary_missing_aggregate_manifest(
     if evidence_result.get("outcome") == "satisfied":
         _mark_summary_missing_evidence(summary)
     reason = cast("dict[str, object]", summary["reason"])
+    reason["fail-closed"] = True
     reason["aggregate-summary-without-manifest"] = True
+    reason["final-producer-unverified"] = False
     reason["final-evidence-failure"] = False
     _append_summary_kind_failure(
         summary,
@@ -16418,13 +22205,71 @@ def _mark_summary_missing_aggregate_manifest(
 
 
 def test_aggregate_summary_accepts_missing_manifest_failure_detail() -> None:
-    """Summary-only validation accepts the missing-manifest cause."""
+    """Summary-only missing-manifest validation requires unbound identity."""
     plan = _plan()
     manifest = _manifest(plan)
     bundle = _bundle(plan, manifest)
     aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
     summary = _aggregate_summary(plan, aggregate_manifest, bundle)
     _mark_summary_missing_aggregate_manifest(summary)
+
+    validate_ci_validation_aggregate_summary(
+        summary,
+        plan=plan,
+        execution_batch_manifest=manifest,
+        request=_request_document(),
+        changed_files_snapshot=_changed_files_snapshot_document(),
+        fact_snapshot=_fact_snapshot_document(),
+    )
+
+
+def test_aggregate_summary_rejects_missing_manifest_supplied_identity() -> None:
+    """Supplied plan context cannot authorize summary identity by itself."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_missing_aggregate_manifest(summary)
+    summary["plan-id"] = plan["plan-id"]
+    summary["plan-digest"] = plan["plan-digest"]
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            request=_request_document(),
+            changed_files_snapshot=_changed_files_snapshot_document(),
+            fact_snapshot=_fact_snapshot_document(),
+        )
+
+    issue_pairs = {
+        (issue.path, issue.message) for issue in exc_info.value.issues
+    }
+    assert (
+        "$.plan-id",
+        "must be null without an authoritative plan",
+    ) in issue_pairs
+    assert (
+        "$.plan-digest",
+        "must be null without an authoritative plan",
+    ) in issue_pairs
+
+
+def test_aggregate_summary_accepts_missing_manifest_unverified_marker() -> None:
+    """Missing-manifest markers do not self-authorize producer failure."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _bundle(plan, manifest)
+    aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
+    summary = _aggregate_summary(plan, aggregate_manifest, bundle)
+    _mark_summary_missing_aggregate_manifest(summary)
+    cast("dict[str, object]", summary["reason"])[
+        "final-producer-unverified"
+    ] = False
+    _remove_summary_failure_kind(summary, "final-producer-unverified")
+    summary["diagnostics"] = _without_final_producer_diagnostics(summary)
 
     validate_ci_validation_aggregate_summary(
         summary,
@@ -16468,7 +22313,12 @@ def test_aggregate_summary_rejects_passed_empty_summary_without_manifest() -> (
         )
 
     assert any(
-        issue.path in {"$.verdict", "$.reason.final-evidence-failure"}
+        issue.path
+        in {
+            "$.verdict",
+            "$.reason.final-evidence-failure",
+            "$.final-artifacts.aggregate-evidence-manifest.producer-verified",
+        }
         for issue in exc_info.value.issues
     )
 
@@ -16539,11 +22389,36 @@ def test_aggregate_summary_fully_validates_supplied_execution_manifest() -> (
 @pytest.mark.parametrize(
     ("summary_claim_key", "final_key", "final_value"),
     [
-        ("artifact-instance-id", None, None),
-        ("content-digest", None, None),
-        (None, "artifact-instance-id", "3001"),
-        (None, "content-digest", "0" * 64),
-        (None, "producer-verified", True),
+        pytest.param(
+            "artifact-instance-id",
+            None,
+            None,
+            id="summary-artifact-instance-id-claim",
+        ),
+        pytest.param(
+            "content-digest",
+            None,
+            None,
+            id="summary-content-digest-claim",
+        ),
+        pytest.param(
+            None,
+            "artifact-instance-id",
+            "3001",
+            id="final-artifact-instance-id-claim",
+        ),
+        pytest.param(
+            None,
+            "content-digest",
+            "0" * 64,
+            id="final-content-digest-claim",
+        ),
+        pytest.param(
+            None,
+            "producer-verified",
+            True,
+            id="final-producer-verified-claim",
+        ),
     ],
 )
 def test_aggregate_summary_rejects_missing_manifest_authoritative_claims(
@@ -16650,7 +22525,7 @@ def test_aggregate_summary_rejects_missing_manifest_satisfied_row() -> None:
 
 
 def test_aggregate_summary_rejects_missing_manifest_fake_batch_id() -> None:
-    """Summary-only rows must match supplied execution-manifest batches."""
+    """Summary-only rows cannot forge missing-manifest batch failures."""
     plan = _plan()
     manifest = _manifest(plan)
     bundle = _bundle(plan, manifest)
@@ -16676,9 +22551,7 @@ def test_aggregate_summary_rejects_missing_manifest_fake_batch_id() -> None:
         )
 
     assert any(
-        issue.path == "$.batch-bundles"
-        and issue.message
-        == "must match execution-batch manifest batch ids exactly"
+        issue.path == "$.failures" and "batch-forged-gate" in issue.message
         for issue in exc_info.value.issues
     )
 

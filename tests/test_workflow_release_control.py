@@ -1034,6 +1034,164 @@ def test_ci_acceptance_matrix_rows_are_actionable() -> None:
         assert row_test_refs, row["id"]
 
 
+def test_ci_acceptance_matrix_pins_group1_r204_regressions() -> None:
+    """Critical Group 1/R204 regressions must stay pinned to intended rows."""
+    matrix = _ci_acceptance_matrix()
+    rows_by_id = {row["id"]: row for row in matrix["rows"]}
+    required_row_refs = {
+        "no-authoritative-plan-path-reaches-aggregation": {
+            "aggregate-or-verdict": {
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_batches.py::"
+                "test_invalid_plan_accepts_retained_projection_with_"
+                "snapshot_companion_fallback",
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_batches.py::"
+                "test_invalid_plan_rejects_retained_projection_with_bound_"
+                "snapshot_companion_fallback",
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_batches.py::"
+                "test_invalid_plan_rejects_retained_projection_with_"
+                "noncanonical_snapshot_companion_fallback",
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_batches.py::"
+                "test_invalid_plan_rejects_retained_projection_with_"
+                "forged_snapshot_companion_fallback",
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_batches.py::"
+                "test_invalid_plan_rejects_retained_projection_with_"
+                "mismatched_snapshot_companion_fallback",
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_batches.py::"
+                "test_invalid_plan_unbound_manifest_rejects_self_authority_"
+                "diagnostics",
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_batches.py::"
+                "test_aggregate_manifest_rejects_request_context_"
+                "projection_conflict",
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_batches.py::"
+                "test_aggregate_summary_rejects_forged_authority_"
+                "diagnostic_shape",
+            },
+        },
+        "aggregate-summary-exists-at-the-final-ref-but-the-aggregate-"
+        "evidence-manifest-is-missing": {
+            "aggregate-or-verdict": {
+                "tests/test_workflow_release_control.py::"
+                "test_ci_batch_missing_manifest_uses_missing_manifest_authority",
+            },
+        },
+    }
+
+    for row_id, columns in required_row_refs.items():
+        row = rows_by_id[row_id]
+        for column, expected_nodeids in columns.items():
+            actual_nodeids = {
+                reference["value"]
+                for reference in row["evidence"][column]
+                if reference["type"] == "test"
+            }
+            assert expected_nodeids <= actual_nodeids, (row_id, column)
+
+
+def test_acceptance_gate_pins_group1_r204_gate_only_regressions() -> None:
+    """Gate-only Group 1/R204+ regression tests must remain mandatory."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_aggregate_cli_accepts_false_producer_verified",
+        "tests/test_workflow_release_control.py::"
+        "test_aggregate_cli_defaults_omitted_producer_verified_to_false",
+        "tests/test_workflow_release_control.py::"
+        "test_aggregate_namespace_non_bool_producer_verified_fails_closed",
+        "tests/test_workflow_release_control.py::"
+        "test_aggregate_cli_rejects_malformed_producer_verified",
+        "tests/test_workflow_release_control.py::"
+        "test_aggregate_cli_rejects_missing_producer_verified_value",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_workflow_passes_explicit_producer_verified_value",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_batch_summary_preserves_unverified_for_unbound_manifest",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_batch_summary_missing_manifest_artifact_id_clears_authority",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_batch_summary_manifest_control_failure_clears_authority",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_batch_summary_fails_closed_for_non_bool_producer_verified",
+        "tests/test_workflow_release_control.py::"
+        "test_final_uploaded_byte_gate_preserves_unbound_invalid_plan_manifest",
+        "tests/test_workflow_release_control.py::"
+        "test_final_uploaded_byte_gate_requires_downloaded_path",
+        "tests/test_workflow_release_control.py::"
+        "test_final_uploaded_byte_gate_requires_expected_digest",
+        "tests/test_workflow_release_control.py::"
+        "test_bound_aggregate_manifest_digest_uses_manifest_bytes",
+        "tests/test_workflow_release_control.py::"
+        "test_final_uploaded_byte_gate_validates_admitted_batch_summary",
+        "tests/test_workflow_release_control.py::"
+        "test_final_uploaded_byte_gate_rejects_missing_or_tampered_admitted_bundles",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_batch_request_authority_invalid_before_identity",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_batch_manifest_unreadable_detail",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_batch_manifest_explicit_missing_clears_unbound_authority",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_batch_aggregation_cli_rejects_missing_required_inputs",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_batch_aggregation_malformed_local_execution_manifest_not_missing",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_batch_aggregation_fails_closed_for_fail_closed_plan",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_batch_missing_plan_summary_clears_unbound_authority_failures",
+        "tests/test_workflow_release_control.py::"
+        "test_verify_ci_validation_artifact_boundaries_allows_final_total_cap",
+        "tests/test_workflow_release_control.py::"
+        "test_verify_ci_validation_artifact_boundaries_rejects_extra_under_cap",
+        "tests/test_workflow_release_control.py::"
+        "test_verify_final_uploaded_bytes_rejects_noncanonical_summary",
+        "tests/test_workflow_release_control.py::"
+        "test_final_uploaded_byte_gate_recomputes_manifest_digest",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_batch_aggregate_all_does_not_self_verify_unbound_manifest",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_batch_aggregate_all_false_producer_requires_external_binding",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_batch_aggregate_all_clears_caller_verified_valid_manifest",
+        "tests/test_workflow_release_control.py::"
+        "test_final_uploaded_byte_gate_validates_manifest_with_context",
+        "tests/test_workflow_release_control.py::"
+        "test_official_entry_publish_sets_up_npm_trusted_runtime",
+        "tests/test_workflow_release_control.py::"
+        "test_entry_publish_sets_up_nuget_trusted_publishing",
+        "tests/test_workflow_release_control.py::"
+        "test_buddy_entry_publish_is_dry_run_gated",
+        "tests/test_workflow_release_control.py::"
+        "test_reusable_publish_jobs_are_dry_run_gated",
+        "tests/test_workflow_release_control.py::"
+        "test_skip_only_tag_verification_is_read_only_without_environment",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_invalid_plan_rejects_final_producer_verified_manifest",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_invalid_plan_rejects_self_authorized_final_producer_evidence",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_batch_rejects_blocking_available_malformed_digest",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
 def test_ci_acceptance_matrix_preserves_no_publish_boundaries() -> None:
     """CI acceptance rows validate no-publish boundaries, not release probes."""
     matrix = _ci_acceptance_matrix()
@@ -1084,6 +1242,10 @@ def test_acceptance_matrix_test_nodeids_are_collected_by_gate() -> None:
     ci_gate_nodeids = set(acceptance_gate._collect_test_nodeids(ci_matrix))
     mandatory_nodeids = {
         "tests/test_workflow_release_control.py::"
+        "test_ci_acceptance_matrix_pins_group1_r204_regressions",
+        "tests/test_workflow_release_control.py::"
+        "test_acceptance_gate_pins_group1_r204_gate_only_regressions",
+        "tests/test_workflow_release_control.py::"
         "test_acceptance_gate_rejects_option_like_nodeids_and_uses_separator",
         "tests/test_workflow_release_control.py::"
         "test_ci_acceptance_matrix_fixture_tracks_lld_scenarios",
@@ -1094,7 +1256,33 @@ def test_acceptance_matrix_test_nodeids_are_collected_by_gate() -> None:
         "tests/test_workflow_release_control.py::"
         "test_hk_runs_focused_workflow_release_validation",
         "tests/test_workflow_release_control.py::"
-        "test_official_entry_publish_sets_up_npm_trusted_runtime",
+        "test_final_uploaded_byte_gate_requires_expected_digest",
+        "tests/test_workflow_release_control.py::"
+        "test_bound_aggregate_manifest_digest_uses_manifest_bytes",
+        "tests/test_workflow_release_control.py::"
+        "test_verify_ci_validation_artifact_boundaries_allows_final_total_cap",
+        "tests/test_workflow_release_control.py::"
+        "test_verify_final_uploaded_bytes_rejects_noncanonical_summary",
+        "tests/test_workflow_release_control.py::"
+        "test_final_uploaded_byte_gate_recomputes_manifest_digest",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_batch_aggregate_all_does_not_self_verify_unbound_manifest",
+        "tests/test_workflow_release_control.py::"
+        "test_entry_publish_sets_up_nuget_trusted_publishing",
+        "tests/test_workflow_release_control.py::"
+        "test_buddy_entry_publish_is_dry_run_gated",
+        "tests/test_workflow_release_control.py::"
+        "test_skip_only_tag_verification_is_read_only_without_environment",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_invalid_plan_unbound_manifest_rejects_self_authority_"
+        "diagnostics",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_invalid_plan_rejects_self_authorized_final_producer_evidence",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_batch_rejects_blocking_available_malformed_digest",
     }
 
     assert _matrix_test_nodeids(matrix)
@@ -5034,6 +5222,80 @@ def test_build_variant_sets_up_node_24_for_npm_smoke_builds() -> None:
     assert setup_step["with"]["node-version"] == "24"
 
 
+def test_official_entry_publish_sets_up_npm_trusted_runtime() -> None:
+    """Official entry-hosted npm publishing gets an OIDC-capable npm runtime."""
+    workflow = yaml.safe_load(_workflow("official.yml"))
+    job = workflow["jobs"]["publish-entry"]
+    steps = job["steps"]
+
+    setup_index, setup_step = next(
+        (index, step)
+        for index, step in enumerate(steps)
+        if step.get("name") == "Install Node.js for npm trusted publishing"
+    )
+    support_index, support_step = next(
+        (index, step)
+        for index, step in enumerate(steps)
+        if step.get("name") == "Ensure npm trusted publishing support"
+    )
+    execute_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == "Execute entry-hosted publish node"
+    )
+
+    assert job["permissions"]["id-token"] == "write"
+    assert setup_index < support_index < execute_index
+    assert setup_step["uses"] == "actions/setup-node@v6"
+    assert setup_step["with"]["node-version"] == "24"
+    support_run = support_step["run"]
+    assert "npm install --global npm@^11.5.1" in support_run
+    assert 'npm_version="$(npm --version)"' in support_run
+    assert "const required = [11, 5, 1];" in support_run
+    assert "process.exit(1);" in support_run
+
+
+def test_entry_publish_sets_up_nuget_trusted_publishing() -> None:
+    """Entry-hosted NuGet.org publishing uses pinned trusted login."""
+    for workflow_name in ("official.yml", "buddy.yml"):
+        workflow = yaml.safe_load(_workflow(workflow_name))
+        job = workflow["jobs"]["publish-entry"]
+        steps = job["steps"]
+        detect_index, detect_step = next(
+            (index, step)
+            for index, step in enumerate(steps)
+            if step.get("name") == "Detect NuGet.org trusted publishing"
+        )
+        login_index, login_step = next(
+            (index, step)
+            for index, step in enumerate(steps)
+            if step.get("name") == "NuGet.org trusted publishing login"
+        )
+        execute_index, execute_step = next(
+            (index, step)
+            for index, step in enumerate(steps)
+            if step.get("name") == "Execute entry-hosted publish node"
+        )
+
+        assert job["permissions"]["id-token"] == "write", workflow_name
+        assert detect_index < login_index < execute_index, workflow_name
+        assert detect_step["id"] == "nuget_trusted_publishing", workflow_name
+        assert 'host="$(jq -r ' in detect_step["run"], workflow_name
+        assert 'if [ "$host" = "nuget.org" ]; then' in detect_step["run"]
+        assert 'echo "required=true" >> "$GITHUB_OUTPUT"' in detect_step["run"]
+        assert login_step["if"] == (
+            "${{ steps.nuget_trusted_publishing.outputs.required == 'true' }}"
+        )
+        assert login_step["id"] == "nuget_login", workflow_name
+        assert login_step["uses"] == (
+            "NuGet/login@8d196754b4036150537f80ac539e15c2f1028841"
+        )
+        assert login_step["with"]["user"] == "${{ secrets.NUGET_USER }}"
+        assert execute_step["env"]["NUGET_API_KEY"] == (
+            "${{ steps.nuget_login.outputs.NUGET_API_KEY }}"
+        )
+
+
 def test_workflow_helper_invocations_use_uv_workspace_python() -> None:
     """Release workflows invoke helper with workspace packages available."""
     plain_helper = "\n          python eng/scripts/workflow_release_control.py"
@@ -5185,7 +5447,9 @@ def test_ci_validation_workflow_downloads_only_explicit_artifacts() -> None:
     assert "name: three-ci-validation-*" not in workflow_text
 
 
-def test_ci_validation_workflow_wires_final_aggregate_boundaries() -> None:
+def test_ci_validation_workflow_wires_final_aggregate_boundaries() -> (  # noqa: PLR0915
+    None
+):
     """Final aggregate artifacts are redownloaded and boundary-verified."""
     workflow = yaml.safe_load(_workflow("ci.yml"))
     aggregate = workflow["jobs"]["aggregate-evidence"]
@@ -5220,6 +5484,7 @@ def test_ci_validation_workflow_wires_final_aggregate_boundaries() -> None:
     assert manifest_boundary["id"] == (
         "verify-aggregate-evidence-manifest-producer-boundary"
     )
+    assert "--verify-final-uploaded-bytes" not in manifest_boundary["run"]
     assert summary_write["env"]["AGGREGATE_EVIDENCE_MANIFEST_ARTIFACT_ID"] == (
         "${{ steps.upload-aggregate-evidence-manifest.outputs.artifact-id }}"
     )
@@ -5252,10 +5517,33 @@ def test_ci_validation_workflow_wires_final_aggregate_boundaries() -> None:
     final_run = final_verify["run"]
     assert "--max-prefixed-validation-artifacts 20" in final_run
     assert "--expected-prefixed-validation-artifacts" in final_run
+    assert "--verify-final-uploaded-bytes" in final_run
     assert (
         "summary['budgets']['expected-actual-validation-artifacts']"
         in final_run
     )
+    assert (
+        "Path('.three-ci-validation/final-uploaded/aggregate-evidence-manifest/"
+        "aggregate-evidence-manifest.json')" in final_run
+    )
+    assert (
+        "Path('.three-ci-validation/final-uploaded/aggregate-summary/"
+        "aggregate-summary.json')" in final_run
+    )
+    assert (
+        "Path('.three-ci-validation/aggregate/aggregate-evidence-manifest.json')"
+        not in final_run
+    )
+    assert (
+        "hashlib.sha256(Path('.three-ci-validation/aggregate/"
+        "aggregate-summary.json')" not in final_run
+    )
+    assert "aggregate_manifest_path.is_file()" in final_run
+    assert "aggregate_summary_path.is_file()" in final_run
+    assert "AGGREGATE_EVIDENCE_MANIFEST_ARTIFACT_ID" in final_run
+    assert "AGGREGATE_SUMMARY_ARTIFACT_ID" in final_run
+    assert "else ''" in final_run
+    assert "aggregate_manifest.get('content-digest')" not in final_run
     assert '\\"producer-boundary\\":\\"aggregate-evidence\\"' in final_run
     assert (
         ".three-ci-validation/final-uploaded/aggregate-evidence-manifest/"
@@ -6226,6 +6514,167 @@ def test_ci_validation_workflow_derives_normal_event_ranges() -> None:
     assert '--validation-commit-sha "$validation_commit_sha"' in normalize
     assert '--validation-ref "$validation_ref"' in normalize
     assert '"${range_args[@]}"' in normalize
+
+
+def test_aggregate_cli_accepts_false_producer_verified() -> None:
+    """The aggregate CLI preserves explicit false producer verification."""
+    parser = control._build_parser()
+
+    args = parser.parse_args(
+        [
+            "aggregate-ci-evidence",
+            "--repository",
+            "hcoona/three",
+            "--workflow",
+            "CI Validation",
+            "--run-id",
+            "1",
+            "--run-attempt",
+            "1",
+            "--observed-artifacts-dir",
+            ".",
+            "--aggregate-evidence-manifest-producer-verified",
+            "false",
+            "--aggregate-evidence-manifest-out",
+            "aggregate-evidence-manifest.json",
+            "--aggregate-summary-out",
+            "aggregate-summary.json",
+        ]
+    )
+
+    assert control._ci_aggregate_manifest_producer_verified(args) is False
+
+
+def test_aggregate_cli_defaults_omitted_producer_verified_to_false() -> None:
+    """Omitted aggregate producer verification is fail-closed."""
+    parser = control._build_parser()
+
+    args = parser.parse_args(
+        [
+            "aggregate-ci-evidence",
+            "--repository",
+            "hcoona/three",
+            "--workflow",
+            "CI Validation",
+            "--run-id",
+            "1",
+            "--run-attempt",
+            "1",
+            "--observed-artifacts-dir",
+            ".",
+            "--aggregate-evidence-manifest-out",
+            "aggregate-evidence-manifest.json",
+            "--aggregate-summary-out",
+            "aggregate-summary.json",
+        ]
+    )
+
+    assert control._ci_aggregate_manifest_producer_verified(args) is False
+
+
+def test_aggregate_namespace_non_bool_producer_verified_fails_closed() -> None:
+    """Programmatic non-bool aggregate producer verification fails closed."""
+    args = argparse.Namespace(
+        aggregate_evidence_manifest_producer_verified="true",
+    )
+
+    assert control._ci_aggregate_manifest_producer_verified(args) is False
+
+
+def test_aggregate_cli_rejects_malformed_producer_verified() -> None:
+    """Malformed aggregate producer verification is rejected by argparse."""
+    parser = control._build_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "aggregate-ci-evidence",
+                "--repository",
+                "hcoona/three",
+                "--workflow",
+                "CI Validation",
+                "--run-id",
+                "1",
+                "--run-attempt",
+                "1",
+                "--observed-artifacts-dir",
+                ".",
+                "--aggregate-evidence-manifest-producer-verified",
+                "not-bool",
+                "--aggregate-evidence-manifest-out",
+                "aggregate-evidence-manifest.json",
+                "--aggregate-summary-out",
+                "aggregate-summary.json",
+            ]
+        )
+
+
+def test_aggregate_cli_rejects_missing_producer_verified_value() -> None:
+    """Aggregate producer verification requires an explicit bool value."""
+    parser = control._build_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "aggregate-ci-evidence",
+                "--repository",
+                "hcoona/three",
+                "--workflow",
+                "CI Validation",
+                "--run-id",
+                "1",
+                "--run-attempt",
+                "1",
+                "--observed-artifacts-dir",
+                ".",
+                "--aggregate-evidence-manifest-producer-verified",
+                "--aggregate-evidence-manifest-out",
+                "aggregate-evidence-manifest.json",
+                "--aggregate-summary-out",
+                "aggregate-summary.json",
+            ]
+        )
+
+
+def test_legacy_bool_parser_remains_lenient_for_unrelated_flags(
+    tmp_path: Path,
+) -> None:
+    """Existing non-authority bool flags keep legacy true-or-false behavior."""
+    request_path = tmp_path / "planner-request.json"
+
+    result = control._cmd_write_planner_request(
+        argparse.Namespace(
+            profile="buddy",
+            commit_sha="a" * 40,
+            requested_project_ids_json="[]",
+            force="not-bool",
+            out=str(request_path),
+        )
+    )
+
+    request = json.loads(request_path.read_text(encoding="utf-8"))
+    assert result == 0
+    assert request["request-flags"]["force"] is False
+
+
+def test_ci_validation_workflow_passes_explicit_producer_verified_value() -> (
+    None
+):
+    """Summary aggregation passes true or false producer verification."""
+    aggregate_block = _step_block(
+        _workflow("ci.yml"),
+        "Write aggregate summary",
+    )
+
+    assert (
+        "--aggregate-evidence-manifest-producer-verified\n"
+        '            "$AGGREGATE_EVIDENCE_MANIFEST_PRODUCER_VERIFIED"'
+        in aggregate_block
+    )
+    assert (
+        '[ "$AGGREGATE_EVIDENCE_MANIFEST_PRODUCER_VERIFIED" = "true" ]'
+        not in aggregate_block
+    )
 
 
 @pytest.mark.parametrize(
@@ -7850,6 +8299,7 @@ def test_verify_final_uploaded_bytes_rejects_noncanonical_summary(
                     control._CI_VALIDATION_TOTAL_NAMESPACE_ARTIFACT_CAP
                 ),
                 expected_prefixed_validation_artifacts=1,
+                verify_final_uploaded_bytes=True,
                 expected_artifact=[
                     json.dumps(expected, separators=(",", ":")),
                 ],
@@ -7920,6 +8370,7 @@ def test_final_uploaded_byte_gate_recomputes_manifest_digest(
             job="aggregate-evidence",
         )
         expected_manifest["downloaded-path"] = str(manifest_path)
+        expected_manifest["content-digest"] = canonical_json_digest(manifest)
         expected_summary = _ci_expected_artifact(
             aggregate_summary_ref,
             artifact_id=9902,
@@ -7927,6 +8378,7 @@ def test_final_uploaded_byte_gate_recomputes_manifest_digest(
             job="aggregate-evidence",
         )
         expected_summary["downloaded-path"] = str(summary_path)
+        expected_summary["content-digest"] = canonical_json_digest(summary)
 
         diagnostics = control._ci_verify_expected_final_artifact_uploaded_bytes(
             [expected_manifest, expected_summary],
@@ -7937,6 +8389,264 @@ def test_final_uploaded_byte_gate_recomputes_manifest_digest(
         assert diagnostics
         assert diagnostics[0]["code"] == "workflow-gate-failure"
         assert diagnostics[0]["detail"] == "final-namespace-closure-mismatch"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_final_uploaded_byte_gate_requires_expected_digest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Final aggregate artifacts fail closed without expected digests."""
+    run_id = "25887422010"
+    run_attempt = "1"
+    aggregate_manifest_ref = (
+        control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    scratch = SCRATCH / "final-uploaded-missing-expected-digest"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        scratch.mkdir(parents=True)
+        manifest_path = scratch / "aggregate-evidence-manifest.json"
+        summary_path = scratch / "aggregate-summary.json"
+        manifest = {"artifact-ref": aggregate_manifest_ref, "value": "uploaded"}
+        summary = {"artifact-ref": "summary", "value": "uploaded"}
+        manifest_path.write_bytes(canonical_json_bytes(manifest))
+        summary_path.write_bytes(canonical_json_bytes(summary))
+        monkeypatch.setattr(
+            control,
+            "validate_ci_validation_aggregate_evidence_manifest",
+            lambda *_, **__: None,
+        )
+        monkeypatch.setattr(
+            control,
+            "validate_ci_validation_aggregate_summary",
+            lambda *_, **__: None,
+        )
+        expected_manifest = _ci_expected_artifact(
+            aggregate_manifest_ref,
+            artifact_id=9901,
+            boundary="aggregate-evidence",
+            job="aggregate-evidence",
+        )
+        expected_manifest["downloaded-path"] = str(manifest_path)
+        expected_manifest["content-digest"] = ""
+        aggregate_summary_ref = (
+            control.ci_validation_aggregate_summary_artifact_ref(
+                run_id=run_id,
+                run_attempt=run_attempt,
+            )
+        )
+        expected_summary = _ci_expected_artifact(
+            aggregate_summary_ref,
+            artifact_id=9902,
+            boundary="aggregate-evidence",
+            job="aggregate-evidence",
+        )
+        expected_summary["downloaded-path"] = str(summary_path)
+        expected_summary["content-digest"] = canonical_json_digest(summary)
+
+        diagnostics = control._ci_verify_expected_final_artifact_uploaded_bytes(
+            [expected_manifest, expected_summary],
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+
+        assert diagnostics
+        assert diagnostics[0]["code"] == "workflow-gate-failure"
+        assert (
+            diagnostics[0]["detail"] == "aggregate-evidence-manifest-malformed"
+        )
+
+        expected_manifest["content-digest"] = canonical_json_digest(manifest)
+        expected_summary["content-digest"] = ""
+
+        diagnostics = control._ci_verify_expected_final_artifact_uploaded_bytes(
+            [expected_manifest, expected_summary],
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+
+        assert diagnostics
+        assert diagnostics[0]["code"] == "workflow-gate-failure"
+        assert diagnostics[0]["detail"] == "final-namespace-closure-mismatch"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_final_uploaded_byte_gate_requires_downloaded_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Final aggregate artifacts fail closed without downloaded bytes."""
+    run_id = "25887422010"
+    run_attempt = "1"
+    aggregate_manifest_ref = (
+        control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    monkeypatch.setattr(
+        control,
+        "validate_ci_validation_aggregate_evidence_manifest",
+        lambda *_, **__: None,
+    )
+    expected_manifest = _ci_expected_artifact(
+        aggregate_manifest_ref,
+        artifact_id=9901,
+        boundary="aggregate-evidence",
+        job="aggregate-evidence",
+    )
+    expected_manifest["content-digest"] = "0" * 64
+
+    diagnostics = control._ci_verify_expected_final_artifact_uploaded_bytes(
+        [expected_manifest],
+        run_id=run_id,
+        run_attempt=run_attempt,
+    )
+
+    assert diagnostics
+    assert diagnostics[0]["code"] == "workflow-gate-failure"
+    assert diagnostics[0]["detail"] == "aggregate-evidence-manifest-malformed"
+
+    expected_manifest["downloaded-path"] = ""
+    diagnostics = control._ci_verify_expected_final_artifact_uploaded_bytes(
+        [expected_manifest],
+        run_id=run_id,
+        run_attempt=run_attempt,
+    )
+
+    assert diagnostics
+    assert diagnostics[0]["code"] == "workflow-gate-failure"
+    assert diagnostics[0]["detail"] == "aggregate-evidence-manifest-malformed"
+
+
+def test_bound_aggregate_manifest_digest_uses_manifest_bytes() -> None:
+    """Final aggregate manifest output digest ignores public summary claims."""
+    aggregate_manifest = {"artifact-ref": "manifest", "value": "uploaded"}
+    aggregate_summary = {
+        "aggregate-evidence-manifest": {
+            "artifact-ref": "manifest",
+            "artifact-instance-id": "9901",
+            "content-digest": "",
+        }
+    }
+
+    assert control._ci_bound_aggregate_manifest_digest(
+        aggregate_manifest,
+        aggregate_summary,
+    ) == ci_validation_aggregate_evidence_manifest_payload_digest(
+        aggregate_manifest
+    )
+
+
+def test_final_uploaded_byte_gate_preserves_unbound_invalid_plan_manifest() -> (
+    None
+):
+    """No-authority invalid-plan summaries stay unbound while uploads bind."""
+    scratch = SCRATCH / "final-uploaded-unbound-invalid-plan"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir(parents=True)
+        manifest_path = scratch / "aggregate-evidence-manifest.json"
+        summary_path = scratch / "aggregate-summary.json"
+        output_path = scratch / "outputs.txt"
+        args = argparse.Namespace(
+            repository="hcoona/three",
+            workflow="CI Validation",
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+            plan=str(scratch / "missing-validation-plan.json"),
+            request="",
+            execution_batch_manifest=str(
+                scratch / "missing-execution-batch-manifest.json"
+            ),
+            changed_files_snapshot="",
+            fact_snapshot="",
+            assignments="",
+            observed_artifacts_dir=str(observed_root),
+            expected_request_artifact_id=None,
+            expected_plan_artifact_id=None,
+            expected_changed_files_snapshot_artifact_id=None,
+            expected_fact_snapshot_artifact_id=None,
+            expected_execution_batch_manifest_artifact_id=None,
+            aggregate_evidence_manifest_artifact_id="aggregate-upload-id",
+            aggregate_phase="evidence",
+            batch_materialization_failed=False,
+            created_at=batch_contracts.CREATED_AT,
+            started_at=batch_contracts.CREATED_AT,
+            aggregate_evidence_manifest_out=str(manifest_path),
+            aggregate_summary_out=str(summary_path),
+            github_output=str(output_path),
+        )
+        assert control._cmd_aggregate_ci_evidence(args) == 0
+        args.aggregate_phase = "summary"
+        assert control._cmd_aggregate_ci_evidence(args) == 1
+        aggregate_manifest = json.loads(
+            manifest_path.read_text(encoding="utf-8")
+        )
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        validate_ci_validation_aggregate_evidence_manifest(aggregate_manifest)
+        validate_ci_validation_aggregate_summary(summary)
+        assert control._ci_uploaded_summary_has_unbound_invalid_plan_manifest(
+            summary
+        )
+
+        manifest_ref = (
+            control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+                run_id=batch_contracts.RUN_ID,
+                run_attempt=batch_contracts.RUN_ATTEMPT,
+            )
+        )
+        summary_ref = control.ci_validation_aggregate_summary_artifact_ref(
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        expected_manifest = _ci_expected_artifact(
+            manifest_ref,
+            artifact_id="aggregate-upload-id",
+            boundary="aggregate-evidence",
+            job="aggregate-evidence",
+        )
+        expected_manifest["downloaded-path"] = str(manifest_path)
+        expected_manifest["content-digest"] = canonical_json_digest(
+            aggregate_manifest
+        )
+        expected_summary = _ci_expected_artifact(
+            summary_ref,
+            artifact_id="summary-upload-id",
+            boundary="aggregate-evidence",
+            job="aggregate-evidence",
+        )
+        expected_summary["downloaded-path"] = str(summary_path)
+        expected_summary["content-digest"] = canonical_json_digest(summary)
+
+        diagnostics = control._ci_verify_expected_final_artifact_uploaded_bytes(
+            [expected_manifest, expected_summary],
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+
+        assert diagnostics == []
+
+        tampered_manifest = dict(aggregate_manifest)
+        tampered_manifest["created-at"] = "2024-01-01T00:00:01Z"
+        manifest_path.write_bytes(canonical_json_bytes(tampered_manifest))
+
+        diagnostics = control._ci_verify_expected_final_artifact_uploaded_bytes(
+            [expected_manifest, expected_summary],
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+
+        assert diagnostics
+        assert diagnostics[0]["code"] == "workflow-gate-failure"
+        assert (
+            diagnostics[0]["detail"] == "aggregate-evidence-manifest-malformed"
+        )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -8001,6 +8711,180 @@ def test_final_uploaded_byte_gate_validates_manifest_with_context(
         assert captured["changed_files_snapshot"] is changed_files_snapshot
         assert captured["fact_snapshot"] is fact_snapshot
         assert captured["execution_batch_manifest"] is execution_batch_manifest
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _final_uploaded_admitted_batch_fixture(
+    scratch: Path,
+) -> dict[str, object]:
+    observed_root = scratch / "observed"
+    uploaded_root = scratch / "uploaded"
+    observed_root.mkdir(parents=True)
+    uploaded_root.mkdir()
+    plan, execution_batch_manifest = _ci_batch_contract_plan_and_manifest()
+    batches = {
+        cast("str", batch["batch-id"]): batch
+        for batch in cast(
+            "list[dict[str, object]]",
+            execution_batch_manifest["batches"],
+        )
+    }
+    for row in _ci_batch_matrix_rows(plan, execution_batch_manifest):
+        batch_id = cast(
+            "str",
+            cast("dict[str, object]", row["identity-matrix"])["batch-id"],
+        )
+        selector = cast(
+            "list[dict[str, object]]",
+            batches[batch_id]["ordered-selectors"],
+        )[0]
+        bundle = _write_ci_batch_bundle(
+            scratch,
+            plan,
+            execution_batch_manifest,
+            row,
+            [
+                _ci_success_validation_result(
+                    plan,
+                    cast("str", selector["work-group-id"]),
+                )
+            ],
+        )
+        _stage_ci_batch_bundle_artifact(observed_root, bundle)
+    evidence_result, aggregate_manifest, _evidence_summary = (
+        _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            execution_batch_manifest,
+            observed_root,
+            aggregate_phase="evidence",
+        )
+    )
+    result, summary_manifest, summary = _aggregate_ci_batch_evidence(
+        scratch,
+        plan,
+        execution_batch_manifest,
+        observed_root,
+        aggregate_phase="summary",
+        aggregate_evidence_manifest_producer_verified=True,
+    )
+    assert evidence_result == 0
+    assert result == 0
+    assert summary_manifest == aggregate_manifest
+    manifest_path = uploaded_root / "aggregate-evidence-manifest.json"
+    summary_path = uploaded_root / "aggregate-summary.json"
+    manifest_path.write_bytes(canonical_json_bytes(aggregate_manifest))
+    summary_path.write_bytes(canonical_json_bytes(summary))
+    manifest_ref = (
+        control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+    )
+    summary_ref = control.ci_validation_aggregate_summary_artifact_ref(
+        run_id=batch_contracts.RUN_ID,
+        run_attempt=batch_contracts.RUN_ATTEMPT,
+    )
+    expected_manifest = _ci_expected_artifact(
+        manifest_ref,
+        artifact_id=9901,
+        boundary="aggregate-evidence",
+        job="aggregate-evidence",
+    )
+    expected_manifest["downloaded-path"] = str(manifest_path)
+    expected_manifest["content-digest"] = canonical_json_digest(
+        aggregate_manifest
+    )
+    expected_summary = _ci_expected_artifact(
+        summary_ref,
+        artifact_id=9902,
+        boundary="aggregate-evidence",
+        job="aggregate-evidence",
+    )
+    expected_summary["downloaded-path"] = str(summary_path)
+    expected_summary["content-digest"] = canonical_json_digest(summary)
+    return {
+        "observed_root": observed_root,
+        "plan": plan,
+        "execution_batch_manifest": execution_batch_manifest,
+        "expected_artifacts": [expected_manifest, expected_summary],
+        "context": batch_contracts.authorizing_context_kwargs(),
+    }
+
+
+def _verify_final_uploaded_batch_fixture(
+    fixture: Mapping[str, object],
+    *,
+    observed_artifacts_dir: str,
+) -> list[Mapping[str, object]]:
+    context = cast("Mapping[str, object]", fixture["context"])
+    return control._ci_verify_expected_final_artifact_uploaded_bytes(
+        cast("list[Mapping[str, object]]", fixture["expected_artifacts"]),
+        run_id=batch_contracts.RUN_ID,
+        run_attempt=batch_contracts.RUN_ATTEMPT,
+        request=cast("dict[str, object]", context["request"]),
+        plan=cast("dict[str, object]", fixture["plan"]),
+        changed_files_snapshot=cast(
+            "dict[str, object]",
+            context["changed_files_snapshot"],
+        ),
+        fact_snapshot=cast("dict[str, object]", context["fact_snapshot"]),
+        execution_batch_manifest=cast(
+            "dict[str, object]",
+            fixture["execution_batch_manifest"],
+        ),
+        observed_artifacts_dir=observed_artifacts_dir,
+    )
+
+
+def test_final_uploaded_byte_gate_validates_admitted_batch_summary() -> None:
+    """Final uploaded summary validation uses admitted bundle payloads."""
+    scratch = SCRATCH / "final-uploaded-admitted-batch-summary"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        fixture = _final_uploaded_admitted_batch_fixture(scratch)
+
+        diagnostics = _verify_final_uploaded_batch_fixture(
+            fixture,
+            observed_artifacts_dir=str(fixture["observed_root"]),
+        )
+
+        assert diagnostics == []
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize("tamper_bundle", [False, True])
+def test_final_uploaded_byte_gate_rejects_missing_or_tampered_admitted_bundles(
+    tamper_bundle: bool,
+) -> None:
+    """Final uploaded summary validation fails closed without valid bundles."""
+    scratch = SCRATCH / (
+        "final-uploaded-admitted-batch-summary-tampered"
+        if tamper_bundle
+        else "final-uploaded-admitted-batch-summary-missing"
+    )
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        fixture = _final_uploaded_admitted_batch_fixture(scratch)
+        observed_root = cast("Path", fixture["observed_root"])
+        observed_artifacts_dir = ""
+        if tamper_bundle:
+            observed_artifacts_dir = str(observed_root)
+            bundle_paths = observed_root.glob("*/batch-evidence-bundle.json")
+            for bundle_path in bundle_paths:
+                bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+                bundle["artifact-ref"] = "ci-validation/forged/bundle.json"
+                bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+
+        diagnostics = _verify_final_uploaded_batch_fixture(
+            fixture,
+            observed_artifacts_dir=observed_artifacts_dir,
+        )
+
+        assert diagnostics
+        assert diagnostics[0]["detail"] == "final-namespace-closure-mismatch"
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -10039,14 +10923,26 @@ def test_download_ci_validation_observed_artifacts_downloads_batch_metadata(
             "run-id": batch_contracts.RUN_ID,
         }
     ]
+    evidence_result, _evidence_manifest, _evidence_summary = (
+        _aggregate_ci_batch_evidence(
+            tmp_path,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_phase="evidence",
+        )
+    )
     aggregate_result, _aggregate_manifest, summary = (
         _aggregate_ci_batch_evidence(
             tmp_path,
             plan,
             manifest,
             observed_root,
+            aggregate_phase="summary",
+            aggregate_evidence_manifest_producer_verified=True,
         )
     )
+    assert evidence_result == 0
     assert aggregate_result == 0
     assert summary["verdict"] == "passed"
 
@@ -10594,9 +11490,11 @@ def test_skip_only_tag_verification_is_read_only_without_environment() -> None:
     active_block = workflow[active_block_start:verify_block_start]
 
     assert "has-active-github-release != 'true'" in verify_block
+    assert "inputs.dry-run == false" in verify_block
     assert "      contents: read\n" in verify_block
     assert "      contents: write\n" not in verify_block
     assert "has-active-github-release == 'true'" in active_block
+    assert "inputs.dry-run == false" in active_block
     assert "      contents: write\n" in active_block
 
 
@@ -10799,75 +11697,6 @@ def test_buddy_entry_external_oidc_publish_permissions_are_minimal() -> None:
         }
 
 
-def test_official_entry_publish_sets_up_npm_trusted_runtime() -> None:
-    """Official entry-hosted npm publish must not rely on runner defaults."""
-    workflow = yaml.safe_load(_workflow("official.yml"))
-    steps = workflow["jobs"]["publish-entry"]["steps"]
-
-    setup_index, setup_step = next(
-        (index, step)
-        for index, step in enumerate(steps)
-        if step.get("uses") == "actions/setup-node@v6"
-    )
-    guard_index, guard_step = next(
-        (index, step)
-        for index, step in enumerate(steps)
-        if step.get("name") == "Ensure npm trusted publishing support"
-    )
-    publish_index = next(
-        index
-        for index, step in enumerate(steps)
-        if "uv run three-workflow-release-publish publish"
-        in str(step.get("run", ""))
-    )
-
-    assert setup_index < guard_index < publish_index
-    assert setup_step["with"]["node-version"] == "24"
-    guard_run = guard_step["run"]
-    assert "npm install --global npm@^11.5.1" in guard_run
-    assert "const required = [11, 5, 1];" in guard_run
-    assert "process.exit(1);" in guard_run
-
-
-def test_entry_publish_sets_up_nuget_trusted_publishing() -> None:
-    """Entry-hosted NuGet.org publish must use NuGet trusted publishing."""
-    for workflow_name in ("official.yml", "buddy.yml"):
-        workflow = yaml.safe_load(_workflow(workflow_name))
-        steps = workflow["jobs"]["publish-entry"]["steps"]
-
-        detect_index, detect_step = next(
-            (index, step)
-            for index, step in enumerate(steps)
-            if step.get("name") == "Detect NuGet.org trusted publishing"
-        )
-        login_index, login_step = next(
-            (index, step)
-            for index, step in enumerate(steps)
-            if step.get("id") == "nuget_login"
-        )
-        publish_index, publish_step = next(
-            (index, step)
-            for index, step in enumerate(steps)
-            if "uv run three-workflow-release-publish publish"
-            in str(step.get("run", ""))
-        )
-
-        assert detect_index < login_index < publish_index
-        assert "nuget.org" in detect_step["run"]
-        assert login_step["if"] == (
-            "${{ steps.nuget_trusted_publishing.outputs.required == 'true' }}"
-        )
-        assert login_step["name"] == "NuGet.org trusted publishing login"
-        assert (
-            login_step["uses"]
-            == "NuGet/login@8d196754b4036150537f80ac539e15c2f1028841"
-        )
-        assert login_step["with"]["user"] == "${{ secrets.NUGET_USER }}"
-        assert publish_step["env"]["NUGET_API_KEY"] == (
-            "${{ steps.nuget_login.outputs.NUGET_API_KEY }}"
-        )
-
-
 def test_entry_publish_gate_ignores_reusable_publish_result() -> None:
     """Entry-hosted publish can proceed after reusable publish fails."""
     for workflow_name in ("official.yml", "buddy.yml"):
@@ -10892,6 +11721,31 @@ def test_entry_publish_gate_ignores_reusable_publish_result() -> None:
         assert "needs.orchestrate.outputs.build-conclusion == 'skipped'" in gate
         assert "needs.orchestrate.outputs.tag-conclusion == 'success'" in gate
         assert "needs.orchestrate.outputs.tag-conclusion == 'skipped'" in gate
+
+
+def test_buddy_entry_publish_is_dry_run_gated() -> None:
+    """Buddy entry-hosted publish must never run during dry-run."""
+    workflow = yaml.safe_load(_workflow("buddy.yml"))
+    gate = workflow["jobs"]["publish-entry"]["if"]
+
+    assert "inputs.dry-run == false" in gate
+    assert gate.startswith("${{ inputs.dry-run == false && always() && ")
+
+
+def test_reusable_publish_jobs_are_dry_run_gated() -> None:
+    """Reusable publish jobs must never run during dry-run."""
+    workflow = yaml.safe_load(_workflow("release-orchestrate.yml"))
+
+    for job_id in (
+        "publish-reusable-github-release",
+        "publish-reusable-github-packages",
+        "publish-reusable-external-oidc",
+    ):
+        gate = workflow["jobs"][job_id]["if"]
+        assert "inputs.dry-run == false" in gate, job_id
+        assert gate.startswith("${{ inputs.dry-run == false && always() && "), (
+            job_id
+        )
 
 
 def test_reusable_build_caller_grants_artifact_download_permission() -> None:
@@ -11579,6 +12433,9 @@ def _ci_staged_downloader_admissions(
     return admissions
 
 
+_OMIT_AGGREGATE_MANIFEST_PRODUCER_VERIFIED = object()
+
+
 def _aggregate_ci_batch_evidence(  # noqa: C901, PLR0912, PLR0913, PLR0915
     scratch: Path,
     plan: dict[str, object],
@@ -11604,7 +12461,10 @@ def _aggregate_ci_batch_evidence(  # noqa: C901, PLR0912, PLR0913, PLR0915
     started_at: str | None = None,
     created_at: str | None = None,
     write_downloader_observation: bool = True,
-    aggregate_evidence_manifest_producer_verified: bool = True,
+    aggregate_evidence_manifest_producer_verified: bool | object = True,
+    aggregate_evidence_manifest_artifact_id: str | None = (
+        "aggregate-manifest-upload-id"
+    ),
     aggregate_phase: str = "all",
 ) -> tuple[int, dict[str, object], dict[str, object]]:
     context = batch_contracts.authorizing_context_kwargs()
@@ -11743,43 +12603,50 @@ def _aggregate_ci_batch_evidence(  # noqa: C901, PLR0912, PLR0913, PLR0915
             run_artifacts
         )
     try:
+        namespace_kwargs = {
+            "repository": "hcoona/three",
+            "workflow": "CI Validation",
+            "run_id": batch_contracts.RUN_ID,
+            "run_attempt": batch_contracts.RUN_ATTEMPT,
+            "plan": str(plan_path),
+            "request": str(request_path_override or request_path),
+            "execution_batch_manifest": str(
+                manifest_path_override or manifest_path
+            ),
+            "changed_files_snapshot": str(changed_files_path),
+            "fact_snapshot": str(fact_snapshot_path),
+            "observed_artifacts_dir": str(observed_root),
+            "expected_request_artifact_id": expected_request_artifact_id,
+            "expected_plan_artifact_id": expected_plan_artifact_id,
+            "expected_changed_files_snapshot_artifact_id": (
+                expected_changed_files_snapshot_artifact_id
+            ),
+            "expected_fact_snapshot_artifact_id": (
+                expected_fact_snapshot_artifact_id
+            ),
+            "expected_execution_batch_manifest_artifact_id": (
+                expected_execution_batch_manifest_artifact_id
+            ),
+            "aggregate_evidence_manifest_artifact_id": (
+                aggregate_evidence_manifest_artifact_id
+            ),
+            "aggregate_phase": aggregate_phase,
+            "batch_materialization_failed": False,
+            "created_at": created_at or batch_contracts.CREATED_AT,
+            "started_at": started_at or batch_contracts.CREATED_AT,
+            "aggregate_evidence_manifest_out": str(aggregate_manifest_path),
+            "aggregate_summary_out": str(summary_path),
+            "github_output": str(output_path),
+        }
+        if (
+            aggregate_evidence_manifest_producer_verified
+            is not _OMIT_AGGREGATE_MANIFEST_PRODUCER_VERIFIED
+        ):
+            namespace_kwargs[
+                "aggregate_evidence_manifest_producer_verified"
+            ] = aggregate_evidence_manifest_producer_verified
         result = control._cmd_aggregate_ci_evidence(
-            argparse.Namespace(
-                repository="hcoona/three",
-                workflow="CI Validation",
-                run_id=batch_contracts.RUN_ID,
-                run_attempt=batch_contracts.RUN_ATTEMPT,
-                plan=str(plan_path),
-                request=str(request_path_override or request_path),
-                execution_batch_manifest=str(
-                    manifest_path_override or manifest_path
-                ),
-                changed_files_snapshot=str(changed_files_path),
-                fact_snapshot=str(fact_snapshot_path),
-                observed_artifacts_dir=str(observed_root),
-                expected_request_artifact_id=expected_request_artifact_id,
-                expected_plan_artifact_id=expected_plan_artifact_id,
-                expected_changed_files_snapshot_artifact_id=(
-                    expected_changed_files_snapshot_artifact_id
-                ),
-                expected_fact_snapshot_artifact_id=(
-                    expected_fact_snapshot_artifact_id
-                ),
-                expected_execution_batch_manifest_artifact_id=(
-                    expected_execution_batch_manifest_artifact_id
-                ),
-                aggregate_evidence_manifest_artifact_id="aggregate-manifest-upload-id",
-                aggregate_evidence_manifest_producer_verified=(
-                    aggregate_evidence_manifest_producer_verified
-                ),
-                aggregate_phase=aggregate_phase,
-                batch_materialization_failed=False,
-                created_at=created_at or batch_contracts.CREATED_AT,
-                started_at=started_at or batch_contracts.CREATED_AT,
-                aggregate_evidence_manifest_out=str(aggregate_manifest_path),
-                aggregate_summary_out=str(summary_path),
-                github_output=str(output_path),
-            )
+            argparse.Namespace(**namespace_kwargs)
         )
     finally:
         control._github_actions_run_artifacts = original_run_artifacts
@@ -11808,19 +12675,11 @@ def _aggregate_ci_batch_evidence(  # noqa: C901, PLR0912, PLR0913, PLR0915
         ]
         if aggregate_instance_id is not None:
             assert aggregate_instance_id == "aggregate-manifest-upload-id"
-        summary_manifest_digest = cast(
-            "dict[str, object]", summary["aggregate-evidence-manifest"]
-        ).get("content-digest")
-        if isinstance(summary_manifest_digest, str):
-            expected_manifest_digest = summary_manifest_digest
-        else:
-            expected_manifest_digest = ""
-    assert (
-        _github_outputs(output_path)[
-            "aggregate_evidence_manifest_payload_digest"
-        ]
-        == expected_manifest_digest
-    )
+    output_digest = _github_outputs(output_path)[
+        "aggregate_evidence_manifest_payload_digest"
+    ]
+    if result == 0:
+        assert output_digest == expected_manifest_digest
     return result, aggregate_manifest, summary
 
 
@@ -11916,13 +12775,193 @@ def test_ci_batch_aggregation_materialization_missing_fails_closed(
     assert summary["verdict"] == "failed"
     assert summary["reason"]["required-input-artifact-failure"] is True
     assert (
-        summary["aggregate-evidence-manifest"]["artifact-instance-id"]
-        == "aggregate-upload-id"
+        summary["aggregate-evidence-manifest"]["artifact-instance-id"] is None
+    )
+    assert summary["aggregate-evidence-manifest"]["content-digest"] is None
+
+
+@pytest.mark.parametrize("include_aggregate_phase", [True, False])
+def test_ci_batch_aggregate_all_does_not_self_verify_unbound_manifest(
+    tmp_path: Path,
+    include_aggregate_phase: bool,
+) -> None:
+    """Default all-mode summaries cannot verify unbound final manifests."""
+    plan = cast("dict[str, object]", batch_contracts.plan())
+    plan_path = tmp_path / "validation-plan.json"
+    request_path = tmp_path / "ci-validation-request.json"
+    changed_files_path = tmp_path / "changed-files.json"
+    fact_snapshot_path = tmp_path / "fact-snapshot.json"
+    observed_root = tmp_path / "observed-artifacts"
+    aggregate_manifest_path = tmp_path / "aggregate-evidence-manifest.json"
+    summary_path = tmp_path / "aggregate-summary.json"
+    output_path = tmp_path / "outputs.txt"
+    for path, document in (
+        (plan_path, plan),
+        (request_path, batch_contracts.request_document()),
+        (changed_files_path, batch_contracts.changed_files_snapshot_document()),
+        (fact_snapshot_path, batch_contracts.fact_snapshot_document()),
+    ):
+        path.write_text(json.dumps(document), encoding="utf-8")
+    _write_empty_ci_downloader_observation(observed_root)
+
+    namespace_kwargs = {
+        "repository": "hcoona/three",
+        "workflow": "CI Validation",
+        "run_id": batch_contracts.RUN_ID,
+        "run_attempt": batch_contracts.RUN_ATTEMPT,
+        "plan": str(plan_path),
+        "request": str(request_path),
+        "execution_batch_manifest": "",
+        "changed_files_snapshot": str(changed_files_path),
+        "fact_snapshot": str(fact_snapshot_path),
+        "assignments": "",
+        "observed_artifacts_dir": str(observed_root),
+        "expected_request_artifact_id": None,
+        "expected_plan_artifact_id": None,
+        "expected_changed_files_snapshot_artifact_id": None,
+        "expected_fact_snapshot_artifact_id": None,
+        "expected_execution_batch_manifest_artifact_id": "",
+        "aggregate_evidence_manifest_artifact_id": "fake-aggregate-upload-id",
+        "aggregate_evidence_manifest_producer_verified": True,
+        "batch_materialization_failed": True,
+        "created_at": batch_contracts.CREATED_AT,
+        "started_at": batch_contracts.CREATED_AT,
+        "aggregate_evidence_manifest_out": str(aggregate_manifest_path),
+        "aggregate_summary_out": str(summary_path),
+        "github_output": str(output_path),
+    }
+    if include_aggregate_phase:
+        namespace_kwargs["aggregate_phase"] = "all"
+    result = control._cmd_aggregate_ci_evidence(
+        argparse.Namespace(**namespace_kwargs)
     )
 
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    final_manifest = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", summary["final-artifacts"])[
+            "aggregate-evidence-manifest"
+        ],
+    )
+    assert result == 1
+    assert aggregate_manifest_path.exists()
+    assert final_manifest["producer-verified"] is False
+    assert final_manifest["artifact-instance-id"] is None
+    assert final_manifest["content-digest"] is None
 
-def test_ci_batch_missing_manifest_preserves_authority_diagnostics() -> None:
-    """Missing-manifest fallback preserves stale final manifest diagnostics."""
+
+@pytest.mark.parametrize(
+    "manifest_failure",
+    ["missing", "malformed", "unreadable"],
+)
+def test_ci_batch_summary_manifest_control_failure_clears_authority(
+    monkeypatch: pytest.MonkeyPatch,
+    manifest_failure: str,
+) -> None:
+    """Two-phase summaries cannot self-verify failed manifest controls."""
+    scratch = _ci_batch_bundle_scratch(
+        f"summary-manifest-control-failure-{manifest_failure}"
+    )
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        observed_root = scratch / "observed-artifacts"
+        observed_root.mkdir()
+        _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_phase="evidence",
+        )
+
+        kwargs: dict[str, object] = {}
+        if manifest_failure == "missing":
+            kwargs["manifest_path_override"] = (
+                scratch / "missing-execution-batch-manifest.json"
+            )
+        elif manifest_failure == "malformed":
+            kwargs["manifest_text_override"] = "{"
+        else:
+            original_read_json = control._read_json
+
+            def read_json(path: Path) -> dict[str, Any]:
+                if path.name == "aggregate-execution-batch-manifest.json":
+                    raise PermissionError(13, "permission denied", str(path))
+                return original_read_json(path)
+
+            monkeypatch.setattr(control, "_read_json", read_json)
+
+        result, _aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_phase="summary",
+            aggregate_evidence_manifest_producer_verified=True,
+            **kwargs,
+        )
+
+        final_manifest = cast(
+            "dict[str, object]",
+            cast("dict[str, object]", summary["final-artifacts"])[
+                "aggregate-evidence-manifest"
+            ],
+        )
+        assert result == 1
+        assert summary["reason"]["required-input-artifact-failure"] is True
+        assert final_manifest["producer-verified"] is False
+        assert final_manifest["artifact-instance-id"] is None
+        assert final_manifest["content-digest"] is None
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_summary_missing_manifest_artifact_id_clears_authority() -> (
+    None
+):
+    """Missing final manifest artifact identity clears binding authority."""
+    scratch = _ci_batch_bundle_scratch("summary-manifest-missing-artifact-id")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        observed_root = scratch / "observed-artifacts"
+        observed_root.mkdir()
+        _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_phase="evidence",
+        )
+
+        result, _aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_phase="summary",
+            aggregate_evidence_manifest_producer_verified=True,
+            aggregate_evidence_manifest_artifact_id="",
+        )
+
+        final_manifest = cast(
+            "dict[str, object]",
+            cast("dict[str, object]", summary["final-artifacts"])[
+                "aggregate-evidence-manifest"
+            ],
+        )
+        assert result == 1
+        assert summary["reason"]["fail-closed"] is True
+        assert summary["reason"]["final-evidence-failure"] is False
+        assert summary["reason"]["aggregate-summary-without-manifest"] is True
+        assert final_manifest["producer-verified"] is False
+        assert final_manifest["artifact-instance-id"] is None
+        assert final_manifest["content-digest"] is None
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_missing_manifest_uses_missing_manifest_authority() -> None:
+    """Missing manifests do not treat stale diagnostics as authority."""
     scratch = _ci_batch_bundle_scratch("missing-manifest-authority-diagnostics")
     plan = cast("dict[str, object]", batch_contracts.plan())
     try:
@@ -11995,11 +13034,23 @@ def test_ci_batch_missing_manifest_preserves_authority_diagnostics() -> None:
             final_artifacts["aggregate-evidence-manifest"]["producer-verified"]
             is False
         )
-        assert reason["final-evidence-failure"] is True
+        assert (
+            final_artifacts["aggregate-evidence-manifest"][
+                "authority-diagnostics"
+            ]
+            == []
+        )
+        assert reason["final-evidence-failure"] is False
+        assert reason["final-producer-unverified"] is False
+        assert reason["aggregate-summary-without-manifest"] is True
         assert any(
-            failure["kind"] == "final-evidence-failure"
+            failure["kind"] == "aggregate-summary-without-manifest"
             and cast("dict[str, object]", failure["diagnostic"])["detail"]
-            == "aggregate-evidence-manifest-digest-mismatch"
+            == "aggregate-summary-without-manifest"
+            for failure in failures
+        )
+        assert not any(
+            failure["kind"] == "final-producer-unverified"
             for failure in failures
         )
     finally:
@@ -12083,6 +13134,135 @@ def test_ci_batch_manifest_unreadable_detail(
         assert result == 1
         assert execution_input["admissibility"] == "inadmissible"
         assert diagnostics[0]["detail"] == "execution-batch-manifest-unreadable"
+        final_manifest = cast(
+            "dict[str, object]",
+            cast("dict[str, object]", _summary["final-artifacts"])[
+                "aggregate-evidence-manifest"
+            ],
+        )
+        assert final_manifest["producer-verified"] is False
+        assert final_manifest["artifact-instance-id"] is None
+        assert final_manifest["content-digest"] is None
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_manifest_explicit_missing_clears_unbound_authority() -> None:
+    """Explicit missing manifest paths cannot retain producer authority."""
+    scratch = _ci_batch_bundle_scratch("manifest-explicit-missing-authority")
+    try:
+        plan, _manifest = _ci_batch_contract_plan_and_manifest()
+        context = batch_contracts.authorizing_context_kwargs()
+        plan_path = scratch / "aggregate-plan.json"
+        request_path = scratch / "aggregate-request.json"
+        changed_files_path = scratch / "aggregate-changed-files.json"
+        fact_snapshot_path = scratch / "aggregate-fact-snapshot.json"
+        missing_manifest_path = (
+            scratch / "missing-execution-batch-manifest.json"
+        )
+        aggregate_manifest_path = scratch / "aggregate-evidence-manifest.json"
+        summary_path = scratch / "aggregate-summary.json"
+        output_path = scratch / "aggregate-outputs.txt"
+        observed_root = scratch / "observed-artifacts"
+        observed_root.mkdir()
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        request_path.write_text(
+            json.dumps(context["request"]),
+            encoding="utf-8",
+        )
+        changed_files_path.write_text(
+            json.dumps(context["changed_files_snapshot"]),
+            encoding="utf-8",
+        )
+        fact_snapshot_path.write_text(
+            json.dumps(context["fact_snapshot"]),
+            encoding="utf-8",
+        )
+        original_run_artifacts = control._github_actions_run_artifacts
+        control._github_actions_run_artifacts = lambda **_kwargs: [
+            _ci_artifact_metadata(
+                control.ci_validation_request_artifact_ref(
+                    run_id=batch_contracts.RUN_ID,
+                    run_attempt=batch_contracts.RUN_ATTEMPT,
+                ),
+                artifact_id=7001,
+            ),
+            _ci_artifact_metadata(
+                control.ci_validation_plan_artifact_ref(
+                    run_id=batch_contracts.RUN_ID,
+                    run_attempt=batch_contracts.RUN_ATTEMPT,
+                ),
+                artifact_id=8001,
+            ),
+            _ci_artifact_metadata(
+                control.ci_validation_changed_files_snapshot_artifact_ref(
+                    run_id=batch_contracts.RUN_ID,
+                    run_attempt=batch_contracts.RUN_ATTEMPT,
+                ),
+                artifact_id=7101,
+            ),
+            _ci_artifact_metadata(
+                control.ci_validation_fact_snapshot_artifact_ref(
+                    run_id=batch_contracts.RUN_ID,
+                    run_attempt=batch_contracts.RUN_ATTEMPT,
+                ),
+                artifact_id=7201,
+            ),
+            _ci_artifact_metadata(
+                control.ci_validation_execution_batch_manifest_artifact_ref(
+                    run_id=batch_contracts.RUN_ID,
+                    run_attempt=batch_contracts.RUN_ATTEMPT,
+                ),
+                artifact_id=9001,
+            ),
+        ]
+
+        try:
+            result = control._cmd_aggregate_ci_evidence(
+                argparse.Namespace(
+                    repository="hcoona/three",
+                    workflow="CI Validation",
+                    run_id=batch_contracts.RUN_ID,
+                    run_attempt=batch_contracts.RUN_ATTEMPT,
+                    plan=str(plan_path),
+                    request=str(request_path),
+                    execution_batch_manifest=str(missing_manifest_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    assignments="",
+                    observed_artifacts_dir=str(observed_root),
+                    expected_request_artifact_id="7001",
+                    expected_plan_artifact_id="8001",
+                    expected_changed_files_snapshot_artifact_id="7101",
+                    expected_fact_snapshot_artifact_id="7201",
+                    expected_execution_batch_manifest_artifact_id="9001",
+                    aggregate_evidence_manifest_artifact_id="aggregate-upload-id",
+                    aggregate_evidence_manifest_producer_verified=True,
+                    aggregate_phase="all",
+                    batch_materialization_failed=False,
+                    created_at=batch_contracts.CREATED_AT,
+                    started_at=batch_contracts.CREATED_AT,
+                    aggregate_evidence_manifest_out=str(
+                        aggregate_manifest_path
+                    ),
+                    aggregate_summary_out=str(summary_path),
+                    github_output=str(output_path),
+                )
+            )
+        finally:
+            control._github_actions_run_artifacts = original_run_artifacts
+
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        final_manifest = cast(
+            "dict[str, object]",
+            cast("dict[str, object]", summary["final-artifacts"])[
+                "aggregate-evidence-manifest"
+            ],
+        )
+        assert result == 1
+        assert final_manifest["producer-verified"] is False
+        assert final_manifest["artifact-instance-id"] is None
+        assert final_manifest["content-digest"] is None
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -12115,7 +13295,7 @@ def test_ci_batch_aggregation_writes_final_outputs_as_canonical_json() -> None:
 
 
 def test_ci_batch_summary_uses_preserved_evidence_manifest_bytes() -> None:
-    """Summary digest binds to the preserved evidence-phase manifest bytes."""
+    """Tampered preserved evidence-phase manifest bytes do not bind summary."""
     scratch = _ci_batch_bundle_scratch("batch-aggregation-preserved-manifest")
     try:
         observed_root = scratch / "observed"
@@ -12151,19 +13331,24 @@ def test_ci_batch_summary_uses_preserved_evidence_manifest_bytes() -> None:
         assert result == 1
         assert aggregate_manifest_path.read_bytes() == preserved_bytes
         assert (
+            final_artifacts["aggregate-evidence-manifest"][
+                "artifact-instance-id"
+            ]
+            is None
+        )
+        assert (
             final_artifacts["aggregate-evidence-manifest"]["content-digest"]
-            == hashlib.sha256(preserved_bytes).hexdigest()
+            is None
         )
+        assert (
+            final_artifacts["aggregate-evidence-manifest"]["producer-verified"]
+            is False
+        )
+        assert summary["reason"]["aggregate-summary-without-manifest"] is True
         assert any(
-            failure["kind"] == "final-producer-unverified"
+            failure["kind"] == "aggregate-summary-without-manifest"
             and cast("dict[str, object]", failure["diagnostic"])["detail"]
-            == "final-producer-unverified"
-            for failure in failures
-        )
-        assert not any(
-            failure["kind"] == "final-evidence-failure"
-            and cast("dict[str, object]", failure["diagnostic"])["detail"]
-            == "final-producer-unverified"
+            == "aggregate-summary-without-manifest"
             for failure in failures
         )
     finally:
@@ -12266,10 +13451,11 @@ def test_ci_batch_summary_falls_back_for_non_rfc3339_preserved_created_at() -> (
         assert summary["verdict"] == "failed"
         assert summary["created-at"] == aggregate_completed_at
         assert budgets["aggregate-duration-seconds"] == 99
+        assert summary["reason"]["aggregate-summary-without-manifest"] is True
         assert any(
-            failure["kind"] == "final-evidence-failure"
+            failure["kind"] == "aggregate-summary-without-manifest"
             and cast("dict[str, object]", failure["diagnostic"])["detail"]
-            == "aggregate-evidence-manifest-malformed"
+            == "aggregate-summary-without-manifest"
             for failure in failures
         )
     finally:
@@ -12328,30 +13514,30 @@ def test_ci_batch_summary_ignores_invalid_started_at_for_envelopes() -> None:
         (
             "noncanonical",
             "pretty",
-            "aggregate-evidence-manifest-non-canonical",
-            "raw",
-            "aggregate-manifest-upload-id",
+            "aggregate-summary-without-manifest",
+            None,
+            None,
         ),
         (
             "malformed",
             "{",
-            "aggregate-evidence-manifest-malformed",
-            "raw",
-            "aggregate-manifest-upload-id",
+            "aggregate-summary-without-manifest",
+            None,
+            None,
         ),
         (
             "canonical-malformed",
             "{}",
-            "aggregate-evidence-manifest-malformed",
-            "raw",
-            "aggregate-manifest-upload-id",
+            "aggregate-summary-without-manifest",
+            None,
+            None,
         ),
         (
             "wrong-artifact-ref",
             "wrong-artifact-ref",
-            "aggregate-evidence-manifest-malformed",
-            "raw",
-            "aggregate-manifest-upload-id",
+            "aggregate-summary-without-manifest",
+            None,
+            None,
         ),
         ("missing", None, "aggregate-summary-without-manifest", None, None),
     ],
@@ -12450,7 +13636,7 @@ def test_ci_batch_summary_fails_closed_for_invalid_preserved_manifest(  # noqa: 
             assert reason["aggregate-summary-without-manifest"] is True
             expected_kind = "aggregate-summary-without-manifest"
         else:
-            assert reason["fail-closed"] is False
+            assert reason["fail-closed"] is True
             assert reason["final-evidence-failure"] is True
             expected_kind = "final-evidence-failure"
         assert any(
@@ -12460,14 +13646,14 @@ def test_ci_batch_summary_fails_closed_for_invalid_preserved_manifest(  # noqa: 
             for failure in failures
         )
         if rewrite is None:
-            assert "aggregate-evidence-manifest-missing" in {
-                diagnostic["detail"] for diagnostic in authority_diagnostics
-            }
+            assert authority_diagnostics == []
             assert not aggregate_manifest_path.exists()
-        else:
+        elif expected_detail != "aggregate-summary-without-manifest":
             assert expected_detail in {
                 diagnostic["detail"] for diagnostic in authority_diagnostics
             }
+        else:
+            assert authority_diagnostics == []
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -12504,7 +13690,7 @@ def test_ci_batch_summary_fails_closed_for_unverified_manifest() -> None:
         assert result == 1
         assert summary["verdict"] == "failed"
         assert reason["final-producer-unverified"] is True
-        assert reason["final-evidence-failure"] is False
+        assert reason["final-evidence-failure"] is True
         assert (
             final_artifacts["aggregate-evidence-manifest"]["producer-verified"]
             is False
@@ -12515,9 +13701,268 @@ def test_ci_batch_summary_fails_closed_for_unverified_manifest() -> None:
             == "final-producer-unverified"
             for failure in failures
         )
-        assert not any(
-            failure["kind"] == "final-evidence-failure" for failure in failures
+        assert any(
+            failure["kind"] == "final-evidence-failure"
+            and cast("dict[str, object]", failure["diagnostic"])["detail"]
+            == "final-producer-unverified"
+            for failure in failures
         )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_summary_fails_closed_for_non_bool_producer_verified() -> None:
+    """Summary treats non-bool namespace producer verification as unverified."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-non-bool-final")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+
+        _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_phase="evidence",
+        )
+        result, _aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_evidence_manifest_producer_verified="true",
+            aggregate_phase="summary",
+        )
+
+        reason = cast("dict[str, object]", summary["reason"])
+        final_artifacts = cast(
+            "dict[str, dict[str, object]]", summary["final-artifacts"]
+        )
+        final_manifest = final_artifacts["aggregate-evidence-manifest"]
+        failures = cast("list[dict[str, object]]", summary["failures"])
+        diagnostics = cast("list[dict[str, object]]", summary["diagnostics"])
+        assert result == 1
+        assert summary["verdict"] == "failed"
+        assert final_manifest["producer-verified"] is False
+        assert reason["final-producer-unverified"] is True
+        assert reason["final-evidence-failure"] is True
+        assert any(
+            failure["kind"] == "final-producer-unverified"
+            and cast("dict[str, object]", failure["diagnostic"])["detail"]
+            == "final-producer-unverified"
+            for failure in failures
+        )
+        assert any(
+            failure["kind"] == "final-evidence-failure"
+            and cast("dict[str, object]", failure["diagnostic"])["detail"]
+            == "final-producer-unverified"
+            for failure in failures
+        )
+        assert {
+            diagnostic["diagnostic-id"]
+            for diagnostic in diagnostics
+            if diagnostic["detail"] == "final-producer-unverified"
+        } == {
+            "final-evidence-failure/final-producer-unverified",
+            "final-producer-unverified",
+        }
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_aggregate_all_false_producer_requires_external_binding() -> (
+    None
+):
+    """All-phase aggregation cannot self-bind a locally recomputed manifest."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-all-false-final")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        batches = {
+            cast("str", batch["batch-id"]): batch
+            for batch in cast("list[dict[str, object]]", manifest["batches"])
+        }
+        for row in _ci_batch_matrix_rows(plan, manifest):
+            batch_id = cast(
+                "str",
+                cast("dict[str, object]", row["identity-matrix"])["batch-id"],
+            )
+            selector = cast(
+                "list[dict[str, object]]",
+                batches[batch_id]["ordered-selectors"],
+            )[0]
+            bundle = _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [
+                    _ci_success_validation_result(
+                        plan,
+                        cast("str", selector["work-group-id"]),
+                    )
+                ],
+            )
+            _stage_ci_batch_bundle_artifact(observed_root, bundle)
+
+        result, _aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_evidence_manifest_producer_verified=False,
+            aggregate_phase="all",
+        )
+
+        reason = cast("dict[str, object]", summary["reason"])
+        failures = cast("list[dict[str, object]]", summary["failures"])
+        final_manifest = cast(
+            "dict[str, object]",
+            cast("dict[str, object]", summary["final-artifacts"])[
+                "aggregate-evidence-manifest"
+            ],
+        )
+        assert result == 1
+        assert summary["verdict"] == "failed"
+        assert final_manifest["producer-verified"] is False
+        assert final_manifest["artifact-instance-id"] is None
+        assert final_manifest["content-digest"] is None
+        assert reason["final-producer-unverified"] is True
+        assert reason["final-evidence-failure"] is True
+        assert any(
+            failure["kind"] == "final-producer-unverified"
+            and cast("dict[str, object]", failure["diagnostic"])["detail"]
+            == "final-producer-unverified"
+            for failure in failures
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_detail"),
+    [
+        pytest.param(
+            "missing",
+            "aggregate-summary-without-manifest",
+            id="missing-preserved-manifest",
+        ),
+        pytest.param(
+            "unreadable",
+            "aggregate-evidence-manifest-unreadable",
+            id="unreadable-preserved-manifest",
+        ),
+        pytest.param(
+            "unbound",
+            "aggregate-evidence-manifest-malformed",
+            id="unbound-preserved-manifest",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "producer_verified",
+    [
+        pytest.param(False, id="explicit-false"),
+        pytest.param(
+            _OMIT_AGGREGATE_MANIFEST_PRODUCER_VERIFIED,
+            id="omitted-default-false",
+        ),
+    ],
+)
+def test_ci_batch_summary_preserves_unverified_for_unbound_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    expected_detail: str,
+    producer_verified: bool | object,
+) -> None:
+    """Unbound summary evidence cannot upgrade a false producer default."""
+    scratch = _ci_batch_bundle_scratch(
+        f"batch-aggregation-unverified-{case}-manifest",
+    )
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+
+        _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_phase="evidence",
+        )
+        aggregate_manifest_path = scratch / "aggregate-evidence-manifest.json"
+        forged_artifact_ref = (
+            "ci-validation/aggregate/forged-run/1/"
+            "aggregate-evidence-manifest.json"
+        )
+        if case == "missing":
+            aggregate_manifest_path.unlink()
+        elif case == "unreadable":
+            original_read_bytes = Path.read_bytes
+
+            def read_bytes(path: Path) -> bytes:
+                if path == aggregate_manifest_path:
+                    raise PermissionError(13, "permission denied", str(path))
+                return original_read_bytes(path)
+
+            monkeypatch.setattr(Path, "read_bytes", read_bytes)
+        else:
+            preserved = json.loads(
+                aggregate_manifest_path.read_text(encoding="utf-8")
+            )
+            preserved["artifact-ref"] = forged_artifact_ref
+            aggregate_manifest_path.write_bytes(canonical_json_bytes(preserved))
+
+        result, _aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_evidence_manifest_producer_verified=producer_verified,
+            aggregate_phase="summary",
+        )
+
+        reason = cast("dict[str, object]", summary["reason"])
+        final_artifacts = cast(
+            "dict[str, dict[str, object]]", summary["final-artifacts"]
+        )
+        final_manifest = final_artifacts["aggregate-evidence-manifest"]
+        failures = cast("list[dict[str, object]]", summary["failures"])
+        diagnostics = [
+            cast("dict[str, object]", failure["diagnostic"])
+            for failure in failures
+            if isinstance(failure.get("diagnostic"), dict)
+        ]
+        assert result == 1
+        assert summary["verdict"] == "failed"
+        assert final_manifest["producer-verified"] is False
+        assert final_manifest["artifact-ref"] != forged_artifact_ref
+        assert final_manifest["artifact-ref"] == (
+            control.ci_validation_aggregate_evidence_manifest_artifact_ref(
+                run_id=batch_contracts.RUN_ID,
+                run_attempt=batch_contracts.RUN_ATTEMPT,
+            )
+        )
+        assert final_manifest["artifact-instance-id"] is None
+        assert final_manifest["content-digest"] is None
+        if case == "missing":
+            assert reason["final-producer-unverified"] is True
+            assert reason["final-evidence-failure"] is True
+        else:
+            assert reason["final-producer-unverified"] is False
+            assert reason["final-evidence-failure"] is False
+        has_final_producer_unverified = any(
+            failure["kind"] == "final-producer-unverified"
+            for failure in failures
+        )
+        assert has_final_producer_unverified is (case == "missing")
+        assert {diagnostic["detail"] for diagnostic in diagnostics} & {
+            expected_detail,
+            "aggregate-summary-without-manifest",
+        }
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -12580,6 +14025,7 @@ def test_ci_batch_missing_execution_summary_falls_back_for_malformed_manifest() 
         aggregate_manifest_path.write_bytes(canonical_json_bytes({}))
 
         args.aggregate_phase = "summary"
+        args.aggregate_evidence_manifest_producer_verified = True
         result = control._cmd_aggregate_ci_evidence(args)
 
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -12596,10 +14042,15 @@ def test_ci_batch_missing_execution_summary_falls_back_for_malformed_manifest() 
             run_id=batch_contracts.RUN_ID,
             run_attempt=batch_contracts.RUN_ATTEMPT,
         )
+        assert (
+            final_artifacts["aggregate-evidence-manifest"]["producer-verified"]
+            is False
+        )
+        assert summary["reason"]["aggregate-summary-without-manifest"] is True
         assert any(
-            failure["kind"] == "final-evidence-failure"
+            failure["kind"] == "aggregate-summary-without-manifest"
             and cast("dict[str, object]", failure["diagnostic"])["detail"]
-            == "aggregate-evidence-manifest-malformed"
+            == "aggregate-summary-without-manifest"
             for failure in failures
         )
     finally:
@@ -12676,20 +14127,25 @@ def test_ci_batch_aggregation_missing_plan_writes_invalid_g5_artifacts() -> (
         assert summary["reason"]["invalid-plan"] is True
         assert (
             summary["aggregate-evidence-manifest"]["artifact-instance-id"]
-            == "aggregate-upload-id"
+            is None
         )
-        assert summary["aggregate-evidence-manifest"][
-            "content-digest"
-        ] == control.ci_validation_aggregate_evidence_manifest_payload_digest(
-            aggregate_manifest
-        )
-        assert final_manifest["producer-verified"] is True
+        assert summary["aggregate-evidence-manifest"]["content-digest"] is None
+        assert final_manifest["artifact-instance-id"] is None
+        assert final_manifest["content-digest"] is None
+        assert final_manifest["producer-verified"] is False
         assert final_manifest["authority-diagnostics"] == []
         failures = cast("list[dict[str, object]]", summary["failures"])
+        reason = cast("dict[str, object]", summary["reason"])
+        assert reason["final-producer-unverified"] is False
+        assert reason["final-evidence-failure"] is False
         assert any(
             failure["kind"] == "invalid-plan"
             and cast("dict[str, object]", failure["diagnostic"])["detail"]
             == "plan-missing"
+            for failure in failures
+        )
+        assert not any(
+            failure["kind"] == "final-producer-unverified"
             for failure in failures
         )
     finally:
@@ -12763,7 +14219,7 @@ def test_ci_batch_invalid_plan_closes_authority() -> None:  # noqa: PLR0915
         assert plan_input["admissibility"] == "inadmissible"
         assert plan_input["content-digest"] == invalid_plan["plan-digest"]
         assert plan_diagnostics[0]["code"] == "invalid-plan"
-        assert plan_diagnostics[0]["detail"] == "structurally-invalid"
+        assert plan_diagnostics[0]["detail"] == "malformed-plan"
         assert execution_input["admissibility"] == "missing"
         assert execution_input["artifact-instance-id"] is None
         assert execution_input["content-digest"] is None
@@ -12782,24 +14238,20 @@ def test_ci_batch_invalid_plan_closes_authority() -> None:  # noqa: PLR0915
 
 
 @pytest.mark.parametrize(
-    ("case", "rewrite", "expected_detail", "expected_digest"),
+    ("case", "rewrite"),
     [
-        ("missing", None, "aggregate-evidence-manifest-missing", None),
+        ("missing", None),
         (
             "malformed",
             "{",
-            "aggregate-evidence-manifest-malformed",
-            "raw",
         ),
     ],
 )
-def test_ci_batch_missing_plan_summary_binds_manifest_authority_failures(
+def test_ci_batch_missing_plan_summary_clears_unbound_authority_failures(
     case: str,
     rewrite: str | None,
-    expected_detail: str,
-    expected_digest: str | None,
 ) -> None:
-    """No-plan summary binds preserved final manifest authority failures."""
+    """No-plan summary does not producer-verify unbound final manifests."""
     scratch = _ci_batch_bundle_scratch(
         f"batch-aggregation-missing-plan-{case}-manifest"
     )
@@ -12838,12 +14290,10 @@ def test_ci_batch_missing_plan_summary_binds_manifest_authority_failures(
             github_output=str(output_path),
         )
         assert control._cmd_aggregate_ci_evidence(args) == 0
-        raw_bytes = b""
         if rewrite is None:
             aggregate_manifest_path.unlink()
         else:
-            raw_bytes = rewrite.encode()
-            aggregate_manifest_path.write_bytes(raw_bytes)
+            aggregate_manifest_path.write_text(rewrite, encoding="utf-8")
 
         args.aggregate_phase = "summary"
         result = control._cmd_aggregate_ci_evidence(args)
@@ -12865,32 +14315,69 @@ def test_ci_batch_missing_plan_summary_binds_manifest_authority_failures(
         assert result == 1
         assert reason["invalid-plan"] is True
         assert reason["fail-closed"] is False
-        assert reason["final-evidence-failure"] is True
+        assert reason["final-producer-unverified"] is False
+        assert reason["final-evidence-failure"] is False
         assert final_manifest["producer-verified"] is False
-        if expected_digest == "raw":
-            assert (
-                final_manifest["artifact-instance-id"] == "aggregate-upload-id"
-            )
-            assert (
-                final_manifest["content-digest"]
-                == hashlib.sha256(raw_bytes).hexdigest()
-            )
-        else:
-            assert final_manifest["artifact-instance-id"] is None
-            assert final_manifest["content-digest"] is None
+        assert final_manifest["artifact-instance-id"] is None
+        assert final_manifest["content-digest"] is None
+        if rewrite is None:
             assert not aggregate_manifest_path.exists()
-        assert expected_detail in {
-            diagnostic["detail"] for diagnostic in authority_diagnostics
-        }
-        assert any(
-            failure["kind"] == "final-evidence-failure"
-            and cast("dict[str, object]", failure["diagnostic"])["detail"]
-            == expected_detail
+        else:
+            assert aggregate_manifest_path.exists()
+        assert authority_diagnostics == []
+        assert not any(
+            failure["kind"] == "final-producer-unverified"
             for failure in failures
+        )
+        assert not any(
+            failure["kind"] == "final-evidence-failure" for failure in failures
         )
         assert not any(failure["kind"] == "fail-closed" for failure in failures)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_request_authority_invalid_before_identity() -> None:
+    """Malformed present request authority is invalid, not unproven."""
+    plan, _manifest = _ci_batch_contract_plan_and_manifest()
+    request_ref = control.ci_validation_request_artifact_ref(
+        run_id=batch_contracts.RUN_ID,
+        run_attempt=batch_contracts.RUN_ATTEMPT,
+    )
+    input_artifacts = {
+        "request": {
+            "artifact-ref": request_ref,
+            "artifact-instance-id": None,
+            "content-digest": None,
+            "required": True,
+            "expected-cardinality": 1,
+            "admissibility": "inadmissible",
+            "diagnostics": [
+                control._ci_aggregate_diagnostic(
+                    "request-invalid/schema",
+                    code=control.DiagnosticFamily.REQUEST_INVALID.value,
+                    detail="request-schema-invalid",
+                    message="request is malformed",
+                    source_id=request_ref,
+                    severity=control.DiagnosticSeverity.FAIL_CLOSED.value,
+                    verdict_effect=(
+                        control.DiagnosticVerdictEffect.FAIL_CLOSED.value
+                    ),
+                )
+            ],
+        }
+    }
+
+    authority = control._ci_aggregate_manifest_request_authority_state(
+        argparse.Namespace(
+            run_id=batch_contracts.RUN_ID,
+            run_attempt=batch_contracts.RUN_ATTEMPT,
+        ),
+        input_artifacts,
+        plan=plan,
+    )
+
+    assert authority == "invalid"
 
 
 def test_ci_batch_missing_plan_reports_unverified_manifest_no_fail_closed() -> (
@@ -13000,13 +14487,7 @@ def test_ci_batch_aggregation_invalid_request_writes_g5_outputs(
             expected_run_id=batch_contracts.RUN_ID,
             expected_run_attempt=batch_contracts.RUN_ATTEMPT,
         )
-        validate_ci_validation_aggregate_summary(
-            summary,
-            plan=plan,
-            aggregate_evidence_manifest=aggregate_manifest,
-            expected_run_id=batch_contracts.RUN_ID,
-            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
-        )
+        validate_ci_validation_aggregate_summary(summary)
         request_input = cast(
             "dict[str, object]",
             cast("dict[str, object]", aggregate_manifest["input-artifacts"])[
@@ -13049,22 +14530,22 @@ def test_ci_batch_aggregation_invalid_request_writes_g5_outputs(
             "plan-schema",
             "validation-plan",
             "inadmissible",
-            "schema-invalid",
+            "malformed-plan",
             "8001",
         ),
         (
             "changed-files",
             "changed-files-snapshot",
-            "inadmissible",
+            "not-required",
             "changed-files-snapshot-malformed",
-            "7101",
+            None,
         ),
         (
             "fact",
             "fact-snapshot",
-            "inadmissible",
+            "not-required",
             "fact-snapshot-malformed",
-            "7201",
+            None,
         ),
         (
             "execution-manifest",
@@ -13075,7 +14556,7 @@ def test_ci_batch_aggregation_invalid_request_writes_g5_outputs(
         ),
     ],
 )
-def test_ci_batch_aggregation_malformed_controls_write_g5_outputs(  # noqa: PLR0915
+def test_ci_batch_aggregation_malformed_controls_write_g5_outputs(
     override_name: str,
     expected_input: str,
     expected_admissibility: str,
@@ -13148,13 +14629,7 @@ def test_ci_batch_aggregation_malformed_controls_write_g5_outputs(  # noqa: PLR0
                 expected_run_id=batch_contracts.RUN_ID,
                 expected_run_attempt=batch_contracts.RUN_ATTEMPT,
             )
-            validate_ci_validation_aggregate_summary(
-                summary,
-                plan=plan,
-                aggregate_evidence_manifest=aggregate_manifest,
-                expected_run_id=batch_contracts.RUN_ID,
-                expected_run_attempt=batch_contracts.RUN_ATTEMPT,
-            )
+            validate_ci_validation_aggregate_summary(summary)
         else:
             validate_ci_validation_aggregate_evidence_manifest(
                 aggregate_manifest
@@ -13203,13 +14678,9 @@ def test_ci_batch_aggregation_malformed_controls_write_g5_outputs(  # noqa: PLR0
         if override_name in {"changed-files", "fact"}:
             assert reason["invalid-plan"] is True
             assert reason["fail-closed"] is False
-            assert summary["plan-id"] == plan["plan-id"]
-            assert summary["plan-digest"] == plan["plan-digest"]
-            assert summary["mode"] == plan["mode"]
-            assert summary["validation-tree"] == plan["validation-tree"]
-            expected_range = control._ci_summary_affected_range(plan)
-            assert summary["affected-range"] == expected_range
-            assert summary["scheduled-full"] == plan["scheduled-full"]
+            assert summary["plan-id"] is None
+            assert summary["plan-digest"] is None
+            assert summary["mode"] == "unknown"
         else:
             assert any(reason.values())
     finally:
@@ -13277,7 +14748,10 @@ def test_ci_batch_aggregation_invalid_plan_inputs_write_g5_outputs(
         assert result == 1
         assert input_artifact["admissibility"] == "inadmissible"
         assert diagnostics[0]["code"] == "invalid-plan"
-        assert diagnostics[0]["detail"] == expected_detail
+        if case == "digest-mismatch":
+            assert diagnostics[0]["detail"] == "malformed-plan"
+        else:
+            assert diagnostics[0]["detail"] == expected_detail
         assert summary["verdict"] == "failed"
         assert summary["reason"]["invalid-plan"] is True
         assert aggregate_manifest["batch-bundles"] == []
@@ -13370,21 +14844,7 @@ def test_ci_batch_aggregation_invalid_plan_artifact_authority_writes_g5_outputs(
             expected_run_id=batch_contracts.RUN_ID,
             expected_run_attempt=batch_contracts.RUN_ATTEMPT,
         )
-        validate_ci_validation_aggregate_summary(
-            summary,
-            plan=plan,
-            aggregate_evidence_manifest=aggregate_manifest,
-            execution_batch_manifest=manifest,
-            request=cast("Mapping[str, object]", context["request"]),
-            changed_files_snapshot=cast(
-                "Mapping[str, object]", context["changed_files_snapshot"]
-            ),
-            fact_snapshot=cast(
-                "Mapping[str, object]", context["fact_snapshot"]
-            ),
-            expected_run_id=batch_contracts.RUN_ID,
-            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
-        )
+        validate_ci_validation_aggregate_summary(summary)
         input_artifact = cast(
             "Mapping[str, object]",
             cast("Mapping[str, object]", aggregate_manifest["input-artifacts"])[
@@ -13401,9 +14861,20 @@ def test_ci_batch_aggregation_invalid_plan_artifact_authority_writes_g5_outputs(
         assert diagnostics[0]["detail"] == expected_detail
         assert summary["verdict"] == "failed"
         reason = cast("Mapping[str, object]", summary["reason"])
-        assert reason["invalid-plan"] is True
-        assert reason["fail-closed"] is False
+        assert reason["invalid-plan"] is False
+        assert reason["required-input-artifact-failure"] is True
+        assert reason["aggregate-summary-without-manifest"] is True
+        assert reason["fail-closed"] is True
         assert reason["final-evidence-failure"] is False
+        final_manifest = cast(
+            "Mapping[str, object]",
+            cast("Mapping[str, object]", summary["final-artifacts"])[
+                "aggregate-evidence-manifest"
+            ],
+        )
+        assert final_manifest["producer-verified"] is False
+        assert final_manifest["artifact-instance-id"] is None
+        assert final_manifest["content-digest"] is None
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -13575,6 +15046,15 @@ def test_ci_batch_aggregation_invalid_manifest_reports_prefixed_artifacts(
         )
         assert summary["reason"]["namespace-closure-failure"] is True
         assert summary["batch-bundles"] == []
+        final_manifest = cast(
+            "dict[str, object]",
+            cast("dict[str, object]", summary["final-artifacts"])[
+                "aggregate-evidence-manifest"
+            ],
+        )
+        assert final_manifest["producer-verified"] is False
+        assert final_manifest["artifact-instance-id"] is None
+        assert final_manifest["content-digest"] is None
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -13612,14 +15092,27 @@ def test_ci_batch_aggregation_writes_manifest_and_summary() -> None:
             )
             _stage_ci_batch_bundle_artifact(observed_root, bundle)
 
-        result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+        evidence_result, aggregate_manifest, _evidence_summary = (
+            _aggregate_ci_batch_evidence(
+                scratch,
+                plan,
+                manifest,
+                observed_root,
+                aggregate_phase="evidence",
+            )
+        )
+        result, summary_manifest, summary = _aggregate_ci_batch_evidence(
             scratch,
             plan,
             manifest,
             observed_root,
+            aggregate_phase="summary",
+            aggregate_evidence_manifest_producer_verified=True,
         )
 
+        assert evidence_result == 0
         assert result == 0
+        assert summary_manifest == aggregate_manifest
         validate_ci_validation_aggregate_evidence_manifest(
             aggregate_manifest,
             plan=plan,
@@ -13684,6 +15177,70 @@ def test_ci_batch_aggregation_writes_manifest_and_summary() -> None:
             ]
             == "satisfied"
         )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_aggregate_all_clears_caller_verified_valid_manifest() -> None:
+    """All-mode does not self-bind locally recomputed manifest bytes."""
+    scratch = _ci_batch_bundle_scratch("batch-aggregation-all-unbound-valid")
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        batches = {
+            cast("str", batch["batch-id"]): batch
+            for batch in cast("list[dict[str, object]]", manifest["batches"])
+        }
+        for row in _ci_batch_matrix_rows(plan, manifest):
+            batch_id = cast(
+                "str",
+                cast("dict[str, object]", row["identity-matrix"])["batch-id"],
+            )
+            selector = cast(
+                "list[dict[str, object]]",
+                batches[batch_id]["ordered-selectors"],
+            )[0]
+            bundle = _write_ci_batch_bundle(
+                scratch,
+                plan,
+                manifest,
+                row,
+                [
+                    _ci_success_validation_result(
+                        plan, cast("str", selector["work-group-id"])
+                    )
+                ],
+            )
+            _stage_ci_batch_bundle_artifact(observed_root, bundle)
+
+        result, _aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_evidence_manifest_producer_verified=True,
+        )
+
+        final_manifest = cast(
+            "dict[str, object]",
+            cast("dict[str, object]", summary["final-artifacts"])[
+                "aggregate-evidence-manifest"
+            ],
+        )
+        reason = cast("dict[str, object]", summary["reason"])
+        assert result == 1
+        validate_ci_validation_aggregate_summary(
+            summary,
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        )
+        assert summary["verdict"] == "failed"
+        assert reason["aggregate-summary-without-manifest"] is True
+        assert reason["fail-closed"] is True
+        assert final_manifest["producer-verified"] is False
+        assert final_manifest["artifact-instance-id"] is None
+        assert final_manifest["content-digest"] is None
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -15586,13 +17143,25 @@ def test_ci_batch_aggregation_admits_dependent_bundles_topologically() -> None:
             staged_bundles.append(bundle)
             _stage_ci_batch_bundle_artifact(observed_root, bundle)
 
+        evidence_result, _evidence_manifest, _evidence_summary = (
+            _aggregate_ci_batch_evidence(
+                scratch,
+                plan,
+                manifest,
+                observed_root,
+                aggregate_phase="evidence",
+            )
+        )
         result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
             scratch,
             plan,
             manifest,
             observed_root,
+            aggregate_phase="summary",
+            aggregate_evidence_manifest_producer_verified=True,
         )
 
+        assert evidence_result == 0
         assert result == 0
         assert summary["verdict"] == "passed"
         assert {
@@ -15864,14 +17433,27 @@ def test_ci_batch_aggregation_preserves_nonblocking_duration_overrun() -> None:
         )
         _stage_ci_batch_bundle_artifact(observed_root, bundle)
 
+        evidence_result, _evidence_manifest, _evidence_summary = (
+            _aggregate_ci_batch_evidence(
+                scratch,
+                plan,
+                manifest,
+                observed_root,
+                started_at="2026-05-14T21:00:00Z",
+                aggregate_phase="evidence",
+            )
+        )
         result, _aggregate_manifest, summary = _aggregate_ci_batch_evidence(
             scratch,
             plan,
             manifest,
             observed_root,
             started_at="2026-05-14T21:00:00Z",
+            aggregate_phase="summary",
+            aggregate_evidence_manifest_producer_verified=True,
         )
 
+        assert evidence_result == 0
         assert result == 0
         reason = cast("dict[str, object]", summary["reason"])
         assert reason["fail-closed"] is False
@@ -15919,6 +17501,17 @@ def test_ci_batch_aggregation_ceilings_fractional_duration_overrun() -> None:
         )
         _stage_ci_batch_bundle_artifact(observed_root, bundle)
 
+        evidence_result, _evidence_manifest, _evidence_summary = (
+            _aggregate_ci_batch_evidence(
+                scratch,
+                plan,
+                manifest,
+                observed_root,
+                started_at="2026-05-14T21:08:00.100000Z",
+                created_at="2026-05-14T21:08:00.100000Z",
+                aggregate_phase="evidence",
+            )
+        )
         result, _aggregate_manifest, summary = _aggregate_ci_batch_evidence(
             scratch,
             plan,
@@ -15926,9 +17519,12 @@ def test_ci_batch_aggregation_ceilings_fractional_duration_overrun() -> None:
             observed_root,
             started_at="2026-05-14T21:08:00.100000Z",
             created_at="2026-05-14T21:10:01Z",
+            aggregate_phase="summary",
+            aggregate_evidence_manifest_producer_verified=True,
         )
 
         budgets = cast("dict[str, object]", summary["budgets"])
+        assert evidence_result == 0
         assert result == 0
         assert budgets["aggregate-duration-seconds"] == 121
         assert "aggregate-duration-exceeded" not in cast(
@@ -15995,6 +17591,17 @@ def test_ci_batch_aggregation_preserves_invalid_duration_telemetry(
         )
         _stage_ci_batch_bundle_artifact(observed_root, bundle)
 
+        evidence_result, _evidence_manifest, _evidence_summary = (
+            _aggregate_ci_batch_evidence(
+                scratch,
+                plan,
+                manifest,
+                observed_root,
+                started_at=started_at,
+                created_at="2026-05-14T21:10:21Z",
+                aggregate_phase="evidence",
+            )
+        )
         result, _aggregate_manifest, summary = _aggregate_ci_batch_evidence(
             scratch,
             plan,
@@ -16002,10 +17609,13 @@ def test_ci_batch_aggregation_preserves_invalid_duration_telemetry(
             observed_root,
             started_at=started_at,
             created_at="2026-05-14T21:10:21Z",
+            aggregate_phase="summary",
+            aggregate_evidence_manifest_producer_verified=True,
         )
 
         budgets = cast("dict[str, object]", summary["budgets"])
         failures = cast("list[dict[str, object]]", summary["failures"])
+        assert evidence_result == 0
         assert result == 0
         assert budgets["aggregate-duration-seconds"] == 121
         reason = cast("dict[str, object]", summary["reason"])

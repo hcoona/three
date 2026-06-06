@@ -388,7 +388,7 @@ jobs:
     needs:
       - plan
       - build
-    if: ${{ always() && needs.plan.outputs.has-active-github-release == 'true' && inputs.release-environment != '' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    if: ${{ inputs.dry-run == false && always() && needs.plan.outputs.has-active-github-release == 'true' && inputs.release-environment != '' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.release-environment }}
     permissions:
@@ -435,7 +435,7 @@ jobs:
     needs:
       - plan
       - build
-    if: ${{ always() && needs.plan.outputs.has-active-github-release == 'true' && inputs.release-environment == '' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    if: ${{ inputs.dry-run == false && always() && needs.plan.outputs.has-active-github-release == 'true' && inputs.release-environment == '' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -481,7 +481,7 @@ jobs:
     needs:
       - plan
       - build
-    if: ${{ always() && needs.plan.outputs.has-selected-github-release == 'true' && needs.plan.outputs.has-active-github-release != 'true' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    if: ${{ inputs.dry-run == false && always() && needs.plan.outputs.has-selected-github-release == 'true' && needs.plan.outputs.has-active-github-release != 'true' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -588,7 +588,7 @@ jobs:
       - ensure-tag-with-environment
       - ensure-tag-without-environment
       - verify-tag-without-environment
-    if: ${{ always() && needs.plan.outputs.has-reusable-github-release-publish == 'true' && (needs.build.result == 'success' || needs.build.result == 'skipped') && (needs.ensure-tag-with-environment.result == 'success' || needs.ensure-tag-with-environment.result == 'skipped') && (needs.ensure-tag-without-environment.result == 'success' || needs.ensure-tag-without-environment.result == 'skipped') && (needs.verify-tag-without-environment.result == 'success' || needs.verify-tag-without-environment.result == 'skipped') }}
+    if: ${{ inputs.dry-run == false && always() && needs.plan.outputs.has-reusable-github-release-publish == 'true' && (needs.build.result == 'success' || needs.build.result == 'skipped') && (needs.ensure-tag-with-environment.result == 'success' || needs.ensure-tag-with-environment.result == 'skipped') && (needs.ensure-tag-without-environment.result == 'success' || needs.ensure-tag-without-environment.result == 'skipped') && (needs.verify-tag-without-environment.result == 'success' || needs.verify-tag-without-environment.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
@@ -617,7 +617,7 @@ jobs:
       - ensure-tag-with-environment
       - ensure-tag-without-environment
       - verify-tag-without-environment
-    if: ${{ always() && needs.plan.outputs.has-reusable-github-packages-publish == 'true' && (needs.build.result == 'success' || needs.build.result == 'skipped') && (needs.ensure-tag-with-environment.result == 'success' || needs.ensure-tag-with-environment.result == 'skipped') && (needs.ensure-tag-without-environment.result == 'success' || needs.ensure-tag-without-environment.result == 'skipped') && (needs.verify-tag-without-environment.result == 'success' || needs.verify-tag-without-environment.result == 'skipped') }}
+    if: ${{ inputs.dry-run == false && always() && needs.plan.outputs.has-reusable-github-packages-publish == 'true' && (needs.build.result == 'success' || needs.build.result == 'skipped') && (needs.ensure-tag-with-environment.result == 'success' || needs.ensure-tag-with-environment.result == 'skipped') && (needs.ensure-tag-without-environment.result == 'success' || needs.ensure-tag-without-environment.result == 'skipped') && (needs.verify-tag-without-environment.result == 'success' || needs.verify-tag-without-environment.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
@@ -646,7 +646,7 @@ jobs:
       - ensure-tag-with-environment
       - ensure-tag-without-environment
       - verify-tag-without-environment
-    if: ${{ always() && needs.plan.outputs.has-reusable-external-oidc-publish == 'true' && (needs.build.result == 'success' || needs.build.result == 'skipped') && (needs.ensure-tag-with-environment.result == 'success' || needs.ensure-tag-with-environment.result == 'skipped') && (needs.ensure-tag-without-environment.result == 'success' || needs.ensure-tag-without-environment.result == 'skipped') && (needs.verify-tag-without-environment.result == 'success' || needs.verify-tag-without-environment.result == 'skipped') }}
+    if: ${{ inputs.dry-run == false && always() && needs.plan.outputs.has-reusable-external-oidc-publish == 'true' && (needs.build.result == 'success' || needs.build.result == 'skipped') && (needs.ensure-tag-with-environment.result == 'success' || needs.ensure-tag-with-environment.result == 'skipped') && (needs.ensure-tag-without-environment.result == 'success' || needs.ensure-tag-without-environment.result == 'skipped') && (needs.verify-tag-without-environment.result == 'success' || needs.verify-tag-without-environment.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:

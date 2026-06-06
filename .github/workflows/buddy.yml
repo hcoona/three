@@ -118,7 +118,7 @@ jobs:
     needs:
       - authorize-entry
       - orchestrate
-    if: ${{ always() && needs.orchestrate.outputs.entry-publish-node-ids != '' && needs.orchestrate.outputs.entry-publish-node-ids != '[]' && needs.orchestrate.outputs.plan-artifact-name != '' && needs.orchestrate.outputs.entry-publish-handoff-artifact-name != '' && needs.orchestrate.outputs.validate-conclusion == 'success' && (needs.orchestrate.outputs.metadata-conclusion == 'success' || needs.orchestrate.outputs.metadata-conclusion == 'skipped') && needs.orchestrate.outputs.plan-conclusion == 'success' && (needs.orchestrate.outputs.build-conclusion == 'success' || needs.orchestrate.outputs.build-conclusion == 'skipped') && (needs.orchestrate.outputs.tag-conclusion == 'success' || needs.orchestrate.outputs.tag-conclusion == 'skipped') }}
+    if: ${{ inputs.dry-run == false && always() && needs.orchestrate.outputs.entry-publish-node-ids != '' && needs.orchestrate.outputs.entry-publish-node-ids != '[]' && needs.orchestrate.outputs.plan-artifact-name != '' && needs.orchestrate.outputs.entry-publish-handoff-artifact-name != '' && needs.orchestrate.outputs.validate-conclusion == 'success' && (needs.orchestrate.outputs.metadata-conclusion == 'success' || needs.orchestrate.outputs.metadata-conclusion == 'skipped') && needs.orchestrate.outputs.plan-conclusion == 'success' && (needs.orchestrate.outputs.build-conclusion == 'success' || needs.orchestrate.outputs.build-conclusion == 'skipped') && (needs.orchestrate.outputs.tag-conclusion == 'success' || needs.orchestrate.outputs.tag-conclusion == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

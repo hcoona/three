@@ -22,11 +22,16 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from collections.abc import Collection, Iterable, Mapping, Sequence
+from collections.abc import (
+    Collection,
+    Iterable,
+    Mapping,
+    Sequence,
+)
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
 
 import yaml
 
@@ -55,6 +60,14 @@ from three_workflow_release_build import (  # noqa: E402
 )
 from three_workflow_release_contracts import (  # noqa: E402
     API_VERSIONS_BY_KIND,
+    CI_VALIDATION_AGGREGATE_MANIFEST_AUTHORITY_MESSAGES,
+    CI_VALIDATION_AGGREGATE_MANIFEST_CONTRACT_INVALID_MESSAGE,
+    CI_VALIDATION_INVALID_PLAN_MISSING_MESSAGE,
+    CI_VALIDATION_INVALID_PLAN_NO_AUTHORITY_PROJECTION_DETAIL_MESSAGES,
+    CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE,
+    CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAIL_MESSAGES,
+    CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAILS,
+    CI_VALIDATION_INVALID_PLAN_SNAPSHOT_MALFORMED_DETAILS,
     DETAILS_BY_DIAGNOSTIC_CODE,
     CiValidationKind,
     ContractValidationError,
@@ -73,11 +86,13 @@ from three_workflow_release_contracts import (  # noqa: E402
     ci_validation_aggregate_summary_payload_digest,
     ci_validation_batch_evidence_bundle_payload_digest,
     ci_validation_batch_evidence_candidate_id,
+    ci_validation_changed_files_hash,
     ci_validation_changed_files_snapshot_artifact_ref,
     ci_validation_diagnostic,
     ci_validation_execution_batch_manifest_artifact_ref,
     ci_validation_execution_batch_manifest_payload_digest,
     ci_validation_fact_snapshot_artifact_ref,
+    ci_validation_fact_snapshot_id,
     ci_validation_plan_artifact_ref,
     ci_validation_plan_digest,
     ci_validation_planner_diagnostics_artifact_ref,
@@ -87,6 +102,7 @@ from three_workflow_release_contracts import (  # noqa: E402
     freeze_ci_validation_aggregate_summary,
     freeze_ci_validation_batch_evidence_bundle,
     materialize_ci_validation_execution_batches,
+    validate_artifact_logical_ref,
     validate_ci_validation_aggregate_evidence_manifest,
     validate_ci_validation_aggregate_summary,
     validate_ci_validation_batch_evidence_bundle,
@@ -106,6 +122,7 @@ from three_workflow_release_contracts.ci_validation_assignments import (  # noqa
 )
 from three_workflow_release_contracts.ci_validation_batches import (  # noqa: E402
     _freeze_ci_validation_aggregate_evidence_manifest,
+    _snapshot_companion_unproven_diagnostic_is_canonical,
 )
 from three_workflow_release_metadata import (  # noqa: E402
     collect_dotnet_metadata,
@@ -199,10 +216,38 @@ _CI_ORCHESTRATOR_STATE_ADMISSION_SOURCE = "orchestrator-artifact-id-state"
 _CI_ORCHESTRATOR_LIVE_CROSS_FAMILY_ADMISSION_SOURCE = (
     "orchestrator-live-cross-family"
 )
+_UNKNOWN_VALIDATION_TREE = {"commit-sha": None, "ref": None}
+_UNKNOWN_AFFECTED_RANGE = {
+    "status": "unknown",
+    "base-sha": None,
+    "base-tip-sha": None,
+    "head-sha": None,
+    "changed-files-hash": None,
+}
+_UNKNOWN_SCHEDULED_FULL = {"enabled": False}
+_CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAILS = (
+    CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAILS
+)
+_CI_VALIDATION_INVALID_PLAN_SNAPSHOT_MALFORMED_DETAILS = (
+    CI_VALIDATION_INVALID_PLAN_SNAPSHOT_MALFORMED_DETAILS
+)
+_CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAIL_MESSAGES = (
+    CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAIL_MESSAGES
+)
+_CI_VALIDATION_INVALID_PLAN_MISSING_PROJECTION_DETAIL_MESSAGES = (
+    CI_VALIDATION_INVALID_PLAN_NO_AUTHORITY_PROJECTION_DETAIL_MESSAGES
+)
 
 
 def main() -> int:
     """Run the requested control-plane helper command."""
+    parser = _build_parser()
+    args = parser.parse_args()
+    return int(args.func(args) or 0)
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the control-plane CLI parser."""
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     _add_normalize_entry(subparsers)
@@ -232,8 +277,7 @@ def main() -> int:
     _add_observe_remote_publications(subparsers)
     _add_ensure_tags(subparsers)
     _add_report(subparsers)
-    args = parser.parse_args()
-    return int(args.func(args) or 0)
+    return parser
 
 
 def _add_normalize_entry(
@@ -343,13 +387,24 @@ def _add_verify_ci_validation_artifact_boundaries(
     parser.add_argument("--changed-files-snapshot", default="")
     parser.add_argument("--fact-snapshot", default="")
     parser.add_argument("--execution-batch-manifest", default="")
+    parser.add_argument("--observed-artifacts-dir", default="")
     parser.add_argument(
         "--expected-artifact",
         action="append",
         default=[],
         help=(
             "JSON object with artifact-ref, artifact-instance-id, "
-            "producer-boundary, and producer-job"
+            "producer-boundary, producer-job, and optionally downloaded-path "
+            "plus content-digest when --verify-final-uploaded-bytes is set"
+        ),
+    )
+    parser.add_argument(
+        "--verify-final-uploaded-bytes",
+        action="store_true",
+        help=(
+            "Validate downloaded aggregate final artifact bytes after producer "
+            "boundary verification. Expected aggregate final artifacts must "
+            "include downloaded-path and content-digest."
         ),
     )
     parser.add_argument(
@@ -429,7 +484,8 @@ def _add_aggregate_ci_evidence(
     )
     parser.add_argument(
         "--aggregate-evidence-manifest-producer-verified",
-        action="store_true",
+        type=_parse_strict_bool,
+        default=None,
         help=(
             "Assert that the uploaded aggregate evidence manifest artifact "
             "passed producer-boundary verification before summary generation."
@@ -1119,7 +1175,9 @@ def _cmd_verify_ci_validation_artifact_boundaries(
                 expected_prefixed_validation_artifacts
             ),
         )
-        if not diagnostics:
+        if not diagnostics and bool(
+            getattr(args, "verify_final_uploaded_bytes", False)
+        ):
             diagnostics = _ci_verify_expected_final_artifact_uploaded_bytes(
                 expected,
                 run_id=str(args.run_id),
@@ -1134,6 +1192,9 @@ def _cmd_verify_ci_validation_artifact_boundaries(
                 ),
                 execution_batch_manifest=_read_optional_json(
                     getattr(args, "execution_batch_manifest", "")
+                ),
+                observed_artifacts_dir=str(
+                    getattr(args, "observed_artifacts_dir", "") or ""
                 ),
             )
     except (
@@ -1353,20 +1414,30 @@ def _ci_verify_expected_final_artifact_uploaded_bytes(
     changed_files_snapshot: Mapping[str, object] | None = None,
     fact_snapshot: Mapping[str, object] | None = None,
     execution_batch_manifest: Mapping[str, object] | None = None,
+    observed_artifacts_dir: str = "",
 ) -> list[Mapping[str, object]]:
     diagnostics: list[Mapping[str, object]] = []
     uploaded: dict[str, Mapping[str, object]] = {}
     for index, expected in enumerate(expected_artifacts):
         artifact_ref = expected.get("artifact-ref")
-        downloaded_path = expected.get("downloaded-path")
-        if not (
-            isinstance(artifact_ref, str)
-            and isinstance(downloaded_path, str)
-            and downloaded_path
-        ):
+        if not isinstance(artifact_ref, str):
             continue
         kind = _ci_control_artifact_kind(artifact_ref)
         if kind not in {"aggregate-evidence-manifest", "aggregate-summary"}:
+            continue
+        downloaded_path = expected.get("downloaded-path")
+        if not (isinstance(downloaded_path, str) and downloaded_path):
+            diagnostics.append(
+                _ci_workflow_gate_diagnostic(
+                    index=index,
+                    detail=_ci_uploaded_final_artifact_failure_detail(kind),
+                    message=(
+                        "uploaded final artifact bytes are not authoritative: "
+                        "expected final artifact downloaded-path is required"
+                    ),
+                    source_id=artifact_ref,
+                )
+            )
             continue
         try:
             document = _ci_load_uploaded_canonical_json_object(
@@ -1384,11 +1455,12 @@ def _ci_verify_expected_final_artifact_uploaded_bytes(
                     expected_run_attempt=run_attempt,
                 )
             expected_digest = expected.get("content-digest")
-            if isinstance(expected_digest, str) and expected_digest:
-                _ci_validate_uploaded_artifact_digest(
-                    document,
-                    expected_digest,
-                )
+            if not (isinstance(expected_digest, str) and expected_digest):
+                _ci_raise_missing_expected_final_artifact_digest()
+            _ci_validate_uploaded_artifact_digest(
+                document,
+                expected_digest,
+            )
             uploaded[kind] = document
         except (
             ContractValidationError,
@@ -1414,9 +1486,20 @@ def _ci_verify_expected_final_artifact_uploaded_bytes(
             expected_artifacts,
             run_id=run_id,
             run_attempt=run_attempt,
+            request=request,
+            plan=plan,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            execution_batch_manifest=execution_batch_manifest,
+            observed_artifacts_dir=observed_artifacts_dir,
         )
     )
     return diagnostics
+
+
+def _ci_raise_missing_expected_final_artifact_digest() -> NoReturn:
+    msg = "expected final artifact content-digest is required"
+    raise ValueError(msg)
 
 
 def _ci_load_uploaded_canonical_json_object(path: Path) -> Mapping[str, object]:
@@ -1453,6 +1536,12 @@ def _ci_verify_uploaded_final_artifact_digest_claims(
     *,
     run_id: str,
     run_attempt: str,
+    request: Mapping[str, object] | None = None,
+    plan: Mapping[str, object] | None = None,
+    changed_files_snapshot: Mapping[str, object] | None = None,
+    fact_snapshot: Mapping[str, object] | None = None,
+    execution_batch_manifest: Mapping[str, object] | None = None,
+    observed_artifacts_dir: str = "",
 ) -> list[Mapping[str, object]]:
     manifest = uploaded.get("aggregate-evidence-manifest")
     summary = uploaded.get("aggregate-summary")
@@ -1463,13 +1552,41 @@ def _ci_verify_uploaded_final_artifact_digest_claims(
         "aggregate-summary",
     )
     try:
-        _ci_validate_uploaded_aggregate_summary_final_claims(
-            summary,
-            manifest,
-            run_id=run_id,
-            run_attempt=run_attempt,
+        admitted_batch_evidence_bundles = (
+            _ci_final_uploaded_summary_admitted_batch_evidence_bundles(
+                aggregate_evidence_manifest=manifest,
+                plan=plan,
+                request=request,
+                execution_batch_manifest=execution_batch_manifest,
+                changed_files_snapshot=changed_files_snapshot,
+                fact_snapshot=fact_snapshot,
+                observed_artifacts_dir=observed_artifacts_dir,
+                run_id=run_id,
+                run_attempt=run_attempt,
+            )
         )
-        if manifest is not None:
+        validate_ci_validation_aggregate_summary(
+            summary,
+            plan=plan,
+            aggregate_evidence_manifest=manifest,
+            admitted_batch_evidence_bundles=admitted_batch_evidence_bundles,
+            execution_batch_manifest=execution_batch_manifest,
+            request=request,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            expected_run_id=run_id,
+            expected_run_attempt=run_attempt,
+            _aggregate_evidence_manifest_bound=(
+                False
+                if _ci_uploaded_summary_has_unbound_invalid_plan_manifest(
+                    summary,
+                )
+                else None
+            ),
+        )
+        if manifest is not None and not (
+            _ci_uploaded_summary_has_unbound_invalid_plan_manifest(summary)
+        ):
             _ci_validate_uploaded_manifest_digest_claim(summary, manifest)
     except (ContractValidationError, TypeError, ValueError) as exc:
         return [
@@ -1489,57 +1606,68 @@ def _ci_verify_uploaded_final_artifact_digest_claims(
     return []
 
 
-def _ci_validate_uploaded_aggregate_summary_final_claims(
-    summary: Mapping[str, object],
-    manifest: Mapping[str, object] | None,
+def _ci_final_uploaded_summary_admitted_batch_evidence_bundles(
     *,
+    aggregate_evidence_manifest: Mapping[str, object] | None,
+    plan: Mapping[str, object] | None,
+    request: Mapping[str, object] | None,
+    execution_batch_manifest: Mapping[str, object] | None,
+    changed_files_snapshot: Mapping[str, object] | None,
+    fact_snapshot: Mapping[str, object] | None,
+    observed_artifacts_dir: str,
     run_id: str,
     run_attempt: str,
-) -> None:
-    expected_summary_ref = ci_validation_aggregate_summary_artifact_ref(
+) -> Sequence[Mapping[str, object]] | None:
+    if (
+        plan is None
+        or request is None
+        or execution_batch_manifest is None
+        or not observed_artifacts_dir
+    ):
+        return None
+    input_artifacts: Mapping[str, object] = {}
+    if aggregate_evidence_manifest is not None:
+        raw_input_artifacts = aggregate_evidence_manifest.get("input-artifacts")
+        if isinstance(raw_input_artifacts, Mapping):
+            input_artifacts = raw_input_artifacts
+    _bundle_slots, admitted_bundles, _unexpected = _ci_aggregate_batch_slots(
+        plan=plan,
+        request=request,
+        execution_batch_manifest=execution_batch_manifest,
+        changed_files_snapshot=changed_files_snapshot,
+        fact_snapshot=fact_snapshot,
+        input_artifacts=input_artifacts,
+        observed_artifacts_dir=observed_artifacts_dir,
         run_id=run_id,
         run_attempt=run_attempt,
     )
-    expected_manifest_ref = (
-        ci_validation_aggregate_evidence_manifest_artifact_ref(
-            run_id=run_id,
-            run_attempt=run_attempt,
-        )
-    )
-    final_artifacts = summary.get("final-artifacts")
-    if not isinstance(final_artifacts, Mapping):
-        msg = "final-artifacts claim is missing"
-        raise TypeError(msg)
-    final_summary = final_artifacts.get("aggregate-summary")
-    if not isinstance(final_summary, Mapping):
-        msg = "final-artifacts.aggregate-summary claim is missing"
-        raise TypeError(msg)
-    if final_summary.get("artifact-ref") != expected_summary_ref:
-        msg = (
-            "final-artifacts.aggregate-summary.artifact-ref does not match run"
-        )
-        raise ValueError(msg)
-    for path, claim in (
-        (
-            "aggregate-evidence-manifest",
-            summary.get("aggregate-evidence-manifest"),
-        ),
-        (
-            "final-artifacts.aggregate-evidence-manifest",
-            final_artifacts.get("aggregate-evidence-manifest"),
-        ),
+    return admitted_bundles
+
+
+def _ci_uploaded_summary_has_unbound_invalid_plan_manifest(
+    summary: Mapping[str, object],
+) -> bool:
+    reason = summary.get("reason")
+    manifest_claim = summary.get("aggregate-evidence-manifest")
+    if not (
+        isinstance(reason, Mapping)
+        and reason.get("invalid-plan") is True
+        and isinstance(manifest_claim, Mapping)
     ):
-        if not isinstance(claim, Mapping):
-            msg = f"{path} claim is missing"
-            raise TypeError(msg)
-        if claim.get("artifact-ref") != expected_manifest_ref:
-            msg = f"{path}.artifact-ref does not match run"
-            raise ValueError(msg)
-        if manifest is not None and claim.get("artifact-ref") != manifest.get(
-            "artifact-ref"
-        ):
-            msg = f"{path}.artifact-ref does not match uploaded manifest"
-            raise ValueError(msg)
+        return False
+    final_artifacts = summary.get("final-artifacts")
+    final_manifest = (
+        final_artifacts.get("aggregate-evidence-manifest")
+        if isinstance(final_artifacts, Mapping)
+        else None
+    )
+    return (
+        manifest_claim.get("artifact-instance-id") is None
+        and manifest_claim.get("content-digest") is None
+        and isinstance(final_manifest, Mapping)
+        and final_manifest.get("artifact-instance-id") is None
+        and final_manifest.get("content-digest") is None
+    )
 
 
 def _ci_validate_uploaded_manifest_digest_claim(
@@ -1779,7 +1907,7 @@ def _ci_expected_control_artifact_producer(
     return None, None
 
 
-def _ci_boundary_diagnostic(
+def _ci_boundary_diagnostic(  # noqa: C901
     *,
     index: int,
     detail: str,
@@ -1817,8 +1945,17 @@ def _ci_boundary_diagnostic(
         )
     ):
         code = DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value
+    if code == DiagnosticFamily.INVALID_PLAN.value:
+        if detail == DiagnosticDetail.PLAN_MISSING.value:
+            diagnostic_id = "invalid-plan"
+            message = CI_VALIDATION_INVALID_PLAN_MISSING_MESSAGE
+        else:
+            diagnostic_id = f"invalid-plan/{detail}"
+            message = CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE
+    else:
+        diagnostic_id = f"producer-boundary/{index:03d}"
     return ci_validation_diagnostic(
-        diagnostic_id=f"producer-boundary/{index:03d}",
+        diagnostic_id=diagnostic_id,
         code=code,
         detail=detail,
         message=message,
@@ -2367,7 +2504,7 @@ def _ci_dependency_blocked_validation_result(
 
 
 def _ci_work_group_by_id(
-    plan: Mapping[str, object],
+    plan: Mapping[str, object] | None,
     work_group_id: str,
 ) -> Mapping[str, Any]:
     for group in _ci_executable_work_groups(plan):
@@ -2901,7 +3038,13 @@ def _ci_orchestrator_same_family_dependency_admission(
         return None
     try:
         uploaded = _read_json(uploaded_path)
-    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+    except (
+        OSError,
+        RecursionError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ):
         return None
     return _ci_orchestrator_download_recorded_dependency(
         dependency,
@@ -3612,7 +3755,7 @@ def _ci_authoritative_dependency_bundles(
     paths: Sequence[str],
     *,
     plan: Mapping[str, object],
-    request: Mapping[str, object],
+    request: Mapping[str, object] | None,
     execution_batch_manifest: Mapping[str, object],
     changed_files_snapshot: Mapping[str, object] | None,
     fact_snapshot: Mapping[str, object] | None,
@@ -5866,22 +6009,15 @@ def _ci_live_required_snapshot_artifact_refs(
     if plan is None:
         return set()
     refs: set[str] = set()
-    affected_range = plan.get("affected-range")
-    if isinstance(affected_range, Mapping) and isinstance(
-        affected_range.get("changed-files-hash"),
-        str,
-    ):
+    required_snapshots = _ci_plan_required_snapshot_inputs(plan)
+    if "changed-files-snapshot" in required_snapshots:
         refs.add(
             ci_validation_changed_files_snapshot_artifact_ref(
                 run_id=run_id,
                 run_attempt=run_attempt,
             )
         )
-    fact_snapshot = plan.get("fact-snapshot")
-    if isinstance(fact_snapshot, Mapping) and isinstance(
-        fact_snapshot.get("id"),
-        str,
-    ):
+    if "fact-snapshot" in required_snapshots:
         refs.add(
             ci_validation_fact_snapshot_artifact_ref(
                 run_id=run_id,
@@ -5889,6 +6025,27 @@ def _ci_live_required_snapshot_artifact_refs(
             )
         )
     return refs
+
+
+def _ci_plan_required_snapshot_inputs(plan: Mapping[str, object]) -> set[str]:
+    required: set[str] = set()
+    affected_range = plan.get("affected-range")
+    if isinstance(affected_range, Mapping):
+        changed_files_hash = affected_range.get("changed-files-hash")
+        if affected_range.get("status") == "available" or (
+            isinstance(changed_files_hash, str) and changed_files_hash != ""
+        ):
+            required.add("changed-files-snapshot")
+    fact_snapshot = plan.get("fact-snapshot")
+    if isinstance(fact_snapshot, Mapping) and (
+        fact_snapshot.get("status") == "available"
+        or (
+            isinstance(fact_snapshot.get("id"), str)
+            and fact_snapshot.get("id") != ""
+        )
+    ):
+        required.add("fact-snapshot")
+    return required
 
 
 def _ci_current_final_aggregate_artifact_names(
@@ -6244,6 +6401,17 @@ def _cmd_aggregate_ci_evidence(args: argparse.Namespace) -> int:
                 fact_snapshot=fact_snapshot,
             )
         except ContractValidationError:
+            plan_control_diagnostics: tuple[Mapping[str, object], ...] = ()
+            if not malformed_control_diagnostics:
+                plan_control_diagnostics = (
+                    _ci_invalid_plan_control_diagnostic(
+                        args,
+                        detail=_ci_invalid_plan_detail_for_validation_error(
+                            plan
+                        ),
+                        message=("Validation plan control input is invalid."),
+                    ),
+                )
             return _cmd_aggregate_ci_batch_evidence(
                 args,
                 owner=owner,
@@ -6255,13 +6423,7 @@ def _cmd_aggregate_ci_evidence(args: argparse.Namespace) -> int:
                 fact_snapshot=None,
                 boundary_diagnostics=[
                     *boundary_diagnostics,
-                    _ci_invalid_plan_control_diagnostic(
-                        args,
-                        detail=_ci_invalid_plan_detail_for_validation_error(
-                            plan
-                        ),
-                        message=("Validation plan control input is invalid."),
-                    ),
+                    *plan_control_diagnostics,
                     *malformed_control_diagnostics,
                 ],
                 invalid_plan_context=plan,
@@ -6299,30 +6461,66 @@ def _cmd_aggregate_ci_batch_evidence(  # noqa: C901, PLR0911, PLR0912, PLR0915
     """Aggregate execution-batch evidence bundles into final G5 artifacts."""
     manifest_created_at = _ci_aggregate_manifest_created_at(args, created_at)
     if plan is None:
-        aggregation = _ci_missing_plan_batch_payloads(
-            args,
-            owner=owner,
-            name=name,
-            created_at=manifest_created_at,
-            completed_at=completed_at,
-            summary_created_at=created_at,
-            input_artifacts=(
-                _ci_invalid_plan_input_artifacts(
+        try:
+            aggregation = _ci_missing_plan_batch_payloads(
+                args,
+                owner=owner,
+                name=name,
+                created_at=manifest_created_at,
+                completed_at=completed_at,
+                summary_created_at=created_at,
+                input_artifacts=(
+                    _ci_invalid_plan_input_artifacts(
+                        args,
+                        invalid_plan_context=invalid_plan_context,
+                        boundary_diagnostics=boundary_diagnostics,
+                    )
+                    if boundary_diagnostics
+                    else None
+                ),
+                invalid_plan_context=(
+                    invalid_plan_context
+                    if (
+                        _ci_has_malformed_snapshot_control_diagnostic(
+                            boundary_diagnostics
+                        )
+                        or _ci_invalid_plan_detail_requires_retained_projection(
+                            _ci_missing_plan_invalid_plan_detail(
+                                boundary_diagnostics
+                            )
+                        )
+                    )
+                    else None
+                ),
+                boundary_diagnostics=boundary_diagnostics,
+            )
+        except ContractValidationError as exc:
+            if (
+                not _ci_contract_error_has_projection_authority(exc)
+                or _ci_malformed_snapshot_detail(boundary_diagnostics) is None
+            ):
+                raise
+            boundary_diagnostics = (
+                _ci_projection_authority_hard_reject_boundary_diagnostics(
                     args,
-                    invalid_plan_context=invalid_plan_context,
+                    boundary_diagnostics,
+                )
+            )
+            aggregation = _ci_missing_plan_batch_payloads(
+                args,
+                owner=owner,
+                name=name,
+                created_at=manifest_created_at,
+                completed_at=completed_at,
+                summary_created_at=created_at,
+                input_artifacts=_ci_invalid_plan_input_artifacts(
+                    args,
+                    invalid_plan_context=None,
                     boundary_diagnostics=boundary_diagnostics,
-                )
-                if boundary_diagnostics
-                else None
-            ),
-            invalid_plan_context=(
-                invalid_plan_context
-                if _ci_has_malformed_snapshot_control_diagnostic(
-                    boundary_diagnostics
-                )
-                else None
-            ),
-        )
+                ),
+                invalid_plan_context=None,
+                boundary_diagnostics=boundary_diagnostics,
+            )
         aggregate_manifest = aggregation["aggregate_manifest"]
         if getattr(args, "aggregate_phase", "all") == "evidence":
             _write_final_ci_json(
@@ -6550,6 +6748,42 @@ def _cmd_aggregate_ci_batch_evidence(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 ],
             )
         except (ContractValidationError, TypeError, ValueError) as exc:
+            invalid_plan_detail = _ci_missing_plan_invalid_plan_detail(
+                boundary_diagnostics
+            )
+            if (
+                invalid_plan_detail
+                not in _CI_VALIDATION_INVALID_PLAN_SNAPSHOT_MALFORMED_DETAILS
+                and _ci_invalid_plan_detail_requires_retained_projection(
+                    invalid_plan_detail
+                )
+            ):
+                aggregation = _ci_missing_plan_batch_payloads(
+                    args,
+                    owner=owner,
+                    name=name,
+                    created_at=manifest_created_at,
+                    completed_at=completed_at,
+                    summary_created_at=created_at,
+                    input_artifacts=_ci_invalid_plan_input_artifacts(
+                        args,
+                        invalid_plan_context=plan,
+                        boundary_diagnostics=boundary_diagnostics,
+                    ),
+                    invalid_plan_context=plan,
+                    boundary_diagnostics=boundary_diagnostics,
+                )
+                return _write_ci_failed_batch_aggregation_outputs(
+                    args,
+                    aggregation=aggregation,
+                    created_at=created_at,
+                )
+            if isinstance(
+                exc,
+                ContractValidationError,
+            ) and _ci_contract_error_has_projection_authority(exc):
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
             print(f"error: {exc}", file=sys.stderr)
             return 1
         aggregate_manifest = aggregation["aggregate_manifest"]
@@ -6666,6 +6900,42 @@ def _cmd_aggregate_ci_batch_evidence(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 ],
             )
         except (ContractValidationError, TypeError, ValueError) as exc:
+            invalid_plan_detail = _ci_missing_plan_invalid_plan_detail(
+                boundary_diagnostics
+            )
+            if (
+                invalid_plan_detail
+                not in _CI_VALIDATION_INVALID_PLAN_SNAPSHOT_MALFORMED_DETAILS
+                and _ci_invalid_plan_detail_requires_retained_projection(
+                    invalid_plan_detail
+                )
+            ):
+                aggregation = _ci_missing_plan_batch_payloads(
+                    args,
+                    owner=owner,
+                    name=name,
+                    created_at=manifest_created_at,
+                    completed_at=completed_at,
+                    summary_created_at=created_at,
+                    input_artifacts=_ci_invalid_plan_input_artifacts(
+                        args,
+                        invalid_plan_context=plan,
+                        boundary_diagnostics=boundary_diagnostics,
+                    ),
+                    invalid_plan_context=plan,
+                    boundary_diagnostics=boundary_diagnostics,
+                )
+                return _write_ci_failed_batch_aggregation_outputs(
+                    args,
+                    aggregation=aggregation,
+                    created_at=created_at,
+                )
+            if isinstance(
+                exc,
+                ContractValidationError,
+            ) and _ci_contract_error_has_projection_authority(exc):
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
             print(f"error: {exc}", file=sys.stderr)
             return 1
     except (RuntimeError, TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -6739,6 +7009,18 @@ def _write_final_ci_json(path: Path, document: object) -> None:
     path.write_bytes(canonical_json_bytes(document))
 
 
+def _ci_preserve_all_phase_aggregate_manifest_bytes(
+    args: argparse.Namespace,
+    aggregate_manifest: Mapping[str, object],
+) -> None:
+    if getattr(args, "aggregate_phase", "all") != "all":
+        return
+    path = Path(_ci_aggregate_manifest_out(args))
+    if path.is_file():
+        return
+    _write_final_ci_json(path, aggregate_manifest)
+
+
 def _ci_aggregate_summary_out(args: argparse.Namespace) -> str:
     return str(args.aggregate_summary_out)
 
@@ -6751,7 +7033,8 @@ def _ci_aggregate_manifest_created_at(
         return fallback_created_at
     try:
         preserved = json.loads(
-            Path(_ci_aggregate_manifest_out(args)).read_text(encoding="utf-8")
+            Path(_ci_aggregate_manifest_out(args)).read_text(encoding="utf-8"),
+            object_pairs_hook=_ci_validation_reject_duplicate_json_keys,
         )
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         return fallback_created_at
@@ -6785,13 +7068,7 @@ def _ci_bound_aggregate_manifest_digest(
     aggregate_manifest: Mapping[str, object],
     aggregate_summary: Mapping[str, object] | None = None,
 ) -> str:
-    if aggregate_summary is not None:
-        manifest_claim = aggregate_summary.get("aggregate-evidence-manifest")
-        if isinstance(manifest_claim, Mapping):
-            digest = manifest_claim.get("content-digest")
-            if isinstance(digest, str) and digest:
-                return digest
-            return ""
+    del aggregate_summary
     return ci_validation_aggregate_evidence_manifest_payload_digest(
         aggregate_manifest
     )
@@ -6806,6 +7083,7 @@ def _ci_summary_aggregate_manifest_authority(
     request: Mapping[str, object] | None,
     changed_files_snapshot: Mapping[str, object] | None,
     fact_snapshot: Mapping[str, object] | None,
+    allow_contract_invalid_bound_manifest: bool = False,
 ) -> dict[str, object]:
     path = Path(_ci_aggregate_manifest_out(args))
     diagnostics: list[Mapping[str, object]] = []
@@ -6813,12 +7091,14 @@ def _ci_summary_aggregate_manifest_authority(
     try:
         raw_bytes = path.read_bytes()
         raw_digest = hashlib.sha256(raw_bytes).hexdigest()
-        preserved = json.loads(raw_bytes.decode("utf-8"))
+        preserved = json.loads(
+            raw_bytes.decode("utf-8"),
+            object_pairs_hook=_ci_validation_reject_duplicate_json_keys,
+        )
         if not isinstance(preserved, dict):
             diagnostics.append(
                 _ci_aggregate_manifest_authority_diagnostic(
                     DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MALFORMED.value,
-                    "Preserved aggregate evidence manifest is malformed.",
                 )
             )
             manifest_claim = _ci_aggregate_manifest_claim(recomputed_manifest)
@@ -6840,20 +7120,12 @@ def _ci_summary_aggregate_manifest_authority(
             diagnostics.append(
                 _ci_aggregate_manifest_authority_diagnostic(
                     DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_NON_CANONICAL.value,
-                    (
-                        "Preserved aggregate evidence manifest bytes are "
-                        "not canonical."
-                    ),
                 )
             )
         if preserved != recomputed_manifest:
             diagnostics.append(
                 _ci_aggregate_manifest_authority_diagnostic(
                     DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_DIGEST_MISMATCH.value,
-                    (
-                        "Preserved aggregate evidence manifest differs "
-                        "from the recomputed validation view."
-                    ),
                 )
             )
         preserved_is_valid = _ci_preserved_aggregate_manifest_is_valid(
@@ -6875,17 +7147,14 @@ def _ci_summary_aggregate_manifest_authority(
             diagnostics.append(
                 _ci_aggregate_manifest_authority_diagnostic(
                     DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MALFORMED.value,
-                    (
-                        "Preserved aggregate evidence manifest is "
-                        "contract-invalid."
-                    ),
+                    CI_VALIDATION_AGGREGATE_MANIFEST_CONTRACT_INVALID_MESSAGE,
                 )
             )
         if (
             preserved_is_canonical
             and preserved_has_structural_authority
-            and preserved_is_valid
             and preserved == recomputed_manifest
+            and (preserved_is_valid or allow_contract_invalid_bound_manifest)
         ):
             return {
                 "manifest": preserved,
@@ -6895,7 +7164,7 @@ def _ci_summary_aggregate_manifest_authority(
             }
         manifest_claim = (
             preserved_manifest_claim
-            if preserved_is_valid and preserved_has_structural_authority
+            if preserved_has_structural_authority
             else recomputed_manifest_claim
         )
         return {  # noqa: TRY300
@@ -6908,24 +7177,23 @@ def _ci_summary_aggregate_manifest_authority(
         diagnostics.append(
             _ci_aggregate_manifest_authority_diagnostic(
                 DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MISSING.value,
-                "Preserved aggregate evidence manifest is missing.",
             )
         )
     except OSError:
         diagnostics.append(
             _ci_aggregate_manifest_authority_diagnostic(
                 DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_UNREADABLE.value,
-                "Preserved aggregate evidence manifest is unreadable.",
             )
         )
     except (UnicodeDecodeError, TypeError, ValueError, json.JSONDecodeError):
         content_digest = (
-            hashlib.sha256(raw_bytes).hexdigest() if raw_bytes else None
+            hashlib.sha256(raw_bytes).hexdigest()
+            if raw_bytes is not None
+            else None
         )
         diagnostics.append(
             _ci_aggregate_manifest_authority_diagnostic(
                 DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MALFORMED.value,
-                "Preserved aggregate evidence manifest is malformed.",
             )
         )
         return {
@@ -7015,8 +7283,10 @@ def _ci_aggregate_summary_without_manifest_diagnostic() -> Mapping[str, object]:
 
 def _ci_aggregate_manifest_authority_diagnostic(
     detail: str,
-    message: str,
+    message: str | None = None,
 ) -> Mapping[str, object]:
+    if message is None:
+        message = CI_VALIDATION_AGGREGATE_MANIFEST_AUTHORITY_MESSAGES[detail]
     return _ci_aggregate_diagnostic(
         f"final-evidence-failure/{detail}",
         code=DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value,
@@ -7107,12 +7377,131 @@ def _ci_required_aggregate_manifest_artifact_id(
 
 
 def _ci_aggregate_manifest_producer_verified(args: argparse.Namespace) -> bool:
-    return bool(
-        getattr(args, "aggregate_evidence_manifest_producer_verified", True)
+    verified = getattr(
+        args,
+        "aggregate_evidence_manifest_producer_verified",
+        None,
+    )
+    return verified if isinstance(verified, bool) else False
+
+
+def _ci_contract_error_has_projection_authority(
+    exc: ContractValidationError,
+) -> bool:
+    return any(issue.path == "$.projection-authority" for issue in exc.issues)
+
+
+def _ci_projection_authority_hard_reject_boundary_diagnostics(
+    args: argparse.Namespace,
+    boundary_diagnostics: Sequence[Mapping[str, object]],
+) -> tuple[Mapping[str, object], ...]:
+    no_authority_diagnostic = _ci_invalid_plan_control_diagnostic(
+        args,
+        detail=DiagnosticDetail.MALFORMED_PLAN.value,
+        message="Validation plan control input is malformed.",
+    )
+    if any(
+        diagnostic.get("code") == DiagnosticFamily.INVALID_PLAN.value
+        and diagnostic.get("detail")
+        in {
+            DiagnosticDetail.PLAN_MISSING.value,
+            *_CI_VALIDATION_INVALID_PLAN_MISSING_PROJECTION_DETAIL_MESSAGES,
+        }
+        for diagnostic in boundary_diagnostics
+    ):
+        return tuple(boundary_diagnostics)
+    return (
+        no_authority_diagnostic,
+        *(
+            diagnostic
+            for diagnostic in boundary_diagnostics
+            if not (
+                diagnostic.get("code") == DiagnosticFamily.INVALID_PLAN.value
+                and diagnostic.get("detail")
+                in _CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAILS
+            )
+        ),
     )
 
 
-def _ci_batch_aggregation_payloads(
+def _ci_normalize_unbound_manifest_authority(
+    *,
+    producer_verified: bool,
+    content_digest: str | None,
+    manifest_document: object,
+    authority_diagnostics: Sequence[Mapping[str, object]],
+) -> tuple[bool, str | None, Sequence[Mapping[str, object]]]:
+    if manifest_document is None:
+        if authority_diagnostics:
+            return False, None, authority_diagnostics
+        return False, None, ()
+    return producer_verified, content_digest, authority_diagnostics
+
+
+def _ci_aggregate_manifest_authority_failure_details(
+    authority_diagnostics: Sequence[Mapping[str, object]],
+) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {
+                detail
+                for diagnostic in authority_diagnostics
+                if isinstance((detail := diagnostic.get("detail")), str)
+                and detail
+            }
+        )
+    )
+
+
+def _ci_missing_execution_manifest_has_input_identity(
+    input_artifacts: Mapping[str, object],
+) -> bool:
+    execution_input = input_artifacts.get("execution-batch-manifest")
+    return (
+        isinstance(execution_input, Mapping)
+        and isinstance(execution_input.get("artifact-instance-id"), str)
+        and bool(execution_input.get("artifact-instance-id"))
+    )
+
+
+def _ci_summary_bound_aggregate_manifest_projection(
+    args: argparse.Namespace,
+    *,
+    aggregate_manifest_digest: str | None,
+    aggregate_manifest_document: Mapping[str, object] | None,
+    aggregate_manifest_authority_diagnostics: Sequence[Mapping[str, object]],
+    require_external_binding: bool = False,
+) -> tuple[str | None, str | None, Mapping[str, object] | None, bool]:
+    externally_bound = not require_external_binding
+    local_evidence_available = (
+        externally_bound
+        and aggregate_manifest_digest is not None
+        and aggregate_manifest_document is not None
+    )
+    artifact_id = getattr(args, "aggregate_evidence_manifest_artifact_id", None)
+    artifact_instance_id = (
+        artifact_id
+        if local_evidence_available
+        and isinstance(artifact_id, str)
+        and artifact_id
+        else None
+    )
+    evidence_bound = artifact_instance_id is not None
+    summary_digest = aggregate_manifest_digest if evidence_bound else None
+    summary_document = (
+        aggregate_manifest_document
+        if evidence_bound and aggregate_manifest_document is not None
+        else None
+    )
+    return (
+        artifact_instance_id,
+        summary_digest,
+        summary_document,
+        evidence_bound,
+    )
+
+
+def _ci_batch_aggregation_payloads(  # noqa: PLR0915
     args: argparse.Namespace,
     *,
     owner: str,
@@ -7139,25 +7528,48 @@ def _ci_batch_aggregation_payloads(
         fact_snapshot=fact_snapshot,
         boundary_diagnostics=boundary_diagnostics,
     )
+    boundary_diagnostics, _ = (
+        _ci_downgrade_retained_invalid_plan_projection_if_unbound(
+            args,
+            input_artifacts,
+            plan,
+            boundary_diagnostics,
+        )
+    )
+    no_authority_invalid_plan = (
+        _ci_boundary_diagnostics_have_no_authority_invalid_plan(
+            boundary_diagnostics,
+        )
+    )
     _ci_close_snapshot_input_authority(input_artifacts)
     required_input_failure = _ci_aggregate_required_input_failure(
         input_artifacts,
     )
-    authoritative_snapshots = _ci_aggregate_input_is_valid(
-        input_artifacts,
-        "changed-files-snapshot",
-    ) and _ci_aggregate_input_is_valid(input_artifacts, "fact-snapshot")
     authoritative_request = (
         request
-        if authoritative_snapshots
+        if not no_authority_invalid_plan
         and _ci_aggregate_input_is_valid(input_artifacts, "request")
         else None
     )
     authoritative_changed_files_snapshot = (
-        changed_files_snapshot if authoritative_snapshots else None
+        changed_files_snapshot
+        if not no_authority_invalid_plan
+        and _ci_aggregate_input_is_valid(
+            input_artifacts, "changed-files-snapshot"
+        )
+        else None
     )
     authoritative_fact_snapshot = (
-        fact_snapshot if authoritative_snapshots else None
+        fact_snapshot
+        if not no_authority_invalid_plan
+        and _ci_aggregate_input_is_valid(input_artifacts, "fact-snapshot")
+        else None
+    )
+    authoritative_plan = (
+        plan
+        if not no_authority_invalid_plan
+        and _ci_aggregate_input_is_valid(input_artifacts, "validation-plan")
+        else None
     )
     bundle_slots, admitted_bundles, unexpected = _ci_aggregate_batch_slots(
         plan=plan,
@@ -7199,6 +7611,19 @@ def _ci_batch_aggregation_payloads(
         _ci_aggregate_manifest_producer_verified(args)
     )
     aggregate_manifest_authority_diagnostics = ()
+    retained_invalid_plan_detail = (
+        _ci_missing_plan_invalid_plan_detail_from_manifest(
+            boundary_diagnostics,
+            {"input-artifacts": input_artifacts},
+        )
+    )
+    aggregate_manifest_plan = (
+        plan
+        if _ci_invalid_plan_detail_requires_retained_projection(
+            retained_invalid_plan_detail
+        )
+        else authoritative_plan
+    )
     aggregate_manifest = _freeze_ci_validation_aggregate_evidence_manifest(
         created_at=created_at,
         repository_owner=owner,
@@ -7212,24 +7637,43 @@ def _ci_batch_aggregation_payloads(
         namespace_overflow=namespace_overflow,
         pre_final_validation_artifacts=pre_final_count,
         namespace_closed_at=created_at,
-        plan=plan,
-        execution_batch_manifest=execution_batch_manifest,
-        request=request,
-        changed_files_snapshot=authoritative_changed_files_snapshot,
-        fact_snapshot=authoritative_fact_snapshot,
+        plan=aggregate_manifest_plan,
+        execution_batch_manifest=(
+            None
+            if aggregate_manifest_plan is None
+            else execution_batch_manifest
+        ),
+        request=authoritative_request
+        if aggregate_manifest_plan is not None
+        else None,
+        changed_files_snapshot=(
+            authoritative_changed_files_snapshot
+            if authoritative_plan is not None
+            else None
+        ),
+        fact_snapshot=(
+            authoritative_fact_snapshot
+            if authoritative_plan is not None
+            else None
+        ),
         _require_authoritative_snapshot_inputs=not required_input_failure,
     )
+    aggregate_phase = getattr(args, "aggregate_phase", "all")
     aggregate_manifest_document: Mapping[str, object] | None = (
         aggregate_manifest
     )
-    if getattr(args, "aggregate_phase", "all") == "evidence":
+    if aggregate_phase == "evidence":
         if not required_input_failure:
             validate_ci_validation_aggregate_evidence_manifest(
                 aggregate_manifest,
                 plan=plan,
                 execution_batch_manifest=execution_batch_manifest,
-                request=authoritative_request,
-                changed_files_snapshot=authoritative_changed_files_snapshot,
+                request=request if authoritative_plan is not None else None,
+                changed_files_snapshot=(
+                    authoritative_changed_files_snapshot
+                    if authoritative_plan is not None
+                    else None
+                ),
                 fact_snapshot=authoritative_fact_snapshot,
                 expected_run_id=str(args.run_id),
                 expected_run_attempt=str(args.run_attempt),
@@ -7240,20 +7684,34 @@ def _ci_batch_aggregation_payloads(
             aggregate_manifest
         )
     )
-    if getattr(args, "aggregate_phase", "all") == "summary":
+    if aggregate_phase != "evidence":
+        _ci_preserve_all_phase_aggregate_manifest_bytes(
+            args, aggregate_manifest
+        )
         manifest_authority = _ci_summary_aggregate_manifest_authority(
             args,
             recomputed_manifest=aggregate_manifest,
-            plan=plan,
-            execution_batch_manifest=execution_batch_manifest,
+            plan=None if no_authority_invalid_plan else plan,
+            execution_batch_manifest=(
+                None if no_authority_invalid_plan else execution_batch_manifest
+            ),
             request=authoritative_request,
-            changed_files_snapshot=authoritative_changed_files_snapshot,
-            fact_snapshot=authoritative_fact_snapshot,
+            changed_files_snapshot=(
+                authoritative_changed_files_snapshot
+                if authoritative_plan is not None
+                else None
+            ),
+            fact_snapshot=(
+                authoritative_fact_snapshot
+                if authoritative_plan is not None
+                else None
+            ),
         )
-        aggregate_manifest = cast(
-            "Mapping[str, object]",
-            manifest_authority["manifest"],
-        )
+        if aggregate_phase == "summary":
+            aggregate_manifest = cast(
+                "Mapping[str, object]",
+                manifest_authority["manifest"],
+            )
         aggregate_manifest_digest = cast(
             "str | None",
             manifest_authority["content_digest"],
@@ -7272,7 +7730,17 @@ def _ci_batch_aggregation_payloads(
                 key=lambda item: str(item.get("diagnostic-id")),
             )
         )
-        if aggregate_manifest_authority_diagnostics:
+        (
+            aggregate_manifest_producer_verified,
+            aggregate_manifest_digest,
+            aggregate_manifest_authority_diagnostics,
+        ) = _ci_normalize_unbound_manifest_authority(
+            producer_verified=aggregate_manifest_producer_verified,
+            content_digest=aggregate_manifest_digest,
+            manifest_document=aggregate_manifest_document,
+            authority_diagnostics=aggregate_manifest_authority_diagnostics,
+        )
+        if no_authority_invalid_plan:
             aggregate_manifest_producer_verified = False
     evidence_results = _ci_aggregate_evidence_results(
         plan=plan,
@@ -7282,38 +7750,121 @@ def _ci_batch_aggregation_payloads(
         bundle_slots,
         admitted_bundles=admitted_bundles,
     )
-    manifest_binding_producer_verified = (
+    all_phase_requires_external_manifest_binding = (
+        aggregate_phase == "all"
+        and not required_input_failure
+        and not no_authority_invalid_plan
+        and not unexpected
+        and namespace_overflow.get("detected") is not True
+        and not _ci_aggregate_namespace_enumeration_failed(namespace_overflow)
+        and not _ci_plan_fail_closed_diagnostics(authoritative_plan)
+        and all(
+            row.get("admissibility") == "valid" for row in summary_bundle_rows
+        )
+        and all(row.get("outcome") == "satisfied" for row in evidence_results)
+    )
+    aggregate_manifest_status_producer_verified = (
         aggregate_manifest_producer_verified
-        or aggregate_manifest_digest is None
+    )
+    (
+        summary_manifest_artifact_id,
+        summary_manifest_digest,
+        summary_manifest_document,
+        summary_manifest_bound,
+    ) = _ci_summary_bound_aggregate_manifest_projection(
+        args,
+        aggregate_manifest_digest=aggregate_manifest_digest,
+        aggregate_manifest_document=aggregate_manifest_document,
+        aggregate_manifest_authority_diagnostics=(
+            aggregate_manifest_authority_diagnostics
+        ),
+        require_external_binding=all_phase_requires_external_manifest_binding,
     )
     aggregate_summary_without_manifest = (
-        aggregate_manifest_document is None
+        summary_manifest_bound
+        and summary_manifest_document is None
         and (
-            aggregate_manifest_digest is None
+            summary_manifest_digest is None
             or not aggregate_manifest_authority_diagnostics
         )
     )
-    summary_required_input_failure = (
-        required_input_failure and aggregate_manifest_document is not None
+    if (
+        not summary_manifest_bound
+        and DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MISSING.value
+        in _ci_aggregate_manifest_authority_failure_details(
+            aggregate_manifest_authority_diagnostics
+        )
+    ):
+        aggregate_summary_without_manifest = True
+    aggregate_manifest_has_plan_authority = isinstance(
+        aggregate_manifest.get("projection-authority"),
+        Mapping,
     )
+    retained_projection_detail = (
+        _ci_missing_plan_invalid_plan_detail_from_manifest(
+            boundary_diagnostics,
+            {"input-artifacts": input_artifacts},
+        )
+    )
+    validation_plan_input = input_artifacts.get("validation-plan")
+    retained_projection_plan_authorized = (
+        _ci_invalid_plan_detail_requires_retained_projection(
+            retained_projection_detail
+        )
+        and isinstance(validation_plan_input, Mapping)
+        and isinstance(validation_plan_input.get("artifact-instance-id"), str)
+        and isinstance(validation_plan_input.get("content-digest"), str)
+    )
+    summary_plan = (
+        plan
+        if aggregate_manifest_has_plan_authority
+        or (
+            authoritative_plan is not None
+            and bool(_ci_plan_fail_closed_diagnostics(authoritative_plan))
+        )
+        or retained_projection_plan_authorized
+        else None
+    )
+    summary_required_input_failure = required_input_failure
     summary_namespace_overflow: Mapping[str, object] = (
-        namespace_overflow if aggregate_manifest_document is not None else {}
+        namespace_overflow if summary_manifest_document is not None else {}
     )
     summary_unexpected = (
-        unexpected if aggregate_manifest_document is not None else []
+        unexpected if summary_manifest_document is not None else []
     )
+    summary_manifest_producer_verified = (
+        aggregate_manifest_status_producer_verified and summary_manifest_bound
+    )
+    if (
+        all_phase_requires_external_manifest_binding
+        and not summary_manifest_bound
+    ):
+        aggregate_manifest_status_producer_verified = False
+        summary_manifest_producer_verified = False
+        summary_plan = None
+        summary_bundle_rows = []
+        evidence_results = []
+        summary_namespace_overflow = {}
+        summary_unexpected = []
+        aggregate_summary_without_manifest = True
+        budgets = {
+            **budgets,
+            "actual-execution-batches": 0,
+            "actual-total-jobs": 0,
+            "actual-windows-jobs": 0,
+        }
     failures = _ci_aggregate_summary_failures(
-        plan=plan,
+        plan=summary_plan,
         summary_bundle_rows=summary_bundle_rows,
         evidence_results=evidence_results,
         namespace_overflow=summary_namespace_overflow,
         unexpected_artifacts=summary_unexpected,
         required_input_failure=summary_required_input_failure,
-        aggregate_manifest_producer_verified=(
-            manifest_binding_producer_verified
-        ),
+        aggregate_manifest_producer_verified=summary_manifest_producer_verified,
         aggregate_manifest_authority_diagnostics=(
             aggregate_manifest_authority_diagnostics
+            if aggregate_manifest_digest is not None
+            else ()
         ),
         aggregate_summary_without_manifest=aggregate_summary_without_manifest,
     )
@@ -7326,17 +7877,16 @@ def _ci_batch_aggregation_payloads(
         key=lambda item: str(item.get("diagnostic-id")),
     )
     reason = _ci_aggregate_summary_reason(
-        plan=plan,
+        plan=summary_plan,
         summary_bundle_rows=summary_bundle_rows,
         evidence_results=evidence_results,
         namespace_overflow=summary_namespace_overflow,
         unexpected_artifacts=summary_unexpected,
         required_input_failure=summary_required_input_failure,
-        aggregate_manifest_producer_verified=(
-            manifest_binding_producer_verified
-        ),
+        aggregate_manifest_producer_verified=summary_manifest_producer_verified,
         aggregate_manifest_authority_failure=bool(
-            aggregate_manifest_authority_diagnostics
+            aggregate_manifest_digest is not None
+            and aggregate_manifest_authority_diagnostics
         ),
         aggregate_summary_without_manifest=aggregate_summary_without_manifest,
     )
@@ -7349,25 +7899,19 @@ def _ci_batch_aggregation_payloads(
         run_attempt=str(args.run_attempt),
         aggregate_evidence_manifest={
             "artifact-ref": aggregate_manifest["artifact-ref"],
-            "artifact-instance-id": (
-                _ci_required_aggregate_manifest_artifact_id(args)
-                if aggregate_manifest_digest is not None
-                else None
-            ),
-            "content-digest": aggregate_manifest_digest,
+            "artifact-instance-id": summary_manifest_artifact_id,
+            "content-digest": summary_manifest_digest,
         },
         final_artifacts={
             "aggregate-evidence-manifest": {
                 "artifact-ref": aggregate_manifest["artifact-ref"],
-                "artifact-instance-id": (
-                    _ci_required_aggregate_manifest_artifact_id(args)
+                "artifact-instance-id": summary_manifest_artifact_id,
+                "content-digest": summary_manifest_digest,
+                "producer-verified": summary_manifest_producer_verified,
+                "authority-diagnostics": (
+                    list(aggregate_manifest_authority_diagnostics)
                     if aggregate_manifest_digest is not None
-                    else None
-                ),
-                "content-digest": aggregate_manifest_digest,
-                "producer-verified": aggregate_manifest_producer_verified,
-                "authority-diagnostics": list(
-                    aggregate_manifest_authority_diagnostics
+                    else []
                 ),
             },
             "aggregate-summary": {
@@ -7377,10 +7921,26 @@ def _ci_batch_aggregation_payloads(
                 ),
             },
         },
-        validation_tree=cast("Mapping[str, object]", plan["validation-tree"]),
-        affected_range=_ci_summary_affected_range(plan),
-        request=_ci_aggregate_manifest_request_summary(input_artifacts),
-        scheduled_full=cast("Mapping[str, object]", plan["scheduled-full"]),
+        validation_tree=(
+            cast("Mapping[str, object]", plan["validation-tree"])
+            if summary_plan is not None
+            else dict(_UNKNOWN_VALIDATION_TREE)
+        ),
+        affected_range=(
+            _ci_summary_affected_range(plan)
+            if summary_plan is not None
+            else dict(_UNKNOWN_AFFECTED_RANGE)
+        ),
+        request=_ci_invalid_plan_request_summary(
+            input_artifacts,
+            plan=summary_plan,
+            boundary_diagnostics=boundary_diagnostics,
+        ),
+        scheduled_full=(
+            cast("Mapping[str, object]", plan["scheduled-full"])
+            if summary_plan is not None
+            else dict(_UNKNOWN_SCHEDULED_FULL)
+        ),
         verdict="failed" if any(reason.values()) else "passed",
         reason=reason,
         budgets=budgets,
@@ -7389,45 +7949,125 @@ def _ci_batch_aggregation_payloads(
         evidence_results=evidence_results,
         failures=failures,
         work_groups=_ci_aggregate_work_group_counts(evidence_results),
-        plan=plan,
-        aggregate_evidence_manifest_document=aggregate_manifest_document,
-        admitted_batch_evidence_bundles=(
-            admitted_bundles
-            if aggregate_manifest_document is not None
+        plan=summary_plan,
+        aggregate_evidence_manifest_document=(
+            summary_manifest_document
+            if summary_manifest_bound
+            and isinstance(summary_manifest_document, Mapping)
+            and summary_manifest_document.get("kind")
+            == CiValidationKind.AGGREGATE_EVIDENCE_MANIFEST.value
             else None
         ),
-        execution_batch_manifest=execution_batch_manifest,
+        admitted_batch_evidence_bundles=(
+            admitted_bundles
+            if summary_manifest_document is not None
+            and not no_authority_invalid_plan
+            and summary_plan is not None
+            else None
+        ),
+        execution_batch_manifest=(
+            None
+            if no_authority_invalid_plan or summary_plan is None
+            else execution_batch_manifest
+        ),
         request_document=authoritative_request,
-        changed_files_snapshot=authoritative_changed_files_snapshot,
-        fact_snapshot=authoritative_fact_snapshot,
+        changed_files_snapshot=(
+            authoritative_changed_files_snapshot
+            if authoritative_plan is not None
+            else None
+        ),
+        fact_snapshot=(
+            authoritative_fact_snapshot
+            if authoritative_plan is not None
+            else None
+        ),
+        aggregate_evidence_manifest_bound=summary_manifest_bound,
+        aggregate_evidence_manifest_external_binding_verified=(
+            summary_manifest_bound
+            and summary_manifest_document is not None
+            and bool(aggregate_manifest_authority_diagnostics)
+        ),
+        aggregate_manifest_authority_failure_details=(
+            _ci_aggregate_manifest_authority_failure_details(
+                aggregate_manifest_authority_diagnostics
+            )
+            if aggregate_manifest_digest is not None
+            else ()
+        ),
     )
-    if not required_input_failure and aggregate_manifest_document is not None:
+    aggregate_summary = _ci_rebind_invalid_plan_summary_failures(
+        aggregate_summary,
+        boundary_diagnostics,
+    )
+    if (
+        not required_input_failure
+        and summary_manifest_bound
+        and aggregate_manifest_document is not None
+    ):
         validate_ci_validation_aggregate_evidence_manifest(
             aggregate_manifest_document,
             plan=plan,
-            execution_batch_manifest=execution_batch_manifest,
+            execution_batch_manifest=(
+                None
+                if no_authority_invalid_plan or summary_plan is None
+                else execution_batch_manifest
+            ),
             request=authoritative_request,
-            changed_files_snapshot=authoritative_changed_files_snapshot,
+            changed_files_snapshot=(
+                authoritative_changed_files_snapshot
+                if authoritative_plan is not None
+                else None
+            ),
             fact_snapshot=authoritative_fact_snapshot,
             expected_run_id=str(args.run_id),
             expected_run_attempt=str(args.run_attempt),
         )
-    if not required_input_failure:
+    if not required_input_failure and (
+        summary_manifest_bound or not aggregate_manifest_authority_diagnostics
+    ):
         validate_ci_validation_aggregate_summary(
             aggregate_summary,
-            plan=plan,
-            aggregate_evidence_manifest=aggregate_manifest_document,
-            admitted_batch_evidence_bundles=(
-                admitted_bundles
-                if aggregate_manifest_document is not None
+            plan=summary_plan,
+            aggregate_evidence_manifest=(
+                summary_manifest_document
+                if summary_manifest_bound
+                and isinstance(summary_manifest_document, Mapping)
+                and summary_manifest_document.get("kind")
+                == CiValidationKind.AGGREGATE_EVIDENCE_MANIFEST.value
                 else None
             ),
-            execution_batch_manifest=execution_batch_manifest,
+            admitted_batch_evidence_bundles=(
+                admitted_bundles
+                if summary_manifest_bound
+                and summary_manifest_document is not None
+                and not no_authority_invalid_plan
+                and summary_plan is not None
+                else None
+            ),
+            execution_batch_manifest=(
+                None
+                if (
+                    no_authority_invalid_plan
+                    or summary_plan is None
+                    or not summary_manifest_bound
+                )
+                else execution_batch_manifest
+            ),
             request=authoritative_request,
             changed_files_snapshot=authoritative_changed_files_snapshot,
             fact_snapshot=authoritative_fact_snapshot,
             expected_run_id=str(args.run_id),
             expected_run_attempt=str(args.run_attempt),
+            _aggregate_evidence_manifest_bound=summary_manifest_bound,
+            _aggregate_evidence_manifest_external_binding_verified=(
+                summary_manifest_bound
+                and bool(aggregate_manifest_authority_diagnostics)
+            ),
+            _aggregate_manifest_authority_failure_details=set(
+                _ci_aggregate_manifest_authority_failure_details(
+                    aggregate_manifest_authority_diagnostics
+                )
+            ),
         )
     return {
         "aggregate_manifest": aggregate_manifest,
@@ -7435,7 +8075,183 @@ def _ci_batch_aggregation_payloads(
     }
 
 
-def _ci_missing_plan_batch_payloads(
+def _ci_downgrade_invalid_plan_inputs_to_no_authority(
+    args: argparse.Namespace,
+    aggregate_input_artifacts: Mapping[str, object],
+    boundary_diagnostics: Sequence[Mapping[str, object]],
+    retained_projection_detail: str,
+) -> list[Mapping[str, object]]:
+    no_authority_diagnostic = _ci_invalid_plan_control_diagnostic(
+        args,
+        detail=DiagnosticDetail.MALFORMED_PLAN.value,
+        message="Validation plan control input is malformed.",
+    )
+    _ci_replace_invalid_plan_input_diagnostics(
+        aggregate_input_artifacts,
+        no_authority_diagnostic,
+        drop_non_validation_plan=True,
+        replaced_detail=retained_projection_detail,
+    )
+    downgraded_diagnostics: list[Mapping[str, object]] = []
+    replaced_retained_diagnostic = False
+    for diagnostic in boundary_diagnostics:
+        if (
+            not replaced_retained_diagnostic
+            and diagnostic.get("code") == DiagnosticFamily.INVALID_PLAN.value
+            and diagnostic.get("detail") == retained_projection_detail
+        ):
+            downgraded_diagnostics.append(no_authority_diagnostic)
+            replaced_retained_diagnostic = True
+        else:
+            downgraded_diagnostics.append(diagnostic)
+    if not replaced_retained_diagnostic:
+        downgraded_diagnostics.insert(0, no_authority_diagnostic)
+    return downgraded_diagnostics
+
+
+def _ci_retained_input_artifact_has_complete_identity(
+    input_artifact: object,
+) -> bool:
+    return (
+        isinstance(input_artifact, Mapping)
+        and isinstance(input_artifact.get("artifact-ref"), str)
+        and bool(input_artifact.get("artifact-ref"))
+        and isinstance(input_artifact.get("artifact-instance-id"), str)
+        and bool(input_artifact.get("artifact-instance-id"))
+        and isinstance(input_artifact.get("content-digest"), str)
+        and bool(input_artifact.get("content-digest"))
+    )
+
+
+def _ci_downgrade_retained_invalid_plan_projection_if_unbound(
+    args: argparse.Namespace,
+    aggregate_input_artifacts: Mapping[str, object],
+    invalid_plan_context: Mapping[str, object] | None,
+    boundary_diagnostics: Sequence[Mapping[str, object]],
+) -> tuple[Sequence[Mapping[str, object]], Mapping[str, object] | None]:
+    retained_projection_detail = _ci_missing_plan_invalid_plan_detail(
+        boundary_diagnostics,
+    )
+    if not _ci_invalid_plan_detail_requires_retained_projection(
+        retained_projection_detail,
+    ):
+        return boundary_diagnostics, invalid_plan_context
+    request_authority = (
+        _ci_retained_invalid_plan_request_document_authority_state(
+            args,
+            aggregate_input_artifacts,
+        )
+    )
+    request_authority_missing = (
+        request_authority == "missing"
+        and not _ci_retained_input_artifact_has_complete_identity(
+            aggregate_input_artifacts.get("request")
+        )
+    )
+    if request_authority_missing and invalid_plan_context is None:
+        if _ci_invalid_plan_detail_allows_no_authority_projection(
+            retained_projection_detail,
+        ):
+            return (
+                _ci_downgrade_invalid_plan_inputs_to_no_authority(
+                    args,
+                    aggregate_input_artifacts,
+                    boundary_diagnostics,
+                    retained_projection_detail,
+                ),
+                None,
+            )
+        raise ContractValidationError(
+            [
+                ValidationIssue(
+                    "$.projection-authority",
+                    "retained invalid-plan detail requires complete "
+                    "producer-compatible projection context",
+                )
+            ]
+        )
+    if invalid_plan_context is not None and (
+        _ci_retained_invalid_plan_projection_shape_is_complete(
+            invalid_plan_context,
+        )
+    ):
+        if (
+            not _ci_retained_invalid_plan_projection_context_is_complete(
+                invalid_plan_context,
+                aggregate_input_artifacts,
+                retained_projection_detail,
+            )
+            or request_authority == "missing"
+        ):
+            raise ContractValidationError(
+                [
+                    ValidationIssue(
+                        "$.projection-authority",
+                        "retained invalid-plan detail requires complete "
+                        "producer-compatible projection context",
+                    )
+                ]
+            )
+        if request_authority == "mismatch":
+            raise ContractValidationError(
+                [
+                    ValidationIssue(
+                        "$.projection-authority",
+                        "retained invalid-plan detail requires complete "
+                        "producer-compatible projection context",
+                    )
+                ]
+            )
+        if not _ci_retained_invalid_plan_request_document_authorizes_projection(
+            args,
+            invalid_plan_context,
+            aggregate_input_artifacts,
+        ):
+            raise ContractValidationError(
+                [
+                    ValidationIssue(
+                        "$.projection-authority",
+                        "retained invalid-plan detail requires complete "
+                        "producer-compatible projection context",
+                    )
+                ]
+            )
+        if _ci_retained_invalid_plan_projection_matches_inputs(
+            invalid_plan_context,
+            aggregate_input_artifacts,
+            retained_projection_detail,
+        ):
+            if (
+                retained_projection_detail
+                == DiagnosticDetail.PLAN_DIGEST_MISMATCH.value
+            ):
+                retained_context = dict(invalid_plan_context)
+                retained_context["plan-digest"] = ci_validation_plan_digest(
+                    invalid_plan_context
+                )
+                return boundary_diagnostics, retained_context
+            return boundary_diagnostics, invalid_plan_context
+        raise ContractValidationError(
+            [
+                ValidationIssue(
+                    "$.projection-authority",
+                    "retained invalid-plan detail requires complete "
+                    "producer-compatible projection context",
+                )
+            ]
+        )
+    raise ContractValidationError(
+        [
+            ValidationIssue(
+                "$.projection-authority",
+                "retained invalid-plan detail requires complete "
+                "producer-compatible projection context",
+            )
+        ]
+    )
+
+
+def _ci_missing_plan_batch_payloads(  # noqa: PLR0915
     args: argparse.Namespace,
     *,
     owner: str,
@@ -7445,6 +8261,7 @@ def _ci_missing_plan_batch_payloads(
     summary_created_at: str | None = None,
     input_artifacts: Mapping[str, object] | None = None,
     invalid_plan_context: Mapping[str, object] | None = None,
+    boundary_diagnostics: Sequence[Mapping[str, object]] = (),
 ) -> dict[str, Mapping[str, object]]:
     summary_created_at = summary_created_at or created_at
     completed_at = completed_at or summary_created_at
@@ -7498,6 +8315,54 @@ def _ci_missing_plan_batch_payloads(
             ),
         }
     )
+    retained_detail = _ci_missing_plan_invalid_plan_detail(
+        boundary_diagnostics,
+    )
+    if (
+        getattr(args, "aggregate_phase", "all") == "all"
+        and invalid_plan_context is not None
+        and _ci_invalid_plan_detail_requires_retained_projection(
+            retained_detail,
+        )
+    ):
+        boundary_diagnostics = (
+            _ci_downgrade_invalid_plan_inputs_to_no_authority(
+                args,
+                aggregate_input_artifacts,
+                boundary_diagnostics,
+                retained_detail,
+            )
+        )
+        invalid_plan_context = None
+    boundary_diagnostics, invalid_plan_context = (
+        _ci_downgrade_retained_invalid_plan_projection_if_unbound(
+            args,
+            aggregate_input_artifacts,
+            invalid_plan_context,
+            boundary_diagnostics,
+        )
+    )
+    malformed_snapshot_detail = _ci_malformed_snapshot_detail(
+        boundary_diagnostics,
+    )
+    if (
+        malformed_snapshot_detail is not None
+        and invalid_plan_context is not None
+        and _ci_malformed_snapshot_culprit_document_is_invalid(
+            args,
+            malformed_snapshot_detail,
+        )
+    ):
+        raise ContractValidationError(
+            [
+                ValidationIssue(
+                    "$.projection-authority",
+                    f"retained invalid-plan detail {malformed_snapshot_detail} "
+                    "requires public-validator admissible snapshot context",
+                )
+            ]
+        )
+    _ci_canonicalize_invalid_plan_input_diagnostics(aggregate_input_artifacts)
     pre_final_count = _ci_aggregate_pre_final_input_count(
         aggregate_input_artifacts
     )
@@ -7530,6 +8395,22 @@ def _ci_missing_plan_batch_payloads(
         enumeration_unavailable=namespace_enumeration_unavailable,
         downloader_observed_overflow=downloader_namespace_overflow,
     )
+    retained_request_document = None
+    retained_changed_files_snapshot = None
+    retained_fact_snapshot = None
+    if invalid_plan_context is not None:
+        with suppress(OSError, TypeError, ValueError, json.JSONDecodeError):
+            retained_request_document = _read_optional_json(
+                getattr(args, "request", "")
+            )
+        with suppress(OSError, TypeError, ValueError, json.JSONDecodeError):
+            retained_changed_files_snapshot = _read_optional_json(
+                getattr(args, "changed_files_snapshot", "")
+            )
+        with suppress(OSError, TypeError, ValueError, json.JSONDecodeError):
+            retained_fact_snapshot = _read_optional_json(
+                getattr(args, "fact_snapshot", "")
+            )
     aggregate_manifest = _freeze_ci_validation_aggregate_evidence_manifest(
         created_at=created_at,
         repository_owner=owner,
@@ -7543,14 +8424,16 @@ def _ci_missing_plan_batch_payloads(
         namespace_overflow=namespace_overflow,
         pre_final_validation_artifacts=pre_final_count,
         namespace_closed_at=created_at,
-        plan=None,
+        plan=invalid_plan_context,
         execution_batch_manifest=None,
-        request=None,
-        changed_files_snapshot=None,
-        fact_snapshot=None,
+        request=retained_request_document,
+        changed_files_snapshot=retained_changed_files_snapshot,
+        fact_snapshot=retained_fact_snapshot,
         _require_authoritative_snapshot_inputs=False,
     )
-    if getattr(args, "aggregate_phase", "all") == "evidence":
+    recomputed_aggregate_manifest = aggregate_manifest
+    aggregate_phase = getattr(args, "aggregate_phase", "all")
+    if aggregate_phase == "evidence":
         return {"aggregate_manifest": aggregate_manifest}
     aggregate_manifest_document: Mapping[str, object] | None = (
         aggregate_manifest
@@ -7566,20 +8449,25 @@ def _ci_missing_plan_batch_payloads(
     aggregate_manifest_authority_diagnostics: Sequence[
         Mapping[str, object]
     ] = ()
-    if getattr(args, "aggregate_phase", "all") == "summary":
+    if aggregate_phase != "evidence":
+        if invalid_plan_context is not None:
+            _ci_preserve_all_phase_aggregate_manifest_bytes(
+                args, aggregate_manifest
+            )
         manifest_authority = _ci_summary_aggregate_manifest_authority(
             args,
             recomputed_manifest=aggregate_manifest,
-            plan=None,
+            plan=invalid_plan_context,
             execution_batch_manifest=None,
             request=None,
             changed_files_snapshot=None,
             fact_snapshot=None,
         )
-        aggregate_manifest = cast(
-            "Mapping[str, object]",
-            manifest_authority["manifest"],
-        )
+        if aggregate_phase == "summary":
+            aggregate_manifest = cast(
+                "Mapping[str, object]",
+                manifest_authority["manifest"],
+            )
         aggregate_manifest_digest = cast(
             "str | None",
             manifest_authority["content_digest"],
@@ -7598,18 +8486,45 @@ def _ci_missing_plan_batch_payloads(
                 key=lambda item: str(item.get("diagnostic-id")),
             )
         )
-        if aggregate_manifest_authority_diagnostics:
-            aggregate_manifest_producer_verified = False
+        (
+            aggregate_manifest_producer_verified,
+            aggregate_manifest_digest,
+            aggregate_manifest_authority_diagnostics,
+        ) = _ci_normalize_unbound_manifest_authority(
+            producer_verified=aggregate_manifest_producer_verified,
+            content_digest=aggregate_manifest_digest,
+            manifest_document=aggregate_manifest_document,
+            authority_diagnostics=aggregate_manifest_authority_diagnostics,
+        )
+    aggregate_manifest_status_producer_verified = (
+        aggregate_manifest_producer_verified
+    )
+    (
+        aggregate_manifest_artifact_instance_id,
+        aggregate_manifest_summary_digest,
+        summary_aggregate_manifest_document,
+        aggregate_manifest_identity_bound,
+    ) = _ci_summary_bound_aggregate_manifest_projection(
+        args,
+        aggregate_manifest_digest=aggregate_manifest_digest,
+        aggregate_manifest_document=aggregate_manifest_document,
+        aggregate_manifest_authority_diagnostics=(
+            aggregate_manifest_authority_diagnostics
+        ),
+        require_external_binding=(
+            aggregate_phase == "all" or invalid_plan_context is None
+        ),
+    )
+    aggregate_manifest_summary_producer_verified = bool(
+        aggregate_manifest_status_producer_verified
+        and aggregate_manifest_identity_bound
+    )
     budgets = _ci_missing_execution_manifest_budgets(
         pre_final_validation_artifacts=pre_final_count,
         aggregate_duration_seconds=_ci_aggregate_duration_seconds(
             str(getattr(args, "started_at", "") or created_at),
             completed_at,
         ),
-    )
-    manifest_binding_producer_verified = (
-        aggregate_manifest_producer_verified
-        or aggregate_manifest_digest is None
     )
     aggregate_summary_without_manifest = (
         aggregate_manifest_document is None
@@ -7618,25 +8533,78 @@ def _ci_missing_plan_batch_payloads(
             or not aggregate_manifest_authority_diagnostics
         )
     )
-    summary_namespace_overflow: Mapping[str, object] = (
-        namespace_overflow if aggregate_manifest_document is not None else {}
-    )
-    summary_unexpected = (
-        unexpected if aggregate_manifest_document is not None else []
-    )
+    invalid_plan_detail_boundary_diagnostics = boundary_diagnostics
     final_failures = _ci_aggregate_summary_failures(
         summary_bundle_rows=[],
         evidence_results=[],
-        namespace_overflow=summary_namespace_overflow,
-        unexpected_artifacts=summary_unexpected,
+        namespace_overflow=(
+            namespace_overflow
+            if aggregate_manifest_document is not None
+            else {}
+        ),
+        unexpected_artifacts=(
+            unexpected if aggregate_manifest_document is not None else []
+        ),
         required_input_failure=False,
         aggregate_manifest_producer_verified=(
-            manifest_binding_producer_verified
+            aggregate_manifest_summary_producer_verified
         ),
         aggregate_manifest_authority_diagnostics=(
             aggregate_manifest_authority_diagnostics
         ),
         aggregate_summary_without_manifest=aggregate_summary_without_manifest,
+    )
+    invalid_plan_failure = _ci_invalid_plan_failure_for_detail(
+        _ci_missing_plan_invalid_plan_detail_from_manifest(
+            invalid_plan_detail_boundary_diagnostics,
+            _ci_invalid_plan_detail_manifest_context(
+                aggregate_manifest=aggregate_manifest,
+                aggregate_input_artifacts=aggregate_input_artifacts,
+                aggregate_manifest_document=aggregate_manifest_document,
+                aggregate_manifest_digest=aggregate_manifest_digest,
+                aggregate_manifest_authority_diagnostics=(
+                    aggregate_manifest_authority_diagnostics
+                ),
+            ),
+        )
+    )
+    final_failures.append(invalid_plan_failure)
+    final_failures = sorted(final_failures, key=_ci_aggregate_failure_sort_key)
+    diagnostics = sorted(
+        [
+            failure["diagnostic"]
+            for failure in final_failures
+            if isinstance(failure.get("diagnostic"), Mapping)
+        ],
+        key=lambda item: str(item.get("diagnostic-id")),
+    )
+    rebound = _ci_rebind_invalid_plan_summary_failures(
+        {"failures": final_failures, "diagnostics": diagnostics},
+        invalid_plan_detail_boundary_diagnostics,
+    )
+    final_failures = list(
+        cast("Sequence[Mapping[str, object]]", rebound["failures"])
+    )
+    diagnostics = list(
+        cast("Sequence[Mapping[str, object]]", rebound["diagnostics"])
+    )
+    invalid_plan_failure = next(
+        failure
+        for failure in final_failures
+        if failure.get("kind") == "invalid-plan"
+    )
+    invalid_plan_diagnostic = cast(
+        "Mapping[str, object]",
+        invalid_plan_failure["diagnostic"],
+    )
+    projected_invalid_plan_context = (
+        invalid_plan_context
+        if invalid_plan_diagnostic.get("detail")
+        not in {
+            DiagnosticDetail.PLAN_MISSING.value,
+            *_CI_VALIDATION_INVALID_PLAN_MISSING_PROJECTION_DETAIL_MESSAGES,
+        }
+        else None
     )
     reason = {
         "invalid-plan": True,
@@ -7650,20 +8618,25 @@ def _ci_missing_plan_batch_payloads(
         "namespace-closure-failure": False,
         "required-input-artifact-failure": False,
         "aggregate-summary-without-manifest": aggregate_summary_without_manifest,
-        "final-producer-unverified": not manifest_binding_producer_verified,
+        "final-producer-unverified": (
+            not aggregate_manifest_summary_producer_verified
+        ),
         "final-evidence-failure": any(
             failure.get("kind") == "final-evidence-failure"
             for failure in final_failures
         ),
     }
-    diagnostics = sorted(
-        [
-            failure["diagnostic"]
-            for failure in final_failures
-            if isinstance(failure.get("diagnostic"), Mapping)
-        ],
-        key=lambda item: str(item.get("diagnostic-id")),
-    )
+    if (
+        projected_invalid_plan_context is not None
+        and aggregate_manifest_document is not None
+    ):
+        summary_aggregate_manifest_document = aggregate_manifest_document
+    elif (
+        projected_invalid_plan_context is not None
+        and aggregate_manifest_identity_bound
+        and aggregate_manifest_authority_diagnostics
+    ):
+        summary_aggregate_manifest_document = recomputed_aggregate_manifest
     aggregate_summary = freeze_ci_validation_aggregate_summary(
         created_at=summary_created_at,
         repository_owner=owner,
@@ -7673,25 +8646,21 @@ def _ci_missing_plan_batch_payloads(
         run_attempt=run_attempt,
         aggregate_evidence_manifest={
             "artifact-ref": aggregate_manifest["artifact-ref"],
-            "artifact-instance-id": (
-                _ci_required_aggregate_manifest_artifact_id(args)
-                if aggregate_manifest_digest is not None
-                else None
-            ),
-            "content-digest": aggregate_manifest_digest,
+            "artifact-instance-id": aggregate_manifest_artifact_instance_id,
+            "content-digest": aggregate_manifest_summary_digest,
         },
         final_artifacts={
             "aggregate-evidence-manifest": {
                 "artifact-ref": aggregate_manifest["artifact-ref"],
-                "artifact-instance-id": (
-                    _ci_required_aggregate_manifest_artifact_id(args)
-                    if aggregate_manifest_digest is not None
-                    else None
+                "artifact-instance-id": aggregate_manifest_artifact_instance_id,
+                "content-digest": aggregate_manifest_summary_digest,
+                "producer-verified": (
+                    aggregate_manifest_summary_producer_verified
                 ),
-                "content-digest": aggregate_manifest_digest,
-                "producer-verified": aggregate_manifest_producer_verified,
                 "authority-diagnostics": list(
                     aggregate_manifest_authority_diagnostics
+                    if aggregate_manifest_identity_bound
+                    else ()
                 ),
             },
             "aggregate-summary": {
@@ -7703,24 +8672,47 @@ def _ci_missing_plan_batch_payloads(
         },
         validation_tree=(
             cast(
-                "Mapping[str, object]", invalid_plan_context["validation-tree"]
+                "Mapping[str, object]",
+                projected_invalid_plan_context.get(
+                    "validation-tree",
+                    {"commit-sha": "0" * 40, "ref": "refs/invalid-plan"},
+                ),
             )
-            if invalid_plan_context is not None
+            if projected_invalid_plan_context is not None
             else {}
         ),
         affected_range=(
-            _ci_summary_affected_range(invalid_plan_context)
-            if invalid_plan_context is not None
+            (
+                _ci_summary_affected_range(projected_invalid_plan_context)
+                if "affected-range" in projected_invalid_plan_context
+                else {
+                    "status": "unknown",
+                    "base-sha": None,
+                    "base-tip-sha": None,
+                    "head-sha": None,
+                    "changed-files-hash": None,
+                }
+            )
+            if projected_invalid_plan_context is not None
             else {}
         ),
         request=(
-            cast("Mapping[str, object]", invalid_plan_context["request"])
-            if invalid_plan_context is not None
+            cast(
+                "Mapping[str, object]",
+                projected_invalid_plan_context.get("request", {}),
+            )
+            if projected_invalid_plan_context is not None
             else {}
         ),
         scheduled_full=(
-            cast("Mapping[str, object]", invalid_plan_context["scheduled-full"])
-            if invalid_plan_context is not None
+            cast(
+                "Mapping[str, object]",
+                projected_invalid_plan_context.get(
+                    "scheduled-full",
+                    {"enabled": False},
+                ),
+            )
+            if projected_invalid_plan_context is not None
             else {}
         ),
         verdict="failed",
@@ -7731,13 +8723,25 @@ def _ci_missing_plan_batch_payloads(
         evidence_results=[],
         failures=final_failures,
         work_groups=_ci_aggregate_work_group_counts([]),
-        plan=invalid_plan_context,
-        aggregate_evidence_manifest_document=aggregate_manifest_document,
+        plan=projected_invalid_plan_context,
+        aggregate_evidence_manifest_document=summary_aggregate_manifest_document,
         admitted_batch_evidence_bundles=None,
         execution_batch_manifest=None,
-        request_document=None,
-        changed_files_snapshot=None,
-        fact_snapshot=None,
+        request_document=retained_request_document,
+        changed_files_snapshot=retained_changed_files_snapshot,
+        fact_snapshot=retained_fact_snapshot,
+        aggregate_evidence_manifest_bound=aggregate_manifest_identity_bound,
+        aggregate_evidence_manifest_external_binding_verified=(
+            aggregate_manifest_identity_bound
+            and bool(aggregate_manifest_authority_diagnostics)
+        ),
+        aggregate_manifest_authority_failure_details=(
+            _ci_aggregate_manifest_authority_failure_details(
+                aggregate_manifest_authority_diagnostics
+            )
+            if aggregate_manifest_identity_bound
+            else None
+        ),
     )
     return {
         "aggregate_manifest": aggregate_manifest,
@@ -7745,7 +8749,261 @@ def _ci_missing_plan_batch_payloads(
     }
 
 
-def _ci_missing_execution_batch_manifest_payloads(
+def _ci_invalid_plan_detail_manifest_context(
+    *,
+    aggregate_manifest: Mapping[str, object],
+    aggregate_input_artifacts: Mapping[str, object],
+    aggregate_manifest_document: Mapping[str, object] | None,
+    aggregate_manifest_digest: str | None,
+    aggregate_manifest_authority_diagnostics: Sequence[Mapping[str, object]],
+) -> Mapping[str, object]:
+    if (
+        aggregate_manifest_document is None
+        and isinstance(aggregate_manifest_digest, str)
+        and bool(aggregate_manifest_authority_diagnostics)
+    ):
+        return {"input-artifacts": dict(aggregate_input_artifacts)}
+    return aggregate_manifest
+
+
+def _ci_missing_plan_invalid_plan_failure(
+    boundary_diagnostics: Sequence[Mapping[str, object]],
+) -> Json:
+    detail = _ci_missing_plan_invalid_plan_detail(boundary_diagnostics)
+    return _ci_invalid_plan_failure_for_detail(detail)
+
+
+def _ci_missing_plan_invalid_plan_detail_from_manifest(
+    boundary_diagnostics: Sequence[Mapping[str, object]],
+    aggregate_manifest: Mapping[str, object],
+) -> str:
+    detail = _ci_missing_plan_invalid_plan_detail(boundary_diagnostics)
+    if detail != DiagnosticDetail.PLAN_MISSING.value:
+        if (
+            _ci_invalid_plan_detail_requires_retained_projection(detail)
+            and aggregate_manifest.get("kind") is None
+            and not _ci_manifest_input_artifacts_include_invalid_plan_detail(
+                aggregate_manifest,
+                detail,
+            )
+        ):
+            return DiagnosticDetail.PLAN_MISSING.value
+        return detail
+    manifest_diagnostics: list[Mapping[str, object]] = []
+    input_artifacts = aggregate_manifest.get("input-artifacts")
+    if isinstance(input_artifacts, Mapping):
+        for input_artifact in input_artifacts.values():
+            if not isinstance(input_artifact, Mapping):
+                continue
+            diagnostics = input_artifact.get("diagnostics")
+            if not isinstance(diagnostics, Sequence) or isinstance(
+                diagnostics,
+                str | bytes,
+            ):
+                continue
+            manifest_diagnostics.extend(
+                diagnostic
+                for diagnostic in diagnostics
+                if isinstance(diagnostic, Mapping)
+            )
+    return _ci_missing_plan_invalid_plan_detail(manifest_diagnostics)
+
+
+def _ci_manifest_input_artifacts_include_invalid_plan_detail(
+    aggregate_manifest: Mapping[str, object],
+    detail: str,
+) -> bool:
+    input_artifacts = aggregate_manifest.get("input-artifacts")
+    if not isinstance(input_artifacts, Mapping):
+        return False
+    for input_artifact in input_artifacts.values():
+        if not isinstance(input_artifact, Mapping):
+            continue
+        diagnostics = input_artifact.get("diagnostics")
+        if not isinstance(diagnostics, Sequence) or isinstance(
+            diagnostics,
+            str | bytes,
+        ):
+            continue
+        if any(
+            isinstance(diagnostic, Mapping)
+            and diagnostic.get("code") == DiagnosticFamily.INVALID_PLAN.value
+            and diagnostic.get("detail") == detail
+            for diagnostic in diagnostics
+        ):
+            return True
+    return False
+
+
+def _ci_invalid_plan_failure_for_detail(detail: str) -> Json:
+    if detail == DiagnosticDetail.PLAN_MISSING.value:
+        diagnostic_id = "invalid-plan"
+        message = CI_VALIDATION_INVALID_PLAN_MISSING_MESSAGE
+    else:
+        diagnostic_id = f"invalid-plan/{detail}"
+        message = CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE
+    diagnostic = _ci_aggregate_diagnostic(
+        diagnostic_id,
+        code=DiagnosticFamily.INVALID_PLAN.value,
+        detail=detail,
+        message=message,
+        source_id=None,
+        severity=DiagnosticSeverity.FAIL_CLOSED.value,
+        verdict_effect=DiagnosticVerdictEffect.FAIL_CLOSED.value,
+    )
+    return _ci_aggregate_failure(
+        kind="invalid-plan",
+        diagnostic=diagnostic,
+        message=message,
+    )
+
+
+def _ci_rebind_invalid_plan_summary_failures(
+    summary: Mapping[str, object],
+    boundary_diagnostics: Sequence[Mapping[str, object]],
+) -> Mapping[str, object]:
+    detail = _ci_missing_plan_invalid_plan_detail(boundary_diagnostics)
+    if detail == DiagnosticDetail.PLAN_MISSING.value:
+        detail = _ci_invalid_plan_detail_from_summary_diagnostics(summary)
+    if detail == DiagnosticDetail.PLAN_MISSING.value:
+        return summary
+    failures = summary.get("failures")
+    if not isinstance(failures, Sequence) or isinstance(failures, str | bytes):
+        return summary
+    rebound_failures: list[object] = []
+    replaced = False
+    replacement = _ci_invalid_plan_failure_for_detail(detail)
+    for failure in failures:
+        if (
+            not replaced
+            and isinstance(failure, Mapping)
+            and failure.get("kind") == "invalid-plan"
+        ):
+            rebound_failures.append(replacement)
+            replaced = True
+        else:
+            rebound_failures.append(failure)
+    if not replaced:
+        return summary
+    sorted_failures = sorted(
+        rebound_failures,
+        key=lambda failure: _ci_aggregate_failure_sort_key(
+            cast("Mapping[str, object]", failure)
+        )
+        if isinstance(failure, Mapping)
+        else ("", "", "", "", "", ""),
+    )
+    result = dict(summary)
+    result["failures"] = sorted_failures
+    if detail in _CI_VALIDATION_INVALID_PLAN_MISSING_PROJECTION_DETAIL_MESSAGES:
+        result["request"] = {"artifact-ref": None, "request-digest": None}
+    result["diagnostics"] = sorted(
+        [
+            failure["diagnostic"]
+            for failure in sorted_failures
+            if isinstance(failure, Mapping)
+            and isinstance(failure.get("diagnostic"), Mapping)
+        ],
+        key=lambda item: str(
+            cast("Mapping[str, object]", item).get("diagnostic-id")
+        ),
+    )
+    return result
+
+
+def _ci_invalid_plan_detail_from_summary_diagnostics(
+    summary: Mapping[str, object],
+) -> str:
+    canonical_details = (
+        _CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAILS
+        | set(_CI_VALIDATION_INVALID_PLAN_MISSING_PROJECTION_DETAIL_MESSAGES)
+    )
+    diagnostics: list[object] = []
+    root_diagnostics = summary.get("diagnostics")
+    if isinstance(root_diagnostics, Sequence) and not isinstance(
+        root_diagnostics, str | bytes
+    ):
+        diagnostics.extend(root_diagnostics)
+    failures = summary.get("failures")
+    if isinstance(failures, Sequence) and not isinstance(failures, str | bytes):
+        diagnostics.extend(
+            failure.get("diagnostic")
+            for failure in failures
+            if isinstance(failure, Mapping)
+        )
+    for diagnostic in diagnostics:
+        if not isinstance(diagnostic, Mapping):
+            continue
+        if diagnostic.get("code") != DiagnosticFamily.INVALID_PLAN.value:
+            continue
+        detail = diagnostic.get("detail")
+        if isinstance(detail, str) and detail in canonical_details:
+            return detail
+    return DiagnosticDetail.PLAN_MISSING.value
+
+
+def _ci_invalid_plan_detail_requires_retained_projection(detail: str) -> bool:
+    return (
+        detail in _CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAILS
+        and detail
+        not in _CI_VALIDATION_INVALID_PLAN_MISSING_PROJECTION_DETAIL_MESSAGES
+    )
+
+
+def _ci_invalid_plan_detail_allows_no_authority_projection(detail: str) -> bool:
+    return detail in {
+        DiagnosticDetail.PLAN_MISSING.value,
+        *_CI_VALIDATION_INVALID_PLAN_MISSING_PROJECTION_DETAIL_MESSAGES,
+    }
+
+
+def _ci_boundary_diagnostics_have_no_authority_invalid_plan(
+    boundary_diagnostics: Sequence[Mapping[str, object]],
+) -> bool:
+    details = _ci_boundary_invalid_plan_details(boundary_diagnostics)
+    return bool(details) and all(
+        _ci_invalid_plan_detail_allows_no_authority_projection(detail)
+        for detail in details
+    )
+
+
+def _ci_missing_plan_invalid_plan_detail(
+    boundary_diagnostics: Sequence[Mapping[str, object]],
+) -> str:
+    details = _ci_boundary_invalid_plan_details(boundary_diagnostics)
+    for detail in details:
+        if _ci_invalid_plan_detail_requires_retained_projection(detail):
+            return detail
+    preferred_details = set(
+        _CI_VALIDATION_INVALID_PLAN_MISSING_PROJECTION_DETAIL_MESSAGES
+    ) | {DiagnosticDetail.PLAN_MISSING.value}
+    for detail in details:
+        if detail in preferred_details:
+            return detail
+    return details[0] if details else DiagnosticDetail.PLAN_MISSING.value
+
+
+def _ci_boundary_invalid_plan_details(
+    boundary_diagnostics: Sequence[Mapping[str, object]],
+) -> tuple[str, ...]:
+    canonical_details = DETAILS_BY_DIAGNOSTIC_CODE[
+        DiagnosticFamily.INVALID_PLAN.value
+    ]
+    details: list[str] = []
+    saw_invalid_plan = False
+    for diagnostic in boundary_diagnostics:
+        if diagnostic.get("code") != DiagnosticFamily.INVALID_PLAN.value:
+            continue
+        saw_invalid_plan = True
+        detail = diagnostic.get("detail")
+        if isinstance(detail, str) and detail in canonical_details:
+            details.append(detail)
+    if not details and saw_invalid_plan:
+        return (DiagnosticDetail.PLAN_MISSING.value,)
+    return tuple(dict.fromkeys(details))
+
+
+def _ci_missing_execution_batch_manifest_payloads(  # noqa: PLR0915
     args: argparse.Namespace,
     *,
     owner: str,
@@ -7794,7 +9052,7 @@ def _ci_missing_execution_batch_manifest_payloads(
             artifact_instance_id=getattr(
                 args, "expected_plan_artifact_id", None
             ),
-            require_artifact_instance_id=False,
+            require_artifact_instance_id=True,
         ),
         "changed-files-snapshot": _ci_aggregate_input_artifact(
             ci_validation_changed_files_snapshot_artifact_ref(
@@ -7812,7 +9070,7 @@ def _ci_missing_execution_batch_manifest_payloads(
                 "expected_changed_files_snapshot_artifact_id",
                 None,
             ),
-            require_artifact_instance_id=False,
+            require_artifact_instance_id=True,
         ),
         "fact-snapshot": _ci_aggregate_input_artifact(
             ci_validation_fact_snapshot_artifact_ref(
@@ -7828,7 +9086,7 @@ def _ci_missing_execution_batch_manifest_payloads(
             artifact_instance_id=getattr(
                 args, "expected_fact_snapshot_artifact_id", None
             ),
-            require_artifact_instance_id=False,
+            require_artifact_instance_id=True,
         ),
         "execution-batch-manifest": _ci_aggregate_input_artifact(
             ci_validation_execution_batch_manifest_artifact_ref(
@@ -7849,26 +9107,67 @@ def _ci_missing_execution_batch_manifest_payloads(
         input_artifacts,
         boundary_diagnostics,
     )
-    _ci_close_snapshot_input_authority(input_artifacts)
+    boundary_diagnostics, _ = (
+        _ci_downgrade_retained_invalid_plan_projection_if_unbound(
+            args,
+            input_artifacts,
+            plan,
+            boundary_diagnostics,
+        )
+    )
+    no_authority_invalid_plan = (
+        _ci_boundary_diagnostics_have_no_authority_invalid_plan(
+            boundary_diagnostics,
+        )
+    )
+    if not _ci_invalid_plan_detail_requires_retained_projection(
+        _ci_missing_plan_invalid_plan_detail(boundary_diagnostics),
+    ):
+        _ci_close_snapshot_input_authority(input_artifacts)
     required_input_failure = _ci_aggregate_required_input_failure(
         input_artifacts,
     )
+    execution_manifest_required_input_failure = (
+        _ci_required_execution_batch_manifest_input_failure(input_artifacts)
+    )
     authoritative_request = (
         request
-        if _ci_aggregate_input_is_valid(input_artifacts, "request")
+        if not no_authority_invalid_plan
+        and _ci_aggregate_input_is_valid(input_artifacts, "request")
         else None
     )
     authoritative_changed_files_snapshot = (
         changed_files_snapshot
-        if _ci_aggregate_input_is_valid(
+        if not no_authority_invalid_plan
+        and _ci_aggregate_input_is_valid(
             input_artifacts, "changed-files-snapshot"
         )
         else None
     )
     authoritative_fact_snapshot = (
         fact_snapshot
-        if _ci_aggregate_input_is_valid(input_artifacts, "fact-snapshot")
+        if not no_authority_invalid_plan
+        and _ci_aggregate_input_is_valid(input_artifacts, "fact-snapshot")
         else None
+    )
+    authoritative_plan = (
+        plan
+        if not no_authority_invalid_plan
+        and _ci_aggregate_input_is_valid(input_artifacts, "validation-plan")
+        else None
+    )
+    retained_invalid_plan_detail = (
+        _ci_missing_plan_invalid_plan_detail_from_manifest(
+            boundary_diagnostics,
+            {"input-artifacts": input_artifacts},
+        )
+    )
+    aggregate_manifest_plan = (
+        plan
+        if _ci_invalid_plan_detail_requires_retained_projection(
+            retained_invalid_plan_detail
+        )
+        else authoritative_plan
     )
     pre_final_count = _ci_aggregate_pre_final_input_count(input_artifacts)
     observed_dir = str(getattr(args, "observed_artifacts_dir", ""))
@@ -7913,14 +9212,23 @@ def _ci_missing_execution_batch_manifest_payloads(
         namespace_overflow=namespace_overflow,
         pre_final_validation_artifacts=pre_final_count,
         namespace_closed_at=created_at,
-        plan=plan,
+        plan=aggregate_manifest_plan,
         execution_batch_manifest=None,
-        request=authoritative_request,
-        changed_files_snapshot=authoritative_changed_files_snapshot,
-        fact_snapshot=authoritative_fact_snapshot,
+        request=request if aggregate_manifest_plan is not None else None,
+        changed_files_snapshot=(
+            authoritative_changed_files_snapshot
+            if aggregate_manifest_plan is not None
+            else None
+        ),
+        fact_snapshot=(
+            authoritative_fact_snapshot
+            if aggregate_manifest_plan is not None
+            else None
+        ),
         _require_authoritative_snapshot_inputs=not required_input_failure,
     )
-    if getattr(args, "aggregate_phase", "all") == "evidence":
+    aggregate_phase = getattr(args, "aggregate_phase", "all")
+    if aggregate_phase == "evidence":
         return {"aggregate_manifest": aggregate_manifest}
     aggregate_manifest_document: Mapping[str, object] | None = (
         aggregate_manifest
@@ -7936,43 +9244,111 @@ def _ci_missing_execution_batch_manifest_payloads(
     aggregate_manifest_authority_diagnostics: Sequence[
         Mapping[str, object]
     ] = ()
-    if getattr(args, "aggregate_phase", "all") == "summary":
-        manifest_authority = _ci_summary_aggregate_manifest_authority(
-            args,
-            recomputed_manifest=aggregate_manifest,
-            plan=plan,
-            execution_batch_manifest=None,
-            request=authoritative_request,
-            changed_files_snapshot=authoritative_changed_files_snapshot,
-            fact_snapshot=authoritative_fact_snapshot,
-        )
-        aggregate_manifest = cast(
-            "Mapping[str, object]",
-            manifest_authority["manifest"],
-        )
-        aggregate_manifest_digest = cast(
-            "str | None",
-            manifest_authority["content_digest"],
-        )
-        aggregate_manifest_document = cast(
-            "Mapping[str, object] | None",
-            manifest_authority["manifest_document"],
-        )
-        aggregate_manifest_authority_diagnostics = cast(
-            "Sequence[Mapping[str, object]]",
-            manifest_authority["diagnostics"],
-        )
-        aggregate_manifest_authority_diagnostics = tuple(
-            sorted(
-                aggregate_manifest_authority_diagnostics,
-                key=lambda item: str(item.get("diagnostic-id")),
-            )
-        )
-        if aggregate_manifest_authority_diagnostics:
+    if aggregate_phase != "evidence":
+        if aggregate_phase == "all" and (
+            no_authority_invalid_plan or required_input_failure
+        ):
+            aggregate_manifest_document = None
+            aggregate_manifest_digest = None
+            aggregate_manifest_authority_diagnostics = ()
             aggregate_manifest_producer_verified = False
+        else:
+            _ci_preserve_all_phase_aggregate_manifest_bytes(
+                args, aggregate_manifest
+            )
+            manifest_authority = _ci_summary_aggregate_manifest_authority(
+                args,
+                recomputed_manifest=aggregate_manifest,
+                plan=None if no_authority_invalid_plan else plan,
+                execution_batch_manifest=None,
+                request=authoritative_request,
+                changed_files_snapshot=authoritative_changed_files_snapshot,
+                fact_snapshot=authoritative_fact_snapshot,
+                allow_contract_invalid_bound_manifest=bool(unexpected),
+            )
+            if aggregate_phase == "summary":
+                aggregate_manifest = cast(
+                    "Mapping[str, object]",
+                    manifest_authority["manifest"],
+                )
+            aggregate_manifest_digest = cast(
+                "str | None",
+                manifest_authority["content_digest"],
+            )
+            aggregate_manifest_document = cast(
+                "Mapping[str, object] | None",
+                manifest_authority["manifest_document"],
+            )
+            aggregate_manifest_authority_diagnostics = cast(
+                "Sequence[Mapping[str, object]]",
+                manifest_authority["diagnostics"],
+            )
+            aggregate_manifest_authority_diagnostics = tuple(
+                sorted(
+                    aggregate_manifest_authority_diagnostics,
+                    key=lambda item: str(item.get("diagnostic-id")),
+                )
+            )
+            (
+                aggregate_manifest_producer_verified,
+                aggregate_manifest_digest,
+                aggregate_manifest_authority_diagnostics,
+            ) = _ci_normalize_unbound_manifest_authority(
+                producer_verified=aggregate_manifest_producer_verified,
+                content_digest=aggregate_manifest_digest,
+                manifest_document=aggregate_manifest_document,
+                authority_diagnostics=aggregate_manifest_authority_diagnostics,
+            )
+            if execution_manifest_required_input_failure:
+                aggregate_manifest_producer_verified = False
+    aggregate_manifest_status_producer_verified = (
+        aggregate_manifest_producer_verified
+    )
+    (
+        aggregate_manifest_artifact_instance_id,
+        aggregate_manifest_summary_digest,
+        summary_aggregate_manifest_document,
+        aggregate_manifest_identity_bound,
+    ) = _ci_summary_bound_aggregate_manifest_projection(
+        args,
+        aggregate_manifest_digest=aggregate_manifest_digest,
+        aggregate_manifest_document=aggregate_manifest_document,
+        aggregate_manifest_authority_diagnostics=(
+            aggregate_manifest_authority_diagnostics
+        ),
+        require_external_binding=(
+            aggregate_phase == "all"
+            or no_authority_invalid_plan
+            or execution_manifest_required_input_failure
+            or (
+                getattr(args, "batch_materialization_failed", False)
+                and not _ci_missing_execution_manifest_has_input_identity(
+                    input_artifacts,
+                )
+            )
+        ),
+    )
+    aggregate_summary_without_manifest = (
+        summary_aggregate_manifest_document is None
+        and (
+            aggregate_manifest_summary_digest is None
+            or not aggregate_manifest_authority_diagnostics
+        )
+    )
+    aggregate_manifest_summary_producer_verified = (
+        aggregate_manifest_status_producer_verified
+        and aggregate_manifest_identity_bound
+    )
+    aggregate_manifest_failure_producer_verified = (
+        aggregate_manifest_summary_producer_verified
+        or not aggregate_manifest_identity_bound
+    )
     evidence_results = _ci_aggregate_evidence_results(
         plan=plan,
         admitted_bundles=[],
+    )
+    summary_evidence_results = (
+        evidence_results if aggregate_manifest_identity_bound else []
     )
     budgets = _ci_missing_execution_manifest_budgets(
         pre_final_validation_artifacts=pre_final_count,
@@ -7981,38 +9357,67 @@ def _ci_missing_execution_batch_manifest_payloads(
             completed_at,
         ),
     )
-    manifest_binding_producer_verified = (
-        aggregate_manifest_producer_verified
-        or aggregate_manifest_digest is None
-    )
-    aggregate_summary_without_manifest = (
-        aggregate_manifest_document is None
-        and (
-            aggregate_manifest_digest is None
-            or not aggregate_manifest_authority_diagnostics
+    summary_required_input_failure = required_input_failure
+    summary_namespace_overflow: Mapping[str, object] = namespace_overflow
+    summary_unexpected = unexpected
+    if required_input_failure:
+        aggregate_summary_without_manifest = (
+            not aggregate_manifest_identity_bound
+            and not summary_unexpected
+            and not _ci_aggregate_namespace_enumeration_failed(
+                summary_namespace_overflow
+            )
+            and summary_namespace_overflow.get("detected") is not True
         )
+    aggregate_manifest_has_plan_authority = isinstance(
+        aggregate_manifest.get("projection-authority"),
+        Mapping,
     )
-    summary_required_input_failure = (
-        required_input_failure and aggregate_manifest_document is not None
+    request_authority = _ci_aggregate_manifest_request_authority_state(
+        args,
+        input_artifacts,
+        plan=plan,
     )
-    summary_namespace_overflow: Mapping[str, object] = (
-        namespace_overflow if aggregate_manifest_document is not None else {}
-    )
-    summary_unexpected = (
-        unexpected if aggregate_manifest_document is not None else []
+    if aggregate_manifest_has_plan_authority and request_authority in {
+        "invalid",
+        "mismatch",
+    }:
+        raise ContractValidationError(
+            [
+                ValidationIssue(
+                    "$.input-artifacts.request",
+                    "aggregate manifest request authority must match current "
+                    "run projection",
+                )
+            ]
+        )
+    summary_plan = (
+        plan
+        if (
+            aggregate_manifest_has_plan_authority
+            and request_authority == "authorized"
+            and aggregate_manifest_identity_bound
+        )
+        or (
+            authoritative_plan is not None
+            and bool(_ci_plan_fail_closed_diagnostics(authoritative_plan))
+        )
+        else None
     )
     failures = _ci_aggregate_summary_failures(
-        plan=plan,
+        plan=summary_plan,
         summary_bundle_rows=[],
-        evidence_results=evidence_results,
+        evidence_results=summary_evidence_results,
         namespace_overflow=summary_namespace_overflow,
         unexpected_artifacts=summary_unexpected,
         required_input_failure=summary_required_input_failure,
         aggregate_manifest_producer_verified=(
-            manifest_binding_producer_verified
+            aggregate_manifest_failure_producer_verified
         ),
         aggregate_manifest_authority_diagnostics=(
             aggregate_manifest_authority_diagnostics
+            if aggregate_manifest_digest is not None
+            else ()
         ),
         aggregate_summary_without_manifest=aggregate_summary_without_manifest,
     )
@@ -8025,19 +9430,25 @@ def _ci_missing_execution_batch_manifest_payloads(
         key=lambda item: str(item.get("diagnostic-id")),
     )
     reason = _ci_aggregate_summary_reason(
-        plan=plan,
+        plan=summary_plan,
         summary_bundle_rows=[],
-        evidence_results=evidence_results,
+        evidence_results=summary_evidence_results,
         namespace_overflow=summary_namespace_overflow,
         unexpected_artifacts=summary_unexpected,
         required_input_failure=summary_required_input_failure,
         aggregate_manifest_producer_verified=(
-            manifest_binding_producer_verified
+            aggregate_manifest_failure_producer_verified
         ),
         aggregate_manifest_authority_failure=bool(
-            aggregate_manifest_authority_diagnostics
+            aggregate_manifest_digest is not None
+            and aggregate_manifest_authority_diagnostics
         ),
         aggregate_summary_without_manifest=aggregate_summary_without_manifest,
+    )
+    summary_request = (
+        cast("Mapping[str, object]", plan["request"])
+        if summary_plan is not None
+        else {"artifact-ref": None, "request-digest": None}
     )
     aggregate_summary = freeze_ci_validation_aggregate_summary(
         created_at=summary_created_at,
@@ -8048,25 +9459,19 @@ def _ci_missing_execution_batch_manifest_payloads(
         run_attempt=run_attempt,
         aggregate_evidence_manifest={
             "artifact-ref": aggregate_manifest["artifact-ref"],
-            "artifact-instance-id": (
-                _ci_required_aggregate_manifest_artifact_id(args)
-                if aggregate_manifest_digest is not None
-                else None
-            ),
-            "content-digest": aggregate_manifest_digest,
+            "artifact-instance-id": aggregate_manifest_artifact_instance_id,
+            "content-digest": aggregate_manifest_summary_digest,
         },
         final_artifacts={
             "aggregate-evidence-manifest": {
                 "artifact-ref": aggregate_manifest["artifact-ref"],
-                "artifact-instance-id": (
-                    _ci_required_aggregate_manifest_artifact_id(args)
+                "artifact-instance-id": aggregate_manifest_artifact_instance_id,
+                "content-digest": aggregate_manifest_summary_digest,
+                "producer-verified": aggregate_manifest_summary_producer_verified,
+                "authority-diagnostics": (
+                    list(aggregate_manifest_authority_diagnostics)
                     if aggregate_manifest_digest is not None
-                    else None
-                ),
-                "content-digest": aggregate_manifest_digest,
-                "producer-verified": aggregate_manifest_producer_verified,
-                "authority-diagnostics": list(
-                    aggregate_manifest_authority_diagnostics
+                    else []
                 ),
             },
             "aggregate-summary": {
@@ -8076,25 +9481,80 @@ def _ci_missing_execution_batch_manifest_payloads(
                 ),
             },
         },
-        validation_tree=cast("Mapping[str, object]", plan["validation-tree"]),
-        affected_range=_ci_summary_affected_range(plan),
-        request=_ci_aggregate_manifest_request_summary(input_artifacts),
-        scheduled_full=cast("Mapping[str, object]", plan["scheduled-full"]),
+        validation_tree=(
+            cast("Mapping[str, object]", plan["validation-tree"])
+            if summary_plan is not None
+            else dict(_UNKNOWN_VALIDATION_TREE)
+        ),
+        affected_range=(
+            _ci_summary_affected_range(plan)
+            if summary_plan is not None
+            else dict(_UNKNOWN_AFFECTED_RANGE)
+        ),
+        request=summary_request,
+        scheduled_full=(
+            cast("Mapping[str, object]", plan["scheduled-full"])
+            if summary_plan is not None
+            else dict(_UNKNOWN_SCHEDULED_FULL)
+        ),
         verdict="failed",
         reason=reason,
         budgets=budgets,
         diagnostics=diagnostics,
         batch_bundles=[],
-        evidence_results=evidence_results,
+        evidence_results=summary_evidence_results,
         failures=failures,
-        work_groups=_ci_aggregate_work_group_counts(evidence_results),
-        plan=plan,
-        aggregate_evidence_manifest_document=aggregate_manifest_document,
+        work_groups=_ci_aggregate_work_group_counts(summary_evidence_results),
+        plan=summary_plan,
+        aggregate_evidence_manifest_document=(
+            (
+                summary_aggregate_manifest_document
+                if aggregate_manifest_identity_bound
+                else aggregate_manifest
+            )
+            if (
+                aggregate_manifest_identity_bound
+                or (
+                    required_input_failure
+                    and (
+                        bool(summary_unexpected)
+                        or _ci_aggregate_namespace_enumeration_failed(
+                            summary_namespace_overflow
+                        )
+                        or summary_namespace_overflow.get("detected") is True
+                    )
+                )
+            )
+            else None
+        ),
         admitted_batch_evidence_bundles=None,
         execution_batch_manifest=None,
-        request_document=authoritative_request,
+        request_document=(
+            authoritative_request if aggregate_manifest_identity_bound else None
+        ),
         changed_files_snapshot=authoritative_changed_files_snapshot,
-        fact_snapshot=authoritative_fact_snapshot,
+        fact_snapshot=(
+            authoritative_fact_snapshot
+            if aggregate_manifest_identity_bound
+            else None
+        ),
+        aggregate_evidence_manifest_bound=aggregate_manifest_identity_bound,
+        aggregate_evidence_manifest_external_binding_verified=(
+            summary_aggregate_manifest_document is not None
+            and aggregate_manifest_digest is not None
+            and bool(aggregate_manifest_authority_diagnostics)
+        ),
+        aggregate_manifest_authority_failure_details=(
+            _ci_aggregate_manifest_authority_failure_details(
+                aggregate_manifest_authority_diagnostics
+            )
+            if aggregate_manifest_digest is not None
+            else ()
+        ),
+    )
+    aggregate_summary = _ci_rebind_invalid_plan_summary_failures(
+        aggregate_summary,
+        boundary_diagnostics,
     )
     return {
         "aggregate_manifest": aggregate_manifest,
@@ -8132,7 +9592,7 @@ def _ci_invalid_request_batch_payloads(
         completed_at=completed_at,
         summary_created_at=summary_created_at,
         plan=plan,
-        request={},
+        request=None,
         changed_files_snapshot=changed_files_snapshot,
         fact_snapshot=fact_snapshot,
         boundary_diagnostics=[
@@ -8190,6 +9650,60 @@ def _ci_aggregate_manifest_request_summary(
     return {"artifact-ref": None, "request-digest": None}
 
 
+def _ci_aggregate_manifest_request_authority_state(
+    args: argparse.Namespace,
+    input_artifacts: Mapping[str, object],
+    *,
+    plan: Mapping[str, object],
+) -> Literal["authorized", "invalid", "missing", "mismatch"]:
+    request = input_artifacts.get("request")
+    if not isinstance(request, Mapping):
+        return "missing"
+    if request.get("admissibility") != "valid":
+        return (
+            "invalid"
+            if request.get("admissibility") is not None
+            or request.get("diagnostics")
+            else "missing"
+        )
+    if request.get("diagnostics"):
+        return "invalid"
+    if not _ci_retained_input_artifact_has_complete_identity(request):
+        return "missing"
+    plan_request = plan.get("request")
+    if not isinstance(plan_request, Mapping):
+        return "invalid"
+    expected_ref = ci_validation_request_artifact_ref(
+        run_id=str(args.run_id),
+        run_attempt=str(args.run_attempt),
+    )
+    return (
+        "authorized"
+        if request.get("artifact-ref")
+        == plan_request.get("artifact-ref")
+        == expected_ref
+        and request.get("content-digest") == plan_request.get("request-digest")
+        else "mismatch"
+    )
+
+
+def _ci_invalid_plan_request_summary(
+    input_artifacts: Mapping[str, object],
+    *,
+    plan: Mapping[str, object],
+    boundary_diagnostics: Sequence[Mapping[str, object]],
+) -> Mapping[str, object]:
+    detail = _ci_missing_plan_invalid_plan_detail(boundary_diagnostics)
+    if (
+        _ci_invalid_plan_detail_requires_retained_projection(detail)
+        and plan is not None
+    ):
+        request = plan.get("request")
+        if isinstance(request, Mapping):
+            return request
+    return _ci_aggregate_manifest_request_summary(input_artifacts)
+
+
 def _ci_aggregate_input_is_valid(
     input_artifacts: Mapping[str, object],
     key: str,
@@ -8230,40 +9744,22 @@ def _ci_close_snapshot_input_authority(
     )
     if not required or not (context_closed or snapshots_closed):
         return
-    if context_closed and not snapshots_closed:
-        items = [
-            *snapshot_maps,
-            *(
-                [request_input]
-                if execution_closed
-                and isinstance(request_input, dict)
-                and request_input.get("admissibility") == "valid"
-                else []
-            ),
-        ]
-    else:
-        items = list(input_artifacts.values())
-    for item in items:
+    for item in snapshot_maps:
         if not isinstance(item, dict) or item.get("required") is not True:
             continue
         if item.get("admissibility") != "valid":
             continue
         item["admissibility"] = "inadmissible"
+        item["artifact-ref"] = None
+        item["artifact-instance-id"] = None
+        item["content-digest"] = None
         item["diagnostics"] = [
-            *cast(
-                "Sequence[Mapping[str, object]]", item.get("diagnostics", [])
-            ),
             _ci_aggregate_diagnostic(
                 "required-input-artifact-failure/snapshot-companion-unproven",
                 code=DiagnosticFamily.REQUIRED_INPUT_ARTIFACT_FAILURE.value,
-                detail=DiagnosticDetail.REQUIRED_INPUT_ARTIFACT_FAILURE.value,
-                message=(
-                    "Required snapshot input artifact evidence was not "
-                    "authoritative as a closed companion set."
-                ),
-                source_id=item.get("artifact-ref")
-                if isinstance(item.get("artifact-ref"), str)
-                else None,
+                detail=DiagnosticDetail.SNAPSHOT_COMPANION_UNPROVEN.value,
+                message="Snapshot companion input artifact was not proven.",
+                source_id=None,
                 severity=DiagnosticSeverity.FAIL_CLOSED.value,
                 verdict_effect=DiagnosticVerdictEffect.FAIL_CLOSED.value,
             ),
@@ -9181,6 +10677,7 @@ def _ci_aggregate_input_artifacts(
         "Mapping[str, object]", plan["fact-snapshot"]
     )
     fact_snapshot_id = fact_snapshot_projection.get("id")
+    required_snapshots = _ci_plan_required_snapshot_inputs(plan)
     request_digest = cast("Mapping[str, object]", plan["request"])[
         "request-digest"
     ]
@@ -9194,7 +10691,9 @@ def _ci_aggregate_input_artifacts(
             required=True,
             artifact_instance_id=getattr(
                 args, "expected_request_artifact_id", None
-            ),
+            )
+            if isinstance(request_digest, str)
+            else None,
             require_artifact_instance_id=True,
         ),
         "validation-plan": _ci_aggregate_input_artifact(
@@ -9212,31 +10711,35 @@ def _ci_aggregate_input_artifacts(
             ci_validation_changed_files_snapshot_artifact_ref(
                 run_id=run_id, run_attempt=run_attempt
             )
-            if isinstance(changed_files_hash, str)
+            if "changed-files-snapshot" in required_snapshots
             else None,
             content_digest=changed_files_hash
-            if isinstance(changed_files_hash, str)
+            if "changed-files-snapshot" in required_snapshots
+            and isinstance(changed_files_hash, str)
             else None,
-            required=isinstance(changed_files_hash, str),
+            required="changed-files-snapshot" in required_snapshots,
             artifact_instance_id=getattr(
                 args, "expected_changed_files_snapshot_artifact_id", None
             ),
-            require_artifact_instance_id=isinstance(changed_files_hash, str),
+            require_artifact_instance_id=(
+                "changed-files-snapshot" in required_snapshots
+            ),
         ),
         "fact-snapshot": _ci_aggregate_input_artifact(
             ci_validation_fact_snapshot_artifact_ref(
                 run_id=run_id, run_attempt=run_attempt
             )
-            if isinstance(fact_snapshot_id, str)
+            if "fact-snapshot" in required_snapshots
             else None,
             content_digest=fact_snapshot_id
-            if isinstance(fact_snapshot_id, str)
+            if "fact-snapshot" in required_snapshots
+            and isinstance(fact_snapshot_id, str)
             else None,
-            required=isinstance(fact_snapshot_id, str),
+            required="fact-snapshot" in required_snapshots,
             artifact_instance_id=getattr(
                 args, "expected_fact_snapshot_artifact_id", None
             ),
-            require_artifact_instance_id=isinstance(fact_snapshot_id, str),
+            require_artifact_instance_id="fact-snapshot" in required_snapshots,
         ),
         "execution-batch-manifest": _ci_aggregate_input_artifact(
             ci_validation_execution_batch_manifest_artifact_ref(
@@ -9258,6 +10761,22 @@ def _ci_aggregate_input_artifacts(
         artifacts,
         boundary_diagnostics,
     )
+    _ci_apply_retained_projection_diagnostics_to_inputs(
+        artifacts,
+        boundary_diagnostics,
+    )
+    boundary_diagnostics, _ = (
+        _ci_downgrade_retained_invalid_plan_projection_if_unbound(
+            args,
+            artifacts,
+            plan,
+            boundary_diagnostics,
+        )
+    )
+    if not _ci_invalid_plan_detail_requires_retained_projection(
+        _ci_missing_plan_invalid_plan_detail(boundary_diagnostics),
+    ):
+        _ci_close_snapshot_input_authority(artifacts)
     return artifacts
 
 
@@ -9268,10 +10787,11 @@ def _ci_aggregate_input_artifact(
     required: bool,
     artifact_instance_id: object,
     require_artifact_instance_id: bool = False,
+    allow_artifact_physical_name_fallback: bool = True,
 ) -> Json:
     if not required:
         return {
-            "artifact-ref": None,
+            "artifact-ref": artifact_ref,
             "artifact-instance-id": None,
             "content-digest": None,
             "required": False,
@@ -9303,6 +10823,8 @@ def _ci_aggregate_input_artifact(
         str(artifact_instance_id)
         if isinstance(artifact_instance_id, str) and artifact_instance_id
         else artifact_physical_name(str(artifact_ref))
+        if allow_artifact_physical_name_fallback
+        else None
     )
     return {
         "artifact-ref": artifact_ref,
@@ -9353,13 +10875,16 @@ def _ci_apply_boundary_diagnostics_to_input_artifacts(
                         and generic_artifact.get("required") is True
                     ):
                         generic_artifact["admissibility"] = "inadmissible"
-                        generic_artifact["diagnostics"] = [
-                            *cast(
-                                "Sequence[Mapping[str, object]]",
-                                generic_artifact.get("diagnostics", []),
-                            ),
-                            dict(diagnostic),
-                        ]
+                        generic_artifact["diagnostics"] = sorted(
+                            [
+                                *cast(
+                                    "Sequence[Mapping[str, object]]",
+                                    generic_artifact.get("diagnostics", []),
+                                ),
+                                dict(diagnostic),
+                            ],
+                            key=lambda item: str(item.get("diagnostic-id")),
+                        )
             continue
         detail = str(diagnostic.get("detail"))
         artifact["admissibility"] = (
@@ -9369,7 +10894,67 @@ def _ci_apply_boundary_diagnostics_to_input_artifacts(
             artifact["artifact-ref"] = None
             artifact["artifact-instance-id"] = None
             artifact["content-digest"] = None
-        artifact["diagnostics"] = [dict(diagnostic)]
+        current_diagnostics = artifact.get("diagnostics", [])
+        diagnostics = list(
+            cast(
+                "Sequence[Mapping[str, object]]",
+                current_diagnostics
+                if isinstance(current_diagnostics, Sequence)
+                and not isinstance(current_diagnostics, str | bytes)
+                else [],
+            )
+        )
+        diagnostic_copy = dict(diagnostic)
+        if diagnostic_copy not in diagnostics:
+            diagnostics.append(diagnostic_copy)
+        artifact["diagnostics"] = sorted(
+            diagnostics,
+            key=lambda item: str(item.get("diagnostic-id")),
+        )
+
+
+def _ci_apply_retained_projection_diagnostics_to_inputs(
+    artifacts: dict[str, object],
+    boundary_diagnostics: Sequence[Mapping[str, object]],
+) -> None:
+    for diagnostic in boundary_diagnostics:
+        artifact = _ci_retained_projection_artifact_for_diagnostic(
+            artifacts,
+            diagnostic,
+        )
+        if not isinstance(artifact, dict):
+            continue
+        artifact["admissibility"] = "inadmissible"
+        diagnostics = list(
+            cast(
+                "Sequence[Mapping[str, object]]",
+                artifact.get("diagnostics", []),
+            )
+        )
+        if not any(
+            isinstance(item, Mapping)
+            and item.get("code") == DiagnosticFamily.INVALID_PLAN.value
+            and item.get("detail") == diagnostic.get("detail")
+            and item.get("source") == diagnostic.get("source")
+            for item in diagnostics
+        ):
+            diagnostics.append(dict(diagnostic))
+        artifact["diagnostics"] = sorted(
+            diagnostics,
+            key=lambda item: str(item.get("diagnostic-id")),
+        )
+
+
+def _ci_retained_projection_artifact_for_diagnostic(
+    artifacts: Mapping[str, object],
+    diagnostic: Mapping[str, object],
+) -> object:
+    detail = str(diagnostic.get("detail"))
+    if detail.startswith("changed-files-snapshot-"):
+        return artifacts.get("changed-files-snapshot")
+    if detail.startswith("fact-snapshot-"):
+        return artifacts.get("fact-snapshot")
+    return None
 
 
 def _ci_aggregate_namespace_enumeration_unavailable(
@@ -9504,6 +11089,17 @@ def _ci_aggregate_required_input_failure(
         and artifact.get("required") is True
         and artifact.get("admissibility") != "valid"
         for artifact in input_artifacts.values()
+    )
+
+
+def _ci_required_execution_batch_manifest_input_failure(
+    input_artifacts: Mapping[str, object],
+) -> bool:
+    artifact = input_artifacts.get("execution-batch-manifest")
+    return (
+        isinstance(artifact, Mapping)
+        and artifact.get("required") is True
+        and artifact.get("admissibility") != "valid"
     )
 
 
@@ -9767,6 +11363,22 @@ def _ci_aggregate_summary_failures(  # noqa: C901, PLR0912
                 ),
             )
         )
+        final_evidence_diagnostic = _ci_aggregate_diagnostic(
+            "final-evidence-failure/final-producer-unverified",
+            code=DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value,
+            detail=DiagnosticDetail.FINAL_PRODUCER_UNVERIFIED.value,
+            message="Aggregate evidence manifest producer was unverified.",
+            source_id=None,
+            severity=DiagnosticSeverity.FAIL_CLOSED.value,
+            verdict_effect=DiagnosticVerdictEffect.FAIL_CLOSED.value,
+        )
+        failures.append(
+            _ci_aggregate_failure(
+                kind="final-evidence-failure",
+                diagnostic=final_evidence_diagnostic,
+                message="Aggregate evidence manifest producer was unverified.",
+            )
+        )
     for diagnostic in aggregate_manifest_authority_diagnostics:
         message = str(diagnostic.get("message") or "Final manifest failed.")
         failures.append(
@@ -9880,10 +11492,19 @@ def _ci_aggregate_summary_reason(
         or _ci_aggregate_namespace_enumeration_failed(namespace_overflow)
     )
     plan_fail_closed = bool(_ci_plan_fail_closed_diagnostics(plan))
-    final_evidence_failure = aggregate_manifest_authority_failure
+    final_evidence_failure = (
+        aggregate_manifest_authority_failure
+        or not aggregate_manifest_producer_verified
+    )
     return {
         "invalid-plan": False,
-        "fail-closed": namespace_failure or plan_fail_closed,
+        "fail-closed": (
+            namespace_failure
+            or plan_fail_closed
+            or required_input_failure
+            or final_evidence_failure
+            or aggregate_summary_without_manifest
+        ),
         "required-evidence-missing": "missing" in outcomes,
         "required-evidence-skipped": "skipped" in outcomes,
         "blocking-validation-failure": "failed" in outcomes,
@@ -10102,8 +11723,18 @@ def _ci_malformed_control_input_diagnostic(
     message: str,
 ) -> Mapping[str, object]:
     artifact_kind = _ci_control_artifact_kind(artifact_ref)
+    if code == DiagnosticFamily.INVALID_PLAN.value:
+        message = (
+            _CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAIL_MESSAGES.get(
+                detail,
+                message,
+            )
+        )
+        diagnostic_id = f"{code}/{detail}"
+    else:
+        diagnostic_id = f"{code}/{artifact_kind}-malformed"
     return _ci_aggregate_diagnostic(
-        f"{code}/{artifact_kind}-malformed",
+        diagnostic_id,
         code=code,
         detail=detail,
         message=message,
@@ -10162,7 +11793,7 @@ def _ci_invalid_plan_detail_for_validation_error(
 ) -> str:
     plan_digest = plan.get("plan-digest")
     if not isinstance(plan_digest, str):
-        return DiagnosticDetail.SCHEMA_INVALID.value
+        return DiagnosticDetail.MALFORMED_PLAN.value
     recomputed_plan_digest = ci_validation_plan_digest(plan)
     if plan_digest == recomputed_plan_digest:
         return DiagnosticDetail.STRUCTURALLY_INVALID.value
@@ -10191,14 +11822,24 @@ def _ci_invalid_plan_control_diagnostic(
     detail: str,
     message: str,
 ) -> Mapping[str, object]:
-    return _ci_malformed_control_input_diagnostic(
-        ci_validation_plan_artifact_ref(
+    del message
+    if detail == DiagnosticDetail.PLAN_MISSING.value:
+        diagnostic_id = "invalid-plan"
+        canonical_message = CI_VALIDATION_INVALID_PLAN_MISSING_MESSAGE
+    else:
+        diagnostic_id = f"invalid-plan/{detail}"
+        canonical_message = CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE
+    return _ci_aggregate_diagnostic(
+        diagnostic_id,
+        code=DiagnosticFamily.INVALID_PLAN.value,
+        detail=detail,
+        message=canonical_message,
+        source_id=ci_validation_plan_artifact_ref(
             run_id=str(args.run_id),
             run_attempt=str(args.run_attempt),
         ),
-        code=DiagnosticFamily.INVALID_PLAN.value,
-        detail=detail,
-        message=message,
+        severity=DiagnosticSeverity.FAIL_CLOSED.value,
+        verdict_effect=DiagnosticVerdictEffect.FAIL_CLOSED.value,
     )
 
 
@@ -10214,17 +11855,29 @@ def _ci_invalid_plan_input_artifacts(
         run_id=run_id,
         run_attempt=run_attempt,
     )
-    changed_files_hash: object = None
-    fact_snapshot_id: object = None
+    changed_files_hash: object = _ci_retained_invalid_plan_changed_files_hash(
+        args,
+        invalid_plan_context=invalid_plan_context,
+    )
+    fact_snapshot_id: object = _ci_retained_invalid_plan_fact_snapshot_id(
+        args,
+        invalid_plan_context=invalid_plan_context,
+    )
     plan_digest: object = None
+    request_digest: object = _ci_retained_invalid_plan_request_digest(args)
     if invalid_plan_context is not None:
-        plan_digest = invalid_plan_context.get("plan-digest")
-        affected_range = invalid_plan_context.get("affected-range")
-        if isinstance(affected_range, Mapping):
-            changed_files_hash = affected_range.get("changed-files-hash")
-        fact_projection = invalid_plan_context.get("fact-snapshot")
-        if isinstance(fact_projection, Mapping):
-            fact_snapshot_id = fact_projection.get("id")
+        if isinstance(invalid_plan_context.get("plan-id"), str):
+            try:
+                plan_digest = ci_validation_plan_digest(invalid_plan_context)
+            except (ContractValidationError, TypeError, ValueError):
+                plan_digest = invalid_plan_context.get("plan-digest")
+        else:
+            plan_digest = invalid_plan_context.get("plan-digest")
+    required_snapshots = (
+        _ci_plan_required_snapshot_inputs(invalid_plan_context)
+        if invalid_plan_context is not None
+        else set()
+    )
     for diagnostic in boundary_diagnostics:
         source = diagnostic.get("source")
         source_id = (
@@ -10241,10 +11894,18 @@ def _ci_invalid_plan_input_artifacts(
             ci_validation_request_artifact_ref(
                 run_id=run_id,
                 run_attempt=run_attempt,
-            ),
-            content_digest=None,
+            )
+            if isinstance(request_digest, str)
+            else None,
+            content_digest=request_digest
+            if isinstance(request_digest, str)
+            else None,
             required=True,
-            artifact_instance_id=None,
+            artifact_instance_id=(
+                getattr(args, "expected_request_artifact_id", None)
+                if isinstance(request_digest, str)
+                else None
+            ),
             require_artifact_instance_id=True,
         ),
         "validation-plan": _ci_aggregate_input_artifact(
@@ -10255,42 +11916,47 @@ def _ci_invalid_plan_input_artifacts(
             required=True,
             artifact_instance_id=(
                 getattr(args, "expected_plan_artifact_id", None)
-                or artifact_physical_name(plan_ref)
             ),
+            require_artifact_instance_id=True,
+            allow_artifact_physical_name_fallback=False,
         ),
         "changed-files-snapshot": _ci_aggregate_input_artifact(
             ci_validation_changed_files_snapshot_artifact_ref(
                 run_id=run_id,
                 run_attempt=run_attempt,
             )
-            if isinstance(changed_files_hash, str)
+            if "changed-files-snapshot" in required_snapshots
             else None,
             content_digest=changed_files_hash
-            if isinstance(changed_files_hash, str)
+            if "changed-files-snapshot" in required_snapshots
+            and isinstance(changed_files_hash, str)
             else None,
-            required=isinstance(changed_files_hash, str),
+            required="changed-files-snapshot" in required_snapshots,
             artifact_instance_id=getattr(
                 args,
                 "expected_changed_files_snapshot_artifact_id",
                 None,
             ),
-            require_artifact_instance_id=isinstance(changed_files_hash, str),
+            require_artifact_instance_id=(
+                "changed-files-snapshot" in required_snapshots
+            ),
         ),
         "fact-snapshot": _ci_aggregate_input_artifact(
             ci_validation_fact_snapshot_artifact_ref(
                 run_id=run_id,
                 run_attempt=run_attempt,
             )
-            if isinstance(fact_snapshot_id, str)
+            if "fact-snapshot" in required_snapshots
             else None,
             content_digest=fact_snapshot_id
-            if isinstance(fact_snapshot_id, str)
+            if "fact-snapshot" in required_snapshots
+            and isinstance(fact_snapshot_id, str)
             else None,
-            required=isinstance(fact_snapshot_id, str),
+            required="fact-snapshot" in required_snapshots,
             artifact_instance_id=getattr(
                 args, "expected_fact_snapshot_artifact_id", None
             ),
-            require_artifact_instance_id=isinstance(fact_snapshot_id, str),
+            require_artifact_instance_id="fact-snapshot" in required_snapshots,
         ),
         "execution-batch-manifest": _ci_aggregate_input_artifact(
             ci_validation_execution_batch_manifest_artifact_ref(
@@ -10307,15 +11973,951 @@ def _ci_invalid_plan_input_artifacts(
         artifacts,
         boundary_diagnostics,
     )
-    if invalid_plan_context is not None:
-        for key in ("changed-files-snapshot", "fact-snapshot"):
-            artifact = artifacts.get(key)
-            if (
-                isinstance(artifact, dict)
-                and artifact.get("admissibility") == "valid"
-            ):
-                artifact["admissibility"] = "inadmissible"
+    validation_plan_artifact = artifacts.get("validation-plan")
+    if (
+        isinstance(validation_plan_artifact, dict)
+        and validation_plan_artifact.get("admissibility") == "missing"
+    ):
+        validation_plan_artifact["artifact-ref"] = plan_ref
+        validation_plan_artifact["admissibility"] = "inadmissible"
+        if isinstance(plan_digest, str):
+            validation_plan_artifact["content-digest"] = plan_digest
+        malformed_plan_diagnostic = _ci_boundary_diagnostic(
+            index=0,
+            detail=DiagnosticDetail.MALFORMED_PLAN.value,
+            message=CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE,
+            source_id=plan_ref,
+        )
+        diagnostics = list(
+            cast(
+                "Sequence[Mapping[str, object]]",
+                validation_plan_artifact.get("diagnostics", []),
+            )
+        )
+        if malformed_plan_diagnostic not in diagnostics:
+            diagnostics.append(malformed_plan_diagnostic)
+        validation_plan_artifact["diagnostics"] = diagnostics
+    _ci_apply_retained_projection_diagnostics_to_inputs(
+        artifacts,
+        boundary_diagnostics,
+    )
+    if not _ci_invalid_plan_detail_requires_retained_projection(
+        _ci_missing_plan_invalid_plan_detail(boundary_diagnostics),
+    ):
+        _ci_close_snapshot_input_authority(artifacts)
     return artifacts
+
+
+def _ci_retained_invalid_plan_request_digest(
+    args: argparse.Namespace,
+) -> str | None:
+    try:
+        request = _read_optional_json(getattr(args, "request", ""))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(request, Mapping):
+        return None
+    try:
+        normalized = validate_ci_validation_request(
+            request,
+            expected_run_id=str(args.run_id),
+            expected_run_attempt=str(args.run_attempt),
+            expected_artifact_ref=ci_validation_request_artifact_ref(
+                run_id=str(args.run_id),
+                run_attempt=str(args.run_attempt),
+            ),
+        )
+    except ContractValidationError:
+        return None
+    return normalized.request_digest
+
+
+def _ci_retained_invalid_plan_request_document_authority_state(
+    args: argparse.Namespace,
+    input_artifacts: Mapping[str, object],
+) -> Literal["authorized", "invalid", "missing", "mismatch"]:
+    request_path = getattr(args, "request", "")
+    if not request_path or not Path(request_path).is_file():
+        return "missing"
+    try:
+        request = _read_optional_json(request_path)
+    except OSError:
+        return "missing"
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return "invalid"
+    if not isinstance(request, Mapping):
+        return "invalid"
+    try:
+        normalized = validate_ci_validation_request(
+            request,
+            expected_run_id=str(args.run_id),
+            expected_run_attempt=str(args.run_attempt),
+            expected_artifact_ref=ci_validation_request_artifact_ref(
+                run_id=str(args.run_id),
+                run_attempt=str(args.run_attempt),
+            ),
+        )
+    except ContractValidationError:
+        return "invalid"
+    return (
+        "authorized"
+        if _ci_retained_input_artifact_value(
+            input_artifacts,
+            "request",
+            "artifact-ref",
+        )
+        == normalized.artifact_ref
+        and _ci_retained_input_artifact_value(
+            input_artifacts,
+            "request",
+            "content-digest",
+        )
+        == normalized.request_digest
+        else "mismatch"
+    )
+
+
+def _ci_retained_invalid_plan_request_document_authorizes_projection(
+    args: argparse.Namespace,
+    invalid_plan_context: Mapping[str, object],
+    input_artifacts: Mapping[str, object],
+) -> bool:
+    request_authority = (
+        _ci_retained_invalid_plan_request_document_authority_state(
+            args,
+            input_artifacts,
+        )
+    )
+    if request_authority != "authorized":
+        return False
+    request_projection = invalid_plan_context.get("request")
+    if not isinstance(request_projection, Mapping):
+        return False
+    return request_projection.get(
+        "artifact-ref"
+    ) == _ci_retained_input_artifact_value(
+        input_artifacts,
+        "request",
+        "artifact-ref",
+    ) and request_projection.get(
+        "request-digest"
+    ) == _ci_retained_input_artifact_value(
+        input_artifacts,
+        "request",
+        "content-digest",
+    )
+
+
+def _ci_retained_invalid_plan_changed_files_hash(
+    args: argparse.Namespace,
+    *,
+    invalid_plan_context: Mapping[str, object] | None,
+) -> str | None:
+    del invalid_plan_context
+    try:
+        snapshot = _read_optional_json(
+            getattr(args, "changed_files_snapshot", ""),
+        )
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return _ci_control_input_raw_digest(
+            str(getattr(args, "changed_files_snapshot", ""))
+        )
+    if not isinstance(snapshot, Mapping):
+        return None
+    run = snapshot.get("run")
+    payload = snapshot.get("hash-payload")
+    changed_files = (
+        payload.get("changed-files") if isinstance(payload, Mapping) else None
+    )
+    if not (
+        isinstance(run, Mapping)
+        and run.get("run-id") == str(args.run_id)
+        and run.get("run-attempt") == str(args.run_attempt)
+        and snapshot.get("artifact-ref")
+        == ci_validation_changed_files_snapshot_artifact_ref(
+            run_id=str(args.run_id),
+            run_attempt=str(args.run_attempt),
+        )
+        and isinstance(changed_files, Sequence)
+        and not isinstance(changed_files, str | bytes)
+        and all(isinstance(item, str) for item in changed_files)
+    ):
+        return None
+    try:
+        digest = ci_validation_changed_files_hash(
+            [str(item) for item in changed_files],
+        )
+    except (ContractValidationError, TypeError, ValueError):
+        return None
+    return digest if snapshot.get("changed-files-hash") == digest else None
+
+
+def _ci_retained_invalid_plan_fact_snapshot_id(
+    args: argparse.Namespace,
+    *,
+    invalid_plan_context: Mapping[str, object] | None,
+) -> str | None:
+    try:
+        snapshot = _read_optional_json(getattr(args, "fact_snapshot", ""))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return _ci_control_input_raw_digest(
+            str(getattr(args, "fact_snapshot", ""))
+        )
+    if not isinstance(snapshot, Mapping):
+        return None
+    run = snapshot.get("run")
+    providers = snapshot.get("providers")
+    expected_plan_id = (
+        invalid_plan_context.get("plan-id")
+        if isinstance(invalid_plan_context, Mapping)
+        else None
+    )
+    if not (
+        isinstance(run, Mapping)
+        and run.get("run-id") == str(args.run_id)
+        and run.get("run-attempt") == str(args.run_attempt)
+        and snapshot.get("artifact-ref")
+        == ci_validation_fact_snapshot_artifact_ref(
+            run_id=str(args.run_id),
+            run_attempt=str(args.run_attempt),
+        )
+        and isinstance(expected_plan_id, str)
+        and snapshot.get("plan-id") == expected_plan_id
+        and isinstance(providers, Sequence)
+        and not isinstance(providers, str | bytes)
+        and all(isinstance(item, Mapping) for item in providers)
+    ):
+        return None
+    try:
+        digest = ci_validation_fact_snapshot_id(
+            [cast("Mapping[str, object]", item) for item in providers],
+        )
+    except (ContractValidationError, TypeError, ValueError):
+        return None
+    return digest if snapshot.get("fact-snapshot-id") == digest else None
+
+
+def _ci_malformed_snapshot_culprit_document_is_invalid(
+    args: argparse.Namespace,
+    retained_projection_detail: str,
+) -> bool:
+    attr = (
+        "changed_files_snapshot"
+        if retained_projection_detail
+        == DiagnosticDetail.CHANGED_FILES_SNAPSHOT_MALFORMED.value
+        else "fact_snapshot"
+    )
+    try:
+        document = _read_optional_json(getattr(args, attr, ""))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return True
+    return not isinstance(document, Mapping)
+
+
+def _ci_malformed_snapshot_detail(
+    diagnostics: Sequence[Mapping[str, object]],
+) -> str | None:
+    for diagnostic in diagnostics:
+        detail = diagnostic.get("detail")
+        if (
+            diagnostic.get("code") == DiagnosticFamily.INVALID_PLAN.value
+            and isinstance(detail, str)
+            and detail in _CI_VALIDATION_INVALID_PLAN_SNAPSHOT_MALFORMED_DETAILS
+        ):
+            return detail
+    return None
+
+
+def _ci_raise_if_malformed_snapshot_control_context(
+    diagnostics: Sequence[Mapping[str, object]],
+) -> None:
+    malformed_snapshot_detail = _ci_malformed_snapshot_detail(diagnostics)
+    if malformed_snapshot_detail is None:
+        return
+    raise ContractValidationError(
+        [
+            ValidationIssue(
+                "$.projection-authority",
+                f"retained invalid-plan detail {malformed_snapshot_detail} "
+                "requires public-validator admissible snapshot context",
+            )
+        ]
+    )
+
+
+def _ci_retained_invalid_plan_projection_context_is_complete(
+    invalid_plan_context: Mapping[str, object],
+    input_artifacts: Mapping[str, object],
+    retained_projection_detail: str,
+) -> bool:
+    culprit_input_name = _ci_retained_invalid_plan_culprit_input_name(
+        retained_projection_detail,
+    )
+    return (
+        _ci_retained_invalid_plan_projection_shape_is_complete(
+            invalid_plan_context,
+        )
+        and all(
+            _ci_retained_invalid_plan_required_input_is_bound(
+                input_artifacts.get(input_name),
+                input_name,
+                culprit_input_name,
+                retained_projection_detail,
+            )
+            for input_name in ("request", "validation-plan")
+        )
+        and all(
+            _ci_retained_invalid_plan_snapshot_input_is_bound(
+                input_artifacts.get(input_name),
+                input_name,
+                culprit_input_name,
+                retained_projection_detail,
+            )
+            for input_name in _ci_plan_required_snapshot_inputs(
+                invalid_plan_context
+            )
+        )
+    )
+
+
+def _ci_retained_invalid_plan_projection_matches_inputs(
+    invalid_plan_context: Mapping[str, object],
+    input_artifacts: Mapping[str, object],
+    retained_projection_detail: str,
+) -> bool:
+    request_projection = invalid_plan_context.get("request")
+    affected_range = invalid_plan_context.get("affected-range")
+    fact_projection = invalid_plan_context.get("fact-snapshot")
+    required_snapshots = _ci_plan_required_snapshot_inputs(invalid_plan_context)
+    if not isinstance(request_projection, Mapping):
+        return False
+    try:
+        recomputed_plan_digest = ci_validation_plan_digest(invalid_plan_context)
+    except (ContractValidationError, TypeError, ValueError):
+        return False
+    expected_plan_digest = (
+        recomputed_plan_digest
+        if retained_projection_detail
+        == DiagnosticDetail.PLAN_DIGEST_MISMATCH.value
+        else invalid_plan_context.get("plan-digest")
+    )
+    matches = (
+        expected_plan_digest
+        == _ci_retained_input_artifact_value(
+            input_artifacts,
+            "validation-plan",
+            "content-digest",
+        )
+        == recomputed_plan_digest
+        and request_projection.get("artifact-ref")
+        == _ci_retained_input_artifact_value(
+            input_artifacts,
+            "request",
+            "artifact-ref",
+        )
+        and request_projection.get("request-digest")
+        == _ci_retained_input_artifact_value(
+            input_artifacts,
+            "request",
+            "content-digest",
+        )
+    )
+    if "changed-files-snapshot" in required_snapshots:
+        if not isinstance(affected_range, Mapping):
+            return False
+        matches = (
+            matches
+            and _ci_retained_invalid_plan_snapshot_projection_matches_input(
+                input_artifacts,
+                "changed-files-snapshot",
+                affected_range.get("changed-files-hash"),
+                retained_projection_detail,
+            )
+        )
+    if "fact-snapshot" in required_snapshots:
+        if not isinstance(fact_projection, Mapping):
+            return False
+        matches = (
+            matches
+            and _ci_retained_invalid_plan_snapshot_projection_matches_input(
+                input_artifacts,
+                "fact-snapshot",
+                fact_projection.get("id"),
+                retained_projection_detail,
+            )
+        )
+    return matches
+
+
+def _ci_retained_invalid_plan_snapshot_projection_matches_input(
+    input_artifacts: Mapping[str, object],
+    input_name: str,
+    projection_value: object,
+    retained_projection_detail: str,
+) -> bool:
+    culprit_input_name = _ci_retained_invalid_plan_culprit_input_name(
+        retained_projection_detail
+    )
+    if (
+        retained_projection_detail
+        in _CI_VALIDATION_INVALID_PLAN_SNAPSHOT_MALFORMED_DETAILS
+        and input_name != culprit_input_name
+        and _ci_retained_invalid_plan_companion_input_is_unavailable_fallback(
+            input_artifacts.get(input_name),
+            input_name,
+            culprit_input_name,
+        )
+    ):
+        return False
+    if _ci_retained_invalid_plan_companion_input_is_unavailable_fallback(
+        input_artifacts.get(input_name),
+        input_name,
+        culprit_input_name,
+    ):
+        return True
+    content_digest = _ci_retained_input_artifact_value(
+        input_artifacts,
+        input_name,
+        "content-digest",
+    )
+    if retained_projection_detail == _ci_retained_invalid_plan_malformed_detail(
+        input_name
+    ):
+        return isinstance(content_digest, str)
+    return projection_value == content_digest
+
+
+def _ci_retained_invalid_plan_malformed_detail(input_name: str) -> str | None:
+    if input_name == "changed-files-snapshot":
+        return DiagnosticDetail.CHANGED_FILES_SNAPSHOT_MALFORMED.value
+    if input_name == "fact-snapshot":
+        return DiagnosticDetail.FACT_SNAPSHOT_MALFORMED.value
+    return None
+
+
+def _ci_retained_input_artifact_value(
+    input_artifacts: Mapping[str, object],
+    input_name: str,
+    field_name: str,
+) -> object:
+    input_artifact = input_artifacts.get(input_name)
+    if not isinstance(input_artifact, Mapping):
+        return None
+    return input_artifact.get(field_name)
+
+
+def _ci_retained_invalid_plan_projection_shape_is_complete(
+    invalid_plan_context: Mapping[str, object],
+) -> bool:
+    try:
+        retained_projection = {
+            "plan-id": invalid_plan_context["plan-id"],
+            "plan-digest": invalid_plan_context["plan-digest"],
+            "mode": invalid_plan_context["mode"],
+            "validation-tree": invalid_plan_context["validation-tree"],
+            "affected-range": _ci_summary_affected_range(
+                invalid_plan_context,
+            ),
+            "request": invalid_plan_context["request"],
+            "scheduled-full": invalid_plan_context["scheduled-full"],
+        }
+    except (ContractValidationError, KeyError, TypeError, ValueError):
+        return False
+    return _ci_retained_invalid_plan_projection_has_complete_shape(
+        retained_projection,
+    )
+
+
+def _ci_retained_invalid_plan_projection_has_complete_shape(
+    projection: Mapping[str, object],
+) -> bool:
+    validation_tree = projection.get("validation-tree")
+    affected_range = projection.get("affected-range")
+    return (
+        _ci_non_empty_string(projection.get("plan-id"))
+        and _ci_hex_digest(projection.get("plan-digest"))
+        and projection.get("mode") in {"pull_request", "push", "scheduled_full"}
+        and _ci_retained_validation_tree_has_complete_shape(validation_tree)
+        and _ci_retained_affected_range_has_shape(affected_range)
+        and isinstance(affected_range, Mapping)
+        and affected_range.get("status") != "unknown"
+        and _ci_retained_request_projection_has_shape(projection.get("request"))
+        and _ci_retained_scheduled_full_projection_matches(projection)
+    )
+
+
+def _ci_retained_validation_tree_has_complete_shape(value: object) -> bool:
+    return (
+        isinstance(value, Mapping)
+        and set(value) == {"commit-sha", "ref"}
+        and _ci_sha(value.get("commit-sha"))
+        and _ci_non_empty_string(value.get("ref"))
+    )
+
+
+def _ci_retained_affected_range_has_shape(value: object) -> bool:
+    return (
+        isinstance(value, Mapping)
+        and set(value)
+        == {
+            "status",
+            "base-sha",
+            "base-tip-sha",
+            "head-sha",
+            "changed-files-hash",
+        }
+        and value.get("status")
+        in {"available", "unavailable", "not-applicable", "unknown"}
+        and _ci_optional_sha(value.get("base-sha"))
+        and _ci_optional_sha(value.get("base-tip-sha"))
+        and _ci_optional_sha(value.get("head-sha"))
+        and (
+            value.get("changed-files-hash") is None
+            or _ci_hex_digest(value.get("changed-files-hash"))
+        )
+    )
+
+
+def _ci_retained_request_projection_has_shape(value: object) -> bool:
+    return (
+        isinstance(value, Mapping)
+        and set(value) == {"artifact-ref", "request-digest"}
+        and _ci_artifact_logical_ref_is_valid(value.get("artifact-ref"))
+        and _ci_hex_digest(value.get("request-digest"))
+    )
+
+
+def _ci_retained_scheduled_full_projection_matches(
+    projection: Mapping[str, object],
+) -> bool:
+    scheduled_full = projection.get("scheduled-full")
+    mode = projection.get("mode")
+    expected_enabled = mode == "scheduled_full"
+    if (
+        not isinstance(scheduled_full, Mapping)
+        or set(scheduled_full) != {"enabled"}
+        or scheduled_full.get("enabled") is not expected_enabled
+    ):
+        return False
+    if mode != "scheduled_full":
+        return True
+    return projection.get("affected-range") == {
+        "status": "not-applicable",
+        "base-sha": None,
+        "base-tip-sha": None,
+        "head-sha": None,
+        "changed-files-hash": None,
+    }
+
+
+def _ci_artifact_logical_ref_is_valid(value: object) -> bool:
+    try:
+        validate_artifact_logical_ref(value)
+    except ContractValidationError:
+        return False
+    return True
+
+
+def _ci_non_empty_string(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _ci_hex_digest(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+    )
+
+
+def _ci_sha(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and re.fullmatch(r"[0-9a-f]{40}", value) is not None
+    )
+
+
+def _ci_optional_sha(value: object) -> bool:
+    return value is None or _ci_sha(value)
+
+
+def _ci_retained_invalid_plan_required_input_is_bound(
+    input_artifact: object,
+    input_name: str,
+    culprit_input_name: str,
+    retained_projection_detail: str,
+) -> bool:
+    if input_name == culprit_input_name:
+        return _ci_retained_invalid_plan_culprit_input_is_bound(
+            input_artifact,
+            input_name,
+            retained_projection_detail,
+        )
+    return _ci_retained_invalid_plan_companion_input_is_bound(
+        input_artifact,
+        input_name,
+    )
+
+
+def _ci_retained_invalid_plan_snapshot_input_is_bound(
+    input_artifact: object,
+    input_name: str,
+    culprit_input_name: str,
+    retained_projection_detail: str,
+) -> bool:
+    if not isinstance(input_artifact, Mapping):
+        return False
+    if (
+        retained_projection_detail
+        in _CI_VALIDATION_INVALID_PLAN_SNAPSHOT_MALFORMED_DETAILS
+        and input_name != culprit_input_name
+    ):
+        return (
+            _ci_retained_invalid_plan_input_has_bound_identity(
+                input_artifact,
+                admissibility="valid",
+            )
+            and input_artifact.get("diagnostics") == []
+        )
+    return _ci_retained_invalid_plan_required_input_is_bound(
+        input_artifact,
+        input_name,
+        culprit_input_name,
+        retained_projection_detail,
+    )
+
+
+def _ci_retained_invalid_plan_culprit_input_name(detail: str) -> str:
+    if detail.startswith("changed-files-snapshot-"):
+        return "changed-files-snapshot"
+    if detail.startswith("fact-snapshot-"):
+        return "fact-snapshot"
+    return "validation-plan"
+
+
+def _ci_retained_invalid_plan_companion_input_is_bound(
+    input_artifact: object,
+    input_name: str,
+) -> bool:
+    if not isinstance(input_artifact, Mapping):
+        return False
+    if (
+        _ci_retained_invalid_plan_input_has_bound_identity(
+            input_artifact,
+            admissibility="valid",
+        )
+        and input_artifact.get("diagnostics") == []
+    ):
+        return True
+    if input_name not in {"changed-files-snapshot", "fact-snapshot"}:
+        return False
+    return _ci_retained_invalid_plan_companion_input_is_unavailable_fallback(
+        input_artifact,
+        input_name,
+        None,
+    )
+
+
+def _ci_retained_invalid_plan_companion_input_is_unavailable_fallback(
+    input_artifact: object,
+    input_name: str,
+    culprit_input_name: str | None,
+) -> bool:
+    if (
+        input_name not in {"changed-files-snapshot", "fact-snapshot"}
+        or input_name == culprit_input_name
+        or not isinstance(input_artifact, Mapping)
+    ):
+        return False
+    diagnostics = input_artifact.get("diagnostics")
+    if not (
+        input_artifact.get("required") is True
+        and input_artifact.get("expected-cardinality") == 1
+        and input_artifact.get("admissibility") in {"missing", "inadmissible"}
+        and input_artifact.get("artifact-ref") is None
+        and input_artifact.get("artifact-instance-id") is None
+        and input_artifact.get("content-digest") is None
+        and isinstance(diagnostics, Sequence)
+        and not isinstance(diagnostics, str | bytes)
+        and len(diagnostics) == 1
+        and isinstance(diagnostics[0], Mapping)
+    ):
+        return False
+    return _snapshot_companion_unproven_diagnostic_is_canonical(
+        cast("Mapping[str, object]", diagnostics[0]),
+        expected_source_id=None,
+    )
+
+
+def _ci_retained_invalid_plan_companion_has_closed_set_diagnostic(
+    input_artifact: Mapping[str, object],
+) -> bool:
+    diagnostics = input_artifact.get("diagnostics")
+    if not isinstance(diagnostics, Sequence) or isinstance(
+        diagnostics,
+        str | bytes,
+    ):
+        return False
+    return (
+        len(diagnostics) == 1
+        and isinstance(diagnostics[0], Mapping)
+        and _snapshot_companion_unproven_diagnostic_is_canonical(
+            cast("Mapping[str, object]", diagnostics[0]),
+            expected_source_id=input_artifact.get("artifact-ref"),
+        )
+    )
+
+
+def _ci_retained_invalid_plan_culprit_input_is_bound(
+    input_artifact: object,
+    input_name: str,
+    retained_projection_detail: str,
+) -> bool:
+    return (
+        isinstance(input_artifact, Mapping)
+        and _ci_retained_invalid_plan_input_has_bound_identity(
+            input_artifact,
+            admissibility="inadmissible",
+        )
+        and _ci_retained_invalid_plan_input_has_canonical_diagnostic(
+            input_artifact,
+            input_name,
+            retained_projection_detail,
+        )
+    )
+
+
+def _ci_retained_invalid_plan_unbound_culprit_diagnostic_is_canonical(
+    input_name: str,
+    retained_projection_detail: str,
+    diagnostic: Mapping[str, object],
+) -> bool:
+    expected_message = (
+        _CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAIL_MESSAGES.get(
+            retained_projection_detail,
+        )
+    )
+    return (
+        expected_message is not None
+        and diagnostic.get("diagnostic-id")
+        == f"invalid-plan/{retained_projection_detail}"
+        and diagnostic.get("detail") == retained_projection_detail
+        and diagnostic.get("message") == expected_message
+        and diagnostic.get("severity") == DiagnosticSeverity.FAIL_CLOSED.value
+        and diagnostic.get("verdict-effect")
+        == DiagnosticVerdictEffect.FAIL_CLOSED.value
+        and _ci_retained_invalid_plan_detail_matches_input(
+            input_name,
+            retained_projection_detail,
+        )
+    )
+
+
+def _ci_retained_invalid_plan_input_has_bound_identity(
+    input_artifact: Mapping[str, object],
+    *,
+    admissibility: str,
+) -> bool:
+    return (
+        input_artifact.get("required") is True
+        and input_artifact.get("expected-cardinality") == 1
+        and input_artifact.get("admissibility") == admissibility
+        and isinstance(input_artifact.get("artifact-ref"), str)
+        and bool(input_artifact.get("artifact-ref"))
+        and isinstance(input_artifact.get("artifact-instance-id"), str)
+        and bool(input_artifact.get("artifact-instance-id"))
+        and isinstance(input_artifact.get("content-digest"), str)
+        and bool(input_artifact.get("content-digest"))
+    )
+
+
+def _ci_retained_invalid_plan_input_has_canonical_diagnostic(
+    input_artifact: Mapping[str, object],
+    input_name: str,
+    retained_projection_detail: str,
+) -> bool:
+    diagnostics = input_artifact.get("diagnostics")
+    if not isinstance(diagnostics, Sequence) or isinstance(
+        diagnostics,
+        str | bytes,
+    ):
+        return False
+    if any(not isinstance(diagnostic, Mapping) for diagnostic in diagnostics):
+        return False
+    invalid_plan_diagnostics = [
+        diagnostic
+        for diagnostic in diagnostics
+        if cast("Mapping[str, object]", diagnostic).get("code")
+        == DiagnosticFamily.INVALID_PLAN.value
+    ]
+    return (
+        len(diagnostics) == 1
+        and len(invalid_plan_diagnostics) == 1
+        and all(
+            _ci_retained_invalid_plan_diagnostic_is_canonical(
+                input_artifact,
+                input_name,
+                retained_projection_detail,
+                cast("Mapping[str, object]", diagnostic),
+            )
+            for diagnostic in invalid_plan_diagnostics
+        )
+    )
+
+
+def _ci_retained_invalid_plan_diagnostic_is_canonical(
+    input_artifact: Mapping[str, object],
+    input_name: str,
+    retained_projection_detail: str,
+    diagnostic: Mapping[str, object],
+) -> bool:
+    expected_message = (
+        _CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAIL_MESSAGES.get(
+            retained_projection_detail,
+        )
+    )
+    source = diagnostic.get("source")
+    return (
+        expected_message is not None
+        and diagnostic.get("diagnostic-id")
+        == f"invalid-plan/{retained_projection_detail}"
+        and diagnostic.get("code") == DiagnosticFamily.INVALID_PLAN.value
+        and diagnostic.get("detail") == retained_projection_detail
+        and diagnostic.get("message") == expected_message
+        and diagnostic.get("severity") == DiagnosticSeverity.FAIL_CLOSED.value
+        and diagnostic.get("verdict-effect")
+        == DiagnosticVerdictEffect.FAIL_CLOSED.value
+        and isinstance(source, Mapping)
+        and source.get("type") == "aggregation"
+        and source.get("id") == input_artifact.get("artifact-ref")
+        and _ci_retained_invalid_plan_detail_matches_input(
+            input_name,
+            retained_projection_detail,
+        )
+    )
+
+
+def _ci_retained_invalid_plan_detail_matches_input(
+    input_name: str,
+    detail: str,
+) -> bool:
+    if input_name == "changed-files-snapshot":
+        return detail.startswith("changed-files-snapshot-")
+    if input_name == "fact-snapshot":
+        return detail.startswith("fact-snapshot-")
+    if input_name == "validation-plan":
+        return not detail.startswith(
+            ("changed-files-snapshot-", "fact-snapshot-")
+        )
+    return False
+
+
+def _ci_replace_invalid_plan_input_diagnostics(
+    input_artifacts: Mapping[str, object],
+    diagnostic: Mapping[str, object],
+    *,
+    drop_non_validation_plan: bool = False,
+    replaced_detail: str | None = None,
+) -> None:
+    target_detail = (
+        replaced_detail
+        if replaced_detail is not None
+        else diagnostic.get("detail")
+    )
+    for name, artifact in input_artifacts.items():
+        if not isinstance(artifact, dict):
+            continue
+        diagnostics = artifact.get("diagnostics")
+        had_replaced_invalid_plan_diagnostic = (
+            isinstance(diagnostics, Sequence)
+            and not isinstance(diagnostics, str | bytes)
+            and any(
+                isinstance(item, Mapping)
+                and item.get("code") == DiagnosticFamily.INVALID_PLAN.value
+                and item.get("detail") == target_detail
+                for item in diagnostics
+            )
+        )
+        retained_diagnostics = [
+            item
+            for item in (
+                diagnostics
+                if isinstance(diagnostics, Sequence)
+                and not isinstance(diagnostics, str | bytes)
+                else []
+            )
+            if not (
+                isinstance(item, Mapping)
+                and item.get("code") == DiagnosticFamily.INVALID_PLAN.value
+                and item.get("detail") == target_detail
+            )
+        ]
+        if name == "validation-plan":
+            artifact["admissibility"] = "inadmissible"
+            artifact["diagnostics"] = [*retained_diagnostics, dict(diagnostic)]
+        elif drop_non_validation_plan:
+            artifact["artifact-ref"] = None
+            artifact["artifact-instance-id"] = None
+            artifact["content-digest"] = None
+            if name in {"request", "execution-batch-manifest"}:
+                artifact["required"] = True
+                artifact["expected-cardinality"] = 1
+                artifact["admissibility"] = "missing"
+            else:
+                artifact["required"] = False
+                artifact["expected-cardinality"] = 0
+                artifact["admissibility"] = "not-required"
+            artifact["diagnostics"] = retained_diagnostics
+        elif retained_diagnostics:
+            artifact["diagnostics"] = retained_diagnostics
+        elif had_replaced_invalid_plan_diagnostic:
+            artifact["artifact-ref"] = None
+            artifact["artifact-instance-id"] = None
+            artifact["content-digest"] = None
+            artifact["required"] = False
+            artifact["expected-cardinality"] = 0
+            artifact["admissibility"] = "not-required"
+            artifact["diagnostics"] = []
+        else:
+            artifact["diagnostics"] = []
+
+
+def _ci_canonicalize_invalid_plan_input_diagnostics(
+    input_artifacts: Mapping[str, object],
+) -> None:
+    for artifact in input_artifacts.values():
+        if not isinstance(artifact, dict):
+            continue
+        diagnostics = artifact.get("diagnostics")
+        if not isinstance(diagnostics, Sequence) or isinstance(
+            diagnostics,
+            str | bytes,
+        ):
+            continue
+        canonicalized: list[object] = []
+        for item in diagnostics:
+            if (
+                isinstance(item, Mapping)
+                and item.get("code") == DiagnosticFamily.INVALID_PLAN.value
+            ):
+                diagnostic = dict(item)
+                detail = diagnostic.get("detail")
+                if isinstance(detail, str):
+                    message = (
+                        _CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAIL_MESSAGES.get(
+                            detail,
+                        )
+                        or _CI_VALIDATION_INVALID_PLAN_MISSING_PROJECTION_DETAIL_MESSAGES.get(
+                            detail,
+                        )
+                    )
+                    if message is not None:
+                        diagnostic["message"] = message
+                canonicalized.append(diagnostic)
+            else:
+                canonicalized.append(item)
+        artifact["diagnostics"] = sorted(
+            canonicalized, key=canonical_json_bytes
+        )
 
 
 def _ci_has_malformed_snapshot_control_diagnostic(
@@ -14895,12 +17497,39 @@ def _parse_bool(value: str | bool) -> bool:
     return value.lower() == "true"
 
 
+def _parse_strict_bool(value: str | bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    normalized = value.lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    msg = "expected 'true' or 'false'"
+    raise argparse.ArgumentTypeError(msg)
+
+
+def _ci_validation_reject_duplicate_json_keys(
+    pairs: Sequence[tuple[str, object]],
+) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            msg = f"duplicate JSON object key: {key}"
+            raise ValueError(msg)
+        result[key] = value
+    return result
+
+
 def _bool_str(value: bool) -> str:
     return "true" if value else "false"
 
 
 def _read_json(path: Path) -> Json:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = json.loads(
+        path.read_text(encoding="utf-8"),
+        object_pairs_hook=_ci_validation_reject_duplicate_json_keys,
+    )
     if not isinstance(payload, dict):
         msg = f"{path} must contain a JSON object"
         raise TypeError(msg)

@@ -145,6 +145,7 @@ class DiagnosticDetail(StrEnum):
     )
     FACT_SNAPSHOT_NONCANONICAL = "fact-snapshot-noncanonical"
     FACT_SNAPSHOT_DIGEST_MISMATCH = "fact-snapshot-digest-mismatch"
+    SNAPSHOT_COMPANION_UNPROVEN = "snapshot-companion-unproven"
     STRUCTURALLY_INVALID = "structurally-invalid"
     BUILD = "build"
     TEST = "test"
@@ -354,7 +355,10 @@ DETAILS_BY_DIAGNOSTIC_CODE = {
         },
     ),
     DiagnosticFamily.REQUIRED_INPUT_ARTIFACT_FAILURE.value: frozenset(
-        {DiagnosticDetail.REQUIRED_INPUT_ARTIFACT_FAILURE.value},
+        {
+            DiagnosticDetail.REQUIRED_INPUT_ARTIFACT_FAILURE.value,
+            DiagnosticDetail.SNAPSHOT_COMPANION_UNPROVEN.value,
+        },
     ),
     DiagnosticFamily.AGGREGATE_SUMMARY_WITHOUT_MANIFEST.value: frozenset(
         {DiagnosticDetail.AGGREGATE_SUMMARY_WITHOUT_MANIFEST.value},
@@ -370,9 +374,149 @@ DETAILS_BY_DIAGNOSTIC_CODE = {
             DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MALFORMED.value,
             DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_NON_CANONICAL.value,
             DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_DIGEST_MISMATCH.value,
+            DiagnosticDetail.FINAL_PRODUCER_UNVERIFIED.value,
         },
     ),
 }
+
+CI_VALIDATION_FINAL_EVIDENCE_DETAILS = DETAILS_BY_DIAGNOSTIC_CODE[
+    DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value
+]
+CI_VALIDATION_G1_DETAILS_BY_DIAGNOSTIC_CODE = {
+    code: DETAILS_BY_DIAGNOSTIC_CODE[code]
+    for code in (
+        DiagnosticFamily.REQUEST_INVALID.value,
+        DiagnosticFamily.INVALID_PLAN.value,
+        DiagnosticFamily.REQUIRED_EVIDENCE_MISSING.value,
+        DiagnosticFamily.REQUIRED_EVIDENCE_SKIPPED.value,
+        DiagnosticFamily.BLOCKING_VALIDATION_FAILURE.value,
+        DiagnosticFamily.INADMISSIBLE_BATCH_EVIDENCE.value,
+        DiagnosticFamily.NAMESPACE_CLOSURE_FAILURE.value,
+        DiagnosticFamily.REQUIRED_INPUT_ARTIFACT_FAILURE.value,
+        DiagnosticFamily.AGGREGATE_SUMMARY_WITHOUT_MANIFEST.value,
+        DiagnosticFamily.FINAL_PRODUCER_UNVERIFIED.value,
+        DiagnosticFamily.FINAL_EVIDENCE_FAILURE.value,
+    )
+}
+
+CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAIL_PRIORITY = (
+    DiagnosticDetail.PLAN_DUPLICATE.value,
+    DiagnosticDetail.PLAN_PRODUCER_UNVERIFIED.value,
+    DiagnosticDetail.PLAN_DIGEST_MISMATCH.value,
+    DiagnosticDetail.SCHEMA_INVALID.value,
+    DiagnosticDetail.STRUCTURALLY_INVALID.value,
+    DiagnosticDetail.CHANGED_FILES_SNAPSHOT_MALFORMED.value,
+    DiagnosticDetail.CHANGED_FILES_SNAPSHOT_SCHEMA_INVALID.value,
+    DiagnosticDetail.CHANGED_FILES_SNAPSHOT_REF_MISMATCH.value,
+    DiagnosticDetail.CHANGED_FILES_SNAPSHOT_ENVELOPE_MISMATCH.value,
+    DiagnosticDetail.CHANGED_FILES_SNAPSHOT_NONCANONICAL.value,
+    DiagnosticDetail.CHANGED_FILES_SNAPSHOT_DIGEST_MISMATCH.value,
+    DiagnosticDetail.FACT_SNAPSHOT_MALFORMED.value,
+    DiagnosticDetail.FACT_SNAPSHOT_PRODUCER_UNVERIFIED.value,
+    DiagnosticDetail.FACT_SNAPSHOT_SCHEMA_INVALID.value,
+    DiagnosticDetail.FACT_SNAPSHOT_REF_MISMATCH.value,
+    DiagnosticDetail.FACT_SNAPSHOT_ENVELOPE_MISMATCH.value,
+    DiagnosticDetail.FACT_SNAPSHOT_PLAN_MISMATCH.value,
+    DiagnosticDetail.FACT_SNAPSHOT_CROSS_REFERENCE_INVALID.value,
+    DiagnosticDetail.FACT_SNAPSHOT_NONCANONICAL.value,
+    DiagnosticDetail.FACT_SNAPSHOT_DIGEST_MISMATCH.value,
+)
+CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAILS = frozenset(
+    CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAIL_PRIORITY
+)
+CI_VALIDATION_INVALID_PLAN_NO_AUTHORITY_PROJECTION_DETAILS = frozenset(
+    {
+        DiagnosticDetail.PLAN_MISSING.value,
+        DiagnosticDetail.MALFORMED_PLAN.value,
+        DiagnosticDetail.PLAN_UNREADABLE.value,
+    }
+)
+CI_VALIDATION_INVALID_PLAN_SNAPSHOT_MALFORMED_DETAILS = frozenset(
+    {
+        DiagnosticDetail.CHANGED_FILES_SNAPSHOT_MALFORMED.value,
+        DiagnosticDetail.FACT_SNAPSHOT_MALFORMED.value,
+    }
+)
+CI_VALIDATION_INVALID_PLAN_MISSING_MESSAGE = (
+    "No authoritative validation plan was available."
+)
+CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE = (
+    "CI validation plan evidence is not authoritative."
+)
+CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAIL_MESSAGES = dict.fromkeys(
+    CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAILS,
+    CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE,
+)
+CI_VALIDATION_INVALID_PLAN_NO_AUTHORITY_PROJECTION_DETAIL_MESSAGES = {
+    DiagnosticDetail.MALFORMED_PLAN.value: (
+        CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE
+    ),
+    DiagnosticDetail.PLAN_UNREADABLE.value: (
+        CI_VALIDATION_INVALID_PLAN_NON_AUTHORITATIVE_MESSAGE
+    ),
+}
+CI_VALIDATION_AGGREGATE_MANIFEST_AUTHORITY_DETAILS = frozenset(
+    {
+        DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MISSING.value,
+        DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_DUPLICATE.value,
+        DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_UNREADABLE.value,
+        DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MALFORMED.value,
+        DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_NON_CANONICAL.value,
+        DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_DIGEST_MISMATCH.value,
+    }
+)
+CI_VALIDATION_AGGREGATE_MANIFEST_AUTHORITY_MESSAGES = {
+    DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MISSING.value: (
+        "Preserved aggregate evidence manifest is missing."
+    ),
+    DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_DUPLICATE.value: (
+        "Preserved aggregate evidence manifest is duplicated."
+    ),
+    DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_UNREADABLE.value: (
+        "Preserved aggregate evidence manifest is unreadable."
+    ),
+    DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MALFORMED.value: (
+        "Preserved aggregate evidence manifest is malformed."
+    ),
+    DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_NON_CANONICAL.value: (
+        "Preserved aggregate evidence manifest bytes are not canonical."
+    ),
+    DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_DIGEST_MISMATCH.value: (
+        "Preserved aggregate evidence manifest differs from the recomputed "
+        "validation view."
+    ),
+}
+CI_VALIDATION_AGGREGATE_MANIFEST_CONTRACT_INVALID_MESSAGE = (
+    "Preserved aggregate evidence manifest is contract-invalid."
+)
+CI_VALIDATION_AGGREGATE_MANIFEST_AUTHORITY_MESSAGE_OPTIONS = {
+    detail: frozenset({message})
+    for detail, message in (
+        CI_VALIDATION_AGGREGATE_MANIFEST_AUTHORITY_MESSAGES.items()
+    )
+} | {
+    DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MALFORMED.value: frozenset(
+        {
+            CI_VALIDATION_AGGREGATE_MANIFEST_AUTHORITY_MESSAGES[
+                DiagnosticDetail.AGGREGATE_EVIDENCE_MANIFEST_MALFORMED.value
+            ],
+            CI_VALIDATION_AGGREGATE_MANIFEST_CONTRACT_INVALID_MESSAGE,
+        }
+    ),
+}
+
+
+def preferred_ci_validation_invalid_plan_retained_projection_detail(
+    details: set[str],
+) -> str:
+    """Return the canonical retained invalid-plan projection detail."""
+    for (
+        detail
+    ) in CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAIL_PRIORITY:
+        if detail in details:
+            return detail
+    return sorted(details)[0]
+
 
 API_VERSIONS_BY_KIND = {
     CiValidationKind.REQUEST.value: "three.ci.validation.request/v1alpha1",
