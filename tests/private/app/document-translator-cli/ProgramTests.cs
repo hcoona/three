@@ -1,4 +1,6 @@
+using Azure;
 using Azure.AI.Translation.Document;
+using Azure.Identity;
 using Xunit;
 
 namespace Hcoona.DocumentTranslatorCli.Tests;
@@ -34,6 +36,32 @@ public sealed class ProgramTests
     }
 
     [Theory]
+    [MemberData(nameof(StandardErrorOutputChannelFailures))]
+    public async Task ParseErrorsReturnExitCodeTwoWhenStderrFails(
+        Exception standardErrorException)
+    {
+        using StringWriter standardOutput = new();
+        using ThrowingStringWriter standardError = new(standardErrorException);
+        bool executed = false;
+
+        int exitCode = await Program.RunAsync(
+            ["translate", "--unknown"],
+            standardOutput,
+            standardError,
+            _ => null,
+            (_, _, _) =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(Program.ValidationErrorExitCode, exitCode);
+        Assert.False(executed);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+    }
+
+    [Theory]
     [InlineData("--help")]
     [InlineData("translate", "--help")]
     public async Task HelpReturnsSuccess(params string[] args)
@@ -48,6 +76,54 @@ public sealed class ProgramTests
 
         Assert.Equal(Program.SuccessExitCode, exitCode);
         Assert.False(executed);
+    }
+
+    [Fact]
+    public async Task RootHelpReturnsSuccessWhenStdoutFails()
+    {
+        using ThrowingStringWriter standardOutput = new(new IOException("stdout failed"));
+        using StringWriter standardError = new();
+        bool executed = false;
+
+        int exitCode = await Program.RunAsync(
+            ["--help"],
+            standardOutput,
+            standardError,
+            _ => null,
+            (_, _, _) =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.False(executed);
+        Assert.Equal(string.Empty, standardError.ToString());
+    }
+
+    [Fact]
+    public async Task TranslateHelpReturnsSuccessWhenStdoutFails()
+    {
+        using ThrowingStringWriter standardOutput = new(new IOException("stdout failed"));
+        using StringWriter standardError = new();
+        bool executed = false;
+
+        int exitCode = await Program.RunAsync(
+            ["translate", "--help"],
+            standardOutput,
+            standardError,
+            _ => null,
+            (_, _, _) =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.False(executed);
+        Assert.Equal(string.Empty, standardError.ToString());
     }
 
     [Theory]
@@ -70,6 +146,125 @@ public sealed class ProgramTests
         Assert.Equal(Program.SuccessExitCode, exitCode);
         Assert.EndsWith(Environment.NewLine, output);
         Assert.False(output.EndsWith("\n" + Environment.NewLine, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RunAsyncMapsValidatedCommandCancellationToUnexpectedExitCode()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        using CancellationTokenSource cancellationTokenSource = new();
+
+        int exitCode = await Program.RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+            ],
+            standardOutput,
+            standardError,
+            _ => null,
+            (_, _, token) =>
+            {
+                Assert.Equal(cancellationTokenSource.Token, token);
+                cancellationTokenSource.Cancel();
+                throw new OperationCanceledException(token);
+            },
+            cancellationTokenSource.Token);
+
+        Assert.Equal(Program.UnexpectedErrorExitCode, exitCode);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("Operation canceled.", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsyncMapsUnexpectedValidationSeamExceptionToUnexpectedExitCode()
+    {
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        bool executed = false;
+
+        int exitCode = await Program.RunAsync(
+            [
+                "translate",
+                "--input",
+                "source.txt",
+                "--output",
+                "translated.txt",
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+            ],
+            standardOutput,
+            standardError,
+            _ => null,
+            (_, _, _) =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            },
+            _ => throw new InvalidOperationException("validation seam failed"),
+            CancellationToken.None);
+
+        Assert.Equal(Program.UnexpectedErrorExitCode, exitCode);
+        Assert.False(executed);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("Unexpected error", standardError.ToString(), StringComparison.Ordinal);
+        Assert.Contains(
+            "validation seam failed",
+            standardError.ToString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsyncReturnsUnexpectedExitCodeWhenUnexpectedErrorReportingFails()
+    {
+        using StringWriter standardOutput = new();
+        using ThrowingStringWriter standardError = new(new IOException("stderr failed"));
+        bool executed = false;
+
+        int exitCode = await Program.RunAsync(
+            [
+                "translate",
+                "--input",
+                "source.txt",
+                "--output",
+                "translated.txt",
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+            ],
+            standardOutput,
+            standardError,
+            _ => null,
+            (_, _, _) =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            },
+            _ => throw new InvalidOperationException("validation seam failed"),
+            CancellationToken.None);
+
+        Assert.Equal(Program.UnexpectedErrorExitCode, exitCode);
+        Assert.False(executed);
+        Assert.Equal(string.Empty, standardOutput.ToString());
     }
 
     [Fact]
@@ -616,6 +811,133 @@ public sealed class ProgramTests
         Assert.False(executed);
     }
 
+    public static IEnumerable<object[]> ValidationFileIoExceptions()
+    {
+        yield return [new IOException("input metadata failed")];
+        yield return [new UnauthorizedAccessException("input metadata denied")];
+        yield return [new PathTooLongException("input path too long")];
+        yield return [new NotSupportedException("input path format is not supported")];
+        yield return [new ArgumentException("input path is invalid")];
+    }
+
+    [Theory]
+    [MemberData(nameof(ValidationFileIoExceptions))]
+    public async Task ValidationFileIoFailuresReturnFileIoExitCode(Exception exception)
+    {
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        bool executed = false;
+
+        int exitCode = await Program.RunAsync(
+            [
+                "translate",
+                "--input",
+                "source.txt",
+                "--output",
+                "translated.txt",
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com",
+                "--key",
+                "secret",
+            ],
+            standardOutput,
+            standardError,
+            _ => null,
+            (_, _, _) =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            },
+            _ => throw exception,
+            CancellationToken.None);
+
+        string error = standardError.ToString();
+        Assert.Equal(Program.FileIoErrorExitCode, exitCode);
+        Assert.False(executed);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("File I/O error", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret", error, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(StandardErrorOutputChannelFailures))]
+    public async Task ValidationFileIoFailuresReturnFileIoExitCodeWhenStderrFails(
+        Exception standardErrorException)
+    {
+        using StringWriter standardOutput = new();
+        using ThrowingStringWriter standardError = new(standardErrorException);
+        bool executed = false;
+
+        int exitCode = await Program.RunAsync(
+            [
+                "translate",
+                "--input",
+                "source.txt",
+                "--output",
+                "translated.txt",
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com",
+                "--key",
+                "secret",
+            ],
+            standardOutput,
+            standardError,
+            _ => null,
+            (_, _, _) =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            },
+            _ => throw new IOException("input metadata failed"),
+            CancellationToken.None);
+
+        Assert.Equal(Program.FileIoErrorExitCode, exitCode);
+        Assert.False(executed);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+    }
+
+    [Theory]
+    [MemberData(nameof(StandardErrorOutputChannelFailures))]
+    public async Task ValidationFailuresReturnExitCodeTwoWhenStderrFails(
+        Exception standardErrorException)
+    {
+        using StringWriter standardOutput = new();
+        using ThrowingStringWriter standardError = new(standardErrorException);
+        bool executed = false;
+
+        int exitCode = await Program.RunAsync(
+            [
+                "translate",
+                "--input",
+                "missing.txt",
+                "--output",
+                "out.txt",
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com",
+                "--key",
+                "secret",
+            ],
+            standardOutput,
+            standardError,
+            _ => null,
+            (_, _, _) =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(Program.ValidationErrorExitCode, exitCode);
+        Assert.False(executed);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+    }
+
     [Fact]
     public void ExistingOutputRequiresForce()
     {
@@ -646,6 +968,95 @@ public sealed class ProgramTests
             ValidRawOptions(inputPath, outputPath));
 
         Assert.NotEmpty(result.Errors);
+    }
+
+    [Fact]
+    public async Task DirectoryLikeSlashOutputPathFailsValidationAndDoesNotExecute()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated") + '/';
+        bool executed = false;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com",
+                "--key",
+                "secret",
+            ],
+            _ => null,
+            _ =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.ValidationErrorExitCode, exitCode);
+        Assert.False(executed);
+    }
+
+    [Fact]
+    public async Task DirectoryLikeBackslashOutputPathFailsValidationAndDoesNotExecuteOnWindows()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated") + '\\';
+        bool executed = false;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com",
+                "--key",
+                "secret",
+            ],
+            _ => null,
+            _ =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.ValidationErrorExitCode, exitCode);
+        Assert.False(executed);
+    }
+
+    [Fact]
+    public void OutputPathWithTrailingBackslashPassesValidationOnUnix()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated\\");
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(
+            ValidRawOptions(inputPath, outputPath));
+
+        Assert.Empty(result.Errors);
     }
 
     [Fact]
@@ -799,6 +1210,1073 @@ public sealed class ProgramTests
         Assert.Null(translator.Options);
     }
 
+    [Fact]
+    public async Task ExecuteValidatedCommandWritesTranslatedOutput()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath))
+            .Options!;
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new CapturingDocumentTranslator(BinaryData.FromString("translated")),
+            CancellationToken.None);
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.Equal("translated", File.ReadAllText(outputPath));
+        Assert.Contains(
+            "Translation completed.",
+            standardOutput.ToString(),
+            StringComparison.Ordinal);
+        Assert.Equal(string.Empty, standardError.ToString());
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandMapsTranslatorFailureToServiceExitCode()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath))
+            .Options!;
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new RequestFailedException(401, "Denied", "Auth", null)),
+            CancellationToken.None);
+
+        Assert.Equal(Program.ServiceErrorExitCode, exitCode);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains(
+            "Azure service error (401, Auth)",
+            standardError.ToString(),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("secret", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    public static IEnumerable<object[]> AzureIdentityCredentialFailures()
+    {
+        yield return
+        [
+            new AuthenticationFailedException(
+                "EnvironmentCredential failed with AZURE_CLIENT_SECRET=secret")
+        ];
+        yield return
+        [
+            new CredentialUnavailableException(
+                "DefaultAzureCredential unavailable; checked environment secret")
+        ];
+    }
+
+    public static IEnumerable<object[]> StandardErrorOutputChannelFailures()
+    {
+        yield return [new IOException("stderr failed")];
+        yield return [new ObjectDisposedException("stderr")];
+        yield return [new InvalidOperationException("stderr failed")];
+    }
+
+    [Theory]
+    [MemberData(nameof(AzureIdentityCredentialFailures))]
+    public async Task ExecuteValidatedCommandMapsAzureIdentityFailuresToServiceExitCode(
+        Exception exception)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                AuthMode = "entra-id",
+                ApiKey = null,
+            })
+            .Options!;
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(exception),
+            CancellationToken.None);
+
+        string error = standardError.ToString();
+        Assert.Equal(Program.ServiceErrorExitCode, exitCode);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("Azure credential acquisition failed.", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("AZURE_CLIENT_SECRET", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret", error, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(exception.Message, error, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(StandardErrorOutputChannelFailures))]
+    public async Task ExecuteValidatedCommandPreservesServiceExitCodeWhenStderrFails(
+        Exception standardErrorException)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath))
+            .Options!;
+        using StringWriter standardOutput = new();
+        using ThrowingStringWriter standardError = new(standardErrorException);
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new RequestFailedException(401, "Denied", "Auth", null)),
+            CancellationToken.None);
+
+        Assert.Equal(Program.ServiceErrorExitCode, exitCode);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandMapsInputOpenFailureToFileIoExitCode()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.GetPath(Path.Combine("missing", "source.txt"));
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = ValidOptions("source.txt") with
+        {
+            InputPath = inputPath,
+            OutputPath = outputPath,
+        };
+        CapturingDocumentTranslator translator = new(BinaryData.FromString("translated"));
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            translator,
+            CancellationToken.None);
+
+        Assert.Equal(Program.FileIoErrorExitCode, exitCode);
+        Assert.Null(translator.Options);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("File I/O error", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(StandardErrorOutputChannelFailures))]
+    public async Task ExecuteValidatedCommandPreservesFileIoExitCodeWhenStderrFails(
+        Exception standardErrorException)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.GetPath(Path.Combine("missing", "source.txt"));
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = ValidOptions("source.txt") with
+        {
+            InputPath = inputPath,
+            OutputPath = outputPath,
+        };
+        CapturingDocumentTranslator translator = new(BinaryData.FromString("translated"));
+        using StringWriter standardOutput = new();
+        using ThrowingStringWriter standardError = new(standardErrorException);
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            translator,
+            CancellationToken.None);
+
+        Assert.Equal(Program.FileIoErrorExitCode, exitCode);
+        Assert.Null(translator.Options);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandDoesNotMapTranslatorIoFailureToFileIoExitCode()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath))
+            .Options!;
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new IOException("network stream failed")),
+            CancellationToken.None);
+
+        Assert.Equal(Program.UnexpectedErrorExitCode, exitCode);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("Unexpected error", standardError.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("File I/O error", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(StandardErrorOutputChannelFailures))]
+    public async Task ExecuteValidatedCommandPreservesUnexpectedExitCodeWhenStderrFails(
+        Exception standardErrorException)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath))
+            .Options!;
+        using StringWriter standardOutput = new();
+        using ThrowingStringWriter standardError = new(standardErrorException);
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new InvalidOperationException("translator failed")),
+            CancellationToken.None);
+
+        Assert.Equal(Program.UnexpectedErrorExitCode, exitCode);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandMapsOutputIoFailureToFileIoExitCode()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string blockingPath = directory.WriteFile("blocking", "not a directory");
+        string outputPath = Path.Combine(blockingPath, "translated.txt");
+        TranslationOptions options = ValidOptions("source.txt") with
+        {
+            InputPath = inputPath,
+            OutputPath = outputPath,
+        };
+        CapturingDocumentTranslator translator = new(BinaryData.FromString("translated"));
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            translator,
+            CancellationToken.None);
+
+        Assert.Equal(Program.FileIoErrorExitCode, exitCode);
+        Assert.Null(translator.Options);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("File I/O error", standardError.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("secret", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandMapsPreflightTempCreateFailureBeforeTranslation()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath))
+            .Options!;
+        CapturingDocumentTranslator translator = new(BinaryData.FromString("translated"));
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        bool outputWriterCalled = false;
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            translator,
+            (_, _, _, _) =>
+            {
+                outputWriterCalled = true;
+                return ValueTask.CompletedTask;
+            },
+            _ => throw new IOException("preflight temp create failed"),
+            CancellationToken.None);
+
+        Assert.Equal(Program.FileIoErrorExitCode, exitCode);
+        Assert.Null(translator.Options);
+        Assert.False(outputWriterCalled);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("File I/O error", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandRejectsExistingOutputDirectoryBeforeTranslation()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.CreateSubdirectory("translated.txt");
+        TranslationOptions options = ValidOptions("source.txt") with
+        {
+            InputPath = inputPath,
+            OutputPath = outputPath,
+        };
+        CapturingDocumentTranslator translator = new(BinaryData.FromString("translated"));
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        bool outputWriterCalled = false;
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            translator,
+            (_, _, _, _) =>
+            {
+                outputWriterCalled = true;
+                return ValueTask.CompletedTask;
+            },
+            CreatePreflightTempFile,
+            CancellationToken.None);
+
+        Assert.Equal(Program.FileIoErrorExitCode, exitCode);
+        Assert.Null(translator.Options);
+        Assert.False(outputWriterCalled);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("File I/O error", standardError.ToString(), StringComparison.Ordinal);
+        Assert.Contains("existing directory", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandRejectsExistingOutputFileWithoutForce()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.WriteFile("translated.txt", "old content");
+        TranslationOptions options = ValidOptions("source.txt") with
+        {
+            InputPath = inputPath,
+            OutputPath = outputPath,
+            Force = false,
+        };
+        CapturingDocumentTranslator translator = new(BinaryData.FromString("translated"));
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        bool outputWriterCalled = false;
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            translator,
+            (_, _, _, _) =>
+            {
+                outputWriterCalled = true;
+                return ValueTask.CompletedTask;
+            },
+            CreatePreflightTempFile,
+            CancellationToken.None);
+
+        Assert.Equal(Program.FileIoErrorExitCode, exitCode);
+        Assert.Null(translator.Options);
+        Assert.False(outputWriterCalled);
+        Assert.Equal("old content", File.ReadAllText(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("File I/O error", standardError.ToString(), StringComparison.Ordinal);
+        Assert.Contains("already exists", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandMapsSlashDirectoryLikeOutputPathBeforeTranslation()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated") + '/';
+        TranslationOptions options = ValidOptions("source.txt") with
+        {
+            InputPath = inputPath,
+            OutputPath = outputPath,
+        };
+        CapturingDocumentTranslator translator = new(BinaryData.FromString("translated"));
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        bool outputWriterCalled = false;
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            translator,
+            (_, _, _, _) =>
+            {
+                outputWriterCalled = true;
+                return ValueTask.CompletedTask;
+            },
+            CreatePreflightTempFile,
+            CancellationToken.None);
+
+        Assert.Equal(Program.FileIoErrorExitCode, exitCode);
+        Assert.Null(translator.Options);
+        Assert.False(outputWriterCalled);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("File I/O error", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandMapsBackslashDirectoryLikeOutputPathOnWindows()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated") + '\\';
+        TranslationOptions options = ValidOptions("source.txt") with
+        {
+            InputPath = inputPath,
+            OutputPath = outputPath,
+        };
+        CapturingDocumentTranslator translator = new(BinaryData.FromString("translated"));
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        bool outputWriterCalled = false;
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            translator,
+            (_, _, _, _) =>
+            {
+                outputWriterCalled = true;
+                return ValueTask.CompletedTask;
+            },
+            CreatePreflightTempFile,
+            CancellationToken.None);
+
+        Assert.Equal(Program.FileIoErrorExitCode, exitCode);
+        Assert.Null(translator.Options);
+        Assert.False(outputWriterCalled);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("File I/O error", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandAcceptsTrailingBackslashOutputPathOnUnix()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated\\");
+        TranslationOptions options = ValidOptions("source.txt") with
+        {
+            InputPath = inputPath,
+            OutputPath = outputPath,
+        };
+        CapturingDocumentTranslator translator = new(BinaryData.FromString("translated"));
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        bool outputWriterCalled = false;
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            translator,
+            (_, _, _, _) =>
+            {
+                outputWriterCalled = true;
+                return ValueTask.CompletedTask;
+            },
+            CreatePreflightTempFile,
+            CancellationToken.None);
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(translator.Options);
+        Assert.True(outputWriterCalled);
+        Assert.Equal(string.Empty, standardError.ToString());
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandMapsForceReplaceabilityFailureOnWindows()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.WriteFile("translated.txt", "old content");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                Force = true,
+            })
+            .Options!;
+        CapturingDocumentTranslator translator = new(BinaryData.FromString("translated"));
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        bool outputWriterCalled = false;
+        string? checkedPath = null;
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            translator,
+            (_, _, _, _) =>
+            {
+                outputWriterCalled = true;
+                return ValueTask.CompletedTask;
+            },
+            CreatePreflightTempFile,
+            path =>
+            {
+                checkedPath = path;
+                throw new UnauthorizedAccessException("existing output cannot be replaced");
+            },
+            CancellationToken.None);
+
+        Assert.Equal(Program.FileIoErrorExitCode, exitCode);
+        Assert.Null(translator.Options);
+        Assert.False(outputWriterCalled);
+        Assert.Equal(Path.GetFullPath(outputPath), checkedPath);
+        Assert.Equal("old content", File.ReadAllText(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("File I/O error", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PreflightOutputPathCreatesAndDeletesTempFileInOutputDirectory()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string outputPath = directory.GetPath(Path.Combine("nested", "translated.txt"));
+        string expectedOutputDirectory = System.IO.Path.GetDirectoryName(outputPath)!;
+        string? preflightTempPath = null;
+
+        Program.PreflightOutputPath(
+            outputPath,
+            tempPath =>
+            {
+                preflightTempPath = tempPath;
+                Assert.Equal(expectedOutputDirectory, System.IO.Path.GetDirectoryName(tempPath));
+                return new FileStream(
+                    tempPath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None);
+            });
+
+        Assert.NotNull(preflightTempPath);
+        Assert.False(File.Exists(preflightTempPath));
+        Assert.False(File.Exists(outputPath));
+        Assert.DoesNotContain(
+            Directory.EnumerateFiles(expectedOutputDirectory),
+            path => System.IO.Path.GetFileName(path).EndsWith(".tmp", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PreflightOutputPathChecksExistingOutputReplaceabilityOnlyWhenForcedOnWindows()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TestDirectory directory = TestDirectory.Create();
+        string outputPath = directory.WriteFile("translated.txt", "old content");
+        bool checkedWithoutForce = false;
+
+        IOException existingOutputException = Assert.Throws<IOException>(
+            () => Program.PreflightOutputPath(
+                outputPath,
+                force: false,
+                CreatePreflightTempFile,
+                _ =>
+                {
+                    checkedWithoutForce = true;
+                    throw new IOException("should not be checked");
+                }));
+
+        Assert.Contains(
+            "already exists",
+            existingOutputException.Message,
+            StringComparison.Ordinal);
+        Assert.False(checkedWithoutForce);
+        Assert.Equal("old content", File.ReadAllText(outputPath));
+
+        UnauthorizedAccessException exception = Assert.Throws<UnauthorizedAccessException>(
+            () => Program.PreflightOutputPath(
+                outputPath,
+                force: true,
+                CreatePreflightTempFile,
+                _ => throw new UnauthorizedAccessException("locked")));
+        Assert.Equal("locked", exception.Message);
+        Assert.Equal("old content", File.ReadAllText(outputPath));
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandDoesNotReadUnreadableExistingOutputOnUnix()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.WriteFile("translated.txt", "old content");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                Force = true,
+            })
+            .Options!;
+        CapturingDocumentTranslator translator = new(BinaryData.FromString("translated"));
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        bool outputWriterCalled = false;
+
+        try
+        {
+            File.SetUnixFileMode(outputPath, UnixFileMode.None);
+
+            int exitCode = await Program.ExecuteValidatedCommandAsync(
+                options,
+                standardOutput,
+                standardError,
+                translator,
+                (_, _, _, _) =>
+                {
+                    outputWriterCalled = true;
+                    return ValueTask.CompletedTask;
+                },
+                CreatePreflightTempFile,
+                _ => throw new UnauthorizedAccessException("should not read existing output"),
+                CancellationToken.None);
+
+            Assert.Equal(Program.SuccessExitCode, exitCode);
+            Assert.NotNull(translator.Options);
+            Assert.True(outputWriterCalled);
+            Assert.Equal(string.Empty, standardError.ToString());
+        }
+        finally
+        {
+            File.SetUnixFileMode(
+                outputPath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+    }
+
+    [Fact]
+    public void PreflightOutputPathReplaceabilityCheckDoesNotModifyExistingOutput()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string outputPath = directory.WriteFile("translated.txt", "old content");
+
+        Program.PreflightOutputPath(
+            outputPath,
+            force: true,
+            CreatePreflightTempFile,
+            path => new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None));
+
+        Assert.Equal("old content", File.ReadAllText(outputPath));
+    }
+
+    [Fact]
+    public void PreflightOutputPathRejectsReadOnlyExistingOutputOnWindows()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TestDirectory directory = TestDirectory.Create();
+        string outputPath = directory.WriteFile("translated.txt", "old content");
+
+        try
+        {
+            File.SetAttributes(
+                outputPath,
+                File.GetAttributes(outputPath) | FileAttributes.ReadOnly);
+
+            UnauthorizedAccessException exception =
+                Assert.Throws<UnauthorizedAccessException>(
+                    () => Program.PreflightOutputPath(
+                        outputPath,
+                        force: true,
+                        CreatePreflightTempFile));
+
+            Assert.Contains("read-only", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("old content", File.ReadAllText(outputPath));
+        }
+        finally
+        {
+            File.SetAttributes(
+                outputPath,
+                File.GetAttributes(outputPath) & ~FileAttributes.ReadOnly);
+        }
+    }
+
+    [Fact]
+    public void PreflightOutputPathAllowsReadOnlyExistingOutputOnUnix()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TestDirectory directory = TestDirectory.Create();
+        string outputPath = directory.WriteFile("translated.txt", "old content");
+
+        try
+        {
+            File.SetAttributes(
+                outputPath,
+                File.GetAttributes(outputPath) | FileAttributes.ReadOnly);
+
+            Program.PreflightOutputPath(outputPath, force: true, CreatePreflightTempFile);
+
+            Assert.Equal("old content", File.ReadAllText(outputPath));
+        }
+        finally
+        {
+            File.SetAttributes(
+                outputPath,
+                File.GetAttributes(outputPath) & ~FileAttributes.ReadOnly);
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandMapsInvalidOutputPathBeforeTranslation()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath =
+            directory.Path + Path.DirectorySeparatorChar + "invalid\0translated.txt";
+        TranslationOptions options = ValidOptions("source.txt") with
+        {
+            InputPath = inputPath,
+            OutputPath = outputPath,
+        };
+        CapturingDocumentTranslator translator = new(BinaryData.FromString("translated"));
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            translator,
+            CancellationToken.None);
+
+        Assert.Equal(Program.FileIoErrorExitCode, exitCode);
+        Assert.Null(translator.Options);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("File I/O error", standardError.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("secret", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    public static IEnumerable<object[]> OutputFileIoExceptions()
+    {
+        yield return [new IOException("disk failed")];
+        yield return [new DriveNotFoundException("drive missing")];
+        yield return [new UnauthorizedAccessException("access denied")];
+        yield return [new PathTooLongException("path too long")];
+        yield return [new NotSupportedException("path format is not supported")];
+    }
+
+    [Theory]
+    [MemberData(nameof(OutputFileIoExceptions))]
+    public async Task ExecuteValidatedCommandMapsInjectedOutputFileIoFailuresToFileIoExitCode(
+        Exception exception)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath))
+            .Options!;
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new CapturingDocumentTranslator(BinaryData.FromString("translated")),
+            (_, _, _, _) => throw exception,
+            CancellationToken.None);
+
+        Assert.Equal(Program.FileIoErrorExitCode, exitCode);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("File I/O error", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandMapsOutputCancellationToUnexpectedExitCode()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath))
+            .Options!;
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new CapturingDocumentTranslator(BinaryData.FromString("translated")),
+            (_, _, _, _) => throw new OperationCanceledException(),
+            CancellationToken.None);
+
+        Assert.Equal(Program.UnexpectedErrorExitCode, exitCode);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("Operation canceled.", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandMapsUnexpectedOutputFailureToUnexpectedExitCode()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath))
+            .Options!;
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new CapturingDocumentTranslator(BinaryData.FromString("translated")),
+            (_, _, _, _) => throw new InvalidOperationException("writer failed"),
+            CancellationToken.None);
+
+        Assert.Equal(Program.UnexpectedErrorExitCode, exitCode);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("Unexpected error", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandReportsSuccessAfterCommitDespiteCallerCancellation()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath))
+            .Options!;
+        using CancellationTokenSource cancellationTokenSource = new();
+        using CancelSensitiveStringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new CapturingDocumentTranslator(BinaryData.FromString("translated")),
+            (_, _, _, _) =>
+            {
+                cancellationTokenSource.Cancel();
+                return ValueTask.CompletedTask;
+            },
+            cancellationTokenSource.Token);
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.Contains(
+            "Translation completed.",
+            standardOutput.ToString(),
+            StringComparison.Ordinal);
+        Assert.Equal(string.Empty, standardError.ToString());
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandIgnoresStatusMessageIoFailureAfterOutputCommit()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath))
+            .Options!;
+        using ThrowingStringWriter standardOutput = new(new IOException("stdout failed"));
+        using StringWriter standardError = new();
+        bool outputCommitted = false;
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new CapturingDocumentTranslator(BinaryData.FromString("translated")),
+            (_, _, _, _) =>
+            {
+                outputCommitted = true;
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.True(outputCommitted);
+        Assert.Equal(string.Empty, standardError.ToString());
+        Assert.DoesNotContain(
+            "File I/O error",
+            standardError.ToString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandMapsCancellationAndLeavesNoOutput()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath))
+            .Options!;
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new OperationCanceledException()),
+            CancellationToken.None);
+
+        Assert.Equal(Program.UnexpectedErrorExitCode, exitCode);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("Operation canceled.", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(StandardErrorOutputChannelFailures))]
+    public async Task ExecuteValidatedCommandPreservesCancellationExitCodeWhenStderrFails(
+        Exception standardErrorException)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath))
+            .Options!;
+        using StringWriter standardOutput = new();
+        using ThrowingStringWriter standardError = new(standardErrorException);
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new OperationCanceledException()),
+            CancellationToken.None);
+
+        Assert.Equal(Program.UnexpectedErrorExitCode, exitCode);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandPreservesExistingOutputWhenTranslationFails()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.WriteFile("translated.txt", "old content");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                Force = true,
+            })
+            .Options!;
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new RequestFailedException(503, "Unavailable")),
+            CancellationToken.None);
+
+        Assert.Equal(Program.ServiceErrorExitCode, exitCode);
+        Assert.Equal("old content", File.ReadAllText(outputPath));
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandOverwritesExistingOutputOnlyAfterSuccess()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.WriteFile("translated.txt", "old content");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                Force = true,
+            })
+            .Options!;
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new CapturingDocumentTranslator(BinaryData.FromString("new content")),
+            CancellationToken.None);
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.Equal("new content", File.ReadAllText(outputPath));
+    }
+
+    [Fact]
+    public async Task AtomicOutputWriterUsesSameDirectoryTempFileAndCleansItOnMoveFailure()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string outputPath = directory.WriteFile("translated.txt", "old content");
+
+        await Assert.ThrowsAsync<IOException>(
+            async () => await AtomicOutputWriter.WriteAsync(
+                outputPath,
+                BinaryData.FromString("new content"),
+                overwrite: false,
+                CancellationToken.None));
+
+        Assert.Equal("old content", File.ReadAllText(outputPath));
+        Assert.DoesNotContain(
+            Directory.EnumerateFiles(directory.Path),
+            path => Path.GetFileName(path).EndsWith(".tmp", StringComparison.Ordinal));
+    }
+
     private static RawTranslationOptions ValidRawOptions(string inputPath, string outputPath) =>
         new(
             inputPath,
@@ -824,6 +2302,13 @@ public sealed class ProgramTests
                 out string contentType)
                 ? contentType
                 : "text/plain");
+
+    private static FileStream CreatePreflightTempFile(string tempPath) =>
+        new(
+            tempPath,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None);
 
     private static async Task<int> RunAsync(
         string[] args,
@@ -895,6 +2380,25 @@ public sealed class ProgramTests
             {
             }
         }
+    }
+
+    private sealed class CancelSensitiveStringWriter : StringWriter
+    {
+        public override Task WriteLineAsync(
+            ReadOnlyMemory<char> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return base.WriteLineAsync(buffer, cancellationToken);
+        }
+    }
+
+    private sealed class ThrowingStringWriter(Exception exception) : StringWriter
+    {
+        public override Task WriteLineAsync(
+            ReadOnlyMemory<char> buffer,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException(exception);
     }
 
     private sealed class CapturingSingleDocumentTranslationClient(BinaryData translatedContent)
@@ -970,6 +2474,18 @@ public sealed class ProgramTests
             InputStreamWasReadable = inputStream.CanRead;
             CancellationToken = cancellationToken;
             return new ValueTask<BinaryData>(TranslatedContent);
+        }
+    }
+
+    private sealed class ThrowingDocumentTranslator(Exception exception)
+        : IDocumentTranslator
+    {
+        public ValueTask<BinaryData> TranslateAsync(
+            TranslationOptions options,
+            Stream inputStream,
+            CancellationToken cancellationToken)
+        {
+            throw exception;
         }
     }
 }

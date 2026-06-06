@@ -91,7 +91,11 @@ internal static partial class TranslationOptionsValidator
             return null;
         }
 
-        if (Directory.Exists(outputPath))
+        if (IsDirectoryLikeOutputPath(outputPath))
+        {
+            errors.Add("Output path must include a file name.");
+        }
+        else if (Directory.Exists(outputPath))
         {
             errors.Add("Output path must not be an existing directory.");
         }
@@ -101,6 +105,18 @@ internal static partial class TranslationOptionsValidator
         }
 
         return outputPath;
+    }
+
+    internal static bool IsDirectoryLikeOutputPath(string outputPath)
+    {
+        if (outputPath.Length == 0)
+        {
+            return true;
+        }
+
+        char lastCharacter = outputPath[^1];
+        return lastCharacter == '/'
+            || (OperatingSystem.IsWindows() && lastCharacter == '\\');
     }
 
     private static void ValidateDifferentInputAndOutput(
