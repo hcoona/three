@@ -150,6 +150,11 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
   codes, JSON handoff files, artifact and immutable-proof naming,
   registry-adapter obligations, GitHub permission boundaries, tag orchestration,
   and acceptance traceability.
+- A dedicated CI affected-validation implementation-plan page now records the
+  grouped implementation history, the distinction between original LLD
+  implementation groups and later governance priority groups, the mandatory
+  independent-review protocol, and the Group 1 release-validation authority
+  completion record.
 - The operator rollout runbook now records the final gate before real testing:
   complete Group 10 local and acceptance validation, run the final global
   overview checks, manually configure the protected `release` environment and
@@ -182,3 +187,8 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
 - [Workflow Release Operator Rollout Runbook](./analyses/workflow-release-operator-rollout.md)
 - [Workflow Release OIDC Publish Topology Research](./analyses/workflow-release-oidc-publish-topology.md)
 - [Workflow Release Deferred PyPI Multi-Wheel Support](./analyses/workflow-release-deferred-pypi-multi-wheel-support.md)
+- [Workflow Release CI Affected Validation Requirements](./analyses/workflow-release-ci-affected-validation-requirements.md)
+- [Workflow Release CI Affected Validation High-Level Design](./analyses/workflow-release-ci-affected-validation-high-level-design.md)
+- [Workflow Release CI Affected Validation Middle-Level Design](./analyses/workflow-release-ci-affected-validation-middle-level-design.md)
+- [Workflow Release CI Affected Validation Low-Level Design](./analyses/workflow-release-ci-affected-validation-low-level-design.md)
+- [Workflow Release CI Affected Validation Implementation Plan](./analyses/workflow-release-ci-affected-validation-implementation-plan.md)

@@ -682,3 +682,13 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Clarified that exact artifact refs, descriptor identity, receipt logical role,
   profile labels, artifact shapes, and obligation IDs remain per-selector equality
   checks.
+
+## [2026-06-07] query | Record CI validation implementation plan
+
+- Added a durable implementation-plan handoff for workflow-release CI affected
+  validation.
+- Captured the difference between the original LLD implementation groups and the
+  later governance priority groups.
+- Recorded the mandatory independent-review protocol, Group 1
+  release-validation authority completion evidence, and future Group 2
+  optimization constraints.
