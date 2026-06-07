@@ -6,12 +6,14 @@ from bs4 import BeautifulSoup, Tag
 
 
 def d2l_ai_extract_document(soup: BeautifulSoup) -> Tag:
-    """
-    Extract the main content of the document from the soup.
-    """
+    """Extract the main content of the document from the soup."""
     document_div = soup.find("div", class_="document")
+    if document_div is None:
+        message = "No document found in the soup."
+        raise ValueError(message)
     if not isinstance(document_div, Tag):
-        raise ValueError("No document found in the soup.")
+        message = "The document node is not an HTML tag."
+        raise TypeError(message)
 
     for headerlink in soup.find_all("a", class_="headerlink"):
         headerlink.decompose()
@@ -26,8 +28,9 @@ def d2l_ai_extract_document(soup: BeautifulSoup) -> Tag:
 
     n = soup.find("div", class_="side-doc-outline")
     n.decompose() if n else None
-    for el in soup.find_all("a", string="Discussions"):
-        el.decompose()
+    for el in soup.find_all("a"):
+        if el.string == "Discussions":
+            el.decompose()
 
     return document_div
 
@@ -35,15 +38,14 @@ def d2l_ai_extract_document(soup: BeautifulSoup) -> Tag:
 def d2l_ai_filter_mdl_tab(
     document: Tag, tab_name: Literal["mxnet", "pytorch", "tensorflow", "paddle"]
 ) -> None:
-    """
-    Filter out the mdl-tab elements from the soup.
-    """
+    """Filter out the mdl-tab elements from the soup."""
     for bar in document.find_all("div", class_="mdl-tabs__tab-bar"):
         bar.decompose()
 
     for panel in document.find_all(
         "div",
         class_="mdl-tabs__panel",
-        id=lambda id: id and not id.startswith(tab_name),
+        id=lambda element_id: element_id
+        and not element_id.startswith(tab_name),
     ):
         panel.decompose()

@@ -2836,12 +2836,12 @@ def validate_ci_validation_aggregate_summary(  # noqa: C901, PLR0912, PLR0913, P
                 )
                 and not (
                     isinstance(
-                        _summary_final_aggregate_manifest(summary),
+                        final_aggregate_manifest := (
+                            _summary_final_aggregate_manifest(summary)
+                        ),
                         Mapping,
                     )
-                    and _summary_final_aggregate_manifest(summary).get(
-                        "authority-diagnostics"
-                    )
+                    and final_aggregate_manifest.get("authority-diagnostics")
                 )
             )
         )

@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, NotRequired, TypedDict, cast
 
 import pytest
 import three_workflow_release_contracts as three_workflow_release_contracts_pkg
@@ -157,6 +157,18 @@ class _AuthorizingContextKwargs(TypedDict):
     fact_snapshot: dict[str, object]
     expected_run_id: str
     expected_run_attempt: str
+
+
+class _AggregateSummaryValidationKwargs(TypedDict):
+    plan: NotRequired[Mapping[str, object] | None]
+    aggregate_evidence_manifest: NotRequired[Mapping[str, object] | None]
+    admitted_batch_evidence_bundles: NotRequired[
+        Sequence[Mapping[str, object]] | None
+    ]
+    execution_batch_manifest: NotRequired[Mapping[str, object] | None]
+    request: NotRequired[Mapping[str, object] | None]
+    changed_files_snapshot: NotRequired[Mapping[str, object] | None]
+    fact_snapshot: NotRequired[Mapping[str, object] | None]
 
 
 def _diagnostic(  # noqa: PLR0913
@@ -1824,8 +1836,8 @@ def _aggregate_evidence_manifest(
     )
 
 
-def _summary_affected_range(plan: dict[str, object]) -> dict[str, object]:
-    affected = cast("dict[str, object]", plan["affected-range"])
+def _summary_affected_range(plan: Mapping[str, object]) -> dict[str, object]:
+    affected = cast("Mapping[str, object]", plan["affected-range"])
     return {
         "status": affected["status"],
         "base-sha": affected["base-sha"],
@@ -1833,6 +1845,22 @@ def _summary_affected_range(plan: dict[str, object]) -> dict[str, object]:
         "head-sha": affected["head-sha"],
         "changed-files-hash": affected["changed-files-hash"] or None,
     }
+
+
+def _summary_failure(
+    summary: Mapping[str, object],
+    index: int = 0,
+) -> dict[str, object]:
+    failures = cast("Sequence[dict[str, object]]", summary["failures"])
+    return failures[index]
+
+
+def _record_diagnostic(
+    record: Mapping[str, object],
+    index: int = 0,
+) -> dict[str, object]:
+    diagnostics = cast("Sequence[dict[str, object]]", record["diagnostics"])
+    return diagnostics[index]
 
 
 def _projection_authority(plan: dict[str, object]) -> dict[str, object]:
@@ -14048,7 +14076,7 @@ def test_invalid_plan_unbound_manifest_rejects_self_authority_diagnostics() -> (
     aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
     summary = _aggregate_summary(plan, aggregate_manifest, bundle)
     _mark_summary_invalid_plan(summary)
-    invalid_plan_failure = cast("dict[str, object]", summary["failures"][0])
+    invalid_plan_failure = _summary_failure(summary)
     invalid_plan_diagnostic = cast(
         "dict[str, object]", invalid_plan_failure["diagnostic"]
     )
@@ -14845,7 +14873,7 @@ def test_invalid_plan_rejects_summary_local_authority_by_default() -> None:
     summary["affected-range"] = _summary_affected_range(plan)
     summary["request"] = plan["request"]
     summary["scheduled-full"] = plan["scheduled-full"]
-    failure = cast("dict[str, object]", summary["failures"][0])
+    failure = _summary_failure(summary)
     diagnostic = cast("dict[str, object]", failure["diagnostic"])
     diagnostic["diagnostic-id"] = (
         "invalid-plan/changed-files-snapshot-schema-invalid"
@@ -16178,7 +16206,7 @@ def test_invalid_plan_rejects_no_authority_preserved_projection(
     aggregate_manifest = _aggregate_evidence_manifest(plan, manifest, bundle)
     summary = _aggregate_summary(plan, aggregate_manifest, bundle)
     _mark_summary_invalid_plan(summary)
-    failure = cast("dict[str, object]", summary["failures"][0])
+    failure = _summary_failure(summary)
     failure["message"] = message
     diagnostic = cast("dict[str, object]", failure["diagnostic"])
     diagnostic["diagnostic-id"] = (
@@ -16802,7 +16830,7 @@ def test_invalid_plan_freezer_downgrades_malformed_supplied_plan() -> None:
         plan={"plan-id": "malformed-plan"},
     )
 
-    failure = cast("dict[str, object]", summary["failures"][0])
+    failure = _summary_failure(summary)
     diagnostic = cast("dict[str, object]", failure["diagnostic"])
     assert diagnostic["detail"] == "malformed-plan"
     assert summary["plan-id"] is None
@@ -16847,7 +16875,7 @@ def test_invalid_plan_rejects_schema_invalid_no_authority_projection() -> None:
         "plan-unreadable",
     )
     summary = _freeze_invalid_planning_input_summary(aggregate_manifest)
-    failure = cast("dict[str, object]", summary["failures"][0])
+    failure = _summary_failure(summary)
     diagnostic = cast("dict[str, object]", failure["diagnostic"])
     diagnostic["diagnostic-id"] = "invalid-plan/schema-invalid"
     diagnostic["detail"] = "schema-invalid"
@@ -16879,7 +16907,7 @@ def test_invalid_plan_rejects_retained_projection_without_authority() -> None:
             "validation-plan"
         ],
     )
-    diagnostic = cast("dict[str, object]", input_artifact["diagnostics"][0])
+    diagnostic = _record_diagnostic(input_artifact)
     diagnostic["diagnostic-id"] = "invalid-plan/schema-invalid"
     diagnostic["detail"] = "schema-invalid"
     cast("dict[str, object]", summary["aggregate-evidence-manifest"])[
@@ -16896,7 +16924,7 @@ def test_invalid_plan_rejects_retained_projection_without_authority() -> None:
     )
     final_manifest["artifact-instance-id"] = None
     final_manifest["content-digest"] = None
-    failure = cast("dict[str, object]", summary["failures"][0])
+    failure = _summary_failure(summary)
     failure_diagnostic = cast("dict[str, object]", failure["diagnostic"])
     failure_diagnostic["diagnostic-id"] = "invalid-plan/schema-invalid"
     failure_diagnostic["detail"] = "schema-invalid"
@@ -17020,7 +17048,7 @@ def test_invalid_plan_rejects_partial_retained_projection(
         "plan-unreadable",
     )
     summary = _freeze_invalid_planning_input_summary(aggregate_manifest)
-    failure = cast("dict[str, object]", summary["failures"][0])
+    failure = _summary_failure(summary)
     diagnostic = cast("dict[str, object]", failure["diagnostic"])
     diagnostic["diagnostic-id"] = f"invalid-plan/{detail}"
     diagnostic["detail"] = detail
@@ -18848,7 +18876,7 @@ def test_aggregate_summary_rejects_non_invalid_protected_attribution(
             aggregate_manifest,
             changed_files_snapshot,
         )
-        validation_context = {
+        validation_context: _AggregateSummaryValidationKwargs = {
             "plan": plan,
             "aggregate_evidence_manifest": aggregate_manifest,
             "admitted_batch_evidence_bundles": [],
