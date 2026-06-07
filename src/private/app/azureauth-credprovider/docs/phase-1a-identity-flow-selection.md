@@ -123,11 +123,12 @@ phases can add them without adapter rewrites.
 Phase 2 may close only when these pass/fail artifacts are linked from Phase 2
 evidence:
 
-- [ ] Credential request contracts can express `interactive-browser`,
-      `device-code`, `pat-compatibility`, and `azure-pipelines-system-token` as
+- [ ] Credential request contracts can express `interactiveBrowser`,
+      `deviceCode`, `patCompatibility`, and
+      `azurePipelinesSystemAccessToken` as
       accepted MVP flow selections.
-- [ ] Contracts can express `service-principal`, `managed-identity`, and
-      `workload-identity-federation` as deferred or unsupported without changing
+- [ ] Contracts can express `servicePrincipal`, `managedIdentity`, and
+      `workloadIdentityFederation` as deferred or unsupported without changing
       adapter protocols later.
 - [ ] Result and error contracts distinguish `InteractionRequired`,
       `InteractionBlocked`, `CredentialUnavailable`, `FlowDeferred`,

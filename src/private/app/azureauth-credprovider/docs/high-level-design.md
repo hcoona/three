@@ -234,13 +234,19 @@ Azure Repos Git should normally key credential storage by host and organization 
 
 CI mode should be explicit. The CLI should detect common CI environments but should not silently persist credentials just because it is running in CI.
 
-CI behavior should prefer:
+MVP CI behavior accepts only an explicit Azure Pipelines system access token
+request under a non-persistent CI context. Explicit CI mode is a closed gate:
+the selected identity flow must be Azure Pipelines system access token, the
+token must be present, persistent writes must be disabled, and the request must
+use the frozen non-persistent CI cache policy.
 
-- workload identity federation,
-- managed identity where available,
-- Azure Pipelines system access token for Azure Pipelines scenarios,
-- short-lived tokens over personal access tokens,
-- temporary config files or environment variables over user-global writes.
+Deferred/future CI identities are:
+
+- workload identity federation (future/deferred),
+- managed identity where available (future/deferred),
+- service principal or other short-lived CI identities (future/deferred).
+
+Future CI expansion should continue to prefer short-lived tokens over personal access tokens and temporary config files or environment variables over user-global writes.
 
 CI behavior must:
 

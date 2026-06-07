@@ -56,19 +56,19 @@ notices, or human help text to stdout when running under a host-tool protocol.
 
 The high-level architecture is allocated into the following mid-level modules:
 
-| Module                  | Primary responsibility                                                                                                    | Depends on                                                                    |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Primary CLI             | User commands, orchestration, configuration, diagnostics, and removal.                                                    | Configuration manager, credential core, installer, doctor engine.             |
-| Credential core         | Canonicalization, identity selection, token acquisition, token exchange, cache access, redaction, and policy enforcement. | Identity provider abstraction, secure cache, policy engine, diagnostics sink. |
-| Adapter host library    | Shared adapter bootstrapping, mode detection, structured diagnostics routing, and fatal-error mapping.                    | Credential core, diagnostics sink.                                            |
-| Installer               | Places adapter entry points, package artifacts, and shims where host tools can discover them.                             | Configuration manager, platform profile, filesystem abstraction.              |
-| Git adapter             | Git credential helper protocol and Azure Repos URL handling.                                                              | Adapter host library, credential core.                                        |
-| NuGet adapter           | NuGet plugin protocol and authentication request handling.                                                                | Adapter host library, credential core.                                        |
-| Python keyring backend  | Python keyring import-mode integration.                                                                                   | Small Python adapter package, fixed external helper executable.               |
-| Keyring executable shim | Subprocess keyring command compatibility for uv and pip subprocess mode.                                                  | Adapter host library, credential core.                                        |
-| npm adapter             | npm, pnpm, and Yarn registry analysis plus credential refresh change planning.                                            | Credential core, npm/Yarn config parser.                                      |
-| Configuration manager   | Owned configuration writes, manifests, dry-run output, and removal.                                                       | Platform profile, filesystem abstraction, host-tool configuration adapters.   |
-| Doctor engine           | Deterministic validation of discovery, configuration, cache, identity, and CI settings.                                   | Configuration manager, platform probes, credential core diagnostics.          |
+| Module                  | Primary responsibility                                                                                                                     | Depends on                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| Primary CLI             | User commands, orchestration, configuration, diagnostics, and removal.                                                                     | Configuration manager, credential core, installer, doctor engine.                       |
+| Credential core         | Canonicalization, identity selection, token acquisition, token exchange, cache policy/key construction, redaction, and policy enforcement. | Identity provider abstraction, cache policy/key model, policy engine, diagnostics sink. |
+| Adapter host library    | Shared adapter bootstrapping, mode detection, structured diagnostics routing, and fatal-error mapping.                                     | Credential core, diagnostics sink.                                                      |
+| Installer               | Places adapter entry points, package artifacts, and shims where host tools can discover them.                                              | Configuration manager, platform profile, filesystem abstraction.                        |
+| Git adapter             | Git credential helper protocol and Azure Repos URL handling.                                                                               | Adapter host library, credential core.                                                  |
+| NuGet adapter           | NuGet plugin protocol and authentication request handling.                                                                                 | Adapter host library, credential core.                                                  |
+| Python keyring backend  | Python keyring import-mode integration.                                                                                                    | Small Python adapter package, fixed external helper executable.                         |
+| Keyring executable shim | Subprocess keyring command compatibility for uv and pip subprocess mode.                                                                   | Adapter host library, credential core.                                                  |
+| npm adapter             | npm, pnpm, and Yarn registry analysis plus credential refresh change planning.                                                             | Credential core, npm/Yarn config parser.                                                |
+| Configuration manager   | Owned configuration writes, manifests, dry-run output, and removal.                                                                        | Platform profile, filesystem abstraction, host-tool configuration adapters.             |
+| Doctor engine           | Deterministic validation of discovery, configuration, cache, identity, and CI settings.                                                    | Configuration manager, platform probes, credential core diagnostics.                    |
 
 ### Module Design
 
@@ -96,11 +96,13 @@ CredentialRequest
   project?
   feed?
   repository?
+  serviceIdentity
   serviceEndpoint
   accountHint?
   tenantHint?
   requestedAudience
   credentialKind
+  identityFlow
   interactivePolicy
   cachePolicy
   ciContext?
@@ -123,13 +125,16 @@ secret.
 
 ### Data Design
 
-The persistent data model has two separate classes of state:
+The MVP persistent data model contains product-owned configuration ownership
+state only. It records which host-tool settings and adapter registrations were
+installed by this product so removal can be scoped and reversible.
 
-1. Credential cache state, which stores sensitive material through the
-   platform-appropriate secure store or an explicitly configured secure cache.
-2. Configuration ownership state, which records which host-tool settings and
-   adapter registrations were installed by this product so removal can be
-   scoped and reversible.
+Product-owned persistent derived credential-cache state is future/deferred and
+disabled by default. MVP credential requests use `noCache`,
+`productPersistentCacheDisabled`, `nonPersistentCi`, or cache-key-only semantics
+as appropriate. Cache keys are still modeled so protocol responses and allowed
+provider/host-tool cache reuse can be partitioned consistently without creating
+a product-owned persistent cache.
 
 Configuration ownership state must not contain secrets.
 
@@ -157,8 +162,7 @@ ecosystems:
 - Non-interactive identity flow policy.
 - Token acquisition and refresh.
 - Token exchange into host-tool-compatible credentials when required.
-- Secure credential cache access.
-- Cache partitioning.
+- Cache policy enforcement and cache-key partitioning.
 - Secret redaction.
 - Diagnostic event production.
 
@@ -176,7 +180,7 @@ must permit direct MSAL integration without changing adapter contracts.
 | Identity selector             | Resolves account, tenant, service identity, and requested authentication flow.                                                                                                                                       |
 | Identity provider abstraction | Acquires Microsoft Entra or Azure DevOps-compatible tokens through the identity flows selected for the current product phase. Candidate flows are gated in the identity policy table and required-prototype section. |
 | Token exchange service        | Converts acquired identity material into the credential form expected by Azure Repos or Azure Artifacts host tools.                                                                                                  |
-| Secure cache                  | Reads, writes, expires, and erases credentials using partitioned cache keys.                                                                                                                                         |
+| Cache policy/key model        | Builds partitioned cache keys and enforces `noCache`, `productPersistentCacheDisabled`, `nonPersistentCi`, cache-unavailable, and future persistent-cache policy results.                                            |
 | Policy engine                 | Enforces interactive, CI, persistence, allowed-host, and allowed-credential-kind decisions.                                                                                                                          |
 | Redaction service             | Sanitizes logs, diagnostics, dry-run output, and errors.                                                                                                                                                             |
 | Diagnostic event emitter      | Emits structured events to stderr, log files, or caller-provided sinks without polluting protocol stdout.                                                                                                            |
@@ -202,7 +206,7 @@ diagnostics.
 
 ### Cache Key Model
 
-Credential cache keys must include at least:
+Credential cache keys use the frozen `azdo-cache-v1` partition schema:
 
 ```text
 ecosystem
@@ -218,10 +222,14 @@ tokenAudience
 credentialKind
 ```
 
-Git credentials are normally partitioned by host and organization. Repository is
-included only when a policy explicitly requires per-repository credentials.
-Package-feed credentials must include feed identity. No adapter may read or write
-a generic "current token" that is not scoped by ecosystem and audience.
+Package-feed credentials include project and feed identity when those components
+are present in the canonical Azure Artifacts resource identity. Azure Repos Git
+resource identity may carry validated project and repository values, but the
+default Phase 2 Git cache key is host plus organization and omits project, feed,
+and repository partitions. Repository, and any Git project partition coupled to
+it, is included only if a future explicit per-repository Git policy enables that
+finer partitioning. No adapter may read or write a generic "current token" that
+is not scoped by ecosystem and audience.
 
 ### Result Classes
 
@@ -267,7 +275,8 @@ The CLI owns:
 - Dry-run and verbose diagnostic presentation.
 - CI bootstrap guidance.
 - Installation verification.
-- Cache inspection and cleanup.
+- Cache-key diagnostics and future-cache cleanup commands when a later phase
+  enables product-owned persistent derived credential caching.
 - Configuration ownership manifest management.
 
 The CLI must not require users to learn machine-facing adapter commands for
@@ -314,13 +323,13 @@ specific config entry being changed, not dumps of entire user configuration
 files. Each ecosystem adapter must define its own canonical entry selector and
 precedence model before implementing `configure`:
 
-| Ecosystem | Canonical entry selector                                                                                                     | Precedence model                                                                                            |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Git       | Config scope, URL subsection when present, key, and exact helper value for multi-value keys.                                 | Git's effective config order, with explicit handling for multi-value `credential.helper`.                   |
-| NuGet     | Plugin installation path, runtime family, and explicit plugin-path environment or config setting when used.                  | NuGet conventional plugin discovery plus explicit plugin-path overrides.                                    |
-| Python    | Python environment identity, package distribution name, backend registration, shim path, and PATH insertion point when used. | Tool environment import path and process PATH order.                                                        |
-| npm/pnpm  | Config file scope, registry URL selector, and auth key selector.                                                             | npm-compatible layered config order for user, global, project, and environment scopes.                      |
-| Yarn      | `.yarnrc.yml` path, `npmScopes` or `npmRegistries` selector, and auth field selector.                                        | Yarn Berry configuration resolution, which must be source-verified or prototyped before writes are enabled. |
+| Ecosystem | Canonical entry selector                                                                                                     | Precedence model                                                                                                                                           |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Git       | Config scope, URL subsection when present, key, and exact helper value for multi-value keys.                                 | Git's effective config order, with explicit handling for multi-value `credential.helper`.                                                                  |
+| NuGet     | Plugin installation path, runtime family, and explicit plugin-path environment or config setting when used.                  | NuGet conventional plugin discovery plus explicit plugin-path overrides.                                                                                   |
+| Python    | Python environment identity, package distribution name, backend registration, shim path, and PATH insertion point when used. | Python environment import path and process PATH order.                                                                                                     |
+| npm/pnpm  | Config file scope, registry URL selector, and auth key selector.                                                             | npm-compatible layered config order for user, global, explicit path, and CI temporary configuration; workspace files are read through `WorkspaceReadOnly`. |
+| Yarn      | `.yarnrc.yml` path, `npmScopes` or `npmRegistries` selector, and auth field selector.                                        | Yarn Berry configuration resolution with Phase 1.4-approved user-level and CI-temporary change-plan targets; direct adapter writes remain disallowed.      |
 
 The default removal strategy is surgical deletion of product-owned entries. The
 product must not attempt whole-file rollback unless the entry was created in a
@@ -421,7 +430,9 @@ git-credential-<helper-name> erase
 stdout only when the core supplies a credential. `store` and `erase` must be
 implemented because Git helpers may invoke them as part of the credential
 lifecycle. They may delegate cache updates to the core when the credential is
-owned by this product.
+owned by this product only after a future persistent-cache feature is explicitly
+enabled; in MVP they must return no-op/cache-disabled behavior and must not
+create product-owned persistent derived host-tool credentials.
 
 ### Input Mapping
 
@@ -684,12 +695,13 @@ The adapter reads:
 - Scoped registry declarations.
 - Registry-specific authentication blocks.
 
-For npm and pnpm, the adapter emits user-level credential write plans by default,
-even when registry declarations are read from workspace files. Yarn Berry support
-is read-only diagnostic support until the Yarn configuration verification gate
-defines the exact consumed keys, scopes, and write targets. Writing credentials
-into repository-local files requires an explicit user choice or a CI mode that
-uses configuration-manager-owned temporary files.
+For npm, pnpm, and Yarn Berry, the adapter emits user-level credential write
+plans by default, even when registry declarations are read from workspace files.
+Yarn Berry user-level and CI-temporary change-plan generation is enabled under
+the Phase 1.4 evidence gate and Phase 2 contract constraints. Direct adapter
+writes remain disallowed, and writing credentials into repository-local files
+requires an explicit user choice or a CI mode that uses
+configuration-manager-owned temporary files.
 
 ### Request Mapping
 
@@ -733,8 +745,8 @@ be documented as the primary setup mechanism.
 1. Registry declaration syntax.
 2. Azure Artifacts registry canonicalization.
 3. User-level versus workspace-level credential placement.
-4. Yarn `npmScopes` and `npmRegistries` consistency in read-only diagnostic mode
-   until Yarn writes are verified.
+4. Yarn `npmScopes` and `npmRegistries` consistency for user-level and
+   CI-temporary change plans.
 5. CI temporary config behavior.
 6. Absence of raw long-lived secrets in repository-local config files.
 
@@ -744,15 +756,19 @@ be documented as the primary setup mechanism.
 
 Configuration operations target one of these scopes:
 
-| Scope            | Usage                                                                                                                          |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| User             | Default developer-machine setup for Git helper, NuGet plugin registration, Python keyring shim discovery, and npm credentials. |
-| Environment      | CI or shell-scoped configuration through environment variables or temporary files.                                             |
-| Workspace        | Registry declarations and project-specific non-secret settings.                                                                |
-| Tool environment | Python environment, pipx environment, NuGet plugin folder, or package-manager config scope.                                    |
+| Scope             | Usage                                                                                                                                                              |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| User              | Default developer-machine setup for Git helper, NuGet plugin registration, Python keyring shim discovery, and npm credentials.                                     |
+| WorkspaceReadOnly | Workspace discovery, registry declarations, and project-specific diagnostics only; this scope authorizes inspection and diagnostics, not configuration writes.     |
+| ExplicitPath      | User-selected writes to an explicit configuration path, including repository-local or tool-specific files only when the command mode and policy allow that target. |
+| CiTemporary       | CI or shell-temporary configuration through configuration-manager-owned temporary files or environment activation metadata.                                        |
+| Global            | Explicit global host-tool configuration when selected by the user or an implementation-specific installer policy.                                                  |
 
 The configuration manager must make scope explicit in command output and
-diagnostics.
+diagnostics. CI and shell temporary configuration maps to `CiTemporary`; tool
+environment identity, such as a Python environment, pipx environment, NuGet
+plugin folder, or package-manager config location, is target metadata rather than
+a configuration scope.
 
 ### Install Operations
 
@@ -805,33 +821,42 @@ IDs, organization names, feed names, or token material.
 
 ```text
 DoctorCheck
-  id
-  ecosystem
-  severity
+  contractMajor
+  checkId
   status
-  observedState
-  expectedState
+  severity
+  target
+  summary
+  diagnosticsCorrelationId
+  observedValue
+  expectedValue
   remediation
-  correlationId
+  safeDetails
 ```
 
-Statuses distinguish pass, warning, failure, skipped, and not applicable.
-Warnings indicate risky but non-blocking configuration. Failures indicate
-configuration that prevents the integration from working.
+Statuses are the frozen Phase 2 set: `pass`, `warning`, `fail`, `skipped`,
+`unsupported`, `deferred`, and `notApplicable`. Warnings indicate risky but
+non-blocking configuration. Failures indicate configuration that prevents the
+integration from working. Unsupported results indicate a check that cannot run
+for the current platform or host-tool capability. Deferred results indicate a
+known future-phase check or capability that is intentionally outside the current
+implementation gate.
 
 ## Security Design
 
 ### Identity Flow Policy
 
-Identity flows are selected by mode and policy. The requirements leave mandatory
-MVP identity flows open, so this table defines allowed fallback behavior without
-committing every candidate flow to MVP support.
+Identity flows are selected by mode and policy. Phase 1A accepts only the
+explicit Azure Pipelines system access token for MVP CI, and only in explicit CI
+mode with a non-persistent context. Service principal, managed identity,
+workload identity federation, and other short-lived CI identities are deferred
+future flows.
 
-| Mode                              | Candidate primary flows                                                                                                                                                | Forbidden fallback                                                              | PAT policy                                                                                                                                                            |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Interactive developer command     | Interactive browser or device code through the selected identity provider.                                                                                             | Silent PAT use, CI-only tokens, or service identity without explicit selection. | Explicit opt-in compatibility flow only.                                                                                                                              |
-| Non-interactive developer command | Previously cached valid credential for the requested cache key, or explicitly selected non-interactive identity.                                                       | New interactive prompt, device code prompt, or PAT fallback.                    | Explicit opt-in only; never inferred from environment.                                                                                                                |
-| CI command                        | Explicit CI identity material such as workload identity federation, managed identity, Azure Pipelines system access token, or another configured short-lived identity. | Interactive auth, device code, desktop cache discovery, or PAT fallback.        | Forbidden by default; allowed only when a command explicitly enables PAT compatibility and the output mode is log-safe and non-persistent unless separately approved. |
+| Mode                              | Candidate primary flows                                                                                                                                                                                                                          | Forbidden fallback                                                                                   | PAT policy                                                                                                                                                                            |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Interactive developer command     | Interactive browser or device code through the selected identity provider.                                                                                                                                                                       | Silent PAT use, CI-only tokens, or service identity without explicit selection.                      | Explicit opt-in compatibility flow only.                                                                                                                                              |
+| Non-interactive developer command | Allowed provider/host-tool cache reuse for the requested cache key, future persistent-cache reuse only after that deferred feature is enabled, or explicitly selected non-interactive identity.                                                  | New interactive prompt, device code prompt, or PAT fallback.                                         | Explicit opt-in only; never inferred from environment.                                                                                                                                |
+| CI command                        | Explicit Azure Pipelines system access token only, and only in explicit CI mode with a non-persistent context. Service principal, managed identity, workload identity federation, and other short-lived CI identities are deferred future flows. | Interactive auth, device code, desktop cache discovery, deferred CI identity flows, or PAT fallback. | Not accepted in explicit CI mode for MVP unless a later accepted decision reopens this gate. Non-CI PAT compatibility remains governed by the explicit PAT compatibility rules above. |
 
 Ecosystem adapters inherit this policy from the credential core. They may further
 restrict interaction based on host-tool protocol flags, such as NuGet
@@ -839,18 +864,27 @@ non-interactive restore settings or keyring subprocess behavior.
 
 ### Token Handling
 
-The credential core is the only component allowed to persist credential material
-in the secure cache. Adapters and the configuration manager may serialize
-credential material to host-tool configuration files only when an explicit write
-policy allows that target, scope, and credential kind. This distinction separates
-long-lived secure-cache storage from protocol-required output, temporary CI
-configuration, and user-approved package-manager configuration writes.
+MVP product-owned persistence is limited to configuration ownership metadata and
+approved host-tool configuration changes. The credential core may use allowed
+identity-provider or host-tool caches that are owned by those providers, but MVP
+does not create a product-owned persistent derived credential cache and must
+reject or disable requests for one with `productPersistentCacheDisabled` or
+equivalent typed policy behavior.
+
+Adapters and the configuration manager may serialize credential material to
+host-tool configuration files only when an explicit write policy allows that
+target, scope, and credential kind. This distinction separates allowed
+provider/host-tool caches and protocol-required output from disallowed
+product-owned persistent derived host-tool credential storage.
 
 Token handling requirements:
 
 - Prefer short-lived or identity-derived credentials.
-- Partition cache entries by ecosystem, host, organization, project, feed,
-  service identity, account, tenant, audience, and credential kind.
+- Partition cache keys by ecosystem, host, organization, service identity,
+  account, tenant, audience, and credential kind; include project/feed only for
+  package-feed resource identities that carry them, and keep default Git cache
+  keys at host plus organization unless a future explicit per-repository Git
+  policy enables finer partitioning.
 - Validate token audience before reuse.
 - Never log token values, Basic auth headers, generated passwords, refresh
   tokens, PATs, npm tokens, or NuGet API keys.
@@ -870,8 +904,10 @@ but it must not silently enable persistent credential writes.
 CI behavior must:
 
 - Disable interaction unless explicitly enabled.
-- Prefer workload identity federation, managed identity, Azure Pipelines system
-  access token, or other short-lived identity material.
+- Accept only explicit Azure Pipelines system access token identity material for
+  MVP CI, and only in explicit CI mode with a non-persistent context.
+- Treat service principal, managed identity, workload identity federation, and
+  other short-lived CI identities as deferred future flows.
 - Use temporary configuration files when possible.
 - Avoid writing secrets into build caches.
 - Provide cleanup commands or automatic cleanup for temporary files.
@@ -889,15 +925,15 @@ applying the change.
 The product uses typed errors rather than broad catch-all success-shaped
 fallbacks.
 
-| Error class          | Example                                                    | Required behavior                                                                        |
-| -------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| UnsupportedHost      | Non-Azure registry or remote.                              | Adapter requests return no-credential behavior; CLI management commands fail explicitly. |
-| InvalidEndpoint      | Malformed Azure Artifacts URL.                             | Fail with safe diagnostics and remediation.                                              |
-| InteractionBlocked   | Login required while non-interactive.                      | Fail closed and explain the explicit interactive command required.                       |
-| CacheUnavailable     | Secure store cannot be opened.                             | Fail closed; do not fall back to plaintext storage silently.                             |
-| UnauthorizedResource | Identity lacks repository or feed permission.              | Report authorization failure without leaking token details.                              |
-| ConfigConflict       | Existing non-owned setting conflicts with requested setup. | Stop and show remediation; do not overwrite silently.                                    |
-| ProtocolViolation    | Host-tool input is malformed.                              | Return protocol-safe failure and diagnostic correlation ID.                              |
+| Error class          | Example                                                                          | Required behavior                                                                                         |
+| -------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| UnsupportedHost      | Non-Azure registry or remote.                                                    | Adapter requests return no-credential behavior; CLI management commands fail explicitly.                  |
+| InvalidEndpoint      | Malformed Azure Artifacts URL.                                                   | Fail with safe diagnostics and remediation.                                                               |
+| InteractionBlocked   | Login required while non-interactive.                                            | Fail closed and explain the explicit interactive command required.                                        |
+| CacheUnavailable     | Allowed provider cache or future persistent-cache secure store cannot be opened. | Fail closed; MVP future-cache requests remain disabled and never fall back to plaintext storage silently. |
+| UnauthorizedResource | Identity lacks repository or feed permission.                                    | Report authorization failure without leaking token details.                                               |
+| ConfigConflict       | Existing non-owned setting conflicts with requested setup.                       | Stop and show remediation; do not overwrite silently.                                                     |
+| ProtocolViolation    | Host-tool input is malformed.                                                    | Return protocol-safe failure and diagnostic correlation ID.                                               |
 
 ## Cross-Platform Design
 
@@ -926,7 +962,7 @@ The implementation sequence reduces protocol risk early:
 
 1. Implement canonicalization and cache-key construction with unit tests.
 2. Implement the credential core abstraction with a fake identity provider and
-   fake secure cache.
+   fake cache-policy/key model.
 3. Implement configuration-manager change plans, ownership manifests, dry-run,
    and removal metadata.
 4. Implement Git adapter protocol parsing and stdout discipline without direct
@@ -935,8 +971,9 @@ The implementation sequence reduces protocol risk early:
    credential core.
 6. Implement Python keyring backend and subprocess shim proof of discovery using
    the versioned helper contract.
-7. Implement npm/pnpm config parsing and change-plan generation; keep Yarn writes
-   disabled until the Yarn verification gate closes.
+7. Implement npm/pnpm config parsing and change-plan generation; include Yarn
+   Berry user-level and CI-temporary change-plan generation under the Phase 1.4
+   and Phase 2 constraints.
 8. Implement `doctor` checks for each ecosystem.
 9. Integrate real identity provider behavior behind the abstraction.
 10. Add CI-specific non-interactive flows and cleanup behavior through
@@ -946,30 +983,30 @@ Each step has host-tool shape tests before real authentication is enabled.
 
 ## Verification Matrix
 
-| Area                  | Verification                                                                                                           |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Core canonicalization | Unit tests for `dev.azure.com`, `*.visualstudio.com`, Azure Artifacts NuGet, Python, and npm endpoint forms.           |
-| Cache partitioning    | Unit tests that prove different ecosystems, feeds, tenants, accounts, audiences, and credential kinds do not collide.  |
-| Git adapter           | Protocol stdin/stdout tests; Git-discovery integration tests; `useHttpPath` validation.                                |
-| NuGet adapter         | Plugin launch tests; handshake tests; non-interactive behavior tests; runtime-layout checks.                           |
-| Python backend        | Import-mode tests in a selected Python environment; backend discovery tests; subprocess `keyring` command-shape tests. |
-| npm adapter           | `.npmrc` and `.yarnrc.yml` parser tests; user-level write tests; repository-local secret prevention tests.             |
-| Configuration manager | Idempotent configure tests; conflict tests; ownership-manifest removal tests.                                          |
-| Doctor                | Synthetic pass, warning, failure, skipped, and not-applicable result tests.                                            |
-| Security              | Redaction tests; protocol stdout exact-output tests; CI no-persistence tests.                                          |
+| Area                  | Verification                                                                                                                                                                        |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core canonicalization | Unit tests for `dev.azure.com`, `*.visualstudio.com`, Azure Artifacts NuGet, Python, and npm endpoint forms.                                                                        |
+| Cache partitioning    | Unit tests that prove different ecosystems, feeds, tenants, accounts, audiences, and credential kinds do not collide, without requiring product-owned persistent credential writes. |
+| Git adapter           | Protocol stdin/stdout tests; Git-discovery integration tests; `useHttpPath` validation.                                                                                             |
+| NuGet adapter         | Plugin launch tests; handshake tests; non-interactive behavior tests; runtime-layout checks.                                                                                        |
+| Python backend        | Import-mode tests in a selected Python environment; backend discovery tests; subprocess `keyring` command-shape tests.                                                              |
+| npm adapter           | `.npmrc` and `.yarnrc.yml` parser tests; user-level write tests; repository-local secret prevention tests.                                                                          |
+| Configuration manager | Idempotent configure tests; conflict tests; ownership-manifest removal tests.                                                                                                       |
+| Doctor                | Synthetic `pass`, `warning`, `fail`, `skipped`, `unsupported`, `deferred`, and `notApplicable` result tests.                                                                        |
+| Security              | Redaction tests; protocol stdout exact-output tests; CI no-persistence tests.                                                                                                       |
 
 ## Design Risks and Required Prototypes
 
-| Risk                                | Required prototype or source verification                                                                                                                                                                      |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Core deployment boundary            | Prototype whether adapters call a library, a single executable, or a local broker before locking packaging and failure-isolation behavior.                                                                     |
-| NuGet plugin message compatibility  | Implement a minimal source-confirmed plugin handshake before finalizing the adapter runtime package shape.                                                                                                     |
-| AzureAuth suitability               | Verify required token audiences, non-interactive flows, MSAL cache reuse, logging behavior, and process-boundary security before choosing AzureAuth as the identity substrate.                                 |
-| MVP identity flow selection         | Verify which identity flows are mandatory for MVP by source requirements and user scenarios before committing to interactive, PAT, service principal, managed identity, WIF, or Azure Pipelines token support. |
-| Python keyring environment coverage | Prototype backend installation and discovery in virtual environment, pipx, and uv subprocess scenarios.                                                                                                        |
-| Git GUI client PATH differences     | Validate helper discovery through Git for Windows and at least one GUI-launched Git environment before relying on PATH-only installation.                                                                      |
-| npm and Yarn config writes          | Prototype config update behavior across npm, pnpm, and Yarn Berry with user-level and temporary CI scopes.                                                                                                     |
-| Secure cache availability           | Verify platform secure-store behavior and failure modes on Windows, Linux, and macOS before enabling persistent credentials by default.                                                                        |
+| Risk                                | Required prototype or source verification                                                                                                                                                                                                 |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core deployment boundary            | Prototype whether adapters call a library, a single executable, or a local broker before locking packaging and failure-isolation behavior.                                                                                                |
+| NuGet plugin message compatibility  | Implement a minimal source-confirmed plugin handshake before finalizing the adapter runtime package shape.                                                                                                                                |
+| AzureAuth suitability               | Verify required token audiences, non-interactive flows, MSAL cache reuse, logging behavior, and process-boundary security before choosing AzureAuth as the identity substrate.                                                            |
+| Future CI identity flow selection   | MVP CI is limited to explicit Azure Pipelines system access token in explicit CI mode with a non-persistent context; verify service principal, managed identity, WIF, and other short-lived CI identities only for future accepted flows. |
+| Python keyring environment coverage | Prototype backend installation and discovery in virtual environment, pipx, and uv subprocess scenarios.                                                                                                                                   |
+| Git GUI client PATH differences     | Validate helper discovery through Git for Windows and at least one GUI-launched Git environment before relying on PATH-only installation.                                                                                                 |
+| npm and Yarn config writes          | Prototype config update behavior across npm, pnpm, and Yarn Berry with user-level and temporary CI scopes.                                                                                                                                |
+| Future persistent cache             | Verify platform secure-store behavior and failure modes on Windows, Linux, and macOS before a later phase enables any product-owned persistent derived credential cache; MVP requests remain rejected or disabled by default.             |
 
 These risks are not assumptions. They are explicit verification gates that must
 be closed by source inspection or experiment before implementation decisions are
@@ -985,7 +1022,7 @@ Primary CLI
   -> doctor engine
   -> shared credential core
       -> identity provider abstraction
-      -> secure cache
+      -> cache policy/key model
       -> policy and redaction
   -> machine-facing adapters
       -> Git credential helper
@@ -995,6 +1032,8 @@ Primary CLI
       -> npm-compatible config updater
 ```
 
-This allocation preserves one credential policy and cache model while satisfying
-the distinct discovery and protocol contracts of Git, NuGet, Python tooling, and
-npm-compatible package managers.
+This allocation preserves one credential policy and cache-key model while
+satisfying the distinct discovery and protocol contracts of Git, NuGet, Python
+tooling, and npm-compatible package managers. Product-owned persistent derived
+credential caching remains a future disabled-by-default extension, not MVP
+behavior.
