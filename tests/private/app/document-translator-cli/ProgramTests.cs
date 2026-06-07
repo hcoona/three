@@ -336,9 +336,11 @@ public sealed class ProgramTests
         using TestDirectory directory = TestDirectory.Create();
         string inputPath = directory.WriteFile("source.txt", "content");
         string outputPath = directory.GetPath("translated.txt");
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
         bool executed = false;
 
-        int exitCode = await RunAsync(
+        int exitCode = await Program.RunAsync(
             [
                 "translate",
                 "--input",
@@ -352,17 +354,29 @@ public sealed class ProgramTests
                 "--key",
                 "secret",
             ],
+            standardOutput,
+            standardError,
             name => name == TranslationOptionResolver.EndpointEnvironmentVariable
                 ? "https://resource.cognitiveservices.azure.com/translator"
                 : null,
-            _ =>
+            (_, _, _) =>
             {
                 executed = true;
                 return new ValueTask<int>(Program.SuccessExitCode);
-            });
+            },
+            CancellationToken.None);
 
         Assert.Equal(Program.ValidationErrorExitCode, exitCode);
         Assert.False(executed);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains(
+            "The --endpoint option must not be blank.",
+            standardError.ToString(),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            TranslationOptionResolver.EndpointEnvironmentVariable,
+            standardError.ToString(),
+            StringComparison.Ordinal);
     }
 
     [Fact]

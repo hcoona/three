@@ -149,8 +149,14 @@ internal static partial class TranslationOptionsValidator
 
     private static Uri? ValidateEndpoint(string? endpoint, List<string> errors)
     {
-        endpoint = NormalizeNonSecretScalar(endpoint);
-        if (string.IsNullOrWhiteSpace(endpoint))
+        endpoint = endpoint?.Trim();
+        if (endpoint is not null && endpoint.Length == 0)
+        {
+            errors.Add("The --endpoint option must not be blank.");
+            return null;
+        }
+
+        if (endpoint is null)
         {
             errors.Add(
                 "The --endpoint option or AZURE_TRANSLATOR_ENDPOINT "

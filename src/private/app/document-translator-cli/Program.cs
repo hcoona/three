@@ -26,15 +26,17 @@ internal static class Program
         try
         {
             IDocumentTranslator translator = new AzureDocumentTranslator();
+            TextWriter standardOutput = Console.Out;
+            TextWriter standardError = Console.Error;
             return RunAsync(
                     args,
-                    Console.Out,
-                    Console.Error,
+                    standardOutput,
+                    standardError,
                     Environment.GetEnvironmentVariable,
                     (options, output, token) => ExecuteValidatedCommandAsync(
                         options,
                         output,
-                        Console.Error,
+                        standardError,
                         translator,
                         token),
                     cancellationTokenSource.Token)
