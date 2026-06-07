@@ -692,3 +692,11 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Recorded the mandatory independent-review protocol, Group 1
   release-validation authority completion evidence, and future Group 2
   optimization constraints.
+
+## [2026-06-07] query | Add CI validation Group 2 execution plan
+
+- Expanded the workflow-release CI affected-validation implementation plan with
+  a waterfall Group 2 execution plan.
+- Added current-topology baseline admission rules, bottleneck-analysis phases,
+  design decision gates, serialized implementation rules, and acceptance
+  evidence requirements for topology/runtime optimization.
