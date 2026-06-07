@@ -240,7 +240,7 @@ internal sealed partial class ReconciliationApp(
         EventId = 1,
         Level = LogLevel.Information,
         Message =
-            "Cloudflare DDNS updater scaffold started for {DomainCount} domain(s); " +
+            "Cloudflare DDNS updater started for {DomainCount} domain(s); " +
             "IPv6 disabled: {DisableIpv6}.")]
     private static partial void LogStarted(
         ILogger logger,
