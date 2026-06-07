@@ -18,6 +18,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -139,6 +140,17 @@ if TYPE_CHECKING:
 
 Json = dict[str, Any]
 _CiValidationOutcome = Literal["success", "blocking-failure", "skipped"]
+_CiOrchestratorDependencyAdmissionStatus = Literal[
+    "admitted",
+    "pending",
+    "failed",
+]
+_CiOrchestratorDependencyAdmission = tuple[
+    _CiOrchestratorDependencyAdmissionStatus,
+    Json | None,
+    str | None,
+]
+_CiOrchestratorDependencyReadiness = tuple[bool, bool, str | None]
 
 
 class _TrustedDependencyBundle(dict[str, object]):
@@ -216,6 +228,8 @@ _CI_ORCHESTRATOR_STATE_ADMISSION_SOURCE = "orchestrator-artifact-id-state"
 _CI_ORCHESTRATOR_LIVE_CROSS_FAMILY_ADMISSION_SOURCE = (
     "orchestrator-live-cross-family"
 )
+_CI_ORCHESTRATOR_DEPENDENCY_WAIT_TIMEOUT_SECONDS = 1800.0
+_CI_ORCHESTRATOR_DEPENDENCY_POLL_INTERVAL_SECONDS = 15.0
 _UNKNOWN_VALIDATION_TREE = {"commit-sha": None, "ref": None}
 _UNKNOWN_AFFECTED_RANGE = {
     "status": "unknown",
@@ -610,6 +624,19 @@ def _add_run_ci_validation_runner_family_orchestrator_step(
     parser.add_argument("--slot-index", required=True)
     parser.add_argument("--observed-commit-sha", required=True)
     parser.add_argument("--repo-root", default=".")
+    parser.add_argument(
+        "--dependency-wait-timeout-seconds",
+        default=str(_CI_ORCHESTRATOR_DEPENDENCY_WAIT_TIMEOUT_SECONDS),
+        help=(
+            "Maximum seconds to wait for dependency-ready work when every "
+            "remaining family batch is blocked by dependencies."
+        ),
+    )
+    parser.add_argument(
+        "--dependency-poll-interval-seconds",
+        default=str(_CI_ORCHESTRATOR_DEPENDENCY_POLL_INTERVAL_SECONDS),
+        help="Seconds between dependency readiness checks while waiting.",
+    )
     parser.add_argument("--github-output")
     parser.set_defaults(
         func=_cmd_run_ci_validation_runner_family_orchestrator_step
@@ -2719,8 +2746,28 @@ def _cmd_run_ci_validation_runner_family_orchestrator_step(
         )
         if str(batch.get("runner-family")) == family
     ]
+    wait_timeout_seconds = float(
+        getattr(
+            args,
+            "dependency_wait_timeout_seconds",
+            _CI_ORCHESTRATOR_DEPENDENCY_WAIT_TIMEOUT_SECONDS,
+        )
+    )
+    if not math.isfinite(wait_timeout_seconds):
+        msg = "dependency wait timeout seconds must be finite"
+        raise ValueError(msg)
+    if not str(args.repository):
+        wait_timeout_seconds = 0.0
+    poll_interval_seconds = float(
+        getattr(
+            args,
+            "dependency_poll_interval_seconds",
+            _CI_ORCHESTRATOR_DEPENDENCY_POLL_INTERVAL_SECONDS,
+        )
+    )
     dependency_admissions: dict[str, Json] = {}
-    ready, waiting = _ci_orchestrator_select_ready_batch(
+    terminal_blockers: dict[str, str] = {}
+    ready, waiting = _ci_orchestrator_select_ready_batch_with_wait(
         family_batches=family_batches,
         batches_by_id=batches_by_id,
         repository=str(args.repository),
@@ -2729,6 +2776,9 @@ def _cmd_run_ci_validation_runner_family_orchestrator_step(
         state_dir=state_dir,
         observed_root=observed_root,
         dependency_admissions=dependency_admissions,
+        terminal_blockers=terminal_blockers,
+        wait_timeout_seconds=wait_timeout_seconds,
+        poll_interval_seconds=poll_interval_seconds,
     )
     if ready is None:
         if waiting:
@@ -2737,6 +2787,12 @@ def _cmd_run_ci_validation_runner_family_orchestrator_step(
                 "batch; waiting batch ids: "
                 f"{', '.join(sorted(waiting))}"
             )
+            if terminal_blockers:
+                details = "; ".join(
+                    f"{batch_id}: {detail}"
+                    for batch_id, detail in sorted(terminal_blockers.items())
+                )
+                msg = f"{msg}; terminal dependency blockers: {details}"
             raise RuntimeError(msg)
         _write_outputs(
             args.github_output,
@@ -2935,6 +2991,74 @@ def _ci_orchestrator_matrix_row(
     return row
 
 
+def _ci_orchestrator_select_ready_batch_with_wait(
+    family_batches: Sequence[Mapping[str, object]],
+    *,
+    batches_by_id: Mapping[str, Mapping[str, object]],
+    repository: str,
+    run_id: str,
+    run_attempt: str,
+    state_dir: Path,
+    observed_root: Path,
+    dependency_admissions: dict[str, Json],
+    terminal_blockers: dict[str, str] | None = None,
+    wait_timeout_seconds: float,
+    poll_interval_seconds: float,
+) -> tuple[Mapping[str, object] | None, list[str]]:
+    if not math.isfinite(wait_timeout_seconds):
+        msg = "dependency wait timeout seconds must be finite"
+        raise ValueError(msg)
+    if wait_timeout_seconds < 0:
+        msg = "dependency wait timeout seconds must not be negative"
+        raise ValueError(msg)
+    if wait_timeout_seconds > 0:
+        if not math.isfinite(poll_interval_seconds):
+            msg = "dependency poll interval seconds must be finite"
+            raise ValueError(msg)
+        if poll_interval_seconds <= 0:
+            msg = "dependency poll interval seconds must be positive"
+            raise ValueError(msg)
+    deadline = time.monotonic() + wait_timeout_seconds
+    while True:
+        dependency_admissions.clear()
+        ready, waiting, _waitable, candidate_terminal_blockers = (
+            _ci_orchestrator_select_ready_batch_with_blockers(
+                family_batches=family_batches,
+                batches_by_id=batches_by_id,
+                repository=repository,
+                run_id=run_id,
+                run_attempt=run_attempt,
+                state_dir=state_dir,
+                observed_root=observed_root,
+                dependency_admissions=dependency_admissions,
+            )
+        )
+        _ci_orchestrator_replace_terminal_blockers(
+            terminal_blockers,
+            candidate_terminal_blockers,
+        )
+        has_terminal_blockers = bool(candidate_terminal_blockers)
+        if has_terminal_blockers:
+            dependency_admissions.clear()
+            return None, waiting
+        if ready is not None or not waiting or wait_timeout_seconds == 0:
+            return ready, waiting
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return ready, waiting
+        time.sleep(min(poll_interval_seconds, remaining))
+
+
+def _ci_orchestrator_replace_terminal_blockers(
+    terminal_blockers: dict[str, str] | None,
+    candidate_terminal_blockers: Mapping[str, str],
+) -> None:
+    if terminal_blockers is None:
+        return
+    terminal_blockers.clear()
+    terminal_blockers.update(candidate_terminal_blockers)
+
+
 def _ci_orchestrator_select_ready_batch(
     family_batches: Sequence[Mapping[str, object]],
     *,
@@ -2946,16 +3070,9 @@ def _ci_orchestrator_select_ready_batch(
     observed_root: Path,
     dependency_admissions: dict[str, Json],
 ) -> tuple[Mapping[str, object] | None, list[str]]:
-    waiting: list[str] = []
-    for batch in family_batches:
-        batch_id = str(batch["batch-id"])
-        if _ci_orchestrator_uploaded_state_path(state_dir, batch_id).exists():
-            continue
-        if _ci_orchestrator_ran_state_path(state_dir, batch_id).exists():
-            waiting.append(batch_id)
-            continue
-        if _ci_orchestrator_dependencies_ready(
-            batch,
+    ready, waiting, _waitable, _terminal_blockers = (
+        _ci_orchestrator_select_ready_batch_with_blockers(
+            family_batches=family_batches,
             batches_by_id=batches_by_id,
             repository=repository,
             run_id=run_id,
@@ -2963,10 +3080,121 @@ def _ci_orchestrator_select_ready_batch(
             state_dir=state_dir,
             observed_root=observed_root,
             dependency_admissions=dependency_admissions,
-        ):
-            return batch, waiting
+        )
+    )
+    return ready, waiting
+
+
+def _ci_orchestrator_select_ready_batch_with_blockers(
+    family_batches: Sequence[Mapping[str, object]],
+    *,
+    batches_by_id: Mapping[str, Mapping[str, object]],
+    repository: str,
+    run_id: str,
+    run_attempt: str,
+    state_dir: Path,
+    observed_root: Path,
+    dependency_admissions: dict[str, Json],
+) -> tuple[
+    Mapping[str, object] | None,
+    list[str],
+    list[str],
+    dict[str, str],
+]:
+    waiting: list[str] = []
+    waitable: list[str] = []
+    terminal_blockers: dict[str, str] = {}
+    first_ready_batch: Mapping[str, object] | None = None
+    for batch in family_batches:
+        batch_id = str(batch["batch-id"])
+        if _ci_orchestrator_uploaded_state_path(state_dir, batch_id).exists():
+            continue
+        if _ci_orchestrator_ran_state_path(state_dir, batch_id).exists():
+            waiting.append(batch_id)
+            terminal_blockers[batch_id] = (
+                "same-family batch has run state without uploaded artifact state"
+            )
+            continue
+        (
+            dependencies_ready,
+            dependencies_waitable,
+            dependency_blocker_detail,
+        ) = _ci_orchestrator_dependency_readiness(
+            batch,
+            batches_by_id=batches_by_id,
+            repository=repository,
+            run_id=run_id,
+            run_attempt=run_attempt,
+            state_dir=state_dir,
+            observed_root=observed_root,
+            dependency_admissions=None,
+        )
+        if dependencies_ready:
+            if first_ready_batch is None:
+                first_ready_batch = batch
+            continue
+        _ci_orchestrator_record_unready_batch(
+            batch_id,
+            ready_seen=first_ready_batch is not None,
+            dependencies_waitable=dependencies_waitable,
+            dependency_blocker_detail=dependency_blocker_detail,
+            waiting=waiting,
+            waitable=waitable,
+            terminal_blockers=terminal_blockers,
+        )
+    if terminal_blockers:
+        return None, waiting, waitable, terminal_blockers
+    if first_ready_batch is not None:
+        (
+            selected_ready,
+            selected_waitable,
+            selected_blocker_detail,
+        ) = _ci_orchestrator_dependency_readiness(
+            first_ready_batch,
+            batches_by_id=batches_by_id,
+            repository=repository,
+            run_id=run_id,
+            run_attempt=run_attempt,
+            state_dir=state_dir,
+            observed_root=observed_root,
+            dependency_admissions=dependency_admissions,
+        )
+        if selected_ready:
+            return first_ready_batch, waiting, waitable, terminal_blockers
+        dependency_admissions.clear()
+        _ci_orchestrator_record_unready_batch(
+            str(first_ready_batch["batch-id"]),
+            ready_seen=False,
+            dependencies_waitable=selected_waitable,
+            dependency_blocker_detail=selected_blocker_detail,
+            waiting=waiting,
+            waitable=waitable,
+            terminal_blockers=terminal_blockers,
+        )
+        return None, waiting, waitable, terminal_blockers
+    return None, waiting, waitable, terminal_blockers
+
+
+def _ci_orchestrator_record_unready_batch(
+    batch_id: str,
+    *,
+    ready_seen: bool,
+    dependencies_waitable: bool,
+    dependency_blocker_detail: str | None,
+    waiting: list[str],
+    waitable: list[str],
+    terminal_blockers: dict[str, str],
+) -> None:
+    is_terminal = (
+        not dependencies_waitable and dependency_blocker_detail is not None
+    )
+    if not ready_seen or is_terminal:
         waiting.append(batch_id)
-    return None, waiting
+    if dependencies_waitable:
+        if not ready_seen:
+            waitable.append(batch_id)
+    elif dependency_blocker_detail is not None:
+        terminal_blockers[batch_id] = dependency_blocker_detail
 
 
 def _ci_orchestrator_dependencies_ready(
@@ -2980,14 +3208,147 @@ def _ci_orchestrator_dependencies_ready(
     observed_root: Path,
     dependency_admissions: dict[str, Json] | None = None,
 ) -> bool:
+    ready, _waitable, _blocker_detail = _ci_orchestrator_dependency_readiness(
+        batch,
+        batches_by_id=batches_by_id,
+        repository=repository,
+        run_id=run_id,
+        run_attempt=run_attempt,
+        state_dir=state_dir,
+        observed_root=observed_root,
+        dependency_admissions=dependency_admissions,
+    )
+    return ready
+
+
+def _ci_orchestrator_dependency_readiness(
+    batch: Mapping[str, object],
+    *,
+    batches_by_id: Mapping[str, Mapping[str, object]],
+    repository: str,
+    run_id: str,
+    run_attempt: str,
+    state_dir: Path,
+    observed_root: Path,
+    dependency_admissions: dict[str, Json] | None = None,
+    _visiting_same_family: set[str] | None = None,
+) -> _CiOrchestratorDependencyReadiness:
     current_family = str(batch["runner-family"])
-    for dependency_id in _ci_execution_batch_transitive_dependencies(
-        str(batch["batch-id"]),
-        batches_by_id,
-    ):
-        dependency = batches_by_id[dependency_id]
-        if str(dependency["runner-family"]) == current_family:
-            admission = _ci_orchestrator_same_family_dependency_admission(
+    current_batch_id = str(batch["batch-id"])
+    if _visiting_same_family is None:
+        _visiting_same_family = set()
+    if current_batch_id in _visiting_same_family:
+        return (
+            False,
+            False,
+            f"same-family dependency cycle includes {current_batch_id!r}",
+        )
+    admission_checkpoint = (
+        set(dependency_admissions)
+        if dependency_admissions is not None
+        else None
+    )
+    _visiting_same_family.add(current_batch_id)
+    blocked = False
+    waitable = False
+    try:
+        for dependency_id in _ci_execution_batch_transitive_dependencies(
+            current_batch_id,
+            batches_by_id,
+        ):
+            dependency = batches_by_id[dependency_id]
+            if str(dependency["runner-family"]) == current_family:
+                (
+                    dependency_ready,
+                    dependency_waitable,
+                    dependency_blocker_detail,
+                ) = _ci_orchestrator_same_family_dependency_readiness(
+                    dependency,
+                    batches_by_id=batches_by_id,
+                    repository=repository,
+                    run_id=run_id,
+                    run_attempt=run_attempt,
+                    state_dir=state_dir,
+                    observed_root=observed_root,
+                    dependency_admissions=dependency_admissions,
+                    visiting_same_family=_visiting_same_family,
+                )
+            else:
+                (
+                    dependency_ready,
+                    dependency_waitable,
+                    dependency_blocker_detail,
+                ) = _ci_orchestrator_cross_family_dependency_readiness(
+                    dependency,
+                    repository=repository,
+                    run_id=run_id,
+                    run_attempt=run_attempt,
+                    observed_root=observed_root,
+                    dependency_admissions=dependency_admissions,
+                )
+            if dependency_ready:
+                continue
+            if dependency_waitable:
+                blocked = True
+                waitable = True
+                continue
+            if admission_checkpoint is not None:
+                _ci_orchestrator_rollback_dependency_admissions(
+                    observed_root,
+                    dependency_admissions=dependency_admissions,
+                    checkpoint_names=admission_checkpoint,
+                )
+            return False, False, dependency_blocker_detail
+        if blocked and admission_checkpoint is not None:
+            _ci_orchestrator_rollback_dependency_admissions(
+                observed_root,
+                dependency_admissions=dependency_admissions,
+                checkpoint_names=admission_checkpoint,
+            )
+        return not blocked, waitable, None
+    finally:
+        _visiting_same_family.remove(current_batch_id)
+
+
+def _ci_orchestrator_rollback_dependency_admissions(
+    observed_root: Path,
+    *,
+    dependency_admissions: dict[str, Json],
+    checkpoint_names: set[str],
+) -> None:
+    for artifact_name_value in list(dependency_admissions):
+        if artifact_name_value in checkpoint_names:
+            continue
+        shutil.rmtree(observed_root / artifact_name_value, ignore_errors=True)
+        dependency_admissions.pop(artifact_name_value, None)
+
+
+def _ci_orchestrator_same_family_dependency_readiness(
+    dependency: Mapping[str, object],
+    *,
+    batches_by_id: Mapping[str, Mapping[str, object]],
+    repository: str,
+    run_id: str,
+    run_attempt: str,
+    state_dir: Path,
+    observed_root: Path,
+    dependency_admissions: dict[str, Json] | None,
+    visiting_same_family: set[str],
+) -> _CiOrchestratorDependencyReadiness:
+    dependency_id = str(dependency["batch-id"])
+    if dependency_admissions is None:
+        admission_status, admission, admission_detail = (
+            _ci_orchestrator_same_family_dependency_probe(
+                dependency,
+                repository=repository,
+                run_id=run_id,
+                run_attempt=run_attempt,
+                state_dir=state_dir,
+            )
+        )
+    else:
+        admission_status, admission, admission_detail = (
+            _ci_orchestrator_same_family_dependency_admission(
                 dependency,
                 repository=repository,
                 run_id=run_id,
@@ -2995,27 +3356,226 @@ def _ci_orchestrator_dependencies_ready(
                 state_dir=state_dir,
                 observed_root=observed_root,
             )
-            if admission is None:
-                return False
-            if dependency_admissions is not None:
-                dependency_admissions[
-                    str(admission["physical-artifact-name"])
-                ] = admission
-            continue
-        admission = _ci_orchestrator_cross_family_dependency_admission(
+        )
+    if admission_status == "pending":
+        (
+            dependency_ready,
+            dependency_waitable,
+            dependency_blocker_detail,
+        ) = _ci_orchestrator_same_family_missing_readiness(
+            dependency,
+            batches_by_id=batches_by_id,
+            repository=repository,
+            run_id=run_id,
+            run_attempt=run_attempt,
+            state_dir=state_dir,
+            observed_root=observed_root,
+            visiting_same_family=visiting_same_family,
+        )
+        if dependency_ready or dependency_waitable:
+            return False, True, None
+        return False, False, dependency_blocker_detail
+    if admission_status == "failed" or admission is None:
+        return (
+            False,
+            False,
+            admission_detail
+            or f"same-family dependency {dependency_id!r} admission failed",
+        )
+    if dependency_admissions is not None:
+        dependency_admissions[str(admission["physical-artifact-name"])] = (
+            admission
+        )
+    return True, False, None
+
+
+def _ci_orchestrator_same_family_missing_readiness(
+    dependency: Mapping[str, object],
+    *,
+    batches_by_id: Mapping[str, Mapping[str, object]],
+    repository: str,
+    run_id: str,
+    run_attempt: str,
+    state_dir: Path,
+    observed_root: Path,
+    visiting_same_family: set[str],
+) -> _CiOrchestratorDependencyReadiness:
+    dependency_id = str(dependency["batch-id"])
+    if _ci_orchestrator_ran_state_path(state_dir, dependency_id).exists():
+        return (
+            False,
+            False,
+            (
+                f"same-family dependency {dependency_id!r} has run state "
+                "without admissible uploaded artifact state"
+            ),
+        )
+    return _ci_orchestrator_dependency_readiness(
+        dependency,
+        batches_by_id=batches_by_id,
+        repository=repository,
+        run_id=run_id,
+        run_attempt=run_attempt,
+        state_dir=state_dir,
+        observed_root=observed_root,
+        dependency_admissions=None,
+        _visiting_same_family=visiting_same_family,
+    )
+
+
+def _ci_orchestrator_cross_family_dependency_readiness(
+    dependency: Mapping[str, object],
+    *,
+    repository: str,
+    run_id: str,
+    run_attempt: str,
+    observed_root: Path,
+    dependency_admissions: dict[str, Json] | None,
+) -> _CiOrchestratorDependencyReadiness:
+    if dependency_admissions is None:
+        admission_status, admission, admission_detail = (
+            _ci_orchestrator_cross_family_dependency_probe(
+                dependency,
+                repository=repository,
+                run_id=run_id,
+                run_attempt=run_attempt,
+            )
+        )
+    else:
+        admission_status, admission, admission_detail = (
+            _ci_orchestrator_cross_family_dependency_admission(
+                dependency,
+                repository=repository,
+                run_id=run_id,
+                run_attempt=run_attempt,
+                observed_root=observed_root,
+            )
+        )
+    if admission_status == "pending":
+        return False, True, None
+    if admission_status == "failed" or admission is None:
+        return (
+            False,
+            False,
+            admission_detail
+            or (
+                "cross-family dependency "
+                f"{dependency['batch-id']!r} admission failed"
+            ),
+        )
+    if dependency_admissions is not None:
+        dependency_admissions[str(admission["physical-artifact-name"])] = (
+            admission
+        )
+    return True, False, None
+
+
+def _ci_orchestrator_same_family_dependency_probe(
+    dependency: Mapping[str, object],
+    *,
+    repository: str,
+    run_id: str,
+    run_attempt: str,
+    state_dir: Path,
+) -> _CiOrchestratorDependencyAdmission:
+    dependency_id = str(dependency["batch-id"])
+    uploaded_path = _ci_orchestrator_uploaded_state_path(
+        state_dir,
+        dependency_id,
+    )
+    if not os.path.lexists(uploaded_path):
+        return "pending", None, None
+    if not repository:
+        return "failed", None, "repository is required"
+    try:
+        uploaded = _read_json(uploaded_path)
+    except (OSError, RecursionError, TypeError, ValueError) as exc:
+        return (
+            "failed",
+            None,
+            (
+                "same-family dependency "
+                f"{dependency_id!r} uploaded artifact state is unreadable "
+                f"or invalid: {exc}"
+            ),
+        )
+    artifact_ref = str(dependency["expected-batch-evidence-bundle-ref"])
+    artifact_name_value = artifact_physical_name(artifact_ref)
+    if not _ci_orchestrator_recorded_upload_matches_dependency(
+        dependency,
+        uploaded,
+        run_id=run_id,
+        run_attempt=run_attempt,
+    ):
+        return (
+            "failed",
+            None,
+            (
+                "same-family dependency "
+                f"{dependency_id!r} uploaded artifact state for "
+                f"{artifact_name_value} is inadmissible or stale"
+            ),
+        )
+    artifact_instance_id = cast("str", uploaded["artifact-instance-id"])
+    artifact_api = _ci_live_artifact_api_instance_by_id(
+        repository=repository,
+        artifact_id=artifact_instance_id,
+    )
+    if not _ci_live_artifact_matches_expected(
+        artifact_api,
+        artifact_id=artifact_instance_id,
+        artifact_name_value=artifact_name_value,
+        run_id=run_id,
+        run_attempt=run_attempt,
+    ):
+        return (
+            "failed",
+            None,
+            (
+                "same-family dependency "
+                f"{dependency_id!r} uploaded artifact state for "
+                f"{artifact_name_value} does not match a live artifact"
+            ),
+        )
+    admission = _ci_dependency_artifact_admission(
+        artifact_ref=artifact_ref,
+        artifact_name_value=artifact_name_value,
+        artifact_api=cast("Mapping[str, object]", artifact_api),
+        run_id=run_id,
+        run_attempt=run_attempt,
+        source="orchestrator-artifact-id-state",
+    )
+    return "admitted", admission, None
+
+
+def _ci_orchestrator_cross_family_dependency_probe(
+    dependency: Mapping[str, object],
+    *,
+    repository: str,
+    run_id: str,
+    run_attempt: str,
+) -> _CiOrchestratorDependencyAdmission:
+    admission_status, artifact_api, admission_detail = (
+        _ci_orchestrator_cross_family_dependency_artifact_api(
             dependency,
             repository=repository,
             run_id=run_id,
             run_attempt=run_attempt,
-            observed_root=observed_root,
         )
-        if admission is None:
-            return False
-        if dependency_admissions is not None:
-            dependency_admissions[str(admission["physical-artifact-name"])] = (
-                admission
-            )
-    return True
+    )
+    if admission_status != "admitted" or artifact_api is None:
+        return admission_status, None, admission_detail
+    artifact_ref = str(dependency["expected-batch-evidence-bundle-ref"])
+    artifact_name_value = artifact_physical_name(artifact_ref)
+    admission = _ci_dependency_artifact_admission(
+        artifact_ref=artifact_ref,
+        artifact_name_value=artifact_name_value,
+        artifact_api=artifact_api,
+        run_id=run_id,
+        run_attempt=run_attempt,
+        source=_CI_ORCHESTRATOR_LIVE_CROSS_FAMILY_ADMISSION_SOURCE,
+    )
+    return "admitted", admission, None
 
 
 def _ci_orchestrator_same_family_dependency_admission(
@@ -3026,27 +3586,46 @@ def _ci_orchestrator_same_family_dependency_admission(
     run_attempt: str,
     state_dir: Path,
     observed_root: Path,
-) -> Json | None:
-    if not repository:
-        return None
+) -> _CiOrchestratorDependencyAdmission:
     dependency_id = str(dependency["batch-id"])
     uploaded_path = _ci_orchestrator_uploaded_state_path(
         state_dir,
         dependency_id,
     )
-    if not uploaded_path.exists():
-        return None
+    if not os.path.lexists(uploaded_path):
+        return "pending", None, None
+    if not repository:
+        return "failed", None, "repository is required"
     try:
         uploaded = _read_json(uploaded_path)
-    except (
-        OSError,
-        RecursionError,
-        TypeError,
-        ValueError,
-        json.JSONDecodeError,
+    except (OSError, RecursionError, TypeError, ValueError) as exc:
+        return (
+            "failed",
+            None,
+            (
+                "same-family dependency "
+                f"{dependency_id!r} uploaded artifact state is unreadable "
+                f"or invalid: {exc}"
+            ),
+        )
+    artifact_ref = str(dependency["expected-batch-evidence-bundle-ref"])
+    artifact_name_value = artifact_physical_name(artifact_ref)
+    if not _ci_orchestrator_recorded_upload_matches_dependency(
+        dependency,
+        uploaded,
+        run_id=run_id,
+        run_attempt=run_attempt,
     ):
-        return None
-    return _ci_orchestrator_download_recorded_dependency(
+        return (
+            "failed",
+            None,
+            (
+                "same-family dependency "
+                f"{dependency_id!r} uploaded artifact state for "
+                f"{artifact_name_value} is inadmissible or stale"
+            ),
+        )
+    admission = _ci_orchestrator_download_recorded_dependency(
         dependency,
         recorded_upload=uploaded,
         repository=repository,
@@ -3054,6 +3633,17 @@ def _ci_orchestrator_same_family_dependency_admission(
         run_attempt=run_attempt,
         observed_root=observed_root,
     )
+    if admission is None:
+        return (
+            "failed",
+            None,
+            (
+                "failed to download or verify same-family dependency "
+                f"{dependency_id!r} artifact {artifact_name_value} from "
+                "uploaded artifact state"
+            ),
+        )
+    return "admitted", admission, None
 
 
 def _ci_orchestrator_cross_family_dependency_admission(
@@ -3063,9 +3653,53 @@ def _ci_orchestrator_cross_family_dependency_admission(
     run_id: str,
     run_attempt: str,
     observed_root: Path,
-) -> Json | None:
+) -> _CiOrchestratorDependencyAdmission:
+    admission_status, artifact_api, admission_detail = (
+        _ci_orchestrator_cross_family_dependency_artifact_api(
+            dependency,
+            repository=repository,
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+    )
+    if admission_status != "admitted" or artifact_api is None:
+        return admission_status, None, admission_detail
+    artifact_ref = str(dependency["expected-batch-evidence-bundle-ref"])
+    artifact_name_value = artifact_physical_name(artifact_ref)
+    admission = _ci_orchestrator_download_admitted_dependency(
+        dependency,
+        repository=repository,
+        run_id=run_id,
+        run_attempt=run_attempt,
+        observed_root=observed_root,
+        artifact_api=artifact_api,
+        source=_CI_ORCHESTRATOR_LIVE_CROSS_FAMILY_ADMISSION_SOURCE,
+    )
+    if admission is None:
+        return (
+            "failed",
+            None,
+            (
+                "failed to download or verify cross-family dependency "
+                f"{dependency['batch-id']!r} artifact {artifact_name_value}"
+            ),
+        )
+    return "admitted", admission, None
+
+
+def _ci_orchestrator_cross_family_dependency_artifact_api(
+    dependency: Mapping[str, object],
+    *,
+    repository: str,
+    run_id: str,
+    run_attempt: str,
+) -> tuple[
+    _CiOrchestratorDependencyAdmissionStatus,
+    Mapping[str, object] | None,
+    str | None,
+]:
     if not repository:
-        return None
+        return "failed", None, "repository is required"
     artifact_ref = str(dependency["expected-batch-evidence-bundle-ref"])
     artifact_name_value = artifact_physical_name(artifact_ref)
     try:
@@ -3075,11 +3709,22 @@ def _ci_orchestrator_cross_family_dependency_admission(
             run_attempt=run_attempt,
             prefixed_artifact_cap=_CI_VALIDATION_LIVE_NAMESPACE_ARTIFACT_CAP,
         )
-    except (RuntimeError, TypeError, ValueError):
-        return None
+    except (RuntimeError, TypeError, ValueError) as exc:
+        return (
+            "failed",
+            None,
+            (
+                "failed to enumerate live artifacts for cross-family "
+                f"dependency {dependency['batch-id']!r} "
+                f"({artifact_name_value}): {exc}"
+            ),
+        )
+    candidate_artifacts = artifact_api_by_name.get(artifact_name_value, [])
+    if not candidate_artifacts:
+        return "pending", None, None
     matches = [
         artifact_api
-        for artifact_api in artifact_api_by_name.get(artifact_name_value, [])
+        for artifact_api in candidate_artifacts
         if _ci_live_artifact_matches_expected(
             artifact_api,
             artifact_id=str(artifact_api.get("id", "")),
@@ -3089,16 +3734,17 @@ def _ci_orchestrator_cross_family_dependency_admission(
         )
     ]
     if len(matches) != 1:
-        return None
-    return _ci_orchestrator_download_admitted_dependency(
-        dependency,
-        repository=repository,
-        run_id=run_id,
-        run_attempt=run_attempt,
-        observed_root=observed_root,
-        artifact_api=matches[0],
-        source=_CI_ORCHESTRATOR_LIVE_CROSS_FAMILY_ADMISSION_SOURCE,
-    )
+        return (
+            "failed",
+            None,
+            (
+                "expected exactly one live artifact for cross-family "
+                f"dependency {dependency['batch-id']!r} named "
+                f"{artifact_name_value}, found {len(matches)} matching "
+                f"artifact(s) among {len(candidate_artifacts)} candidate(s)"
+            ),
+        )
+    return "admitted", matches[0], None
 
 
 def _ci_orchestrator_download_recorded_dependency(
@@ -3207,6 +3853,11 @@ def _ci_orchestrator_download_admitted_dependency(
     artifact_ref = str(dependency["expected-batch-evidence-bundle-ref"])
     artifact_name_value = artifact_physical_name(artifact_ref)
     destination = observed_root / artifact_name_value
+    staging = _ci_orchestrator_dependency_staging_path(
+        observed_root,
+        artifact_name_value=artifact_name_value,
+        artifact_api=artifact_api,
+    )
     admission = _ci_dependency_artifact_admission(
         artifact_ref=artifact_ref,
         artifact_name_value=artifact_name_value,
@@ -3216,16 +3867,16 @@ def _ci_orchestrator_download_admitted_dependency(
         source=source,
     )
     try:
-        if destination.exists():
-            shutil.rmtree(destination)
+        if staging.exists():
+            shutil.rmtree(staging)
         _download_artifact_by_id(
             repository,
             artifact_api,
             artifact_name_value,
-            destination,
+            staging,
         )
         _materialize_ci_observed_artifact_metadata(
-            destination,
+            staging,
             artifact_name_value=artifact_name_value,
             artifact_api=artifact_api,
             run_id=run_id,
@@ -3234,13 +3885,32 @@ def _ci_orchestrator_download_admitted_dependency(
             admission_source=source,
         )
     except (OSError, RuntimeError, TypeError, ValueError):
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
         return None
     if not _ci_dependency_artifact_metadata_matches_admission(
-        destination / "artifact-metadata.json",
+        staging / "artifact-metadata.json",
         admission,
     ):
+        shutil.rmtree(staging, ignore_errors=True)
         return None
+    if destination.exists():
+        shutil.rmtree(destination)
+    shutil.move(str(staging), str(destination))
     return admission
+
+
+def _ci_orchestrator_dependency_staging_path(
+    observed_root: Path,
+    *,
+    artifact_name_value: str,
+    artifact_api: Mapping[str, object],
+) -> Path:
+    artifact_id = str(artifact_api.get("id", ""))
+    staging_key = hashlib.sha256(
+        f"{artifact_name_value}\0{artifact_id}".encode(),
+    ).hexdigest()[:24]
+    return observed_root / f".admission-staging-{staging_key}"
 
 
 def _ci_dependency_artifact_admission(

@@ -646,6 +646,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.pytest-workflow-release-control/
 cover/
 
 # Translations

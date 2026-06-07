@@ -2164,6 +2164,74 @@
           },
           {
             "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_runner_family_orchestrator_waits_for_cross_family_ready_batch"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_waits_for_downstream_same_family_chain"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_defers_ready_candidate_download_until_scan_finishes"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_later_terminal_blocker_prevents_ready_download"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_selected_batch_admission_rolls_back_on_later_failure"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_selected_batch_admission_materializes_dependencies"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_cross_family_duplicate_artifact_does_not_sleep"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_cross_family_terminal_failure_reports_detail"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_same_family_inadmissible_upload_does_not_sleep"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_later_same_family_stale_live_state_preempts_ready"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_rejects_nonfinite_dependency_wait_timeout"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_rejects_nonfinite_dependency_poll_interval"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_rejects_nonpositive_dependency_poll_interval"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_ran_without_upload_does_not_sleep"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_mixed_terminal_and_waitable_blockers_do_not_sleep"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_terminal_blocker_preempts_later_ready_batch"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_later_terminal_blocker_preempts_ready_batch"
+          },
+          {
+            "type": "test",
             "value": "tests/test_workflow_release_control.py::test_ci_orchestrator_upload_record_writes_local_artifact_id_state"
           },
           {

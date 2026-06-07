@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import math
 import shlex
 import shutil
 import subprocess
@@ -1267,6 +1268,8 @@ def test_acceptance_matrix_test_nodeids_are_collected_by_gate() -> None:
         "test_final_uploaded_byte_gate_recomputes_manifest_digest",
         "tests/test_workflow_release_control.py::"
         "test_ci_batch_aggregate_all_does_not_self_verify_unbound_manifest",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_orchestrator_wait_returns_promptly_when_all_batches_uploaded",
         "tests/test_workflow_release_control.py::"
         "test_entry_publish_sets_up_nuget_trusted_publishing",
         "tests/test_workflow_release_control.py::"
@@ -6220,6 +6223,219 @@ def test_ci_runner_family_orchestrator_downloads_cross_family_live_artifact(
     )
 
 
+def test_ci_orchestrator_selected_batch_admission_rolls_back_on_later_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Selected-batch admission leaves no earlier final artifacts on failure."""
+    batches: list[dict[str, object]] = [
+        {
+            "batch-id": "provider-a",
+            "runner-family": "windows",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/provider-a/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "provider-b",
+            "runner-family": "windows",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/provider-b/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "dependent",
+            "runner-family": "ubuntu",
+            "depends-on-batches": ["provider-a", "provider-b"],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/dependent/batch-evidence-bundle.json"
+            ),
+        },
+    ]
+    state_dir = SCRATCH / "orchestrator-selected-admission-rollback-state"
+    observed_root = (
+        SCRATCH / "orchestrator-selected-admission-rollback-observed"
+    )
+    shutil.rmtree(state_dir, ignore_errors=True)
+    shutil.rmtree(observed_root, ignore_errors=True)
+    provider_a_name = artifact_physical_name(
+        str(batches[0]["expected-batch-evidence-bundle-ref"])
+    )
+    provider_b_name = artifact_physical_name(
+        str(batches[1]["expected-batch-evidence-bundle-ref"])
+    )
+
+    def fake_api_multimap(
+        **_kwargs: object,
+    ) -> dict[str, list[Mapping[str, object]]]:
+        return {
+            provider_a_name: [
+                {
+                    "id": "artifact-a",
+                    "name": provider_a_name,
+                    "expired": False,
+                    "workflow_run": {"id": 1, "run_attempt": 1},
+                }
+            ],
+            provider_b_name: [
+                {
+                    "id": "artifact-b",
+                    "name": provider_b_name,
+                    "expired": False,
+                    "workflow_run": {"id": 1, "run_attempt": 1},
+                }
+            ],
+        }
+
+    def fake_download(
+        _repository: str,
+        artifact_api: Mapping[str, object],
+        artifact_name_value: str,
+        destination: Path,
+    ) -> None:
+        if artifact_api["id"] == "artifact-b":
+            message = "download failed"
+            raise RuntimeError(message)
+        assert artifact_name_value == provider_a_name
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / "batch-evidence-bundle.json").write_text(
+            '{"source":"provider-a"}',
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(
+        control,
+        "_ci_observed_artifact_api_multimap",
+        fake_api_multimap,
+    )
+    monkeypatch.setattr(control, "_download_artifact_by_id", fake_download)
+    admissions: dict[str, control.Json] = {}
+
+    assert not control._ci_orchestrator_dependencies_ready(
+        batches[2],
+        batches_by_id={str(batch["batch-id"]): batch for batch in batches},
+        repository="owner/repo",
+        run_id="1",
+        run_attempt="1",
+        state_dir=state_dir,
+        observed_root=observed_root,
+        dependency_admissions=admissions,
+    )
+
+    assert admissions == {}
+    assert not (observed_root / provider_a_name).exists()
+    assert not (observed_root / provider_b_name).exists()
+
+
+def test_ci_orchestrator_selected_batch_admission_materializes_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Successful selected-batch admission materializes every dependency."""
+    batches: list[dict[str, object]] = [
+        {
+            "batch-id": "provider-a",
+            "runner-family": "windows",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/provider-a/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "provider-b",
+            "runner-family": "windows",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/provider-b/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "dependent",
+            "runner-family": "ubuntu",
+            "depends-on-batches": ["provider-a", "provider-b"],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/dependent/batch-evidence-bundle.json"
+            ),
+        },
+    ]
+    state_dir = SCRATCH / "orchestrator-selected-admission-success-state"
+    observed_root = SCRATCH / "orchestrator-selected-admission-success-observed"
+    shutil.rmtree(state_dir, ignore_errors=True)
+    shutil.rmtree(observed_root, ignore_errors=True)
+    provider_names = {
+        str(batch["batch-id"]): artifact_physical_name(
+            str(batch["expected-batch-evidence-bundle-ref"])
+        )
+        for batch in batches[:2]
+    }
+
+    def fake_api_multimap(
+        **_kwargs: object,
+    ) -> dict[str, list[Mapping[str, object]]]:
+        return {
+            name: [
+                {
+                    "id": f"artifact-{batch_id}",
+                    "name": name,
+                    "expired": False,
+                    "workflow_run": {"id": 1, "run_attempt": 1},
+                }
+            ]
+            for batch_id, name in provider_names.items()
+        }
+
+    def fake_download(
+        _repository: str,
+        artifact_api: Mapping[str, object],
+        artifact_name_value: str,
+        destination: Path,
+    ) -> None:
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / "batch-evidence-bundle.json").write_text(
+            json.dumps(
+                {
+                    "artifact-id": artifact_api["id"],
+                    "artifact-name": artifact_name_value,
+                },
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(
+        control,
+        "_ci_observed_artifact_api_multimap",
+        fake_api_multimap,
+    )
+    monkeypatch.setattr(control, "_download_artifact_by_id", fake_download)
+    admissions: dict[str, control.Json] = {}
+
+    assert control._ci_orchestrator_dependencies_ready(
+        batches[2],
+        batches_by_id={str(batch["batch-id"]): batch for batch in batches},
+        repository="owner/repo",
+        run_id="1",
+        run_attempt="1",
+        state_dir=state_dir,
+        observed_root=observed_root,
+        dependency_admissions=admissions,
+    )
+
+    assert set(admissions) == set(provider_names.values())
+    for batch_id, artifact_name_value in provider_names.items():
+        bundle_path = (
+            observed_root / artifact_name_value / ("batch-evidence-bundle.json")
+        )
+        assert json.loads(bundle_path.read_text(encoding="utf-8")) == {
+            "artifact-id": f"artifact-{batch_id}",
+            "artifact-name": artifact_name_value,
+        }
+
+
 def test_ci_dependency_admission_trusts_cross_family_source() -> None:
     """Cross-family orchestrator admissions are internal trusted transfers."""
     control._ci_verify_dependency_admission_source(
@@ -6308,6 +6524,1278 @@ def test_ci_runner_family_orchestrator_selects_later_ready_batch() -> None:
     assert ready is not None
     assert ready["batch-id"] == "ready-ubuntu"
     assert waiting == ["blocked-ubuntu"]
+
+
+def test_ci_runner_family_orchestrator_waits_for_cross_family_ready_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A family with only cross-family-blocked batches waits."""
+    batches: list[dict[str, object]] = [
+        {
+            "batch-id": "windows-provider",
+            "runner-family": "windows",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/windows-provider/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "macos-dependent",
+            "runner-family": "macos",
+            "depends-on-batches": ["windows-provider"],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/macos-dependent/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+    ]
+    state_dir = SCRATCH / "orchestrator-cross-family-wait-state"
+    observed_root = SCRATCH / "orchestrator-cross-family-wait-observed"
+    shutil.rmtree(state_dir, ignore_errors=True)
+    shutil.rmtree(observed_root, ignore_errors=True)
+    upstream_ref = cast("str", batches[0]["expected-batch-evidence-bundle-ref"])
+    upstream_name = artifact_physical_name(upstream_ref)
+    artifact_visible = False
+    sleeps: list[float] = []
+
+    def fake_api_multimap(
+        **_kwargs: object,
+    ) -> dict[str, list[Mapping[str, object]]]:
+        if not artifact_visible:
+            return {}
+        return {
+            upstream_name: [
+                {
+                    "id": "9100",
+                    "name": upstream_name,
+                    "expired": False,
+                    "workflow_run": {"id": 1},
+                }
+            ]
+        }
+
+    def fake_sleep(seconds: float) -> None:
+        nonlocal artifact_visible
+        sleeps.append(seconds)
+        artifact_visible = True
+
+    def fake_download(
+        _repository: str,
+        _artifact_api: Mapping[str, object],
+        artifact_name_value: str,
+        destination: Path,
+    ) -> None:
+        assert artifact_name_value == upstream_name
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / "batch-evidence-bundle.json").write_text(
+            '{"source":"cross-family-live"}',
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(
+        control,
+        "_ci_observed_artifact_api_multimap",
+        fake_api_multimap,
+    )
+    monkeypatch.setattr(control, "_download_artifact_by_id", fake_download)
+    monkeypatch.setattr(control.time, "sleep", fake_sleep)
+    admissions: dict[str, control.Json] = {}
+
+    ready, waiting = control._ci_orchestrator_select_ready_batch_with_wait(
+        [batches[1]],
+        batches_by_id={str(batch["batch-id"]): batch for batch in batches},
+        repository="owner/repo",
+        run_id="1",
+        run_attempt="1",
+        state_dir=state_dir,
+        observed_root=observed_root,
+        dependency_admissions=admissions,
+        wait_timeout_seconds=30,
+        poll_interval_seconds=15,
+    )
+
+    assert ready is not None
+    assert ready["batch-id"] == "macos-dependent"
+    assert waiting == []
+    assert sleeps == [15]
+    assert admissions[upstream_name]["artifact-instance-id"] == "9100"
+    assert (
+        observed_root / upstream_name / "batch-evidence-bundle.json"
+    ).is_file()
+
+
+def test_ci_orchestrator_waits_for_downstream_same_family_chain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Downstream same-family batches inherit waitable cross-family blockers."""
+    batches: list[dict[str, object]] = [
+        {
+            "batch-id": "windows-provider",
+            "runner-family": "windows",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/windows-provider/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "ubuntu-provider",
+            "runner-family": "ubuntu",
+            "depends-on-batches": ["windows-provider"],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/ubuntu-provider/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "ubuntu-dependent",
+            "runner-family": "ubuntu",
+            "depends-on-batches": ["ubuntu-provider"],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/ubuntu-dependent/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+    ]
+    state_dir = SCRATCH / "orchestrator-same-family-chain-state"
+    observed_root = SCRATCH / "orchestrator-same-family-chain-observed"
+    shutil.rmtree(state_dir, ignore_errors=True)
+    shutil.rmtree(observed_root, ignore_errors=True)
+    upstream_ref = cast("str", batches[0]["expected-batch-evidence-bundle-ref"])
+    upstream_name = artifact_physical_name(upstream_ref)
+    artifact_visible = False
+    sleeps: list[float] = []
+
+    def fake_api_multimap(
+        **_kwargs: object,
+    ) -> dict[str, list[Mapping[str, object]]]:
+        if not artifact_visible:
+            return {}
+        return {
+            upstream_name: [
+                {
+                    "id": "9100",
+                    "name": upstream_name,
+                    "expired": False,
+                    "workflow_run": {"id": 1},
+                },
+            ],
+        }
+
+    def fake_sleep(seconds: float) -> None:
+        nonlocal artifact_visible
+        sleeps.append(seconds)
+        artifact_visible = True
+
+    def fake_download(
+        _repository: str,
+        artifact_api: Mapping[str, object],
+        artifact_name_value: str,
+        destination: Path,
+    ) -> None:
+        assert str(artifact_api["id"]) == "9100"
+        assert artifact_name_value == upstream_name
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / "batch-evidence-bundle.json").write_text(
+            '{"source":"cross-family-live"}',
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(
+        control,
+        "_ci_observed_artifact_api_multimap",
+        fake_api_multimap,
+    )
+    monkeypatch.setattr(control, "_download_artifact_by_id", fake_download)
+    monkeypatch.setattr(control.time, "sleep", fake_sleep)
+    admissions: dict[str, control.Json] = {}
+
+    ready, waiting = control._ci_orchestrator_select_ready_batch_with_wait(
+        [batches[1], batches[2]],
+        batches_by_id={str(batch["batch-id"]): batch for batch in batches},
+        repository="owner/repo",
+        run_id="1",
+        run_attempt="1",
+        state_dir=state_dir,
+        observed_root=observed_root,
+        dependency_admissions=admissions,
+        wait_timeout_seconds=30,
+        poll_interval_seconds=15,
+    )
+
+    assert ready is not None
+    assert ready["batch-id"] == "ubuntu-provider"
+    assert waiting == []
+    assert sleeps == [15]
+    assert admissions[upstream_name]["artifact-instance-id"] == "9100"
+
+
+def test_ci_orchestrator_defers_ready_candidate_download_until_scan_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Later candidates are scanned before the selected dependency admits."""
+    batches: list[dict[str, object]] = [
+        {
+            "batch-id": "windows-provider-a",
+            "runner-family": "windows",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/windows-provider-a/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "windows-provider-b",
+            "runner-family": "windows",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/windows-provider-b/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "ubuntu-dependent-a",
+            "runner-family": "ubuntu",
+            "depends-on-batches": ["windows-provider-a"],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/ubuntu-dependent-a/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "ubuntu-dependent-b",
+            "runner-family": "ubuntu",
+            "depends-on-batches": ["windows-provider-b"],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/ubuntu-dependent-b/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+    ]
+    state_dir = SCRATCH / "orchestrator-deferred-scan-state"
+    observed_root = SCRATCH / "orchestrator-deferred-scan-observed"
+    shutil.rmtree(state_dir, ignore_errors=True)
+    shutil.rmtree(observed_root, ignore_errors=True)
+    upstream_a_ref = str(batches[0]["expected-batch-evidence-bundle-ref"])
+    upstream_b_ref = str(batches[1]["expected-batch-evidence-bundle-ref"])
+    upstream_a_name = artifact_physical_name(upstream_a_ref)
+    upstream_b_name = artifact_physical_name(upstream_b_ref)
+    api_calls = 0
+    later_candidate_scanned = False
+    downloads: list[str] = []
+
+    def fake_api_multimap(
+        **_kwargs: object,
+    ) -> dict[str, list[Mapping[str, object]]]:
+        nonlocal api_calls, later_candidate_scanned
+        api_calls += 1
+        if api_calls == 2:
+            later_candidate_scanned = True
+        return {
+            upstream_a_name: [
+                {
+                    "id": "9100",
+                    "name": upstream_a_name,
+                    "expired": False,
+                    "workflow_run": {"id": 1},
+                }
+            ],
+            upstream_b_name: [
+                {
+                    "id": "9200",
+                    "name": upstream_b_name,
+                    "expired": False,
+                    "workflow_run": {"id": 1},
+                }
+            ],
+        }
+
+    def fake_download(
+        _repository: str,
+        artifact_api: Mapping[str, object],
+        artifact_name_value: str,
+        destination: Path,
+    ) -> None:
+        assert later_candidate_scanned
+        downloads.append(str(artifact_api["id"]))
+        assert artifact_name_value == upstream_a_name
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / "batch-evidence-bundle.json").write_text(
+            '{"source":"selected-after-scan"}',
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(
+        control,
+        "_ci_observed_artifact_api_multimap",
+        fake_api_multimap,
+    )
+    monkeypatch.setattr(control, "_download_artifact_by_id", fake_download)
+    admissions: dict[str, control.Json] = {}
+
+    ready, waiting = control._ci_orchestrator_select_ready_batch_with_wait(
+        [batches[2], batches[3]],
+        batches_by_id={str(batch["batch-id"]): batch for batch in batches},
+        repository="owner/repo",
+        run_id="1",
+        run_attempt="1",
+        state_dir=state_dir,
+        observed_root=observed_root,
+        dependency_admissions=admissions,
+        wait_timeout_seconds=0,
+        poll_interval_seconds=15,
+    )
+
+    assert ready is not None
+    assert ready["batch-id"] == "ubuntu-dependent-a"
+    assert waiting == []
+    assert downloads == ["9100"]
+    assert upstream_a_name in admissions
+    assert (
+        observed_root / upstream_a_name / "batch-evidence-bundle.json"
+    ).is_file()
+    assert not (observed_root / upstream_b_name).exists()
+
+
+def test_ci_orchestrator_later_terminal_blocker_prevents_ready_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A later terminal blocker aborts without materializing ready artifacts."""
+    batches: list[dict[str, object]] = [
+        {
+            "batch-id": "windows-provider-a",
+            "runner-family": "windows",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/windows-provider-a/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "windows-provider-b",
+            "runner-family": "windows",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/windows-provider-b/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "ubuntu-dependent-a",
+            "runner-family": "ubuntu",
+            "depends-on-batches": ["windows-provider-a"],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/ubuntu-dependent-a/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "ubuntu-dependent-b",
+            "runner-family": "ubuntu",
+            "depends-on-batches": ["windows-provider-b"],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/ubuntu-dependent-b/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+    ]
+    state_dir = SCRATCH / "orchestrator-terminal-after-ready-state"
+    observed_root = SCRATCH / "orchestrator-terminal-after-ready-observed"
+    shutil.rmtree(state_dir, ignore_errors=True)
+    shutil.rmtree(observed_root, ignore_errors=True)
+    upstream_a_ref = str(batches[0]["expected-batch-evidence-bundle-ref"])
+    upstream_b_ref = str(batches[1]["expected-batch-evidence-bundle-ref"])
+    upstream_a_name = artifact_physical_name(upstream_a_ref)
+    upstream_b_name = artifact_physical_name(upstream_b_ref)
+
+    def fake_api_multimap(
+        **_kwargs: object,
+    ) -> dict[str, list[Mapping[str, object]]]:
+        return {
+            upstream_a_name: [
+                {
+                    "id": "9100",
+                    "name": upstream_a_name,
+                    "expired": False,
+                    "workflow_run": {"id": 1},
+                }
+            ],
+            upstream_b_name: [
+                {
+                    "id": "9200",
+                    "name": upstream_b_name,
+                    "expired": False,
+                    "workflow_run": {"id": 1},
+                },
+                {
+                    "id": "9201",
+                    "name": upstream_b_name,
+                    "expired": False,
+                    "workflow_run": {"id": 1},
+                },
+            ],
+        }
+
+    def fail_if_download_called(
+        _repository: str,
+        _artifact_api: Mapping[str, object],
+        _artifact_name_value: str,
+        _destination: Path,
+    ) -> None:
+        message = "_download_artifact_by_id must not be called"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(
+        control,
+        "_ci_observed_artifact_api_multimap",
+        fake_api_multimap,
+    )
+    monkeypatch.setattr(
+        control,
+        "_download_artifact_by_id",
+        fail_if_download_called,
+    )
+    admissions: dict[str, control.Json] = {}
+    terminal_blockers: dict[str, str] = {}
+
+    ready, waiting = control._ci_orchestrator_select_ready_batch_with_wait(
+        [batches[2], batches[3]],
+        batches_by_id={str(batch["batch-id"]): batch for batch in batches},
+        repository="owner/repo",
+        run_id="1",
+        run_attempt="1",
+        state_dir=state_dir,
+        observed_root=observed_root,
+        dependency_admissions=admissions,
+        terminal_blockers=terminal_blockers,
+        wait_timeout_seconds=0,
+        poll_interval_seconds=15,
+    )
+
+    assert ready is None
+    assert waiting == ["ubuntu-dependent-b"]
+    assert admissions == {}
+    assert "ubuntu-dependent-b" in terminal_blockers
+    assert (
+        "expected exactly one live artifact"
+        in terminal_blockers["ubuntu-dependent-b"]
+    )
+    assert not (observed_root / upstream_a_name).exists()
+    assert not (observed_root / upstream_b_name).exists()
+
+
+def test_ci_orchestrator_cross_family_duplicate_artifact_does_not_sleep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Terminal cross-family admission failures fail closed without polling."""
+    batches: list[dict[str, object]] = [
+        {
+            "batch-id": "windows-provider",
+            "runner-family": "windows",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/windows-provider/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "ubuntu-dependent",
+            "runner-family": "ubuntu",
+            "depends-on-batches": ["windows-provider"],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/ubuntu-dependent/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+    ]
+    state_dir = SCRATCH / "orchestrator-cross-family-duplicate-state"
+    observed_root = SCRATCH / "orchestrator-cross-family-duplicate-observed"
+    shutil.rmtree(state_dir, ignore_errors=True)
+    shutil.rmtree(observed_root, ignore_errors=True)
+    upstream_ref = cast("str", batches[0]["expected-batch-evidence-bundle-ref"])
+    upstream_name = artifact_physical_name(upstream_ref)
+
+    def fake_api_multimap(
+        **_kwargs: object,
+    ) -> dict[str, list[Mapping[str, object]]]:
+        return {
+            upstream_name: [
+                {
+                    "id": "9100",
+                    "name": upstream_name,
+                    "expired": False,
+                    "workflow_run": {"id": 1},
+                },
+                {
+                    "id": "9101",
+                    "name": upstream_name,
+                    "expired": False,
+                    "workflow_run": {"id": 1},
+                },
+            ],
+        }
+
+    def fail_if_sleep_called(_seconds: float) -> None:
+        message = "time.sleep must not be called"
+        raise AssertionError(message)
+
+    def fail_if_download_called(
+        _repository: str,
+        _artifact_api: Mapping[str, object],
+        _artifact_name_value: str,
+        _destination: Path,
+    ) -> None:
+        message = "_download_artifact_by_id must not be called"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(
+        control,
+        "_ci_observed_artifact_api_multimap",
+        fake_api_multimap,
+    )
+    monkeypatch.setattr(
+        control,
+        "_download_artifact_by_id",
+        fail_if_download_called,
+    )
+    monkeypatch.setattr(control.time, "sleep", fail_if_sleep_called)
+    admissions: dict[str, control.Json] = {}
+
+    ready, waiting = control._ci_orchestrator_select_ready_batch_with_wait(
+        [batches[1]],
+        batches_by_id={str(batch["batch-id"]): batch for batch in batches},
+        repository="owner/repo",
+        run_id="1",
+        run_attempt="1",
+        state_dir=state_dir,
+        observed_root=observed_root,
+        dependency_admissions=admissions,
+        wait_timeout_seconds=1800,
+        poll_interval_seconds=15,
+    )
+
+    assert ready is None
+    assert waiting == ["ubuntu-dependent"]
+    assert admissions == {}
+    assert not (observed_root / upstream_name).exists()
+
+
+def test_ci_orchestrator_cross_family_terminal_failure_reports_detail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Terminal admission failures include dependency diagnostics in errors."""
+    batches: list[dict[str, object]] = [
+        {
+            "batch-id": "windows-provider",
+            "runner-family": "windows",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/windows-provider/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "ubuntu-dependent",
+            "runner-family": "ubuntu",
+            "depends-on-batches": ["windows-provider"],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/ubuntu-dependent/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+    ]
+    scratch = _ci_batch_bundle_scratch("orchestrator-terminal-detail")
+    manifest_path = scratch / "execution-batch-manifest.json"
+    manifest_path.write_text(json.dumps({"batches": batches}), encoding="utf-8")
+    upstream_ref = cast("str", batches[0]["expected-batch-evidence-bundle-ref"])
+    upstream_name = artifact_physical_name(upstream_ref)
+
+    def fake_api_multimap(
+        **_kwargs: object,
+    ) -> dict[str, list[Mapping[str, object]]]:
+        return {
+            upstream_name: [
+                {
+                    "id": "9100",
+                    "name": upstream_name,
+                    "expired": False,
+                    "workflow_run": {"id": 1},
+                },
+                {
+                    "id": "9101",
+                    "name": upstream_name,
+                    "expired": False,
+                    "workflow_run": {"id": 1},
+                },
+            ],
+        }
+
+    monkeypatch.setattr(
+        control,
+        "_ci_observed_artifact_api_multimap",
+        fake_api_multimap,
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        control._cmd_run_ci_validation_runner_family_orchestrator_step(
+            argparse.Namespace(
+                plan=str(scratch / "unused-plan.json"),
+                request=str(scratch / "unused-request.json"),
+                execution_batch_manifest=str(manifest_path),
+                changed_files_snapshot=str(scratch / "unused-changed.json"),
+                fact_snapshot=str(scratch / "unused-facts.json"),
+                runner_family="ubuntu",
+                repository="owner/repo",
+                workflow="CI Validation",
+                job="execution-batch-ubuntu-orchestrator",
+                expected_run_id="1",
+                expected_run_attempt="1",
+                observed_artifacts_dir=str(scratch / "observed-artifacts"),
+                state_dir=str(scratch / "state"),
+                work_dir=str(scratch / "work"),
+                slot_index="0",
+                observed_commit_sha=SHA_B,
+                repo_root=str(REPO_ROOT),
+                github_output="",
+                dependency_wait_timeout_seconds=1800,
+                dependency_poll_interval_seconds=15,
+            )
+        )
+
+    message = str(exc_info.value)
+    assert "terminal dependency blockers" in message
+    assert "ubuntu-dependent" in message
+    assert "windows-provider" in message
+    assert upstream_name in message
+    assert "expected exactly one live artifact" in message
+    assert "found 2 matching artifact(s)" in message
+
+
+def test_ci_orchestrator_same_family_inadmissible_upload_does_not_sleep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Existing inadmissible same-family upload state is terminal."""
+    batches: list[dict[str, object]] = [
+        {
+            "batch-id": "ubuntu-provider",
+            "runner-family": "ubuntu",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/ubuntu-provider/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "ubuntu-dependent",
+            "runner-family": "ubuntu",
+            "depends-on-batches": ["ubuntu-provider"],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/ubuntu-dependent/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+    ]
+    state_dir = SCRATCH / "orchestrator-same-family-bad-upload-state"
+    observed_root = SCRATCH / "orchestrator-same-family-bad-upload-observed"
+    shutil.rmtree(state_dir, ignore_errors=True)
+    shutil.rmtree(observed_root, ignore_errors=True)
+    upstream_ref = str(batches[0]["expected-batch-evidence-bundle-ref"])
+    upstream_name = artifact_physical_name(upstream_ref)
+    control._write_json(
+        control._ci_orchestrator_uploaded_state_path(
+            state_dir,
+            "ubuntu-provider",
+        ),
+        {
+            "batch-id": "ubuntu-provider",
+            "artifact-name": upstream_name,
+            "artifact-ref": upstream_ref,
+            "artifact-instance-id": "9100",
+            "run-id": "1",
+            "run-attempt": "1",
+            "producer-boundary": "execution-batch",
+            "admission-source": "github-actions-live-api",
+        },
+    )
+
+    def fail_if_sleep_called(_seconds: float) -> None:
+        message = "time.sleep must not be called"
+        raise AssertionError(message)
+
+    def fail_if_download_called(
+        _repository: str,
+        _artifact_api: Mapping[str, object],
+        _artifact_name_value: str,
+        _destination: Path,
+    ) -> None:
+        message = "_download_artifact_by_id must not be called"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(control.time, "sleep", fail_if_sleep_called)
+    monkeypatch.setattr(
+        control,
+        "_download_artifact_by_id",
+        fail_if_download_called,
+    )
+    terminal_blockers: dict[str, str] = {}
+
+    ready, waiting = control._ci_orchestrator_select_ready_batch_with_wait(
+        [batches[1]],
+        batches_by_id={str(batch["batch-id"]): batch for batch in batches},
+        repository="owner/repo",
+        run_id="1",
+        run_attempt="1",
+        state_dir=state_dir,
+        observed_root=observed_root,
+        dependency_admissions={},
+        terminal_blockers=terminal_blockers,
+        wait_timeout_seconds=1800,
+        poll_interval_seconds=15,
+    )
+
+    assert ready is None
+    assert waiting == ["ubuntu-dependent"]
+    assert terminal_blockers == {
+        "ubuntu-dependent": (
+            "same-family dependency 'ubuntu-provider' uploaded artifact "
+            f"state for {upstream_name} is inadmissible or stale"
+        ),
+    }
+    assert not (observed_root / upstream_name).exists()
+
+
+@pytest.mark.parametrize("timeout_seconds", [math.nan, math.inf, -math.inf])
+def test_ci_orchestrator_rejects_nonfinite_dependency_wait_timeout(
+    timeout_seconds: float,
+) -> None:
+    """Dependency wait timeout must be finite to preserve fail-closed bounds."""
+    with pytest.raises(ValueError, match="wait timeout seconds must be finite"):
+        control._ci_orchestrator_select_ready_batch_with_wait(
+            [],
+            batches_by_id={},
+            repository="owner/repo",
+            run_id="1",
+            run_attempt="1",
+            state_dir=SCRATCH / "orchestrator-nonfinite-timeout-state",
+            observed_root=SCRATCH / "orchestrator-nonfinite-timeout-observed",
+            dependency_admissions={},
+            wait_timeout_seconds=timeout_seconds,
+            poll_interval_seconds=15,
+        )
+
+
+@pytest.mark.parametrize(
+    "poll_interval_seconds",
+    [math.nan, math.inf, -math.inf],
+)
+def test_ci_orchestrator_rejects_nonfinite_dependency_poll_interval(
+    poll_interval_seconds: float,
+) -> None:
+    """Dependency poll interval must be finite when dependency waiting is on."""
+    with pytest.raises(
+        ValueError,
+        match="poll interval seconds must be finite",
+    ):
+        control._ci_orchestrator_select_ready_batch_with_wait(
+            [],
+            batches_by_id={},
+            repository="owner/repo",
+            run_id="1",
+            run_attempt="1",
+            state_dir=SCRATCH / "orchestrator-nonfinite-poll-state",
+            observed_root=SCRATCH / "orchestrator-nonfinite-poll-observed",
+            dependency_admissions={},
+            wait_timeout_seconds=30,
+            poll_interval_seconds=poll_interval_seconds,
+        )
+
+
+@pytest.mark.parametrize("poll_interval_seconds", [0, -1])
+def test_ci_orchestrator_rejects_nonpositive_dependency_poll_interval(
+    poll_interval_seconds: float,
+) -> None:
+    """Dependency poll interval must be positive with dependency waiting on."""
+    with pytest.raises(
+        ValueError,
+        match="poll interval seconds must be positive",
+    ):
+        control._ci_orchestrator_select_ready_batch_with_wait(
+            [],
+            batches_by_id={},
+            repository="owner/repo",
+            run_id="1",
+            run_attempt="1",
+            state_dir=SCRATCH / "orchestrator-nonpositive-poll-state",
+            observed_root=SCRATCH / "orchestrator-nonpositive-poll-observed",
+            dependency_admissions={},
+            wait_timeout_seconds=30,
+            poll_interval_seconds=poll_interval_seconds,
+        )
+
+
+def test_ci_orchestrator_ran_without_upload_does_not_sleep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ran batches without upload state are terminal local blockers."""
+    batch = {
+        "batch-id": "ran-ubuntu",
+        "runner-family": "ubuntu",
+        "depends-on-batches": [],
+        "expected-batch-evidence-bundle-ref": (
+            "ci-validation/batches/1/1/ran-ubuntu/batch-evidence-bundle.json"
+        ),
+    }
+    state_dir = SCRATCH / "orchestrator-ran-without-upload-state"
+    observed_root = SCRATCH / "orchestrator-ran-without-upload-observed"
+    shutil.rmtree(state_dir, ignore_errors=True)
+    shutil.rmtree(observed_root, ignore_errors=True)
+    control._write_json(
+        control._ci_orchestrator_ran_state_path(state_dir, "ran-ubuntu"),
+        {
+            "batch-id": "ran-ubuntu",
+            "artifact-name": artifact_physical_name(
+                str(batch["expected-batch-evidence-bundle-ref"])
+            ),
+            "artifact-ref": batch["expected-batch-evidence-bundle-ref"],
+            "upload-path": str(SCRATCH / "unused-upload"),
+        },
+    )
+
+    def fail_if_sleep_called(_seconds: float) -> None:
+        message = "time.sleep must not be called"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(control.time, "sleep", fail_if_sleep_called)
+
+    ready, waiting = control._ci_orchestrator_select_ready_batch_with_wait(
+        [batch],
+        batches_by_id={"ran-ubuntu": batch},
+        repository="owner/repo",
+        run_id="1",
+        run_attempt="1",
+        state_dir=state_dir,
+        observed_root=observed_root,
+        dependency_admissions={},
+        wait_timeout_seconds=1800,
+        poll_interval_seconds=15,
+    )
+
+    assert ready is None
+    assert waiting == ["ran-ubuntu"]
+
+
+def test_ci_orchestrator_mixed_terminal_and_waitable_blockers_do_not_sleep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Any terminal blocker makes a mixed waitable set return promptly."""
+    batches: list[dict[str, object]] = [
+        {
+            "batch-id": "windows-provider",
+            "runner-family": "windows",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/windows-provider/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "ran-ubuntu",
+            "runner-family": "ubuntu",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/ran-ubuntu/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "blocked-ubuntu",
+            "runner-family": "ubuntu",
+            "depends-on-batches": ["windows-provider"],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/blocked-ubuntu/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+    ]
+    state_dir = SCRATCH / "orchestrator-mixed-blockers-state"
+    observed_root = SCRATCH / "orchestrator-mixed-blockers-observed"
+    shutil.rmtree(state_dir, ignore_errors=True)
+    shutil.rmtree(observed_root, ignore_errors=True)
+    ran_batch = batches[1]
+    control._write_json(
+        control._ci_orchestrator_ran_state_path(state_dir, "ran-ubuntu"),
+        {
+            "batch-id": "ran-ubuntu",
+            "artifact-name": artifact_physical_name(
+                str(ran_batch["expected-batch-evidence-bundle-ref"])
+            ),
+            "artifact-ref": ran_batch["expected-batch-evidence-bundle-ref"],
+            "upload-path": str(SCRATCH / "unused-upload"),
+        },
+    )
+
+    def fake_api_multimap(
+        **_kwargs: object,
+    ) -> dict[str, list[Mapping[str, object]]]:
+        return {}
+
+    def fail_if_sleep_called(_seconds: float) -> None:
+        message = "time.sleep must not be called"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(
+        control,
+        "_ci_observed_artifact_api_multimap",
+        fake_api_multimap,
+    )
+    monkeypatch.setattr(control.time, "sleep", fail_if_sleep_called)
+
+    ready, waiting = control._ci_orchestrator_select_ready_batch_with_wait(
+        [batches[1], batches[2]],
+        batches_by_id={str(batch["batch-id"]): batch for batch in batches},
+        repository="owner/repo",
+        run_id="1",
+        run_attempt="1",
+        state_dir=state_dir,
+        observed_root=observed_root,
+        dependency_admissions={},
+        wait_timeout_seconds=1800,
+        poll_interval_seconds=15,
+    )
+
+    assert ready is None
+    assert waiting == ["ran-ubuntu", "blocked-ubuntu"]
+
+
+def test_ci_orchestrator_terminal_blocker_preempts_later_ready_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A terminal blocker prevents selecting later ready family work."""
+    batches: list[dict[str, object]] = [
+        {
+            "batch-id": "ran-ubuntu",
+            "runner-family": "ubuntu",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/ran-ubuntu/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "ready-ubuntu",
+            "runner-family": "ubuntu",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/ready-ubuntu/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+    ]
+    state_dir = SCRATCH / "orchestrator-terminal-preempts-ready-state"
+    observed_root = SCRATCH / "orchestrator-terminal-preempts-ready-observed"
+    shutil.rmtree(state_dir, ignore_errors=True)
+    shutil.rmtree(observed_root, ignore_errors=True)
+    ran_batch = batches[0]
+    control._write_json(
+        control._ci_orchestrator_ran_state_path(state_dir, "ran-ubuntu"),
+        {
+            "batch-id": "ran-ubuntu",
+            "artifact-name": artifact_physical_name(
+                str(ran_batch["expected-batch-evidence-bundle-ref"])
+            ),
+            "artifact-ref": ran_batch["expected-batch-evidence-bundle-ref"],
+            "upload-path": str(SCRATCH / "unused-upload"),
+        },
+    )
+
+    def fail_if_sleep_called(_seconds: float) -> None:
+        message = "time.sleep must not be called"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(control.time, "sleep", fail_if_sleep_called)
+    terminal_blockers: dict[str, str] = {}
+
+    ready, waiting = control._ci_orchestrator_select_ready_batch_with_wait(
+        batches,
+        batches_by_id={str(batch["batch-id"]): batch for batch in batches},
+        repository="owner/repo",
+        run_id="1",
+        run_attempt="1",
+        state_dir=state_dir,
+        observed_root=observed_root,
+        dependency_admissions={},
+        terminal_blockers=terminal_blockers,
+        wait_timeout_seconds=1800,
+        poll_interval_seconds=15,
+    )
+
+    assert ready is None
+    assert waiting == ["ran-ubuntu"]
+    assert terminal_blockers == {
+        "ran-ubuntu": (
+            "same-family batch has run state without uploaded artifact state"
+        ),
+    }
+
+
+def test_ci_orchestrator_later_terminal_blocker_preempts_ready_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The family scan detects terminal blockers after a ready candidate."""
+    batches: list[dict[str, object]] = [
+        {
+            "batch-id": "ready-ubuntu",
+            "runner-family": "ubuntu",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/ready-ubuntu/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "ran-ubuntu",
+            "runner-family": "ubuntu",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/ran-ubuntu/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+    ]
+    state_dir = SCRATCH / "orchestrator-later-terminal-preempts-ready-state"
+    observed_root = SCRATCH / (
+        "orchestrator-later-terminal-preempts-ready-observed"
+    )
+    shutil.rmtree(state_dir, ignore_errors=True)
+    shutil.rmtree(observed_root, ignore_errors=True)
+    ran_batch = batches[1]
+    control._write_json(
+        control._ci_orchestrator_ran_state_path(state_dir, "ran-ubuntu"),
+        {
+            "batch-id": "ran-ubuntu",
+            "artifact-name": artifact_physical_name(
+                str(ran_batch["expected-batch-evidence-bundle-ref"])
+            ),
+            "artifact-ref": ran_batch["expected-batch-evidence-bundle-ref"],
+            "upload-path": str(SCRATCH / "unused-upload"),
+        },
+    )
+
+    def fail_if_sleep_called(_seconds: float) -> None:
+        message = "time.sleep must not be called"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(control.time, "sleep", fail_if_sleep_called)
+    terminal_blockers: dict[str, str] = {}
+    admissions: dict[str, control.Json] = {}
+
+    ready, waiting = control._ci_orchestrator_select_ready_batch_with_wait(
+        batches,
+        batches_by_id={str(batch["batch-id"]): batch for batch in batches},
+        repository="owner/repo",
+        run_id="1",
+        run_attempt="1",
+        state_dir=state_dir,
+        observed_root=observed_root,
+        dependency_admissions=admissions,
+        terminal_blockers=terminal_blockers,
+        wait_timeout_seconds=1800,
+        poll_interval_seconds=15,
+    )
+
+    assert ready is None
+    assert waiting == ["ran-ubuntu"]
+    assert admissions == {}
+    assert terminal_blockers == {
+        "ran-ubuntu": (
+            "same-family batch has run state without uploaded artifact state"
+        ),
+    }
+
+
+def test_ci_orchestrator_later_same_family_stale_live_state_preempts_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Full-family scan live-validates later same-family uploaded state."""
+    batches: list[dict[str, object]] = [
+        {
+            "batch-id": "provider",
+            "runner-family": "ubuntu",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/provider/batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "ready-ubuntu",
+            "runner-family": "ubuntu",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/ready-ubuntu/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "blocked-ubuntu",
+            "runner-family": "ubuntu",
+            "depends-on-batches": ["provider"],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/blocked-ubuntu/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+    ]
+    state_dir = SCRATCH / "orchestrator-later-stale-same-family-state"
+    observed_root = SCRATCH / "orchestrator-later-stale-same-family-observed"
+    shutil.rmtree(state_dir, ignore_errors=True)
+    shutil.rmtree(observed_root, ignore_errors=True)
+    provider_ref = str(batches[0]["expected-batch-evidence-bundle-ref"])
+    provider_name = artifact_physical_name(provider_ref)
+    control._write_json(
+        control._ci_orchestrator_uploaded_state_path(state_dir, "provider"),
+        {
+            "batch-id": "provider",
+            "artifact-name": provider_name,
+            "artifact-ref": provider_ref,
+            "artifact-instance-id": "stale-artifact-id",
+            "run-id": "1",
+            "run-attempt": "1",
+            "producer-boundary": "execution-batch",
+            "admission-source": (
+                control._CI_ORCHESTRATOR_STATE_ADMISSION_SOURCE
+            ),
+        },
+    )
+
+    def fake_live_by_id(**kwargs: object) -> Mapping[str, object] | None:
+        assert kwargs["artifact_id"] == "stale-artifact-id"
+        return {
+            "id": "stale-artifact-id",
+            "name": f"{provider_name}-wrong",
+            "expired": False,
+            "workflow_run": {"id": 1, "run_attempt": 1},
+        }
+
+    def fail_if_download_called(*_args: object, **_kwargs: object) -> None:
+        message = "full-family scan must not download artifacts"
+        raise AssertionError(message)
+
+    def fail_if_sleep_called(_seconds: float) -> None:
+        message = "terminal stale state must not sleep"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(
+        control,
+        "_ci_live_artifact_api_instance_by_id",
+        fake_live_by_id,
+    )
+    monkeypatch.setattr(
+        control,
+        "_download_artifact_by_id",
+        fail_if_download_called,
+    )
+    monkeypatch.setattr(control.time, "sleep", fail_if_sleep_called)
+    terminal_blockers: dict[str, str] = {}
+    admissions: dict[str, control.Json] = {}
+
+    ready, waiting = control._ci_orchestrator_select_ready_batch_with_wait(
+        [batches[1], batches[2]],
+        batches_by_id={str(batch["batch-id"]): batch for batch in batches},
+        repository="owner/repo",
+        run_id="1",
+        run_attempt="1",
+        state_dir=state_dir,
+        observed_root=observed_root,
+        dependency_admissions=admissions,
+        terminal_blockers=terminal_blockers,
+        wait_timeout_seconds=1800,
+        poll_interval_seconds=15,
+    )
+
+    assert ready is None
+    assert waiting == ["blocked-ubuntu"]
+    assert admissions == {}
+    assert terminal_blockers == {
+        "blocked-ubuntu": (
+            "same-family dependency 'provider' uploaded artifact state for "
+            f"{provider_name} does not match a live artifact"
+        ),
+    }
+    assert not observed_root.exists()
+
+
+def test_ci_orchestrator_wait_returns_promptly_when_all_batches_uploaded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Positive dependency wait exits when no family work remains."""
+    batches: list[dict[str, object]] = [
+        {
+            "batch-id": "uploaded-ubuntu-a",
+            "runner-family": "ubuntu",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/uploaded-ubuntu-a/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+        {
+            "batch-id": "uploaded-ubuntu-b",
+            "runner-family": "ubuntu",
+            "depends-on-batches": [],
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/uploaded-ubuntu-b/"
+                "batch-evidence-bundle.json"
+            ),
+        },
+    ]
+    state_dir = SCRATCH / "orchestrator-wait-all-uploaded-state"
+    observed_root = SCRATCH / "orchestrator-wait-all-uploaded-observed"
+    shutil.rmtree(state_dir, ignore_errors=True)
+    shutil.rmtree(observed_root, ignore_errors=True)
+    for batch in batches:
+        batch_id = str(batch["batch-id"])
+        artifact_ref = str(batch["expected-batch-evidence-bundle-ref"])
+        control._write_json(
+            control._ci_orchestrator_uploaded_state_path(
+                state_dir,
+                batch_id,
+            ),
+            {
+                "batch-id": batch_id,
+                "artifact-name": artifact_physical_name(artifact_ref),
+                "artifact-ref": artifact_ref,
+                "artifact-instance-id": f"artifact-{batch_id}",
+                "run-id": "1",
+                "run-attempt": "1",
+                "producer-boundary": "execution-batch",
+                "admission-source": "local-runner-family-orchestrator-state",
+            },
+        )
+
+    def fail_if_sleep_called(_seconds: float) -> None:
+        message = "time.sleep must not be called"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(control.time, "sleep", fail_if_sleep_called)
+    admissions: dict[str, control.Json] = {}
+
+    ready, waiting = control._ci_orchestrator_select_ready_batch_with_wait(
+        batches,
+        batches_by_id={str(batch["batch-id"]): batch for batch in batches},
+        repository="owner/repo",
+        run_id="1",
+        run_attempt="1",
+        state_dir=state_dir,
+        observed_root=observed_root,
+        dependency_admissions=admissions,
+        wait_timeout_seconds=30,
+        poll_interval_seconds=15,
+    )
+
+    assert ready is None
+    assert waiting == []
+    assert admissions == {}
 
 
 def test_ci_orchestrator_matrix_row_includes_identity_matrix() -> None:
