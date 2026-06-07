@@ -2,7 +2,7 @@
 Description=Run Cloudflare DDNS updater periodically
 
 [Timer]
-OnBootSec=5m
+OnActiveSec=5m
 OnUnitActiveSec=1h
 Persistent=true
 Unit=cf-ddns-updater.service
