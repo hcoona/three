@@ -54,6 +54,8 @@ MANDATORY_TEST_NODEIDS = (
     "tests/test_workflow_release_control.py::"
     "test_ci_validation_workflow_passes_explicit_producer_verified_value",
     "tests/test_workflow_release_control.py::"
+    "test_ci_validation_orchestrator_slots_stop_after_completion",
+    "tests/test_workflow_release_control.py::"
     "test_ci_batch_summary_preserves_unverified_for_unbound_manifest",
     "tests/test_workflow_release_control.py::"
     "test_ci_batch_summary_missing_manifest_artifact_id_clears_authority",

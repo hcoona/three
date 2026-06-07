@@ -5751,6 +5751,32 @@ def test_ci_validation_orchestrators_use_internal_dependency_state() -> None:
         assert "batch-evidence-bundle.json" not in record_run
 
 
+def test_ci_validation_orchestrator_slots_stop_after_completion() -> None:
+    """Runner-family orchestrators skip slots after the first empty slot."""
+    workflow = yaml.safe_load(_workflow("ci.yml"))
+
+    for family in ("ubuntu", "windows", "macos"):
+        steps = workflow["jobs"][f"execution-batch-{family}-orchestrator"][
+            "steps"
+        ]
+        run_steps = [
+            step
+            for step in steps
+            if str(step.get("name", "")).startswith(
+                f"Run {family} orchestrator slot "
+            )
+        ]
+
+        assert len(run_steps) == 13
+        assert "if" not in run_steps[0]
+        for index, step in enumerate(run_steps[1:], start=1):
+            assert step["if"] == (
+                "${{ "
+                f"steps.run-slot-{index - 1:02d}.outputs.batch_selected "
+                "== 'true' }}"
+            )
+
+
 def test_ci_runner_family_outputs_bind_dependency_paths() -> None:
     """Runner-family rows carry exact dependency artifact names and paths."""
     plan = cast("dict[str, object]", batch_contracts.plan())
