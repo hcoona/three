@@ -1,6 +1,0 @@
-import "@hk/Config.pkl"
-
-commitlint = new Config.Step {
-  prefix = "pnpm exec --"
-  check = "commitlint --strict --edit"
-}

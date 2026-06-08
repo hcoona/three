@@ -1,9 +1,0 @@
-import "@hk/Config.pkl"
-
-csharpier = new Config.Step {
-  batch = true
-  check = "csharpier check {{files}}"
-  fix = "csharpier format {{files}}"
-  glob = List("*.cs")
-  stage = List("*.cs")
-}

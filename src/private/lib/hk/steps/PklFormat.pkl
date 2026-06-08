@@ -1,9 +1,0 @@
-import "@hk/Config.pkl"
-
-pkl_format = new Config.Step {
-  batch = true
-  check = "python eng/scripts/hk_exec.py pkl format --silent -- {{files}}"
-  fix = "python eng/scripts/hk_exec.py pkl format --silent --write -- {{files}}"
-  glob = "*.pkl"
-  stage = "*.pkl"
-}

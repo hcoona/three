@@ -1,9 +1,0 @@
-import "@hk/Config.pkl"
-
-uv_lock = new Config.Step {
-  batch = true
-  glob = List("**/pyproject.toml", "uv.lock")
-  stage = List("**/pyproject.toml", "uv.lock")
-  check = "uv lock --check"
-  fix = "uv lock"
-}

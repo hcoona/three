@@ -1,9 +1,0 @@
-import "@hk/Config.pkl"
-
-markdownlint_cli2 = new Config.Step {
-  batch = true
-  glob = "*.md"
-  stage = "*.md"
-  check = "markdownlint-cli2 {{files}}"
-  fix = "markdownlint-cli2 --fix {{files}}"
-}
