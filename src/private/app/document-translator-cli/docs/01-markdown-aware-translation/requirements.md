@@ -163,12 +163,13 @@ inline patterns are found outside those excluded regions:
    `^\s*</?[A-Z][A-Za-z0-9.:-]*(\s|/?>)`.
 3. MDX expression: inline text that matches
    `\{[A-Za-z_$][A-Za-z0-9_$]*(?:[.()[\]\w\s+\-*/?:'"]*)?\}`.
-4. Markdown directive: a line that matches
+4. MDX comment: inline text that matches `\{/\*[\s\S]*?\*/\}`.
+5. Markdown directive: a line that matches
    `^\s*:{2,3}[A-Za-z][A-Za-z0-9_-]*\b`.
-5. Custom admonition: a line that matches `^\s*!!!\s+\w+`.
-6. TOML front matter: the file starts with `+++` before any other byte except a
+6. Custom admonition: a line that matches `^\s*!!!\s+\w+`.
+7. TOML front matter: the file starts with `+++` before any other byte except a
    UTF-8 byte order mark.
-7. JSON front matter: the file starts with `{` before any other byte except a
+8. JSON front matter: the file starts with `{` before any other byte except a
    UTF-8 byte order mark and the first non-whitespace line appears before any
    Markdown block.
 
@@ -396,7 +397,10 @@ unless they are caused by a lower-level service or file I/O failure.
 
 Markdown-aware v1 does not include:
 
-- Batch translation.
+- Multi-document or multi-file batch translation workflows. This non-goal does
+  not prohibit batching extracted text segments from one Markdown file into a
+  single Text Translation request when all segment batching requirements are
+  satisfied.
 - Multiple input files.
 - Multiple target languages.
 - Source language override controls.
@@ -478,8 +482,8 @@ At minimum, tests must cover:
 3. Legacy override behavior for Markdown files, including validator bypass,
    original file name preservation, and `text/plain` content type.
 4. Parser failures and unsupported syntax failures, including MDX
-   import/export, JSX elements, MDX expressions, Markdown directives, custom
-   admonitions, TOML front matter, and JSON front matter.
+   import/export, JSX elements, MDX expressions, MDX comments, Markdown
+   directives, custom admonitions, TOML front matter, and JSON front matter.
 5. Placeholder insertion, restoration, and corruption detection.
 6. Golden-file output for headings, paragraphs, lists, block quotes, tables,
    links, images, code fences, inline code, front matter, raw HTML, task lists,
