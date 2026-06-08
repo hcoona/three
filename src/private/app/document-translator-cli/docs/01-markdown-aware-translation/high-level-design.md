@@ -538,6 +538,8 @@ Unit-level coverage:
 - command-line parsing for `--markdown-mode`,
 - environment fallback for `DOCUMENT_TRANSLATOR_MARKDOWN_MODE`,
 - route selection,
+- existing non-Markdown formats staying on the current Document Translation
+  route,
 - Markdown legacy override validator bypass, original file name preservation, and
   `text/plain` content type,
 - extension matching,
@@ -578,6 +580,7 @@ Golden-file coverage:
 - footnotes,
 - each frozen machine-token class,
 - machine-token overlap resolution,
+- placeholder-bearing prose and protected spans,
 - UTF-8 byte order mark,
 - LF, CRLF, and mixed line endings,
 - final newline and no-final-newline.
