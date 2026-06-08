@@ -1,0 +1,19 @@
+[project]
+name = "supermemo-mcp"
+version = "0.0.0-dev"
+description = "This project provides a SuperMemo MCP server for LLMs."
+readme = "README.md"
+authors = [{ name = "Shuai Zhang", email = "zhangshuai.ustc@gmail.com" }]
+requires-python = ">=3.12"
+license = "GPL-3.0-or-later"
+classifiers = ["Private :: Do Not Upload"]
+dependencies = [
+  "beautifulsoup4>=4.13.4",
+  "fastmcp>=2.9.2",
+  "psutil>=7.0.0",
+  "uiautomation>=2.0.28",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

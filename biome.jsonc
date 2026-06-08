@@ -18,7 +18,9 @@
       "**/*.cts",
       "**/*.mts",
       "**/*.tsx",
-      "**/*.css"
+      "**/*.css",
+      "!.copilot",
+      "!.three-workflow-release-planner"
     ]
   },
   "formatter": {

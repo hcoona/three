@@ -738,3 +738,70 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Recorded remaining non-blocking follow-ups: hosted runtime optimization,
   clean A/B runtime baseline only for future runtime-target claims, and clear
   aggregate-summary versus aggregate-job timing evidence.
+
+## [2026-06-08] query | Record CI validation cache follow-up
+
+- Updated the CI affected-validation implementation plan with the first focused
+  runtime follow-up: NuGet lockfile caching for NBGV-backed CI validation jobs.
+- Preserved the distinction between this workflow optimization, required hosted
+  behavior validation, and any future clean A/B runtime-target claim.
+
+## [2026-06-08] query | Correct CI validation follow-up scope
+
+- Clarified that the CI affected-validation follow-up has two parts:
+  `actions/setup-dotnet` NuGet lockfile caching and the NBGV/control-plane
+  full-checkout repair.
+- Recorded that hosted run `27117479657` failed under shallow checkout and that
+  `materialize-execution-batches` and `aggregate-evidence` need
+  `fetch-depth: 0`.
+- Kept hosted rerun validation explicit and did not claim hosted success or
+  runtime-target compliance.
+
+## [2026-06-08] query | Correct CI validation source-restoration scope
+
+- Corrected the pending hosted rerun scope to cover the combined state:
+  `actions/setup-dotnet` NuGet cache optimization, NBGV/control-plane
+  full-checkout repair, and restoration of the 213 legitimate `src/**` files
+  accidentally deleted by commit `4fde7f1`.
+- Clarified that the prior post-hosted docs-only rerun waiver does not apply to
+  this combined workflow/source restoration change.
+- Kept hosted validation pending and did not claim hosted success, measured
+  speedup, or runtime-target compliance.
+
+## [2026-06-08] query | Correct CI validation planner follow-up scope
+
+- Expanded the pending hosted rerun scope to include staged planner behavior
+  changes: runtime output relocation from `.three-workflow-release-planner` to
+  `.copilot/three-workflow-release-planner` and removal of root `biome.json` and
+  `biome.jsonc` from materialized planner checkouts.
+- Restated the full combined follow-up scope as NuGet cache optimization,
+  NBGV/control-plane full-checkout repair after hosted run `27117479657`,
+  restoration of the 213 legitimate `src/**` files deleted by `4fde7f1`, and the
+  two planner behavior changes.
+- Clarified that the prior docs-only rerun waiver does not apply to this
+  combined workflow/source/planner behavior change, while keeping hosted rerun
+  validation pending with no hosted-success, speedup, or runtime-target claim.
+
+## [2026-06-08] query | Correct CI validation config follow-up scope
+
+- Updated the pending combined hosted rerun scope to include staged root config
+  hygiene: exact `.editorconfig-checker.json` exclusions for
+  `src/private/app/supermemo-mcp/references/Gdip_All.ahk` and
+  `src/private/app/supermemo-mcp/references/supermemo_18.ahk`, the narrow
+  `.typos.toml` exclusion for
+  `src/private/app/supermemo-mcp/references/Gdip_All.ahk`, `biome.jsonc` ignores
+  for `.copilot` and `.three-workflow-release-planner`, and the `.gitignore`
+  rule for root `/.copilot/` local Copilot agent/tool runtime state, covering
+  `/.copilot/three-workflow-release-planner/`.
+- Clarified that these config updates are validation/runtime-state hygiene for
+  the combined workflow/source/planner/config follow-up, not a runtime-target
+  improvement claim.
+
+## [2026-06-08] query | Correct CI validation test follow-up scope
+
+- Expanded the pending combined hosted rerun scope to include staged
+  `tests/test_workflow_release_control.py` workflow-release-control test updates
+  for `actions/setup-dotnet` NuGet lockfile cache settings and
+  NBGV/control-plane full-checkout assertions.
+- Kept hosted validation pending and did not claim hosted success, measured
+  speedup, or runtime-target compliance.

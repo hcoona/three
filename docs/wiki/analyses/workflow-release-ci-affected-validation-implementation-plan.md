@@ -113,12 +113,12 @@ completed groups unless a new review finding directly requires it.
 After adversarial review found release-validation authority risks, the go-forward
 plan was reprioritized:
 
-| Group | Scope                                          | Completion status                                                                                                                                                                                                  |
-| ----- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1     | Release-validation authority correctness       | Complete. Fixed fail-closed authority semantics, invalid-plan handling, producer verification, dry-run/publish safety, final artifact validation, and acceptance-gate coverage.                                    |
-| 2     | CI topology and runtime optimization           | Complete. Hosted acceptance run `27111512179` passed with authority and hard-cap evidence recorded below; the 12-minute timing target remains a documented follow-up.                                              |
-| 3     | GitHub Actions UI and observability, if needed | Not separately required by the accepted Group 2 repair set unless a future review asks for additional operator-facing clarity.                                                                                     |
-| Final | Global overview and cross-group consistency    | Complete. After commit `9f1791d`, the OA process recorded two consecutive raw-clean final global overview rounds, `global-closure-r1-*` and `global-closure-r2-*`, before this docs-only closure-recording update. |
+| Group | Scope                                          | Completion status                                                                                                                                                                                                         |
+| ----- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Release-validation authority correctness       | Complete. Fixed fail-closed authority semantics, invalid-plan handling, producer verification, dry-run/publish safety, final artifact validation, and acceptance-gate coverage.                                           |
+| 2     | CI topology and runtime optimization           | Complete. Hosted acceptance run `27111512179` passed with authority and hard-cap evidence recorded below; the 12-minute timing target remains a documented follow-up.                                                     |
+| 3     | GitHub Actions UI and observability, if needed | Not separately required by the accepted Group 2 repair set unless a future review asks for additional operator-facing clarity.                                                                                            |
+| Final | Global overview and cross-group consistency    | Complete. After commit `9f1791d`, the OA process recorded two consecutive raw-clean final global overview rounds, `global-closure-r1-*` and `global-closure-r2-*`, before the earlier docs-only closure-recording update. |
 
 Group 1 deliberately did not optimize runtime. It addressed correctness before
 performance because an untrusted or self-authorizing release-validation result is
@@ -406,11 +406,11 @@ The durable hosted acceptance package for Group 2 is:
 
 Post-hosted closure-update disposition:
 
-| Item                         | Disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Hosted behavior evidence     | Workflow and code behavior evidence remains anchored at GitHub Actions run `27111512179` for SHA `782571d535d4cd09795ad9a96955180aad279edb`.                                                                                                                                                                                                                                                                                                                              |
-| Docs-only closure updates    | Commit `9ef6a8c docs: Record Release Validation Acceptance Evidence`, the later docs-only review/waiver repair through commit `9f1791d`, and this closure-recording update are post-hosted documentation updates. They are covered by the local hook-validation path when they do not alter workflow or code behavior.                                                                                                                                                    |
-| Hosted rerun waiver boundary | Hosted rerun is waived for low-risk docs-only closure-recording updates after `782571d535d4cd09795ad9a96955180aad279edb` when local hook validation passes, because they do not alter workflow or code behavior. This prevents documentation closure notes from creating an infinite requirement for another hosted run. This waiver does not apply to later workflow, code, validation-script, or behavior-changing edits, which still need appropriate hosted evidence. |
+| Item                         | Disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hosted behavior evidence     | Workflow and code behavior evidence remains anchored at GitHub Actions run `27111512179` for SHA `782571d535d4cd09795ad9a96955180aad279edb`.                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Docs-only closure updates    | Commit `9ef6a8c docs: Record Release Validation Acceptance Evidence`, the later docs-only review/waiver repair through commit `9f1791d`, and the earlier closure-recording updates after `9f1791d` through commit `b4cc789` are post-hosted documentation updates covered by the local hook-validation path when they do not alter workflow or code behavior. This waiver excludes the current combined cache/full-checkout workflow repair, `src/**` source restoration, and planner runtime/materialized-checkout behavior follow-up, which requires hosted validation. |
+| Hosted rerun waiver boundary | Hosted rerun is waived for low-risk docs-only closure-recording updates after `782571d535d4cd09795ad9a96955180aad279edb` when local hook validation passes, because they do not alter workflow or code behavior. This prevents documentation closure notes from creating an infinite requirement for another hosted run. This waiver does not apply to later workflow, code, validation-script, or behavior-changing edits, which still need appropriate hosted evidence.                                                                                                 |
 
 Final accepted run job evidence:
 
@@ -572,13 +572,103 @@ a newer comparable hosted run.
 
 Remaining non-blocking follow-up tasks:
 
-1. Optimize hosted runtime, especially Windows orchestrator, setup, and cache
+1. Validate the combined pending hosted rerun scope before claiming this
+   follow-up complete. That combined state includes:
+    - enabling `actions/setup-dotnet` NuGet lockfile caching in the CI validation
+      plan and runner-family orchestrator jobs;
+    - repairing NBGV-sensitive control-plane jobs after hosted run `27117479657`
+      failed under shallow checkout by restoring full checkout history
+      (`fetch-depth: 0`) for `materialize-execution-batches` and
+      `aggregate-evidence`;
+    - restoring the 213 legitimate `src/**` files accidentally deleted by commit
+      `4fde7f1`;
+    - relocating planner runtime output from
+      `.three-workflow-release-planner` to
+      `.copilot/three-workflow-release-planner`; and
+    - removing root `biome.json` and `biome.jsonc` from materialized planner
+      checkouts so nested Biome root discovery cannot select the outer
+      repository root;
+    - applying the staged root config hygiene needed by that state:
+      `.editorconfig-checker.json` excludes exactly
+      `src/private/app/supermemo-mcp/references/Gdip_All.ahk` and
+      `src/private/app/supermemo-mcp/references/supermemo_18.ahk`;
+      `.typos.toml` excludes only
+      `src/private/app/supermemo-mcp/references/Gdip_All.ahk` for this
+      reference-content typo case; `biome.jsonc` ignores `.copilot` and the old
+      `.three-workflow-release-planner` runtime directory; and `.gitignore`
+      ignores the root `/.copilot/` directory for local Copilot agent/tool
+      runtime state, which covers the planner subdirectory
+      `/.copilot/three-workflow-release-planner/`.
+    - updating `tests/test_workflow_release_control.py` workflow-release-control
+      assertions so the pending staged tests cover the `actions/setup-dotnet`
+      NuGet lockfile cache settings and the NBGV/control-plane full-checkout
+      requirements.
+2. Optimize hosted runtime, especially Windows orchestrator, setup, and cache
    cost, to reduce the final run wall time.
-2. Establish a clean comparable A/B hosted runtime baseline only if future work
+3. Establish a clean comparable A/B hosted runtime baseline only if future work
    wants to claim 12-minute runtime-target compliance or runtime improvement
    relative to a clean baseline.
-3. Keep the aggregate-summary processing duration distinct from GitHub
+4. Keep the aggregate-summary processing duration distinct from GitHub
    aggregate-job wall time in future evidence.
+
+#### Runtime Cache, Full-Checkout, Source-Restoration, and Planner Follow-up
+
+The safe focused optimization chosen after the accepted hosted run is to restore
+the NuGet global-packages cache through `actions/setup-dotnet` for CI validation
+jobs that run NBGV-backed .NET planning or execution. This targets setup and
+restore cost without changing selected validation obligations, runner-family
+scheduling, artifact refs, producer-boundary checks, final uploaded-byte
+verification, hard caps, or aggregate evidence authority.
+
+The same follow-up also restores full checkout history (`fetch-depth: 0`) for
+NBGV-sensitive control-plane jobs after hosted run `27117479657` failed with
+shallow checkout. The affected control-plane jobs are
+`materialize-execution-batches` and `aggregate-evidence`, both of which depend
+on NBGV-compatible repository history rather than a depth-limited checkout.
+
+The same pending state also restores the 213 legitimate `src/**` files
+accidentally deleted by commit `4fde7f1`. Therefore the hosted rerun scope is a
+combined workflow, source-restoration, and planner behavior change, not only a
+cache or checkout repair.
+
+The same pending state includes staged planner behavior changes. Planner runtime
+output moves from `.three-workflow-release-planner` to
+`.copilot/three-workflow-release-planner`, and materialized planner checkouts no
+longer retain root `biome.json` or `biome.jsonc` files that could cause nested
+Biome root discovery to resolve to the outer repository root.
+
+The same pending state includes root config hygiene for those staged changes:
+`.editorconfig-checker.json` excludes exactly the vendored/reference AHK files
+`src/private/app/supermemo-mcp/references/Gdip_All.ahk` and
+`src/private/app/supermemo-mcp/references/supermemo_18.ahk`; `.typos.toml`
+adds the narrow vendored/reference exclusion
+`src/private/app/supermemo-mcp/references/Gdip_All.ahk`; `biome.jsonc` ignores
+`.copilot` and the old `.three-workflow-release-planner` runtime directory; and
+`.gitignore` ignores the root `/.copilot/` directory for local Copilot
+agent/tool runtime state, which covers the planner subdirectory
+`/.copilot/three-workflow-release-planner/`. These root config adjustments are
+scoped validation/runtime-state hygiene for the combined hosted rerun, not a
+separate runtime-target improvement claim.
+
+The same pending state includes staged workflow-release-control test updates in
+`tests/test_workflow_release_control.py`. Those tests assert the
+`actions/setup-dotnet` NuGet lockfile cache configuration and the
+NBGV/control-plane full-checkout requirements for the affected hosted workflow
+jobs.
+
+The earlier post-hosted docs-only rerun waiver does not apply to this combined
+state. That waiver only covered low-risk documentation-only closure updates that
+did not alter workflow, validation-script, source-code, or test behavior. The
+cache/full-checkout workflow changes, the `src/**` restoration, the planner
+runtime-output and materialized-checkout hygiene changes, the config hygiene,
+and the workflow-release-control test updates require hosted validation before
+this follow-up can be claimed complete.
+
+This is intentionally not recorded as hosted success, measured speedup, or
+runtime-target compliance. A successful hosted rerun after the combined
+workflow/source/planner/config/test state is required to prove behavior, and a
+clean comparable A/B hosted baseline remains optional future work before
+claiming an improvement or satisfaction of the 12-minute target.
 
 ### Final Review and Repair Summary
 
@@ -614,14 +704,16 @@ changing the accepted topology semantics.
 Final-global closure is complete for the accepted hosted behavior package. After
 commit `9f1791d`, the OA process recorded two consecutive raw-clean final global
 overview review rounds, `global-closure-r1-*` and `global-closure-r2-*`, before
-this closure-recording update.
+the earlier docs-only closure-recording update.
 
-This closure-recording update is documentation-only. Under the post-hosted
-docs-only waiver above, it is covered by local hook validation and must not
-create an infinite requirement for another hosted run, because it does not alter
-workflow, validation-script, source-code, or test behavior. A hosted rerun remains
-required for future workflow, code, validation-script, or behavior-changing
-edits.
+The closure-recording update immediately following commit `9f1791d` was
+documentation-only. Under the post-hosted docs-only waiver above, that earlier
+closure note was covered by local hook validation and did not create an infinite
+requirement for another hosted run, because it did not alter workflow,
+validation-script, source-code, or test behavior. The current combined
+cache/full-checkout workflow repair, `src/**` source-restoration, and planner
+runtime/materialized-checkout behavior follow-up is outside that docs-only
+waiver and requires hosted validation before it can be claimed complete.
 
 ### Historical Group 2 Acceptance Checklist
 

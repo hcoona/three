@@ -1,0 +1,9 @@
+import "@hk/Config.pkl"
+
+editorconfig_check = new Config.Step {
+  batch = true
+  check = new Config.Script {
+    linux = "ec {{files}}"
+    windows = "ec-windows-amd64.exe {{files}}"
+  }
+}

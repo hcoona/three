@@ -5395,6 +5395,31 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
     )
 
 
+def test_ci_validation_dotnet_setup_uses_nuget_lockfile_cache() -> None:
+    """CI validation caches NuGet packages for NBGV-backed jobs."""
+    workflow = yaml.safe_load(_workflow("ci.yml"))
+    jobs = workflow["jobs"]
+    dotnet_setup_jobs = (
+        "plan",
+        "execution-batch-ubuntu-orchestrator",
+        "execution-batch-windows-orchestrator",
+        "execution-batch-macos-orchestrator",
+    )
+
+    for job_name in dotnet_setup_jobs:
+        setup_step = next(
+            step
+            for step in jobs[job_name]["steps"]
+            if step.get("uses") == "actions/setup-dotnet@v5"
+        )
+
+        assert setup_step["with"] == {
+            "global-json-file": "global.json",
+            "cache": True,
+            "cache-dependency-path": "**/packages.lock.json",
+        }
+
+
 def test_ci_validation_workflow_uses_current_batch_evidence_commands() -> None:
     """CI workflow must not invoke retired receipt or writer-observation."""
     workflow_text = _workflow("ci.yml")
@@ -8447,14 +8472,20 @@ def test_ci_validation_workflow_checks_out_pull_request_head() -> None:
     )
 
 
-def test_ci_validation_execution_batches_use_full_checkout_for_nbgv() -> None:
-    """Execution batches need full history for NBGV version height."""
+def test_ci_validation_control_plane_uses_full_checkout_for_nbgv() -> None:
+    """Control-plane uv helper jobs need full history for NBGV metadata."""
     workflow = yaml.safe_load(_workflow("ci.yml"))
+    control_plane_jobs = (
+        "plan",
+        "materialize-execution-batches",
+        "aggregate-evidence",
+        "execution-batch-ubuntu-orchestrator",
+        "execution-batch-windows-orchestrator",
+        "execution-batch-macos-orchestrator",
+    )
 
-    for family in ("ubuntu", "windows", "macos"):
-        steps = workflow["jobs"][f"execution-batch-{family}-orchestrator"][
-            "steps"
-        ]
+    for job_name in control_plane_jobs:
+        steps = workflow["jobs"][job_name]["steps"]
         checkout_step = next(
             step for step in steps if step.get("uses") == "actions/checkout@v6"
         )

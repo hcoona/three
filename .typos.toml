@@ -29,6 +29,7 @@ extend-exclude = [
   "src/public/lib/Hjg.Pngcs/Chunks/PngMetadata.cs",
   "src/public/lib/Hjg.Pngcs/Zlib/AZlibOutputStream.cs",
   "src/public/lib/Hjg.Pngcs/Zlib/ZlibStreamFactory.cs",
+  "src/private/app/supermemo-mcp/references/Gdip_All.ahk",
   "tests/private/app/OxfordDictExtractor.Tests/**/*.html",
   "**/generated/**/*",
 ]

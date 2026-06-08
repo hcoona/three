@@ -902,8 +902,14 @@ _version.py
 # Exclude Pnpm Store
 /.pnpm-store/
 
+# Exclude local Copilot agent/tool runtime state.
+/.copilot/
+
 # Exclude Copilot notification state
 /.copilot/notifications/
+
+# Exclude workflow release planner runtime state
+/.copilot/three-workflow-release-planner/
 
 # Qidian novel downloader PoC artifacts
 .browser-profile/
