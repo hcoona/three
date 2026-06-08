@@ -220,8 +220,14 @@
           "xunit.v3.runner.common": "[3.2.2]"
         }
       },
-      "hcoona.azureauth.credprovider.platform": {
+      "hcoona.azureauth.credprovider.contracts": {
         "type": "Project"
+      },
+      "hcoona.azureauth.credprovider.platform": {
+        "type": "Project",
+        "dependencies": {
+          "Hcoona.AzureAuth.CredProvider.Contracts": "[1.0.0, )"
+        }
       },
       "Microsoft.Testing.Platform.MSBuild": {
         "type": "CentralTransitive",

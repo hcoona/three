@@ -38,6 +38,9 @@
         "resolved": "10.0.300",
         "contentHash": "0jlkXaUGjYlWTIVPve5MftjKHnT3SlAtq9BCLV4J9IjdPrxV/+4rMlBSjfr1khG8/GC6KGojjola8E1VvWF0qQ=="
       },
+      "hcoona.azureauth.credprovider.contracts": {
+        "type": "Project"
+      },
       "System.IO.Hashing": {
         "type": "CentralTransitive",
         "requested": "[10.0.8, )",
