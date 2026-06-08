@@ -170,6 +170,63 @@ jobs:
             }
           }
 
+  azureauth-foundation-artifacts:
+    name: AzureAuth Foundation Artifact (${{ matrix.build-os }} build, ${{ matrix.target-os }} target, ${{ matrix.target-rid }})
+    runs-on: ${{ matrix.build-runner }}
+    needs: [validation, dotnet-tests]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - build-os: Windows
+            build-runner: windows-latest
+            target-os: Windows
+            target-rid: win-x64
+          - build-os: Linux
+            build-runner: ubuntu-latest
+            target-os: Linux
+            target-rid: linux-x64
+          - build-os: macOS
+            build-runner: macos-latest
+            target-os: macOS
+            target-rid: osx-x64
+
+    env:
+      NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: |
+            src/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Contracts/packages.lock.json
+            src/private/app/azureauth-credprovider/Hcoona.AzureAuth.CredProvider.Platform/packages.lock.json
+
+      - name: Create internal foundation artifact
+        shell: pwsh
+        run: |
+          ./eng/scripts/azureauth-credprovider/New-FoundationArtifact.ps1 `
+            -BuildOs '${{ matrix.build-os }}' `
+            -TargetRid '${{ matrix.target-rid }}' `
+            -Configuration Release `
+            -ProductVersion '0.0.0-internal' `
+            -SourceRevision '${{ github.sha }}'
+
+      - name: Upload internal foundation artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: azureauth-credprovider-foundation-internal-${{ matrix.build-os }}-${{ matrix.target-rid }}
+          path: artifacts/azureauth-credprovider/foundation/azureauth-credprovider-foundation-internal-${{ matrix.build-os }}-${{ matrix.target-rid }}.zip
+          if-no-files-found: error
+          retention-days: 7
+
   node-tests:
     name: Test & Build (Node.js ${{ matrix.node-version }})
     runs-on: ubuntu-latest
