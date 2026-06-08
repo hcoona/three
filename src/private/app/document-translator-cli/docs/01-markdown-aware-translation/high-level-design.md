@@ -55,13 +55,14 @@ translates text segments, not document streams.
 
 ## Dependencies
 
-Add required application package references:
+Add one required application package reference:
 
 - `Markdig`
-- `System.Text.Json`
 
-`System.Text.Json` is already centrally versioned. Add `Markdig` to
-`Directory.Packages.props` in alphabetical order when implementation begins.
+Use `System.Text.Json` from the .NET shared framework. Do not add a
+`System.Text.Json` package reference unless a future implementation explicitly
+requires a NuGet-version override. Add `Markdig` to `Directory.Packages.props`
+in alphabetical order when implementation begins.
 
 Use `HttpClient` directly for Azure Translator Text Translation REST API v3.0.
 Do not introduce a host, dependency injection container, or `IHttpClientFactory`

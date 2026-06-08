@@ -159,8 +159,8 @@ inline patterns are found outside those excluded regions:
 
 1. MDX import/export: a line that matches
    `^\s*(import|export)\s+`.
-2. MDX JSX block or element: a line that matches
-   `^\s*</?[A-Z][A-Za-z0-9.:-]*(\s|/?>)`.
+2. MDX JSX block or element: inline text that matches
+   `</?[A-Z][A-Za-z0-9.:-]*(\s|/?>)`.
 3. MDX expression: inline text that matches
    `\{[A-Za-z_$][A-Za-z0-9_$]*(?:[.()[\]\w\s+\-*/?:'"]*)?\}`.
 4. MDX comment: inline text that matches `\{/\*[\s\S]*?\*/\}`.
@@ -246,7 +246,8 @@ translatable text nodes:
 2. Short CLI flag group: `(?<!\w)-[A-Za-z](?:[A-Za-z0-9])*\b`.
 3. Environment variable: `\b[A-Z][A-Z0-9_]{2,}\b`.
 4. Windows environment variable reference: `%[A-Za-z_][A-Za-z0-9_]*%`.
-5. Shell variable reference: `\$\{?[A-Za-z_][A-Za-z0-9_]*\}?`.
+5. Shell variable reference:
+   `\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)`.
 6. Replacement field: `\{[0-9]+\}`.
 7. Template variable: `\{\{[^{}\r\n]+\}\}`.
 8. Absolute URL: `https?://[^\s<>)]+`.
