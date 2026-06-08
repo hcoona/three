@@ -817,3 +817,17 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Recorded actual timing for run `27164117754`: 38m20s wall-clock,
   34m08s Windows orchestrator, and 2m37s `aggregate-evidence`; the 12-minute
   runtime target remains unmet and non-blocking.
+
+## [2026-06-08] query | Record combined CI validation audit closure
+
+- Added durable closure records for the combined
+  code/source/planner/config/test/doc follow-up ending in commit `4dd8d8e` and
+  the hosted-success docs update ending in commit `a41ae36`.
+- Recorded the serialized `gpt-55-coder` implementation path,
+  `gpt-55-reviewer` adversarial review rounds, independent TP/FP triage, TP
+  repair categories, known FP dispositions, and two raw-clean implementation and
+  group-interface rounds for each closure record.
+- Preserved hosted success evidence for run `27164117754`, prior historical
+  evidence `27111512179`, and the remaining non-blocking runtime follow-up
+  wording while clarifying that only the current final global two-clean loop
+  remains before final closure.
