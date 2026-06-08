@@ -805,3 +805,15 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   NBGV/control-plane full-checkout assertions.
 - Kept hosted validation pending and did not claim hosted success, measured
   speedup, or runtime-target compliance.
+
+## [2026-06-08] query | Record combined CI validation hosted success
+
+- Updated the CI affected-validation implementation plan to record hosted
+  success for combined follow-up commit `4dd8d8e` via run `27164117754` at HEAD
+  `4dd8d8eae0083416066bc803e06bdfd5d471e5a0`.
+- Preserved earlier baseline run `27111512179` as separate historical Group 2
+  evidence and dispositioned failed run `27117479657` as the shallow
+  checkout/NBGV failure repaired by restoring control-plane `fetch-depth: 0`.
+- Recorded actual timing for run `27164117754`: 38m20s wall-clock,
+  34m08s Windows orchestrator, and 2m37s `aggregate-evidence`; the 12-minute
+  runtime target remains unmet and non-blocking.
