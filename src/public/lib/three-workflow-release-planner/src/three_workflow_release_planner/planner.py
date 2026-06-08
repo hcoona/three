@@ -204,6 +204,13 @@ class _PlanBuilder:
         ] = {}
         self.diagnostics: list[Json] = []
 
+    def _runtime_dir(self) -> Path:
+        return (
+            self.inputs.repo_root
+            / ".copilot"
+            / "three-workflow-release-planner"
+        )
+
     def build(self) -> PlanningResult:
         """Build and return validated planner outputs."""
         self._validate_profile_coexistence()
@@ -1028,8 +1035,7 @@ class _PlanBuilder:
             )
             return None
         build_dir = (
-            self.inputs.repo_root
-            / ".three-workflow-release-planner"
+            self._runtime_dir()
             / "pypi-filenames"
             / _digest(
                 {
@@ -1090,8 +1096,7 @@ class _PlanBuilder:
     ) -> Path | None:
         record_failure = record_failure or self._record_pypi_filename_failure
         checkout_dir = (
-            self.inputs.repo_root
-            / ".three-workflow-release-planner"
+            self._runtime_dir()
             / checkout_kind
             / _digest(
                 {
@@ -1127,7 +1132,13 @@ class _PlanBuilder:
                 project, result.stderr.strip() or result.stdout.strip()
             )
             return None
+        self._remove_checkout_biome_config(checkout_dir)
         return checkout_dir
+
+    def _remove_checkout_biome_config(self, checkout_dir: Path) -> None:
+        for filename in ("biome.json", "biome.jsonc"):
+            with suppress(OSError):
+                (checkout_dir / filename).unlink()
 
     def _remove_pypi_build_checkout(self, checkout_dir: Path) -> None:
         git = shutil.which("git") or "git"
