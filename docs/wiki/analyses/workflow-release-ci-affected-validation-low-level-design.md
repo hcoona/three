@@ -28,7 +28,7 @@ upstream decision must be escalated rather than silently rewritten here.
 
 | Area               | Low-level decision                                                                                                                                                                                                                                                                                                            |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workflow shape     | Add one top-level CI validation entry workflow with `pull_request`, `push`, and `schedule` triggers, plus reusable internal validation units only if implementation benefits from them.                                                                                                                                       |
+| Workflow shape     | Add one top-level CI validation entry workflow with `pull_request`, `push`, `schedule`, and `workflow_dispatch` triggers, plus reusable internal validation units only if implementation benefits from them.                                                                                                                  |
 | Plan format        | Emit one UTF-8 JSON validation plan with stable `api-version`, `kind`, `plan-id`, `mode`, provenance, classification, subject universe, planned obligations, logical work groups, stable selectors, evidence expectations, diagnostics, and verdict intent.                                                                   |
 | Fail-closed        | Emit an inspectable fail-closed plan artifact and diagnostics, but the run conclusion must fail and no execution batches execute.                                                                                                                                                                                             |
 | Subject universe   | Include discovered validation subjects with selected/excluded status, not only selected subjects.                                                                                                                                                                                                                             |
@@ -100,9 +100,18 @@ MLD contract:
 
 The CI validation entry point should be one checked-in workflow file:
 
-| File                                | Trigger shape                      | Stable responsibility                                                                                                                                              |
-| ----------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `.github/workflows/ci.yml`          | `pull_request`, `push`, `schedule` | Normalize CI event input, run planning, materialize execution batches, run the batch DAG, aggregate validation-only evidence, and publish inspectable diagnostics. |
+| File                       | Trigger shape                                           | Stable responsibility                                                                                                                                              |
+| -------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `.github/workflows/ci.yml` | `pull_request`, `push`, `schedule`, `workflow_dispatch` | Normalize CI event input, run planning, materialize execution batches, run the batch DAG, aggregate validation-only evidence, and publish inspectable diagnostics. |
+
+The trigger contract is:
+
+| Trigger             | CI mode resolved by normalization | Contract notes                                                                                                                  |
+| ------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `pull_request`      | `pull_request`                    | Validates the confirmed pull-request affected range.                                                                            |
+| `push`              | `push`                            | Validates the confirmed push affected range.                                                                                    |
+| `schedule`          | `scheduled_full`                  | Runs synthetic/global scheduled-full validation with no affected range.                                                         |
+| `workflow_dispatch` | `scheduled_full`                  | Provides the manual validation trigger and follows the scheduled-full validation path; the workflow defines no explicit inputs. |
 
 The workflow filename is a repository contract because branch protection and
 operator documentation may refer to CI check names. Unlike release publication
@@ -135,7 +144,8 @@ execution-batch/artifact budget, not an arbitrary dependency-depth limit.
 The top-level CI validation workflow preserves this logical sequence:
 
 1. **`normalize-input`**
-    - resolves CI mode: `pull_request`, `push`, or `scheduled_full`;
+    - resolves CI mode: `pull_request`, `push`, or `scheduled_full`
+      (`workflow_dispatch` resolves to `scheduled_full`);
     - derives the confirmed affected range for affected modes;
     - records event identity for diagnostics;
     - fails into a planner-facing fail-closed request when external event, API, or
@@ -161,10 +171,12 @@ The top-level CI validation workflow preserves this logical sequence:
       lightweight-only
       plans with no executable lightweight obligations.
 4. **Execution-batch DAG**
-    - runs executable batches through independent Windows and Ubuntu
+    - runs executable batches through independent Windows, Ubuntu, and macOS
       runner-family orchestrator jobs;
-    - fails closed if materialization or validation would require a
-      batch-to-batch dependency that crosses runner families;
+    - admits same-family dependencies from local orchestrator state and admits
+      cross-family dependencies only through bounded same-run artifact readiness
+      checks; terminal blockers, timeout, or invalid dependency evidence still
+      fail closed;
     - starts a same-family dependent batch when its declared dependency bundle
       artifact is available in the local orchestrator state, without waiting for
       unrelated peers from the same coarse layer;
@@ -224,14 +236,18 @@ manifests. `aggregate-ci-evidence` batch mode is not a standalone trust
 boundary: the live workflow pairs it with a freshly
 `download-ci-validation-observed-artifacts`-created observed-artifacts
 directory, and both aggregate phases must consume that downloader-created
-directory. Runner-family orchestrator dependency admission is same-family only:
-same-run same-family dependencies use the artifact ID recorded immediately after
-the upload step, then recheck artifact ID/API metadata before consumption.
-Cross-family batch dependencies fail closed in the current validation topology;
-there is no peer-family handoff or wait path. In-flight gating requires the
-dependency bundle plus downloader-observed `artifact-metadata.json` binding the
-artifact ID, physical name, run, attempt, and execution-batch boundary. The final
-aggregate job performs the stronger live namespace and singleton checks.
+directory. Runner-family orchestrator dependency admission is bounded and
+validation-grade: same-run same-family dependencies use the artifact ID recorded
+immediately after the upload step, then recheck artifact ID/API metadata before
+consumption, while accepted cross-family batch dependencies may wait only within
+the configured bounded scheduler timeout for retryable readiness. No-work states
+and terminal blockers return promptly. Terminal dependency failures, timeout,
+missing, duplicate, malformed, wrong-run, or wrong-attempt dependency evidence
+fail closed without publishing or mutating validation artifacts. In-flight gating
+requires the dependency bundle plus downloader-observed `artifact-metadata.json`
+binding the artifact ID, physical name, run, attempt, and execution-batch
+boundary. The final aggregate job performs the stronger live namespace and
+singleton checks and remains the authority for the terminal verdict.
 
 The downloader also writes trusted namespace-enumeration observation metadata
 and an internal batch admission manifest under the observed-artifacts directory.
@@ -1709,7 +1725,7 @@ coverage-target:
     type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation | lightweight-policy
     id: string
 ecosystem: dotnet | python | javascript | typescript | ruby | null
-runner-family: windows | ubuntu
+runner-family: windows | ubuntu | macos
 selector-variant: string | null
 depends-on: [work-group-id]
 expected-evidence:
@@ -1732,11 +1748,12 @@ subject or artifact obligation subject. It must be the owning subject ecosystem
 for `descriptor-validation` only when descriptor validation requires
 ecosystem-specific evidence; otherwise it is `null`. It is `null` for
 `lightweight-preflight` and ordinary `workflow-release-tooling` work groups; a
-workflow-release-tooling work group that fans out to ecosystem runners must use
-separate work groups whose coverage and selector variant identify the relevant
-ecosystem-owned scope. `ecosystem` must be consistent with `runner-family` under
-section 12; illegal enum values, required-but-null ecosystems, or ecosystem/runner
-mismatches make the plan structurally invalid.
+workflow-release-tooling work group that fans out to ecosystem or platform
+runners must use separate work groups whose coverage and selector variant
+identify the relevant ecosystem-owned or platform-owned scope. `ecosystem` must
+be consistent with `runner-family` under section 12; illegal enum values,
+required-but-null ecosystems, or ecosystem/runner mismatches make the plan
+structurally invalid.
 `selector-variant` is `null` for the ordinary one-work-group-per-kind/target
 case. It is required and path-safe when multiple executable work groups share the
 same `kind` and `coverage-target`; examples include runner-family splits or
@@ -1817,274 +1834,274 @@ Selector rules:
   bundle. It must not coalesce selectors connected by a `depends-on` edge unless
   the batch manifest orders those selectors and requires the same
   dependency-blocked result semantics before the dependent selector starts.
-- `materialize-execution-batches` emits one execution-batch manifest at the
+  `materialize-execution-batches` emits one execution-batch manifest at the
   contract-owned ref
   `ci-validation/execution-batches/<run-id>/<run-attempt>/execution-batch-manifest.json`.
   It has:
 
-    ```yaml
-    common-envelope: inherited
-    api-version: three.ci.validation.execution-batch-manifest/v1alpha1
-    kind: ci-validation-execution-batch-manifest
-    execution-job: string  # legacy logical direct-batch job identity component
-    plan-id: string
-    plan-digest: string
-    budget:
-        min-total-jobs: integer
-        max-total-jobs: integer
-        min-windows-jobs: integer
-        max-windows-jobs: integer
-        non-batch-control-plane-job-count: integer
-        actual-total-jobs: integer
-        actual-windows-jobs: integer
-        max-validation-artifacts: integer
-        actual-validation-artifacts: integer
-        expected-input-non-bundle-validation-artifacts: integer
-        expected-final-validation-artifacts: integer
-        expected-non-bundle-validation-artifacts: integer
-        pre-final-validation-artifacts: integer
-        max-execution-batches: integer
-        actual-execution-batches: integer
-        aggregate-target-duration-seconds: integer
-        aggregate-max-duration-seconds: integer
-    batches:
-        - batch-id: string
-          runner-family: windows | ubuntu
-          compatibility-profile:
-              ecosystem: dotnet | python | javascript | typescript | ruby | null
-              setup-profile: string
-              setup-profile-digest: string
-              execution-profile: string
-              execution-profile-digest: string
-              release-shaped-profile: string | null
-              release-shaped-profile-digest: string | null
-          depends-on-batches: [batch-id]
-          ordered-selectors:
-              - work-group-id: string
-                selector-index: integer
-                depends-on: [work-group-id]
-                expected-evidence-id: string
-                expected-evidence-slot: selector-evidence-slot
-          expected-batch-evidence-bundle-ref: string
-          batch-writer:
-              identity-source: github-actions-job-context  # logical direct-batch compatibility
-              expected-boundary: execution-batch
-              expected-job-identity: string
-              provenance-fields: [workflow, job, matrix]  # legacy logical identity preimage
-    ```
+```yaml
+common-envelope: inherited
+api-version: three.ci.validation.execution-batch-manifest/v1alpha1
+kind: ci-validation-execution-batch-manifest
+execution-job: string # legacy logical direct-batch job identity component
+plan-id: string
+plan-digest: string
+budget:
+    min-total-jobs: integer
+    max-total-jobs: integer
+    min-windows-jobs: integer
+    max-windows-jobs: integer
+    non-batch-control-plane-job-count: integer
+    actual-total-jobs: integer
+    actual-windows-jobs: integer
+    max-validation-artifacts: integer
+    actual-validation-artifacts: integer
+    expected-input-non-bundle-validation-artifacts: integer
+    expected-final-validation-artifacts: integer
+    expected-non-bundle-validation-artifacts: integer
+    pre-final-validation-artifacts: integer
+    max-execution-batches: integer
+    actual-execution-batches: integer
+    aggregate-target-duration-seconds: integer
+    aggregate-max-duration-seconds: integer
+batches:
+    - batch-id: string
+      runner-family: windows | ubuntu | macos
+      compatibility-profile:
+          ecosystem: dotnet | python | javascript | typescript | ruby | null
+          setup-profile: string
+          setup-profile-digest: string
+          execution-profile: string
+          execution-profile-digest: string
+          release-shaped-profile: string | null
+          release-shaped-profile-digest: string | null
+      depends-on-batches: [batch-id]
+      ordered-selectors:
+          - work-group-id: string
+            selector-index: integer
+            depends-on: [work-group-id]
+            expected-evidence-id: string
+            expected-evidence-slot: selector-evidence-slot
+      expected-batch-evidence-bundle-ref: string
+      batch-writer:
+          identity-source: github-actions-job-context # logical direct-batch compatibility
+          expected-boundary: execution-batch
+          expected-job-identity: string
+          provenance-fields: [workflow, job, matrix] # legacy logical identity preimage
+```
 
-    `batch-id` is stable within the run attempt, path-safe, and derived from the
-    ordered selector set plus the compatibility profile. It must match
-    `^[a-z0-9][a-z0-9._-]{0,127}$`; if readable components are not path-safe, the
-    materializer uses a normalized prefix plus a lowercase SHA-256 digest of the
-    typed batch identity. `depends-on-batches` entries resolve within the manifest
-    and form an acyclic DAG. `ordered-selectors` contains every executable
-    work-group selector assigned to the batch exactly once, in the order the batch
-    must evaluate them. The union of all `ordered-selectors.work-group-id` values
-    across all batches must equal the executable work groups in the verified plan,
-    excluding the terminal `evidence-aggregation` work group; no selected
-    obligation may disappear, duplicate, or be downgraded by batching.
-    Each ordered selector entry must equality-check against the frozen plan for
-    `work-group-id`, the work group's exact `depends-on` list, and the matched
-    evidence expectation identified by `expected-evidence-id`. The materializer
-    must not drop, rewrite, or invent dependency or evidence bindings while
-    preserving only the selector union. Every selector dependency edge from the
-    frozen plan must be covered either by an earlier selector in the same batch's
-    `ordered-selectors` order or by the producer batch listed in
-    `depends-on-batches`; missing, extra, or stale batch DAG edges make the
-    manifest structurally invalid.
+`batch-id` is stable within the run attempt, path-safe, and derived from the
+ordered selector set plus the compatibility profile. It must match
+`^[a-z0-9][a-z0-9._-]{0,127}$`; if readable components are not path-safe, the
+materializer uses a normalized prefix plus a lowercase SHA-256 digest of the
+typed batch identity. `depends-on-batches` entries resolve within the manifest
+and form an acyclic DAG. `ordered-selectors` contains every executable
+work-group selector assigned to the batch exactly once, in the order the batch
+must evaluate them. The union of all `ordered-selectors.work-group-id` values
+across all batches must equal the executable work groups in the verified plan,
+excluding the terminal `evidence-aggregation` work group; no selected
+obligation may disappear, duplicate, or be downgraded by batching.
+Each ordered selector entry must equality-check against the frozen plan for
+`work-group-id`, the work group's exact `depends-on` list, and the matched
+evidence expectation identified by `expected-evidence-id`. The materializer
+must not drop, rewrite, or invent dependency or evidence bindings while
+preserving only the selector union. Every selector dependency edge from the
+frozen plan must be covered either by an earlier selector in the same batch's
+`ordered-selectors` order or by the producer batch listed in
+`depends-on-batches`; missing, extra, or stale batch DAG edges make the
+manifest structurally invalid.
 
-    The `compatibility-profile` is the post-plan handoff placeholder for setup and
-    execution compatibility. It records the runner family, ecosystem, setup,
-    execution, and release-shaped compatibility dimensions needed to prove that
-    coalesced selectors can share one batch. `setup-profile` and
-    `execution-profile` are stable path-safe profile identifiers. Their matching
-    `setup-profile-digest` and `execution-profile-digest` fields are lowercase
-    SHA-256 digests of the RFC 8785 canonical preimages that include the frozen
-    platform, setup, executor, and toolchain requirements not otherwise exposed as
-    manifest enum fields. The batch bundle must copy these identifiers and
-    digests exactly; aggregation does not admit a bundle whose compatibility
-    profile differs from the manifest.
-    Any batch containing a `release-shaped-artifact` selector must set a non-null,
-    stable, path-safe `release-shaped-profile` and `release-shaped-profile-digest`
-    derived from the frozen release-shaped executor profile assigned to that
-    batch. The current first-delivery executor profile is validation-only,
-    no-publish, credential-free, and scoped by runner family plus ecosystem; it
-    can multiplex artifact families, concrete kinds, target variants, and logical
-    receipt roles inside one physical validation batch. Exact artifact refs,
-    release-receipt logical roles, descriptor identities, profile labels, artifact
-    shapes, and obligation identifiers are not batch-compatibility split
-    dimensions by themselves; they remain selector-owned plan/result equality
-    checks. If a future planner exposes distinct runner, credential, toolchain, or
-    executor requirements, the materializer must split the selectors into safe
-    batches or fail post-plan materialization without authorizing executable
-    validation.
-    Batches with no release-shaped selectors must set both release-shaped profile
-    fields to `null`. The compatibility profile does not define release-shaped
-    command lines; those details remain owned by release-shaped execution while
-    preserving the manifest-bound digest equality checks.
+The `compatibility-profile` is the post-plan handoff placeholder for setup and
+execution compatibility. It records the runner family, ecosystem, setup,
+execution, and release-shaped compatibility dimensions needed to prove that
+coalesced selectors can share one batch. `setup-profile` and
+`execution-profile` are stable path-safe profile identifiers. Their matching
+`setup-profile-digest` and `execution-profile-digest` fields are lowercase
+SHA-256 digests of the RFC 8785 canonical preimages that include the frozen
+platform, setup, executor, and toolchain requirements not otherwise exposed as
+manifest enum fields. The batch bundle must copy these identifiers and
+digests exactly; aggregation does not admit a bundle whose compatibility
+profile differs from the manifest.
+Any batch containing a `release-shaped-artifact` selector must set a non-null,
+stable, path-safe `release-shaped-profile` and `release-shaped-profile-digest`
+derived from the frozen release-shaped executor profile assigned to that
+batch. The current first-delivery executor profile is validation-only,
+no-publish, credential-free, and scoped by runner family plus ecosystem; it
+can multiplex artifact families, concrete kinds, target variants, and logical
+receipt roles inside one physical validation batch. Exact artifact refs,
+release-receipt logical roles, descriptor identities, profile labels, artifact
+shapes, and obligation identifiers are not batch-compatibility split
+dimensions by themselves; they remain selector-owned plan/result equality
+checks. If a future planner exposes distinct runner, credential, toolchain, or
+executor requirements, the materializer must split the selectors into safe
+batches or fail post-plan materialization without authorizing executable
+validation.
+Batches with no release-shaped selectors must set both release-shaped profile
+fields to `null`. The compatibility profile does not define release-shaped
+command lines; those details remain owned by release-shaped execution while
+preserving the manifest-bound digest equality checks.
 
-    `expected-evidence-slot` is a pre-execution expectation slot, not an execution
-    result. It may identify the logical work group, evidence expectation,
-    category, planned capabilities, detail profile, coverage target, and the
-    placeholder shape that the later batch bundle must fill. It must not contain
-    outcome, success/failure state, diagnostics, observed artifact refs, observed
-    digests, command output, or any other execution-produced data. Section 14 defines the
-    detailed batch output result schema.
+`expected-evidence-slot` is a pre-execution expectation slot, not an execution
+result. It may identify the logical work group, evidence expectation,
+category, planned capabilities, detail profile, coverage target, and the
+placeholder shape that the later batch bundle must fill. It must not contain
+outcome, success/failure state, diagnostics, observed artifact refs, observed
+digests, command output, or any other execution-produced data. Section 14 defines the
+detailed batch output result schema.
 
-    `expected-batch-evidence-bundle-ref` is the single validation-only bundle ref
-    expected from that execution batch:
-    `ci-validation/bundles/<run-id>/<run-attempt>/<batch-id>/batch-evidence-bundle.json`.
-    The bundle must contain separately addressable result rows for every ordered
-    selector and evidence expectation assigned to the batch. A batch bundle may
-    contain batch-level metadata and diagnostics, but it cannot collapse logical
-    work-group outcomes into only a batch-level pass/fail result.
+`expected-batch-evidence-bundle-ref` is the single validation-only bundle ref
+expected from that execution batch:
+`ci-validation/bundles/<run-id>/<run-attempt>/<batch-id>/batch-evidence-bundle.json`.
+The bundle must contain separately addressable result rows for every ordered
+selector and evidence expectation assigned to the batch. A batch bundle may
+contain batch-level metadata and diagnostics, but it cannot collapse logical
+work-group outcomes into only a batch-level pass/fail result.
 
-    `batch-writer` records logical validation-routing expectations for the
-    expected bundle, but it is not immutable producer-identity proof for live G5
-    bundle admission. `execution-job`, `identity-source:
-    github-actions-job-context`, and `provenance-fields: [workflow, job,
-    matrix]` are legacy/direct-batch compatibility fields that define the
-    logical writer identity preimage for manifests and matrix rows; they do not
-    assert that each batch has a separate physical GitHub Actions job. Payload
-    fields, logs, command-authored JSON, artifact path segments, and
-    caller-generated sidecars are not trusted writer identity sources. Live
-    aggregation admits a bundle through the execution-batch manifest, current-run
-    artifact API metadata, downloaded artifact metadata, payload validation, and
-    run/run-attempt/batch binding. Immutable workflow/job producer proof is
-    scoped to non-bundle control/final artifacts or to a future genuinely trusted
-    observer seam. There is no separate writer-integrity or writer-observation
-    artifact in the current design.
+`batch-writer` records logical validation-routing expectations for the
+expected bundle, but it is not immutable producer-identity proof for live G5
+bundle admission. `execution-job`, `identity-source:
+github-actions-job-context`, and `provenance-fields: [workflow, job,
+matrix]` are legacy/direct-batch compatibility fields that define the
+logical writer identity preimage for manifests and matrix rows; they do not
+assert that each batch has a separate physical GitHub Actions job. Payload
+fields, logs, command-authored JSON, artifact path segments, and
+caller-generated sidecars are not trusted writer identity sources. Live
+aggregation admits a bundle through the execution-batch manifest, current-run
+artifact API metadata, downloaded artifact metadata, payload validation, and
+run/run-attempt/batch binding. Immutable workflow/job producer proof is
+scoped to non-bundle control/final artifacts or to a future genuinely trusted
+observer seam. There is no separate writer-integrity or writer-observation
+artifact in the current design.
 
-    When bounded runner-family orchestrators implement the batch DAG, bundle
-    writer evidence distinguishes the logical batch identity (`batch-id`,
-    `runner-family`, and `expected-batch-evidence-bundle-ref`) from the observed
-    physical orchestrator job and slot identity. Physical orchestrator evidence
-    appears only in the batch evidence bundle writer fields: `identity-source:
-    github-actions-orchestrator-job-context`, `observed-job:
-    execution-batch-<runner-family>-orchestrator`, `observed-matrix: {}`,
-    `logical-batch-identity`, and `observed-orchestrator-slot-index`. It must
-    not claim that the physical job is the retired per-batch `execution-job`
-    abstraction. For `identity-source:
-    github-actions-orchestrator-job-context`,
-    `observed-orchestrator-slot-index` is required and must be a non-empty
-    string. `null` is valid only for legacy/direct
-    `github-actions-job-context` writers.
+When bounded runner-family orchestrators implement the batch DAG, bundle
+writer evidence distinguishes the logical batch identity (`batch-id`,
+`runner-family`, and `expected-batch-evidence-bundle-ref`) from the observed
+physical orchestrator job and slot identity. Physical orchestrator evidence
+appears only in the batch evidence bundle writer fields: `identity-source:
+github-actions-orchestrator-job-context`, `observed-job:
+execution-batch-<runner-family>-orchestrator`, `observed-matrix: {}`,
+`logical-batch-identity`, and `observed-orchestrator-slot-index`. It must
+not claim that the physical job is the retired per-batch `execution-job`
+abstraction. For `identity-source:
+github-actions-orchestrator-job-context`,
+`observed-orchestrator-slot-index` is required and must be a non-empty
+string. `null` is valid only for legacy/direct
+`github-actions-job-context` writers.
 
-    `budget.actual-execution-batches` must equal `batches.length`. The
-    materializer must map each batch to exactly one budget-counted batch evidence
-    bundle, identified by the batch writer's expected logical job identity.
-    Runner-family orchestrator jobs may implement multiple batches through
-    bounded slots, but they must not hide additional budget-relevant public
-    artifacts outside the manifest's artifact counts. The materializer must
-    compute
-    `pre-final-validation-artifacts` from expected input non-bundle validation
-    artifacts plus expected batch evidence bundles, and compute
-    `actual-validation-artifacts` from expected non-bundle validation artifacts
-    plus expected batch evidence bundles. `expected-final-validation-artifacts` is
-    currently `2` for the aggregate evidence manifest and aggregate summary.
-    `expected-non-bundle-validation-artifacts` is the sum of expected input
-    non-bundle artifacts and expected final validation artifacts.
+`budget.actual-execution-batches` must equal `batches.length`. The
+materializer must map each batch to exactly one budget-counted batch evidence
+bundle, identified by the batch writer's expected logical job identity.
+Runner-family orchestrator jobs may implement multiple batches through
+bounded slots, but they must not hide additional budget-relevant public
+artifacts outside the manifest's artifact counts. The materializer must
+compute
+`pre-final-validation-artifacts` from expected input non-bundle validation
+artifacts plus expected batch evidence bundles, and compute
+`actual-validation-artifacts` from expected non-bundle validation artifacts
+plus expected batch evidence bundles. `expected-final-validation-artifacts` is
+currently `2` for the aggregate evidence manifest and aggregate summary.
+`expected-non-bundle-validation-artifacts` is the sum of expected input
+non-bundle artifacts and expected final validation artifacts.
 
-    The artifact-derived execution-batch allowance is
-    `20 - expected-non-bundle-validation-artifacts`. Logical batch count is
-    tracked by `actual-execution-batches` and `max-execution-batches`, not by
-    physical job totals. `budget.actual-total-jobs` counts non-batch
-    control-plane jobs plus active runner-family orchestrator jobs, and
-    `budget.actual-windows-jobs` counts Windows control-plane jobs plus the
-    active Windows runner-family orchestrator job when Windows batches exist.
-    `budget.max-execution-batches` must be no greater than the artifact-derived
-    allowance for the manifest.
+The artifact-derived execution-batch allowance is
+`20 - expected-non-bundle-validation-artifacts`. Logical batch count is
+tracked by `actual-execution-batches` and `max-execution-batches`, not by
+physical job totals. `budget.actual-total-jobs` counts non-batch
+control-plane jobs plus active runner-family orchestrator jobs, and
+`budget.actual-windows-jobs` counts Windows control-plane jobs plus the
+active Windows runner-family orchestrator job when Windows batches exist.
+`budget.max-execution-batches` must be no greater than the artifact-derived
+allowance for the manifest.
 
-    Declared budget fields cannot relax the fixed LLD caps. Max caps apply to all
-    manifests where applicable: `max-total-jobs` and `actual-total-jobs` must be at
-    most 18, `max-windows-jobs` and `actual-windows-jobs` must be at most 8,
-    `max-validation-artifacts` and `actual-validation-artifacts` must be at most
-    20, `pre-final-validation-artifacts` must be at most
-    `20 - expected-final-validation-artifacts`, and
-    `aggregate-max-duration-seconds` must be at most 120. Lower-bound
-    topology targets are informational under runner-family orchestrators:
-    manifests must keep `min-total-jobs` and `min-windows-jobs` aligned with the
-    physical orchestrator topology, and actual counts must satisfy those lower
-    bounds. Lower bounds are waived for fail-closed, no-executable, all
-    lightweight-only manifests including executable lightweight selectors/checks,
-    and zero-work materializations. Fail-closed, no-executable, and zero-work
-    materializations use a zero-execution budget profile with `batches: []`; they
-    preserve fail-closed or no-work aggregation semantics and are not invalid
-    merely because actual total or Windows jobs are below the broad/full/global
-    lower-bound targets. Lightweight-only manifests with executable
-    selectors/checks still declare and observe the corresponding counts, and
-    those counts must satisfy the applicable maximum caps.
+Declared budget fields cannot relax the fixed LLD caps. Max caps apply to all
+manifests where applicable: `max-total-jobs` and `actual-total-jobs` must be at
+most 18, `max-windows-jobs` and `actual-windows-jobs` must be at most 8,
+`max-validation-artifacts` and `actual-validation-artifacts` must be at most
+20, `pre-final-validation-artifacts` must be at most
+`20 - expected-final-validation-artifacts`, and
+`aggregate-max-duration-seconds` must be at most 120. Lower-bound
+topology targets are informational under runner-family orchestrators:
+manifests must keep `min-total-jobs` and `min-windows-jobs` aligned with the
+physical orchestrator topology, and actual counts must satisfy those lower
+bounds. Lower bounds are waived for fail-closed, no-executable, all
+lightweight-only manifests including executable lightweight selectors/checks,
+and zero-work materializations. Fail-closed, no-executable, and zero-work
+materializations use a zero-execution budget profile with `batches: []`; they
+preserve fail-closed or no-work aggregation semantics and are not invalid
+merely because actual total or Windows jobs are below the broad/full/global
+lower-bound targets. Lightweight-only manifests with executable
+selectors/checks still declare and observe the corresponding counts, and
+those counts must satisfy the applicable maximum caps.
 
-    Actual counts must match the declared manifest fields and stay within the
-    applicable declared ranges and `max-validation-artifacts`.
-    `aggregate-target-duration-seconds` and `aggregate-max-duration-seconds` use
-    seconds; the target must be less than or equal to the max. A manifest whose
-    declared caps, actual counts, or durations are inconsistent, exceed fixed LLD
-    caps, overflow declared budgets, or cannot be validated by aggregation is a
-    post-plan materialization/control-plane failure, not a planner policy
-    fail-closed outcome. The zero-execution profile must not be used to downgrade
-    or drop selected executable obligations. If selected executable obligations
-    exist and cannot be coalesced into compatible batches within the applicable
-    budgets without dropping required evidence, downgrading obligations, or
-    violating dependencies, materialization fails post-plan and must not authorize
-    executable validation.
+Actual counts must match the declared manifest fields and stay within the
+applicable declared ranges and `max-validation-artifacts`.
+`aggregate-target-duration-seconds` and `aggregate-max-duration-seconds` use
+seconds; the target must be less than or equal to the max. A manifest whose
+declared caps, actual counts, or durations are inconsistent, exceed fixed LLD
+caps, overflow declared budgets, or cannot be validated by aggregation is a
+post-plan materialization/control-plane failure, not a planner policy
+fail-closed outcome. The zero-execution profile must not be used to downgrade
+or drop selected executable obligations. If selected executable obligations
+exist and cannot be coalesced into compatible batches within the applicable
+budgets without dropping required evidence, downgrading obligations, or
+violating dependencies, materialization fails post-plan and must not authorize
+executable validation.
 
-    `materialize-execution-batches` must perform the same authoritative plan
-    validation needed to safely fan out executable batches before emitting the
-    manifest: plan ref and instance count, producer authority, envelope, schema,
-    digest, structural reference rules, executable/fail-closed invariants, and
-    required companion changed-files and fact snapshot artifacts. If plan identity
-    or companion snapshot validation fails, it emits no executable batches and
-    aggregation treats the run as `invalid-plan`. A structurally valid fail-closed
-    plan, or a valid executable plan with no executable work groups, emits exactly
-    one empty execution-batch manifest with the verified `plan-id`, `plan-digest`,
-    budget fields, and `batches: []`; this preserves fail-closed or no-work
-    semantics instead of authorizing validation from an invalid or absent
-    manifest.
+`materialize-execution-batches` must perform the same authoritative plan
+validation needed to safely fan out executable batches before emitting the
+manifest: plan ref and instance count, producer authority, envelope, schema,
+digest, structural reference rules, executable/fail-closed invariants, and
+required companion changed-files and fact snapshot artifacts. If plan identity
+or companion snapshot validation fails, it emits no executable batches and
+aggregation treats the run as `invalid-plan`. A structurally valid fail-closed
+plan, or a valid executable plan with no executable work groups, emits exactly
+one empty execution-batch manifest with the verified `plan-id`, `plan-digest`,
+budget fields, and `batches: []`; this preserves fail-closed or no-work
+semantics instead of authorizing validation from an invalid or absent
+manifest.
 
-    Aggregation must verify the execution-batch manifest's producer authority from
-    platform/control-plane metadata before trusting its payload because the
-    manifest authorizes batch execution and bundle writers. A manifest authored
-    outside `materialize-execution-batches`, by an executable validation command,
-    or by an unverified artifact instance is not authority even if its payload
-    matches. A missing, duplicate, unreadable, malformed, schema-invalid,
-    plan-mismatched, dependency-mismatched, evidence-mismatched,
-    producer-unverified, structurally invalid, budget-overflow, or
-    unmaterializable-obligation manifest makes aggregation fail closed with
-    `required-input-artifact-failure`; no batch evidence bundle is admissible
-    under an invalid manifest.
-    Aggregation must also recompute or verify the manifest's current-run budget
-    totals before admitting any batch bundle: batch count equals `batches.length`,
-    pre-final artifact count equals declared `pre-final-validation-artifacts`,
-    enough final artifact slots remain for `expected-final-validation-artifacts`,
-    total and Windows job counts equal their declared actual fields for the selected
-    orchestrator topology, each execution batch maps to one budget-counted batch
-    evidence bundle, the
-    aggregate duration budget fields use seconds with target less than or equal to
-    max and max no greater than 120 seconds, max caps never exceed 18 total jobs,
-    8 Windows jobs, or 20 validation artifacts, and lower bounds match the
-    selected physical runner-family orchestrator topology. Logical batch volume
-    remains represented by `actual-execution-batches` and
-    `max-execution-batches`; maximum caps still apply wherever the corresponding
-    topology counts exist. It must also verify `budget.max-execution-batches`
-    against the artifact-derived allowance. Any mismatch, hidden budget-relevant
-    job, relaxed cap, invalid lower-bound use, or overflow is a post-plan
-    control-plane/materialization failure reported through the invalid
-    execution-batch manifest input path. Aggregation records the applicable
-    `inadmissible-batch-evidence` diagnostic detail on the manifest input and
-    sets the terminal `required-input-artifact-failure` reason/failure instead
-    of registering execution-batch topology or budget details under
-    `invalid-plan`. After publishing final aggregate artifacts, aggregation
-    verifies that the observed final artifact count makes the complete
-    `actual-validation-artifacts` equal the declared total and remain within the
-    20-artifact cap.
-    The `aggregate-evidence` boundary must measure its actual aggregate duration
-    in seconds and record it as execution-produced final evidence, not
-    pre-execution manifest data. Observed aggregate duration is telemetry for
-    the performance target; exceeding `aggregate-max-duration-seconds` does not
-    set a reason, emit diagnostics or failure kinds, or fail the final required
-    check.
+Aggregation must verify the execution-batch manifest's producer authority from
+platform/control-plane metadata before trusting its payload because the
+manifest authorizes batch execution and bundle writers. A manifest authored
+outside `materialize-execution-batches`, by an executable validation command,
+or by an unverified artifact instance is not authority even if its payload
+matches. A missing, duplicate, unreadable, malformed, schema-invalid,
+plan-mismatched, dependency-mismatched, evidence-mismatched,
+producer-unverified, structurally invalid, budget-overflow, or
+unmaterializable-obligation manifest makes aggregation fail closed with
+`required-input-artifact-failure`; no batch evidence bundle is admissible
+under an invalid manifest.
+Aggregation must also recompute or verify the manifest's current-run budget
+totals before admitting any batch bundle: batch count equals `batches.length`,
+pre-final artifact count equals declared `pre-final-validation-artifacts`,
+enough final artifact slots remain for `expected-final-validation-artifacts`,
+total and Windows job counts equal their declared actual fields for the selected
+orchestrator topology, each execution batch maps to one budget-counted batch
+evidence bundle, the
+aggregate duration budget fields use seconds with target less than or equal to
+max and max no greater than 120 seconds, max caps never exceed 18 total jobs,
+8 Windows jobs, or 20 validation artifacts, and lower bounds match the
+selected physical runner-family orchestrator topology. Logical batch volume
+remains represented by `actual-execution-batches` and
+`max-execution-batches`; maximum caps still apply wherever the corresponding
+topology counts exist. It must also verify `budget.max-execution-batches`
+against the artifact-derived allowance. Any mismatch, hidden budget-relevant
+job, relaxed cap, invalid lower-bound use, or overflow is a post-plan
+control-plane/materialization failure reported through the invalid
+execution-batch manifest input path. Aggregation records the applicable
+`inadmissible-batch-evidence` diagnostic detail on the manifest input and
+sets the terminal `required-input-artifact-failure` reason/failure instead
+of registering execution-batch topology or budget details under
+`invalid-plan`. After publishing final aggregate artifacts, aggregation
+verifies that the observed final artifact count makes the complete
+`actual-validation-artifacts` equal the declared total and remain within the
+20-artifact cap.
+The `aggregate-evidence` boundary must measure its actual aggregate duration
+in seconds and record it as execution-produced final evidence, not
+pre-execution manifest data. Observed aggregate duration is telemetry for
+the performance target; exceeding `aggregate-max-duration-seconds` does not
+set a reason, emit diagnostics or failure kinds, or fail the final required
+check.
 
 - Category-specific validation commands may produce provisional result material
   inside an execution batch, but they must not have authority to write
@@ -2155,28 +2172,31 @@ concrete GitHub Actions jobs, matrix rows, batch IDs, or bundle refs.
 into physical execution. Its manifest maps each `execution-batch` to exactly one
 budget-counted batch evidence bundle, and each executable work-group selector
 appears in exactly one batch `ordered-selectors` list. Concrete GitHub Actions
-execution is grouped into bounded runner-family orchestrator jobs.
+execution is grouped into bounded runner-family orchestrator jobs. The closed
+runner-family enum is `windows`, `ubuntu`, and `macos`; `macos` is a platform
+runner family, not a separate subject ecosystem.
 
-| Work group kind                                               | Default runner family                                                                                   | Notes                                                                |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `lightweight-preflight`                                       | Ubuntu                                                                                                  | May run documentation, formatting, or policy checks when lightweight |
-| `ecosystem-gate` for .NET                                     | Windows                                                                                                 | Preserves .NET runner expectation                                    |
-| `ecosystem-gate` for Python                                   | Ubuntu                                                                                                  | Uses repository tool provisioning convention                         |
-| `ecosystem-gate` for JavaScript/TypeScript                    | Ubuntu                                                                                                  | Uses repository tool provisioning convention                         |
-| `descriptor-validation`                                       | Ubuntu, or the subject ecosystem runner when descriptor validation requires ecosystem-specific evidence | Must not publish or mutate release state                             |
-| `release-shaped-artifact` for .NET                            | Windows                                                                                                 | Emits validation-only batch evidence rows                            |
-| `release-shaped-artifact` for Python or JavaScript/TypeScript | Ubuntu                                                                                                  | Emits validation-only batch evidence rows                            |
-| `workflow-release-tooling`                                    | Ubuntu, or Windows when the affected tooling surface requires Windows-only evidence                     | Uses separate selectors only when scope requires separate evidence   |
-| `evidence-aggregation`                                        | Ubuntu                                                                                                  | Terminal control-plane aggregation; emits final aggregate artifacts  |
+| Work group kind                                               | Default runner family                                                                                                         | Notes                                                                |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `lightweight-preflight`                                       | Ubuntu                                                                                                                        | May run documentation, formatting, or policy checks when lightweight |
+| `ecosystem-gate` for .NET                                     | Windows                                                                                                                       | Preserves .NET runner expectation                                    |
+| `ecosystem-gate` for Python                                   | Ubuntu                                                                                                                        | Uses repository tool provisioning convention                         |
+| `ecosystem-gate` for JavaScript/TypeScript                    | Ubuntu                                                                                                                        | Uses repository tool provisioning convention                         |
+| `descriptor-validation`                                       | Ubuntu, or the subject ecosystem/platform runner when descriptor validation requires ecosystem- or platform-specific evidence | Must not publish or mutate release state                             |
+| `release-shaped-artifact` for .NET                            | Windows, or macOS when artifact/platform validation requires macOS                                                            | Emits validation-only batch evidence rows                            |
+| `release-shaped-artifact` for Python or JavaScript/TypeScript | Ubuntu                                                                                                                        | Emits validation-only batch evidence rows                            |
+| `workflow-release-tooling`                                    | Ubuntu, Windows, or macOS when the affected tooling surface requires platform-specific evidence                               | Uses separate selectors only when scope requires separate evidence   |
+| `evidence-aggregation`                                        | Ubuntu                                                                                                                        | Terminal control-plane aggregation; emits final aggregate artifacts  |
 
 The planner applies this table before freezing work groups and records the
-result in each executable selector. "Requires ecosystem runner" means the
-descriptor validation must run with the same runner family as the selected
-subject or artifact-producing ecosystem; mixed requirements are represented by
-separate work groups with distinct non-null `selector-variant` values. "Requires
-Windows-only evidence" means the affected tooling surface validates
-Windows-specific .NET/build behavior. All other workflow-release-tooling work
-groups use Ubuntu. All runners provision tools through `mise` where practical.
+result in each executable selector. "Requires ecosystem/platform runner" means
+the descriptor validation must run with the same runner family as the selected
+subject, artifact-producing ecosystem, or platform-specific obligation; mixed
+requirements are represented by separate work groups with distinct non-null
+`selector-variant` values. "Requires platform-specific evidence" means the
+affected tooling surface validates Windows-specific, macOS-specific, or other
+runner-family-specific behavior. All other workflow-release-tooling work groups
+use Ubuntu. All runners provision tools through `mise` where practical.
 The concrete command lines and helper scripts are implementation-owned, but they
 must run the repository's existing ecosystem gates for selected scopes.
 
@@ -2184,11 +2204,11 @@ The execution-batch orchestrator input row emitted for each manifest batch has t
 
 ```yaml
 batch-id: string
-runner-family: windows | ubuntu
+runner-family: windows | ubuntu | macos
 expected-batch-evidence-bundle-ref: string
 identity-matrix:
     batch-id: string
-    runner-family: windows | ubuntu
+    runner-family: windows | ubuntu | macos
     expected-batch-evidence-bundle-ref: string
 expected-job-identity: string
 ```
@@ -2785,7 +2805,7 @@ execution-batch-manifest:
     content-digest: string
 batch:
     batch-id: string
-    runner-family: windows | ubuntu
+    runner-family: windows | ubuntu | macos
     compatibility-profile:
         ecosystem: dotnet | python | javascript | typescript | ruby | null
         setup-profile: string
@@ -2801,10 +2821,10 @@ writer:
     expected-job-identity: string
     observed-writer-identity: string
     observed-workflow: string
-    observed-job: string  # direct logical job or physical orchestrator job
-    observed-matrix: object | null  # logical batch matrix, or {} for orchestrator
-    logical-batch-identity: object | null  # required for orchestrator writers
-    observed-orchestrator-slot-index: string | null  # required non-empty string for orchestrator writers; null only for legacy/direct writers
+    observed-job: string # direct logical job or physical orchestrator job
+    observed-matrix: object | null # logical batch matrix, or {} for orchestrator
+    logical-batch-identity: object | null # required for orchestrator writers
+    observed-orchestrator-slot-index: string | null # required for orchestrator; null for legacy/direct
 execution-tree:
     observed-commit-sha: string | null
     source: execution-batch-boundary
@@ -2847,27 +2867,39 @@ When `observed-writer-identity` is present, validation recomputes it from
 `observed-workflow`, `observed-job`, and `observed-matrix`; for orchestrator
 writers, `observed-matrix` is `{}` and the logical batch matrix is carried
 separately in `logical-batch-identity`.
-Runner-family orchestrator slot dependency admission is intentionally
-same-family only. The materializer and manifest validator fail closed with the
-diagnostic that the current runner-family validation topology does not support
-cross-family batch dependencies; affected work must be coalesced into one family
-or await a future explicit cross-family mode. Within one family, the
-orchestrator records uploaded batch artifact IDs in local job state, rechecks the
-GitHub Actions artifact ID/API metadata before a dependent slot consumes the
-bundle, and passes the resulting admission record directly to bundle validation.
-There is no peer-family manifest wait, lookup, publication, payload-digest field,
-or cross-family terminal manifest dependency path. Aggregate collection remains a
-separate fan-in after both family jobs complete through workflow `needs`; it
-admits the expected batch bundle artifacts from the execution-batch manifest and
-fails closed on missing, duplicate, malformed, wrong-run, or wrong-attempt
-artifacts rather than falling back to broad public namespace discovery. The
-design does not use broad namespace enumeration or separate writer-integrity,
-writer-observation, selector-assignment, batch observation, or peer-family state
-manifest artifacts for dependency admission. Artifact admission assumes the
-checked-in CI workflow and control-plane scripts are trusted reviewable code for
-the validation tree. A malicious workflow or control-plane change is therefore a
-reviewed code-change risk outside artifact admission's threat model, not
-something payload admission can independently defeat.
+Runner-family orchestrator slot dependency admission supports same-family
+dependency admission and the accepted bounded scheduler repair for cross-family
+batch dependencies. The materializer and manifest validator no longer fail
+closed solely because a manifest dependency crosses runner-family boundaries,
+but they still fail closed for unmaterializable dependencies, invalid manifests,
+terminal upstream failures, bounded-wait timeout, or missing, duplicate,
+malformed, wrong-run, or wrong-attempt dependency evidence. No-work states and
+terminal blockers return promptly. Retryable cross-family readiness, and
+retryable readiness for same-family slot chains, may wait only within the
+configured bounded scheduler timeout.
+
+Within one family, the orchestrator records uploaded batch artifact IDs in local
+job state, rechecks the GitHub Actions artifact ID/API metadata before a
+dependent slot consumes the bundle, and passes the resulting admission record
+directly to bundle validation. Cross-family dependency readiness uses only the
+expected dependency refs from the execution-batch manifest, current-run artifact
+observation/API metadata, and the downloader-observed
+`artifact-metadata.json` binding; it does not publish or mutate validation
+artifacts, reclassify scope, or change plan obligations. There is no unbounded
+peer-family polling path, caller-writable handoff sidecar, peer-family state
+manifest, payload-digest authority, or cross-family terminal manifest dependency
+path. Aggregate collection remains a separate fan-in after all runner-family
+jobs complete through workflow `needs`; it admits the expected batch bundle
+artifacts from the execution-batch manifest and fails closed on missing, duplicate,
+malformed, wrong-run, or wrong-attempt artifacts rather than falling back to
+broad public namespace discovery. The design does not use broad namespace
+enumeration or separate writer-integrity, writer-observation,
+selector-assignment, batch observation, or peer-family state manifest artifacts
+for dependency admission. Artifact admission assumes the checked-in CI workflow
+and control-plane scripts are trusted reviewable code for the validation tree. A
+malicious workflow or control-plane change is therefore a reviewed code-change
+risk outside artifact admission's threat model, not something payload admission
+can independently defeat.
 Live namespace closure treats optional/not-required snapshot artifact names as
 unexpected unless the plan proves those snapshots are required. Any future
 trusted-observation input must come from a genuinely trusted non-payload
@@ -2896,7 +2928,7 @@ coverage-target:
     type: subject | ecosystem | descriptor | tooling-surface | artifact-obligation | lightweight-policy
     id: string
 ecosystem: dotnet | python | javascript | typescript | ruby | null
-runner-family: windows | ubuntu
+runner-family: windows | ubuntu | macos
 selector-variant: string | null
 depends-on: [work-group-id]
 dependency-results:
@@ -3011,7 +3043,7 @@ lightweight-preflight:
         type: lightweight-policy | subject | ecosystem | descriptor | tooling-surface
         id: string
     selector-variant: string | null
-    runner-family: windows | ubuntu
+    runner-family: windows | ubuntu | macos
     outcome: success | blocking-failure | skipped
     subcheck-results:
         - subcheck-id: string
@@ -3032,7 +3064,7 @@ workflow-release-tooling:
         id: string
     ecosystem: dotnet | python | javascript | typescript | ruby | null
     selector-variant: string | null
-    runner-family: windows | ubuntu
+    runner-family: windows | ubuntu | macos
     outcome: success | blocking-failure | skipped
     subcheck-results:
         - subcheck-id: string
@@ -3594,11 +3626,11 @@ Implementation acceptance must include at least these evidence scenarios:
 | Workflow-release infrastructure change                                                                                                                                                                                             | Plan selects affected tooling surface, related subjects/ecosystems, and all discovered descriptors only for descriptor semantics, authoring validation, planning, contracts, build execution, publish execution, or smoke validation impacts; execution-batch manifest, batch evidence bundles, and per-selector evidence/result rows cover the selected executable obligations                                                                                                                                                                                                                                                                                                                         |
 | Known global change                                                                                                                                                                                                                | Plan selects scheduled-full-equivalent scope with global provenance and required workflow-release-tooling work groups for every closed tooling surface; execution-batch manifest, batch evidence bundles, and per-selector evidence/result rows cover the selected executable obligations                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Scheduled full run                                                                                                                                                                                                                 | Plan selects full repository scope with required workflow-release-tooling work groups for every closed tooling surface and scheduled provenance records using `selection-kind: scheduled-full`, empty impact/expansion refs, `scheduled-full-source: true`, and `scheduled-full.enabled: true`; execution-batch manifest, batch evidence bundles, and per-selector evidence/result rows cover the selected executable obligations                                                                                                                                                                                                                                                                       |
-| Executable plan with multiple logical selectors coalesced into fewer concrete execution batches                                                                                                                                    | The frozen plan remains authoritative for logical work groups, selectors, dependencies, and evidence expectations; the execution-batch manifest assigns each executable selector exactly once to one execution batch, each execution batch maps to one budget-counted batch evidence bundle, may place multiple compatible selectors in one batch, and batch bundles preserve one result row per assigned selector without requiring one job or artifact per logical selector/work group                                                                                                                                                                                                           |
-| Broad, global, or scheduled-full executable materialization with non-empty batches                                                                                                                                                 | Execution-batch manifest and aggregate evidence show bounded topology: runner-family orchestrator jobs remain bounded, each execution batch maps to exactly one budget-counted batch evidence bundle, lower topology-count bounds are waived for fail-closed, no-executable, all lightweight-only manifests including executable lightweight selectors/checks, and zero-work manifests, and maximum caps still apply wherever the corresponding topology count is present                                                                                                                                                       |
+| Executable plan with multiple logical selectors coalesced into fewer concrete execution batches                                                                                                                                    | The frozen plan remains authoritative for logical work groups, selectors, dependencies, and evidence expectations; the execution-batch manifest assigns each executable selector exactly once to one execution batch, each execution batch maps to one budget-counted batch evidence bundle, may place multiple compatible selectors in one batch, and batch bundles preserve one result row per assigned selector without requiring one job or artifact per logical selector/work group                                                                                                                                                                                                                |
+| Broad, global, or scheduled-full executable materialization with non-empty batches                                                                                                                                                 | Execution-batch manifest and aggregate evidence show bounded topology: runner-family orchestrator jobs remain bounded, each execution batch maps to exactly one budget-counted batch evidence bundle, lower topology-count bounds are waived for fail-closed, no-executable, all lightweight-only manifests including executable lightweight selectors/checks, and zero-work manifests, and maximum caps still apply wherever the corresponding topology count is present                                                                                                                                                                                                                               |
 | Validation artifact budget at normal finalization                                                                                                                                                                                  | The run has at most 20 prefixed validation artifacts total, including input non-bundle artifacts, one batch evidence bundle per executable batch, the aggregate evidence manifest, and the aggregate summary; acceptance does not require or allow one artifact per selector/work group and treats overflow as bounded namespace failure                                                                                                                                                                                                                                                                                                                                                                |
-| Full, broad, or global validation performance evidence                                                                                                                                                                             | Aggregate summary and workflow evidence expose observed CI duration and historical estimates for the full/broad/global 12-minute target; the target is an optimization and observability expectation, not a hard correctness ceiling, and no per-batch duration cap is inferred from this acceptance goal                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Aggregate duration budget evidence                                                                                                                                                                                                 | Execution-batch manifest declares aggregate target/max duration in seconds with max no greater than 120, and aggregate summary records observed aggregate duration as telemetry only; aggregate duration is observable performance evidence, not a correctness contract, and observed overruns do not set reasons, emit diagnostics or failure kinds, or fail the final required check                                                                                                                                                                                                                                                                                                                       |
+| Full, broad, or global validation performance evidence                                                                                                                                                                             | Aggregate summary and workflow evidence expose observed CI duration and historical estimates for the full/broad/global 12-minute target; the target is an optimization and observability expectation, not a hard correctness ceiling, and no per-batch duration cap is inferred from this acceptance goal                                                                                                                                                                                                                                                                                                                                                                                               |
+| Aggregate duration budget evidence                                                                                                                                                                                                 | Execution-batch manifest declares aggregate target/max duration in seconds with max no greater than 120, and aggregate summary records observed aggregate duration as telemetry only; aggregate duration is observable performance evidence, not a correctness contract, and observed overruns do not set reasons, emit diagnostics or failure kinds, or fail the final required check                                                                                                                                                                                                                                                                                                                  |
 | Known non-impacting change with no executable checks                                                                                                                                                                               | Lightweight-only plan passes without heavy work, remains inspectable, has no executable validation work groups, uses a verified empty execution-batch manifest, has no batch evidence bundles, and has terminal aggregate evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Known non-impacting change with executable lightweight checks                                                                                                                                                                      | Verified execution-batch manifest assigns the lightweight selectors, and lightweight work appears as per-selector success evidence/result rows in the assigned batch evidence bundle for pass                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Known non-impacting lightweight-only plan attempts subject, ecosystem, or descriptor-scoped lightweight work                                                                                                                       | The plan is structurally invalid; lightweight-only executable checks must use `lightweight-policy` or workflow-release `tooling-surface` coverage targets rather than implying selected validation subjects                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
@@ -3639,8 +3671,8 @@ Implementation acceptance must include at least these evidence scenarios:
 | Ecosystem gate omits a capability enabled by selected subject/provider facts                                                                                                                                                       | Plan is fail-closed with `fact-provider-insufficient` or structurally invalid; batch evidence cannot pass by matching an under-planned capability set                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Upstream selector emits a valid `blocking-failure` batch evidence row                                                                                                                                                              | The batch can still write evidence for dependency gating, downstream selectors are not dependency-blocked solely by that validation outcome, and aggregation fails the final verdict from the batch evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Batch evidence row emitted after validation on the wrong or unverifiable execution tree                                                                                                                                            | Aggregation treats the batch evidence row as inadmissible with `malformed-bundle`; copied plan provenance is insufficient without execution-tree evidence from the execution-batch boundary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Non-current contract artifact appears in the contract artifact namespace                                                                                                                                                        | Aggregation treats it as a non-authoritative unexpected contract artifact; it cannot replace the current execution-batch manifest, batch evidence bundle, aggregate evidence manifest, or aggregate summary requirements                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Obsolete control artifact appears in the contract artifact namespace                                                                                                                                                        | Aggregation treats it as non-authoritative and, when it uses the prefixed contract namespace, as an unexpected contract artifact; selector assignment comes only from the execution-batch manifest, and live bundle admission comes only from manifest expectations, artifact/API metadata, downloaded metadata, and payload validation                                                                                                                                                                                                                                                                                                                                                                 |
+| Non-current contract artifact appears in the contract artifact namespace                                                                                                                                                           | Aggregation treats it as a non-authoritative unexpected contract artifact; it cannot replace the current execution-batch manifest, batch evidence bundle, aggregate evidence manifest, or aggregate summary requirements                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Obsolete control artifact appears in the contract artifact namespace                                                                                                                                                               | Aggregation treats it as non-authoritative and, when it uses the prefixed contract namespace, as an unexpected contract artifact; selector assignment comes only from the execution-batch manifest, and live bundle admission comes only from manifest expectations, artifact/API metadata, downloaded metadata, and payload validation                                                                                                                                                                                                                                                                                                                                                                 |
 | Release-shaped artifact batch evidence row with empty, partial, extra, or unavailable expected artifact coverage, missing artifact digest, unchecked logical release-shaped receipt check, or mismatched planned shape             | Aggregation records `artifact-shape-unconfirmed` or `malformed-bundle` and fails the final verdict                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Dependency-blocked release-shaped artifact batch evidence row                                                                                                                                                                      | The batch evidence row may use the explicit skipped form with empty observed artifact refs and digests plus `validation-work-skipped: dependency-blocked`; aggregation treats it as required evidence skipped and fails the final verdict, not as successful artifact-shape validation                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Lightweight-preflight or workflow-release-tooling batch evidence row omits or mismatches its required detail profile or subcheck results                                                                                           | Aggregation treats the batch evidence row as inadmissible with `malformed-bundle`; category-result detail must match the frozen work group, evidence expectation, and profile subcheck contract                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |

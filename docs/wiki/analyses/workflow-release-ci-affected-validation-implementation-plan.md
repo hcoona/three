@@ -24,19 +24,21 @@ sessions. The durable design inputs are:
 - [Workflow Release CI Affected Validation Middle-Level Design](./workflow-release-ci-affected-validation-middle-level-design.md)
 - [Workflow Release CI Affected Validation Low-Level Design](./workflow-release-ci-affected-validation-low-level-design.md)
 
-The latest committed implementation milestone is Group 1 release-validation
-authority hardening, committed as `241416c fix(ci): Harden Release Validation
-Authority`.
+The latest recorded implementation milestones now include Group 1
+release-validation authority hardening and Group 2 CI topology/runtime
+optimization. Group 2 and the final repair commits listed in
+[Group 2 Hosted Acceptance Evidence](#group-2-hosted-acceptance-evidence) are
+part of the durable completion record for this handoff.
 
 ## Terminology Note: Two Grouping Schemes
 
 Two different grouping schemes were used during the work. Future agents must not
 merge them accidentally.
 
-| Scheme                     | Purpose                                                                                                                                                        | Current status                                                                                                          |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| LLD implementation groups  | Original execution-batch CI implementation decomposition: contracts, materialization, execution, aggregation, workflow topology, cleanup, and topology repair. | The original G1-G6 implementation path and later G7 topology repair were completed before the authority-hardening pass. |
-| Governance priority groups | Correctness-first stabilization after review found that release-validation authority had to be hardened before runtime optimization.                           | Group 1 is complete and committed; Group 2+ remains future work.                                                        |
+| Scheme                     | Purpose                                                                                                                                                        | Current status                                                                                                            |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| LLD implementation groups  | Original execution-batch CI implementation decomposition: contracts, materialization, execution, aggregation, workflow topology, cleanup, and topology repair. | The original G1-G6 implementation path and later G7 topology repair were completed before the authority-hardening pass.   |
+| Governance priority groups | Correctness-first stabilization after review found that release-validation authority had to be hardened before runtime optimization.                           | Group 1 authority hardening is complete; Group 2 optimization is complete with hosted acceptance evidence recorded below. |
 
 When this page says **Group 1 release-validation authority**, it refers to the
 governance priority group, not the older LLD implementation Group 1 contract
@@ -111,12 +113,12 @@ completed groups unless a new review finding directly requires it.
 After adversarial review found release-validation authority risks, the go-forward
 plan was reprioritized:
 
-| Group | Scope                                          | Completion status                                                                                                                                                               |
-| ----- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Release-validation authority correctness       | Complete. Fixed fail-closed authority semantics, invalid-plan handling, producer verification, dry-run/publish safety, final artifact validation, and acceptance-gate coverage. |
-| 2     | CI topology and runtime optimization           | Future work. Optimize runtime only after Group 1 authority correctness remains stable under review.                                                                             |
-| 3     | GitHub Actions UI and observability, if needed | Future work. Improve operator-facing clarity without weakening evidence or check semantics.                                                                                     |
-| Final | Global overview and cross-group consistency    | Future work. Required after later groups, using the same clean-round rule.                                                                                                      |
+| Group | Scope                                          | Completion status                                                                                                                                                                                                                                                                                         |
+| ----- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Release-validation authority correctness       | Complete. Fixed fail-closed authority semantics, invalid-plan handling, producer verification, dry-run/publish safety, final artifact validation, and acceptance-gate coverage.                                                                                                                           |
+| 2     | CI topology and runtime optimization           | Complete. Hosted acceptance run `27111512179` passed with authority and hard-cap evidence recorded below; the 12-minute timing target remains a documented follow-up.                                                                                                                                     |
+| 3     | GitHub Actions UI and observability, if needed | Not separately required by the accepted Group 2 repair set unless a future review asks for additional operator-facing clarity.                                                                                                                                                                            |
+| Final | Global overview and cross-group consistency    | Final global review ran and found true-positive documentation/evidence findings. The findings are addressed by the durable evidence and timing-analysis updates in this page, but final-global closure still requires the human/OA to record two consecutive raw-clean global rounds after these repairs. |
 
 Group 1 deliberately did not optimize runtime. It addressed correctness before
 performance because an untrusted or self-authorizing release-validation result is
@@ -189,7 +191,19 @@ Group 1's accepted semantics include:
   reusable publish jobs.
 - Acceptance-gate meta-tests verify mandatory Group 1 pins are present.
 
-## Future Group 2 Guidance
+## Group 2 Optimization Record
+
+Group 2 CI topology and runtime optimization has been implemented and validated
+on hosted GitHub Actions. Future agents should not treat this section as an
+unstarted work queue. The original guidance and execution plan remain below as
+historical context and as the checklist used to judge the accepted work.
+
+The accepted result achieved the correctness, authority, topology, and hard-cap
+requirements. It did **not** achieve the 12-minute broad/full/global timing
+target; that miss is recorded explicitly in
+[Timing Target Analysis and Follow-up](#timing-target-analysis-and-follow-up).
+
+### Historical Group 2 Guidance
 
 Group 2 should optimize CI topology and runtime without weakening Group 1.
 
@@ -216,11 +230,12 @@ produce inspectable evidence.
 
 ### Group 2 Execution Plan
 
-Group 2 remains a waterfall execution group. Do not edit workflow, test, code, or
-wiki files for Group 2 optimization until the human approves the proposed design
-alternative. The approved requirements, HLD, MLD, and LLD remain authoritative.
-Escalate any design-layer conflict, unclear decision, or proposed change to those
-layers before editing implementation files.
+This was the pre-implementation waterfall execution plan for Group 2. It is
+retained to preserve the decision trail and acceptance criteria, but it no
+longer means that Group 2 is future or unstarted. The approved requirements,
+HLD, MLD, and LLD remain authoritative. Escalate any design-layer conflict,
+unclear decision, or proposed change to those layers before editing
+implementation files.
 
 #### Entry Gate and Frozen Invariants
 
@@ -365,10 +380,203 @@ against Group 1 under the same triage and reset rule. Accept Group 2 only after
 two consecutive raw-clean implementation review rounds and two consecutive
 raw-clean group-interface review rounds.
 
-### Group 2 Acceptance Evidence
+### Group 2 Hosted Acceptance Evidence
 
-A future Group 2 implementation is not accepted by plausibility or local code
-inspection alone. It must leave an auditable evidence package that includes:
+The durable hosted acceptance package for Group 2 is:
+
+| Field                   | Final accepted run                                                                                                     |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| GitHub Actions run      | `27111512179`                                                                                                          |
+| URL                     | https://github.com/hcoona/three/actions/runs/27111512179                                                               |
+| Event                   | `workflow_dispatch`                                                                                                    |
+| Workflow inputs         | No explicit `workflow_dispatch` inputs; `.github/workflows/ci.yml` defines none for this workflow.                     |
+| CI mode                 | `scheduled_full`, resolved by the workflow for `workflow_dispatch` and recorded in `ci-validation-request.json`.       |
+| Branch                  | `dev/shuaizhang/design-workflows`                                                                                      |
+| Head SHA                | `782571d535d4cd09795ad9a96955180aad279edb`                                                                             |
+| Affected range or scope | Synthetic/global scheduled-full scope; affected range is `not-applicable` with no base/head SHA or changed-files hash. |
+| Status / conclusion     | `completed` / `success`                                                                                                |
+| Created / started       | `2026-06-08T01:47:39Z`                                                                                                 |
+| Updated / completed     | `2026-06-08T02:22:57Z`                                                                                                 |
+| Total wall-clock basis  | 35m18s from created/started to updated/completed; queue and provisioning were not separately isolated in this package. |
+
+Final accepted run job evidence:
+
+| Job                                | Result  | Duration           |
+| ---------------------------------- | ------- | ------------------ |
+| `normalize-input`                  | success | 14s                |
+| `plan`                             | success | 21s                |
+| `materialize-execution-batches`    | success | 23s                |
+| Ubuntu runner-family orchestrator  | success | 782s               |
+| macOS runner-family orchestrator   | success | 471s               |
+| Windows runner-family orchestrator | success | 1889s              |
+| `aggregate-evidence`               | success | 153s job wall time |
+
+Final accepted run verdict and evidence:
+
+| Evidence area           | Final accepted value                                                         | Result        |
+| ----------------------- | ---------------------------------------------------------------------------- | ------------- |
+| Aggregate verdict       | `passed`                                                                     | Pass          |
+| Diagnostics             | `[]`                                                                         | Pass          |
+| Failures                | `[]`                                                                         | Pass          |
+| Evidence results        | 207 satisfied / 0 failed                                                     | Pass          |
+| Execution batches       | 13 valid / 0 invalid                                                         | Pass          |
+| Top-level jobs          | 7                                                                            | Pass          |
+| Windows top-level jobs  | 1                                                                            | Pass          |
+| Execution-batch bundles | 13                                                                           | Pass          |
+| Artifacts               | 19 total: 17 pre-final validation artifacts plus 2 final aggregate artifacts | Pass          |
+| Aggregate evidence job  | success                                                                      | Pass          |
+| Artifact total size     | 316,925 bytes                                                                | Informational |
+
+Final accepted workload and no-weaker evidence obligations:
+
+| Field                        | Final accepted value                                                                                                                                                                                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Selected scope basis         | Scheduled-full plan with 66 selected subjects and `lightweight-only=false`; there were no affected-file impacts because the affected range was not applicable.                                                                                          |
+| Selected work groups         | 208 logical work groups: 100 release-shaped artifact, 66 ecosystem gate, 29 descriptor validation, 12 workflow-release tooling, and 1 evidence aggregation.                                                                                             |
+| Runner-family distribution   | Logical work groups: 113 Ubuntu, 91 Windows, 4 macOS. Execution batches: 10 Ubuntu, 2 Windows, 1 macOS.                                                                                                                                                 |
+| Selected obligations         | 178 validation obligations, 100 artifact obligations, 29 descriptor obligations, and 12 detail profiles in the frozen validation plan.                                                                                                                  |
+| Selectors/evidence count     | The plan admitted 207 evidence expectations; final aggregation reported 207 satisfied and 0 failed.                                                                                                                                                     |
+| No-weaker evidence statement | Acceptance uses the final validation plan's selected logical workload and all 207 evidence expectations. No selected obligation was replaced by a weaker smoke proxy, and no evidence obligation was waived or silently downgraded in the accepted run. |
+
+Durable review and triage evidence for acceptance:
+
+| Review stream                            | Raw findings and disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Clean-counter and final evidence                                                                                                                                                                                                                                                                                                                                                  |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Group 2 implementation                   | Initial slot-chaining implementation rounds reported 0 raw findings. Later staging-scope review found unrelated `uv.lock` and Docker Compose changes mixed with Group 2; both were TP and were split into separate commits.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Counter reset after the staging findings. Final Group 2 implementation review then reached two consecutive raw-clean rounds.                                                                                                                                                                                                                                                      |
+| Group 2 interface with Group 1 authority | Interface rounds against release-validation authority reported 0 raw findings after the Group 2 implementation scope was isolated.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Reached two consecutive raw-clean rounds before the Group 2 commit.                                                                                                                                                                                                                                                                                                               |
+| Scheduler repair implementation          | Baseline run `27086933851` exposed a cross-family scheduler TP. Subsequent implementation reviews found TPs for missing gate coverage, no-work prompt return, non-finite timeout handling, ran-without-upload waiting, mixed terminal/waitable blockers, terminal cross-family admission classification and diagnostics, same-family waitability propagation, same-family inadmissible upload state, terminal-blocker priority, later-terminal scanning, and deferred admission side effects. Repeated empty `.pytest-workflow-release-control/` reports were FP until validation later created real unignored scratch files; that later scratch finding was TP and fixed by ignoring/cleaning the directory. | Counter reset after every raw finding, including FPs. After fixes, scheduler implementation reached two raw-clean rounds; side-effect follow-up used `scheduler-sidefx-r1-*` / `scheduler-sidefx-r2-*` review labels and ended raw-clean.                                                                                                                                         |
+| Scheduler repair interface               | Interface reviews found TPs for no-work prompt return, non-finite timeout and local terminal blockers, same-family pending-chain handling, terminal diagnostics, same-family inadmissible upload state, and terminal-blocker priority.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Counter reset after each TP; final interface rounds reached two raw-clean rounds.                                                                                                                                                                                                                                                                                                 |
+| Pyrefly repair implementation            | Hosted run `27105923041` failed pyrefly gates for `html-sm-processor` and `workflow-release-contracts`; the repair was accepted after local pyrefly/test validation and no remaining raw implementation findings.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Final pyrefly implementation rounds reached raw-clean before accepted hosted run `27111512179`.                                                                                                                                                                                                                                                                                   |
+| Pyrefly repair interface                 | Interface review confirmed the type-check repair did not weaken CI validation authority, selected-obligation evidence, or acceptance-gate coverage.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Final interface evidence was raw-clean before hosted acceptance.                                                                                                                                                                                                                                                                                                                  |
+| Documentation repair implementation      | Documentation repair reviews found TPs that the LLD omitted macOS runner-family coverage, the acceptance record lacked auditable review/triage evidence, the LLD trigger contract omitted `workflow_dispatch`, and the acceptance record prematurely claimed raw-clean docs repair rounds.                                                                                                                                                                                                                                                                                                                                                                                                                    | Counter reset after docs TPs; this docs repair stream remains pending until the repaired documents receive the required consecutive raw-clean review rounds.                                                                                                                                                                                                                      |
+| Documentation repair interface           | Interface review found stale wording that contradicted bounded cross-family wait/admission semantics and family-count-agnostic aggregation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Fixed in the LLD; interface closure remains pending until the current docs repair stream records the required consecutive raw-clean group-interface review rounds.                                                                                                                                                                                                                |
+| Final global review                      | Final global review TPs were stale Group 2 state, missing hosted evidence, target-miss explanation gaps, and missing durable acceptance evidence.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Hosted run `27111512179` passed at SHA `782571d`; the documentation/evidence TPs were fixed afterward in this documentation repair. The 12-minute timing miss remains recorded as follow-up, not hidden acceptance evidence. Final-global closure is not claimed here and remains pending until the human/OA records two consecutive raw-clean global rounds after these repairs. |
+
+Hard-cap and target comparison for the final accepted run:
+
+| Requirement or target               | Final accepted run                                                               | Comparison                                                                                                                                                              |
+| ----------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Broad/full/global run timing target | 35m18s wall-clock                                                                | Missed the 12-minute target.                                                                                                                                            |
+| Top-level GitHub job cap            | 7 jobs                                                                           | Pass: below 18.                                                                                                                                                         |
+| Windows job cap                     | 1 top-level Windows job                                                          | Pass: below 8.                                                                                                                                                          |
+| Total validation artifact cap       | 19 artifacts: 17 pre-final validation artifacts plus 2 final aggregate artifacts | Pass: below 20.                                                                                                                                                         |
+| Pre-final validation artifact cap   | 17 pre-final validation artifacts                                                | Pass: below 18.                                                                                                                                                         |
+| Execution-batch bundle cap          | 13 execution batches / bundles                                                   | Pass: at the 13-bundle cap.                                                                                                                                             |
+| Final aggregation target            | 153s aggregate job wall time; aggregate-summary duration 34s                     | Mixed by metric basis: the aggregate-summary operation is within 1-2 minutes, while the aggregate job wall time is 33s above a strict 2-minute job-wall interpretation. |
+
+Baseline comparability status:
+
+- Run `27086933851` at old SHA
+  `a5e26546cc585f5d273c8a775712b1793ea038a6` failed in the scheduler before
+  comparable aggregate evidence could complete. It is retained as hosted
+  scheduler-defect evidence, not as a clean runtime A/B baseline.
+- Run `27105923041` at SHA
+  `497bb5c149a666f0e0c72411646c616ec5029d32` used the same
+  `workflow_dispatch` event class and reached successful orchestrators, but its
+  aggregate failed on two pyrefly gates. It is post-change repair evidence, not a
+  fully accepted baseline.
+- Therefore the accepted package is not a clean comparable timing baseline. The
+  documented acceptance note is that impactful workflow changes received actual
+  hosted GitHub Actions testing: the failed old-SHA run proved the scheduler
+  defect, and final run `27111512179` proved the repaired post-change acceptance
+  workload. No claim of a clean runtime A/B baseline is made.
+
+Human/OA acceptance disposition for the missing clean baseline:
+
+- The baseline run was not clean or comparable because it exposed the
+  cross-family scheduler defect that the repair stream had to fix.
+- Hosted validation was still required and performed because the accepted changes
+  affect CI topology, runner-family scheduling, evidence admission, and runtime.
+- Acceptance therefore uses the failed old-SHA hosted run as defect evidence and
+  final green hosted run `27111512179` as correctness, authority, and hard-cap
+  evidence.
+- A clean runtime A/B optimization comparison is explicitly waived or deferred as
+  a timing follow-up. This waiver does not claim clean A/B equivalence and does
+  not hide the missed 12-minute target.
+- Any future statement that the runtime target is satisfied, or that runtime
+  improved relative to a clean baseline, must cite newer comparable hosted runs.
+
+Earlier hosted evidence used during repair:
+
+| Run           | SHA                                        | Outcome                                              | Durable lesson                                                                                                                                                                                                                             |
+| ------------- | ------------------------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `27086933851` | `a5e26546cc585f5d273c8a775712b1793ea038a6` | Failed in the old scheduler path.                    | The macOS orchestrator failed at slot 00 with `runner-family orchestrator could not select a dependency-ready batch` while waiting for a cross-family dependency. This was a scheduler correctness failure, not accepted runtime evidence. |
+| `27105923041` | `497bb5c149a666f0e0c72411646c616ec5029d32` | All orchestrators succeeded, but aggregation failed. | Aggregate evidence reported 205 satisfied / 2 failed because the `html-sm-processor` and `workflow-release-contracts` pyrefly gates failed. This proved the topology repair needed Python type-check repairs before acceptance.            |
+
+Relevant pushed commits in the Group 2 and repair trail:
+
+| Commit    | Subject                                      | Role in acceptance trail                                         |
+| --------- | -------------------------------------------- | ---------------------------------------------------------------- |
+| `12be048` | Optimize Release Validation CI Slot Chaining | Main Group 2 runtime/topology optimization.                      |
+| `5262e27` | chore: Refresh Python Lockfile               | Dependency lockfile refresh needed by the repair stream.         |
+| `3cc787f` | style: Format Docker Compose Port Mapping    | Formatting repair in the same evidence trail.                    |
+| `497bb5c` | fix: Wait for Cross-Family Release Batches   | Scheduler repair for cross-family batch dependencies.            |
+| `782571d` | fix: Resolve Python Type Check Gates         | Final pyrefly gate repair for accepted hosted run `27111512179`. |
+
+The low-level design's execution-batch admission sections have been reconciled
+with the accepted scheduler repair: cross-family batch readiness is now described
+as bounded wait/admission with prompt no-work and terminal-blocker handling,
+while terminal failures, timeout, and invalid evidence still fail closed and
+aggregation remains the authority.
+
+### Timing Target Analysis and Follow-up
+
+The final accepted run achieved the correctness, authority, and hard-cap
+requirements, but it missed the documented 12-minute broad/full/global target.
+The run took approximately 35m18s wall-clock from `2026-06-08T01:47:39Z` to
+`2026-06-08T02:22:57Z`. The Windows runner-family orchestrator took 1889s
+approximately 31m29s, which dominated the total runtime.
+
+The evidence points to actual Windows validation workload and hosted runner
+execution time as the dominant overrun source, not uncontrolled topology
+fan-out. The accepted topology used 7 top-level jobs, 1 Windows top-level job,
+13 execution batches, 17 pre-final validation artifacts, and 19 total artifacts,
+all within the hard caps. The remaining
+timing problem should therefore be tracked as follow-up optimization of Windows
+validation workload, cache/setup behavior, or hosted-runner execution cost,
+without hiding the target miss and without weakening the evidence or authority
+model.
+
+The final aggregation timing must be read with an explicit metric basis. The
+aggregate-summary operation duration was 34s, which is within the 1-to-2-minute
+target. The `aggregate-evidence` GitHub job wall time was 153s, or 2m33s, which
+is above a strict 2-minute job-wall interpretation by 33s. Future comparisons
+must state which metric is being compared instead of calling the summary
+operation itself a 153s operation.
+
+This record is not a blanket waiver of the 12-minute target for future work. It
+records that the accepted Group 2 repair passed correctness, authority, and hard
+caps while leaving the 12-minute runtime miss visible as a follow-up
+optimization item. Any later claim that the timing target is satisfied must cite
+a newer comparable hosted run.
+
+### Final Review and Repair Summary
+
+The final global review findings for this repair group were all triaged true
+positive:
+
+1. the handoff plan was stale and still described Group 2 and final review as
+   future work;
+2. the acceptance evidence package was not durably recorded in `docs/wiki`;
+3. timing targets were missed without documented explanation;
+4. the 12-minute target miss needed explicit analysis, waiver or follow-up
+   disposition.
+
+This page now records Group 2 as completed, preserves the original execution
+plan as historical context, adds the hosted acceptance evidence package, and
+keeps the 12-minute miss visible with a follow-up disposition.
+
+A later documentation repair review also triaged true positives in the durable
+record itself: the LLD runner-family schema omitted the accepted macOS
+orchestrator family, and the Group 2 acceptance package needed concise
+review/triage evidence. Both documentation findings were addressed without
+changing the accepted topology semantics.
+
+### Historical Group 2 Acceptance Checklist
+
+The pre-implementation checklist below is preserved as historical context. Group
+2 is no longer future work, but this checklist remains useful when auditing or
+comparing the accepted evidence above.
 
 1. Baseline measurement source:
     - GitHub Actions workflow run IDs for an admissible current-topology

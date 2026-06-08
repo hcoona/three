@@ -700,3 +700,31 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Added current-topology baseline admission rules, bottleneck-analysis phases,
   design decision gates, serialized implementation rules, and acceptance
   evidence requirements for topology/runtime optimization.
+
+## [2026-06-08] query | Record CI validation Group 2 acceptance
+
+- Updated the workflow-release CI affected-validation implementation plan so
+  Group 2 and final review are no longer described as future work.
+- Added hosted acceptance evidence for run `27111512179`, including job
+  durations, topology and artifact caps, aggregate verdict, repair commits, and
+  earlier failed hosted evidence.
+- Recorded the 35m18s wall-clock timing miss against the 12-minute target and
+  kept it visible as a follow-up optimization item dominated by Windows hosted
+  validation runtime.
+
+## [2026-06-08] query | Repair CI validation acceptance docs
+
+- Updated the CI affected-validation LLD runner-family schema and mapping text
+  to include the accepted macOS orchestrator family.
+- Added concise Group 2 review and triage evidence to the hosted acceptance
+  package, including raw-clean implementation and group-interface review cycles.
+
+## [2026-06-08] query | Repair CI validation review evidence wording
+
+- Reconciled the CI affected-validation LLD top-level DAG with bounded
+  cross-family readiness/admission semantics.
+- Replaced stale two-family aggregation wording with runner-family-agnostic
+  wording.
+- Expanded the Group 2 acceptance evidence into a compact auditable review and
+  triage table covering implementation, interface, scheduler, pyrefly,
+  documentation, and final global review streams.
