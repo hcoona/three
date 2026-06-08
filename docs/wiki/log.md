@@ -728,3 +728,13 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Expanded the Group 2 acceptance evidence into a compact auditable review and
   triage table covering implementation, interface, scheduler, pyrefly,
   documentation, and final global review streams.
+
+## [2026-06-08] query | Record CI validation final global closure
+
+- Updated the CI affected-validation implementation plan to record two
+  consecutive raw-clean final global overview rounds after commit `9f1791d`.
+- Clarified that this closure-recording update is docs-only, locally
+  hook-validated, and covered by the post-hosted docs-only rerun waiver.
+- Recorded remaining non-blocking follow-ups: hosted runtime optimization,
+  clean A/B runtime baseline only for future runtime-target claims, and clear
+  aggregate-summary versus aggregate-job timing evidence.
