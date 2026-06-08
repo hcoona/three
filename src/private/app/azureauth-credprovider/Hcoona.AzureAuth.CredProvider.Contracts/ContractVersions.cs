@@ -9,6 +9,6 @@ public static class ContractVersions
     public const int ConfigurationChangePlanMajor = 1;
     public const int DoctorCheckMajor = 1;
     public const int AdapterHostResultMajor = 1;
-    public const int KeyringHelperMajor = 1;
-    public const string KeyringHelperContractId = "keyring-helper-v1";
+    public const int KeyringHelperMajor = 2;
+    public const string KeyringHelperContractId = "keyring-helper-v2";
 }

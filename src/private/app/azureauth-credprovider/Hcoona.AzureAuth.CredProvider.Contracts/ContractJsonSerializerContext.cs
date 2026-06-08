@@ -41,6 +41,7 @@ namespace Hcoona.AzureAuth.CredProvider.Contracts;
 [JsonSerializable(typeof(InteractivePolicy))]
 [JsonSerializable(typeof(KeyringDigestPolicy))]
 [JsonSerializable(typeof(KeyringHelperIntegrityContract))]
+[JsonSerializable(typeof(KeyringHelperIntegrityPlatform))]
 [JsonSerializable(typeof(KeyringHelperMode))]
 [JsonSerializable(typeof(KeyringHelperRequest))]
 [JsonSerializable(typeof(KeyringHelperResponse))]
@@ -57,5 +58,6 @@ namespace Hcoona.AzureAuth.CredProvider.Contracts;
 [JsonSourceGenerationOptions(
     JsonSerializerDefaults.Web,
     WriteIndented = false,
-    GenerationMode = JsonSourceGenerationMode.Metadata)]
+    GenerationMode = JsonSourceGenerationMode.Metadata
+)]
 internal sealed partial class ContractJsonSerializerContext : JsonSerializerContext;

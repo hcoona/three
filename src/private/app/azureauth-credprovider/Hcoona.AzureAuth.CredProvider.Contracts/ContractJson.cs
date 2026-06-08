@@ -49,6 +49,7 @@ public static class ContractJson
         options.Converters.Add(new StrictCamelCaseEnumConverter<DoctorCheckStatus>());
         options.Converters.Add(new StrictCamelCaseEnumConverter<DoctorCheckSeverity>());
         options.Converters.Add(new StrictCamelCaseEnumConverter<KeyringHelperMode>());
+        options.Converters.Add(new StrictCamelCaseEnumConverter<KeyringHelperIntegrityPlatform>());
         options.Converters.Add(
             new StrictCamelCaseEnumConverter<KeyringOwnerValidationRequirement>()
         );

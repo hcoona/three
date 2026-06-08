@@ -674,8 +674,7 @@ public sealed class ContractFreezeTests
 
     [Theory]
     [MemberData(nameof(PaddedCanonicalResourceIdentityFields))]
-    public void
-        CanonicalResourceIdentityRejectsPaddedCanonicalFieldsBeforeEndpointAndCacheKeyComparison(
+    public void CanonicalResourceIdentityRejectsPaddedCanonicalFieldsBeforeEndpointComparison(
         string fieldName,
         CredentialRequest request
     )
@@ -801,8 +800,7 @@ public sealed class ContractFreezeTests
         "feed",
         null
     )]
-    public void
-        CanonicalResourceIdentityRejectsEncodedOrDecodedSeparatorsInsideEndpointIdentityComponents(
+    public void CanonicalResourceIdentityRejectsSeparatorsInsideEndpointIdentityComponents(
         string endpoint,
         string host,
         string? project,
@@ -872,8 +870,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        CanonicalResourceIdentityRequiresSupportedEndpointPathComponentsToMatchCanonicalFields()
+    public void CanonicalResourceIdentityRequiresEndpointPathComponentsToMatchCanonicalFields()
     {
         var gitResource = CanonicalResourceIdentity.Create(
             "dev.azure.com",
@@ -913,8 +910,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        CanonicalResourceIdentityRejectsUnderSpecifiedEndpointsForMoreSpecificCanonicalFields()
+    public void CanonicalResourceIdentityRejectsUnderSpecifiedEndpointsForSpecificFields()
     {
         var gitResource = CanonicalResourceIdentity.Create(
             "dev.azure.com",
@@ -977,8 +973,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        CanonicalResourceIdentityRejectsUnsupportedHostsEvenWhenCanonicalHostMatchesEndpointHost()
+    public void CanonicalResourceIdentityRejectsUnsupportedHostsEvenWhenCanonicalHostMatches()
     {
         var request = CreateRequest(IdentityFlow.InteractiveBrowser, CredentialKind.BasicPassword);
         var unsupportedHostResource = request.Resource with
@@ -1117,8 +1112,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        CanonicalResourceIdentityAcceptsTerminalSlashForValidationWithoutChangingStoredEndpoint()
+    public void CanonicalResourceIdentityAcceptsTerminalSlashWithoutChangingStoredEndpoint()
     {
         var endpoint = new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/");
 
@@ -1266,8 +1260,7 @@ public sealed class ContractFreezeTests
         "feed",
         null
     )]
-    public void
-        CanonicalResourceIdentityRejectsTrailingResourceMarkersOutsideSupportedEndpointShapes(
+    public void CanonicalResourceIdentityRejectsTrailingResourceMarkersOutsideSupportedShapes(
         string endpoint,
         string host,
         string project,
@@ -1365,8 +1358,7 @@ public sealed class ContractFreezeTests
         "feed",
         null
     )]
-    public void
-        CanonicalResourceIdentityRejectsReservedMarkerNamesAsEndpointIdentityComponentValues(
+    public void CanonicalResourceIdentityRejectsReservedMarkersAsEndpointIdentityValues(
         string endpoint,
         string host,
         string? project,
@@ -1491,8 +1483,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        CanonicalResourceIdentitySupportsLegacyVisualStudioOrganizationInHostEndpointShapes()
+    public void CanonicalResourceIdentitySupportsLegacyVisualStudioOrganizationInHostShapes()
     {
         var gitResource = CanonicalResourceIdentity.Create(
             "org.visualstudio.com",
@@ -2251,7 +2242,7 @@ public sealed class ContractFreezeTests
             AdapterProtocol.GitCredentialHelper,
             AdapterProtocol.NuGetPlugin,
             AdapterProtocol.PythonKeyringBackend,
-            AdapterProtocol.KeyringHelperV1,
+            AdapterProtocol.KeyringHelper,
             AdapterProtocol.NpmConfiguration,
         ];
         (
@@ -2318,7 +2309,7 @@ public sealed class ContractFreezeTests
                     "user@example.com",
                     "tenant-1"
                 ),
-                [AdapterProtocol.PythonKeyringBackend, AdapterProtocol.KeyringHelperV1]
+                [AdapterProtocol.PythonKeyringBackend, AdapterProtocol.KeyringHelper]
             ),
             (
                 "python-project-feed",
@@ -2330,7 +2321,7 @@ public sealed class ContractFreezeTests
                     "user@example.com",
                     "tenant-1"
                 ),
-                [AdapterProtocol.PythonKeyringBackend, AdapterProtocol.KeyringHelperV1]
+                [AdapterProtocol.PythonKeyringBackend, AdapterProtocol.KeyringHelper]
             ),
             (
                 "npm-feed",
@@ -2428,7 +2419,7 @@ public sealed class ContractFreezeTests
                         && protocol
                             is AdapterProtocol.GitCredentialHelper
                                 or AdapterProtocol.NuGetPlugin
-                                or AdapterProtocol.KeyringHelperV1,
+                                or AdapterProtocol.KeyringHelper,
                     mapped.WriteProtocolStdout
                 );
                 Assert.Equal(!shouldAccept, mapped.WriteDiagnosticStderr);
@@ -2807,8 +2798,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        ConfigurationChangePlanRepresentsYarnBerryRegistryAuthEntriesSeparatelyFromNpmrcSelectors()
+    public void ConfigurationChangePlanRepresentsYarnBerryRegistryAuthEntriesSeparately()
     {
         var plan = new ConfigurationChangePlan
         {
@@ -2874,56 +2864,56 @@ public sealed class ContractFreezeTests
             change =>
                 change.Key
                 == "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm\"]"
-                       + ".npmAuthToken"
+                    + ".npmAuthToken"
         );
         Assert.Contains(
             plan.Changes,
             change =>
                 change.Key
                 == "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm\"]"
-                       + ".npmAlwaysAuth"
+                    + ".npmAlwaysAuth"
         );
         Assert.Contains(
             plan.Changes,
             change =>
                 change.Key
                 == "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry\"]"
-                       + ".npmAuthToken"
+                    + ".npmAuthToken"
         );
         Assert.Contains(
             plan.Changes,
             change =>
                 change.Key
                 == "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry\"]"
-                       + ".npmAlwaysAuth"
+                    + ".npmAlwaysAuth"
         );
         Assert.Contains(
             plan.Changes,
             change =>
                 change.Key
                 == "npmRegistries[\"https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm\"]"
-                       + ".npmAuthToken"
+                    + ".npmAuthToken"
         );
         Assert.Contains(
             plan.Changes,
             change =>
                 change.Key
                 == "npmRegistries[\"https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm\"]"
-                       + ".npmAlwaysAuth"
+                    + ".npmAlwaysAuth"
         );
         Assert.Contains(
             plan.Changes,
             change =>
                 change.Key
                 == "npmRegistries[\"https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm/"
-                       + "registry\"].npmAuthToken"
+                    + "registry\"].npmAuthToken"
         );
         Assert.Contains(
             plan.Changes,
             change =>
                 change.Key
                 == "npmRegistries[\"https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm/"
-                       + "registry\"].npmAlwaysAuth"
+                    + "registry\"].npmAlwaysAuth"
         );
         Assert.All(
             plan.Changes.Where(change =>
@@ -2949,8 +2939,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        ConfigurationChangePlanRepresentsCiTemporaryYarnBerryRegistryAuthWithPreservedDeclarations()
+    public void ConfigurationChangePlanRepresentsCiTemporaryYarnBerryRegistryAuth()
     {
         var plan = new ConfigurationChangePlan
         {
@@ -3075,56 +3064,56 @@ public sealed class ContractFreezeTests
             change =>
                 change.Key
                 == "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm\"]"
-                       + ".npmAuthToken"
+                    + ".npmAuthToken"
         );
         Assert.Contains(
             plan.Changes,
             change =>
                 change.Key
                 == "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm\"]"
-                       + ".npmAlwaysAuth"
+                    + ".npmAlwaysAuth"
         );
         Assert.Contains(
             plan.Changes,
             change =>
                 change.Key
                 == "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry\"]"
-                       + ".npmAuthToken"
+                    + ".npmAuthToken"
         );
         Assert.Contains(
             plan.Changes,
             change =>
                 change.Key
                 == "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry\"]"
-                       + ".npmAlwaysAuth"
+                    + ".npmAlwaysAuth"
         );
         Assert.Contains(
             plan.Changes,
             change =>
                 change.Key
                 == "npmRegistries[\"https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm\"]"
-                       + ".npmAuthToken"
+                    + ".npmAuthToken"
         );
         Assert.Contains(
             plan.Changes,
             change =>
                 change.Key
                 == "npmRegistries[\"https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm\"]"
-                       + ".npmAlwaysAuth"
+                    + ".npmAlwaysAuth"
         );
         Assert.Contains(
             plan.Changes,
             change =>
                 change.Key
                 == "npmRegistries[\"https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm/"
-                       + "registry\"].npmAuthToken"
+                    + "registry\"].npmAuthToken"
         );
         Assert.Contains(
             plan.Changes,
             change =>
                 change.Key
                 == "npmRegistries[\"https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm/"
-                       + "registry\"].npmAlwaysAuth"
+                    + "registry\"].npmAlwaysAuth"
         );
     }
 
@@ -3139,16 +3128,16 @@ public sealed class ContractFreezeTests
             Target = @"C:\repo\.yarnrc.yml",
             Summary =
                 "Project-local Yarn auth for the same registry would shadow CI temporary HOME "
-                    + "auth.",
+                + "auth.",
             DiagnosticsCorrelationId = "corr-yarn-ci-shadowing",
             ObservedValue =
                 "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm/"
-                    + "registry\"].npmAuthToken in C:\\repo\\.yarnrc.yml",
+                + "registry\"].npmAuthToken in C:\\repo\\.yarnrc.yml",
             ExpectedValue =
                 "No same-registry project-local Yarn auth when CI temporary HOME auth is planned.",
             Remediation =
                 "Remove or migrate the project-local Yarn auth entry before applying the CI "
-                    + "temporary plan.",
+                + "temporary plan.",
             SafeDetails = new ReadOnlyDictionary<string, string>(
                 new Dictionary<string, string>
                 {
@@ -3157,12 +3146,12 @@ public sealed class ContractFreezeTests
                     ["plannedScope"] = "ci-temporary",
                     ["shadowingSelectors"] =
                         "npmRegistries[registry].npmAuthToken;npmRegistries[registry].npmAuthIdent;"
-                            + "npmRegistries[registry].npmAlwaysAuth=false;npmScopes[*]"
-                            + ".npmAuthToken;npmScopes[*].npmAuthIdent;npmScopes[*]"
-                            + ".npmAlwaysAuth=false",
+                        + "npmRegistries[registry].npmAlwaysAuth=false;npmScopes[*]"
+                        + ".npmAuthToken;npmScopes[*].npmAuthIdent;npmScopes[*]"
+                        + ".npmAlwaysAuth=false",
                     ["registryNormalization"] =
                         "match project-local npmScopes[*].npmRegistryServer after normalizing "
-                            + "terminal slashes",
+                        + "terminal slashes",
                 }
             ),
         };
@@ -3214,8 +3203,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        ConfigurationChangePlanRepresentsPhaseOneFourCreateUpdateRefreshAndCiTemporaryRules()
+    public void ConfigurationChangePlanRepresentsCreateUpdateRefreshAndCiTemporaryRules()
     {
         var plan = new ConfigurationChangePlan
         {
@@ -3304,8 +3292,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        ConfigurationPlanContractSurfaceKeepsFrozenRemoveExplicitPathAndWorkspaceReadOnlyMembers()
+    public void ConfigurationPlanContractSurfaceKeepsFrozenRemoveExplicitPathMembers()
     {
         var explicitPathRemovePlan = new ConfigurationChangePlan
         {
@@ -3434,8 +3421,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        ConfigurationChangePlanPolicyFactoryRejectsNullChangeEntriesWithoutNullReferenceException()
+    public void ConfigurationChangePlanPolicyFactoryRejectsNullChangeEntries()
     {
         ArgumentException exception = Assert.Throws<ArgumentException>(() =>
             ConfigurationChangePlanPolicy.Create(
@@ -4160,8 +4146,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        ConfigurationChangePlanPolicyRejectsCiTemporaryContainersWithRollbackCleanupDisabled()
+    public void ConfigurationChangePlanPolicyRejectsCiTemporaryContainersWithRollbackDisabled()
     {
         const string npmrcPath = @"C:\agent\_temp\azureauth-credprovider\.npmrc";
         const string yarnHomePath = @"C:\agent\_temp\azureauth-credprovider\yarn-home";
@@ -4222,8 +4207,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        ConfigurationChangePlanPolicyRejectsCiTemporaryContainersWithRemovalCleanupDisabled()
+    public void ConfigurationChangePlanPolicyRejectsCiTemporaryContainersWithRemovalDisabled()
     {
         const string npmrcPath = @"C:\agent\_temp\azureauth-credprovider\.npmrc";
         const string yarnHomePath = @"C:\agent\_temp\azureauth-credprovider\yarn-home";
@@ -4284,8 +4268,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        ConfigurationChangePlanPolicyBindsCiTemporaryChangesToDeclaredProductOwnedContainer()
+    public void ConfigurationChangePlanPolicyBindsCiTemporaryChangesToDeclaredContainer()
     {
         const string npmrcPath = @"C:\agent\_temp\azureauth-credprovider\.npmrc";
         const string yarnHomePath = @"C:\agent\_temp\azureauth-credprovider\yarn-home";
@@ -4408,7 +4391,7 @@ public sealed class ContractFreezeTests
                         {
                             TargetPathOrName =
                                 "C:\\agent\\_temp\\azureauth-credprovider\\"
-                                    + "yarn-home-sibling\\.yarnrc.yml",
+                                + "yarn-home-sibling\\.yarnrc.yml",
                         },
                     ],
                 }
@@ -4426,7 +4409,7 @@ public sealed class ContractFreezeTests
                         {
                             TargetPathOrName =
                                 "C:\\agent\\_temp\\azureauth-credprovider\\"
-                                    + "yarn-home\\nested\\.yarnrc.yml",
+                                + "yarn-home\\nested\\.yarnrc.yml",
                         },
                     ],
                 }
@@ -4492,8 +4475,7 @@ public sealed class ContractFreezeTests
         "//agent-share/temp/azureauth-credprovider/yarn-home",
         "//agent-share/temp/azureauth-credprovider/yarn-home/other.yml"
     )]
-    public void
-        ConfigurationChangePlanPolicyRejectsCiTemporaryHomeYarnrcTargetsOtherThanImmediateChild(
+    public void ConfigurationChangePlanPolicyRejectsCiTemporaryHomeYarnrcTargetsOutsideChild(
         string productOwnedPath,
         string targetPath
     )
@@ -4585,8 +4567,7 @@ public sealed class ContractFreezeTests
     [InlineData("USERPROFILE", "C:\\other", "HOME", null, "HOMEDRIVE", "HOMEPATH")]
     [InlineData("USERPROFILE", null, "HOME", null, "HOMEDRIVE", null)]
     [InlineData("USERPROFILE", null, "HOME", null, null, "HOMEPATH")]
-    public void
-        PlanPolicyRejectsIncompleteWindowsYarnHomeActivation(
+    public void PlanPolicyRejectsIncompleteWindowsYarnHomeActivation(
         string? firstSetVariable,
         string? firstSetValue,
         string? secondSetVariable,
@@ -4714,8 +4695,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        ConfigurationChangePlanPolicyPinsWindowsUncNpmrcFileCiTemporaryActivationEnvironment()
+    public void ConfigurationChangePlanPolicyPinsWindowsUncNpmrcFileCiTemporaryEnvironment()
     {
         const string npmrcPath = "//agent-share/temp/azureauth-credprovider/.npmrc";
         ConfigurationChangePlan plan = CreateValidConfigurationPlan() with
@@ -4785,8 +4765,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        PlanPolicyRejectsPosixNpmrcActivationWithOnlyUppercaseUserConfig()
+    public void PlanPolicyRejectsPosixNpmrcActivationWithOnlyUppercaseUserConfig()
     {
         const string npmrcPath = "/agent/_temp/azureauth-credprovider/.npmrc";
         ConfigurationChangePlan plan = CreateValidConfigurationPlan() with
@@ -4827,8 +4806,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        PlanPolicyRejectsWindowsNpmrcActivationWithExtraLowercaseUserConfig()
+    public void PlanPolicyRejectsWindowsNpmrcActivationWithExtraLowercaseUserConfig()
     {
         const string npmrcPath = @"C:\agent\_temp\azureauth-credprovider\.npmrc";
         ConfigurationChangePlan plan = CreateValidConfigurationPlan() with
@@ -4873,8 +4851,7 @@ public sealed class ContractFreezeTests
     [InlineData(null, null, null)]
     [InlineData("NPM_CONFIG_USERCONFIG", "C:\\other\\.npmrc", "npm_config_userconfig")]
     [InlineData("npm_config_userconfig", null, null)]
-    public void
-        ConfigurationChangePlanPolicyRejectsIncompleteNpmrcFileCiTemporaryActivationEnvironment(
+    public void ConfigurationChangePlanPolicyRejectsIncompleteNpmrcFileCiTemporaryEnvironment(
         string? firstSetVariable,
         string? firstSetValue,
         string? secondSetVariable
@@ -4933,8 +4910,7 @@ public sealed class ContractFreezeTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("linux")]
-    public void
-        ConfigurationChangePlanPolicyRejectsNpmrcFileCiTemporaryActivationWithoutKnownPlatform(
+    public void ConfigurationChangePlanPolicyRejectsNpmrcFileCiTemporaryWithoutKnownPlatform(
         string? platform
     )
     {
@@ -4980,8 +4956,7 @@ public sealed class ContractFreezeTests
     [InlineData(@"C:\agent\_temp\azureauth-credprovider\.npmrc", "posix")]
     [InlineData("//agent-share/temp/azureauth-credprovider/.npmrc", "posix")]
     [InlineData("/agent/_temp/azureauth-credprovider/.npmrc", "windows")]
-    public void
-        ConfigurationChangePlanPolicyRejectsNpmrcFileCiTemporaryActivationPlatformPathKindMismatch(
+    public void ConfigurationChangePlanPolicyRejectsNpmrcFileCiTemporaryPlatformKindMismatch(
         string npmrcPath,
         string platform
     )
@@ -6087,24 +6062,24 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void KeyringHelperV1BuildsFixedNonShellCommandShape()
+    public void KeyringHelperV2BuildsFixedNonShellCommandShape()
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"),
             Username = "user",
             Mode = KeyringHelperMode.Credentials,
         };
 
-        IReadOnlyList<string> arguments = KeyringHelperV1.BuildArguments(request);
+        IReadOnlyList<string> arguments = KeyringHelperV2.BuildArguments(request);
 
         Assert.Equal(
             [
                 "python-keyring",
                 "get",
                 "--protocol-version",
-                "1",
+                "2",
                 "--service",
                 "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
                 "--username",
@@ -6117,7 +6092,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void KeyringHelperV1RejectsRequestsForNonFixedCommand()
+    public void KeyringHelperV2RejectsRequestsForNonFixedCommand()
     {
         var request = new KeyringHelperRequest
         {
@@ -6133,9 +6108,9 @@ public sealed class ContractFreezeTests
         };
 
         var exception = Assert.Throws<ArgumentException>(() =>
-            KeyringHelperV1.BuildArguments(request)
+            KeyringHelperV2.BuildArguments(request)
         );
-        KeyringHelperResponse response = KeyringHelperV1.ToResponse(request, success);
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(request, success);
 
         Assert.Contains("python-keyring", exception.Message, StringComparison.Ordinal);
         Assert.Equal(AdapterHostExitCode.ConfigurationError, response.ExitCode);
@@ -6145,13 +6120,13 @@ public sealed class ContractFreezeTests
 
     [Theory]
     [InlineData(0)]
-    [InlineData(2)]
-    public void KeyringHelperV1RejectsUnsupportedRequestContractMajor(int contractMajor)
+    [InlineData(1)]
+    public void KeyringHelperV2RejectsUnsupportedRequestContractMajor(int contractMajor)
     {
         var request = new KeyringHelperRequest
         {
             ContractMajor = contractMajor,
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"),
             Mode = KeyringHelperMode.Password,
         };
@@ -6163,9 +6138,9 @@ public sealed class ContractFreezeTests
         };
 
         var exception = Assert.Throws<ArgumentException>(() =>
-            KeyringHelperV1.BuildArguments(request)
+            KeyringHelperV2.BuildArguments(request)
         );
-        KeyringHelperResponse response = KeyringHelperV1.ToResponse(request, success);
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(request, success);
 
         Assert.Contains("contract major", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(AdapterHostExitCode.ConfigurationError, response.ExitCode);
@@ -6174,11 +6149,11 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void KeyringHelperV1RejectsNullServiceWithoutStdout()
+    public void KeyringHelperV2RejectsNullServiceWithoutStdout()
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = null!,
             Mode = KeyringHelperMode.Password,
         };
@@ -6190,9 +6165,9 @@ public sealed class ContractFreezeTests
         };
 
         var exception = Assert.Throws<ArgumentException>(() =>
-            KeyringHelperV1.BuildArguments(request)
+            KeyringHelperV2.BuildArguments(request)
         );
-        KeyringHelperResponse response = KeyringHelperV1.ToResponse(request, success);
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(request, success);
 
         Assert.Contains("service", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(AdapterHostExitCode.ConfigurationError, response.ExitCode);
@@ -6208,18 +6183,18 @@ public sealed class ContractFreezeTests
     [InlineData("https://org.pkgs.visualstudio.com/_packaging/feed/pypi/simple")]
     [InlineData("https://org.pkgs.visualstudio.com/proj/_packaging/feed/pypi/simple/")]
     [InlineData("https://org.pkgs.visualstudio.com/DefaultCollection/_packaging/feed/pypi/simple/")]
-    public void KeyringHelperV1AcceptsOnlyAzureArtifactsPythonFeedServiceUris(string service)
+    public void KeyringHelperV2AcceptsOnlyAzureArtifactsPythonFeedServiceUris(string service)
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri(service),
             Mode = KeyringHelperMode.Password,
         };
 
-        IReadOnlyList<string> arguments = KeyringHelperV1.BuildArguments(request);
+        IReadOnlyList<string> arguments = KeyringHelperV2.BuildArguments(request);
 
-        Assert.Equal(KeyringHelperV1.CommandName, arguments[0]);
+        Assert.Equal(KeyringHelperV2.CommandName, arguments[0]);
         Assert.Contains("--service", arguments);
         Assert.Contains(request.Service.AbsoluteUri, arguments);
     }
@@ -6229,21 +6204,21 @@ public sealed class ContractFreezeTests
     [InlineData("https://pkgs.dev.azure.com/org/_packaging/_git/pypi/simple/")]
     [InlineData("https://pkgs.dev.azure.com/_packaging/_packaging/feed/pypi/simple/")]
     [InlineData("https://_git.pkgs.visualstudio.com/_packaging/feed/pypi/simple/")]
-    public void KeyringHelperV1RejectsReservedMarkerNamesAsServiceIdentityComponentValues(
+    public void KeyringHelperV2RejectsReservedMarkerNamesAsServiceIdentityComponentValues(
         string service
     )
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri(service),
             Mode = KeyringHelperMode.Password,
         };
 
         var exception = Assert.Throws<ArgumentException>(() =>
-            KeyringHelperV1.BuildArguments(request)
+            KeyringHelperV2.BuildArguments(request)
         );
-        KeyringHelperResponse response = KeyringHelperV1.ToResponse(
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(
             request,
             new CredentialResult
             {
@@ -6261,11 +6236,11 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void KeyringHelperV1RejectsServiceUserInfoWithoutStdoutOrArgvLeak()
+    public void KeyringHelperV2RejectsServiceUserInfoWithoutStdoutOrArgvLeak()
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri(
                 "https://user:secret@pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"
             ),
@@ -6279,9 +6254,9 @@ public sealed class ContractFreezeTests
         };
 
         var exception = Assert.Throws<ArgumentException>(() =>
-            KeyringHelperV1.BuildArguments(request)
+            KeyringHelperV2.BuildArguments(request)
         );
-        KeyringHelperResponse response = KeyringHelperV1.ToResponse(request, success);
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(request, success);
 
         Assert.Contains("service", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("secret", exception.ToString(), StringComparison.Ordinal);
@@ -6293,11 +6268,11 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void KeyringHelperV1RejectsEmptyServiceUserInfoWithoutStdoutOrArgvLeak()
+    public void KeyringHelperV2RejectsEmptyServiceUserInfoWithoutStdoutOrArgvLeak()
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri("https://@pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"),
             Mode = KeyringHelperMode.Password,
         };
@@ -6309,9 +6284,9 @@ public sealed class ContractFreezeTests
         };
 
         var exception = Assert.Throws<ArgumentException>(() =>
-            KeyringHelperV1.BuildArguments(request)
+            KeyringHelperV2.BuildArguments(request)
         );
-        KeyringHelperResponse response = KeyringHelperV1.ToResponse(request, success);
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(request, success);
 
         Assert.Contains("service", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(AdapterHostExitCode.ConfigurationError, response.ExitCode);
@@ -6325,11 +6300,11 @@ public sealed class ContractFreezeTests
     [InlineData("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/#secret")]
     [InlineData("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/?")]
     [InlineData("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/#")]
-    public void KeyringHelperV1RejectsServiceQueryOrFragmentWithoutStdoutOrArgvLeak(string service)
+    public void KeyringHelperV2RejectsServiceQueryOrFragmentWithoutStdoutOrArgvLeak(string service)
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri(service),
             Mode = KeyringHelperMode.Password,
         };
@@ -6341,9 +6316,9 @@ public sealed class ContractFreezeTests
         };
 
         var exception = Assert.Throws<ArgumentException>(() =>
-            KeyringHelperV1.BuildArguments(request)
+            KeyringHelperV2.BuildArguments(request)
         );
-        KeyringHelperResponse response = KeyringHelperV1.ToResponse(request, success);
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(request, success);
 
         Assert.Contains(
             "query, or fragment",
@@ -6359,11 +6334,11 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void KeyringHelperV1RejectsRelativeServiceWithoutStdout()
+    public void KeyringHelperV2RejectsRelativeServiceWithoutStdout()
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri("/org/_packaging/feed/pypi/simple/", UriKind.Relative),
             Mode = KeyringHelperMode.Password,
         };
@@ -6375,9 +6350,9 @@ public sealed class ContractFreezeTests
         };
 
         var exception = Assert.Throws<ArgumentException>(() =>
-            KeyringHelperV1.BuildArguments(request)
+            KeyringHelperV2.BuildArguments(request)
         );
-        KeyringHelperResponse response = KeyringHelperV1.ToResponse(request, success);
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(request, success);
 
         Assert.Contains("service", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(AdapterHostExitCode.ConfigurationError, response.ExitCode);
@@ -6410,11 +6385,11 @@ public sealed class ContractFreezeTests
     [InlineData("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/extra")]
     [InlineData("https://dev.azure.com/org/proj/_unknown/repo")]
     [InlineData("https://dev.azure.com")]
-    public void KeyringHelperV1RejectsUnsupportedServiceUrisBeforeArgvOrStdout(string service)
+    public void KeyringHelperV2RejectsUnsupportedServiceUrisBeforeArgvOrStdout(string service)
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri(service),
             Mode = KeyringHelperMode.Password,
         };
@@ -6426,9 +6401,9 @@ public sealed class ContractFreezeTests
         };
 
         var exception = Assert.Throws<ArgumentException>(() =>
-            KeyringHelperV1.BuildArguments(request)
+            KeyringHelperV2.BuildArguments(request)
         );
-        KeyringHelperResponse response = KeyringHelperV1.ToResponse(request, success);
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(request, success);
 
         Assert.Contains(
             "keyring helper service",
@@ -6447,11 +6422,11 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void KeyringHelperV1SerializesCredentialsAndNoCredentialPrecisely()
+    public void KeyringHelperV2SerializesCredentialsAndNoCredentialPrecisely()
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"),
             Mode = KeyringHelperMode.Credentials,
         };
@@ -6468,8 +6443,8 @@ public sealed class ContractFreezeTests
             DiagnosticsCorrelationId = "corr-no-credential",
         };
 
-        KeyringHelperResponse successResponse = KeyringHelperV1.ToResponse(request, success);
-        KeyringHelperResponse noCredentialResponse = KeyringHelperV1.ToResponse(
+        KeyringHelperResponse successResponse = KeyringHelperV2.ToResponse(request, success);
+        KeyringHelperResponse noCredentialResponse = KeyringHelperV2.ToResponse(
             request,
             noCredential
         );
@@ -6487,11 +6462,11 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void KeyringHelperV1CredentialsModeUsesRequestUsernameWhenResultUsernameIsNull()
+    public void KeyringHelperV2CredentialsModeUsesRequestUsernameWhenResultUsernameIsNull()
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"),
             Username = "request-user",
             Mode = KeyringHelperMode.Credentials,
@@ -6504,7 +6479,7 @@ public sealed class ContractFreezeTests
             DiagnosticsCorrelationId = "corr-keyring-request-username",
         };
 
-        KeyringHelperResponse response = KeyringHelperV1.ToResponse(request, success);
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(request, success);
 
         Assert.Equal(AdapterHostExitCode.Success, response.ExitCode);
         Assert.Equal("request-user\ngenerated-password\n", response.Stdout);
@@ -6512,12 +6487,11 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        KeyringHelperV1CredentialsModeRejectsMissingRequestAndResultUsernameWithoutPasswordLeak()
+    public void KeyringHelperV2CredentialsModeRejectsMissingUsernamesWithoutPasswordLeak()
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"),
             Mode = KeyringHelperMode.Credentials,
         };
@@ -6528,7 +6502,7 @@ public sealed class ContractFreezeTests
             DiagnosticsCorrelationId = "corr-keyring-missing-username",
         };
 
-        KeyringHelperResponse response = KeyringHelperV1.ToResponse(request, success);
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(request, success);
 
         Assert.Equal(AdapterHostExitCode.ConfigurationError, response.ExitCode);
         Assert.Equal(string.Empty, response.Stdout);
@@ -6538,11 +6512,11 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void KeyringHelperV1PasswordModeUsesExplicitLfStdout()
+    public void KeyringHelperV2PasswordModeUsesExplicitLfStdout()
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"),
             Mode = KeyringHelperMode.Password,
         };
@@ -6553,7 +6527,7 @@ public sealed class ContractFreezeTests
             DiagnosticsCorrelationId = "corr-keyring-lf",
         };
 
-        KeyringHelperResponse response = KeyringHelperV1.ToResponse(request, success);
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(request, success);
 
         Assert.Equal(AdapterHostExitCode.Success, response.ExitCode);
         Assert.Equal("generated-password\n", response.Stdout);
@@ -6566,7 +6540,7 @@ public sealed class ContractFreezeTests
     [InlineData(KeyringHelperMode.Password, null, null, "generated\npassword")]
     [InlineData(KeyringHelperMode.Credentials, null, "Azure\rDevOps", "generated-password")]
     [InlineData(KeyringHelperMode.Credentials, "Azure\nDevOps", null, "generated-password")]
-    public void KeyringHelperV1RejectsSuccessCredentialFieldsContainingCrOrLf(
+    public void KeyringHelperV2RejectsSuccessCredentialFieldsContainingCrOrLf(
         KeyringHelperMode mode,
         string? requestUsername,
         string? resultUsername,
@@ -6575,7 +6549,7 @@ public sealed class ContractFreezeTests
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"),
             Username = requestUsername,
             Mode = mode,
@@ -6588,7 +6562,7 @@ public sealed class ContractFreezeTests
             DiagnosticsCorrelationId = "corr-keyring-crlf",
         };
 
-        KeyringHelperResponse response = KeyringHelperV1.ToResponse(request, success);
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(request, success);
 
         Assert.Equal(AdapterHostExitCode.ConfigurationError, response.ExitCode);
         Assert.Equal(string.Empty, response.Stdout);
@@ -6597,11 +6571,11 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void KeyringHelperV1UsesMapperDiagnosticWhenMappedSuccessCarriesError()
+    public void KeyringHelperV2UsesMapperDiagnosticWhenMappedSuccessCarriesError()
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"),
             Mode = KeyringHelperMode.Password,
         };
@@ -6618,7 +6592,7 @@ public sealed class ContractFreezeTests
             },
         };
 
-        KeyringHelperResponse response = KeyringHelperV1.ToResponse(request, errorBearingSuccess);
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(request, errorBearingSuccess);
 
         Assert.Equal(AdapterHostExitCode.ConfigurationError, response.ExitCode);
         Assert.Equal(string.Empty, response.Stdout);
@@ -6634,13 +6608,13 @@ public sealed class ContractFreezeTests
     [Theory]
     [InlineData(0)]
     [InlineData(2)]
-    public void KeyringHelperV1FailsClosedForUnsupportedCredentialResultContractMajor(
+    public void KeyringHelperV2FailsClosedForUnsupportedCredentialResultContractMajor(
         int contractMajor
     )
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"),
             Mode = KeyringHelperMode.Password,
         };
@@ -6652,7 +6626,7 @@ public sealed class ContractFreezeTests
             DiagnosticsCorrelationId = "corr-keyring-result-version",
         };
 
-        KeyringHelperResponse response = KeyringHelperV1.ToResponse(request, success);
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(request, success);
 
         Assert.Equal(AdapterHostExitCode.ConfigurationError, response.ExitCode);
         Assert.Equal(string.Empty, response.Stdout);
@@ -6663,13 +6637,13 @@ public sealed class ContractFreezeTests
     [Theory]
     [InlineData(0)]
     [InlineData(2)]
-    public void KeyringHelperV1UsesMapperDiagnosticForUnsupportedCredentialResultContractMajor(
+    public void KeyringHelperV2UsesMapperDiagnosticForUnsupportedCredentialResultContractMajor(
         int contractMajor
     )
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"),
             Mode = KeyringHelperMode.Password,
         };
@@ -6687,7 +6661,7 @@ public sealed class ContractFreezeTests
             },
         };
 
-        KeyringHelperResponse response = KeyringHelperV1.ToResponse(request, rejectedResult);
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(request, rejectedResult);
 
         Assert.Equal(AdapterHostExitCode.ConfigurationError, response.ExitCode);
         Assert.Equal(string.Empty, response.Stdout);
@@ -6703,11 +6677,11 @@ public sealed class ContractFreezeTests
     [Theory]
     [InlineData(KeyringHelperMode.Unspecified)]
     [InlineData((KeyringHelperMode)999)]
-    public void KeyringHelperV1RejectsUnspecifiedOrUnknownMode(KeyringHelperMode mode)
+    public void KeyringHelperV2RejectsUnspecifiedOrUnknownMode(KeyringHelperMode mode)
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"),
             Mode = mode,
         };
@@ -6719,9 +6693,9 @@ public sealed class ContractFreezeTests
         };
 
         var exception = Assert.Throws<ArgumentException>(() =>
-            KeyringHelperV1.BuildArguments(request)
+            KeyringHelperV2.BuildArguments(request)
         );
-        KeyringHelperResponse response = KeyringHelperV1.ToResponse(request, success);
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(request, success);
 
         Assert.Contains("mode", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(AdapterHostExitCode.ConfigurationError, response.ExitCode);
@@ -6748,11 +6722,11 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void KeyringHelperV1EmitsIntegrityFailureAndProtocolViolationExitCodes()
+    public void KeyringHelperV2EmitsIntegrityFailureAndProtocolViolationExitCodes()
     {
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"),
             Mode = KeyringHelperMode.Password,
         };
@@ -6773,11 +6747,11 @@ public sealed class ContractFreezeTests
             DiagnosticsCorrelationId = "corr-protocol",
         };
 
-        KeyringHelperResponse integrityResponse = KeyringHelperV1.ToResponse(
+        KeyringHelperResponse integrityResponse = KeyringHelperV2.ToResponse(
             request,
             integrityFailure
         );
-        KeyringHelperResponse protocolResponse = KeyringHelperV1.ToResponse(
+        KeyringHelperResponse protocolResponse = KeyringHelperV2.ToResponse(
             request,
             protocolViolation
         );
@@ -6789,13 +6763,14 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void KeyringIntegrityContractRequiresAbsoluteOwnedNonSymlinkHelperWithDigest()
+    public void KeyringIntegrityContractAcceptsStrongLinuxPolicy()
     {
         var integrity = new KeyringHelperIntegrityContract
         {
             ProductId = "azureauth-credprovider",
-            AbsoluteHelperPath = GetFullyQualifiedHelperPath(),
+            AbsoluteHelperPath = GetFullyQualifiedHelperPath(KeyringHelperIntegrityPlatform.Linux),
             Sha256 = new string('a', 64),
+            Platform = KeyringHelperIntegrityPlatform.Linux,
         };
 
         Assert.Equal(ContractVersions.KeyringHelperMajor, integrity.ContractMajor);
@@ -6806,10 +6781,361 @@ public sealed class ContractFreezeTests
             typeof(KeyringHelperIntegrityContract).GetProperties(),
             property => property.PropertyType == typeof(bool)
         );
-        Assert.True(Path.IsPathFullyQualified(integrity.AbsoluteHelperPath));
+        Assert.StartsWith("/", integrity.AbsoluteHelperPath, StringComparison.Ordinal);
+        Assert.Equal(KeyringHelperIntegrityPlatform.Linux, integrity.Platform);
         Assert.Equal(64, integrity.Sha256.Length);
-        Assert.True(KeyringHelperIntegrityPolicy.IsValid(integrity));
-        KeyringHelperIntegrityPolicy.EnsureValid(integrity);
+        Assert.True(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
+        KeyringHelperIntegrityPolicy.EnsureStructurallyValid(integrity);
+    }
+
+    [Theory]
+    [InlineData(KeyringHelperIntegrityPlatform.Windows)]
+    [InlineData(KeyringHelperIntegrityPlatform.MacOs)]
+    public void KeyringIntegrityContractAcceptsWeakWindowsMacOsPolicy(
+        KeyringHelperIntegrityPlatform platform
+    )
+    {
+        var integrity = new KeyringHelperIntegrityContract
+        {
+            ProductId = "azureauth-credprovider",
+            AbsoluteHelperPath = GetFullyQualifiedHelperPath(platform),
+            Sha256 = new string('a', 64),
+            Platform = platform,
+            OwnerValidation = KeyringOwnerValidationRequirement.DeferredNotAvailable,
+            SymlinkPolicy = KeyringSymlinkPolicy.BestEffortRejectSymlinks,
+            DigestPolicy = KeyringDigestPolicy.Sha256RequiredWeakPath,
+        };
+
+        Assert.True(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
+        KeyringHelperIntegrityPolicy.EnsureStructurallyValid(integrity);
+    }
+
+    [Theory]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Linux,
+        "/opt/azureauth-credprovider/keyring-helper",
+        true
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Linux,
+        "/opt/azureauth-credprovider/keyring-helper. ",
+        true
+    )]
+    [InlineData(KeyringHelperIntegrityPlatform.Linux, @"C:\Program Files\helper.exe", false)]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.MacOs,
+        "/Applications/AzureAuth CredProvider/keyring-helper",
+        true
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.MacOs,
+        "/Applications/AzureAuth CredProvider/keyring-helper. ",
+        true
+    )]
+    [InlineData(KeyringHelperIntegrityPlatform.MacOs, @"C:\Program Files\helper.exe", false)]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Windows,
+        @"C:\Program Files\AzureAuth CredProvider\keyring-helper.exe",
+        true
+    )]
+    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"\\server\share\keyring-helper.exe", true)]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Windows,
+        "/opt/azureauth-credprovider/keyring-helper",
+        false
+    )]
+    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"C:relative\keyring-helper.exe", false)]
+    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"\rooted\keyring-helper.exe", false)]
+    public void KeyringIntegrityStructuralValidationUsesDeclaredPlatformPathRules(
+        KeyringHelperIntegrityPlatform platform,
+        string absoluteHelperPath,
+        bool expectedValid
+    )
+    {
+        var integrity = CreateStructurallyValidIntegrityContract(platform) with
+        {
+            AbsoluteHelperPath = absoluteHelperPath,
+        };
+
+        Assert.Equal(expectedValid, KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
+        if (expectedValid)
+        {
+            KeyringHelperIntegrityPolicy.EnsureStructurallyValid(integrity);
+        }
+        else
+        {
+            var violation = KeyringHelperIntegrityPolicy.GetStructuralViolation(integrity);
+            Assert.Contains("path must be absolute", violation, StringComparison.Ordinal);
+            Assert.Throws<ArgumentException>(() =>
+                KeyringHelperIntegrityPolicy.EnsureStructurallyValid(integrity)
+            );
+        }
+    }
+
+    [Theory]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Linux,
+        "/opt/./azureauth-credprovider/keyring-helper"
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Linux,
+        "/opt/azureauth-credprovider/../keyring-helper"
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.MacOs,
+        "/Applications/./AzureAuth CredProvider/keyring-helper"
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.MacOs,
+        "/Applications/AzureAuth CredProvider/../keyring-helper"
+    )]
+    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"C:\Program Files\.\keyring-helper.exe")]
+    [InlineData(KeyringHelperIntegrityPlatform.Windows, "C:/Program Files/./keyring-helper.exe")]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Windows,
+        @"C:\Program Files\AzureAuth CredProvider\..\keyring-helper.exe"
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Windows,
+        @"C:\Program Files\AzureAuth CredProvider\. \keyring-helper.exe"
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Windows,
+        @"C:\Program Files\AzureAuth CredProvider\.. \keyring-helper.exe"
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Windows,
+        @"C:\Program Files\AzureAuth CredProvider \keyring-helper.exe"
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Windows,
+        @"C:\Program Files.\AzureAuth CredProvider\keyring-helper.exe"
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Windows,
+        @"C:\Program Files\AzureAuth CredProvider\keyring-helper.exe. "
+    )]
+    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"\\server\share\.\keyring-helper.exe")]
+    [InlineData(KeyringHelperIntegrityPlatform.Windows, "//server/share/./keyring-helper.exe")]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Windows,
+        @"\\server\share\folder\..\keyring-helper.exe"
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Windows,
+        "//server/share/folder/../keyring-helper.exe"
+    )]
+    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"\\server\share\. \keyring-helper.exe")]
+    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"\\server\share\.. \keyring-helper.exe")]
+    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"\\server \share\keyring-helper.exe")]
+    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"\\server\share.\keyring-helper.exe")]
+    [InlineData(KeyringHelperIntegrityPlatform.Windows, @"\\server\share\keyring-helper.exe. ")]
+    public void KeyringIntegrityStructuralValidationRejectsUnsafePathComponents(
+        KeyringHelperIntegrityPlatform platform,
+        string absoluteHelperPath
+    )
+    {
+        var integrity = CreateStructurallyValidIntegrityContract(platform) with
+        {
+            AbsoluteHelperPath = absoluteHelperPath,
+        };
+
+        Assert.False(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
+        var violation = KeyringHelperIntegrityPolicy.GetStructuralViolation(integrity);
+        Assert.Contains(
+            "must not contain '.' or '..' path components",
+            violation,
+            StringComparison.Ordinal
+        );
+        Assert.Throws<ArgumentException>(() =>
+            KeyringHelperIntegrityPolicy.EnsureStructurallyValid(integrity)
+        );
+    }
+
+    [Theory]
+    [InlineData(KeyringHelperIntegrityPlatform.Linux, @"C:\Program Files\helper.exe")]
+    [InlineData(KeyringHelperIntegrityPlatform.MacOs, @"C:\Program Files\helper.exe")]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Windows,
+        "/opt/azureauth-credprovider/keyring-helper"
+    )]
+    public void KeyringIntegrityContractPolicyValidationRejectsWrongTrustedPlatformPathSyntax(
+        KeyringHelperIntegrityPlatform trustedRuntimePlatform,
+        string absoluteHelperPath
+    )
+    {
+        var integrity = CreateStructurallyValidIntegrityContract(trustedRuntimePlatform) with
+        {
+            AbsoluteHelperPath = absoluteHelperPath,
+        };
+
+        Assert.False(
+            KeyringHelperIntegrityPolicy.IsContractPolicyValid(integrity, trustedRuntimePlatform)
+        );
+        var violation = KeyringHelperIntegrityPolicy.GetContractPolicyViolation(
+            integrity,
+            trustedRuntimePlatform
+        );
+        Assert.Contains("path must be absolute", violation, StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>(() =>
+            KeyringHelperIntegrityPolicy.EnsureContractPolicyValid(
+                integrity,
+                trustedRuntimePlatform
+            )
+        );
+    }
+
+    [Theory]
+    [InlineData(KeyringHelperIntegrityPlatform.Linux)]
+    [InlineData(KeyringHelperIntegrityPlatform.Windows)]
+    [InlineData(KeyringHelperIntegrityPlatform.MacOs)]
+    public void KeyringIntegrityContractPolicyValidationAcceptsMatchingTrustedPlatform(
+        KeyringHelperIntegrityPlatform platform
+    )
+    {
+        var integrity = CreateStructurallyValidIntegrityContract(platform);
+
+        Assert.True(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
+        Assert.True(KeyringHelperIntegrityPolicy.IsContractPolicyValid(integrity, platform));
+        Assert.Null(KeyringHelperIntegrityPolicy.GetContractPolicyViolation(integrity, platform));
+        KeyringHelperIntegrityPolicy.EnsureContractPolicyValid(integrity, platform);
+    }
+
+    [Fact]
+    public void KeyringIntegrityContractPolicyValidationDoesNotInspectFilesystemSnapshot()
+    {
+        var integrity = CreateStructurallyValidIntegrityContract(
+            KeyringHelperIntegrityPlatform.Linux
+        ) with
+        {
+            AbsoluteHelperPath = "/definitely-not-installed/azureauth-credprovider/keyring-helper",
+        };
+
+        Assert.True(
+            KeyringHelperIntegrityPolicy.IsContractPolicyValid(
+                integrity,
+                KeyringHelperIntegrityPlatform.Linux
+            )
+        );
+    }
+
+    [Theory]
+    [InlineData(KeyringHelperIntegrityPlatform.Linux)]
+    [InlineData(KeyringHelperIntegrityPlatform.Windows)]
+    [InlineData(KeyringHelperIntegrityPlatform.MacOs)]
+    public void KeyringIntegrityDefaultContractPolicyValidationUsesTrustedCurrentRuntime(
+        KeyringHelperIntegrityPlatform declaredPlatform
+    )
+    {
+        KeyringHelperIntegrityPlatform trustedRuntimePlatform =
+            KeyringHelperIntegrityPolicy.GetTrustedRuntimePlatform();
+        var integrity = CreateStructurallyValidIntegrityContract(declaredPlatform);
+        bool expected = declaredPlatform == trustedRuntimePlatform;
+
+        Assert.True(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
+        Assert.Equal(expected, KeyringHelperIntegrityPolicy.IsContractPolicyValid(integrity));
+        Assert.Equal(
+            expected,
+            KeyringHelperIntegrityPolicy.GetContractPolicyViolation(integrity) is null
+        );
+        if (expected)
+        {
+            KeyringHelperIntegrityPolicy.EnsureContractPolicyValid(integrity);
+        }
+        else
+        {
+            Assert.Throws<ArgumentException>(() =>
+                KeyringHelperIntegrityPolicy.EnsureContractPolicyValid(integrity)
+            );
+        }
+    }
+
+    [Theory]
+    [InlineData(KeyringHelperIntegrityPlatform.Linux, KeyringHelperIntegrityPlatform.Windows)]
+    [InlineData(KeyringHelperIntegrityPlatform.Linux, KeyringHelperIntegrityPlatform.MacOs)]
+    [InlineData(KeyringHelperIntegrityPlatform.Windows, KeyringHelperIntegrityPlatform.Linux)]
+    [InlineData(KeyringHelperIntegrityPlatform.Windows, KeyringHelperIntegrityPlatform.MacOs)]
+    [InlineData(KeyringHelperIntegrityPlatform.MacOs, KeyringHelperIntegrityPlatform.Linux)]
+    [InlineData(KeyringHelperIntegrityPlatform.MacOs, KeyringHelperIntegrityPlatform.Windows)]
+    public void KeyringIntegrityContractPolicyValidationRejectsSelfDeclaredPlatformMismatch(
+        KeyringHelperIntegrityPlatform declaredPlatform,
+        KeyringHelperIntegrityPlatform trustedRuntimePlatform
+    )
+    {
+        var integrity = CreateStructurallyValidIntegrityContract(declaredPlatform);
+
+        Assert.True(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
+        Assert.False(
+            KeyringHelperIntegrityPolicy.IsContractPolicyValid(integrity, trustedRuntimePlatform)
+        );
+        var violation = KeyringHelperIntegrityPolicy.GetContractPolicyViolation(
+            integrity,
+            trustedRuntimePlatform
+        );
+        Assert.Contains("trusted runtime platform", violation, StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>(() =>
+            KeyringHelperIntegrityPolicy.EnsureContractPolicyValid(
+                integrity,
+                trustedRuntimePlatform
+            )
+        );
+    }
+
+    [Theory]
+    [InlineData(KeyringHelperIntegrityPlatform.Unspecified)]
+    [InlineData((KeyringHelperIntegrityPlatform)999)]
+    public void KeyringIntegrityContractPolicyValidationRejectsUnsupportedTrustedPlatform(
+        KeyringHelperIntegrityPlatform trustedRuntimePlatform
+    )
+    {
+        var integrity = CreateStructurallyValidIntegrityContract(
+            KeyringHelperIntegrityPlatform.Linux
+        );
+
+        Assert.True(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
+        Assert.False(
+            KeyringHelperIntegrityPolicy.IsContractPolicyValid(integrity, trustedRuntimePlatform)
+        );
+        var violation = KeyringHelperIntegrityPolicy.GetContractPolicyViolation(
+            integrity,
+            trustedRuntimePlatform
+        );
+        Assert.Contains("trusted runtime platform", violation, StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>(() =>
+            KeyringHelperIntegrityPolicy.EnsureContractPolicyValid(
+                integrity,
+                trustedRuntimePlatform
+            )
+        );
+    }
+
+    [Fact]
+    public void KeyringIntegrityCurrentContractPolicyValidationUsesTrustedRuntimePlatform()
+    {
+        KeyringHelperIntegrityPlatform trustedRuntimePlatform =
+            KeyringHelperIntegrityPolicy.GetTrustedRuntimePlatform();
+        if (trustedRuntimePlatform == KeyringHelperIntegrityPlatform.Unspecified)
+        {
+            var unsupportedRuntimeIntegrity = CreateStructurallyValidIntegrityContract(
+                KeyringHelperIntegrityPlatform.Linux
+            );
+            Assert.False(
+                KeyringHelperIntegrityPolicy.IsContractPolicyValidForCurrentRuntime(
+                    unsupportedRuntimeIntegrity
+                )
+            );
+            Assert.Throws<ArgumentException>(() =>
+                KeyringHelperIntegrityPolicy.EnsureContractPolicyValidForCurrentRuntime(
+                    unsupportedRuntimeIntegrity
+                )
+            );
+            return;
+        }
+
+        var integrity = CreateStructurallyValidIntegrityContract(trustedRuntimePlatform);
+
+        Assert.True(KeyringHelperIntegrityPolicy.IsContractPolicyValidForCurrentRuntime(integrity));
+        KeyringHelperIntegrityPolicy.EnsureContractPolicyValidForCurrentRuntime(integrity);
     }
 
     [Fact]
@@ -6821,6 +7147,7 @@ public sealed class ContractFreezeTests
             ProductId = "azureauth-credprovider",
             AbsoluteHelperPath = GetFullyQualifiedHelperPath(),
             Sha256 = new string('a', 64),
+            Platform = KeyringHelperIntegrityPlatform.Linux,
         };
         KeyringHelperIntegrityContract[] invalidContracts =
         [
@@ -6830,7 +7157,7 @@ public sealed class ContractFreezeTests
             },
             valid with
             {
-                ContractMajor = 2,
+                ContractMajor = 1,
             },
             valid with
             {
@@ -6882,9 +7209,9 @@ public sealed class ContractFreezeTests
             invalidContracts,
             integrity =>
             {
-                Assert.False(KeyringHelperIntegrityPolicy.IsValid(integrity));
+                Assert.False(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
                 Assert.Throws<ArgumentException>(() =>
-                    KeyringHelperIntegrityPolicy.EnsureValid(integrity)
+                    KeyringHelperIntegrityPolicy.EnsureStructurallyValid(integrity)
                 );
             }
         );
@@ -6921,6 +7248,8 @@ public sealed class ContractFreezeTests
     }
 
     [Theory]
+    [InlineData(nameof(KeyringHelperIntegrityContract.Platform), 0)]
+    [InlineData(nameof(KeyringHelperIntegrityContract.Platform), 999)]
     [InlineData(nameof(KeyringHelperIntegrityContract.OwnerValidation), 0)]
     [InlineData(nameof(KeyringHelperIntegrityContract.OwnerValidation), 999)]
     [InlineData(nameof(KeyringHelperIntegrityContract.SymlinkPolicy), 0)]
@@ -6937,6 +7266,10 @@ public sealed class ContractFreezeTests
             ProductId = "azureauth-credprovider",
             AbsoluteHelperPath = GetFullyQualifiedHelperPath(),
             Sha256 = new string('a', 64),
+            Platform =
+                invalidPolicy == nameof(KeyringHelperIntegrityContract.Platform)
+                    ? (KeyringHelperIntegrityPlatform)invalidValue
+                    : KeyringHelperIntegrityPlatform.Linux,
             OwnerValidation =
                 invalidPolicy == nameof(KeyringHelperIntegrityContract.OwnerValidation)
                     ? (KeyringOwnerValidationRequirement)invalidValue
@@ -6951,14 +7284,93 @@ public sealed class ContractFreezeTests
                     : KeyringDigestPolicy.Sha256Required,
         };
 
-        Assert.False(KeyringHelperIntegrityPolicy.IsValid(integrity));
+        Assert.False(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
         var exception = Assert.Throws<ArgumentException>(() =>
-            KeyringHelperIntegrityPolicy.EnsureValid(integrity)
+            KeyringHelperIntegrityPolicy.EnsureStructurallyValid(integrity)
         );
         Assert.Contains(
-            "integrity policies",
+            "keyring helper integrity",
             exception.Message,
             StringComparison.OrdinalIgnoreCase
+        );
+    }
+
+    [Theory]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Linux,
+        KeyringOwnerValidationRequirement.Required,
+        KeyringSymlinkPolicy.RejectSymlinks,
+        KeyringDigestPolicy.Sha256RequiredWeakPath
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Linux,
+        KeyringOwnerValidationRequirement.Required,
+        KeyringSymlinkPolicy.BestEffortRejectSymlinks,
+        KeyringDigestPolicy.Sha256RequiredWeakPath
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Linux,
+        KeyringOwnerValidationRequirement.Required,
+        KeyringSymlinkPolicy.BestEffortRejectSymlinks,
+        KeyringDigestPolicy.Sha256Required
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Linux,
+        KeyringOwnerValidationRequirement.DeferredNotAvailable,
+        KeyringSymlinkPolicy.RejectSymlinks,
+        KeyringDigestPolicy.Sha256Required
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Linux,
+        KeyringOwnerValidationRequirement.DeferredNotAvailable,
+        KeyringSymlinkPolicy.RejectSymlinks,
+        KeyringDigestPolicy.Sha256RequiredWeakPath
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Linux,
+        KeyringOwnerValidationRequirement.DeferredNotAvailable,
+        KeyringSymlinkPolicy.BestEffortRejectSymlinks,
+        KeyringDigestPolicy.Sha256Required
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Linux,
+        KeyringOwnerValidationRequirement.DeferredNotAvailable,
+        KeyringSymlinkPolicy.BestEffortRejectSymlinks,
+        KeyringDigestPolicy.Sha256RequiredWeakPath
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.Windows,
+        KeyringOwnerValidationRequirement.Required,
+        KeyringSymlinkPolicy.RejectSymlinks,
+        KeyringDigestPolicy.Sha256Required
+    )]
+    [InlineData(
+        KeyringHelperIntegrityPlatform.MacOs,
+        KeyringOwnerValidationRequirement.Required,
+        KeyringSymlinkPolicy.RejectSymlinks,
+        KeyringDigestPolicy.Sha256Required
+    )]
+    public void KeyringIntegrityContractRejectsMixedPlatformPolicies(
+        KeyringHelperIntegrityPlatform platform,
+        KeyringOwnerValidationRequirement ownerValidation,
+        KeyringSymlinkPolicy symlinkPolicy,
+        KeyringDigestPolicy digestPolicy
+    )
+    {
+        var integrity = new KeyringHelperIntegrityContract
+        {
+            ProductId = "azureauth-credprovider",
+            AbsoluteHelperPath = GetFullyQualifiedHelperPath(platform),
+            Sha256 = new string('a', 64),
+            Platform = platform,
+            OwnerValidation = ownerValidation,
+            SymlinkPolicy = symlinkPolicy,
+            DigestPolicy = digestPolicy,
+        };
+
+        Assert.False(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
+        Assert.Throws<ArgumentException>(() =>
+            KeyringHelperIntegrityPolicy.EnsureStructurallyValid(integrity)
         );
     }
 
@@ -7070,8 +7482,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        IdentityFlowPolicyRequiresExplicitCiModeAndProvidedTokenForAzurePipelinesSystemAccessToken()
+    public void IdentityFlowPolicyRequiresExplicitCiModeAndProvidedAzurePipelinesToken()
     {
         var ciContext = new CiContext
         {
@@ -7170,8 +7581,7 @@ public sealed class ContractFreezeTests
     [InlineData(IdentityFlow.InteractiveBrowser, CredentialKind.BasicPassword)]
     [InlineData(IdentityFlow.DeviceCode, CredentialKind.BasicPassword)]
     [InlineData(IdentityFlow.PatCompatibility, CredentialKind.PatCompatibility)]
-    public void
-        IdentityFlowPolicyRejectsNonSystemTokenFlowsInExplicitCiModeForAcceptanceAndCacheKeys(
+    public void IdentityFlowPolicyRejectsNonSystemTokenFlowsInExplicitCiMode(
         IdentityFlow flow,
         CredentialKind credentialKind
     )
@@ -7195,8 +7605,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        AzPipelinesSystemTokenGitRequiresBearerCredentialKind()
+    public void AzPipelinesSystemTokenGitRequiresBearerCredentialKind()
     {
         var ciContext = new CiContext
         {
@@ -7229,8 +7638,7 @@ public sealed class ContractFreezeTests
     [InlineData(CredentialEcosystem.Npm, CredentialKind.NpmAuthToken)]
     [InlineData(CredentialEcosystem.Pnpm, CredentialKind.NpmAuthToken)]
     [InlineData(CredentialEcosystem.Yarn, CredentialKind.NpmAuthToken)]
-    public void
-        AzPipelinesSystemTokenPackagesUseEcosystemCredentialKind(
+    public void AzPipelinesSystemTokenPackagesUseEcosystemCredentialKind(
         CredentialEcosystem ecosystem,
         CredentialKind credentialKind
     )
@@ -7450,8 +7858,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        CompatibilityAllowsAdditiveSameMajorButRequiresMajorForUnsafeChanges()
+    public void CompatibilityAllowsAdditiveSameMajorButRequiresMajorForUnsafeChanges()
     {
         Assert.True(ContractCompatibility.IsSupportedMajor(1, 1));
         Assert.True(ContractCompatibility.AllowsAdditiveField(1, 1, "newSafeDetail"));
@@ -7520,8 +7927,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void
-        StringCompatibilityOverloadFailsClosedForUnknownChangesButKeepsKnownSafeChangesCompatible()
+    public void StringCompatibilityOverloadFailsClosedForUnknownChangesButKeepsKnownSafe()
     {
         Assert.True(
             ContractCompatibility.RequiresMajorVersionChange("phase-two-round-six-unknown-change")
@@ -7630,7 +8036,7 @@ public sealed class ContractFreezeTests
         };
         var request = new KeyringHelperRequest
         {
-            Command = KeyringHelperV1.CommandName,
+            Command = KeyringHelperV2.CommandName,
             Service = new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"),
             Mode = KeyringHelperMode.Credentials,
         };
@@ -7656,7 +8062,7 @@ public sealed class ContractFreezeTests
             StringComparison.Ordinal
         );
         Assert.Contains("\"mode\":\"credentials\"", requestJson, StringComparison.Ordinal);
-        Assert.Contains("\"contractMajor\":1", responseJson, StringComparison.Ordinal);
+        Assert.Contains("\"contractMajor\":2", responseJson, StringComparison.Ordinal);
         Assert.Contains("\"exitCode\":\"noCredential\"", responseJson, StringComparison.Ordinal);
         Assert.Throws<JsonException>(() =>
             JsonSerializer.Deserialize<AdapterHostResult>(
@@ -7750,7 +8156,7 @@ public sealed class ContractFreezeTests
 
     [Theory]
     [InlineData(0)]
-    [InlineData(2)]
+    [InlineData(1)]
     [InlineData(999)]
     public void KeyringHelperRequestDeserializationRejectsUnsupportedContractMajor(
         int contractMajor
@@ -7773,7 +8179,7 @@ public sealed class ContractFreezeTests
 
     [Theory]
     [InlineData(0)]
-    [InlineData(2)]
+    [InlineData(1)]
     [InlineData(999)]
     public void KeyringHelperResponseDeserializationRejectsUnsupportedContractMajor(
         int contractMajor
@@ -7940,7 +8346,7 @@ public sealed class ContractFreezeTests
 
         string json = JsonSerializer.Serialize(response, options);
 
-        Assert.Contains("\"contractMajor\":1", json, StringComparison.Ordinal);
+        Assert.Contains("\"contractMajor\":2", json, StringComparison.Ordinal);
         Assert.Contains($"\"exitCode\":\"{exitCodeWireName}\"", json, StringComparison.Ordinal);
     }
 
@@ -7956,7 +8362,7 @@ public sealed class ContractFreezeTests
         string stderr = nullField == "stderr" ? "null" : "\"\"";
         string json = $$"""
             {
-              "contractMajor": 1,
+              "contractMajor": 2,
               "exitCode": "noCredential",
               "stdout": {{stdout}},
               "stderr": {{stderr}}
@@ -7981,7 +8387,7 @@ public sealed class ContractFreezeTests
         var options = ContractJson.CreateSerializerOptions();
         string json = $$"""
             {
-              "contractMajor": 1,
+              "contractMajor": 2,
               "exitCode": "{{exitCode}}",
               "stdout": "unexpected protocol output",
               "stderr": ""
@@ -8001,7 +8407,7 @@ public sealed class ContractFreezeTests
         var options = ContractJson.CreateSerializerOptions();
         string json = $$"""
             {
-              "contractMajor": 1,
+              "contractMajor": 2,
               "exitCode": "success",
               "stdout": {{JsonSerializer.Serialize(stdout, options)}},
               "stderr": ""
@@ -8029,7 +8435,7 @@ public sealed class ContractFreezeTests
         var options = ContractJson.CreateSerializerOptions();
         string json = $$"""
             {
-              "contractMajor": 1,
+              "contractMajor": 2,
               "exitCode": "{{exitCode}}",
               "stdout": {{JsonSerializer.Serialize(stdout, options)}},
               "stderr": "diagnostic"
@@ -8047,7 +8453,7 @@ public sealed class ContractFreezeTests
         var options = ContractJson.CreateSerializerOptions();
         const string json = """
             {
-              "contractMajor": 1,
+              "contractMajor": 2,
               "exitCode": "success",
               "stdout": "",
               "stderr": ""
@@ -8072,7 +8478,7 @@ public sealed class ContractFreezeTests
         var options = ContractJson.CreateSerializerOptions();
         string json = $$"""
             {
-              "contractMajor": 1,
+              "contractMajor": 2,
               "exitCode": "success",
               "stdout": {{JsonSerializer.Serialize(stdout, options)}},
               "stderr": ""
@@ -8095,7 +8501,7 @@ public sealed class ContractFreezeTests
         var options = ContractJson.CreateSerializerOptions();
         string json = $$"""
             {
-              "contractMajor": 1,
+              "contractMajor": 2,
               "exitCode": "success",
               "stdout": {{JsonSerializer.Serialize(stdout, options)}},
               "stderr": ""
@@ -8116,7 +8522,7 @@ public sealed class ContractFreezeTests
         var options = ContractJson.CreateSerializerOptions();
         string json = $$"""
             {
-              "contractMajor": 1,
+              "contractMajor": 2,
               "exitCode": "success",
               "stdout": {{JsonSerializer.Serialize(stdout, options)}},
               "stderr": ""
@@ -8130,7 +8536,7 @@ public sealed class ContractFreezeTests
 
     [Theory]
     [InlineData(0)]
-    [InlineData(2)]
+    [InlineData(1)]
     [InlineData(999)]
     public void KeyringHelperIntegrityContractDeserializationRejectsUnsupportedContractMajor(
         int contractMajor
@@ -8139,7 +8545,7 @@ public sealed class ContractFreezeTests
         var options = ContractJson.CreateSerializerOptions();
         string json = CreateKeyringIntegrityJson()
             .Replace(
-                "\"contractMajor\": 1",
+                "\"contractMajor\": 2",
                 $"\"contractMajor\": {contractMajor}",
                 StringComparison.Ordinal
             );
@@ -8476,7 +8882,7 @@ public sealed class ContractFreezeTests
                 [AdapterProtocol.GitCredentialHelper] = "gitCredentialHelper",
                 [AdapterProtocol.NuGetPlugin] = "nuGetPlugin",
                 [AdapterProtocol.PythonKeyringBackend] = "pythonKeyringBackend",
-                [AdapterProtocol.KeyringHelperV1] = "keyringHelperV1",
+                [AdapterProtocol.KeyringHelper] = "keyringHelper",
                 [AdapterProtocol.NpmConfiguration] = "npmConfiguration",
             }
         );
@@ -8631,10 +9037,21 @@ public sealed class ContractFreezeTests
         );
         VerifyEnumWireValues(
             options,
+            new Dictionary<KeyringHelperIntegrityPlatform, string>
+            {
+                [KeyringHelperIntegrityPlatform.Unspecified] = "unspecified",
+                [KeyringHelperIntegrityPlatform.Linux] = "linux",
+                [KeyringHelperIntegrityPlatform.Windows] = "windows",
+                [KeyringHelperIntegrityPlatform.MacOs] = "macOs",
+            }
+        );
+        VerifyEnumWireValues(
+            options,
             new Dictionary<KeyringOwnerValidationRequirement, string>
             {
                 [KeyringOwnerValidationRequirement.Unspecified] = "unspecified",
                 [KeyringOwnerValidationRequirement.Required] = "required",
+                [KeyringOwnerValidationRequirement.DeferredNotAvailable] = "deferredNotAvailable",
             }
         );
         VerifyEnumWireValues(
@@ -8643,6 +9060,7 @@ public sealed class ContractFreezeTests
             {
                 [KeyringSymlinkPolicy.Unspecified] = "unspecified",
                 [KeyringSymlinkPolicy.RejectSymlinks] = "rejectSymlinks",
+                [KeyringSymlinkPolicy.BestEffortRejectSymlinks] = "bestEffortRejectSymlinks",
             }
         );
         VerifyEnumWireValues(
@@ -8651,6 +9069,7 @@ public sealed class ContractFreezeTests
             {
                 [KeyringDigestPolicy.Unspecified] = "unspecified",
                 [KeyringDigestPolicy.Sha256Required] = "sha256Required",
+                [KeyringDigestPolicy.Sha256RequiredWeakPath] = "sha256RequiredWeakPath",
             }
         );
         VerifyEnumWireValues(
@@ -8951,7 +9370,7 @@ public sealed class ContractFreezeTests
             ),
             new KeyringHelperRequest
             {
-                Command = KeyringHelperV1.CommandName,
+                Command = KeyringHelperV2.CommandName,
                 Service = new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"),
                 Mode = KeyringHelperMode.Password,
             },
@@ -8966,6 +9385,7 @@ public sealed class ContractFreezeTests
                 ProductId = "azureauth-credprovider",
                 AbsoluteHelperPath = GetFullyQualifiedHelperPath(),
                 Sha256 = new string('a', 64),
+                Platform = KeyringHelperIntegrityPlatform.Linux,
             },
             NpmCompatibleAuthSelectorPolicy.Create(
                 CanonicalResourceIdentity.Create(
@@ -9021,7 +9441,19 @@ public sealed class ContractFreezeTests
         );
 
         Assert.NotNull(integrity);
-        Assert.True(KeyringHelperIntegrityPolicy.IsValid(integrity));
+        Assert.True(KeyringHelperIntegrityPolicy.IsStructurallyValid(integrity));
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<KeyringHelperIntegrityContract>(
+                CreateKeyringIntegrityJson(
+                    includeContractMajor: true,
+                    includePlatform: false,
+                    includeOwnerValidation: true,
+                    includeSymlinkPolicy: true,
+                    includeDigestPolicy: true
+                ),
+                options
+            )
+        );
         Assert.Throws<JsonException>(() =>
             JsonSerializer.Deserialize<KeyringHelperIntegrityContract>(
                 CreateKeyringIntegrityJson(
@@ -9591,7 +10023,7 @@ public sealed class ContractFreezeTests
                 Username = "AzureDevOps",
                 Password = "generated-password",
             },
-            AdapterProtocol.PythonKeyringBackend or AdapterProtocol.KeyringHelperV1 => result with
+            AdapterProtocol.PythonKeyringBackend or AdapterProtocol.KeyringHelper => result with
             {
                 Password = "generated-password",
             },
@@ -9700,12 +10132,46 @@ public sealed class ContractFreezeTests
             """;
 
     private static string GetFullyQualifiedHelperPath() =>
-        OperatingSystem.IsWindows()
-            ? @"C:\Program Files\AzureAuth CredProvider\keyring-helper.exe"
-            : "/opt/azureauth-credprovider/keyring-helper";
+        GetFullyQualifiedHelperPath(KeyringHelperIntegrityPlatform.Linux);
+
+    private static string GetFullyQualifiedHelperPath(KeyringHelperIntegrityPlatform platform) =>
+        platform switch
+        {
+            KeyringHelperIntegrityPlatform.Windows =>
+                @"C:\Program Files\AzureAuth CredProvider\keyring-helper.exe",
+            KeyringHelperIntegrityPlatform.MacOs =>
+                "/Applications/AzureAuth CredProvider/keyring-helper",
+            _ => "/opt/azureauth-credprovider/keyring-helper",
+        };
+
+    private static KeyringHelperIntegrityContract CreateStructurallyValidIntegrityContract(
+        KeyringHelperIntegrityPlatform platform
+    )
+    {
+        var integrity = new KeyringHelperIntegrityContract
+        {
+            ProductId = "azureauth-credprovider",
+            AbsoluteHelperPath = GetFullyQualifiedHelperPath(platform),
+            Sha256 = new string('a', 64),
+            Platform = platform,
+        };
+
+        return
+            platform
+                is KeyringHelperIntegrityPlatform.Windows
+                    or KeyringHelperIntegrityPlatform.MacOs
+            ? integrity with
+            {
+                OwnerValidation = KeyringOwnerValidationRequirement.DeferredNotAvailable,
+                SymlinkPolicy = KeyringSymlinkPolicy.BestEffortRejectSymlinks,
+                DigestPolicy = KeyringDigestPolicy.Sha256RequiredWeakPath,
+            }
+            : integrity;
+    }
 
     private static string CreateKeyringIntegrityJson(
         bool includeContractMajor = true,
+        bool includePlatform = true,
         bool includeOwnerValidation = true,
         bool includeSymlinkPolicy = true,
         bool includeDigestPolicy = true,
@@ -9718,7 +10184,7 @@ public sealed class ContractFreezeTests
 
         if (includeContractMajor)
         {
-            properties.Add("\"contractMajor\": 1");
+            properties.Add("\"contractMajor\": 2");
         }
 
         if (includeProductId)
@@ -9731,14 +10197,17 @@ public sealed class ContractFreezeTests
             string encodedHelperPath = JsonEncodedText
                 .Encode(GetFullyQualifiedHelperPath())
                 .ToString();
-            properties.Add(
-                $"\"absoluteHelperPath\": \"{encodedHelperPath}\""
-            );
+            properties.Add($"\"absoluteHelperPath\": \"{encodedHelperPath}\"");
         }
 
         if (includeSha256)
         {
             properties.Add($"\"sha256\": \"{new string('a', 64)}\"");
+        }
+
+        if (includePlatform)
+        {
+            properties.Add("\"platform\": \"linux\"");
         }
 
         if (includeOwnerValidation)

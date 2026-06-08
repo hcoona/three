@@ -119,7 +119,7 @@ public enum AdapterProtocol
     GitCredentialHelper = 1,
     NuGetPlugin = 2,
     PythonKeyringBackend = 3,
-    KeyringHelperV1 = 4,
+    KeyringHelper = 4,
     NpmConfiguration = 5,
 }
 
@@ -242,22 +242,33 @@ public enum KeyringHelperMode
     Credentials = 2,
 }
 
+public enum KeyringHelperIntegrityPlatform
+{
+    Unspecified = 0,
+    Linux = 1,
+    Windows = 2,
+    MacOs = 3,
+}
+
 public enum KeyringOwnerValidationRequirement
 {
     Unspecified = 0,
     Required = 1,
+    DeferredNotAvailable = 2,
 }
 
 public enum KeyringSymlinkPolicy
 {
     Unspecified = 0,
     RejectSymlinks = 1,
+    BestEffortRejectSymlinks = 2,
 }
 
 public enum KeyringDigestPolicy
 {
     Unspecified = 0,
     Sha256Required = 1,
+    Sha256RequiredWeakPath = 2,
 }
 
 public enum ContractBreakingChangeKind

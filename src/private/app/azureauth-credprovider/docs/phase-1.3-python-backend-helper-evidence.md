@@ -118,7 +118,7 @@ modify product source. The probe exercised four gate concerns:
 2. A backend can validate a product-owned helper manifest before invoking the
    helper.
 3. A backend can invoke a fixed absolute helper path with a non-shell argv list
-   matching the product's `keyring-helper-v1` shape only after validation passes.
+   matching the product's `keyring-helper-v2` shape only after validation passes.
 4. Local Linux validation fails closed before helper execution for relative helper
    paths, symlink helper paths, missing owner-execute mode, wrong product ID, and
    digest mismatch.
@@ -150,7 +150,7 @@ EXPECTED = [
     "python-keyring",
     "get",
     "--protocol-version",
-    "1",
+    "2",
     "--service",
     "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
     "--username",
@@ -295,7 +295,7 @@ def run_case(case_name: str, config: dict[str, object]) -> dict[str, object]:
         "python-keyring",
         "get",
         "--protocol-version",
-        "1",
+        "2",
         "--service",
         SERVICE,
         "--username",
@@ -391,7 +391,7 @@ exit 1
 ```
 
 The helper stub behavior was intentionally narrow: it accepted only the expected
-`python-keyring get --protocol-version 1 ... --mode creds` argv suffix, exited 64
+`python-keyring get --protocol-version 2 ... --mode creds` argv suffix, exited 64
 with stderr for any mismatch, and otherwise wrote exactly `probe-user\n` followed
 by `probe-password\n` to stdout with empty stderr. The positive assertion required
 backend exit 0, helper invocation, helper exit 0, empty stderr, and that exact
@@ -455,7 +455,7 @@ Python 3.14.3
             "python-keyring",
             "get",
             "--protocol-version",
-            "1",
+            "2",
             "--service",
             "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
             "--username",
@@ -902,15 +902,14 @@ already invokes the credential provider through a subprocess argv list and does
 not require importing the large credential implementation into the keyring
 backend process. The product should keep that isolation pattern but replace the
 reference provider's ad hoc command shape with the versioned
-`keyring-helper-v1` contract from `mid-level-design.md`:
+`keyring-helper-v2` contract from `mid-level-design.md`:
 
 ```text
 <helper> python-keyring get
-  --protocol-version 1
+  --protocol-version 2
   --service <service>
   [--username <username>]
   [--mode password|creds]
-  [--correlation-id <id>]
 ```
 
 The helper path must come from product-owned configuration written by the
@@ -1146,7 +1145,7 @@ Results: all three commands exited 0.
   with the ownership and integrity constraints recorded here.
 - `high-level-design.md`: Python backend and `keyring` shim shapes are
   evidence-supported for the scoped evidence above.
-- `mid-level-design.md`: `keyring-helper-v1`, fixed helper invocation, fail-closed
+- `mid-level-design.md`: `keyring-helper-v2`, fixed helper invocation, fail-closed
   behavior, and stronger integrity expectations are accepted with the constraints
   above.
 - `project-breakdown.md`: Phase 1.3 exit criterion is satisfied with a pass

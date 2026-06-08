@@ -591,15 +591,14 @@ For MVP, `configure python` writes or updates backend configuration so the
 backend can locate the product-owned helper by absolute path. That write is a
 configuration-manager change plan, not a direct backend mutation.
 
-The backend-helper protocol is versioned. MVP uses `keyring-helper-v1`:
+The backend-helper protocol is versioned. MVP uses `keyring-helper-v2`:
 
 ```text
 <helper> python-keyring get
-  --protocol-version 1
+  --protocol-version 2
   --service <service>
   [--username <username>]
   [--mode password|creds]
-  [--correlation-id <id>]
 ```
 
 The backend invokes the helper with a stable, non-shell command form. Before

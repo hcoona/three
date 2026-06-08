@@ -83,7 +83,7 @@ public static class CanonicalResourceIdentityPolicy
         catch (UriFormatException)
         {
             return "Protocol violation: service endpoint must be a well-formed supported Azure "
-                       + "DevOps service URI.";
+                + "DevOps service URI.";
         }
 
         return endpointShape.Violation;
@@ -165,7 +165,7 @@ public static class CanonicalResourceIdentityPolicy
         )
         {
             return "Protocol violation: canonical resource identity components must not include "
-                       + "leading or trailing whitespace.";
+                + "leading or trailing whitespace.";
         }
 
         if (
@@ -176,7 +176,7 @@ public static class CanonicalResourceIdentityPolicy
         )
         {
             return "Protocol violation: canonical identity components must not use reserved "
-                       + "resource marker names.";
+                + "resource marker names.";
         }
 
         ServiceEndpointShape endpointShape;
@@ -187,7 +187,7 @@ public static class CanonicalResourceIdentityPolicy
         catch (UriFormatException)
         {
             return "Protocol violation: service endpoint must be a well-formed supported Azure "
-                       + "DevOps service URI.";
+                + "DevOps service URI.";
         }
 
         if (endpointShape.Violation is not null)
@@ -204,7 +204,7 @@ public static class CanonicalResourceIdentityPolicy
         )
         {
             return "Protocol violation: service endpoint host must match the canonical Azure "
-                       + "DevOps host.";
+                + "DevOps host.";
         }
 
         if (
@@ -216,7 +216,7 @@ public static class CanonicalResourceIdentityPolicy
         )
         {
             return "Protocol violation: service endpoint organization must match the canonical "
-                       + "organization.";
+                + "organization.";
         }
 
         if (!MatchesCanonicalComponent(endpointShape.Components?.Project, resource.Project))
@@ -232,7 +232,7 @@ public static class CanonicalResourceIdentityPolicy
         if (!MatchesCanonicalComponent(endpointShape.Components?.Repository, resource.Repository))
         {
             return "Protocol violation: service endpoint repository must match the canonical "
-                       + "repository.";
+                + "repository.";
         }
 
         return null;
@@ -1040,7 +1040,7 @@ public static class CacheKeySchema
                 if (!IsOptionalPartitionIndex(i))
                 {
                     return "Protocol violation: cache-key required partition components must be "
-                               + "encoded.";
+                        + "encoded.";
                 }
 
                 continue;
@@ -1052,7 +1052,7 @@ public static class CacheKeySchema
             )
             {
                 return "Protocol violation: cache-key partition components must be valid base64 or "
-                           + "base64url.";
+                    + "base64url.";
             }
         }
 
@@ -1071,7 +1071,7 @@ public static class CacheKeySchema
         )
         {
             return "Protocol violation: cache-key partition components must use the frozen "
-                       + "canonical lower-case form.";
+                + "canonical lower-case form.";
         }
 
         string ecosystem = DecodeRequiredPartitionComponent(parts[EcosystemPartIndex]);
@@ -1090,7 +1090,7 @@ public static class CacheKeySchema
         )
         {
             return "Protocol violation: cache-key enum partition components must use supported v1 "
-                       + "values.";
+                + "values.";
         }
 
         if (
@@ -1103,7 +1103,7 @@ public static class CacheKeySchema
         )
         {
             return "Protocol violation: cache-key resource identity partitions must match "
-                       + "supported canonical resource rules.";
+                + "supported canonical resource rules.";
         }
 
         if (
@@ -1114,7 +1114,7 @@ public static class CacheKeySchema
         )
         {
             return "Protocol violation: cache-key resource identity partitions must not contain "
-                       + "path separators.";
+                + "path separators.";
         }
 
         if (
@@ -1129,7 +1129,7 @@ public static class CacheKeySchema
         )
         {
             return "Protocol violation: cache-key resource partitions must match the frozen "
-                       + "ecosystem resource shape.";
+                + "ecosystem resource shape.";
         }
 
         if (
@@ -1139,7 +1139,7 @@ public static class CacheKeySchema
         )
         {
             return "Protocol violation: cache-key service identity partition must use canonical "
-                       + "lower-case form.";
+                + "lower-case form.";
         }
 
         return null;
@@ -1600,7 +1600,7 @@ public static class ConfigurationChangePlanPolicy
         if (!HasKnownPlanEnums(plan))
         {
             return "Protocol violation: configuration change plan enum values must use supported "
-                       + "v1 values.";
+                + "v1 values.";
         }
 
         if (plan.Manifest is null)
@@ -1615,7 +1615,7 @@ public static class ConfigurationChangePlanPolicy
         )
         {
             return "Protocol violation: configuration change plan manifest required strings must "
-                       + "be non-empty.";
+                + "be non-empty.";
         }
 
         if (
@@ -1627,7 +1627,7 @@ public static class ConfigurationChangePlanPolicy
         )
         {
             return "Protocol violation: configuration change plan owner product ID must match "
-                       + "manifest owner product ID.";
+                + "manifest owner product ID.";
         }
 
         if (plan.Changes is null)
@@ -1638,7 +1638,7 @@ public static class ConfigurationChangePlanPolicy
         if (plan.Changes.Any(change => change is null))
         {
             return "Protocol violation: configuration change plan changes must not contain null "
-                       + "entries.";
+                + "entries.";
         }
 
         string? temporaryContainerViolation = GetTemporaryContainerViolation(plan);
@@ -1650,7 +1650,7 @@ public static class ConfigurationChangePlanPolicy
         if (plan.Scope == ConfigurationScope.WorkspaceReadOnly && plan.Changes.Count > 0)
         {
             return "Protocol violation: workspace read-only configuration plans must not carry "
-                       + "configuration changes.";
+                + "configuration changes.";
         }
 
         foreach (ConfigurationChange change in plan.Changes)
@@ -1671,7 +1671,7 @@ public static class ConfigurationChangePlanPolicy
         if (!plan.ContainsCredentialMaterial && ContainsCredentialMaterial(plan.Changes))
         {
             return "Protocol violation: configuration change plans with secret changes must "
-                       + "advertise credential material.";
+                + "advertise credential material.";
         }
 
         return null;
@@ -1705,25 +1705,25 @@ public static class ConfigurationChangePlanPolicy
             if (plan.TemporaryContainer is null)
             {
                 return "Protocol violation: CI temporary configuration plans require a temporary "
-                           + "container.";
+                    + "container.";
             }
 
             if (string.IsNullOrWhiteSpace(plan.TemporaryContainer.ProductOwnedPath))
             {
                 return "Protocol violation: CI temporary configuration plans require a valid "
-                           + "product-owned temporary container.";
+                    + "product-owned temporary container.";
             }
 
             if (!plan.TemporaryContainer.DeleteContainerOnRollback)
             {
                 return "Protocol violation: CI temporary configuration plans require temporary "
-                           + "container cleanup on rollback.";
+                    + "container cleanup on rollback.";
             }
 
             if (!plan.TemporaryContainer.DeleteContainerOnRemoval)
             {
                 return "Protocol violation: CI temporary configuration plans require temporary "
-                           + "container cleanup on removal.";
+                    + "container cleanup on removal.";
             }
 
             if (
@@ -1733,13 +1733,13 @@ public static class ConfigurationChangePlanPolicy
             )
             {
                 return "Protocol violation: CI temporary configuration plans require a fully "
-                           + "qualified canonical product-owned temporary container path.";
+                    + "qualified canonical product-owned temporary container path.";
             }
 
             if (IsConfigurationFilesystemRoot(plan.TemporaryContainer.ProductOwnedPath))
             {
                 return "Protocol violation: CI temporary configuration plans must not use a "
-                           + "filesystem root as the product-owned path.";
+                    + "filesystem root as the product-owned path.";
             }
 
             if (
@@ -1751,7 +1751,7 @@ public static class ConfigurationChangePlanPolicy
             )
             {
                 return "Protocol violation: CI temporary configuration plans require a valid "
-                           + "product-owned temporary container.";
+                    + "product-owned temporary container.";
             }
 
             string? activationEnvironmentViolation =
@@ -1771,7 +1771,7 @@ public static class ConfigurationChangePlanPolicy
             )
             {
                 return "Protocol violation: CI temporary configuration plans require a declaration "
-                           + "preservation policy.";
+                    + "preservation policy.";
             }
 
             return null;
@@ -1780,13 +1780,13 @@ public static class ConfigurationChangePlanPolicy
         if (plan.TemporaryContainer is not null)
         {
             return "Protocol violation: temporary containers are valid only for CI temporary "
-                       + "configuration plans.";
+                + "configuration plans.";
         }
 
         return plan.DeclarationPreservation == ConfigurationDeclarationPreservation.NotApplicable
             ? null
             : "Protocol violation: declaration preservation is valid only for CI temporary "
-                  + "configuration plans.";
+                + "configuration plans.";
     }
 
     private static string? GetTemporaryContainerActivationEnvironmentViolation(
@@ -1802,7 +1802,7 @@ public static class ConfigurationChangePlanPolicy
             _ => container.ActivationEnvironment is null
                 ? null
                 : "Protocol violation: activation environment metadata is valid only for CI "
-                      + "temporary npmrc file or HOME containers.",
+                    + "temporary npmrc file or HOME containers.",
         };
     }
 
@@ -1876,7 +1876,7 @@ public static class ConfigurationChangePlanPolicy
             )
             {
                 return "Protocol violation: Windows CI temporary npmrc file activation requires a "
-                           + "Windows product-owned path.";
+                    + "Windows product-owned path.";
             }
 
             if (
@@ -1890,8 +1890,8 @@ public static class ConfigurationChangePlanPolicy
             )
             {
                 return "Protocol violation: Windows CI temporary npmrc file activation must set "
-                           + "only NPM_CONFIG_USERCONFIG to the product-owned path and clear no "
-                           + "variables.";
+                    + "only NPM_CONFIG_USERCONFIG to the product-owned path and clear no "
+                    + "variables.";
             }
 
             return null;
@@ -1905,7 +1905,7 @@ public static class ConfigurationChangePlanPolicy
             )
             {
                 return "Protocol violation: POSIX CI temporary npmrc file activation requires a "
-                           + "POSIX product-owned path.";
+                    + "POSIX product-owned path.";
             }
 
             if (
@@ -1924,8 +1924,8 @@ public static class ConfigurationChangePlanPolicy
             )
             {
                 return "Protocol violation: POSIX CI temporary npmrc file activation must set "
-                           + "NPM_CONFIG_USERCONFIG and npm_config_userconfig to the product-owned "
-                           + "path and clear no variables.";
+                    + "NPM_CONFIG_USERCONFIG and npm_config_userconfig to the product-owned "
+                    + "path and clear no variables.";
             }
 
             return null;
@@ -1934,11 +1934,11 @@ public static class ConfigurationChangePlanPolicy
         if (string.IsNullOrWhiteSpace(platform))
         {
             return "Protocol violation: CI temporary npmrc file activation requires platform "
-                       + "metadata.";
+                + "metadata.";
         }
 
         return "Protocol violation: CI temporary npmrc file activation platform must be windows or "
-                   + "posix.";
+            + "posix.";
     }
 
     private static string? GetTemporaryHomeActivationEnvironmentViolation(
@@ -1988,7 +1988,7 @@ public static class ConfigurationChangePlanPolicy
         )
         {
             return "Protocol violation: Windows CI temporary HOME activation must set USERPROFILE "
-                       + "and HOME to the product-owned path and clear HOMEDRIVE and HOMEPATH.";
+                + "and HOME to the product-owned path and clear HOMEDRIVE and HOMEPATH.";
         }
 
         return null;
@@ -2007,7 +2007,7 @@ public static class ConfigurationChangePlanPolicy
         )
         {
             return "Protocol violation: POSIX CI temporary HOME activation must set only HOME to "
-                       + "the product-owned path.";
+                + "the product-owned path.";
         }
 
         return null;
@@ -2029,7 +2029,7 @@ public static class ConfigurationChangePlanPolicy
         if (!HasKnownChangeEnums(change))
         {
             return "Protocol violation: configuration change enum values must use supported v1 "
-                       + "values.";
+                + "values.";
         }
 
         if (
@@ -2048,7 +2048,7 @@ public static class ConfigurationChangePlanPolicy
         if (!change.RequiresOwnershipRecord)
         {
             return "Protocol violation: configuration changes must require product ownership "
-                       + "records.";
+                + "records.";
         }
 
         if (RequiresValue(change.Operation) && change.Value is null)
@@ -2068,13 +2068,13 @@ public static class ConfigurationChangePlanPolicy
         )
         {
             return "Protocol violation: line-oriented configuration values must not contain CR or "
-                       + "LF.";
+                + "LF.";
         }
 
         if (IsIntrinsicallySecretNpmCompatibleAuthValue(change) && ContainsLineBreak(change.Value!))
         {
             return "Protocol violation: npm-compatible secret auth values must not contain CR or "
-                       + "LF.";
+                + "LF.";
         }
 
         if (IsIntrinsicallySecretNpmCompatibleAuthValue(change) && !change.IsSecretValue)
@@ -2103,7 +2103,7 @@ public static class ConfigurationChangePlanPolicy
         )
         {
             return "Protocol violation: update, refresh, remove, and remove-adapter changes "
-                       + "require previous owned-entry metadata.";
+                + "require previous owned-entry metadata.";
         }
 
         return null;
@@ -2172,7 +2172,7 @@ public static class ConfigurationChangePlanPolicy
             if (!IsCanonicalFullyQualifiedConfigurationPath(change.TargetPathOrName))
             {
                 return "Protocol violation: CI temporary configuration changes require fully "
-                           + "qualified canonical target paths.";
+                    + "qualified canonical target paths.";
             }
 
             if (
@@ -2183,7 +2183,7 @@ public static class ConfigurationChangePlanPolicy
             )
             {
                 return "Protocol violation: CI temporary configuration changes must use a target "
-                           + "kind compatible with the declared temporary container.";
+                    + "kind compatible with the declared temporary container.";
             }
 
             if (
@@ -2191,7 +2191,7 @@ public static class ConfigurationChangePlanPolicy
             )
             {
                 return "Protocol violation: CI temporary configuration changes must target only "
-                           + "the declared product-owned temporary container.";
+                    + "the declared product-owned temporary container.";
             }
         }
 
@@ -2512,7 +2512,7 @@ public sealed record ConfigurationChange
             Key,
             nameof(Value),
             IsSecretValue
-                || ConfigurationChangePlanPolicy.IsIntrinsicallySecretNpmCompatibleAuthValue(this)
+            || ConfigurationChangePlanPolicy.IsIntrinsicallySecretNpmCompatibleAuthValue(this)
                 ? "<redacted>"
                 : Value,
             nameof(RequiresOwnershipRecord),
@@ -2946,7 +2946,7 @@ public static class AdapterHostResultMapper
             is AdapterProtocol.GitCredentialHelper
                 or AdapterProtocol.NuGetPlugin
                 or AdapterProtocol.PythonKeyringBackend
-                or AdapterProtocol.KeyringHelperV1
+                or AdapterProtocol.KeyringHelper
                 or AdapterProtocol.NpmConfiguration;
 
     private static bool IsSupportedGitCredentialHelperOperation(CredentialOperation operation) =>
@@ -2967,7 +2967,7 @@ public static class AdapterHostResultMapper
                     or CredentialOperation.Erase
                 ? !ContainsCredentialMaterial(result)
                 : TryMapGitCredentialHelperBasicMaterial(result, out _, out _),
-            AdapterProtocol.PythonKeyringBackend or AdapterProtocol.KeyringHelperV1 =>
+            AdapterProtocol.PythonKeyringBackend or AdapterProtocol.KeyringHelper =>
                 !string.IsNullOrEmpty(result.Password),
             AdapterProtocol.NuGetPlugin => HasBasicCredentialSuccessMaterial(
                 result.Username,
@@ -3030,12 +3030,12 @@ public static class AdapterHostResultMapper
                 && shape.CredentialKind == CredentialKind.NuGetPluginCredential
                 && shape.HasFeed
                 && !shape.HasRepository,
-            AdapterProtocol.PythonKeyringBackend or AdapterProtocol.KeyringHelperV1 =>
-                shape.Ecosystem == CredentialEcosystem.Python
-                    && shape.Audience == TokenAudience.AzureArtifacts
-                    && shape.CredentialKind == CredentialKind.BasicPassword
-                    && shape.HasFeed
-                    && !shape.HasRepository,
+            AdapterProtocol.PythonKeyringBackend or AdapterProtocol.KeyringHelper => shape.Ecosystem
+                == CredentialEcosystem.Python
+                && shape.Audience == TokenAudience.AzureArtifacts
+                && shape.CredentialKind == CredentialKind.BasicPassword
+                && shape.HasFeed
+                && !shape.HasRepository,
             AdapterProtocol.NpmConfiguration => shape.Ecosystem
                 is CredentialEcosystem.Npm
                     or CredentialEcosystem.Pnpm
@@ -3054,7 +3054,7 @@ public static class AdapterHostResultMapper
     ) =>
         protocol is AdapterProtocol.GitCredentialHelper
             ? operation == CredentialOperation.Get
-            : protocol is AdapterProtocol.NuGetPlugin or AdapterProtocol.KeyringHelperV1;
+            : protocol is AdapterProtocol.NuGetPlugin or AdapterProtocol.KeyringHelper;
 
     private static bool ContainsCredentialMaterial(CredentialResult result) =>
         !string.IsNullOrEmpty(result.Username)
@@ -3085,7 +3085,7 @@ public sealed record KeyringHelperRequest : IJsonOnDeserialized
         if (ContractMajor != ContractVersions.KeyringHelperMajor)
         {
             throw new ArgumentException(
-                "Protocol violation: keyring helper contract major must be 1.",
+                "Protocol violation: keyring helper contract major must be 2.",
                 nameof(ContractMajor)
             );
         }
@@ -3122,7 +3122,7 @@ public sealed record KeyringHelperResponse : IJsonOnDeserialized, IJsonOnSeriali
         if (ContractMajor != ContractVersions.KeyringHelperMajor)
         {
             throw new ArgumentException(
-                "Protocol violation: keyring helper response contract major must be 1.",
+                "Protocol violation: keyring helper response contract major must be 2.",
                 nameof(ContractMajor)
             );
         }
@@ -3204,6 +3204,10 @@ public sealed record KeyringHelperIntegrityContract : IJsonOnDeserialized
     public required string Sha256 { get; init; }
 
     [JsonRequired]
+    public KeyringHelperIntegrityPlatform Platform { get; init; } =
+        KeyringHelperIntegrityPlatform.Unspecified;
+
+    [JsonRequired]
     public KeyringOwnerValidationRequirement OwnerValidation { get; init; } =
         KeyringOwnerValidationRequirement.Required;
 
@@ -3218,7 +3222,7 @@ public sealed record KeyringHelperIntegrityContract : IJsonOnDeserialized
         if (ContractMajor != ContractVersions.KeyringHelperMajor)
         {
             throw new ArgumentException(
-                "Protocol violation: keyring helper integrity contract major must be 1.",
+                "Protocol violation: keyring helper integrity contract major must be 2.",
                 nameof(ContractMajor)
             );
         }
@@ -3227,30 +3231,131 @@ public sealed record KeyringHelperIntegrityContract : IJsonOnDeserialized
 
 public static class KeyringHelperIntegrityPolicy
 {
-    public static void EnsureValid(KeyringHelperIntegrityContract contract)
+    /// <summary>
+    /// Validates helper integrity contract policy for the current trusted runtime platform.
+    /// This does not inspect the filesystem and is not sufficient before helper execution.
+    /// </summary>
+    public static void EnsureContractPolicyValid(KeyringHelperIntegrityContract contract)
     {
         ArgumentNullException.ThrowIfNull(contract);
 
-        string? violation = GetViolation(contract);
+        EnsureContractPolicyValid(contract, GetTrustedRuntimePlatform());
+    }
+
+    /// <summary>
+    /// Validates helper integrity contract policy for a trusted runtime platform.
+    /// This does not inspect the filesystem and is not sufficient before helper execution.
+    /// </summary>
+    public static void EnsureContractPolicyValid(
+        KeyringHelperIntegrityContract contract,
+        KeyringHelperIntegrityPlatform trustedRuntimePlatform
+    )
+    {
+        ArgumentNullException.ThrowIfNull(contract);
+
+        string? violation = GetContractPolicyViolation(contract, trustedRuntimePlatform);
         if (violation is not null)
         {
             throw new ArgumentException(violation, nameof(contract));
         }
     }
 
-    public static bool IsValid(KeyringHelperIntegrityContract contract)
+    /// <summary>
+    /// Performs structural-only validation of the self-declared helper integrity metadata.
+    /// Path syntax is checked with the declared platform's rules.
+    /// This is not sufficient before helper execution because it does not inspect the
+    /// filesystem or bind the policy to a trusted runtime platform.
+    /// </summary>
+    public static void EnsureStructurallyValid(KeyringHelperIntegrityContract contract)
     {
         ArgumentNullException.ThrowIfNull(contract);
-        return GetViolation(contract) is null;
+
+        string? violation = GetStructuralViolation(contract);
+        if (violation is not null)
+        {
+            throw new ArgumentException(violation, nameof(contract));
+        }
     }
 
-    public static string? GetViolation(KeyringHelperIntegrityContract contract)
+    public static void EnsureContractPolicyValidForCurrentRuntime(
+        KeyringHelperIntegrityContract contract
+    )
+    {
+        ArgumentNullException.ThrowIfNull(contract);
+
+        EnsureContractPolicyValid(contract);
+    }
+
+    /// <summary>
+    /// Returns whether helper integrity contract policy is valid for the current trusted runtime
+    /// platform. This does not inspect the filesystem and is not sufficient before helper
+    /// execution.
+    /// </summary>
+    public static bool IsContractPolicyValid(KeyringHelperIntegrityContract contract)
+    {
+        ArgumentNullException.ThrowIfNull(contract);
+        return IsContractPolicyValid(contract, GetTrustedRuntimePlatform());
+    }
+
+    /// <summary>
+    /// Returns whether helper integrity contract policy is valid for a trusted runtime platform.
+    /// This does not inspect the filesystem and is not sufficient before helper execution.
+    /// </summary>
+    public static bool IsContractPolicyValid(
+        KeyringHelperIntegrityContract contract,
+        KeyringHelperIntegrityPlatform trustedRuntimePlatform
+    )
+    {
+        ArgumentNullException.ThrowIfNull(contract);
+        return GetContractPolicyViolation(contract, trustedRuntimePlatform) is null;
+    }
+
+    /// <summary>
+    /// Returns whether the self-declared helper integrity metadata is structurally valid.
+    /// Path syntax is checked with the declared platform's rules.
+    /// This is not sufficient before helper execution because it does not inspect the
+    /// filesystem or bind the policy to a trusted runtime platform.
+    /// </summary>
+    public static bool IsStructurallyValid(KeyringHelperIntegrityContract contract)
+    {
+        ArgumentNullException.ThrowIfNull(contract);
+        return GetStructuralViolation(contract) is null;
+    }
+
+    public static bool IsContractPolicyValidForCurrentRuntime(
+        KeyringHelperIntegrityContract contract
+    )
+    {
+        ArgumentNullException.ThrowIfNull(contract);
+
+        return IsContractPolicyValid(contract);
+    }
+
+    /// <summary>
+    /// Gets the helper integrity contract policy violation for the current trusted runtime
+    /// platform.
+    /// This does not inspect the filesystem and is not sufficient before helper execution.
+    /// </summary>
+    public static string? GetContractPolicyViolation(KeyringHelperIntegrityContract contract)
+    {
+        ArgumentNullException.ThrowIfNull(contract);
+
+        return GetContractPolicyViolation(contract, GetTrustedRuntimePlatform());
+    }
+
+    /// <summary>
+    /// Gets the structural-only validation violation for self-declared helper integrity metadata.
+    /// Path syntax is checked with the declared platform's rules.
+    /// This is not sufficient before helper execution because it does not inspect the
+    /// filesystem or bind the policy to a trusted runtime platform.
+    /// </summary>
+    public static string? GetStructuralViolation(KeyringHelperIntegrityContract contract)
     {
         ArgumentNullException.ThrowIfNull(contract);
 
         if (contract.ContractMajor != ContractVersions.KeyringHelperMajor)
         {
-            return "Protocol violation: keyring helper integrity contract major must be 1.";
+            return "Protocol violation: keyring helper integrity contract major must be 2.";
         }
 
         if (string.IsNullOrWhiteSpace(contract.ProductId))
@@ -3258,12 +3363,18 @@ public static class KeyringHelperIntegrityPolicy
             return "Protocol violation: keyring helper integrity product ID is required.";
         }
 
-        if (
-            string.IsNullOrWhiteSpace(contract.AbsoluteHelperPath)
-            || !Path.IsPathFullyQualified(contract.AbsoluteHelperPath)
-        )
+        if (string.IsNullOrWhiteSpace(contract.AbsoluteHelperPath))
         {
             return "Protocol violation: keyring helper path must be absolute.";
+        }
+
+        string? pathViolation = GetAbsoluteHelperPathSyntaxViolation(
+            contract.AbsoluteHelperPath,
+            contract.Platform
+        );
+        if (pathViolation is not null)
+        {
+            return pathViolation;
         }
 
         if (!IsSha256Hex(contract.Sha256))
@@ -3271,18 +3382,242 @@ public static class KeyringHelperIntegrityPolicy
             return "Protocol violation: keyring helper SHA-256 digest is required.";
         }
 
-        return (contract.OwnerValidation, contract.SymlinkPolicy, contract.DigestPolicy) switch
+        return contract.Platform switch
         {
-            (
-                KeyringOwnerValidationRequirement.Required,
-                KeyringSymlinkPolicy.RejectSymlinks,
-                KeyringDigestPolicy.Sha256Required
-            ) => null,
-            _ =>
-                "Protocol violation: keyring helper integrity policies must require owner "
-                    + "validation, symlink rejection, and SHA-256 verification.",
+            KeyringHelperIntegrityPlatform.Linux when IsStrongLinuxPolicy(contract) => null,
+            KeyringHelperIntegrityPlatform.Windows
+            or KeyringHelperIntegrityPlatform.MacOs when IsWeakWindowsMacOsPolicy(contract) => null,
+            KeyringHelperIntegrityPlatform.Linux =>
+                "Protocol violation: Linux keyring helper integrity policy must be the explicit "
+                    + "strong policy.",
+            KeyringHelperIntegrityPlatform.Windows or KeyringHelperIntegrityPlatform.MacOs =>
+                "Protocol violation: Windows/macOS keyring helper integrity policy must be the "
+                    + "explicit weak policy.",
+            _ => "Protocol violation: keyring helper integrity platform must be explicit and "
+                + "supported.",
         };
     }
+
+    public static string? GetContractPolicyViolation(
+        KeyringHelperIntegrityContract contract,
+        KeyringHelperIntegrityPlatform trustedRuntimePlatform
+    )
+    {
+        ArgumentNullException.ThrowIfNull(contract);
+
+        string? structuralViolation = GetStructuralViolation(contract);
+        if (structuralViolation is not null)
+        {
+            return structuralViolation;
+        }
+
+        if (!IsSupportedPlatform(trustedRuntimePlatform))
+        {
+            return "Protocol violation: trusted runtime platform must be Windows, macOS, or Linux.";
+        }
+
+        if (contract.Platform != trustedRuntimePlatform)
+        {
+            return "Protocol violation: keyring helper integrity platform must match the trusted "
+                + "runtime platform.";
+        }
+
+        return GetAbsoluteHelperPathSyntaxViolation(
+            contract.AbsoluteHelperPath,
+            trustedRuntimePlatform
+        );
+    }
+
+    public static KeyringHelperIntegrityPlatform GetTrustedRuntimePlatform()
+    {
+        if (OperatingSystem.IsLinux())
+        {
+            return KeyringHelperIntegrityPlatform.Linux;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return KeyringHelperIntegrityPlatform.Windows;
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            return KeyringHelperIntegrityPlatform.MacOs;
+        }
+
+        return KeyringHelperIntegrityPlatform.Unspecified;
+    }
+
+    private static bool IsStrongLinuxPolicy(KeyringHelperIntegrityContract contract) =>
+        contract.OwnerValidation == KeyringOwnerValidationRequirement.Required
+        && contract.SymlinkPolicy == KeyringSymlinkPolicy.RejectSymlinks
+        && contract.DigestPolicy == KeyringDigestPolicy.Sha256Required;
+
+    private static bool IsWeakWindowsMacOsPolicy(KeyringHelperIntegrityContract contract) =>
+        contract.OwnerValidation == KeyringOwnerValidationRequirement.DeferredNotAvailable
+        && contract.SymlinkPolicy == KeyringSymlinkPolicy.BestEffortRejectSymlinks
+        && contract.DigestPolicy == KeyringDigestPolicy.Sha256RequiredWeakPath;
+
+    private static bool IsSupportedPlatform(KeyringHelperIntegrityPlatform platform) =>
+        platform
+            is KeyringHelperIntegrityPlatform.Linux
+                or KeyringHelperIntegrityPlatform.Windows
+                or KeyringHelperIntegrityPlatform.MacOs;
+
+    private static string? GetAbsoluteHelperPathSyntaxViolation(
+        string absoluteHelperPath,
+        KeyringHelperIntegrityPlatform platform
+    )
+    {
+        if (!IsSupportedPlatform(platform))
+        {
+            return null;
+        }
+
+        bool isAbsolute =
+            platform == KeyringHelperIntegrityPlatform.Windows
+                ? IsWindowsFullyQualifiedPath(absoluteHelperPath)
+                : IsPosixAbsolutePath(absoluteHelperPath);
+        if (!isAbsolute)
+        {
+            return "Protocol violation: keyring helper path must be absolute for the declared or "
+                + "trusted platform.";
+        }
+
+        bool containsUnsafeComponent =
+            platform == KeyringHelperIntegrityPlatform.Windows
+                ? WindowsPathContainsUnsafeDirectoryComponent(absoluteHelperPath)
+                : PosixPathContainsCurrentOrParentDirectoryComponent(absoluteHelperPath);
+        return containsUnsafeComponent
+            ? "Protocol violation: keyring helper path must not contain '.' or '..' path "
+                + "components "
+                + "or Windows path components with trailing spaces or periods."
+            : null;
+    }
+
+    private static bool IsPosixAbsolutePath(string path) => path.Length > 0 && path[0] == '/';
+
+    private static bool PosixPathContainsCurrentOrParentDirectoryComponent(string path) =>
+        PathContainsCurrentOrParentDirectoryComponent(path, IsPosixDirectorySeparator);
+
+    private static bool IsWindowsFullyQualifiedPath(string path) =>
+        IsWindowsDriveFullyQualifiedPath(path) || IsWindowsUncFullyQualifiedPath(path);
+
+    private static bool WindowsPathContainsUnsafeDirectoryComponent(string path) =>
+        PathContainsDirectoryComponent(
+            path,
+            IsWindowsDirectorySeparator,
+            IsUnsafeWindowsPathComponent
+        );
+
+    private static bool PathContainsCurrentOrParentDirectoryComponent(
+        string path,
+        Func<char, bool> isDirectorySeparator
+    ) =>
+        PathContainsDirectoryComponent(
+            path,
+            isDirectorySeparator,
+            IsCurrentOrParentDirectoryComponent
+        );
+
+    private static bool PathContainsDirectoryComponent(
+        string path,
+        Func<char, bool> isDirectorySeparator,
+        Func<string, int, int, bool> isUnsafeComponent
+    )
+    {
+        var componentStart = 0;
+        for (var index = 0; index <= path.Length; index++)
+        {
+            if (index < path.Length && !isDirectorySeparator(path[index]))
+            {
+                continue;
+            }
+
+            var componentLength = index - componentStart;
+            if (isUnsafeComponent(path, componentStart, componentLength))
+            {
+                return true;
+            }
+
+            componentStart = index + 1;
+        }
+
+        return false;
+    }
+
+    private static bool IsUnsafeWindowsPathComponent(
+        string path,
+        int componentStart,
+        int componentLength
+    )
+    {
+        if (componentLength == 0)
+        {
+            return false;
+        }
+
+        if (IsCurrentOrParentDirectoryComponent(path, componentStart, componentLength))
+        {
+            return true;
+        }
+
+        char lastCharacter = path[componentStart + componentLength - 1];
+        return lastCharacter is ' ' or '.';
+    }
+
+    private static bool IsCurrentOrParentDirectoryComponent(
+        string path,
+        int componentStart,
+        int componentLength
+    ) =>
+        componentLength == 1 && path[componentStart] == '.'
+        || componentLength == 2 && path[componentStart] == '.' && path[componentStart + 1] == '.';
+
+    private static bool IsWindowsDriveFullyQualifiedPath(string path) =>
+        path.Length >= 3
+        && IsAsciiLetter(path[0])
+        && path[1] == ':'
+        && IsWindowsDirectorySeparator(path[2]);
+
+    private static bool IsWindowsUncFullyQualifiedPath(string path)
+    {
+        if (path.Length < 5 || !IsWindowsDirectorySeparator(path[0]) || path[0] != path[1])
+        {
+            return false;
+        }
+
+        int serverStart = 2;
+        int serverEnd = IndexOfWindowsDirectorySeparator(path, serverStart);
+        if (serverEnd <= serverStart)
+        {
+            return false;
+        }
+
+        int shareStart = serverEnd + 1;
+        int shareEnd = IndexOfWindowsDirectorySeparator(path, shareStart);
+        return shareEnd > shareStart || shareEnd < 0 && shareStart < path.Length;
+    }
+
+    private static int IndexOfWindowsDirectorySeparator(string path, int startIndex)
+    {
+        for (int index = startIndex; index < path.Length; index++)
+        {
+            if (IsWindowsDirectorySeparator(path[index]))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool IsAsciiLetter(char value) =>
+        value is >= 'A' and <= 'Z' or >= 'a' and <= 'z';
+
+    private static bool IsPosixDirectorySeparator(char value) => value == '/';
+
+    private static bool IsWindowsDirectorySeparator(char value) => value is '\\' or '/';
 
     private static bool IsSha256Hex(string? value)
     {
@@ -3303,7 +3638,7 @@ public static class KeyringHelperIntegrityPolicy
     }
 }
 
-public static class KeyringHelperV1
+public static class KeyringHelperV2
 {
     public const string CommandName = "python-keyring";
     public const string GetVerb = "get";
@@ -3353,7 +3688,7 @@ public static class KeyringHelperV1
             };
         }
 
-        var mapped = AdapterHostResultMapper.Map(AdapterProtocol.KeyringHelperV1, result);
+        var mapped = AdapterHostResultMapper.Map(AdapterProtocol.KeyringHelper, result);
         if (mapped.ExitCode != AdapterHostExitCode.Success || !mapped.WriteProtocolStdout)
         {
             return new KeyringHelperResponse
@@ -3379,7 +3714,7 @@ public static class KeyringHelperV1
                 Stdout = string.Empty,
                 Stderr =
                     "Protocol violation: success response does not contain required credential "
-                        + "material.",
+                    + "material.",
             };
         }
 
@@ -3398,7 +3733,7 @@ public static class KeyringHelperV1
                 Stdout = string.Empty,
                 Stderr =
                     "Protocol violation: success response credential fields must not contain CR or "
-                        + "LF.",
+                    + "LF.",
             };
         }
 
@@ -3467,7 +3802,7 @@ public static class KeyringHelperV1
     {
         if (request.ContractMajor != ContractVersions.KeyringHelperMajor)
         {
-            return "Protocol violation: keyring helper contract major must be 1.";
+            return "Protocol violation: keyring helper contract major must be 2.";
         }
 
         if (!StringComparer.Ordinal.Equals(request.Command, CommandName))
@@ -3478,7 +3813,7 @@ public static class KeyringHelperV1
         if (request.Service is null)
         {
             return "Protocol violation: keyring helper service must be a non-null absolute URI "
-                       + "without user info, query, or fragment.";
+                + "without user info, query, or fragment.";
         }
 
         string? serviceViolation = GetKeyringServiceEndpointViolation(request.Service);
@@ -3520,7 +3855,7 @@ public static class KeyringHelperV1
         )
         {
             return "Protocol violation: keyring helper service must not include user info, query, "
-                       + "or fragment.";
+                + "or fragment.";
         }
 
         string host = service.IdnHost;
@@ -3531,13 +3866,13 @@ public static class KeyringHelperV1
         )
         {
             return "Protocol violation: keyring helper service host must be a supported Azure "
-                       + "Artifacts host.";
+                + "Artifacts host.";
         }
 
         if (IsReservedIdentityComponent(legacyHostOrganization))
         {
             return "Protocol violation: keyring helper service identity components must not use "
-                       + "reserved resource marker names.";
+                + "reserved resource marker names.";
         }
 
         string[] segments;
@@ -3548,13 +3883,13 @@ public static class KeyringHelperV1
         catch (UriFormatException)
         {
             return "Protocol violation: keyring helper service path must be a well-formed Azure "
-                       + "Artifacts Python feed endpoint.";
+                + "Artifacts Python feed endpoint.";
         }
 
         if (!HasPythonFeedEndpointShape(segments, legacyHostOrganization is not null))
         {
             return "Protocol violation: keyring helper service path must be an Azure Artifacts "
-                       + "Python feed endpoint ending in _packaging/{feed}/pypi/simple.";
+                + "Python feed endpoint ending in _packaging/{feed}/pypi/simple.";
         }
 
         if (legacyHostOrganization is not null && string.IsNullOrWhiteSpace(legacyHostOrganization))
