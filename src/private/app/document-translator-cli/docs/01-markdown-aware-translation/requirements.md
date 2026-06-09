@@ -120,7 +120,11 @@ the mode is `auto`.
     partial translated output is not acceptable.
 14. Markdown-aware translation must not write the final output file unless the
     reconstructed Markdown passes validation.
-15. Error output must be concise, actionable, and must not include secrets or
+15. When a valid Markdown file contains no approved translatable text nodes,
+    Markdown-aware translation must skip the text translation backend, still run
+    reconstruction and protected-content validation, and write the original bytes
+    through the atomic output path.
+16. Error output must be concise, actionable, and must not include secrets or
     full document content.
 
 ## Markdown Scope
@@ -151,28 +155,38 @@ heuristic pass-through.
 
 The implementation must detect unsupported constructs after excluding fenced code
 blocks, indented code blocks, inline code spans, YAML front matter, raw HTML
-blocks, HTML comments, inline HTML tags, text enclosed by raw HTML markup, and
-frozen machine token matches. Frozen machine token matches are protected before
-MDX expression detection so template variables, replacement fields, and shell
-variable references are not misclassified as MDX expressions. The file must fail
-before translation when any of the following line-based or inline patterns are
-found outside those excluded regions:
+blocks, HTML comments, and early brace-like machine token matches. Early
+brace-like machine token matches are limited to template variables, replacement
+fields, and braced shell variable references such as `${name}` when they appear
+inside otherwise translatable parser text nodes. URL literals, file paths, link
+destinations, link titles, reference metadata, and other candidate protected
+ranges must not suppress unsupported-construct detection even when they match a
+machine-token pattern. Inline HTML tags and text enclosed by paired inline raw
+HTML markup are protected only after the frozen MDX JSX, MDX expression, and MDX
+comment checks prove the full tag text, attributes, and enclosed text are not
+unsupported MDX-like syntax. The file must fail before translation when any of
+the following line-based or inline patterns are found outside those excluded
+regions:
 
 1. MDX import/export: a line that matches
    `^\s*(import|export)\s+`.
 2. MDX JSX block or element: inline text that matches
    `</?[A-Z][A-Za-z0-9.:-]*(\s|/?>)`.
 3. MDX expression: inline text that matches
-   `\{[A-Za-z_$][A-Za-z0-9_$]*(?:[.()[\]\w\s+\-*/?:'"]*)?\}`.
+   `(?<!\{)\{(?!\{)[^{}\r\n]+\}(?!\})` after applying the allowed early
+   brace-like machine-token exclusions. This intentionally rejects spaced and
+   non-identifier single-brace expressions such as `{ foo }`, `{1 + 2}`, and
+   `{"text"}`.
 4. MDX comment: inline text that matches `\{/\*[\s\S]*?\*/\}`.
 5. Markdown directive: a line that matches
    `^\s*:{2,3}[A-Za-z][A-Za-z0-9_-]*\b`.
 6. Custom admonition: a line that matches `^\s*!!!\s+\w+`.
 7. TOML front matter: the file starts with `+++` before any other byte except a
    UTF-8 byte order mark.
-8. JSON front matter: the file starts with `{` before any other byte except a
-   UTF-8 byte order mark and the first non-whitespace line appears before any
-   Markdown block.
+8. JSON front matter: the first byte after an optional UTF-8 byte order mark is
+   `{`. Such files fail before Markdown parsing; v1 does not attempt to find a
+   closing JSON delimiter or distinguish JSON front matter from a Markdown
+   paragraph that starts with `{`.
 
 The detection rules intentionally prefer false-positive rejection over unsafe
 translation. A rejected file can still be translated through
@@ -181,7 +195,8 @@ translation risk.
 
 ## Translatable Content
 
-Markdown-aware translation may translate text nodes in these regions:
+Markdown-aware translation must translate eligible text nodes only in these
+regions:
 
 1. Heading visible text.
 2. Paragraph prose.
@@ -224,7 +239,9 @@ Markdown-aware translation must not translate or mutate these regions:
    raw HTML markup.
 9. MDX-like JSX, imports, exports, expressions, directives, and comments, which
    are unsupported in v1 and must fail before translation when detected outside
-   raw HTML.
+   raw HTML blocks and HTML comments. Inline HTML tags and paired inline raw HTML
+   enclosures must still be scanned for these constructs before they become
+   protected content.
 10. Markdown structural delimiters, including heading markers, list markers,
     block quote markers, table pipes, table alignment rows, emphasis markers,
     thematic breaks, and escape characters.
@@ -262,7 +279,10 @@ translatable text nodes:
 15. Package-like identifier:
     `\b[@A-Za-z0-9][A-Za-z0-9._/-]*[A-Za-z0-9]\b` when one of the
     previous three case-insensitive words is `package`, `module`, `namespace`,
-    `dependency`, `NuGet`, `npm`, or `Python`.
+    `dependency`, `NuGet`, `npm`, or `Python`. The previous-word window is
+    limited to the same parser text node. A word is a maximal ASCII
+    alphanumeric sequence; whitespace, punctuation, Markdown delimiters, and
+    protected-token boundaries separate words.
 
 The implementation must apply these patterns before sending a segment to the
 text translator. If overlapping token matches occur, the longest match wins; ties
@@ -291,6 +311,8 @@ are resolved by the earliest start offset.
    before translation.
 10. A batched text translation request must not exceed 50,000 Unicode scalar
     values across all segment texts in that request.
+11. A batched text translation request must not contain more than 100 segment
+    texts in its JSON array.
 
 ## Translation Backend Requirements
 
@@ -343,7 +365,10 @@ the following:
 8. Table row and column counts are unchanged.
 9. Code fences, inline code spans, front matter, raw HTML, task markers, and
    footnote identifiers are unchanged.
-10. The output path is not written after any validation failure.
+10. The patched output does not introduce unsupported MDX import/export, MDX JSX,
+    MDX expression, MDX comment, Markdown directive, custom admonition, TOML
+    front matter, or JSON front matter constructs outside protected ranges.
+11. The output path is not written after any validation failure.
 
 The implementation may allow translated prose to differ in wording, punctuation,
 Unicode normalization, or internal spacing. It must not allow those differences
@@ -364,11 +389,13 @@ Markdown-aware translation must fail closed for these conditions:
 7. Structural validation detects changed block order, nesting, table shape, link
    destinations, reference definitions, front matter, code, raw HTML, or
    footnote identifiers.
-8. Any segment translation fails.
-9. The input contains any shortcut or collapsed reference link.
-10. A segment or batched request exceeds the frozen 50,000 Unicode scalar value
+8. Re-validating the patched output detects unsupported constructs introduced by
+   translated prose.
+9. Any segment translation fails.
+10. The input contains any shortcut or collapsed reference link.
+11. A segment or batched request exceeds the frozen 50,000 Unicode scalar value
     limit.
-11. File I/O, authentication, or service errors occur.
+12. File I/O, authentication, or service errors occur.
 
 Failure must return a non-zero exit code consistent with the baseline CLI error
 taxonomy. Markdown validation and reconstruction failures are validation errors
@@ -509,6 +536,8 @@ At minimum, tests must cover:
 15. UTF-8 without byte order mark, UTF-8 with byte order mark, LF, CRLF, mixed
     line endings, final newline, and no-final-newline cases.
 16. Backward-compatible behavior for existing non-Markdown supported formats.
+17. Protected-only Markdown files with zero extracted segments skip text
+    translation, pass validation, and write byte-for-byte original content.
 
 ## Frozen Decisions
 
