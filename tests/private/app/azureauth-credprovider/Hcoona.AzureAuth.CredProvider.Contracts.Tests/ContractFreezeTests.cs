@@ -3145,10 +3145,12 @@ public sealed class ContractFreezeTests
                     ["shadowingScope"] = "project-local",
                     ["plannedScope"] = "ci-temporary",
                     ["shadowingSelectors"] =
-                        "npmRegistries[registry].npmAuthToken;npmRegistries[registry].npmAuthIdent;"
-                        + "npmRegistries[registry].npmAlwaysAuth=false;npmScopes[*]"
-                        + ".npmAuthToken;npmScopes[*].npmAuthIdent;npmScopes[*]"
-                        + ".npmAlwaysAuth=false",
+                        "npmRegistries[registry].npmAuthToken;"
+                        + "npmRegistries[registry].npmAuthIdent;"
+                        + "npmRegistries[registry].npmAlwaysAuth=false;"
+                        + "npmScopes[*].npmAuthToken;"
+                        + "npmScopes[*].npmAuthIdent;"
+                        + "npmScopes[*].npmAlwaysAuth=false",
                     ["registryNormalization"] =
                         "match project-local npmScopes[*].npmRegistryServer after normalizing "
                         + "terminal slashes",
@@ -3448,11 +3450,6 @@ public sealed class ContractFreezeTests
         "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm\"].npmAuthToken"
     )]
     [InlineData(ConfigurationTargetKind.Yarnrc, "npmAuthToken")]
-    [InlineData(
-        ConfigurationTargetKind.Yarnrc,
-        "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm\"].npmAuthIdent"
-    )]
-    [InlineData(ConfigurationTargetKind.Yarnrc, "npmAuthIdent")]
     public void ConfigurationChangePlanPolicyRejectsIntrinsicNpmCompatibleAuthTokensNotMarkedSecret(
         ConfigurationTargetKind targetKind,
         string key
@@ -3505,21 +3502,48 @@ public sealed class ContractFreezeTests
         ConfigurationChangeOperation.Refresh,
         "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm\"].npmAuthIdent"
     )]
-    public void ConfigurationChangePlanPolicyRejectsSecretMarkedYarnNpmAuthIdentWrites(
+    [InlineData(ConfigurationChangeOperation.Remove, "npmAuthIdent")]
+    [InlineData(
+        ConfigurationChangeOperation.Remove,
+        "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm\"].npmAuthIdent"
+    )]
+    [InlineData(ConfigurationChangeOperation.RemoveAdapter, "npmAuthIdent")]
+    [InlineData(
+        ConfigurationChangeOperation.RemoveAdapter,
+        "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm\"].npmAuthIdent"
+    )]
+    [InlineData(ConfigurationChangeOperation.EnsureFile, "npmAuthIdent")]
+    [InlineData(
+        ConfigurationChangeOperation.EnsureFile,
+        "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm\"].npmAuthIdent"
+    )]
+    [InlineData(ConfigurationChangeOperation.InstallAdapter, "npmAuthIdent")]
+    [InlineData(
+        ConfigurationChangeOperation.InstallAdapter,
+        "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm\"].npmAuthIdent"
+    )]
+    public void ConfigurationChangePlanPolicyRejectsYarnNpmAuthIdentPlanEntries(
         ConfigurationChangeOperation operation,
         string key
     )
     {
+        bool requiresValue = operation
+            is ConfigurationChangeOperation.Set
+                or ConfigurationChangeOperation.Create
+                or ConfigurationChangeOperation.Update
+                or ConfigurationChangeOperation.Refresh;
         ConfigurationChange change = CreateConfigurationChange(operation) with
         {
             TargetKind = ConfigurationTargetKind.Yarnrc,
             TargetPathOrName = "user .yarnrc.yml",
             Key = key,
-            Value = "AzureDevOps:secret-token",
+            Value = requiresValue ? "AzureDevOps:secret-token" : null,
             IsSecretValue = true,
             PreviousOwnedEntryMetadata = operation
                 is ConfigurationChangeOperation.Update
                     or ConfigurationChangeOperation.Refresh
+                    or ConfigurationChangeOperation.Remove
+                    or ConfigurationChangeOperation.RemoveAdapter
                 ? "owner=azureauth-credprovider;selector=yarn"
                 : null,
         };
@@ -3531,7 +3555,7 @@ public sealed class ContractFreezeTests
 
         Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
         Assert.Contains(
-            "validation and conflict detection",
+            "unsupported",
             ConfigurationChangePlanPolicy.GetViolation(plan),
             StringComparison.OrdinalIgnoreCase
         );
@@ -3655,12 +3679,6 @@ public sealed class ContractFreezeTests
         "secret\ntoken"
     )]
     [InlineData(ConfigurationTargetKind.Yarnrc, "npmAuthToken", "secret\rtoken")]
-    [InlineData(
-        ConfigurationTargetKind.Yarnrc,
-        "npmRegistries[\"https://pkgs.dev.azure.com/org/_packaging/feed/npm\"].npmAuthIdent",
-        "AzureDevOps:secret\ntoken"
-    )]
-    [InlineData(ConfigurationTargetKind.Yarnrc, "npmAuthIdent", "AzureDevOps:secret\rtoken")]
     public void ConfigurationChangePlanPolicyRejectsLineBreaksInNpmCompatibleAuthValuesBySelector(
         ConfigurationTargetKind targetKind,
         string key,

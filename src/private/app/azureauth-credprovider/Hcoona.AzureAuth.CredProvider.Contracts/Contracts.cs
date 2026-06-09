@@ -2051,6 +2051,15 @@ public static class ConfigurationChangePlanPolicy
                 + "records.";
         }
 
+        if (
+            change.TargetKind == ConfigurationTargetKind.Yarnrc
+            && IsYarnNpmAuthIdentKey(change.Key)
+        )
+        {
+            return "Protocol violation: Yarn npmAuthIdent is unsupported and must not be "
+                + "emitted as a product-owned configuration plan entry.";
+        }
+
         if (RequiresValue(change.Operation) && change.Value is null)
         {
             return "Protocol violation: value-writing configuration changes require a value.";
@@ -2080,16 +2089,6 @@ public static class ConfigurationChangePlanPolicy
         if (IsIntrinsicallySecretNpmCompatibleAuthValue(change) && !change.IsSecretValue)
         {
             return "Protocol violation: npm-compatible auth values must be marked as secret.";
-        }
-
-        if (
-            RequiresValue(change.Operation)
-            && change.TargetKind == ConfigurationTargetKind.Yarnrc
-            && IsYarnNpmAuthIdentKey(change.Key)
-        )
-        {
-            return "Protocol violation: Yarn npmAuthIdent is reserved for validation and conflict "
-                + "detection and must not be emitted as a product-owned configuration write.";
         }
 
         if (

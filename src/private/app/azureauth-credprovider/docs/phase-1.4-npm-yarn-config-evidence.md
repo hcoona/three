@@ -494,6 +494,12 @@ The user-level Yarn probe wrote auth under `npmRegistries` in
 `$SCRATCH/home/.yarnrc.yml`. The evidence gate covers Yarn config resolution and
 write targets only; it does not claim a real package install, publish, or feed
 operation.
+Yarn's JSON output includes `npmAuthIdent` fields with `null` values, but this
+product scenario does not support writing, removing, owning, or cleaning up Yarn
+`npmAuthIdent` entries. Product-owned Yarn configuration plans use
+`npmAuthToken` plus `npmAlwaysAuth` only. Doctor and plan-gate checks still
+treat project-local same-registry `npmAuthIdent` as a forbidden shadowing or
+conflict source that blocks CI temporary auth plans.
 
 ```text
 $ COREPACK_HOME="$SCRATCH/corepack" HOME="$SCRATCH/home" corepack yarn@4.9.2 --cwd "$SCRATCH/project" config get npmRegistries --json
