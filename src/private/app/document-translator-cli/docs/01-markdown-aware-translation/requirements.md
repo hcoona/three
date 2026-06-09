@@ -151,11 +151,12 @@ heuristic pass-through.
 
 The implementation must detect unsupported constructs after excluding fenced code
 blocks, indented code blocks, inline code spans, YAML front matter, raw HTML
-blocks, and frozen machine token matches. Frozen machine token matches are
-protected before MDX expression detection so template variables, replacement
-fields, and shell variable references are not misclassified as MDX expressions.
-The file must fail before translation when any of the following line-based or
-inline patterns are found outside those excluded regions:
+blocks, HTML comments, inline HTML tags, text enclosed by raw HTML markup, and
+frozen machine token matches. Frozen machine token matches are protected before
+MDX expression detection so template variables, replacement fields, and shell
+variable references are not misclassified as MDX expressions. The file must fail
+before translation when any of the following line-based or inline patterns are
+found outside those excluded regions:
 
 1. MDX import/export: a line that matches
    `^\s*(import|export)\s+`.
