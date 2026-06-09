@@ -780,6 +780,62 @@ public sealed class ProgramTests
     }
 
     [Theory]
+    [InlineData("source.TXT", "text/plain")]
+    [InlineData("source.tsv", "text/tab-separated-values")]
+    [InlineData("source.tab", "text/tab-separated-values")]
+    [InlineData("source.csv", "text/csv")]
+    [InlineData("source.html", "text/html")]
+    [InlineData("source.htm", "text/html")]
+    [InlineData("source.mhtml", "message/rfc822")]
+    [InlineData("source.mht", "message/rfc822")]
+    [InlineData(
+        "source.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document")]
+    [InlineData(
+        "source.pptx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation")]
+    [InlineData("source.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")]
+    [InlineData("source.msg", "application/vnd.ms-outlook")]
+    [InlineData("source.xlf", "application/xliff+xml")]
+    public async Task RunAsyncExecutesValidatedCommandForSupportedExtensions(
+        string fileName,
+        string expectedContentType)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(fileName, "content");
+        string outputPath = directory.GetPath("translated.out");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+            ],
+            _ => null,
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.Equal(inputPath, executedOptions.InputPath);
+        Assert.Equal(outputPath, executedOptions.OutputPath);
+        Assert.Equal(fileName, executedOptions.OriginalFileName);
+        Assert.Equal(expectedContentType, executedOptions.ContentType);
+    }
+
+    [Theory]
     [InlineData("source.pdf")]
     [InlineData("source.md")]
     [InlineData("source")]
@@ -793,6 +849,53 @@ public sealed class ProgramTests
             ValidRawOptions(inputPath, outputPath));
 
         Assert.NotEmpty(result.Errors);
+    }
+
+    [Theory]
+    [InlineData("source.pdf", ".pdf")]
+    [InlineData("source", "")]
+    public async Task RunAsyncRejectsUnsupportedExtensionsBeforeExecution(
+        string fileName,
+        string expectedExtension)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(fileName, "content");
+        string outputPath = directory.GetPath("translated.txt");
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        bool executed = false;
+
+        int exitCode = await Program.RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+            ],
+            standardOutput,
+            standardError,
+            _ => null,
+            (_, _, _) =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(Program.ValidationErrorExitCode, exitCode);
+        Assert.False(executed);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains(
+            $"Unsupported input file extension '{expectedExtension}'.",
+            standardError.ToString(),
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1015,6 +1118,42 @@ public sealed class ProgramTests
 
         Assert.NotEmpty(withoutForce.Errors);
         Assert.Empty(withForce.Errors);
+    }
+
+    [Fact]
+    public async Task RunAsyncPropagatesForceWhenReplacingExistingOutput()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.WriteFile("translated.txt", "old content");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+                "--force",
+            ],
+            _ => null,
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.True(executedOptions.Force);
+        Assert.Equal(outputPath, executedOptions.OutputPath);
     }
 
     [Fact]
