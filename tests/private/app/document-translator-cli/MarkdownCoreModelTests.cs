@@ -143,11 +143,11 @@ public sealed class MarkdownCoreModelTests
         ProtectedSlice fencedCodeSlice = Assert.Single(
             result.ProtectedSlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.FencedCodeBlock);
-        ProtectedSlice detectorFencedCodeSlice = Assert.Single(
-            result.DetectorExclusionSlices,
+        ProtectedSlice validationBoundaryFencedCodeSlice = Assert.Single(
+            result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.FencedCodeBlock);
         Assert.Equal(fencedCodeStart, fencedCodeSlice.SourceRange.Start);
-        Assert.Equal(fencedCodeStart, detectorFencedCodeSlice.SourceRange.Start);
+        Assert.Equal(fencedCodeStart, validationBoundaryFencedCodeSlice.SourceRange.Start);
         foreach (MarkdownLineEnding lineEnding in result.SourceMetadata.LineEndings)
         {
             Assert.Equal(
@@ -225,11 +225,36 @@ public sealed class MarkdownCoreModelTests
 
         MarkdownParseResult result = parser.Parse([0xEF, 0xBB, 0xBF, (byte)'{', (byte)'}']);
 
-        Assert.False(result.Succeeded);
-        MarkdownDiagnostic diagnostic = Assert.Single(result.Diagnostics);
-        Assert.Equal(MarkdownFailureKind.UnsupportedSyntax, diagnostic.Kind);
+        AssertJsonFrontMatterDiagnostic(result);
         Assert.Null(result.Document);
         Assert.True(result.SourceMetadata.HasUtf8Bom);
+        Assert.Equal("{}", result.SourceText);
+    }
+
+    [Fact]
+    public void DocumentParserRejectsLeadingJsonFrontMatterBytesWithStableDiagnostic()
+    {
+        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
+
+        MarkdownParseResult result = parser.Parse([(byte)'{', (byte)'}']);
+
+        AssertJsonFrontMatterDiagnostic(result);
+        Assert.Null(result.Document);
+        Assert.False(result.SourceMetadata.HasUtf8Bom);
+        Assert.Equal("{}", result.SourceText);
+    }
+
+    [Fact]
+    public void DocumentParserStringOverloadRejectsLeadingJsonFrontMatterWithStableDiagnostic()
+    {
+        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
+
+        MarkdownParseResult result = parser.Parse("{}");
+
+        AssertJsonFrontMatterDiagnostic(result);
+        Assert.Null(result.Document);
+        Assert.False(result.SourceMetadata.HasUtf8Bom);
+        Assert.Equal("{}", result.SourceText);
     }
 
     [Fact]
@@ -239,9 +264,7 @@ public sealed class MarkdownCoreModelTests
 
         MarkdownParseResult result = parser.Parse("\uFEFF{}");
 
-        Assert.False(result.Succeeded);
-        MarkdownDiagnostic diagnostic = Assert.Single(result.Diagnostics);
-        Assert.Equal(MarkdownFailureKind.UnsupportedSyntax, diagnostic.Kind);
+        AssertJsonFrontMatterDiagnostic(result);
         Assert.Null(result.Document);
         Assert.True(result.SourceMetadata.HasUtf8Bom);
         Assert.Equal("{}", result.SourceText);
@@ -1263,7 +1286,7 @@ public sealed class MarkdownCoreModelTests
     }
 
     [Fact]
-    public void DetectorExclusionRangesKeepCandidateRangesVisibleForUnsupportedDetection()
+    public void ValidationBoundarySlicesRemainAvailableWithoutRejectingCandidateRanges()
     {
         const string markdown = "Text [link](https://example.com/{id}) with `code` and ${name}.";
         MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
@@ -1272,24 +1295,24 @@ public sealed class MarkdownCoreModelTests
 
         Assert.True(result.Succeeded);
         Assert.Contains(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.InlineCode);
         Assert.Contains(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.OriginalText == "{id}");
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.LinkDestination);
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.UrlLiteral);
     }
 
     [Fact]
-    public void DetectorExclusionKindsMatchUnsupportedDetectorHandoffAllowList()
+    public void ValidationBoundaryKindsMatchValidationBoundaryKindSet()
     {
         const string markdown = """
             ---
@@ -1310,7 +1333,7 @@ public sealed class MarkdownCoreModelTests
             raw html
             </section>
 
-            [link](https://example.com/{id}) https://example.com/path <span>inline html</span>
+            [link](https://example.com/id) https://example.com/path <span>inline html</span>
             """;
         MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
 
@@ -1329,12 +1352,12 @@ public sealed class MarkdownCoreModelTests
         ];
         Assert.Equal(
             expectedKinds.Order(StringComparer.Ordinal),
-            result.DetectorExclusionSlices
+            result.ValidationBoundarySlices
                 .Select(slice => slice.Kind)
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal));
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind is MarkdownProtectedRangeKinds.LinkDestination
                 or MarkdownProtectedRangeKinds.UrlLiteral
                 or MarkdownProtectedRangeKinds.InlineHtmlTag
@@ -1342,7 +1365,7 @@ public sealed class MarkdownCoreModelTests
     }
 
     [Fact]
-    public void DetectorExclusionRangesDoNotTreatPathPlaceholdersAsMachineTokens()
+    public void ValidationBoundarySlicesDoNotTreatPathPlaceholdersAsMachineTokens()
     {
         const string markdown =
             "Paths docs/${name}.md, {locale}.json, {{locale}}.json, "
@@ -1353,28 +1376,28 @@ public sealed class MarkdownCoreModelTests
 
         Assert.True(result.Succeeded);
         ProtectedSlice slice = Assert.Single(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
         Assert.Equal("${name}", slice.OriginalText);
         Assert.Equal(
             markdown.LastIndexOf("${name}", StringComparison.Ordinal),
             slice.SourceRange.Start);
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.OriginalText == "{0}");
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.OriginalText == "{locale}");
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.OriginalText == "{{locale}}");
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.OriginalText == "{lang}");
     }
 
     [Fact]
-    public void DetectorExclusionRangesDoNotTreatSingleBraceIdentifiersAsMachineTokens()
+    public void ValidationBoundarySlicesDoNotTreatSingleBraceIdentifiersAsMachineTokens()
     {
         const string markdown =
             "Track ID-{id}, standalone {name}, and path-like docs/README-{lang}.";
@@ -1384,7 +1407,7 @@ public sealed class MarkdownCoreModelTests
 
         Assert.True(result.Succeeded);
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken
                 && slice.OriginalText is "{id}" or "{name}" or "{lang}");
     }
@@ -1393,7 +1416,7 @@ public sealed class MarkdownCoreModelTests
     [InlineData("${id}")]
     [InlineData("{{id}}")]
     [InlineData("{0}")]
-    public void DetectorExclusionRangesProtectSupportedEarlyMachineTokens(string token)
+    public void ValidationBoundarySlicesIncludeSupportedEarlyMachineTokens(string token)
     {
         string markdown = $"Text {token}.";
         MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
@@ -1402,7 +1425,7 @@ public sealed class MarkdownCoreModelTests
 
         Assert.True(result.Succeeded);
         ProtectedSlice slice = Assert.Single(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
         Assert.Equal(token, slice.OriginalText);
     }
@@ -1411,7 +1434,7 @@ public sealed class MarkdownCoreModelTests
     [InlineData("{0:N2}")]
     [InlineData("{0,10}")]
     [InlineData("{0:<Component />}")]
-    public void DetectorExclusionRangesDoNotProtectFormattedNumericReplacementFields(string token)
+    public void ValidationBoundarySlicesDoNotIncludeFormattedNumericReplacementFields(string token)
     {
         string markdown = $"Text {token}.";
         MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
@@ -1420,14 +1443,14 @@ public sealed class MarkdownCoreModelTests
 
         Assert.True(result.Succeeded);
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
     }
 
     [Theory]
     [InlineData("{１２}")]
     [InlineData("{١}")]
-    public void DetectorExclusionRangesDoNotProtectUnicodeDecimalDigitReplacementFields(
+    public void ValidationBoundarySlicesDoNotIncludeUnicodeDecimalDigitReplacementFields(
         string token)
     {
         string markdown = $"Text {token}.";
@@ -1437,7 +1460,7 @@ public sealed class MarkdownCoreModelTests
 
         Assert.True(result.Succeeded);
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
     }
 
@@ -1464,7 +1487,7 @@ public sealed class MarkdownCoreModelTests
             result.ProtectedSlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
     }
 
@@ -1482,7 +1505,7 @@ public sealed class MarkdownCoreModelTests
     [InlineData("#foo+bar")]
     [InlineData("#user@example")]
     [InlineData("#a;b")]
-    public void DetectorExclusionRangesDoNotTreatUriFragmentPlaceholdersAsMachineTokens(
+    public void ValidationBoundarySlicesDoNotTreatUriFragmentPlaceholdersAsMachineTokens(
         string fragment)
     {
         string markdown = $"Jump to {fragment} then use standalone ${{id}}.";
@@ -1496,13 +1519,13 @@ public sealed class MarkdownCoreModelTests
             slice => slice.Kind == MarkdownProtectedRangeKinds.UriFragment
                 && slice.OriginalText == fragment);
         ProtectedSlice slice = Assert.Single(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
         Assert.Equal(
             markdown.LastIndexOf("${id}", StringComparison.Ordinal),
             slice.SourceRange.Start);
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.SourceRange.Start >= markdown.IndexOf(
                 fragment,
                 StringComparison.Ordinal)
@@ -1529,7 +1552,7 @@ public sealed class MarkdownCoreModelTests
             slice => slice.Kind == MarkdownProtectedRangeKinds.UriFragment
                     && slice.OriginalText == fragment);
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
     }
 
@@ -1550,7 +1573,7 @@ public sealed class MarkdownCoreModelTests
             slice => slice.Kind == MarkdownProtectedRangeKinds.UriFragment
                     && slice.OriginalText == fragment);
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
     }
 
@@ -1934,7 +1957,7 @@ public sealed class MarkdownCoreModelTests
                     slice.SourceRange,
                     inlineHtmlSlice.SourceRange)));
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind is MarkdownProtectedRangeKinds.InlineHtmlTag
                 or MarkdownProtectedRangeKinds.InlineHtmlEnclosureText);
         Assert.Contains(
@@ -1956,7 +1979,7 @@ public sealed class MarkdownCoreModelTests
     }
 
     [Fact]
-    public void InlineHtmlMachineTokensAreNotDetectorExclusions()
+    public void InlineHtmlMachineTokensAreSkippedByValidationBoundarySlices()
     {
         const string markdown = "<span>${foo} {{foo}} {0}</span>";
         MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
@@ -1971,7 +1994,7 @@ public sealed class MarkdownCoreModelTests
         foreach (string machineToken in new[] { "${foo}", "{{foo}}", "{0}" })
         {
             Assert.DoesNotContain(
-                result.DetectorExclusionSlices,
+                result.ValidationBoundarySlices,
                 slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken
                     && slice.OriginalText == machineToken);
         }
@@ -1997,10 +2020,10 @@ public sealed class MarkdownCoreModelTests
                 .Select(slice => slice.OriginalText)
                 .ToArray());
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.InlineHtmlEnclosureText);
         Assert.DoesNotContain(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.InlineHtmlTag);
     }
 
@@ -2058,7 +2081,7 @@ public sealed class MarkdownCoreModelTests
             slice => slice.Kind == MarkdownProtectedRangeKinds.HtmlComment);
         Assert.Equal("<!-- keep -->", slice.OriginalText);
         Assert.Contains(
-            result.DetectorExclusionSlices,
+            result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.HtmlComment);
     }
 
@@ -2101,11 +2124,18 @@ public sealed class MarkdownCoreModelTests
 
         MarkdownParseResult result = parser.Parse(markdown);
 
-        Assert.False(result.Succeeded);
-        MarkdownDiagnostic diagnostic = Assert.Single(result.Diagnostics);
-        Assert.Equal(MarkdownFailureKind.UnsupportedSyntax, diagnostic.Kind);
-        Assert.DoesNotContain("<span>", diagnostic.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("raw text", diagnostic.Message, StringComparison.Ordinal);
+        AssertInlineHtmlPairDiagnostic(result, "<span>", "raw text");
+    }
+
+    [Fact]
+    public void InlineHtmlNestedPairUsesStableProtectedRangeFailure()
+    {
+        const string markdown = "Text <span><em>{foo}</em></span>.";
+        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
+
+        MarkdownParseResult result = parser.Parse(markdown);
+
+        AssertInlineHtmlPairDiagnostic(result, "{foo}", "<span>");
     }
 
     [Fact]
@@ -2174,10 +2204,7 @@ public sealed class MarkdownCoreModelTests
 
         MarkdownParseResult result = parser.Parse(markdown);
 
-        Assert.False(result.Succeeded);
-        MarkdownDiagnostic diagnostic = Assert.Single(result.Diagnostics);
-        Assert.Equal(MarkdownFailureKind.UnsupportedSyntax, diagnostic.Kind);
-        Assert.DoesNotContain(markdown, diagnostic.Message, StringComparison.Ordinal);
+        AssertInlineHtmlPairDiagnostic(result, "raw text");
     }
 
     [Theory]
@@ -2740,6 +2767,222 @@ public sealed class MarkdownCoreModelTests
         Assert.DoesNotContain(unexpectedHtml, html, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("First\nSecond\nText {foo}\n")]
+    [InlineData("First\r\nSecond\r\nText {foo}\r\n")]
+    [InlineData("First\rSecond\rText {foo}\r")]
+    [InlineData("import Thing from './thing'\n")]
+    [InlineData("import{}from \"m\"\n")]
+    [InlineData("export const value = 1\n")]
+    [InlineData("export{};\n")]
+    [InlineData("export*from \"m\"\n")]
+    [InlineData("Text <MyComponent />\n")]
+    [InlineData("Text <My_Component />\n")]
+    [InlineData("Text <Foo$Bar />\n")]
+    [InlineData("Text <motion.div />\n")]
+    [InlineData("Text { foo }\n")]
+    [InlineData("Text {1 + 2}\n")]
+    [InlineData("Text {\"text\"}\n")]
+    [InlineData("Text {foo({})}\n")]
+    [InlineData("Text {\nfoo\n}\n")]
+    [InlineData("Text {/* hidden */}\n")]
+    [InlineData("::note\n")]
+    [InlineData(":::warning\n")]
+    [InlineData("!!! note\n")]
+    [InlineData("+++\ntitle = 'Example'\n+++\n")]
+    public void DocumentParserDoesNotHardFailFormerUnsupportedConstructText(string markdown)
+    {
+        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
+
+        MarkdownParseResult result = parser.Parse(markdown);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Theory]
+    [InlineData("important Thing from './thing'\n")]
+    [InlineData("imported Thing from './thing'\n")]
+    [InlineData("import/export matrix\n")]
+    [InlineData("export-oriented guidance\n")]
+    [InlineData("exported const value = 1\n")]
+    [InlineData("exports const value = 1\n")]
+    [InlineData("Text <span>HTML</span>.\n")]
+    public void DocumentParserAcceptsImportExportWordPrefixes(
+        string markdown)
+    {
+        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
+
+        MarkdownParseResult result = parser.Parse(markdown);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Theory]
+    [InlineData("```\nimport Thing from './thing'\n<MyComponent />\n{foo}\n```\n")]
+    [InlineData("Text {\n\n```\n}\n```\n")]
+    [InlineData("    import Thing from './thing'\n    <MyComponent />\n    {foo}\n")]
+    [InlineData("`import Thing from './thing' <MyComponent /> {foo}`\n")]
+    [InlineData("---\nimport: value\n---\n")]
+    [InlineData("<!-- import Thing from './thing' <MyComponent /> {foo} -->\n")]
+    [InlineData("Text {\n\n<!-- } -->\n")]
+    [InlineData("<section>\nimport Thing from './thing'\n{foo}\n</section>\n")]
+    [InlineData("Text {\n\n<section>\n}\n</section>\n")]
+    [InlineData("Text ${name} {{name}} {0}.\n")]
+    public void DocumentParserAcceptsFormerUnsupportedTextInsideProtectedRanges(string markdown)
+    {
+        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
+
+        MarkdownParseResult result = parser.Parse(markdown);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Theory]
+    [InlineData("""Text <span title="{foo}">raw text</span>.""")]
+    [InlineData("""Text <span title="{/* comment */}">raw text</span>.""")]
+    [InlineData("Text <MyComponent />.")]
+    [InlineData("Text <span>{foo}</span>.")]
+    [InlineData("Text <span>{/* comment */}</span>.")]
+    public void DocumentParserAcceptsFormerUnsupportedTextInInlineHtml(string markdown)
+    {
+        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
+
+        MarkdownParseResult result = parser.Parse(markdown);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Theory]
+    [InlineData("<span>line\n{foo}</span>")]
+    [InlineData("<span>line\n{/* comment */}</span>")]
+    public void DocumentParserAcceptsFormerUnsupportedTextInMultilineInlineHtmlEnclosure(
+        string markdown)
+    {
+        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
+
+        MarkdownParseResult result = parser.Parse(markdown);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Theory]
+    [InlineData("<MyComponent />\n")]
+    [InlineData("<div>\n<MyComponent />\n</div>\n")]
+    [InlineData("<div>\n<motion.div />\n</div>\n")]
+    public void RawHtmlBlocksRemainProtectedWhenTheyContainJsxLikeText(string markdown)
+    {
+        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
+
+        MarkdownParseResult result = parser.Parse(markdown);
+
+        Assert.True(result.Succeeded);
+        Assert.Contains(
+            result.ProtectedSlices,
+            slice => slice.Kind == MarkdownProtectedRangeKinds.RawHtmlBlock);
+        Assert.Contains(
+            result.ValidationBoundarySlices,
+            slice => slice.Kind == MarkdownProtectedRangeKinds.RawHtmlBlock);
+    }
+
+    [Fact]
+    public void RawHtmlBlocksRemainValidationBoundarySlices()
+    {
+        const string markdown = "<div>\n{foo}\n</div>\n";
+        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
+
+        MarkdownParseResult result = parser.Parse(markdown);
+
+        Assert.True(result.Succeeded);
+        Assert.Contains(
+            result.ValidationBoundarySlices,
+            slice => slice.Kind == MarkdownProtectedRangeKinds.RawHtmlBlock
+                && slice.OriginalText == "<div>\n{foo}\n</div>");
+    }
+
+    [Theory]
+    [InlineData("""[text](https://example.com "{foo}")""", "{foo}")]
+    [InlineData("[text](https://example.com/{foo})", "{foo}")]
+    [InlineData("[{foo}]: https://example.com\n", "{foo}")]
+    [InlineData("[ref]: https://example.com/{foo}\n", "{foo}")]
+    [InlineData("""[ref]: https://example.com "{foo}" """, "{foo}")]
+    public void DocumentParserAcceptsSingleBraceTextInInlineLinkAndReferenceMetadata(
+        string markdown,
+        string snippet)
+    {
+        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
+
+        MarkdownParseResult result = parser.Parse(markdown);
+
+        Assert.True(result.Succeeded);
+        Assert.DoesNotContain(
+            result.ValidationBoundarySlices,
+            slice => slice.OriginalText.Contains(snippet, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("""[text](https://example.com "{/* comment */}")""", "{/* comment */}")]
+    [InlineData("""[text](https://example.com "<My_Component />")""", "<My_Component />")]
+    [InlineData("[ref]: https://example.com/{/* comment */}\n", "{/* comment */}")]
+    [InlineData("""[ref]: https://example.com "<Foo$Bar />" """, "<Foo$Bar />")]
+    [InlineData("Visit https://example.com/{/* comment */} now.", "{/* comment */}")]
+    [InlineData("Open docs/<My_Component/>.", "<My_Component/>")]
+    [InlineData("Jump to #section-{/* comment */}.", "{/* comment */}")]
+    public void DocumentParserAcceptsMdxCommentsAndJsxInCandidateProtectedRanges(
+        string markdown,
+        string snippet)
+    {
+        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
+
+        MarkdownParseResult result = parser.Parse(markdown);
+
+        Assert.True(result.Succeeded);
+        Assert.DoesNotContain(
+            result.ValidationBoundarySlices,
+            slice => slice.OriginalText.Contains(snippet, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("[id][]\n\n[id]: https://example.com\n")]
+    [InlineData("[id]\n\n[id]: https://example.com\n")]
+    [InlineData("![id][]\n\n[id]: image.png\n")]
+    [InlineData("![id]\n\n[id]: image.png\n")]
+    public void DocumentParserAcceptsCollapsedAndShortcutReferenceLinks(
+        string markdown)
+    {
+        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
+
+        MarkdownParseResult result = parser.Parse(markdown);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Theory]
+    [InlineData("[`]`]\n\n[`]`]: https://example.com\n")]
+    [InlineData("[`]`][]\n\n[`]`]: https://example.com\n")]
+    [InlineData("![`]`]\n\n[`]`]: image.png\n")]
+    [InlineData("![`]`][]\n\n[`]`]: image.png\n")]
+    public void DocumentParserAcceptsUnresolvedInlineCodeBracketReferenceText(
+        string markdown)
+    {
+        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
+
+        MarkdownParseResult result = parser.Parse(markdown);
+
+        Assert.True(result.Succeeded);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void DocumentParserAcceptsFullReferenceLinks()
+    {
+        const string markdown = "[text][id]\n\n[id]: https://example.com\n";
+        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
+
+        MarkdownParseResult result = parser.Parse(markdown);
+
+        Assert.True(result.Succeeded);
+    }
+
     private static void AssertLinkOrImageStructuralDelimiterIsProtected(
         string markdown,
         MarkdownParseResult result,
@@ -2767,6 +3010,41 @@ public sealed class MarkdownCoreModelTests
 
     private static bool RangeContains(TextRange outer, TextRange inner) =>
         inner.Start >= outer.Start && inner.End <= outer.End;
+
+    private static void AssertJsonFrontMatterDiagnostic(MarkdownParseResult result)
+    {
+        Assert.False(result.Succeeded);
+        MarkdownDiagnostic diagnostic = Assert.Single(result.Diagnostics);
+        Assert.Equal(MarkdownFailureKind.UnsupportedSyntax, diagnostic.Kind);
+        Assert.Null(diagnostic.Line);
+        Assert.Equal(
+            "JSON front matter is not supported in Markdown-aware translation.",
+            diagnostic.Message);
+        Assert.DoesNotContain(result.SourceText, diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    private static void AssertInlineHtmlPairDiagnostic(
+        MarkdownParseResult result,
+        params string[] snippets)
+    {
+        Assert.False(result.Succeeded);
+        const string expectedMessage =
+            "Nested, unmatched, or mismatched paired inline HTML is not supported "
+            + "in Markdown-aware translation.";
+        MarkdownDiagnostic diagnostic = Assert.Single(result.Diagnostics);
+        Assert.Equal(MarkdownFailureKind.UnsupportedSyntax, diagnostic.Kind);
+        Assert.Null(diagnostic.Line);
+        Assert.Equal(expectedMessage, diagnostic.Message);
+        foreach (MarkdownDiagnostic currentDiagnostic in result.Diagnostics)
+        {
+            Assert.DoesNotContain('\r', currentDiagnostic.Message);
+            Assert.DoesNotContain('\n', currentDiagnostic.Message);
+            foreach (string snippet in snippets)
+            {
+                Assert.DoesNotContain(snippet, currentDiagnostic.Message, StringComparison.Ordinal);
+            }
+        }
+    }
 
     private static void AssertInvalidUtf8ParseFailure(MarkdownParseResult result)
     {

@@ -106,14 +106,8 @@ internal sealed partial class MarkdownDocumentParser
                 []);
         }
 
-        IReadOnlyList<ProtectedSlice> detectorExclusionSlices = collectionResult.ProtectedSlices
-            .Where(slice => slice.Kind is MarkdownProtectedRangeKinds.FencedCodeBlock
-                or MarkdownProtectedRangeKinds.IndentedCodeBlock
-                or MarkdownProtectedRangeKinds.InlineCode
-                or MarkdownProtectedRangeKinds.YamlFrontMatter
-                or MarkdownProtectedRangeKinds.RawHtmlBlock
-                or MarkdownProtectedRangeKinds.HtmlComment
-                or MarkdownProtectedRangeKinds.MachineToken)
+        IReadOnlyList<ProtectedSlice> validationBoundarySlices = collectionResult.ProtectedSlices
+            .Where(IsValidationBoundarySlice)
             .ToArray();
 
         return new MarkdownParseResult(
@@ -122,8 +116,21 @@ internal sealed partial class MarkdownDocumentParser
             sourceText,
             sourceMetadata,
             collectionResult.ProtectedSlices,
-            detectorExclusionSlices);
+            validationBoundarySlices);
     }
+
+    private static bool IsValidationBoundarySlice(ProtectedSlice slice) =>
+        slice.Kind switch
+        {
+            MarkdownProtectedRangeKinds.FencedCodeBlock
+                or MarkdownProtectedRangeKinds.IndentedCodeBlock
+                or MarkdownProtectedRangeKinds.InlineCode
+                or MarkdownProtectedRangeKinds.YamlFrontMatter
+                or MarkdownProtectedRangeKinds.HtmlComment
+                or MarkdownProtectedRangeKinds.MachineToken
+                or MarkdownProtectedRangeKinds.RawHtmlBlock => true,
+            _ => false,
+        };
 
     private static MarkdownParseResult CreateFailure(
         MarkdownFailureKind kind,

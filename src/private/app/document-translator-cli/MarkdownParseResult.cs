@@ -8,7 +8,7 @@ internal sealed record MarkdownParseResult(
     string SourceText,
     MarkdownSourceMetadata SourceMetadata,
     IReadOnlyList<ProtectedSlice> ProtectedSlices,
-    IReadOnlyList<ProtectedSlice> DetectorExclusionSlices)
+    IReadOnlyList<ProtectedSlice> ValidationBoundarySlices)
 {
     public bool Succeeded => Document is not null && Diagnostics.Count == 0;
 }
