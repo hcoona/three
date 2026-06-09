@@ -199,30 +199,46 @@ write seam.
     - UTF-8 byte order mark presence,
     - line-ending bytes by source range,
     - final newline presence.
-3. Run a preliminary parse and source-range collection pass with the frozen
-   Markdig pipeline. This pass exists only to collect reliable source ranges for
-   excluded/protected syntax before unsupported-construct detection.
-4. Build pre-detection protected source ranges for code, raw HTML blocks, HTML
-   comments, text enclosed by raw HTML markup, front matter, link and image
-   destinations, link and image titles, reference labels, reference definitions,
-   autolinks, URI-like literals, machine tokens, and Markdown structural syntax,
-   including escaped Markdown delimiters. Do not protect arbitrary inline HTML at
-   this stage, because MDX-like JSX must still be detected before translation.
-   Do not protect inline link display text or image alt text when they are
-   emitted as approved parser text nodes.
-5. Run unsupported construct detection outside excluded ranges.
-6. Parse with the frozen Markdig-compatible pipeline for extraction. The parse
+3. Reject JSON front matter before Markdown parsing when the first byte after an
+   optional UTF-8 byte order mark is `{`.
+4. Run a preliminary parse and source-range collection pass with the frozen
+   Markdig pipeline. This pass collects reliable source ranges for later
+   detection, extraction, patching, and validation.
+5. Build the exact unsupported-detection exclusion ranges for fenced code,
+   indented code, inline code, YAML front matter, raw HTML blocks, HTML comments,
+   and early brace-like machine tokens. Early brace-like machine tokens are only
+   template variables, replacement fields, and braced shell variable references
+   inside otherwise translatable parser text nodes. These are the only protected
+   ranges that suppress unsupported-construct detection.
+6. Separately collect candidate protected ranges for link and image destinations,
+   link and image titles, reference labels, reference definitions, autolinks,
+   URL literals, email literals, URI fragments, Markdown structural syntax,
+   escaped Markdown delimiters, inline HTML tags, and text enclosed by paired
+   inline raw HTML markup. These candidate ranges are for extraction,
+   reconstruction validation, and later protection only; they must not suppress
+   unsupported-construct detection. Inline HTML tags and paired inline raw HTML
+   enclosures become protected only after MDX JSX, MDX expression, and MDX
+   comment checks prove the full tag text, attributes, and enclosed text are not
+   unsupported MDX-like syntax. Do not protect inline link display text or image
+   alt text when they are emitted as approved parser text nodes.
+7. Run unsupported construct detection outside the exact detector exclusion
+   ranges.
+8. Parse with the frozen Markdig-compatible pipeline for extraction. The parse
    result may reuse the preliminary parse only if no mutation occurred and all
    required precise source spans are available.
-7. Extract approved text-node segments and source spans.
-8. Apply inline machine-token protection and placeholder replacement.
-9. Validate per-segment and per-batch 50,000 Unicode scalar value limits.
-10. Translate segment batches with `ITextSegmentTranslator`.
-11. Restore placeholders and validate placeholder integrity.
-12. Patch translated text into the original source text by source span.
-13. Re-parse the patched Markdown with the same pipeline.
-14. Validate structural invariants and protected bytes.
-15. Encode the patched text back to UTF-8, preserving byte order mark and final
+9. Extract approved text-node segments and source spans.
+10. Apply inline machine-token protection and placeholder replacement.
+11. Validate per-segment and per-batch 50,000 Unicode scalar value limits.
+12. If no segments were extracted, skip `ITextSegmentTranslator`, keep the
+    original decoded text as the patched text for validation, and return the
+    original input bytes through the atomic output writer after validation
+    succeeds. Do not re-encode protected-only input on the zero-segment path.
+13. Translate non-empty segment batches with `ITextSegmentTranslator`.
+14. Restore placeholders and validate placeholder integrity.
+15. Patch translated text into the original source text by source span.
+16. Re-parse the patched Markdown with the same pipeline.
+17. Validate structural invariants and protected bytes.
+18. Encode the patched text back to UTF-8, preserving byte order mark and final
     newline presence.
 
 If any step fails, the command returns a validation, service, file I/O, or
@@ -305,13 +321,17 @@ Detection input:
 - excluded ranges for YAML front matter,
 - excluded ranges for raw HTML,
 - excluded ranges for HTML comments,
-- excluded ranges for text enclosed by raw HTML markup,
-- excluded ranges for frozen machine tokens.
+- excluded ranges for early brace-like machine-token matches only: template
+  variables, replacement fields, and braced shell variable references inside
+  otherwise translatable parser text nodes.
 
 Do not exclude arbitrary inline HTML before unsupported construct detection.
 Inline HTML that matches the frozen MDX JSX patterns, such as `<MyComponent />`,
-must fail before translation. Inline HTML is protected only after unsupported
-construct detection proves it is not an unsupported MDX-like construct.
+must fail before translation. Inline HTML tags and paired inline raw HTML
+enclosures are protected only after unsupported construct detection proves the
+full tag text, attributes, and enclosed text are not unsupported MDX-like
+constructs. If a paired inline raw HTML enclosure cannot be scanned safely, the
+file fails closed before translation.
 
 The detector applies exactly the frozen line-based and inline patterns from the
 requirements. A match outside excluded ranges produces a validation error. The
@@ -409,9 +429,11 @@ Request construction:
 2. Append `/translator/text/v3.0/translate`.
 3. Add `api-version=3.0` and `to=<target-language>`.
 4. Send UTF-8 JSON body: `[{ "Text": "<segment>" }]`.
-5. Set `Content-Type: application/json; charset=utf-8`.
-6. For API key mode, send `Ocp-Apim-Subscription-Key`.
-7. For Entra ID mode, request
+5. Keep each request at or below 100 text array elements and 50,000 Unicode
+   scalar values across all segment texts.
+6. Set `Content-Type: application/json; charset=utf-8`.
+7. For API key mode, send `Ocp-Apim-Subscription-Key`.
+8. For Entra ID mode, request
    `https://cognitiveservices.azure.com/.default` with the existing Azure
    Identity credential flow and send `Authorization: Bearer <token>`.
 
@@ -466,9 +488,15 @@ returned:
     - raw HTML byte content, including comments and attributes,
     - task markers,
     - footnote identifiers.
-3. Compare protected source slices against their corresponding output slices.
-4. Verify byte order mark presence and final newline presence.
-5. Verify original line-ending bytes remain unchanged outside translated prose.
+3. Recompute detector exclusion ranges from the patched parse and patched text,
+   then run unsupported construct detection against the patched output outside
+   those exact output-side exclusion ranges. This catches translated prose that
+   introduces unsupported MDX import/export, MDX JSX, MDX expression, MDX
+   comment, Markdown directive, custom admonition, TOML front matter, or JSON
+   front matter syntax.
+4. Compare protected source slices against their corresponding output slices.
+5. Verify byte order mark presence and final newline presence.
+6. Verify original line-ending bytes remain unchanged outside translated prose.
 
 Validation failures are command validation errors unless caused by service, file
 I/O, or cancellation failures.
@@ -582,6 +610,7 @@ Golden-file coverage:
 - each frozen machine-token class,
 - machine-token overlap resolution,
 - placeholder-bearing prose and protected spans,
+- protected-only Markdown with zero extracted segments,
 - UTF-8 byte order mark,
 - LF, CRLF, and mixed line endings,
 - final newline and no-final-newline.
@@ -593,16 +622,22 @@ Negative coverage:
 - unsupported MDX import/export,
 - unsupported JSX element,
 - unsupported MDX expression,
+- unsupported spaced and non-identifier single-brace MDX expression,
 - unsupported MDX comment,
 - unsupported Markdown directive,
 - unsupported custom admonition,
 - unsupported TOML front matter,
 - unsupported JSON front matter,
+- leading-`{` JSON front matter rejected before preliminary Markdown parsing,
 - shortcut reference link,
 - collapsed reference link,
 - single segment over 50,000 Unicode scalar values,
 - batch over 50,000 Unicode scalar values,
+- batch over 100 text array elements,
 - placeholder drop, duplication, mutation, and reorder,
+- fake translator injection of unsupported MDX expression, MDX comment, JSX,
+  spaced or non-identifier single-brace MDX expression, directive, custom
+  admonition, TOML front matter, JSON front matter, and import/export-like text,
 - structural validation mismatch for table shape,
 - structural validation mismatch for link destination or title,
 - structural validation mismatch for image destination or title,
