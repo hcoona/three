@@ -15,6 +15,7 @@
   <ItemGroup>
     <PackageReference Include="Azure.AI.Translation.Document" />
     <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="Markdig" />
     <PackageReference Include="System.CommandLine" />
   </ItemGroup>
 

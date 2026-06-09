@@ -26,6 +26,12 @@
         "resolved": "2.0.2",
         "contentHash": "VaHoEN6YHp0jXucxm67vfuRy8zo9ufiKSuaZ4ZudRi8xmWcEFMKxfCsg2nvYNvdISFTURDu+IHqADGh53+Bamw=="
       },
+      "Markdig": {
+        "type": "Direct",
+        "requested": "[1.2.0, )",
+        "resolved": "1.2.0",
+        "contentHash": "LoBVOgeDWfHthWTPzQJkjDkxImqBXRA5XpuTyjdM4SAURyWQGG1CbEEbfPbmvAavggnAZPaTYpbhIPUurWvIXA=="
+      },
       "Microsoft.SourceLink.GitHub": {
         "type": "Direct",
         "requested": "[10.0.300, )",
