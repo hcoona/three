@@ -49,30 +49,6 @@ public sealed class MarkdownCoreModelTests
     {
         Assert.Equal(3, MarkdownTextMetrics.CountUnicodeScalarValues("a😀b"));
     }
-
-    [Fact]
-    public void SegmentRequestModelPreservesSegmentOrderContractMetadata()
-    {
-        ProtectedToken token = new(
-            new TextRange(6, 4),
-            "__DTCLI_PH_0_0__",
-            "{name}");
-        MarkdownTranslationSegment segment = new(
-            SegmentIndex: 0,
-            SourceRange: new TextRange(0, 12),
-            OriginalText: "Hello {name}",
-            ProtectedText: "Hello __DTCLI_PH_0_0__",
-            ProtectedTokens: [token]);
-        TextSegmentTranslationRequest request = new(
-            segment.SegmentIndex,
-            segment.ProtectedText,
-            segment.ProtectedTokens);
-
-        Assert.Equal(0, request.SegmentIndex);
-        Assert.Equal("Hello __DTCLI_PH_0_0__", request.ProtectedText);
-        Assert.Same(segment.ProtectedTokens, request.ProtectedTokens);
-    }
-
     [Fact]
     public void ProtectedSliceAndPatchMapUseStableSourceRanges()
     {
@@ -321,7 +297,7 @@ public sealed class MarkdownCoreModelTests
             <div>block</div>
 
             - List item
-            Escaped \* delimiter and ${name}.
+            Escaped \* delimiter.
             """;
         MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
 
@@ -357,10 +333,6 @@ public sealed class MarkdownCoreModelTests
             result.ProtectedSlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.InlineHtmlEnclosureText
                 && slice.OriginalText == "raw text");
-        Assert.Contains(
-            result.ProtectedSlices,
-            slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken
-                && slice.OriginalText == "${name}");
     }
 
     [Theory]
@@ -1288,7 +1260,7 @@ public sealed class MarkdownCoreModelTests
     [Fact]
     public void ValidationBoundarySlicesRemainAvailableWithoutRejectingCandidateRanges()
     {
-        const string markdown = "Text [link](https://example.com/{id}) with `code` and ${name}.";
+        const string markdown = "Text [link](https://example.com/{id}) with `code`.";
         MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
 
         MarkdownParseResult result = parser.Parse(markdown);
@@ -1297,9 +1269,6 @@ public sealed class MarkdownCoreModelTests
         Assert.Contains(
             result.ValidationBoundarySlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.InlineCode);
-        Assert.Contains(
-            result.ValidationBoundarySlices,
-            slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
         Assert.DoesNotContain(
             result.ValidationBoundarySlices,
             slice => slice.OriginalText == "{id}");
@@ -1325,7 +1294,7 @@ public sealed class MarkdownCoreModelTests
 
                 indented
 
-            `inline` ${name}
+            `inline`
 
             <!-- comment -->
 
@@ -1348,7 +1317,6 @@ public sealed class MarkdownCoreModelTests
             MarkdownProtectedRangeKinds.YamlFrontMatter,
             MarkdownProtectedRangeKinds.RawHtmlBlock,
             MarkdownProtectedRangeKinds.HtmlComment,
-            MarkdownProtectedRangeKinds.MachineToken,
         ];
         Assert.Equal(
             expectedKinds.Order(StringComparer.Ordinal),
@@ -1365,103 +1333,30 @@ public sealed class MarkdownCoreModelTests
     }
 
     [Fact]
-    public void ValidationBoundarySlicesDoNotTreatPathPlaceholdersAsMachineTokens()
+    public void DocumentParserDoesNotProtectMachineLookingProse()
     {
-        const string markdown =
-            "Paths docs/${name}.md, {locale}.json, {{locale}}.json, "
-            + "docs/README-${lang} and ./docs/{0}; standalone ${name}.";
+        const string markdown = "Use ${name}, {{name}}, {0}, --output=file.txt, "
+            + "C:\\Users\\me\\file.txt, and @scope/package.";
         MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
 
         MarkdownParseResult result = parser.Parse(markdown);
 
         Assert.True(result.Succeeded);
-        ProtectedSlice slice = Assert.Single(
-            result.ValidationBoundarySlices,
-            slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
-        Assert.Equal("${name}", slice.OriginalText);
-        Assert.Equal(
-            markdown.LastIndexOf("${name}", StringComparison.Ordinal),
-            slice.SourceRange.Start);
-        Assert.DoesNotContain(
-            result.ValidationBoundarySlices,
-            slice => slice.OriginalText == "{0}");
-        Assert.DoesNotContain(
-            result.ValidationBoundarySlices,
-            slice => slice.OriginalText == "{locale}");
-        Assert.DoesNotContain(
-            result.ValidationBoundarySlices,
-            slice => slice.OriginalText == "{{locale}}");
-        Assert.DoesNotContain(
-            result.ValidationBoundarySlices,
-            slice => slice.OriginalText == "{lang}");
-    }
-
-    [Fact]
-    public void ValidationBoundarySlicesDoNotTreatSingleBraceIdentifiersAsMachineTokens()
-    {
-        const string markdown =
-            "Track ID-{id}, standalone {name}, and path-like docs/README-{lang}.";
-        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
-
-        MarkdownParseResult result = parser.Parse(markdown);
-
-        Assert.True(result.Succeeded);
-        Assert.DoesNotContain(
-            result.ValidationBoundarySlices,
-            slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken
-                && slice.OriginalText is "{id}" or "{name}" or "{lang}");
-    }
-
-    [Theory]
-    [InlineData("${id}")]
-    [InlineData("{{id}}")]
-    [InlineData("{0}")]
-    public void ValidationBoundarySlicesIncludeSupportedEarlyMachineTokens(string token)
-    {
-        string markdown = $"Text {token}.";
-        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
-
-        MarkdownParseResult result = parser.Parse(markdown);
-
-        Assert.True(result.Succeeded);
-        ProtectedSlice slice = Assert.Single(
-            result.ValidationBoundarySlices,
-            slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
-        Assert.Equal(token, slice.OriginalText);
-    }
-
-    [Theory]
-    [InlineData("{0:N2}")]
-    [InlineData("{0,10}")]
-    [InlineData("{0:<Component />}")]
-    public void ValidationBoundarySlicesDoNotIncludeFormattedNumericReplacementFields(string token)
-    {
-        string markdown = $"Text {token}.";
-        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
-
-        MarkdownParseResult result = parser.Parse(markdown);
-
-        Assert.True(result.Succeeded);
-        Assert.DoesNotContain(
-            result.ValidationBoundarySlices,
-            slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
-    }
-
-    [Theory]
-    [InlineData("{１２}")]
-    [InlineData("{١}")]
-    public void ValidationBoundarySlicesDoNotIncludeUnicodeDecimalDigitReplacementFields(
-        string token)
-    {
-        string markdown = $"Text {token}.";
-        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
-
-        MarkdownParseResult result = parser.Parse(markdown);
-
-        Assert.True(result.Succeeded);
-        Assert.DoesNotContain(
-            result.ValidationBoundarySlices,
-            slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
+        Assert.Empty(result.ValidationBoundarySlices);
+        foreach (string machineLookingText in new[]
+                 {
+                     "${name}",
+                     "{{name}}",
+                     "{0}",
+                     "--output=file.txt",
+                     """C:\Users\me\file.txt""",
+                     "@scope/package",
+                 })
+        {
+            Assert.DoesNotContain(
+                result.ProtectedSlices,
+                slice => slice.OriginalText == machineLookingText);
+        }
     }
 
     [Theory]
@@ -1483,57 +1378,7 @@ public sealed class MarkdownCoreModelTests
             result.ProtectedSlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.UriFragment
                 && slice.OriginalText == fragment);
-        Assert.DoesNotContain(
-            result.ProtectedSlices,
-            slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
-        Assert.DoesNotContain(
-            result.ValidationBoundarySlices,
-            slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
     }
-
-    [Theory]
-    [InlineData("#{0}")]
-    [InlineData("#sec-{0}")]
-    [InlineData("#section/{0}?tab:details%2Fmore")]
-    [InlineData("#{{id}}")]
-    [InlineData("#section-{{id}}")]
-    [InlineData("#section-{{user.name}}")]
-    [InlineData("#section-{{ name }}")]
-    [InlineData("#section-{{foo-bar}}")]
-    [InlineData("#section-${name}")]
-    [InlineData("#section?tab={{id}}")]
-    [InlineData("#foo+bar")]
-    [InlineData("#user@example")]
-    [InlineData("#a;b")]
-    public void ValidationBoundarySlicesDoNotTreatUriFragmentPlaceholdersAsMachineTokens(
-        string fragment)
-    {
-        string markdown = $"Jump to {fragment} then use standalone ${{id}}.";
-        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
-
-        MarkdownParseResult result = parser.Parse(markdown);
-
-        Assert.True(result.Succeeded);
-        Assert.Contains(
-            result.ProtectedSlices,
-            slice => slice.Kind == MarkdownProtectedRangeKinds.UriFragment
-                && slice.OriginalText == fragment);
-        ProtectedSlice slice = Assert.Single(
-            result.ValidationBoundarySlices,
-            slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
-        Assert.Equal(
-            markdown.LastIndexOf("${id}", StringComparison.Ordinal),
-            slice.SourceRange.Start);
-        Assert.DoesNotContain(
-            result.ValidationBoundarySlices,
-            slice => slice.SourceRange.Start >= markdown.IndexOf(
-                fragment,
-                StringComparison.Ordinal)
-                && slice.SourceRange.Start < markdown.IndexOf(
-                    fragment,
-                    StringComparison.Ordinal) + fragment.Length);
-    }
-
     [Theory]
     [InlineData("#{0:N2}")]
     [InlineData("#section/{0,10}")]
@@ -1551,9 +1396,6 @@ public sealed class MarkdownCoreModelTests
             result.ProtectedSlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.UriFragment
                     && slice.OriginalText == fragment);
-        Assert.DoesNotContain(
-            result.ValidationBoundarySlices,
-            slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
     }
 
     [Theory]
@@ -1572,9 +1414,6 @@ public sealed class MarkdownCoreModelTests
             result.ProtectedSlices,
             slice => slice.Kind == MarkdownProtectedRangeKinds.UriFragment
                     && slice.OriginalText == fragment);
-        Assert.DoesNotContain(
-            result.ValidationBoundarySlices,
-            slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken);
     }
 
     [Theory]
@@ -1977,29 +1816,6 @@ public sealed class MarkdownCoreModelTests
             slice => slice.Kind == MarkdownProtectedRangeKinds.FootnoteReference
                 && slice.OriginalText == "[^outside]");
     }
-
-    [Fact]
-    public void InlineHtmlMachineTokensAreSkippedByValidationBoundarySlices()
-    {
-        const string markdown = "<span>${foo} {{foo}} {0}</span>";
-        MarkdownDocumentParser parser = MarkdownDocumentParser.CreateV1();
-
-        MarkdownParseResult result = parser.Parse(markdown);
-
-        Assert.True(result.Succeeded);
-        Assert.Contains(
-            result.ProtectedSlices,
-            slice => slice.Kind == MarkdownProtectedRangeKinds.InlineHtmlEnclosureText
-                && slice.OriginalText == "${foo} {{foo}} {0}");
-        foreach (string machineToken in new[] { "${foo}", "{{foo}}", "{0}" })
-        {
-            Assert.DoesNotContain(
-                result.ValidationBoundarySlices,
-                slice => slice.Kind == MarkdownProtectedRangeKinds.MachineToken
-                    && slice.OriginalText == machineToken);
-        }
-    }
-
     [Fact]
     public void InlineHtmlSimplePairProtectsInnerText()
     {
@@ -2206,131 +2022,6 @@ public sealed class MarkdownCoreModelTests
 
         AssertInlineHtmlPairDiagnostic(result, "raw text");
     }
-
-    [Theory]
-    [InlineData("${name}")]
-    [InlineData("${foo}")]
-    public void MachineTokenProtectionRecognizesDollarBraceIdentifiers(string token)
-    {
-        IReadOnlyList<ProtectedSlice> slices =
-            MarkdownTokenProtector.ScanEarlyMachineTokens($"Value {token}.");
-
-        ProtectedSlice slice = Assert.Single(slices);
-        Assert.Equal(MarkdownProtectedRangeKinds.MachineToken, slice.Kind);
-        Assert.Equal(token, slice.OriginalText);
-    }
-
-    [Theory]
-    [InlineData("{0}")]
-    public void MachineTokenProtectionRecognizesNumericReplacementFields(string token)
-    {
-        IReadOnlyList<ProtectedSlice> slices =
-            MarkdownTokenProtector.ScanEarlyMachineTokens($"Value {token}.");
-
-        ProtectedSlice slice = Assert.Single(slices);
-        Assert.Equal(MarkdownProtectedRangeKinds.MachineToken, slice.Kind);
-        Assert.Equal(token, slice.OriginalText);
-    }
-
-    [Theory]
-    [InlineData("{0:N2}")]
-    [InlineData("{0:}")]
-    [InlineData("{0,10}")]
-    [InlineData("{0,5:}")]
-    [InlineData("{0,-10:N2}")]
-    [InlineData("{0:<Component />}")]
-    public void MachineTokenProtectionIgnoresFormattedNumericReplacementFields(string token)
-    {
-        IReadOnlyList<ProtectedSlice> slices =
-            MarkdownTokenProtector.ScanEarlyMachineTokens($"Value {token}.");
-
-        Assert.Empty(slices);
-    }
-
-    [Theory]
-    [InlineData("{{name}}")]
-    [InlineData("{{user.name}}")]
-    [InlineData("{{ name }}")]
-    [InlineData("{{foo-bar}}")]
-    public void MachineTokenProtectionRecognizesDoubleBraceTemplateVariablesAsSingleToken(
-        string token)
-    {
-        IReadOnlyList<ProtectedSlice> slices =
-            MarkdownTokenProtector.ScanEarlyMachineTokens($"Value {token}.");
-
-        ProtectedSlice slice = Assert.Single(slices);
-        Assert.Equal(MarkdownProtectedRangeKinds.MachineToken, slice.Kind);
-        Assert.Equal(token, slice.OriginalText);
-    }
-
-    [Theory]
-    [InlineData("{{}}")]
-    [InlineData("{{name\r}}")]
-    [InlineData("{{name\n}}")]
-    public void MachineTokenProtectionIgnoresEmptyOrMultilineDoubleBraceTemplateVariables(
-        string token)
-    {
-        IReadOnlyList<ProtectedSlice> slices =
-            MarkdownTokenProtector.ScanEarlyMachineTokens($"Value {token}.");
-
-        Assert.Empty(slices);
-    }
-
-    [Fact]
-    public void MachineTokenProtectionDoesNotTreatSingleBraceIdentifiersOrExpressionsAsTokens()
-    {
-        IReadOnlyList<ProtectedSlice> identifierSlices =
-            MarkdownTokenProtector.ScanEarlyMachineTokens("Value {foo}.");
-        IReadOnlyList<ProtectedSlice> expressionSlices =
-            MarkdownTokenProtector.ScanEarlyMachineTokens("Value {1 + 2}.");
-
-        Assert.Empty(identifierSlices);
-        Assert.Empty(expressionSlices);
-    }
-
-    [Theory]
-    [InlineData("{１２}")]
-    [InlineData("{١}")]
-    public void MachineTokenProtectionDoesNotTreatUnicodeDecimalDigitsAsNumericReplacementFields(
-        string token)
-    {
-        IReadOnlyList<ProtectedSlice> slices =
-            MarkdownTokenProtector.ScanEarlyMachineTokens($"Value {token}.");
-
-        Assert.Empty(slices);
-    }
-
-    [Fact]
-    public void MachineTokenProtectionRequiresPathEvidenceAfterHyphen()
-    {
-        IReadOnlyList<ProtectedSlice> proseSlices =
-            MarkdownTokenProtector.ScanEarlyMachineTokens("Value ${name}-specific.");
-        IReadOnlyList<ProtectedSlice> extensionPathSlices =
-            MarkdownTokenProtector.ScanEarlyMachineTokens("Value ${name}-specific.md.");
-        IReadOnlyList<ProtectedSlice> directoryPathSlices =
-            MarkdownTokenProtector.ScanEarlyMachineTokens("Value docs/${name}-specific.");
-
-        ProtectedSlice slice = Assert.Single(proseSlices);
-        Assert.Equal(MarkdownProtectedRangeKinds.MachineToken, slice.Kind);
-        Assert.Equal("${name}", slice.OriginalText);
-        Assert.Empty(extensionPathSlices);
-        Assert.Empty(directoryPathSlices);
-    }
-
-    [Fact]
-    public void MachineTokenProtectionScansLeftOfHyphenForPathEvidence()
-    {
-        IReadOnlyList<ProtectedSlice> proseSlices =
-            MarkdownTokenProtector.ScanEarlyMachineTokens("Value ID-${id}.");
-        IReadOnlyList<ProtectedSlice> pathSlices =
-            MarkdownTokenProtector.ScanEarlyMachineTokens("Value docs/README-${lang}.");
-
-        ProtectedSlice slice = Assert.Single(proseSlices);
-        Assert.Equal(MarkdownProtectedRangeKinds.MachineToken, slice.Kind);
-        Assert.Equal("${id}", slice.OriginalText);
-        Assert.Empty(pathSlices);
-    }
-
     [Fact]
     public void ReferenceDefinitionsMayEndWithCarriageReturnOnly()
     {

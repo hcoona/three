@@ -22,5 +22,4 @@ internal static class MarkdownProtectedRangeKinds
     public const string UriFragment = "uri-fragment";
     public const string MarkdownStructuralSyntax = "markdown-structural-syntax";
     public const string EscapedMarkdownDelimiter = "escaped-markdown-delimiter";
-    public const string MachineToken = "machine-token";
 }

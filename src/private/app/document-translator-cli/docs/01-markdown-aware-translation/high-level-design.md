@@ -23,7 +23,7 @@ validated Markdown output without normalizing protected bytes.
    whole-document translation.
 4. Preserve protected Markdown bytes by editing only approved source text spans.
 5. Fail closed before writing output when parsing, segmentation, translation,
-   placeholder restoration, or structural validation cannot prove safety.
+   source patching or structural validation cannot prove safety.
 6. Keep the implementation testable with deterministic fake translators and no
    live Azure dependency in normal CI.
 
@@ -38,7 +38,6 @@ src/private/app/document-translator-cli/
   MarkdownTranslationCommand.cs
   MarkdownDocumentParser.cs
   MarkdownSegmentExtractor.cs
-  MarkdownTokenProtector.cs
   MarkdownSourcePatcher.cs
   MarkdownOutputValidator.cs
   ITextSegmentTranslator.cs
@@ -205,9 +204,9 @@ write seam.
    patching, protection, and validation.
 5. Preserve `ValidationBoundarySlices` as a Group C handoff for later
    output-side validation, protected-boundary reasoning, and pass-through safety
-   checks. These slices are not the primary extraction source or the primary
-   token-protection source; extraction and token protection use the source text,
-   parsed document, protected slices, and source metadata as appropriate.
+   checks. These slices are not the extraction source and do not define protected
+   ranges; extraction and protected-range collection use the source text, parsed
+   document, protected slices, and source metadata as appropriate.
 6. Collect candidate protected ranges for link and image destinations, link and
    image titles, reference labels, reference definitions, footnote definition
    markers (`footnote-definition`), footnote reference syntax and identifiers
@@ -220,18 +219,16 @@ write seam.
    result may reuse the preliminary parse only if no mutation occurred and all
    required precise source spans are available.
 8. Extract approved text-node segments and source spans.
-9. Apply inline machine-token protection and placeholder replacement.
-10. Validate per-segment and per-batch 50,000 Unicode scalar value limits.
-11. If no segments were extracted, skip `ITextSegmentTranslator`, keep the
+9. Validate per-segment and per-batch 50,000 Unicode scalar value limits.
+10. If no segments were extracted, skip `ITextSegmentTranslator`, keep the
     original decoded text as the patched text for validation, and return the
     original input bytes through the atomic output writer after validation
     succeeds. Do not re-encode protected-only input on the zero-segment path.
-12. Translate non-empty segment batches with `ITextSegmentTranslator`.
-13. Restore placeholders and validate placeholder integrity.
-14. Patch translated text into the original source text by source span.
-15. Re-parse the patched Markdown with the same pipeline.
-16. Validate structural invariants and protected bytes.
-17. Encode the patched text back to UTF-8, preserving byte order mark and final
+11. Translate non-empty segment batches with `ITextSegmentTranslator`.
+12. Patch translated text into the original source text by source span.
+13. Re-parse the patched Markdown with the same pipeline.
+14. Validate structural invariants and protected bytes.
+15. Encode the patched text back to UTF-8, preserving byte order mark and final
     newline presence.
 
 The Group C parse-result handoff uses decoded string offsets. In particular,
@@ -314,42 +311,23 @@ extension or content type. Raw HTML and inline HTML are handled through protecte
 ranges and later byte-preservation validation. The Group C leading `{`
 JSON-front-matter guard remains in `MarkdownDocumentParser`.
 
-## Machine Token Protection
+## Machine Token Handling
 
-`MarkdownTokenProtector` applies the frozen machine-token patterns to each
-candidate text node before translation.
-
-Rules:
-
-1. Evaluate all frozen patterns.
-2. Resolve overlaps by longest match, then earliest start offset.
-3. Replace each protected span with a generated placeholder.
-4. Store placeholder-to-original mappings per segment.
-5. Validate that no generated placeholder already appears anywhere in the decoded
-   source document.
-
-Placeholder format:
-
-```text
-__DTCLI_PH_<segment-index>_<token-index>__
-```
-
-The placeholder format is fixed for v1 and intentionally non-natural-language.
-The implementation must generate placeholders with document-scoped uniqueness,
-keep the whole-document collision check, and keep all restoration invariants.
+Markdown-aware translation v1 does not implement Machine Token Patterns. The
+pipeline does not scan approved prose for CLI flags, paths,
+identifiers, template variables, replacement fields, package names, or similar
+machine-looking substrings, and it does not replace them with placeholders. Such
+text is sent to the text translator as normal prose when it is inside an
+approved text segment. It is preserved only when another protected-range rule
+already applies, for example code spans, fenced code, link destinations,
+autolinks, URI fragments, raw HTML, front matter, reference definitions, escaped
+Markdown delimiters, or structural syntax.
 
 ## Segment Model
 
-Use a small immutable model for extracted segments:
-
-```csharp
-internal sealed record MarkdownTranslationSegment(
-    int SegmentIndex,
-    TextRange SourceRange,
-    string OriginalText,
-    string ProtectedText,
-    IReadOnlyList<ProtectedToken> ProtectedTokens);
-```
+Use a small immutable model for extracted segments that stores the segment index,
+decoded source range, and original segment text. No placeholder map or protected
+machine-token metadata is part of the v1 segment contract.
 
 `TextRange` uses decoded-string offsets, not byte offsets. The source patcher
 converts patched text back to bytes only after reconstruction validation.
@@ -362,10 +340,10 @@ Each segment must:
 - exclude escaped Markdown delimiters and their escape characters,
 - avoid mutating shortcut or collapsed reference-link labels unless extraction
   can prove safe handling,
-- contain no more than 50,000 Unicode scalar values after placeholder insertion.
+- contain no more than 50,000 Unicode scalar values before translation.
 
-Batching may group multiple protected segment strings as long as the batch total
-does not exceed 50,000 Unicode scalar values.
+Batching may group multiple segment strings as long as the batch total does not
+exceed 50,000 Unicode scalar values.
 
 ## Text Translation Backend
 
@@ -387,10 +365,9 @@ client around `HttpClient`. The REST client must accept an injectable
 seam for Entra ID tests. Unit tests must be able to verify request URI, headers,
 body, batching, and token usage without live Azure credentials or network calls.
 
-`TextSegmentTranslationRequest` carries the segment index, protected segment
-text, and placeholder map. The Azure REST client sends only the protected segment
-text to the service, while fake translators and placeholder validation can use
-the map to verify segment-level invariants.
+`TextSegmentTranslationRequest` carries the segment index and extracted segment
+text. The Azure REST client sends that text to the service; Machine Token
+Patterns do not add placeholder metadata to the request.
 
 Request construction:
 
@@ -415,20 +392,11 @@ Response handling:
 5. The translator abstraction returns only translated strings, never raw response
    JSON.
 
-## Placeholder Restoration
+## Source Patching
 
-After translation:
-
-1. Verify every expected placeholder appears exactly once.
-2. Verify no unexpected placeholder-shaped token appears.
-3. Verify placeholders appear in the same relative order as the protected input
-   segment.
-4. Replace each placeholder with its original protected token text.
-5. Fail validation if any placeholder is missing, duplicated, mutated, or
-   illegally reordered.
-
-The restoration step operates per segment. One corrupted segment fails the whole
-file.
+After translation, the source patcher replaces translated segment ranges in
+descending source order. It does not restore machine-token placeholders because
+Markdown-aware v1 does not create them.
 
 ## Reconstruction Validation
 
@@ -495,7 +463,7 @@ Use the baseline exit-code taxonomy:
 | Condition                                                                                                                             | Exit code |
 | ------------------------------------------------------------------------------------------------------------------------------------- | --------- |
 | Successful translation                                                                                                                | `0`       |
-| Command-line, validation, Markdown parse, placeholder, reconstruction, or structural validation error                                 | `2`       |
+| Command-line, validation, Markdown parse, reconstruction or structural validation error                                               | `2`       |
 | Azure Text Translation HTTP error, malformed service response, Azure Document Translation error, or Azure Identity credential failure | `3`       |
 | File I/O or path error                                                                                                                | `4`       |
 | Cancellation or unexpected error                                                                                                      | `1`       |
@@ -542,8 +510,7 @@ Unit-level coverage:
   `text/plain` content type,
 - extension matching,
 - validation errors,
-- machine-token protection,
-- placeholder restoration,
+- source patching,
 - source patching,
 - structural fingerprint comparison,
 - Azure Text Translation REST request construction,
@@ -575,9 +542,8 @@ Golden-file coverage:
 - HTML comments,
 - task lists,
 - footnotes,
-- each frozen machine-token class,
-- machine-token overlap resolution,
-- placeholder-bearing prose and protected spans,
+- machine-looking prose such as paths, CLI flags, environment variables, and template variables to confirm it is not specially frozen,
+- protected spans that already cover non-prose content,
 - protected-only Markdown with zero extracted segments,
 - MDX/JSX-looking text, explicit `import` and `export` line cases, directives,
   custom admonitions, TOML-looking front matter, and shortcut/collapsed reference
@@ -594,7 +560,6 @@ Negative coverage:
 - single segment over 50,000 Unicode scalar values,
 - batch over 50,000 Unicode scalar values,
 - batch over 100 text array elements,
-- placeholder drop, duplication, mutation, and reorder,
 - structural validation mismatch for table shape,
 - structural validation mismatch for link destination or title,
 - structural validation mismatch for image destination or title,
@@ -616,10 +581,8 @@ Negative coverage:
 The fake text translator must follow the frozen requirements contract:
 
 1. For segment index `n`, return `TRANSLATED[n]` followed by one ASCII space and
-   the original protected segment text.
-2. Preserve placeholders in order for success fixtures.
-3. Provide variants that drop, duplicate, mutate, and reorder placeholders for
-   failure fixtures.
+   the original segment text.
+2. Return exactly one translated result per input segment.
 
 Successful golden-file tests compare the full output byte-for-byte. Negative
 tests assert stable error categories, not full source or translated content.
@@ -645,9 +608,9 @@ tests assert stable error categories, not full source or translated content.
 | Explicit legacy override              | `MarkdownMode.Legacy` and legacy route behavior                 |
 | UTF-8 only                            | Encoding and newline handling                                   |
 | Frozen parser scope                   | Markdig parser pipeline                                         |
-| Protected machine tokens              | Machine token protection                                        |
+| Existing protected ranges             | Protected range collection                                      |
 | Segment translation backend           | `ITextSegmentTranslator` and Azure Text Translation REST client |
-| Placeholder safety                    | Placeholder restoration                                         |
+| Source patch safety                   | Source patching                                                 |
 | Byte preservation                     | Source-patching strategy and reconstruction validation          |
 | All-or-nothing output                 | Runtime flow and existing atomic output writer                  |
 | Deterministic testing                 | Test strategy and fake translator contract                      |

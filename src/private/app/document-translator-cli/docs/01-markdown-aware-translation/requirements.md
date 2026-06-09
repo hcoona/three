@@ -31,7 +31,7 @@ translation path.
 - A repository maintainer who needs translated Markdown to remain reviewable,
   diff-friendly, and syntactically valid.
 - An automation agent that must avoid corrupting code samples, links,
-  placeholders, metadata, and other non-prose content embedded in Markdown.
+  metadata and other non-prose content embedded in Markdown.
 
 ## Primary Use Case
 
@@ -115,7 +115,7 @@ the mode is `auto`.
     structure, and non-prose content.
 12. Markdown-aware translation must never silently fall back to legacy
     whole-document translation after a Markdown parse, segmentation,
-    translation, placeholder, reconstruction, or validation failure.
+    translation, reconstruction, or validation failure.
 13. Markdown-aware translation must be all-or-nothing for each input file. A
     partial translated output is not acceptable.
 14. Markdown-aware translation must not write the final output file unless the
@@ -152,11 +152,16 @@ every non-Markdown extension. The parser must not reject MDX/JSX-looking text,
 front matter, or shortcut/collapsed reference-link syntax solely because those
 patterns appear in the input. Content that Markdig classifies as raw HTML, inline
 HTML, or prose is handled by protected ranges, extraction rules, and output-side
-validation. The only retained fail-closed guard is the Group C leading
-JSON-front-matter guard: when the first byte after an optional UTF-8 byte order
-mark is `{`, Markdown-aware parsing fails before Markdig parsing. v1 does not
-attempt to distinguish JSON front matter from a Markdown paragraph that starts
-with `{`.
+validation. Group C retains exactly two boundary and safety fail-closed guards,
+not Group D unsupported-format detectors:
+
+1. Leading JSON-front-matter guard: when the first byte after an optional UTF-8
+   byte order mark is `{`, Markdown-aware parsing fails before Markdig parsing.
+   v1 does not attempt to distinguish JSON front matter from a Markdown paragraph
+   that starts with `{`.
+2. Paired inline HTML guard: nested, unmatched, mismatched, or ambiguous paired
+   inline HTML enclosures fail closed rather than risking unsafe text extraction
+   or reconstruction.
 
 ## Translatable Content
 
@@ -211,46 +216,23 @@ Markdown-aware translation must not translate or mutate these regions:
     thematic breaks, and escape characters.
 11. Task list checkbox markers such as `[ ]`, `[x]`, and `[X]`.
 12. Footnote identifiers and reference syntax.
-13. Placeholders, template variables, replacement fields, and format tokens such
-    as `{{name}}`, `${name}`, `%NAME%`, and `{0}`.
-14. CLI flags, environment variable names, package names, file names, file paths,
-    and identifiers that match the frozen token patterns in this document.
+13. Non-prose syntax only when it is covered by an existing protected range,
+    such as code, links, HTML, front matter, structural delimiters, or escaped
+    Markdown delimiters.
 
 Protected content must be preserved byte-for-byte. The v1 requirement is
 preservation, not normalization.
 
-## Machine Token Patterns
+## Machine Token Handling
 
-The following inline tokens are protected when they appear inside otherwise
-translatable text nodes:
-
-1. CLI flag: `(?<!\w)--[A-Za-z][A-Za-z0-9-]*(?:=[^\s]+)?`.
-2. Short CLI flag group: `(?<!\w)-[A-Za-z](?:[A-Za-z0-9])*\b`.
-3. Environment variable: `\b[A-Z][A-Z0-9_]{2,}\b`.
-4. Windows environment variable reference: `%[A-Za-z_][A-Za-z0-9_]*%`.
-5. Shell variable reference:
-   `\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)`.
-6. Replacement field: `\{[0-9]+\}`.
-7. Template variable: `\{\{[^{}\r\n]+\}\}`.
-8. Absolute URL: `https?://[^\s<>)]+`.
-9. Windows absolute path: `[A-Za-z]:\\[^\s:*?"<>|]+`.
-10. UNC path: `\\\\[^\s\\/:*?"<>|]+\\[^\s:*?"<>|]+`.
-11. POSIX absolute path: `/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+`.
-12. Relative path: `(?:\.{1,2}/)?(?:[A-Za-z0-9._-]+/)+[A-Za-z0-9._-]+`.
-13. File name with extension: `\b[A-Za-z0-9._-]+\.[A-Za-z0-9]{1,8}\b`.
-14. .NET identifier:
-    `\b[A-Z][A-Za-z0-9_]*(?:\.[A-Z][A-Za-z0-9_]*)+\b`.
-15. Package-like identifier:
-    `\b[@A-Za-z0-9][A-Za-z0-9._/-]*[A-Za-z0-9]\b` when one of the
-    previous three case-insensitive words is `package`, `module`, `namespace`,
-    `dependency`, `NuGet`, `npm`, or `Python`. The previous-word window is
-    limited to the same parser text node. A word is a maximal ASCII
-    alphanumeric sequence; whitespace, punctuation, Markdown delimiters, and
-    protected-token boundaries separate words.
-
-The implementation must apply these patterns before sending a segment to the
-text translator. If overlapping token matches occur, the longest match wins; ties
-are resolved by the earliest start offset.
+Markdown-aware translation v1 does not implement Machine Token Patterns and must
+not run a full token-freezing matcher or add Machine Token Pattern scanning. CLI
+flags, environment variables, package names, file names, paths, identifiers,
+template variables, replacement fields, and similar machine-looking prose remain
+translator-editable unless an existing protected-range rule already covers them.
+URL literals are an existing protected-range category, including Markdown link
+destinations, autolinks, and bare URL literals, and remain preserved
+byte-for-byte. Validation boundaries alone do not make prose non-editable.
 
 ## Segmentation Requirements
 
@@ -259,24 +241,19 @@ are resolved by the earliest start offset.
 2. A translation segment must not cross a block boundary.
 3. A translation segment must not cross a table cell boundary.
 4. A translation segment must not cross into code, links, images, front matter,
-   raw HTML, reference definitions, or any other protected
-   region.
-5. Protected inline spans inside otherwise translatable prose must be replaced
-   with reversible placeholders before translation.
-6. Placeholders must be stable, collision-resistant within the document, and
-   unlikely to be interpreted as natural language by a translator.
-7. Placeholder restoration must verify that every placeholder appears exactly
-   where required. Missing, duplicated, modified, or illegally reordered
-   placeholders must cause failure.
-8. Segment batching is allowed for efficiency only when reconstruction remains
+   raw HTML, reference definitions, or any other protected region.
+5. Machine-looking substrings inside an approved prose segment are not split out
+   or replaced; they are sent to the translator as normal segment text unless an
+   existing protected range already excludes them from the segment.
+6. Segment batching is allowed for efficiency only when reconstruction remains
    deterministic and no protected boundary is crossed.
-9. A single extracted segment must not exceed 50,000 Unicode scalar values after
-   placeholders are inserted. A segment that exceeds this limit fails validation
-   before translation.
-10. A batched text translation request must not exceed 50,000 Unicode scalar
-    values across all segment texts in that request.
-11. A batched text translation request must not contain more than 100 segment
-    texts in its JSON array.
+7. A single extracted segment must not exceed 50,000 Unicode scalar values before
+   translation. A segment that exceeds this limit fails validation before
+   translation.
+8. A batched text translation request must not exceed 50,000 Unicode scalar
+   values across all segment texts in that request.
+9. A batched text translation request must not contain more than 100 segment
+   texts in its JSON array.
 
 ## Translation Backend Requirements
 
@@ -286,26 +263,24 @@ translator abstraction backed by Azure Translator text translation capability.
 
 The text-segment translator must:
 
-1. Accept one or more extracted text segments plus their placeholder maps.
+1. Accept one or more extracted text segments.
 2. Return exactly one translated result for each input segment.
-3. Preserve placeholder tokens in each returned segment so the reconstruction
-   layer can validate them.
-4. Avoid writing segment text to temporary files.
-5. Use Azure Translator Text Translation REST API v3.0 `translate`, not Azure
+3. Avoid writing segment text to temporary files.
+4. Use Azure Translator Text Translation REST API v3.0 `translate`, not Azure
    Document Translation.
-6. Derive the text translation request URI from the validated root custom-domain
+5. Derive the text translation request URI from the validated root custom-domain
    endpoint by appending `/translator/text/v3.0/translate` and adding query
    parameters `api-version=3.0` and `to=<target-language>`.
-7. Submit a UTF-8 JSON request body shaped as an array of objects:
+6. Submit a UTF-8 JSON request body shaped as an array of objects:
    `[{ "Text": "<segment>" }]`.
-8. Set `Content-Type` to `application/json; charset=utf-8`.
-9. For API key authentication, send the configured key in the
+7. Set `Content-Type` to `application/json; charset=utf-8`.
+8. For API key authentication, send the configured key in the
    `Ocp-Apim-Subscription-Key` header.
-10. For Entra ID authentication, request a token for
-    `https://cognitiveservices.azure.com/.default` through the existing
-    Azure Identity credential flow and send it with the `Authorization: Bearer`
-    header.
-11. Reuse the resolved endpoint, authentication mode, and target language from
+9. For Entra ID authentication, request a token for
+   `https://cognitiveservices.azure.com/.default` through the existing
+   Azure Identity credential flow and send it with the `Authorization: Bearer`
+   header.
+10. Reuse the resolved endpoint, authentication mode, and target language from
     the baseline command. No separate text endpoint, region option, source
     language option, glossary option, or custom model option is in scope for v1.
 
@@ -321,17 +296,16 @@ the following:
 
 1. The output can be parsed as supported Markdown.
 2. Protected regions are unchanged.
-3. Placeholder restoration is complete.
-4. Markdown node ordering is unchanged.
-5. Markdown block nesting is unchanged.
-6. Link and image destinations are unchanged.
-7. Reference definitions still resolve to the same labels and destinations.
-8. Table row and column counts are unchanged.
-9. Code fences, inline code spans, front matter, raw HTML, task markers, and
+3. Markdown node ordering is unchanged.
+4. Markdown block nesting is unchanged.
+5. Link and image destinations are unchanged.
+6. Reference definitions still resolve to the same labels and destinations.
+7. Table row and column counts are unchanged.
+8. Code fences, inline code spans, front matter, raw HTML, task markers, and
    footnote identifiers are unchanged.
-10. The patched output still satisfies the leading `{` JSON-front-matter guard
-    when reparsed for validation.
-11. The output path is not written after any validation failure.
+9. The patched output still satisfies the leading `{` JSON-front-matter guard
+   when reparsed for validation.
+10. The output path is not written after any validation failure.
 
 The implementation may allow translated prose to differ in wording, punctuation,
 Unicode normalization, or internal spacing. It must not allow those differences
@@ -345,17 +319,15 @@ Markdown-aware translation must fail closed for these conditions:
 2. The leading `{` JSON-front-matter guard is triggered.
 3. A translatable segment cannot be extracted without crossing a protected
    boundary.
-4. The translation service drops, duplicates, mutates, or illegally reorders a
-   placeholder.
-5. Reconstruction changes protected content.
-6. Re-parsing the reconstructed Markdown fails.
-7. Structural validation detects changed block order, nesting, table shape, link
+4. Reconstruction changes protected content.
+5. Re-parsing the reconstructed Markdown fails.
+6. Structural validation detects changed block order, nesting, table shape, link
    destinations, reference definitions, front matter, code, raw HTML, or
    footnote identifiers.
-8. Any segment translation fails.
-9. A segment or batched request exceeds the frozen 50,000 Unicode scalar value
+7. Any segment translation fails.
+8. A segment or batched request exceeds the frozen 50,000 Unicode scalar value
    limit.
-10. File I/O, authentication, or service errors occur.
+9. File I/O, authentication, or service errors occur.
 
 Failure must return a non-zero exit code consistent with the baseline CLI error
 taxonomy. Markdown validation and reconstruction failures are validation errors
@@ -428,21 +400,20 @@ Markdown-aware v1 does not include:
 9. Code fences, indented code blocks, inline code, URLs, link destinations,
    image destinations, reference definitions, front matter, raw HTML, task
    markers, table structure, and footnote identifiers remain unchanged.
-10. Placeholder corruption causes a non-zero exit and no final output file.
-11. Markdown parse, reconstruction, and structural validation failures cause a
+10. Markdown parse, reconstruction, and structural validation failures cause a
     non-zero exit and no final output file.
-12. The output overwrite behavior still requires `--force` when the output file
+11. The output overwrite behavior still requires `--force` when the output file
     already exists.
-13. The output path must still differ from the input path.
-14. Invalid UTF-8 input causes a non-zero exit before translation.
-15. Leading `{` JSON front matter causes a non-zero exit before translation,
+12. The output path must still differ from the input path.
+13. Invalid UTF-8 input causes a non-zero exit before translation.
+14. Leading `{` JSON front matter causes a non-zero exit before translation,
     while MDX/JSX-looking text, explicit `import` and `export` line cases,
     directives, custom admonitions, TOML-looking front matter, and shortcut or
     collapsed reference links are not rejected solely because those patterns
     appear.
-16. Segment and batched request sizes over 50,000 Unicode scalar values cause a
+15. Segment and batched request sizes over 50,000 Unicode scalar values cause a
     non-zero exit before translation.
-17. Missing endpoint, invalid endpoint, missing target language, missing API key
+16. Missing endpoint, invalid endpoint, missing target language, missing API key
     for API key authentication, unsupported authentication mode, and service
     errors keep the baseline behavior and do not print secrets.
 
@@ -455,9 +426,7 @@ The required fake text translator contract is:
 
 1. For segment index `n`, return the marker `TRANSLATED[n]` followed by one
    ASCII space and then the original segment text.
-2. Preserve every placeholder token in the original order.
-3. Support test variants that deliberately drop, duplicate, mutate, and reorder
-   placeholders.
+2. Return exactly one result for each input segment in order.
 
 Successful golden-file tests compare the entire output byte-for-byte against the
 expected file. Negative tests compare stable error categories and must not assert
@@ -476,31 +445,29 @@ At minimum, tests must cover:
    directives, custom admonitions, TOML-looking front matter, and
    shortcut/collapsed reference links must parse successfully when Markdig accepts
    them.
-5. Placeholder insertion, restoration, and corruption detection.
-6. Golden-file output for headings, paragraphs, lists, block quotes, tables,
+5. Golden-file output for headings, paragraphs, lists, block quotes, tables,
    links, images, code fences, inline code, front matter, raw HTML, task lists,
-   footnotes, reference links, placeholders, paths, CLI flags, and environment
-   variables.
-7. Machine token protection for each frozen token pattern, including overlap
-   resolution by longest match and earliest start offset.
-8. Byte-for-byte preservation of protected regions.
-9. Structural validation for table shape, link destinations, reference
+   footnotes, reference links, paths, CLI flags, environment variables, and
+   template-looking prose to confirm Machine Token Patterns are not specially
+   protected.
+6. Byte-for-byte preservation of protected regions.
+7. Structural validation for table shape, link destinations, reference
    definitions, block ordering, nesting, code fences, front matter, raw HTML,
    task markers, and footnote identifiers.
-10. Text translation backend request construction for URI path, query
-    parameters, JSON body, content type, API key header, Entra ID bearer token,
-    target language, and request batching limits.
-11. Shortcut and collapsed reference links are not rejected solely because of their
-    reference syntax.
-12. Single extracted segments over 50,000 Unicode scalar values fail before
+8. Text translation backend request construction for URI path, query
+   parameters, JSON body, content type, API key header, Entra ID bearer token,
+   target language, and request batching limits.
+9. Shortcut and collapsed reference links are not rejected solely because of their
+   reference syntax.
+10. Single extracted segments over 50,000 Unicode scalar values fail before
     translation.
-13. Batched requests over 50,000 Unicode scalar values fail before translation.
-14. Atomic write behavior for success, validation failure, service failure, file
+11. Batched requests over 50,000 Unicode scalar values fail before translation.
+12. Atomic write behavior for success, validation failure, service failure, file
     I/O failure, and cancellation.
-15. UTF-8 without byte order mark, UTF-8 with byte order mark, LF, CRLF, mixed
+13. UTF-8 without byte order mark, UTF-8 with byte order mark, LF, CRLF, mixed
     line endings, final newline, and no-final-newline cases.
-16. Backward-compatible behavior for existing non-Markdown supported formats.
-17. Protected-only Markdown files with zero extracted segments skip text
+14. Backward-compatible behavior for existing non-Markdown supported formats.
+15. Protected-only Markdown files with zero extracted segments skip text
     translation, pass validation, and write byte-for-byte original content.
 
 ## Frozen Decisions

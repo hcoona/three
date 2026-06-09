@@ -127,7 +127,6 @@ internal sealed partial class MarkdownDocumentParser
                 or MarkdownProtectedRangeKinds.InlineCode
                 or MarkdownProtectedRangeKinds.YamlFrontMatter
                 or MarkdownProtectedRangeKinds.HtmlComment
-                or MarkdownProtectedRangeKinds.MachineToken
                 or MarkdownProtectedRangeKinds.RawHtmlBlock => true,
             _ => false,
         };
@@ -228,7 +227,6 @@ internal static partial class MarkdownProtectedRangeCollector
 
         List<ProtectedSlice> slices = [];
         List<MarkdownDiagnostic> diagnostics = [];
-        List<SourceSpan> machineTokenCandidateSpans = [];
         List<InlineHtmlTagContext> inlineHtmlTagContexts = [];
         CollectBlockSlices(document, sourceText, slices, diagnostics);
         CollectInlineSlices(
@@ -236,7 +234,6 @@ internal static partial class MarkdownProtectedRangeCollector
             sourceText,
             slices,
             diagnostics,
-            machineTokenCandidateSpans,
             inlineHtmlTagContexts);
         CollectInlineHtmlEnclosureText(sourceText, slices, diagnostics, inlineHtmlTagContexts);
         CollectReferenceDefinitions(sourceText, slices, diagnostics);
@@ -257,7 +254,6 @@ internal static partial class MarkdownProtectedRangeCollector
         CollectUriFragments(sourceText, slices, diagnostics);
         CollectEscapedMarkdownDelimiters(sourceText, slices, diagnostics);
         CollectMarkdownStructuralSyntax(document, sourceText, slices, diagnostics);
-        CollectEarlyMachineTokens(sourceText, slices, diagnostics, machineTokenCandidateSpans);
 
         if (diagnostics.Count > 0)
         {
@@ -329,7 +325,6 @@ internal static partial class MarkdownProtectedRangeCollector
         string sourceText,
         List<ProtectedSlice> slices,
         List<MarkdownDiagnostic> diagnostics,
-        List<SourceSpan> machineTokenCandidateSpans,
         List<InlineHtmlTagContext> inlineHtmlTagContexts)
     {
         foreach (Inline inline in markdownObject.Descendants().OfType<Inline>())
@@ -412,56 +407,6 @@ internal static partial class MarkdownProtectedRangeCollector
 
                     CollectLinkInlineStructuralSyntax(sourceText, slices, diagnostics, linkInline);
                     break;
-                case LiteralInline literalInline:
-                    machineTokenCandidateSpans.Add(literalInline.Span);
-                    break;
-            }
-        }
-    }
-
-    private static void CollectEarlyMachineTokens(
-        string sourceText,
-        List<ProtectedSlice> slices,
-        List<MarkdownDiagnostic> diagnostics,
-        List<SourceSpan> machineTokenCandidateSpans)
-    {
-        foreach (SourceSpan span in machineTokenCandidateSpans)
-        {
-            AddEarlyMachineTokens(slices, diagnostics, span, sourceText);
-        }
-    }
-
-    private static void AddEarlyMachineTokens(
-        List<ProtectedSlice> slices,
-        List<MarkdownDiagnostic> diagnostics,
-        SourceSpan span,
-        string sourceText)
-    {
-        if (span.Start < 0 || span.End < span.Start)
-        {
-            AddUnreliableSourceSpanDiagnostic(
-                diagnostics,
-                MarkdownProtectedRangeKinds.MachineToken,
-                span);
-            return;
-        }
-
-        TextRange range = new(span.Start, checked(span.End - span.Start + 1));
-        if (!range.IsWithin(sourceText))
-        {
-            AddUnreliableSourceSpanDiagnostic(
-                diagnostics,
-                MarkdownProtectedRangeKinds.MachineToken,
-                span);
-            return;
-        }
-
-        foreach (ProtectedSlice machineToken in
-            MarkdownTokenProtector.ScanEarlyMachineTokens(sourceText, range))
-        {
-            if (!OverlapsExistingProtectedRange(machineToken.SourceRange, slices))
-            {
-                slices.Add(machineToken);
             }
         }
     }
