@@ -148,12 +148,12 @@ internal enum TranslationRoute
 Add these validated properties:
 
 - `MarkdownMode MarkdownMode`
-- `TranslationRoute Route`
+- `TranslationRoute TranslationRoute`
 - `bool IsMarkdownExtension`
 
-Keep `ContentType` populated for the legacy route. For the Markdown-aware route,
-`ContentType` is not used by the text-segment backend but may remain on the
-model for compatibility with existing command seams.
+Keep `LegacyDocumentContentType` populated only for the legacy document route.
+The Markdown-aware route does not carry an Azure document content type because
+its text-segment backend does not use that Azure document contract.
 
 ## Runtime Flow
 

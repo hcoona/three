@@ -30,7 +30,9 @@ internal sealed class AzureDocumentTranslator : IDocumentTranslator
         MultipartFormFileData document = new(
             options.OriginalFileName,
             inputStream,
-            options.ContentType);
+            options.LegacyDocumentContentType
+                ?? throw new InvalidOperationException(
+                    "Legacy document content type is required for Azure document translation."));
         DocumentTranslateContent content = new(document);
 
         return await client

@@ -221,6 +221,13 @@ internal static class Program
         ArgumentNullException.ThrowIfNull(createPreflightTempFile);
         ArgumentNullException.ThrowIfNull(openExistingOutputForReplaceability);
 
+        if (options.TranslationRoute == TranslationRoute.MarkdownAware)
+        {
+            await WriteMarkdownAwareNotImplementedErrorBestEffortAsync(standardError)
+                .ConfigureAwait(false);
+            return UnexpectedErrorExitCode;
+        }
+
         FileStream inputStream;
         try
         {
@@ -461,6 +468,15 @@ internal static class Program
         TextWriter standardError)
     {
         await WriteErrorLineBestEffortAsync(standardError, "Error: Operation canceled.")
+            .ConfigureAwait(false);
+    }
+
+    private static async ValueTask WriteMarkdownAwareNotImplementedErrorBestEffortAsync(
+        TextWriter standardError)
+    {
+        await WriteErrorLineBestEffortAsync(
+                standardError,
+                "Error: Markdown-aware translation is not implemented yet.")
             .ConfigureAwait(false);
     }
 

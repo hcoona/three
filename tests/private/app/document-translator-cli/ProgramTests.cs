@@ -571,6 +571,83 @@ public sealed class ProgramTests
     }
 
     [Fact]
+    public async Task CommandLineMarkdownModeOverridesEnvironmentFallback()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+                "--markdown-mode",
+                "legacy",
+            ],
+            name => name == TranslationOptionResolver.MarkdownModeEnvironmentVariable
+                ? "aware"
+                : null,
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.Equal(MarkdownMode.Legacy, executedOptions.MarkdownMode);
+        Assert.Equal(TranslationRoute.LegacyDocument, executedOptions.TranslationRoute);
+    }
+
+    [Fact]
+    public async Task EnvironmentMarkdownModeOverridesDefault()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "invalid {{ markdown fixture");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+            ],
+            name => name == TranslationOptionResolver.MarkdownModeEnvironmentVariable
+                ? " legacy "
+                : null,
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.Equal(MarkdownMode.Legacy, executedOptions.MarkdownMode);
+        Assert.Equal(TranslationRoute.LegacyDocument, executedOptions.TranslationRoute);
+        Assert.Equal("text/plain", executedOptions.LegacyDocumentContentType);
+    }
+
+    [Fact]
     public async Task ApiKeyModeIsDefaultAndRequiresApiKey()
     {
         using TestDirectory directory = TestDirectory.Create();
@@ -763,9 +840,9 @@ public sealed class ProgramTests
     [InlineData("source.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")]
     [InlineData("source.msg", "application/vnd.ms-outlook")]
     [InlineData("source.xlf", "application/xliff+xml")]
-    public void SupportedExtensionsResolveContentTypeCaseInsensitively(
+    public void SupportedExtensionsResolveLegacyDocumentContentTypeCaseInsensitively(
         string fileName,
-        string expectedContentType)
+        string expectedLegacyDocumentContentType)
     {
         using TestDirectory directory = TestDirectory.Create();
         string inputPath = directory.WriteFile(fileName, "content");
@@ -775,8 +852,289 @@ public sealed class ProgramTests
             ValidRawOptions(inputPath, outputPath));
 
         Assert.Empty(result.Errors);
-        Assert.Equal(expectedContentType, result.Options!.ContentType);
+        Assert.Equal(expectedLegacyDocumentContentType, result.Options!.LegacyDocumentContentType);
         Assert.Equal(fileName, result.Options.OriginalFileName);
+    }
+
+    [Fact]
+    public async Task DefaultMarkdownModeIsAuto()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+            ],
+            _ => null,
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.Equal(MarkdownMode.Auto, executedOptions.MarkdownMode);
+        Assert.False(executedOptions.IsMarkdownExtension);
+        Assert.Equal(TranslationRoute.LegacyDocument, executedOptions.TranslationRoute);
+    }
+
+    [Theory]
+    [InlineData("source.md")]
+    [InlineData("source.MD")]
+    [InlineData("source.MarkDown")]
+    [InlineData("archive.tar.markdown")]
+    public void MarkdownExtensionsRouteToMarkdownAwareInAuto(string fileName)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(fileName, "content");
+        string outputPath = directory.GetPath("translated.md");
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(
+            ValidRawOptions(inputPath, outputPath));
+
+        Assert.Empty(result.Errors);
+        Assert.Equal(MarkdownMode.Auto, result.Options!.MarkdownMode);
+        Assert.True(result.Options.IsMarkdownExtension);
+        Assert.Equal(TranslationRoute.MarkdownAware, result.Options.TranslationRoute);
+        Assert.Null(result.Options.LegacyDocumentContentType);
+    }
+
+    [Theory]
+    [InlineData("source.md")]
+    [InlineData("source.markdown")]
+    public void AwareMarkdownModeRoutesMarkdownExtensionsToMarkdownAware(string fileName)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(fileName, "content");
+        string outputPath = directory.GetPath("translated.md");
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(
+            ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "aware",
+            });
+
+        Assert.Empty(result.Errors);
+        Assert.Equal(MarkdownMode.Aware, result.Options!.MarkdownMode);
+        Assert.True(result.Options.IsMarkdownExtension);
+        Assert.Equal(TranslationRoute.MarkdownAware, result.Options.TranslationRoute);
+        Assert.Null(result.Options.LegacyDocumentContentType);
+    }
+
+    [Theory]
+    [InlineData("source.txt")]
+    [InlineData("source.docx")]
+    public void NonMarkdownSupportedFormatsRouteToLegacyDocumentInAuto(string fileName)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(fileName, "content");
+        string outputPath = directory.GetPath("translated.out");
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(
+            ValidRawOptions(inputPath, outputPath));
+
+        Assert.Empty(result.Errors);
+        Assert.False(result.Options!.IsMarkdownExtension);
+        Assert.Equal(TranslationRoute.LegacyDocument, result.Options.TranslationRoute);
+    }
+
+    [Fact]
+    public void MarkdownParentDirectoryDoesNotAffectAutoRouteForNonMarkdownLeafFile()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(Path.Combine("folder.md", "source.txt"), "content");
+        string outputPath = directory.GetPath("translated.txt");
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(
+            ValidRawOptions(inputPath, outputPath));
+
+        Assert.Empty(result.Errors);
+        Assert.False(result.Options!.IsMarkdownExtension);
+        Assert.Equal(TranslationRoute.LegacyDocument, result.Options.TranslationRoute);
+        Assert.Equal("text/plain", result.Options.LegacyDocumentContentType);
+    }
+
+    [Fact]
+    public void AwareMarkdownModeRejectsNonMarkdownExtensions()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(
+            ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = " aware ",
+            });
+
+        Assert.NotEmpty(result.Errors);
+        Assert.Contains(
+            "Markdown-aware translation requires a .md or .markdown input file.",
+            result.Errors);
+    }
+
+    [Theory]
+    [InlineData("source.md")]
+    [InlineData("source.MARKDOWN")]
+    public void LegacyMarkdownModeRoutesMarkdownExtensionsAsTextPlain(string fileName)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(fileName, "invalid {{ markdown fixture");
+        string outputPath = directory.GetPath("translated.md");
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(
+            ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "LEGACY",
+            });
+
+        Assert.Empty(result.Errors);
+        Assert.Equal(MarkdownMode.Legacy, result.Options!.MarkdownMode);
+        Assert.True(result.Options.IsMarkdownExtension);
+        Assert.Equal(TranslationRoute.LegacyDocument, result.Options.TranslationRoute);
+        Assert.Equal("text/plain", result.Options.LegacyDocumentContentType);
+        Assert.Equal(fileName, result.Options.OriginalFileName);
+    }
+
+    [Theory]
+    [InlineData("source.txt", "text/plain")]
+    [InlineData(
+        "source.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document")]
+    public void LegacyMarkdownModeRoutesNonMarkdownSupportedFormatsToLegacyDocument(
+        string fileName,
+        string expectedLegacyDocumentContentType)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(fileName, "content");
+        string outputPath = directory.GetPath("translated.out");
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(
+            ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "legacy",
+            });
+
+        Assert.Empty(result.Errors);
+        Assert.Equal(MarkdownMode.Legacy, result.Options!.MarkdownMode);
+        Assert.False(result.Options.IsMarkdownExtension);
+        Assert.Equal(TranslationRoute.LegacyDocument, result.Options.TranslationRoute);
+        Assert.Equal(expectedLegacyDocumentContentType, result.Options.LegacyDocumentContentType);
+        Assert.Equal(fileName, result.Options.OriginalFileName);
+    }
+
+    [Theory]
+    [InlineData("source.pdf")]
+    [InlineData("source")]
+    public void LegacyMarkdownModeRejectsUnsupportedExtensions(string fileName)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(fileName, "content");
+        string outputPath = directory.GetPath("translated.txt");
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(
+            ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "legacy",
+            });
+
+        Assert.NotEmpty(result.Errors);
+    }
+
+    [Fact]
+    public async Task InvalidMarkdownModeFailsBeforeTranslation()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        bool executed = false;
+
+        int exitCode = await Program.RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+                "--markdown-mode",
+                "sometimes",
+            ],
+            standardOutput,
+            standardError,
+            _ => null,
+            (_, _, _) =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(Program.ValidationErrorExitCode, exitCode);
+        Assert.False(executed);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains(
+            "Markdown mode must be 'auto', 'aware', or 'legacy'.",
+            standardError.ToString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task LegacyMarkdownModeBypassesMarkdownAwareValidationAndCallsLegacyTranslator()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "invalid {{ markdown fixture");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+                "--markdown-mode",
+                "legacy",
+            ],
+            _ => null,
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.Equal(TranslationRoute.LegacyDocument, executedOptions.TranslationRoute);
+        Assert.Equal("text/plain", executedOptions.LegacyDocumentContentType);
     }
 
     [Theory]
@@ -799,7 +1157,7 @@ public sealed class ProgramTests
     [InlineData("source.xlf", "application/xliff+xml")]
     public async Task RunAsyncExecutesValidatedCommandForSupportedExtensions(
         string fileName,
-        string expectedContentType)
+        string expectedLegacyDocumentContentType)
     {
         using TestDirectory directory = TestDirectory.Create();
         string inputPath = directory.WriteFile(fileName, "content");
@@ -832,12 +1190,11 @@ public sealed class ProgramTests
         Assert.Equal(inputPath, executedOptions.InputPath);
         Assert.Equal(outputPath, executedOptions.OutputPath);
         Assert.Equal(fileName, executedOptions.OriginalFileName);
-        Assert.Equal(expectedContentType, executedOptions.ContentType);
+        Assert.Equal(expectedLegacyDocumentContentType, executedOptions.LegacyDocumentContentType);
     }
 
     [Theory]
     [InlineData("source.pdf")]
-    [InlineData("source.md")]
     [InlineData("source")]
     public void UnsupportedExtensionsFailValidation(string fileName)
     {
@@ -1384,7 +1741,7 @@ public sealed class ProgramTests
         Assert.True(translator.InputStreamWasReadable);
         TranslationOptions capturedOptions = translator.Options!;
         Assert.Equal("source.TXT", capturedOptions.OriginalFileName);
-        Assert.Equal("text/plain", capturedOptions.ContentType);
+        Assert.Equal("text/plain", capturedOptions.LegacyDocumentContentType);
         Assert.Equal(cancellationTokenSource.Token, translator.CancellationToken);
     }
 
@@ -2484,6 +2841,7 @@ public sealed class ProgramTests
             "api-key",
             "https://resource.cognitiveservices.azure.com/translator",
             "secret",
+            "auto",
             Force: false);
 
     private static TranslationOptions ValidOptions(string originalFileName) =>
@@ -2494,9 +2852,12 @@ public sealed class ProgramTests
             new Uri("https://resource.cognitiveservices.azure.com"),
             AuthMode.ApiKey,
             "secret",
+            MarkdownMode.Auto,
+            TranslationRoute.LegacyDocument,
+            TranslationOptionsValidator.IsMarkdownExtension(originalFileName),
             Force: false,
             originalFileName,
-            DocumentTranslationContentTypes.TryGetContentType(
+            LegacyDocumentContentTypes.TryGetContentType(
                 Path.GetExtension(originalFileName),
                 out string contentType)
                 ? contentType

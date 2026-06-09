@@ -13,7 +13,9 @@ internal sealed record RawCommandLineOptions(
     string? AuthMode,
     string? Endpoint,
     string? ApiKey,
+    string? MarkdownMode,
     bool Force,
     bool TargetLanguageSpecified = false,
     bool AuthModeSpecified = false,
-    bool EndpointSpecified = false);
+    bool EndpointSpecified = false,
+    bool MarkdownModeSpecified = false);

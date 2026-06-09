@@ -16,13 +16,22 @@ internal static partial class TranslationOptionsValidator
         List<string> errors = [];
 
         string? inputPath = ValidateInputPath(options.InputPath, errors);
-        string? contentType = ValidateInputExtension(inputPath, errors);
         string? outputPath = ValidateOutputPath(options.OutputPath, options.Force, errors);
         ValidateDifferentInputAndOutput(inputPath, outputPath, errors);
         Uri? endpoint = ValidateEndpoint(options.Endpoint, errors);
         AuthMode? authMode = ValidateAuthMode(options.AuthMode, errors);
         ValidateApiKey(options.ApiKey, authMode, errors);
         string? targetLanguage = ValidateTargetLanguage(options.TargetLanguage, errors);
+        MarkdownMode? markdownMode = ValidateMarkdownMode(options.MarkdownMode, errors);
+        bool isMarkdownExtension = IsMarkdownExtension(inputPath);
+        TranslationRoute? translationRoute = SelectTranslationRoute(
+            markdownMode,
+            isMarkdownExtension);
+        string? legacyDocumentContentType = ValidateRouteSpecificInputExtension(
+            inputPath,
+            isMarkdownExtension,
+            translationRoute,
+            errors);
 
         if (errors.Count > 0)
         {
@@ -36,9 +45,12 @@ internal static partial class TranslationOptionsValidator
             endpoint!,
             authMode!.Value,
             authMode.Value == AuthMode.EntraId ? null : options.ApiKey,
+            markdownMode!.Value,
+            translationRoute!.Value,
+            isMarkdownExtension,
             options.Force,
             Path.GetFileName(inputPath!),
-            contentType!);
+            legacyDocumentContentType);
 
         return new TranslationValidationResult(validatedOptions, errors);
     }
@@ -66,15 +78,87 @@ internal static partial class TranslationOptionsValidator
         return inputPath;
     }
 
-    private static string? ValidateInputExtension(string? inputPath, List<string> errors)
+    internal static bool IsMarkdownExtension(string? inputPath)
+    {
+        if (string.IsNullOrWhiteSpace(inputPath))
+        {
+            return false;
+        }
+
+        string extension = Path.GetExtension(inputPath);
+        return StringComparer.OrdinalIgnoreCase.Equals(extension, ".md")
+            || StringComparer.OrdinalIgnoreCase.Equals(extension, ".markdown");
+    }
+
+    private static MarkdownMode? ValidateMarkdownMode(string? markdownMode, List<string> errors)
+    {
+        markdownMode = NormalizeNonSecretScalar(markdownMode);
+        if (StringComparer.OrdinalIgnoreCase.Equals(markdownMode, "auto"))
+        {
+            return MarkdownMode.Auto;
+        }
+
+        if (StringComparer.OrdinalIgnoreCase.Equals(markdownMode, "aware"))
+        {
+            return MarkdownMode.Aware;
+        }
+
+        if (StringComparer.OrdinalIgnoreCase.Equals(markdownMode, "legacy"))
+        {
+            return MarkdownMode.Legacy;
+        }
+
+        errors.Add("Markdown mode must be 'auto', 'aware', or 'legacy'.");
+        return null;
+    }
+
+    private static TranslationRoute? SelectTranslationRoute(
+        MarkdownMode? markdownMode,
+        bool isMarkdownExtension) =>
+        markdownMode switch
+        {
+            MarkdownMode.Auto => isMarkdownExtension
+                ? TranslationRoute.MarkdownAware
+                : TranslationRoute.LegacyDocument,
+            MarkdownMode.Aware => TranslationRoute.MarkdownAware,
+            MarkdownMode.Legacy => TranslationRoute.LegacyDocument,
+            _ => null,
+        };
+
+    private static string? ValidateRouteSpecificInputExtension(
+        string? inputPath,
+        bool isMarkdownExtension,
+        TranslationRoute? translationRoute,
+        List<string> errors)
     {
         if (string.IsNullOrWhiteSpace(inputPath))
         {
             return null;
         }
 
+        if (translationRoute is null)
+        {
+            return null;
+        }
+
         string extension = Path.GetExtension(inputPath).ToLowerInvariant();
-        if (!DocumentTranslationContentTypes.TryGetContentType(extension, out string contentType))
+        if (translationRoute == TranslationRoute.MarkdownAware)
+        {
+            if (!isMarkdownExtension)
+            {
+                errors.Add("Markdown-aware translation requires a .md or .markdown input file.");
+                return null;
+            }
+
+            return null;
+        }
+
+        if (isMarkdownExtension)
+        {
+            return "text/plain";
+        }
+
+        if (!LegacyDocumentContentTypes.TryGetContentType(extension, out string contentType))
         {
             errors.Add($"Unsupported input file extension '{extension}'.");
             return null;
