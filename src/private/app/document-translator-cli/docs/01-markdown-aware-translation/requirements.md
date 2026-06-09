@@ -367,7 +367,9 @@ the following:
    footnote identifiers are unchanged.
 10. The patched output does not introduce unsupported MDX import/export, MDX JSX,
     MDX expression, MDX comment, Markdown directive, custom admonition, TOML
-    front matter, or JSON front matter constructs outside protected ranges.
+    front matter, or JSON front matter constructs outside recomputed output-side
+    detector exclusion ranges. These ranges use the same allowlist as
+    `DetectorExclusionSlices` and must not use broad `ProtectedSlices`.
 11. The output path is not written after any validation failure.
 
 The implementation may allow translated prose to differ in wording, punctuation,
@@ -408,7 +410,7 @@ unless they are caused by a lower-level service or file I/O failure.
    mark. Invalid UTF-8 and other encodings must fail validation before
    translation.
 3. Markdown-aware output must preserve the input's UTF-8 byte order mark
-   presence, final newline presence, and original line-ending bytes for
+   presence, final newline presence, and original line-ending text for
    structural delimiters and protected regions. The implementation must not
    normalize LF to CRLF, CRLF to LF, or mixed line endings.
 4. Do not log or print source document content, translated document content,

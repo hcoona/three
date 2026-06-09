@@ -88,26 +88,42 @@ repository buildable and must add tests for the behavior it introduces.
 | I. Command orchestration                       | `MarkdownTranslationCommand` and route dispatch                            | A, F, G, H | None.                                                                        |
 | J. End-to-end hardening                        | golden files, negative tests, regression tests, validation commands        | All groups | None.                                                                        |
 
+Group C handoff boundaries:
+
+| Consumer group | C output consumed                                                                                                                                                            | Boundary rule                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D              | `MarkdownParseResult.SourceText`, `DetectorExclusionSlices`, and `MarkdownParseResult.Document` parsed link nodes only for shortcut/collapsed reference link inspection      | D must run unsupported-construct detection only outside `DetectorExclusionSlices`. D may inspect parsed link nodes only to reject unsupported shortcut and collapsed reference links. D must not read `ProtectedSlices` or derive detector exclusions from `ProtectedSlices`. `DetectorExclusionSlices` is a filtered subset of `ProtectedSlices` and currently contains only `MarkdownProtectedRangeKinds` values for `fenced-code-block`, `indented-code-block`, `inline-code`, `yaml-front-matter`, `raw-html-block`, `html-comment`, and `machine-token`.                                  |
+| E              | `MarkdownParseResult.SourceText`, `MarkdownParseResult.ProtectedSlices`, `MarkdownParseResult.SourceMetadata` (`MarkdownSourceMetadata`), and `MarkdownParseResult.Document` | E uses the source text, protected ranges, source metadata, and parsed document for extraction and token protection after D succeeds; it must not broaden D's detector exclusions or reinterpret parser spans outside the Group C parse result. E must apply the full frozen machine-token matcher set from the requirements. C's `MarkdownTokenProtector.ScanEarlyMachineTokens` covers only the early brace-like detector-exclusion subset (`${name}`, `{{...}}`, and `{0}`-style replacement fields) and may be reused by E only as a submatcher, not as the complete machine-token matcher. |
+| H              | `MarkdownParseResult.SourceText`, `MarkdownParseResult.Document`, `MarkdownParseResult.ProtectedSlices`, and `MarkdownParseResult.SourceMetadata` (`MarkdownSourceMetadata`) | H uses C's source parse result to build and compare the source structural fingerprint against the patched-output fingerprint, avoiding duplicate source-parser responsibility drift. H uses C-owned protected ranges and source metadata for protected-byte, BOM, newline, and line-ending validation; it must not redefine the detector exclusion set. H also consumes Phase 7/G `SourcePatchMap` metadata for reconstruction validation.                                                                                                                                                     |
+
+Group C hands off decoded string offsets, not byte offsets.
+`MarkdownParseResult.SourceText` is strict UTF-8 decoded text with any UTF-8
+BOM removed. All `TextRange` offsets in `ProtectedSlices`,
+`DetectorExclusionSlices`, and `SourceMetadata.LineEndings` are decoded string
+offsets relative to `SourceText`. BOM presence is represented only by
+`SourceMetadata.HasUtf8Bom`; D/E/H must not infer a BOM from `SourceText` or
+from protected range offsets.
+
 ## 3. Component Map
 
 Use the high-level design component names so implementation agents can coordinate
 without inventing duplicate abstractions.
 
-| Component                              | Owner phase | Responsibility                                                                                         |
-| -------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------ |
-| `MarkdownMode`                         | Phase 1     | User-selected Markdown routing mode.                                                                   |
-| `TranslationRoute`                     | Phase 1     | Validated dispatch route.                                                                              |
-| `MarkdownDocumentParser`               | Phases 2-3  | Central Markdig pipeline usage, strict UTF-8 document model, and source metadata.                      |
-| `MarkdownUnsupportedConstructDetector` | Phase 4     | Fail-closed unsupported syntax detection.                                                              |
-| `MarkdownSegmentExtractor`             | Phase 5     | Approved text-node extraction from a document that has already passed unsupported-construct detection. |
-| `MarkdownTokenProtector`               | Phases 3, 5 | Frozen machine-token matching, early protected-range scanning, and placeholder insertion.              |
-| `MarkdownSourcePatcher`                | Phase 7     | Placeholder restoration, translated source-span replacement, and source patch mapping.                 |
-| `MarkdownOutputValidator`              | Phase 8     | Re-parse, structural fingerprint, protected-slice, BOM, newline, and line-ending validation.           |
-| `ITextSegmentTranslator`               | Phase 6     | Testable segment translation abstraction.                                                              |
-| `AzureTextSegmentTranslator`           | Phase 6     | Batching adapter from segment requests to Azure Text Translation REST calls.                           |
-| `AzureTextTranslationClient`           | Phase 6     | Low-level HTTP client for Azure Translator Text Translation REST API v3.0.                             |
-| `AzureTextTranslationJsonContext`      | Phase 6     | Source-generated JSON metadata for request and response payloads.                                      |
-| `MarkdownTranslationCommand`           | Phase 9     | Markdown-aware pipeline orchestration.                                                                 |
+| Component                              | Owner phase | Responsibility                                                                                                                                            |
+| -------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MarkdownMode`                         | Phase 1     | User-selected Markdown routing mode.                                                                                                                      |
+| `TranslationRoute`                     | Phase 1     | Validated dispatch route.                                                                                                                                 |
+| `MarkdownDocumentParser`               | Phases 2-3  | Central Markdig pipeline usage, strict UTF-8 document model, and source metadata.                                                                         |
+| `MarkdownUnsupportedConstructDetector` | Phase 4     | Fail-closed unsupported syntax detection.                                                                                                                 |
+| `MarkdownSegmentExtractor`             | Phase 5     | Approved text-node extraction from a document that has already passed unsupported-construct detection.                                                    |
+| `MarkdownTokenProtector`               | Phases 3, 5 | Phase 3 early brace-like protected-range scanning without placeholders; full frozen machine-token matching and placeholder insertion belong to Phase 5/E. |
+| `MarkdownSourcePatcher`                | Phase 7     | Placeholder restoration, translated source-span replacement, and source patch mapping.                                                                    |
+| `MarkdownOutputValidator`              | Phase 8     | Re-parse, structural fingerprint, protected-slice, BOM, newline, and line-ending validation.                                                              |
+| `ITextSegmentTranslator`               | Phase 6     | Testable segment translation abstraction.                                                                                                                 |
+| `AzureTextSegmentTranslator`           | Phase 6     | Batching adapter from segment requests to Azure Text Translation REST calls.                                                                              |
+| `AzureTextTranslationClient`           | Phase 6     | Low-level HTTP client for Azure Translator Text Translation REST API v3.0.                                                                                |
+| `AzureTextTranslationJsonContext`      | Phase 6     | Source-generated JSON metadata for request and response payloads.                                                                                         |
+| `MarkdownTranslationCommand`           | Phase 9     | Markdown-aware pipeline orchestration.                                                                                                                    |
 
 ## 4. Phase 0: Baseline Characterization
 
@@ -239,8 +255,9 @@ Tasks:
     ```
 
 2. Add typed Markdown failure categories for unsupported syntax, invalid UTF-8,
-   unreliable source spans, segment-size violations, placeholder corruption,
-   reconstruction changes, and structural changes detected during validation.
+   parse errors, unreliable source spans, segment-size violations, placeholder
+   corruption, reconstruction changes, and structural changes detected during
+   validation.
 3. Define the segment request handoff contract:
     - `SegmentIndex` is unique, zero-based, and stable for the whole document;
     - requests preserve extraction order;
@@ -297,7 +314,7 @@ Tasks:
 1. Decode input bytes as UTF-8 with strict error detection.
 2. Preserve UTF-8 byte order mark presence.
 3. Record final newline presence.
-4. Record original line-ending bytes for source ranges that must remain
+4. Record original line-ending text for source ranges that must remain
    protected.
 5. Reject JSON front matter before any Markdig parse when the first byte after an
    optional UTF-8 byte order mark is `{`.
@@ -308,11 +325,14 @@ Tasks:
     - YAML front matter,
     - raw HTML blocks,
     - HTML comments,
+    - inline HTML tag syntax (`inline-html-tag`),
     - text enclosed by raw HTML markup,
     - link and image destinations,
     - link and image titles,
     - reference labels,
     - reference definitions,
+    - footnote definition markers (`footnote-definition`),
+    - footnote reference syntax and identifiers (`footnote-reference`),
     - autolinks,
     - URL literals,
     - email literals,
@@ -325,10 +345,14 @@ Tasks:
    such as `${name}` inside otherwise translatable parser text nodes. It must not
    exclude URL literals, file paths, link destinations, titles, reference
    metadata, URI fragments, or other candidate protected ranges from
-   unsupported-construct detection. Phase 5 reuses the same matcher to generate
-   placeholders inside extracted segments.
+   unsupported-construct detection. This early scanner is only a brace-like
+   detector-exclusion subset (`${name}`, `{{...}}`, and `{0}`-style replacement
+   fields). Phase 5/E must apply the full frozen machine-token matcher set from
+   the requirements and may reuse this early scanner only as a submatcher, not as
+   the complete matcher.
 8. Do not exclude arbitrary inline HTML before unsupported-construct detection;
-   JSX-like uppercase tags must still be detectable.
+   inline HTML tag and enclosure ranges must remain visible to Group D by staying
+   out of `DetectorExclusionSlices`.
 9. Identify text enclosed by inline raw HTML markup, such as
    `<span>do not translate</span>`, as candidate protected content. Phase 4 must
    scan the full tag text, attributes, and enclosed text for frozen unsupported
@@ -352,17 +376,21 @@ Tests:
 4. Leading-`{` JSON front matter fails before preliminary Markdown parsing and
    before either translator can be called.
 5. Protected range collection excludes code, YAML front matter, raw HTML, inline
-   code, references, inline raw HTML enclosure text, and structural delimiters
-   from later translation.
-6. Inline JSX-like HTML remains visible to unsupported-construct detection.
-7. Lowercase inline HTML can be protected after MDX/JSX detection, while
-   uppercase JSX-like tags are rejected.
+   code, references, inline HTML tags, inline raw HTML enclosure text, footnote
+   definition markers, footnote reference syntax and identifiers, and structural
+   delimiters from later translation.
+6. Inline HTML tag and enclosure candidate ranges remain visible to unsupported
+   detection and are not included in `DetectorExclusionSlices`.
+7. Lowercase inline HTML candidates can be protected after Group D MDX/JSX
+   detection succeeds; uppercase JSX-like rejection is covered by Phase 4 tests.
 8. Bare URL literals, email literals, and URI fragments are protected before
    extraction.
 
 Exit criteria:
 
-1. The Markdown pipeline has reliable text, byte metadata, and protected ranges.
+1. The Markdown pipeline has reliable decoded source text, decoded source
+   metadata (`MarkdownSourceMetadata.HasUtf8Bom`, `HasFinalNewline`, and
+   `LineEndings`), and protected ranges.
 2. Later components do not need to inspect raw bytes directly except for final
    validation and encoding.
 
@@ -465,8 +493,12 @@ Tasks:
 4. Apply every frozen machine-token pattern to each candidate text node.
 5. Resolve overlapping token matches by longest match, then earliest start
    offset.
-6. Reuse the same `MarkdownTokenProtector` matcher used by Phase 3 early
-   scanning; Phase 5 is the only phase that creates translation placeholders.
+6. Apply the full frozen machine-token matcher set from the requirements. The
+   Phase 3 `MarkdownTokenProtector.ScanEarlyMachineTokens` scanner is only the
+   early brace-like detector-exclusion subset (`${name}`, `{{...}}`, and
+   `{0}`-style replacement fields); Phase 5/E may reuse it as a submatcher but
+   must not treat it as the complete matcher. Phase 5 is the only phase that
+   creates translation placeholders.
 7. Replace protected inline tokens with placeholders of this exact form:
 
     ```text
@@ -658,7 +690,7 @@ Tasks:
    validation before output bytes are returned. Do not reuse source-document
    exclusion offsets after translation changes text lengths.
 7. Verify BOM presence and final newline presence.
-8. Verify original line-ending bytes remain unchanged outside translated prose.
+8. Verify original line-ending text remains unchanged outside translated prose.
 9. Map validation failures to exit code `2` unless caused by service, file I/O,
    or cancellation failures.
 
@@ -761,7 +793,7 @@ Golden-file fixture groups:
 
 1. Headings, paragraphs, nested lists, block quotes, and thematic breaks.
 2. Soft line breaks, hard breaks using two trailing spaces, and backslash hard
-   breaks with surrounding line-ending bytes preserved.
+   breaks with surrounding line-ending text preserved.
 3. Pipe tables, including alignment rows.
 4. Emphasis, strong emphasis, and strikethrough.
 5. Inline links, full reference links, images, image alt text, and protected
@@ -832,14 +864,15 @@ current code paths for its workstream.
 
 Recommended groups:
 
-| Agent group           | Owned phases   | Handoff output                                                                                 |
-| --------------------- | -------------- | ---------------------------------------------------------------------------------------------- |
-| CLI routing agent     | Phases 0-1     | Route-aware options, tests, and unchanged baseline behavior.                                   |
-| Markdown parser agent | Phases 2-4     | Parser factory, source metadata, protected ranges, and unsupported detector.                   |
-| Segment safety agent  | Phases 5 and 7 | Extraction, token protection, placeholder restoration, source patching, and patch maps.        |
-| Backend agent         | Phase 6        | Segment translator adapter, Azure REST client, JSON context, fake translators, and tests.      |
-| Validation agent      | Phase 8        | Structural fingerprints, protected-byte validation, encoding preservation, and negative tests. |
-| Integration agent     | Phases 9-10    | End-to-end command orchestration, fixture matrix, error mapping, and validation command runs.  |
+| Agent group                | Owned phases   | Handoff output                                                                                 |
+| -------------------------- | -------------- | ---------------------------------------------------------------------------------------------- |
+| CLI routing agent          | Phases 0-1     | Route-aware options, tests, and unchanged baseline behavior.                                   |
+| Markdown parser agent      | Phases 2-3     | Parser factory, source metadata, protected ranges, and `DetectorExclusionSlices`.              |
+| Unsupported detector agent | Phase 4        | `MarkdownUnsupportedConstructDetector` and diagnostics as an independent handoff consumer.     |
+| Segment safety agent       | Phases 5 and 7 | Extraction, token protection, placeholder restoration, source patching, and patch maps.        |
+| Backend agent              | Phase 6        | Segment translator adapter, Azure REST client, JSON context, fake translators, and tests.      |
+| Validation agent           | Phase 8        | Structural fingerprints, protected-byte validation, encoding preservation, and negative tests. |
+| Integration agent          | Phases 9-10    | End-to-end command orchestration, fixture matrix, error mapping, and validation command runs.  |
 
 Coordination rules:
 

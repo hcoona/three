@@ -197,13 +197,14 @@ write seam.
 1. Read the input bytes.
 2. Decode as UTF-8 with strict error detection and remember:
     - UTF-8 byte order mark presence,
-    - line-ending bytes by source range,
+    - decoded line-ending text by source range,
     - final newline presence.
 3. Reject JSON front matter before Markdown parsing when the first byte after an
    optional UTF-8 byte order mark is `{`.
 4. Run a preliminary parse and source-range collection pass with the frozen
    Markdig pipeline. This pass collects reliable source ranges for later
    detection, extraction, patching, and validation.
+
 5. Build the exact unsupported-detection exclusion ranges for fenced code,
    indented code, inline code, YAML front matter, raw HTML blocks, HTML comments,
    and early brace-like machine tokens. Early brace-like machine tokens are only
@@ -211,10 +212,12 @@ write seam.
    inside otherwise translatable parser text nodes. These are the only protected
    ranges that suppress unsupported-construct detection.
 6. Separately collect candidate protected ranges for link and image destinations,
-   link and image titles, reference labels, reference definitions, autolinks,
-   URL literals, email literals, URI fragments, Markdown structural syntax,
-   escaped Markdown delimiters, inline HTML tags, and text enclosed by paired
-   inline raw HTML markup. These candidate ranges are for extraction,
+   link and image titles, reference labels, reference definitions, footnote
+   definition markers (`footnote-definition`), footnote reference syntax and
+   identifiers (`footnote-reference`), autolinks, URL literals, email literals,
+   URI fragments, Markdown structural syntax, escaped Markdown delimiters,
+   inline HTML tags, and text enclosed by paired inline raw HTML markup. These
+   candidate ranges are for extraction,
    reconstruction validation, and later protection only; they must not suppress
    unsupported-construct detection. Inline HTML tags and paired inline raw HTML
    enclosures become protected only after MDX JSX, MDX expression, and MDX
@@ -240,6 +243,13 @@ write seam.
 17. Validate structural invariants and protected bytes.
 18. Encode the patched text back to UTF-8, preserving byte order mark and final
     newline presence.
+
+The Group C parse-result handoff uses decoded string offsets. In particular,
+`MarkdownParseResult.SourceText` is strict UTF-8 decoded text with any UTF-8
+BOM removed. All `TextRange` offsets in `ProtectedSlices`,
+`DetectorExclusionSlices`, and `SourceMetadata.LineEndings` are decoded string
+offsets relative to `SourceText`. BOM presence is represented only by
+`SourceMetadata.HasUtf8Bom`.
 
 If any step fails, the command returns a validation, service, file I/O, or
 cancellation result according to the baseline exit-code taxonomy and writes no
@@ -315,6 +325,8 @@ range collection pass and before segment extraction.
 Detection input:
 
 - decoded UTF-8 text,
+- `MarkdownParseResult.Document` parsed link nodes only for shortcut and
+  collapsed reference link inspection,
 - excluded ranges for fenced code,
 - excluded ranges for indented code,
 - excluded ranges for inline code,
@@ -496,7 +508,7 @@ returned:
    front matter syntax.
 4. Compare protected source slices against their corresponding output slices.
 5. Verify byte order mark presence and final newline presence.
-6. Verify original line-ending bytes remain unchanged outside translated prose.
+6. Verify original line-ending text remains unchanged outside translated prose.
 
 Validation failures are command validation errors unless caused by service, file
 I/O, or cancellation failures.
@@ -510,7 +522,7 @@ Implementation rules:
 1. Detect and preserve a UTF-8 byte order mark.
 2. Decode with strict UTF-8 validation.
 3. Reject invalid UTF-8 before translation.
-4. Keep original line-ending bytes for structural delimiters and protected
+4. Keep original line-ending text for structural delimiters and protected
    regions.
 5. Preserve final newline presence exactly.
 6. Do not normalize mixed line endings.
