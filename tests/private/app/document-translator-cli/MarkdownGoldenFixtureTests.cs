@@ -60,6 +60,7 @@ public sealed class MarkdownGoldenFixtureTests
             EmphasisStrongAndStrikethrough(),
             ListsTasksBlockquotesAndNestedContainers(),
             LinksImagesReferencesAndDefinitions(),
+            ShortcutAndCollapsedReferenceLabels(),
             CodeSpansAndFences(),
             Tables(),
             FrontMatter(),
@@ -146,7 +147,7 @@ public sealed class MarkdownGoldenFixtureTests
                 + "[TRANSLATED[5] Reference link][ref]\n\n"
                 + "![TRANSLATED[6] Reference alt][imgref]\n\n"
                 + "[ref]: https://example.org \"Reference title\"\n"
-                + "[imgref]: images/reference.png \"Reference image title\"\n",
+                + "[imgref]: images/reference.png \"Reference image title\"",
             [
                 "Link text",
                 " and ",
@@ -156,6 +157,35 @@ public sealed class MarkdownGoldenFixtureTests
                 "Reference link",
                 "Reference alt",
             ]);
+
+    private static GoldenFixture ShortcutAndCollapsedReferenceLabels() =>
+        GoldenFixture.Utf8(
+            "shortcut and collapsed reference labels",
+            """
+            [id]
+
+            [id][]
+
+            ![img]
+
+            ![img][]
+
+            [id]: https://example.org
+            [img]: image.png
+            """,
+            """
+            [id]
+
+            [id][]
+
+            ![img]
+
+            ![img][]
+
+            [id]: https://example.org
+            [img]: image.png
+            """,
+            []);
 
     private static GoldenFixture CodeSpansAndFences() =>
         GoldenFixture.Utf8(

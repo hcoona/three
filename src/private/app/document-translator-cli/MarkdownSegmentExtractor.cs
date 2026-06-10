@@ -21,6 +21,10 @@ internal static class MarkdownSegmentExtractor
         List<MarkdownTranslationSegment> segments = [];
         ProtectedRangeCursor protectedRanges = new(parseResult.ProtectedSlices);
         HashSet<LiteralInline> approvedTextNodes = CollectApprovedTextNodes(parseResult.Document);
+        HashSet<LiteralInline> preservedReferenceLabelTextNodes =
+            CollectPreservedReferenceLabelTextNodes(
+                parseResult.Document,
+                parseResult.SourceText);
         HashSet<LiteralInline> tableCellTextNodes = CollectTableCellTextNodes(parseResult.Document);
 
         foreach (LiteralInline literalInline in parseResult.Document
@@ -28,7 +32,8 @@ internal static class MarkdownSegmentExtractor
             .OfType<LiteralInline>()
             .OrderBy(static inline => inline.Span.Start))
         {
-            if (!IsApprovedTextNode(literalInline, approvedTextNodes))
+            if (!IsApprovedTextNode(literalInline, approvedTextNodes)
+                || preservedReferenceLabelTextNodes.Contains(literalInline))
             {
                 continue;
             }
@@ -127,6 +132,119 @@ internal static class MarkdownSegmentExtractor
         }
 
         return approvedTextNodes;
+    }
+
+    private static HashSet<LiteralInline> CollectPreservedReferenceLabelTextNodes(
+        MarkdownDocument document,
+        string sourceText)
+    {
+        HashSet<LiteralInline> preservedTextNodes = [];
+        foreach (LinkInline linkInline in document.Descendants().OfType<LinkInline>())
+        {
+            if (!ReferenceDestinationDependsOnVisibleLabel(linkInline, sourceText))
+            {
+                continue;
+            }
+
+            foreach (LiteralInline literalInline in linkInline
+                .Descendants()
+                .OfType<LiteralInline>())
+            {
+                preservedTextNodes.Add(literalInline);
+            }
+        }
+
+        return preservedTextNodes;
+    }
+
+    private static bool ReferenceDestinationDependsOnVisibleLabel(
+        LinkInline linkInline,
+        string sourceText) =>
+        !linkInline.IsAutoLink
+        && linkInline.Reference is not null
+        && (linkInline.IsShortcut || IsCollapsedReference(linkInline, sourceText));
+
+    private static bool IsCollapsedReference(LinkInline linkInline, string sourceText) =>
+        linkInline.LocalLabel switch
+        {
+            LocalLabel.Empty => true,
+            LocalLabel.Local => false,
+            _ => SourceSpanEndsWithCollapsedReferenceSuffix(linkInline, sourceText)
+                || HasCollapsedReferenceSuffixAfterSpan(linkInline, sourceText),
+        };
+
+    private static bool SourceSpanEndsWithCollapsedReferenceSuffix(
+        LinkInline linkInline,
+        string sourceText) =>
+        linkInline.Span.Start >= 0
+        && linkInline.Span.End >= linkInline.Span.Start
+        && linkInline.Span.End < sourceText.Length
+        && sourceText.AsSpan(
+            linkInline.Span.Start,
+            linkInline.Span.End - linkInline.Span.Start + 1)
+            .EndsWith("[]", StringComparison.Ordinal)
+        && LinkSpanEndsAtDisplayLabel(linkInline, sourceText, linkInline.Span.End - 2);
+
+    private static bool HasCollapsedReferenceSuffixAfterSpan(
+        LinkInline linkInline,
+        string sourceText)
+    {
+        int suffixStart = linkInline.Span.End + 1;
+        return suffixStart >= 0
+            && suffixStart + 1 < sourceText.Length
+            && sourceText[suffixStart] == '['
+            && sourceText[suffixStart + 1] == ']'
+            && LinkSpanEndsAtDisplayLabel(linkInline, sourceText, linkInline.Span.End);
+    }
+
+    private static bool LinkSpanEndsAtDisplayLabel(
+        LinkInline linkInline,
+        string sourceText,
+        int displayLabelEnd)
+    {
+        int labelStart = linkInline.Span.Start;
+        if (labelStart < 0 || labelStart >= sourceText.Length)
+        {
+            return false;
+        }
+
+        if (sourceText[labelStart] == '!')
+        {
+            labelStart++;
+        }
+
+        if (labelStart >= sourceText.Length || sourceText[labelStart] != '[')
+        {
+            return false;
+        }
+
+        int bracketDepth = 0;
+        for (int index = labelStart; index <= displayLabelEnd && index < sourceText.Length; index++)
+        {
+            char current = sourceText[index];
+            if (current == '\\')
+            {
+                index++;
+                continue;
+            }
+
+            if (current == '[')
+            {
+                bracketDepth++;
+                continue;
+            }
+
+            if (current == ']')
+            {
+                bracketDepth--;
+                if (bracketDepth == 0)
+                {
+                    return index == displayLabelEnd;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static HashSet<LiteralInline> CollectTableCellTextNodes(MarkdownDocument document)

@@ -559,7 +559,10 @@ internal static class MarkdownOutputValidator
                     link.IsAutoLink,
                     link.Url,
                     link.Title,
-                    link.Label),
+                    link.Label,
+                    ReferenceDestinationDependsOnDisplayText(link)
+                        ? SourceSpanText(link.Span)
+                        : string.Empty),
                 TaskList taskList => $"{nameof(TaskList)}:{taskList.Checked}",
                 FootnoteLink footnoteLink => string.Join(
                     ':',
@@ -580,6 +583,84 @@ internal static class MarkdownOutputValidator
                 Reference: null,
             } link
             && (link.IsShortcut || link.LocalLabel != LocalLabel.None);
+
+        private bool ReferenceDestinationDependsOnDisplayText(LinkInline link) =>
+            !link.IsAutoLink
+            && link.Reference is not null
+            && (link.IsShortcut
+                || IsCollapsedReference(link));
+
+        private bool IsCollapsedReference(LinkInline link) =>
+            link.LocalLabel switch
+            {
+                LocalLabel.Empty => true,
+                LocalLabel.Local => false,
+                _ => SourceSpanEndsWithCollapsedReferenceSuffix(link)
+                    || HasCollapsedReferenceSuffixAfterSpan(link),
+            };
+
+        private bool SourceSpanEndsWithCollapsedReferenceSuffix(LinkInline link) =>
+            SourceSpanText(link.Span).EndsWith("[]", StringComparison.Ordinal)
+            && LinkSpanEndsAtDisplayLabel(link, link.Span.End - 2);
+
+        private bool HasCollapsedReferenceSuffixAfterSpan(LinkInline link)
+        {
+            int suffixStart = link.Span.End + 1;
+            return suffixStart >= 0
+                && suffixStart + 1 < sourceText.Length
+                && sourceText[suffixStart] == '['
+                && sourceText[suffixStart + 1] == ']'
+                && LinkSpanEndsAtDisplayLabel(link, link.Span.End);
+        }
+
+        private bool LinkSpanEndsAtDisplayLabel(LinkInline link, int displayLabelEnd)
+        {
+            int labelStart = link.Span.Start;
+            if (labelStart < 0 || labelStart >= sourceText.Length)
+            {
+                return false;
+            }
+
+            if (sourceText[labelStart] == '!')
+            {
+                labelStart++;
+            }
+
+            if (labelStart >= sourceText.Length || sourceText[labelStart] != '[')
+            {
+                return false;
+            }
+
+            int bracketDepth = 0;
+            for (int index = labelStart;
+                index <= displayLabelEnd && index < sourceText.Length;
+                index++)
+            {
+                char current = sourceText[index];
+                if (current == '\\')
+                {
+                    index++;
+                    continue;
+                }
+
+                if (current == '[')
+                {
+                    bracketDepth++;
+                    continue;
+                }
+
+                if (current == ']')
+                {
+                    bracketDepth--;
+                    if (bracketDepth == 0)
+                    {
+                        return index == displayLabelEnd;
+                    }
+                }
+            }
+
+            return false;
+        }
 
         private static string ReflectionSignature(object value)
         {

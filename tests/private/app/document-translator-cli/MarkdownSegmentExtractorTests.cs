@@ -111,6 +111,68 @@ public sealed class MarkdownSegmentExtractorTests
     }
 
     [Fact]
+    public void ExcludesShortcutAndCollapsedReferenceLabels()
+    {
+        const string markdown = """
+            [id]
+
+            [id][]
+
+            ![img]
+
+            ![img][]
+
+            [id]: https://example.com
+            [img]: image.png
+            """;
+
+        MarkdownSegmentExtractionResult result = Extract(markdown);
+
+        Assert.True(result.Succeeded);
+        Assert.Empty(result.Segments);
+        Assert.Empty(result.TranslationRequests);
+    }
+
+    [Fact]
+    public void KeepsFullReferenceLinkVisibleTextTranslatable()
+    {
+        const string markdown = """
+            [visible text][id]
+
+            ![visible alt][img]
+
+            [id]: https://example.com
+            [img]: image.png
+            """;
+
+        MarkdownSegmentExtractionResult result = Extract(markdown);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(
+            ["visible text", "visible alt"],
+            result.Segments.Select(static segment => segment.OriginalText));
+    }
+
+    [Fact]
+    public void KeepsFullReferenceVisibleTextTranslatableBeforeLiteralEmptyBrackets()
+    {
+        const string markdown = """
+            [visible text][id][]
+
+            ![visible alt][img][]
+
+            [id]: https://example.com
+            [img]: image.png
+            """;
+
+        MarkdownSegmentExtractionResult result = Extract(markdown);
+
+        Assert.True(result.Succeeded);
+        Assert.Contains(result.Segments, static segment => segment.OriginalText == "visible text");
+        Assert.Contains(result.Segments, static segment => segment.OriginalText == "visible alt");
+    }
+
+    [Fact]
     public void UsesDecodedSourceTextOffsetsInSourceOrder()
     {
         const string markdown = "é First\n\nSecond 😀 text\n";

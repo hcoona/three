@@ -444,6 +444,113 @@ public sealed class MarkdownOutputValidatorTests
         Assert.True(result.Succeeded);
     }
 
+    [Theory]
+    [InlineData(
+        "[id]\n\n[id]: https://example.com \"same\"\n[fr]: https://example.com \"same\"\n",
+        "[fr]\n\n[id]: https://example.com \"same\"\n[fr]: https://example.com \"same\"\n",
+        1)]
+    [InlineData(
+        "![id]\n\n[id]: image.png \"same\"\n[fr]: image.png \"same\"\n",
+        "![fr]\n\n[id]: image.png \"same\"\n[fr]: image.png \"same\"\n",
+        2)]
+    public void ShortcutReferenceLabelsChangingDestinationKeyFailValidation(
+        string source,
+        string patched,
+        int labelStart)
+    {
+        MarkdownParseResult parsed = Parse(source);
+
+        MarkdownOutputValidationResult result = MarkdownOutputValidator.Validate(
+            parsed,
+            patched,
+            parsed.SourceMetadata,
+            [new SourcePatchMap(0, new TextRange(labelStart, 2), new TextRange(labelStart, 2), 0)]);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Diagnostics, static diagnostic =>
+            diagnostic.Kind == MarkdownFailureKind.StructuralChanged);
+    }
+
+    [Theory]
+    [InlineData(
+        "[id][]\n\n[id]: https://example.com \"same\"\n[fr]: https://example.com \"same\"\n",
+        "[fr][]\n\n[id]: https://example.com \"same\"\n[fr]: https://example.com \"same\"\n",
+        1)]
+    [InlineData(
+        "![id][]\n\n[id]: image.png \"same\"\n[fr]: image.png \"same\"\n",
+        "![fr][]\n\n[id]: image.png \"same\"\n[fr]: image.png \"same\"\n",
+        2)]
+    public void CollapsedReferenceLabelsChangingDestinationKeyFailValidation(
+        string source,
+        string patched,
+        int labelStart)
+    {
+        MarkdownParseResult parsed = Parse(source);
+
+        MarkdownOutputValidationResult result = MarkdownOutputValidator.Validate(
+            parsed,
+            patched,
+            parsed.SourceMetadata,
+            [new SourcePatchMap(0, new TextRange(labelStart, 2), new TextRange(labelStart, 2), 0)]);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Diagnostics, static diagnostic =>
+            diagnostic.Kind is MarkdownFailureKind.StructuralChanged
+                or MarkdownFailureKind.ReconstructionChanged);
+    }
+
+    [Theory]
+    [InlineData(
+        "[id] Outro\n\n[id]: https://example.com\n",
+        "[id] Bonjour\n\n[id]: https://example.com\n")]
+    [InlineData(
+        "[id][] Outro\n\n[id]: https://example.com\n",
+        "[id][] Bonjour\n\n[id]: https://example.com\n")]
+    [InlineData(
+        "![id] Outro\n\n[id]: image.png\n",
+        "![id] Bonjour\n\n[id]: image.png\n")]
+    [InlineData(
+        "![id][] Outro\n\n[id]: image.png\n",
+        "![id][] Bonjour\n\n[id]: image.png\n")]
+    public void ShortcutAndCollapsedReferenceLabelsCanPassWhenLabelTextIsPreserved(
+        string source,
+        string expectedPatchedText)
+    {
+        MarkdownOutputValidationResult result = TranslateAndValidate(
+            source,
+            static text => text == " Outro" ? " Bonjour" : text);
+
+        Assert.True(
+            result.Succeeded,
+            string.Join(
+                Environment.NewLine,
+                result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        Assert.Equal(expectedPatchedText, result.PatchedText);
+    }
+
+    [Theory]
+    [InlineData(
+        "[visible][id][]\n\n[id]: https://example.com\n",
+        "[translated][id][]\n\n[id]: https://example.com\n")]
+    [InlineData(
+        "![visible][img][]\n\n[img]: image.png\n",
+        "![translated][img][]\n\n[img]: image.png\n")]
+    public void FullReferenceVisibleTextCanChangeBeforeLiteralEmptyBrackets(
+        string source,
+        string expectedPatchedText)
+    {
+        MarkdownOutputValidationResult result = TranslateAndValidate(
+            source,
+            static text => text == "visible" ? "translated" : text);
+
+        Assert.True(
+            result.Succeeded,
+            string.Join(
+                Environment.NewLine,
+                result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        Assert.Equal(expectedPatchedText, result.PatchedText);
+    }
+
     public static TheoryData<string, string> StructuralMutations() =>
         new()
         {
