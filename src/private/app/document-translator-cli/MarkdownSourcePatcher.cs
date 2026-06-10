@@ -65,7 +65,7 @@ internal static class MarkdownSourcePatcher
         }
 
         ValidateTranslatedTexts(translatedTexts, diagnostics);
-        ValidateSegments(sourceText, segments, translatedTexts, diagnostics);
+        ValidateSegments(sourceText, segments, diagnostics);
         if (diagnostics.Count > 0)
         {
             return new MarkdownSourcePatchResult(sourceText, sourceMetadata, [], diagnostics);
@@ -124,7 +124,6 @@ internal static class MarkdownSourcePatcher
     private static void ValidateSegments(
         string sourceText,
         IReadOnlyList<MarkdownTranslationSegment> segments,
-        IReadOnlyList<string> translatedTexts,
         List<MarkdownDiagnostic> diagnostics)
     {
         bool[] seenIndexes = new bool[segments.Count];
