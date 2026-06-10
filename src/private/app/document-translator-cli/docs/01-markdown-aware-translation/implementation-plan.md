@@ -565,7 +565,11 @@ Tasks:
    reuse source-document absolute offsets after translation changes text lengths.
 8. Verify BOM presence and final newline presence.
 9. Verify original line-ending text remains unchanged outside translated prose.
-10. Map validation failures to exit code `2` unless caused by service, file I/O,
+10. Return validated output metadata with the validation result, separate from
+    the BOM-less reparsed text, so orchestration can re-emit the UTF-8 BOM,
+    final-newline state, and line-ending metadata. Failure results also carry
+    explicit candidate output metadata for diagnostics.
+11. Map validation failures to exit code `2` unless caused by service, file I/O,
     or cancellation failures.
 
 Tests:

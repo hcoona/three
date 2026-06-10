@@ -435,6 +435,11 @@ returned:
 6. Verify byte order mark presence and final newline presence.
 7. Verify original line-ending text remains unchanged outside translated prose.
 
+The validation result carries the validated output metadata separately from the
+BOM-less reparsed text, so orchestration can re-emit the original UTF-8 BOM,
+final-newline state, and line-ending metadata when validation succeeds. Failure
+results also carry the candidate output metadata for diagnostics.
+
 Validation failures are command validation errors unless caused by service, file
 I/O, or cancellation failures.
 
