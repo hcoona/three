@@ -2650,17 +2650,25 @@ internal static partial class MarkdownProtectedRangeCollector
 
             int checkboxStart = markerEnd;
             SkipSpacesAndTabs(sourceText, ref checkboxStart, lineEnd);
-            TextRange checkboxRange = new(checkboxStart, 3);
-            if (IsTaskListCheckbox(sourceText, checkboxStart, lineEnd)
-                && !OverlapsOpaqueProtectedRange(checkboxRange, slices))
+            if (IsTaskListCheckbox(sourceText, checkboxStart, lineEnd))
             {
-                AddRequiredRange(
-                    slices,
-                    diagnostics,
-                    MarkdownProtectedRangeKinds.MarkdownStructuralSyntax,
-                    checkboxStart,
-                    3,
-                    sourceText);
+                int checkboxEnd = checkboxStart + 3;
+                while (checkboxEnd < lineEnd && sourceText[checkboxEnd] is ' ' or '\t')
+                {
+                    checkboxEnd++;
+                }
+
+                TextRange checkboxRange = new(checkboxStart, checkboxEnd - checkboxStart);
+                if (!OverlapsOpaqueProtectedRange(checkboxRange, slices))
+                {
+                    AddRequiredRange(
+                        slices,
+                        diagnostics,
+                        MarkdownProtectedRangeKinds.MarkdownStructuralSyntax,
+                        checkboxStart,
+                        checkboxEnd - checkboxStart,
+                        sourceText);
+                }
             }
         }
     }

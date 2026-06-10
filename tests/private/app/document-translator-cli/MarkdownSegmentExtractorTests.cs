@@ -111,6 +111,25 @@ public sealed class MarkdownSegmentExtractorTests
     }
 
     [Fact]
+    public void StartsTaskListTextAfterCheckboxSeparator()
+    {
+        const string markdown = """
+            - [x] Done task
+            - [ ]	Open task
+            """;
+
+        MarkdownSegmentExtractionResult result = Extract(markdown);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(
+            ["Done task", "Open task"],
+            result.Segments.Select(static segment => segment.OriginalText));
+        Assert.Equal(
+            result.Segments.Select(static segment => segment.OriginalText),
+            result.TranslationRequests.Select(static request => request.Text));
+    }
+
+    [Fact]
     public void ExcludesShortcutAndCollapsedReferenceLabels()
     {
         const string markdown = """

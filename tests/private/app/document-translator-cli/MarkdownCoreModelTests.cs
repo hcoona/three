@@ -338,7 +338,7 @@ public sealed class MarkdownCoreModelTests
     [Theory]
     [InlineData("1. First\n2) Second\n", "1.|2)")]
     [InlineData("- First\n+ Second\n* Third\n", "-|+|*")]
-    [InlineData("- [x] Done\n- [X] Done\n- [ ] Todo\n", "[x]|[X]|[ ]")]
+    [InlineData("- [x] Done\n- [X] Done\n- [ ] Todo\n", "[x] |[X] |[ ] ")]
     public void StructuralSyntaxProtectionKeepsContextualMarkersWhole(
         string markdown,
         string expectedMarkersValue)

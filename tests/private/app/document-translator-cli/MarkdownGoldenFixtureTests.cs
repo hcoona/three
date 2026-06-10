@@ -7,50 +7,28 @@ public sealed class MarkdownGoldenFixtureTests
 {
     [Theory]
     [MemberData(nameof(GoldenFixtures))]
-    public async Task MarkdownAwareCommandProducesGoldenOutput(GoldenFixture fixture)
+    public async Task MarkdownAwarePipelineProducesGoldenOutput(GoldenFixture fixture)
     {
-        string workDirectory = CreateWorkDirectory();
-        try
-        {
-            string inputPath = Path.Combine(workDirectory, "source.md");
-            string outputPath = Path.Combine(workDirectory, "translated.md");
-            await File.WriteAllBytesAsync(
-                inputPath,
-                fixture.InputBytes,
-                TestContext.Current.CancellationToken);
+        using TestDirectory testDirectory = TestDirectory.Create();
+        string inputPath = testDirectory.WriteFileBytes("source.md", fixture.InputBytes);
+        string outputPath = testDirectory.GetPath("translated.md");
+        DeterministicTextSegmentTranslator translator = new();
+        CapturingOutputWriter outputWriter = new();
+        MarkdownTranslationCommand command = new(
+            MarkdownDocumentParser.CreateV1(),
+            translator,
+            outputWriter.WriteAsync);
+        MarkdownTranslationCommandResult result = await command.ExecuteAsync(
+            CreateOptions(inputPath, outputPath),
+            TestContext.Current.CancellationToken);
 
-            DeterministicTextSegmentTranslator translator = new();
-            BinaryData? capturedOutput = null;
-            MarkdownTranslationCommand command = new(
-                MarkdownDocumentParser.CreateV1(),
-                translator,
-                (path, content, overwrite, cancellationToken) =>
-                {
-                    Assert.Equal(outputPath, path);
-                    Assert.True(overwrite);
-                    cancellationToken.ThrowIfCancellationRequested();
-                    capturedOutput = content;
-                    return ValueTask.CompletedTask;
-                });
-
-            MarkdownTranslationCommandResult result = await command.ExecuteAsync(
-                CreateOptions(inputPath, outputPath),
-                TestContext.Current.CancellationToken);
-
-            Assert.True(
-                result.Success,
-                string.Join(
-                    Environment.NewLine,
-                    result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
-            Assert.Equal(fixture.ExpectedRequests, translator.Requests);
-            Assert.NotNull(capturedOutput);
-            Assert.Equal(fixture.ExpectedOutputBytes, capturedOutput.ToArray());
-            Assert.Equal(fixture.ExpectedOutputText, DecodeOutput(capturedOutput.ToArray()));
-        }
-        finally
-        {
-            DeleteDirectoryBestEffort(workDirectory);
-        }
+        AssertSucceeded(result.Diagnostics);
+        BinaryData output = Assert.Single(outputWriter.Writes).Content;
+        Assert.Equal(fixture.ExpectedRequests, translator.Requests);
+        Assert.Equal(outputPath, Assert.Single(outputWriter.Writes).OutputPath);
+        Assert.True(Assert.Single(outputWriter.Writes).Overwrite);
+        Assert.Equal(fixture.ExpectedOutputBytes, output.ToArray());
+        Assert.Equal(fixture.ExpectedOutputText, DecodeOutput(output.ToArray()));
     }
 
     public static TheoryData<GoldenFixture> GoldenFixtures() =>
@@ -124,7 +102,7 @@ public sealed class MarkdownGoldenFixtureTests
             >
             > - TRANSLATED[5] Quoted item
             """,
-            [" Done task", " Open task", "Item one", "Nested item", "Quote line", "Quoted item"]);
+            ["Done task", "Open task", "Item one", "Nested item", "Quote line", "Quoted item"]);
 
     private static GoldenFixture LinksImagesReferencesAndDefinitions() =>
         GoldenFixture.Utf8(
@@ -141,8 +119,8 @@ public sealed class MarkdownGoldenFixtureTests
             [ref]: https://example.org "Reference title"
             [imgref]: images/reference.png "Reference image title"
             """,
-            "[TRANSLATED[0] Link text](https://example.com \"Title\") TRANSLATED[1] and "
-                + "![TRANSLATED[2] Alt text](image.png).\n\n"
+            "[TRANSLATED[0] Link text](https://example.com \"Title\")TRANSLATED[1]  and "
+                + "![TRANSLATED[2] Alt text](image.png)TRANSLATED[3] .\n\n"
                 + "![TRANSLATED[4] Titled alt](image.png \"Image title\")\n\n"
                 + "[TRANSLATED[5] Reference link][ref]\n\n"
                 + "![TRANSLATED[6] Reference alt][imgref]\n\n"
@@ -200,7 +178,7 @@ public sealed class MarkdownGoldenFixtureTests
             After fence.
             """,
             """
-            TRANSLATED[0] Before `inline code` TRANSLATED[1] after.
+            TRANSLATED[0] Before `inline code`TRANSLATED[1]  after.
 
             ```csharp
             Console.WriteLine("hi");
@@ -261,7 +239,7 @@ public sealed class MarkdownGoldenFixtureTests
             After block.
             """,
             """
-            TRANSLATED[0] Before <span>inline</span> TRANSLATED[1] after.
+            TRANSLATED[0] Before <span>inline</span>TRANSLATED[1]  after.
 
             <div>
             block html
@@ -302,7 +280,7 @@ public sealed class MarkdownGoldenFixtureTests
         GoldenFixture.Utf8(
             "footnotes",
             "Footnote reference[^1].\n\n[^1]: Footnote definition text.\n",
-            "TRANSLATED[0] Footnote reference[^1].\n\n"
+            "TRANSLATED[0] Footnote reference[^1]TRANSLATED[1] .\n\n"
                 + "[^1]: TRANSLATED[2] Footnote definition text.\n",
             ["Footnote reference", ".", "Footnote definition text."]);
 
@@ -371,9 +349,9 @@ public sealed class MarkdownGoldenFixtureTests
         GoldenFixture.Utf8(
             "escaped delimiters",
             @"\*Not emphasis\* and \[not link\] plus \# not heading.",
-            @"\*TRANSLATED[0] Not emphasis\* TRANSLATED[1] and "
-                + @"\[TRANSLATED[2] not link\] TRANSLATED[3] plus "
-                + @"\# TRANSLATED[4] not heading.",
+            @"\*TRANSLATED[0] Not emphasis\*TRANSLATED[1]  and "
+                + @"\[TRANSLATED[2] not link\]TRANSLATED[3]  plus "
+                + @"\#TRANSLATED[4]  not heading.",
             ["Not emphasis", " and ", "not link", " plus ", " not heading."]);
 
     private static GoldenFixture IndentedCode() =>
@@ -389,7 +367,7 @@ public sealed class MarkdownGoldenFixtureTests
         GoldenFixture.Utf8(
             "HTML comments",
             "Before <!-- inline note --> after.\n\n<!-- block note -->\n\nAfter block.\n",
-            "TRANSLATED[0] Before <!-- inline note --> TRANSLATED[1] after.\n\n"
+            "TRANSLATED[0] Before <!-- inline note -->TRANSLATED[1]  after.\n\n"
                 + "<!-- block note -->\n\n"
                 + "TRANSLATED[2] After block.\n",
             ["Before ", " after.", "After block."]);
@@ -397,10 +375,10 @@ public sealed class MarkdownGoldenFixtureTests
     private static GoldenFixture UriFragments() =>
         GoldenFixture.Utf8(
             "URI fragments",
-            "See #section-${id} and [details](guide.md#details).\n",
-            "TRANSLATED[0] See #section-${id} TRANSLATED[1] and "
-                + "[TRANSLATED[2] details](guide.md#details).\n",
-            ["See ", " and ", "details", "."]);
+            "See #section-${id}\n\n[details](guide.md#details).\n",
+            "TRANSLATED[0] See #section-${id}\n\n"
+                + "[TRANSLATED[1] details](guide.md#details)TRANSLATED[2] .\n",
+            ["See ", "details", "."]);
 
     private static GoldenFixture AlignedTables() =>
         GoldenFixture.Utf8(
@@ -448,7 +426,7 @@ public sealed class MarkdownGoldenFixtureTests
         GoldenFixture.Utf8(
             "MDX/JSX-looking text is accepted",
             "Use <Component prop={value} /> in MDX-looking prose.\n",
-            "TRANSLATED[0] Use <Component prop={value} /> TRANSLATED[1] in MDX-looking prose.\n",
+            "TRANSLATED[0] Use <Component prop={value} />TRANSLATED[1]  in MDX-looking prose.\n",
             ["Use ", " in MDX-looking prose."]);
 
     private static GoldenFixture ImportExportLookingText() =>
@@ -463,7 +441,7 @@ public sealed class MarkdownGoldenFixtureTests
         GoldenFixture.Utf8(
             "directives are accepted",
             "::note\nDirective body\n::\n",
-            "TRANSLATED[0] ::note\nTRANSLATED[1] Directive body\n::\n",
+            "TRANSLATED[0] ::note\nTRANSLATED[1] Directive body\nTRANSLATED[2] ::\n",
             ["::note", "Directive body", "::"]);
 
     private static GoldenFixture CustomAdmonitions() =>
@@ -477,7 +455,8 @@ public sealed class MarkdownGoldenFixtureTests
         GoldenFixture.Utf8(
             "TOML-looking front matter is accepted",
             "+++\ntitle = \"Sample\"\n+++\n\nBody paragraph.\n",
-            "+++\nTRANSLATED[1] title = \"Sample\"\n+++\n\nTRANSLATED[3] Body paragraph.\n",
+            "TRANSLATED[0] +++\nTRANSLATED[1] title = \"Sample\"\n"
+                + "TRANSLATED[2] +++\n\nTRANSLATED[3] Body paragraph.\n",
             ["+++", "title = \"Sample\"", "+++", "Body paragraph."]);
 
     private static TranslationOptions CreateOptions(string inputPath, string outputPath) =>
@@ -503,29 +482,8 @@ public sealed class MarkdownGoldenFixtureTests
             : Encoding.UTF8.GetString(bytes);
     }
 
-    private static string CreateWorkDirectory()
-    {
-        string path = Path.Combine(
-            AppContext.BaseDirectory,
-            "MarkdownGoldenFixtureTests",
-            Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(path);
-        return path;
-    }
-
-    private static void DeleteDirectoryBestEffort(string path)
-    {
-        try
-        {
-            Directory.Delete(path, recursive: true);
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
-    }
+    private static void AssertSucceeded(IReadOnlyList<MarkdownDiagnostic> diagnostics) =>
+        Assert.Empty(diagnostics.Select(static diagnostic => diagnostic.Message));
 
     public sealed record GoldenFixture(
         string Name,
@@ -605,19 +563,74 @@ public sealed class MarkdownGoldenFixtureTests
             return new ValueTask<IReadOnlyList<string>>(translatedTexts);
         }
 
-        private static string Translate(int segmentIndex, string text)
+        private static string Translate(int segmentIndex, string text) =>
+            $"TRANSLATED[{segmentIndex}] {text}";
+    }
+
+    private sealed class CapturingOutputWriter
+    {
+        public List<OutputWrite> Writes { get; } = [];
+
+        public ValueTask WriteAsync(
+            string outputPath,
+            BinaryData content,
+            bool overwrite,
+            CancellationToken cancellationToken)
         {
-            if (!text.Any(char.IsLetterOrDigit))
+            cancellationToken.ThrowIfCancellationRequested();
+            Writes.Add(new OutputWrite(outputPath, content, overwrite));
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed record OutputWrite(string OutputPath, BinaryData Content, bool Overwrite);
+
+    private sealed class TestDirectory : IDisposable
+    {
+        private TestDirectory(string path)
+        {
+            Path = path;
+        }
+
+        public string Path { get; }
+
+        public static TestDirectory Create()
+        {
+            string path = System.IO.Path.Combine(
+                AppContext.BaseDirectory,
+                "markdown-golden-fixture-tests",
+                Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(path);
+            return new TestDirectory(path);
+        }
+
+        public string GetPath(string relativePath) => System.IO.Path.Combine(Path, relativePath);
+
+        public string WriteFileBytes(string relativePath, byte[] content)
+        {
+            string path = GetPath(relativePath);
+            string? directory = System.IO.Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory))
             {
-                return text;
+                Directory.CreateDirectory(directory);
             }
 
-            int leadingLength = text.Length - text.AsSpan().TrimStart().Length;
-            int trailingLength = text.Length - text.AsSpan().TrimEnd().Length;
-            string leading = text[..leadingLength];
-            string core = text[leadingLength..^trailingLength];
-            string trailing = trailingLength == 0 ? string.Empty : text[^trailingLength..];
-            return $"{leading}TRANSLATED[{segmentIndex}] {core}{trailing}";
+            File.WriteAllBytes(path, content);
+            return path;
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                Directory.Delete(Path, recursive: true);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
         }
     }
 
