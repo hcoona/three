@@ -515,6 +515,11 @@ internal static class MarkdownOutputValidator
 
         private void AddInline(Inline inline, int depth)
         {
+            if (inline is LiteralInline || IsUnresolvedReferenceLikeLink(inline))
+            {
+                return;
+            }
+
             entries.Add($"{depth}:inline:{InlineSignature(inline)}");
             if (inline is ContainerInline containerInline)
             {
@@ -564,6 +569,17 @@ internal static class MarkdownOutputValidator
                     footnoteLink.Footnote?.Label),
                 _ => $"{inline.GetType().FullName}:{ReflectionSignature(inline)}",
             };
+
+        private static bool IsUnresolvedReferenceLikeLink(Inline inline) =>
+            inline is LinkInline
+            {
+                IsImage: false,
+                IsAutoLink: false,
+                Url: null or "",
+                Title: null or "",
+                Reference: null,
+            } link
+            && (link.IsShortcut || link.LocalLabel != LocalLabel.None);
 
         private static string ReflectionSignature(object value)
         {

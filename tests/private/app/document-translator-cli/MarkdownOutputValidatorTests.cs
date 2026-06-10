@@ -82,6 +82,70 @@ public sealed class MarkdownOutputValidatorTests
                 result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
     }
 
+    [Fact]
+    public void BracketedFakeTranslatorMarkersAreAllowed()
+    {
+        MarkdownParseResult parsed = Parse("# Heading\n\nParagraph.\n");
+        MarkdownSegmentExtractionResult extracted = MarkdownSegmentExtractor.Extract(parsed);
+        Assert.True(extracted.Succeeded);
+        MarkdownSourcePatchResult patched = MarkdownSourcePatcher.Patch(
+            parsed.SourceText,
+            parsed.SourceMetadata,
+            extracted.Segments,
+            extracted.Segments
+                .Select(
+                    static segment =>
+                        $"TRANSLATED[{segment.SegmentIndex}] {segment.OriginalText}")
+                .ToArray());
+
+        MarkdownOutputValidationResult result = MarkdownOutputValidator.Validate(parsed, patched);
+
+        Assert.True(
+            result.Succeeded,
+            string.Join(
+                Environment.NewLine,
+                result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+    }
+
+    [Fact]
+    public async Task MarkdownAwareCommandRejectsTranslatedEmptyInlineLink()
+    {
+        string workDirectory = CreateWorkDirectory();
+        try
+        {
+            string inputPath = Path.Combine(workDirectory, "source.md");
+            string outputPath = Path.Combine(workDirectory, "translated.md");
+            await File.WriteAllTextAsync(
+                inputPath,
+                "Plain prose only.",
+                TestContext.Current.CancellationToken);
+
+            bool outputWritten = false;
+            MarkdownTranslationCommand command = new(
+                MarkdownDocumentParser.CreateV1(),
+                new FixedTextSegmentTranslator("[text]()"),
+                (_, _, _, _) =>
+                {
+                    outputWritten = true;
+                    return ValueTask.CompletedTask;
+                });
+
+            MarkdownTranslationCommandResult result = await command.ExecuteAsync(
+                CreateOptions(inputPath, outputPath),
+                TestContext.Current.CancellationToken);
+
+            Assert.False(result.Success);
+            Assert.False(outputWritten);
+            Assert.Contains(result.Diagnostics, static diagnostic =>
+                diagnostic.Kind is MarkdownFailureKind.StructuralChanged
+                    or MarkdownFailureKind.ReconstructionChanged);
+        }
+        finally
+        {
+            DeleteDirectoryBestEffort(workDirectory);
+        }
+    }
+
     [Theory]
     [InlineData("Alphabet", 8, 9, 14)]
     [InlineData("A", 1, 2, 7)]
@@ -330,6 +394,7 @@ public sealed class MarkdownOutputValidatorTests
     [InlineData("Contact user@example.com now.")]
     [InlineData("See #anchor now.")]
     [InlineData("Visit <https://example.com> now.")]
+    [InlineData("[text]()")]
     public void TranslatedTextIntroducingProtectedLiteralFails(string translated)
     {
         MarkdownOutputValidationResult result = TranslateAndValidate(
@@ -438,5 +503,59 @@ public sealed class MarkdownOutputValidatorTests
         MarkdownParseResult parsed = MarkdownDocumentParser.CreateV1().Parse(source);
         Assert.True(parsed.Succeeded);
         return parsed;
+    }
+
+    private static TranslationOptions CreateOptions(string inputPath, string outputPath) =>
+        new(
+            inputPath,
+            outputPath,
+            "fr",
+            new Uri("https://resource.cognitiveservices.azure.com"),
+            AuthMode.ApiKey,
+            "not-used",
+            MarkdownMode.Aware,
+            TranslationRoute.MarkdownAware,
+            IsMarkdownExtension: true,
+            Force: true,
+            OriginalFileName: Path.GetFileName(inputPath),
+            LegacyDocumentContentType: null);
+
+    private static string CreateWorkDirectory()
+    {
+        string path = Path.Combine(
+            AppContext.BaseDirectory,
+            nameof(MarkdownOutputValidatorTests),
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        return path;
+    }
+
+    private static void DeleteDirectoryBestEffort(string path)
+    {
+        try
+        {
+            Directory.Delete(path, recursive: true);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private sealed class FixedTextSegmentTranslator(string translatedText) : ITextSegmentTranslator
+    {
+        public ValueTask<IReadOnlyList<string>> TranslateAsync(
+            TranslationOptions options,
+            IReadOnlyList<TextSegmentTranslationRequest> segments,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            IReadOnlyList<string> translatedTexts = segments
+                .Select(_ => translatedText)
+                .ToArray();
+            return new ValueTask<IReadOnlyList<string>>(translatedTexts);
+        }
     }
 }
