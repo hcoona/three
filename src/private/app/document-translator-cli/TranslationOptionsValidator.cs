@@ -27,6 +27,7 @@ internal static partial class TranslationOptionsValidator
         TranslationRoute? translationRoute = SelectTranslationRoute(
             markdownMode,
             isMarkdownExtension);
+        string? region = ValidateRegion(options.Region, authMode, translationRoute, errors);
         string? legacyDocumentContentType = ValidateRouteSpecificInputExtension(
             inputPath,
             isMarkdownExtension,
@@ -50,7 +51,8 @@ internal static partial class TranslationOptionsValidator
             isMarkdownExtension,
             options.Force,
             Path.GetFileName(inputPath!),
-            legacyDocumentContentType);
+            legacyDocumentContentType,
+            region);
 
         return new TranslationValidationResult(validatedOptions, errors);
     }
@@ -308,6 +310,32 @@ internal static partial class TranslationOptionsValidator
         }
     }
 
+    private static string? ValidateRegion(
+        string? region,
+        AuthMode? authMode,
+        TranslationRoute? translationRoute,
+        List<string> errors)
+    {
+        if (authMode != AuthMode.ApiKey || translationRoute != TranslationRoute.MarkdownAware)
+        {
+            return null;
+        }
+
+        region = NormalizeNonSecretScalar(region);
+        if (region is null)
+        {
+            return null;
+        }
+
+        if (!RegionRegex().IsMatch(region))
+        {
+            errors.Add("Azure Translator region must be a syntactically valid Azure region name.");
+            return null;
+        }
+
+        return region;
+    }
+
     private static string? ValidateTargetLanguage(string? targetLanguage, List<string> errors)
     {
         targetLanguage = NormalizeNonSecretScalar(targetLanguage);
@@ -339,4 +367,9 @@ internal static partial class TranslationOptionsValidator
         "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$",
         RegexOptions.CultureInvariant)]
     private static partial Regex ResourceNameRegex();
+
+    [GeneratedRegex(
+        "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex RegionRegex();
 }

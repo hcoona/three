@@ -18,4 +18,6 @@ internal sealed record RawCommandLineOptions(
     bool TargetLanguageSpecified = false,
     bool AuthModeSpecified = false,
     bool EndpointSpecified = false,
-    bool MarkdownModeSpecified = false);
+    bool MarkdownModeSpecified = false,
+    string? Region = null,
+    bool RegionSpecified = false);

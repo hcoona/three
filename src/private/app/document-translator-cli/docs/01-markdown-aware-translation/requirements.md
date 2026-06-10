@@ -274,15 +274,19 @@ The text-segment translator must:
 6. Submit a UTF-8 JSON request body shaped as an array of objects:
    `[{ "Text": "<segment>" }]`.
 7. Set `Content-Type` to `application/json; charset=utf-8`.
-8. For API key authentication, send the configured key in the
-   `Ocp-Apim-Subscription-Key` header.
+8. For API key authentication in the Markdown-aware text translation backend,
+   send the configured key in the `Ocp-Apim-Subscription-Key` header; when
+   `--region` or `AZURE_TRANSLATOR_REGION` is configured, also send
+   `Ocp-Apim-Subscription-Region`.
 9. For Entra ID authentication, request a token for
    `https://cognitiveservices.azure.com/.default` through the existing
    Azure Identity credential flow and send it with the `Authorization: Bearer`
    header.
-10. Reuse the resolved endpoint, authentication mode, and target language from
-    the baseline command. No separate text endpoint, region option, source
-    language option, glossary option, or custom model option is in scope for v1.
+10. Reuse the resolved endpoint, authentication mode, target language, and
+    optional API key region from the baseline command. Markdown-aware API key
+    translation supports `--region` and `AZURE_TRANSLATOR_REGION` with normal
+    command-line precedence. No separate text endpoint, source language option,
+    glossary option, or custom model option is in scope for v1.
 
 The existing whole-document `SingleDocumentTranslationClient` path remains the
 backend for non-Markdown files and for Markdown files only when the resolved

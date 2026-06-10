@@ -82,6 +82,7 @@ document-translator translate \
   [--auth-mode <api-key|entra-id>] \
   [--endpoint <uri>] \
   [--key <api-key>] \
+  [--region <region>] \
   [--force] \
   [--markdown-mode <auto|aware|legacy>]
 ```
@@ -329,6 +330,11 @@ Use a small immutable model for extracted segments that stores the segment index
 decoded source range, and original segment text. No placeholder map or protected
 machine-token metadata is part of the v1 segment contract.
 
+`SegmentIndex` values are unique, zero-based, dense/contiguous (`0..Count-1`),
+and stable for the whole document. The extractor emits requests in
+`SegmentIndex` order, and the text translator rejects sparse or otherwise
+non-contiguous handoffs before sending an Azure request.
+
 `TextRange` uses decoded-string offsets, not byte offsets. The source patcher
 converts patched text back to bytes only after reconstruction validation.
 
@@ -365,9 +371,9 @@ client around `HttpClient`. The REST client must accept an injectable
 seam for Entra ID tests. Unit tests must be able to verify request URI, headers,
 body, batching, and token usage without live Azure credentials or network calls.
 
-`TextSegmentTranslationRequest` carries the segment index and extracted segment
-text. The Azure REST client sends that text to the service; Machine Token
-Patterns do not add placeholder metadata to the request.
+`TextSegmentTranslationRequest` carries the dense/contiguous segment index and
+extracted segment text. The Azure REST client sends that text to the service;
+Machine Token Patterns do not add placeholder metadata to the request.
 
 Request construction:
 
@@ -378,7 +384,10 @@ Request construction:
 5. Keep each request at or below 100 text array elements and 50,000 Unicode
    scalar values across all segment texts.
 6. Set `Content-Type: application/json; charset=utf-8`.
-7. For API key mode, send `Ocp-Apim-Subscription-Key`.
+7. For API key mode in the Markdown-aware text translation backend, send
+   `Ocp-Apim-Subscription-Key`; when `--region` or `AZURE_TRANSLATOR_REGION`
+   is configured, also send
+   `Ocp-Apim-Subscription-Region`.
 8. For Entra ID mode, request
    `https://cognitiveservices.azure.com/.default` with the existing Azure
    Identity credential flow and send `Authorization: Bearer <token>`.
@@ -387,8 +396,8 @@ Response handling:
 
 1. Non-success HTTP responses are service errors.
 2. The response must contain exactly one translation result per input segment.
-3. Each result must contain at least one translated text value.
-4. Missing, extra, malformed, or empty result entries are service errors.
+3. Each result must contain exactly one translated text value.
+4. Missing, null, surplus, malformed, or empty result entries are service errors.
 5. The translator abstraction returns only translated strings, never raw response
    JSON.
 

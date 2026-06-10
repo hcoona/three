@@ -268,11 +268,12 @@ public sealed class ProgramTests
     }
 
     [Fact]
-    public async Task EnvironmentFallbackSuppliesEndpointAuthModeAndApiKey()
+    public async Task
+        EnvironmentFallbackSuppliesEndpointAuthModeApiKeyAndRegionForMarkdownAwareRoute()
     {
         using TestDirectory directory = TestDirectory.Create();
-        string inputPath = directory.WriteFile("source.docx", "content");
-        string outputPath = directory.GetPath("translated.docx");
+        string inputPath = directory.WriteFile("source.md", "content");
+        string outputPath = directory.GetPath("translated.md");
         TranslationOptions? executedOptions = null;
 
         int exitCode = await RunAsync(
@@ -283,6 +284,7 @@ public sealed class ProgramTests
                     "https://resource.cognitiveservices.azure.com/translator",
                 TranslationOptionResolver.AuthModeEnvironmentVariable => "API-KEY",
                 TranslationOptionResolver.ApiKeyEnvironmentVariable => "secret",
+                TranslationOptionResolver.RegionEnvironmentVariable => " eastus ",
                 _ => null,
             },
             options =>
@@ -295,9 +297,50 @@ public sealed class ProgramTests
         Assert.NotNull(executedOptions);
         Assert.Equal(AuthMode.ApiKey, executedOptions.AuthMode);
         Assert.Equal("secret", executedOptions.ApiKey);
+        Assert.Equal("eastus", executedOptions.Region);
         Assert.Equal(
             "https://resource.cognitiveservices.azure.com",
             executedOptions.Endpoint.ToString().TrimEnd('/'));
+    }
+
+    [Fact]
+    public async Task CommandLineRegionOverridesEnvironmentForMarkdownAwareApiKeyRoute()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "content");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+                "--region",
+                "westus2",
+            ],
+            name => name == TranslationOptionResolver.RegionEnvironmentVariable
+                ? "eastus"
+                : null,
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.Equal(AuthMode.ApiKey, executedOptions.AuthMode);
+        Assert.Equal(TranslationRoute.MarkdownAware, executedOptions.TranslationRoute);
+        Assert.Equal("westus2", executedOptions.Region);
     }
 
     [Fact]
@@ -546,6 +589,8 @@ public sealed class ProgramTests
                 "https://cli.cognitiveservices.azure.com/translator",
                 "--key",
                 "cli-secret",
+                "--region",
+                "westus2",
             ],
             name => name switch
             {
@@ -553,6 +598,7 @@ public sealed class ProgramTests
                     "https://env.cognitiveservices.azure.com/translator",
                 TranslationOptionResolver.AuthModeEnvironmentVariable => "api-key",
                 TranslationOptionResolver.ApiKeyEnvironmentVariable => "env-secret",
+                TranslationOptionResolver.RegionEnvironmentVariable => "eastus",
                 _ => null,
             },
             options =>
@@ -565,9 +611,48 @@ public sealed class ProgramTests
         Assert.NotNull(executedOptions);
         Assert.Equal(AuthMode.EntraId, executedOptions.AuthMode);
         Assert.Null(executedOptions.ApiKey);
+        Assert.Null(executedOptions.Region);
         Assert.Equal(
             "https://cli.cognitiveservices.azure.com",
             executedOptions.Endpoint.ToString().TrimEnd('/'));
+    }
+
+    [Fact]
+    public async Task BlankCommandLineRegionDoesNotFallBackToEnvironment()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "content");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+                "--region",
+                " ",
+            ],
+            name => name == TranslationOptionResolver.RegionEnvironmentVariable
+                ? "eastus"
+                : null,
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.Null(executedOptions.Region);
     }
 
     [Fact]
@@ -820,6 +905,141 @@ public sealed class ProgramTests
         TranslationValidationResult result = TranslationOptionsValidator.Validate(options);
 
         Assert.Equal(expectedValid, result.Errors.Count == 0);
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("eastus", true)]
+    [InlineData("westus2", true)]
+    [InlineData(" eastus ", true)]
+    [InlineData("east us", false)]
+    [InlineData("-eastus", false)]
+    [InlineData("eastus-", false)]
+    public void RegionSyntaxIsValidated(string? region, bool expectedValid)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "content");
+        string outputPath = directory.GetPath("translated.md");
+        RawTranslationOptions options = ValidRawOptions(inputPath, outputPath) with
+        {
+            Region = region,
+        };
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(options);
+
+        Assert.Equal(expectedValid, result.Errors.Count == 0);
+        if (expectedValid)
+        {
+            Assert.Equal(region?.Trim(), result.Options!.Region);
+        }
+    }
+
+    [Fact]
+    public async Task LegacyDocumentRouteIgnoresInvalidEnvironmentRegion()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.docx", "content");
+        string outputPath = directory.GetPath("translated.docx");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            ["translate", "--input", inputPath, "--output", outputPath, "--target-language", "fr"],
+            name => name switch
+            {
+                TranslationOptionResolver.EndpointEnvironmentVariable =>
+                    "https://resource.cognitiveservices.azure.com/translator",
+                TranslationOptionResolver.ApiKeyEnvironmentVariable => "secret",
+                TranslationOptionResolver.RegionEnvironmentVariable => "east us",
+                _ => null,
+            },
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.Equal(TranslationRoute.LegacyDocument, executedOptions.TranslationRoute);
+        Assert.Null(executedOptions.Region);
+    }
+
+    [Fact]
+    public async Task MarkdownAwareApiKeyRouteRejectsInvalidEnvironmentRegion()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "content");
+        string outputPath = directory.GetPath("translated.md");
+        bool executed = false;
+
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        int exitCode = await Program.RunAsync(
+            ["translate", "--input", inputPath, "--output", outputPath, "--target-language", "fr"],
+            standardOutput,
+            standardError,
+            name => name switch
+            {
+                TranslationOptionResolver.EndpointEnvironmentVariable =>
+                    "https://resource.cognitiveservices.azure.com/translator",
+                TranslationOptionResolver.ApiKeyEnvironmentVariable => "secret",
+                TranslationOptionResolver.RegionEnvironmentVariable => "east us",
+                _ => null,
+            },
+            (_, _, _) =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(Program.ValidationErrorExitCode, exitCode);
+        Assert.False(executed);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains(
+            "Azure Translator region must be a syntactically valid Azure region name.",
+            standardError.ToString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EntraIdMarkdownAwareRouteIgnoresRegion()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "content");
+        string outputPath = directory.GetPath("translated.md");
+        RawTranslationOptions options = ValidRawOptions(inputPath, outputPath) with
+        {
+            AuthMode = "entra-id",
+            Region = "east us",
+        };
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(options);
+
+        Assert.Empty(result.Errors);
+        Assert.NotNull(result.Options);
+        Assert.Equal(AuthMode.EntraId, result.Options.AuthMode);
+        Assert.Equal(TranslationRoute.MarkdownAware, result.Options.TranslationRoute);
+        Assert.Null(result.Options.Region);
+    }
+
+    [Fact]
+    public void LegacyDocumentRouteClearsValidRegion()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.docx", "content");
+        string outputPath = directory.GetPath("translated.docx");
+        RawTranslationOptions options = ValidRawOptions(inputPath, outputPath) with
+        {
+            Region = "eastus",
+        };
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(options);
+
+        Assert.Empty(result.Errors);
+        Assert.NotNull(result.Options);
+        Assert.Equal(TranslationRoute.LegacyDocument, result.Options.TranslationRoute);
+        Assert.Null(result.Options.Region);
     }
 
     [Theory]
@@ -1835,6 +2055,35 @@ public sealed class ProgramTests
             new CredentialUnavailableException(
                 "DefaultAzureCredential unavailable; checked environment secret")
         ];
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandMapsTextTranslationServiceFailuresToServiceExitCode()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "sensitive segment");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath))
+            .Options!;
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new TextTranslationServiceException(
+                "Azure Text Translation service returned malformed JSON.")),
+            CancellationToken.None);
+
+        string error = standardError.ToString();
+        Assert.Equal(Program.ServiceErrorExitCode, exitCode);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("Azure Text Translation service error", error, StringComparison.Ordinal);
+        Assert.Contains("malformed JSON", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("sensitive segment", error, StringComparison.Ordinal);
     }
 
     public static IEnumerable<object[]> StandardErrorOutputChannelFailures()

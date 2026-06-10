@@ -8,4 +8,5 @@ internal sealed record RawTranslationOptions(
     string? Endpoint,
     string? ApiKey,
     string? MarkdownMode,
-    bool Force);
+    bool Force,
+    string? Region = null);

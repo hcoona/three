@@ -295,6 +295,14 @@ internal static class Program
             await WriteCredentialErrorBestEffortAsync(standardError).ConfigureAwait(false);
             return ServiceErrorExitCode;
         }
+        catch (TextTranslationServiceException ex)
+        {
+            await WriteErrorLineBestEffortAsync(
+                    standardError,
+                    $"Error: Azure Text Translation service error: {ex.Message}")
+                .ConfigureAwait(false);
+            return ServiceErrorExitCode;
+        }
         catch (OperationCanceledException)
         {
             await WriteOperationCanceledErrorBestEffortAsync(standardError).ConfigureAwait(false);

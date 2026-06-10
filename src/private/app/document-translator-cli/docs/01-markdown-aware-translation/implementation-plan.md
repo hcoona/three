@@ -251,7 +251,8 @@ Tasks:
    failures, segment-size violations, reconstruction changes, and structural
    changes detected during validation.
 3. Define the segment request handoff contract:
-    - `SegmentIndex` is unique, zero-based, and stable for the whole document;
+    - `SegmentIndex` is unique, zero-based, dense/contiguous (`0..Count-1`),
+      and stable for the whole document;
     - requests preserve extraction order;
     - `Text` is the extracted segment text sent to Azure;
     - Machine Token Patterns do not add placeholder metadata;
@@ -401,8 +402,9 @@ Tasks:
    in the extracted text unless an existing protected range excludes them.
 5. Enforce the 50,000 Unicode scalar value limit for each segment by counting
    Unicode scalar values with `System.Text.Rune` or equivalent logic.
-6. Emit `TextSegmentTranslationRequest` instances in `SegmentIndex` order for
-   the backend adapter. Do not batch inside the extractor.
+6. Emit `TextSegmentTranslationRequest` instances with dense/contiguous
+   `SegmentIndex` values (`0..Count-1`) in `SegmentIndex` order for the backend
+   adapter. Do not batch inside the extractor.
 7. Return an empty segment list for valid protected-only Markdown instead of
    treating the absence of translatable nodes as a validation failure.
 
@@ -442,8 +444,9 @@ Tasks:
     }
     ```
 
-2. Use the Phase 2 `TextSegmentTranslationRequest` contract without adding
-   Machine Token Pattern placeholder metadata or changing ordering semantics.
+2. Use the Phase 2 `TextSegmentTranslationRequest` contract, including the
+   dense/contiguous `SegmentIndex` requirement, without adding Machine Token
+   Pattern placeholder metadata or changing ordering semantics.
 3. Implement deterministic fake translators for tests:
     - success variant returns `TRANSLATED[n]` followed by one ASCII space and the
       original segment text.
@@ -460,13 +463,18 @@ Tasks:
    `api-version=3.0` and `to=<target-language>`.
 9. Send a UTF-8 JSON body shaped as `[{ "Text": "<segment>" }]`.
 10. Set `Content-Type` to `application/json; charset=utf-8`.
-11. For API key authentication, send `Ocp-Apim-Subscription-Key`.
+11. For API key authentication in the Markdown-aware text translation backend,
+    send `Ocp-Apim-Subscription-Key`; when `--region` or
+    `AZURE_TRANSLATOR_REGION` is configured, also send
+    `Ocp-Apim-Subscription-Region`.
 12. For Entra ID authentication, request
     `https://cognitiveservices.azure.com/.default` through the existing Azure
     Identity credential flow and send `Authorization: Bearer <token>`.
 13. Treat token acquisition failures as service errors that map to exit code `3`.
 14. Treat non-success HTTP status, malformed JSON, missing result entries, extra
-    result entries, and empty translation values as service errors.
+    result entries, missing/null translation arrays, translation arrays with
+    anything other than exactly one entry, and null or empty translation values
+    as service errors.
 15. Enforce batching by both service limits:
     - at most 100 text array elements per request;
     - at most 50,000 Unicode scalar values across all segment texts in
@@ -487,7 +495,8 @@ Tests:
 6. Token acquisition failures map to service errors.
 7. Segment batching respects both the 100-item request limit and the 50,000
    Unicode scalar value request limit while preserving result order.
-8. Empty translated text values map to service errors.
+8. Missing, surplus, null, or empty translated text values map to service
+   errors through `TextTranslationServiceException`.
 9. Segment and batch scalar limits count Unicode scalar values rather than UTF-16 code
    units, including cases with surrogate pairs.
 10. Batching splits many short segments by the 100-item request limit.

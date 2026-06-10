@@ -12,4 +12,5 @@ internal sealed record TranslationOptions(
     bool IsMarkdownExtension,
     bool Force,
     string OriginalFileName,
-    string? LegacyDocumentContentType);
+    string? LegacyDocumentContentType,
+    string? Region = null);

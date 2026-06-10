@@ -5,6 +5,7 @@ internal static class TranslationOptionResolver
     public const string EndpointEnvironmentVariable = "AZURE_TRANSLATOR_ENDPOINT";
     public const string AuthModeEnvironmentVariable = "AZURE_TRANSLATOR_AUTH_MODE";
     public const string ApiKeyEnvironmentVariable = "AZURE_TRANSLATOR_KEY";
+    public const string RegionEnvironmentVariable = "AZURE_TRANSLATOR_REGION";
     public const string MarkdownModeEnvironmentVariable = "DOCUMENT_TRANSLATOR_MARKDOWN_MODE";
 
     public static RawTranslationOptions Resolve(
@@ -26,7 +27,8 @@ internal static class TranslationOptionResolver
                 commandLineOptions.ApiKey,
                 getEnvironmentVariable(ApiKeyEnvironmentVariable)),
             ResolveMarkdownMode(commandLineOptions, getEnvironmentVariable),
-            commandLineOptions.Force);
+            commandLineOptions.Force,
+            ResolveRegion(commandLineOptions, getEnvironmentVariable));
     }
 
     private static string ResolveAuthMode(
@@ -46,6 +48,14 @@ internal static class TranslationOptionResolver
             ? NormalizeCommandLineNonSecretScalar(commandLineOptions.Endpoint, isSpecified: true)
             : NormalizeEnvironmentNonSecretScalar(
                 getEnvironmentVariable(EndpointEnvironmentVariable));
+
+    private static string? ResolveRegion(
+        RawCommandLineOptions commandLineOptions,
+        Func<string, string?> getEnvironmentVariable) =>
+        commandLineOptions.RegionSpecified
+            ? NormalizeCommandLineNonSecretScalar(commandLineOptions.Region, isSpecified: true)
+            : NormalizeEnvironmentNonSecretScalar(
+                getEnvironmentVariable(RegionEnvironmentVariable));
 
     private static string ResolveMarkdownMode(
         RawCommandLineOptions commandLineOptions,
