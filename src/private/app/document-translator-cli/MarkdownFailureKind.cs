@@ -7,6 +7,7 @@ internal enum MarkdownFailureKind
     UnsupportedSyntax,
     UnreliableSourceSpan,
     SegmentSizeViolation,
+    SourcePatchError,
     ReconstructionChanged,
     StructuralChanged,
 }
