@@ -2186,7 +2186,11 @@ public static class ConfigurationChangePlanPolicy
             }
 
             if (
-                !TargetsDeclaredTemporaryContainer(plan.TemporaryContainer, change.TargetPathOrName)
+                !TargetsDeclaredTemporaryContainer(
+                    plan.TemporaryContainer,
+                    change.TargetKind,
+                    change.TargetPathOrName
+                )
             )
             {
                 return "Protocol violation: CI temporary configuration changes must target only "
@@ -2206,12 +2210,13 @@ public static class ConfigurationChangePlanPolicy
             ConfigurationTemporaryContainerKind.NpmrcFile => targetKind
                 == ConfigurationTargetKind.Npmrc,
             ConfigurationTemporaryContainerKind.TemporaryHome => targetKind
-                == ConfigurationTargetKind.Yarnrc,
+                is ConfigurationTargetKind.Yarnrc or ConfigurationTargetKind.CiTemporaryFile,
             _ => false,
         };
 
     private static bool TargetsDeclaredTemporaryContainer(
         ConfigurationTemporaryContainer container,
+        ConfigurationTargetKind targetKind,
         string targetPath
     ) =>
         container.Kind switch
@@ -2221,9 +2226,13 @@ public static class ConfigurationChangePlanPolicy
                 container.ProductOwnedPath
             ),
             ConfigurationTemporaryContainerKind.TemporaryHome => ConfigurationPathsEqual(
-                targetPath,
-                CombineConfigurationPath(container.ProductOwnedPath, ".yarnrc.yml")
-            ),
+                    targetPath,
+                    CombineConfigurationPath(container.ProductOwnedPath, ".yarnrc.yml")
+                )
+                || (
+                    targetKind == ConfigurationTargetKind.CiTemporaryFile
+                    && IsConfigurationPathUnderDirectory(container.ProductOwnedPath, targetPath)
+                ),
             _ => false,
         };
 
@@ -2277,6 +2286,21 @@ public static class ConfigurationChangePlanPolicy
 
     private static string CombineConfigurationPath(string directoryPath, string childName) =>
         NormalizeConfigurationPath(directoryPath) + "/" + childName;
+
+    private static bool IsConfigurationPathUnderDirectory(string directoryPath, string targetPath)
+    {
+        if (!ConfigurationPathKindsMatch(directoryPath, targetPath))
+        {
+            return false;
+        }
+
+        string normalizedDirectory = NormalizeConfigurationPath(directoryPath);
+        string normalizedTarget = NormalizeConfigurationPath(targetPath);
+        StringComparison comparison = GetConfigurationPathComparison(directoryPath, targetPath);
+        return normalizedTarget.Length > normalizedDirectory.Length
+            && normalizedTarget.StartsWith(normalizedDirectory, comparison)
+            && normalizedTarget[normalizedDirectory.Length] == '/';
+    }
 
     private static bool IsConfigurationFilesystemRoot(string path)
     {

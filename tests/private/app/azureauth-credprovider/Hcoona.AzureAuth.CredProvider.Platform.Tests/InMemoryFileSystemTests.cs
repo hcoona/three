@@ -78,6 +78,194 @@ public sealed class InMemoryFileSystemTests
     }
 
     [Fact]
+    public void GetFileLengthReturnsRegularFileMetadataLength()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        fileSystem.CreateDirectory("/root");
+        fileSystem.WriteAllText("/root/empty.lock", string.Empty);
+        fileSystem.WriteAllText("/root/non-empty.lock", "abc");
+
+        Assert.Equal(0, fileSystem.GetFileLength("/root/empty.lock"));
+        Assert.Equal(3, fileSystem.GetFileLength("/root/non-empty.lock"));
+    }
+
+    [Fact]
+    public void GetFileLengthRejectsFinalSymbolicLinkOrReparsePoint()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        fileSystem.CreateDirectory("/root");
+        fileSystem.WriteAllText("/root/target.lock", string.Empty);
+        fileSystem.WriteAllText("/root/reparse.lock", string.Empty);
+        fileSystem.AddSymbolicLink("/root/link.lock", "/root/target.lock");
+        fileSystem.MarkAsNonSymbolicReparsePoint("/root/reparse.lock");
+
+        Assert.Throws<IOException>(() => fileSystem.GetFileLength("/root/link.lock"));
+        Assert.Throws<IOException>(() => fileSystem.GetFileLength("/root/reparse.lock"));
+    }
+
+    [Fact]
+    public void GetFileLengthRejectsDirectory()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        fileSystem.CreateDirectory("/root/directory.lock");
+
+        Assert.Throws<IOException>(() => fileSystem.GetFileLength("/root/directory.lock"));
+    }
+
+    [Fact]
+    public void ConditionalAtomicWriteExistingMissingTargetLeavesNoPersistentParents()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        fileSystem.CreateDirectory("/root");
+        var expectation = FileMutationExpectation.Existing(
+            Convert.ToHexString(Sha256("missing")).ToLowerInvariant()
+        );
+
+        Assert.Throws<InvalidOperationException>(() =>
+            fileSystem.AtomicWriteAllText(
+                "/root/created/nested/atomic.txt",
+                "created atomically",
+                expectation: expectation
+            )
+        );
+
+        Assert.False(fileSystem.DirectoryExists("/root/created"));
+        Assert.False(fileSystem.DirectoryExists("/root/created/nested"));
+        Assert.False(fileSystem.FileExists("/root/created/nested/atomic.txt"));
+    }
+
+    [Fact]
+    public void AtomicWriteAllTextRejectsSymbolicLinkParentBeforeCreatingEscapedParent()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        fileSystem.CreateDirectory("/root/config");
+        fileSystem.CreateDirectory("/root/outside");
+        fileSystem.AddSymbolicLink("/root/config/link", "/root/outside");
+
+        var exception = Assert.Throws<NotSupportedException>(() =>
+            fileSystem.AtomicWriteAllText("/root/config/link/nested/escape.txt", "secret")
+        );
+
+        Assert.Contains("symbolic-link", exception.Message, StringComparison.Ordinal);
+        Assert.False(fileSystem.DirectoryExists("/root/outside/nested"));
+        Assert.False(fileSystem.FileExists("/root/outside/nested/escape.txt"));
+    }
+
+    [Fact]
+    public void AddSymbolicLinkRejectsExistingSymbolicLinkPathWithoutOverwriting()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        fileSystem.CreateDirectory("/root");
+        fileSystem.WriteAllText("/root/first-target.txt", "first target");
+        fileSystem.WriteAllText("/root/second-target.txt", "second target");
+        fileSystem.AddSymbolicLink("/root/link.txt", "/root/first-target.txt");
+
+        var exception = Assert.Throws<IOException>(() =>
+            fileSystem.AddSymbolicLink("/root/link.txt", "/root/second-target.txt")
+        );
+
+        Assert.Contains("already exists", exception.Message, StringComparison.Ordinal);
+        Assert.True(fileSystem.IsSymbolicLink("/root/link.txt"));
+        Assert.Equal("first target", fileSystem.ReadAllText("/root/link.txt"));
+    }
+
+    [Fact]
+    public void AddSymbolicLinkRejectsExistingRegularFilePathWithoutOverwriting()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        fileSystem.CreateDirectory("/root");
+        fileSystem.WriteAllText("/root/existing.txt", "existing contents");
+        fileSystem.WriteAllText("/root/target.txt", "target contents");
+
+        var exception = Assert.Throws<IOException>(() =>
+            fileSystem.AddSymbolicLink("/root/existing.txt", "/root/target.txt")
+        );
+
+        Assert.Contains("already exists", exception.Message, StringComparison.Ordinal);
+        Assert.False(fileSystem.IsSymbolicLink("/root/existing.txt"));
+        Assert.Equal("existing contents", fileSystem.ReadAllText("/root/existing.txt"));
+    }
+
+    [Fact]
+    public void AddSymbolicLinkRejectsExistingDirectoryPathWithoutOverwriting()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        fileSystem.CreateDirectory("/root/existing");
+        fileSystem.WriteAllText("/root/existing/child.txt", "child contents");
+        fileSystem.WriteAllText("/root/target.txt", "target contents");
+
+        var exception = Assert.Throws<IOException>(() =>
+            fileSystem.AddSymbolicLink("/root/existing", "/root/target.txt")
+        );
+
+        Assert.Contains("already exists", exception.Message, StringComparison.Ordinal);
+        Assert.False(fileSystem.IsSymbolicLink("/root/existing"));
+        Assert.True(fileSystem.DirectoryExists("/root/existing"));
+        Assert.Equal("child contents", fileSystem.ReadAllText("/root/existing/child.txt"));
+    }
+
+    [Fact]
+    public void AddSymbolicLinkRejectsExistingReparsePointPathWithoutOverwriting()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        fileSystem.CreateDirectory("/root");
+        fileSystem.WriteAllText("/root/reparse.txt", "reparse contents");
+        fileSystem.WriteAllText("/root/target.txt", "target contents");
+        fileSystem.MarkAsNonSymbolicReparsePoint("/root/reparse.txt");
+
+        var exception = Assert.Throws<IOException>(() =>
+            fileSystem.AddSymbolicLink("/root/reparse.txt", "/root/target.txt")
+        );
+
+        Assert.Contains("already exists", exception.Message, StringComparison.Ordinal);
+        Assert.False(fileSystem.IsSymbolicLink("/root/reparse.txt"));
+        Assert.Equal("reparse contents", fileSystem.ReadAllText("/root/reparse.txt"));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void MutationLockRejectsFinalDirectorySymbolicLink(bool createDirectory)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string lockDirectory = "/root/config-lock";
+        fileSystem.CreateDirectory("/root");
+        fileSystem.CreateDirectory("/outside");
+        fileSystem.AddSymbolicLink(lockDirectory, "/outside");
+
+        var exception = Assert.Throws<IOException>(() =>
+            ((IFileSystemMutationLock)fileSystem)
+                .AcquireMutationLock(lockDirectory, createDirectory)
+                .Dispose()
+        );
+
+        Assert.Contains("symbolic link", exception.Message, StringComparison.Ordinal);
+        Assert.True(fileSystem.IsSymbolicLink(lockDirectory));
+        Assert.False(fileSystem.Directories.Contains(lockDirectory));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void MutationLockRejectsFinalNonSymbolicReparsePoint(bool createDirectory)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string lockDirectory = "/root/config-lock";
+        fileSystem.CreateDirectory(lockDirectory);
+        fileSystem.MarkAsNonSymbolicReparsePoint(lockDirectory);
+
+        var exception = Assert.Throws<IOException>(() =>
+            ((IFileSystemMutationLock)fileSystem)
+                .AcquireMutationLock(lockDirectory, createDirectory)
+                .Dispose()
+        );
+
+        Assert.Contains("reparse point", exception.Message, StringComparison.Ordinal);
+        Assert.True(fileSystem.DirectoryExists(lockDirectory));
+        Assert.False(fileSystem.IsSymbolicLink(lockDirectory));
+    }
+
+    [Fact]
     public void AtomicWriteAllTextRestrictsCreatedParentDirectoriesForSecrets()
     {
         var fileSystem = new InMemoryFileSystem();
@@ -123,6 +311,37 @@ public sealed class InMemoryFileSystemTests
     }
 
     [Fact]
+    public void DeleteFileThrowsWhenDirectoryExistsAtPath()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        fileSystem.CreateDirectory("root/existing");
+
+        Assert.Throws<IOException>(() => fileSystem.DeleteFile("root/existing"));
+        Assert.True(fileSystem.DirectoryExists("root/existing"));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ConditionalDeleteFileThrowsWhenDirectoryExistsAtPath(bool expectExisting)
+    {
+        var fileSystem = new InMemoryFileSystem();
+        fileSystem.CreateDirectory("root/existing");
+        FileMutationExpectation expectation = expectExisting
+            ? FileMutationExpectation.Existing(
+                Convert.ToHexString(Sha256("unused")).ToLowerInvariant()
+            )
+            : FileMutationExpectation.Missing;
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            fileSystem.DeleteFile("root/existing", expectation)
+        );
+
+        Assert.Contains("Configuration conflict", exception.Message, StringComparison.Ordinal);
+        Assert.True(fileSystem.DirectoryExists("root/existing"));
+    }
+
+    [Fact]
     public void AtomicWriteAllTextThrowsWhenDirectoryExistsAtPath()
     {
         var fileSystem = new InMemoryFileSystem();
@@ -133,6 +352,132 @@ public sealed class InMemoryFileSystemTests
         );
         Assert.True(fileSystem.DirectoryExists("root/existing"));
         Assert.False(fileSystem.FileExists("root/existing"));
+    }
+
+    [Fact]
+    public void AtomicWriteAllBytesThrowsWhenDirectoryExistsAtPath()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        fileSystem.CreateDirectory("root/existing");
+
+        Assert.Throws<IOException>(() => fileSystem.AtomicWriteAllBytes("root/existing", [0x01]));
+        Assert.True(fileSystem.DirectoryExists("root/existing"));
+        Assert.False(fileSystem.FileExists("root/existing"));
+    }
+
+    [Fact]
+    public void AtomicWriteAllTextRejectsFinalNonSymbolicReparsePoint()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string targetPath = "/root/reparse-target.txt";
+        fileSystem.CreateDirectory("/root");
+        fileSystem.WriteAllText(targetPath, "before");
+        fileSystem.MarkAsNonSymbolicReparsePoint(targetPath);
+
+        var exception = Assert.Throws<IOException>(() =>
+            fileSystem.AtomicWriteAllText(targetPath, "after")
+        );
+
+        Assert.Contains("reparse point", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("before", fileSystem.ReadAllText(targetPath));
+    }
+
+    [Theory]
+    [InlineData(nameof(IFileSystem.AtomicWriteAllText))]
+    [InlineData(nameof(IFileSystem.AtomicWriteAllBytes))]
+    public void ConditionalAtomicWriteRejectsParentSymlinkBeforeFollowingTargetForHash(
+        string methodName
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string externalPath = "/outside/target.txt";
+        const string targetPath = "/link/target.txt";
+        fileSystem.CreateDirectory("/outside");
+        fileSystem.WriteAllText(externalPath, "external");
+        fileSystem.AddSymbolicLink("/link", "/outside");
+        var expectation = FileMutationExpectation.Existing(HashText("wrong-before-state"));
+
+        var exception = Assert.Throws<NotSupportedException>(() =>
+            InvokeAtomicWrite(fileSystem, methodName, targetPath, expectation)
+        );
+
+        Assert.Contains("symbolic-link", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("external", fileSystem.ReadAllText(externalPath));
+    }
+
+    [Theory]
+    [InlineData(nameof(IFileSystem.AtomicWriteAllText))]
+    [InlineData(nameof(IFileSystem.AtomicWriteAllBytes))]
+    public void ConditionalAtomicWriteRejectsParentReparsePointBeforeReadingTargetHash(
+        string methodName
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string targetPath = "/root/target.txt";
+        fileSystem.CreateDirectory("/root");
+        fileSystem.WriteAllText(targetPath, "before");
+        fileSystem.MarkAsNonSymbolicReparsePoint("/root");
+        var expectation = FileMutationExpectation.Existing(HashText("wrong-before-state"));
+
+        var exception = Assert.Throws<NotSupportedException>(() =>
+            InvokeAtomicWrite(fileSystem, methodName, targetPath, expectation)
+        );
+
+        Assert.Contains("reparse-point", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("before", fileSystem.ReadAllText(targetPath));
+    }
+
+    [Fact]
+    public void DeleteFileRejectsFinalNonSymbolicReparsePoint()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string targetPath = "/root/reparse-target.txt";
+        fileSystem.CreateDirectory("/root");
+        fileSystem.WriteAllText(targetPath, "before");
+        fileSystem.MarkAsNonSymbolicReparsePoint(targetPath);
+
+        var exception = Assert.Throws<IOException>(() => fileSystem.DeleteFile(targetPath));
+
+        Assert.Contains("reparse point", exception.Message, StringComparison.Ordinal);
+        Assert.True(fileSystem.FileExists(targetPath));
+        Assert.Equal("before", fileSystem.ReadAllText(targetPath));
+    }
+
+    [Fact]
+    public void ConditionalDeleteRejectsParentSymlinkBeforeFollowingTargetForHash()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string externalPath = "/outside/target.txt";
+        const string targetPath = "/link/target.txt";
+        fileSystem.CreateDirectory("/outside");
+        fileSystem.WriteAllText(externalPath, "external");
+        fileSystem.AddSymbolicLink("/link", "/outside");
+        var expectation = FileMutationExpectation.Existing(HashText("wrong-before-state"));
+
+        var exception = Assert.Throws<NotSupportedException>(() =>
+            fileSystem.DeleteFile(targetPath, expectation)
+        );
+
+        Assert.Contains("symbolic-link", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("external", fileSystem.ReadAllText(externalPath));
+    }
+
+    [Fact]
+    public void ConditionalDeleteRejectsParentReparsePointBeforeReadingTargetHash()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string targetPath = "/root/target.txt";
+        fileSystem.CreateDirectory("/root");
+        fileSystem.WriteAllText(targetPath, "before");
+        fileSystem.MarkAsNonSymbolicReparsePoint("/root");
+        var expectation = FileMutationExpectation.Existing(HashText("wrong-before-state"));
+
+        var exception = Assert.Throws<NotSupportedException>(() =>
+            fileSystem.DeleteFile(targetPath, expectation)
+        );
+
+        Assert.Contains("reparse-point", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("before", fileSystem.ReadAllText(targetPath));
     }
 
     [Fact]
@@ -203,7 +548,7 @@ public sealed class InMemoryFileSystemTests
     }
 
     [Fact]
-    public void AtomicWriteAllTextReplacesSymbolicLinkPathWithoutChangingTarget()
+    public void AtomicWriteAllTextFailsClosedForFinalSymbolicLinkPath()
     {
         var fileSystem = new InMemoryFileSystem();
         fileSystem.CreateDirectory("root");
@@ -214,14 +559,36 @@ public sealed class InMemoryFileSystemTests
         );
         fileSystem.AddSymbolicLink("root/link.txt", "root/target.txt");
 
-        fileSystem.AtomicWriteAllText("root/link.txt", "replacement contents");
+        Assert.Throws<IOException>(() =>
+            fileSystem.AtomicWriteAllText("root/link.txt", "replacement contents")
+        );
 
-        Assert.Equal("replacement contents", fileSystem.ReadAllText("root/link.txt"));
+        Assert.Equal("target contents", fileSystem.ReadAllText("root/link.txt"));
         Assert.Equal("target contents", fileSystem.ReadAllText("root/target.txt"));
-        Assert.False(fileSystem.IsSymbolicLink("root/link.txt"));
+        Assert.True(fileSystem.IsSymbolicLink("root/link.txt"));
         Assert.Equal(
             UnixFileMode.UserRead | UnixFileMode.UserExecute,
-            fileSystem.GetUnixFileMode("root/link.txt")
+            fileSystem.GetUnixFileMode("root/target.txt")
+        );
+    }
+
+    [Fact]
+    public void ReadAllBytesAndAtomicWriteAllBytesRoundTripNonUtf8Bytes()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        byte[] contents = [0x00, 0xff, 0xfe, 0x80, 0x41];
+
+        fileSystem.AtomicWriteAllBytes("root/file.bin", contents);
+        contents[0] = 0x7f;
+        byte[] readContents = fileSystem.ReadAllBytes("root/file.bin");
+        readContents[1] = 0x7e;
+
+        Assert.Equal([0x00, 0xff, 0xfe, 0x80, 0x41], fileSystem.ReadAllBytes("root/file.bin"));
+        Assert.Equal(
+            System.Security.Cryptography.SHA256.HashData(
+                new byte[] { 0x00, 0xff, 0xfe, 0x80, 0x41 }
+            ),
+            fileSystem.ComputeSha256Hash("root/file.bin")
         );
     }
 
@@ -267,6 +634,36 @@ public sealed class InMemoryFileSystemTests
         Assert.Equal("old", fileSystem.ReadAllText("root/file.txt"));
         Assert.Contains(
             new FileSystemCall("AtomicWriteAllText", NormalizePath("root/file.txt"), "new"),
+            fileSystem.Calls
+        );
+    }
+
+    [Fact]
+    public void AtomicWriteAllBytesFailureLeavesExistingNonUtf8BytesUnchanged()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        byte[] originalContents = [0x00, 0xff, 0xfe, 0x80, 0x41];
+        byte[] replacementContents = [0x7f, 0x01, 0x02];
+        fileSystem.CreateDirectory("root");
+        fileSystem.AtomicWriteAllBytes("root/file.bin", originalContents);
+        var expectedException = new IOException("injected");
+        fileSystem.FailNextCall(expectedException);
+
+        var exception = Assert.Throws<IOException>(() =>
+            fileSystem.AtomicWriteAllBytes("root/file.bin", replacementContents)
+        );
+
+        Assert.Same(expectedException, exception);
+        Assert.Equal(
+            new byte[] { 0x00, 0xff, 0xfe, 0x80, 0x41 },
+            fileSystem.ReadAllBytes("root/file.bin")
+        );
+        Assert.Contains(
+            new FileSystemCall(
+                "AtomicWriteAllBytes",
+                NormalizePath("root/file.bin"),
+                Convert.ToHexString(replacementContents)
+            ),
             fileSystem.Calls
         );
     }
@@ -414,9 +811,12 @@ public sealed class InMemoryFileSystemTests
             fileSystem.EnumerateFiles("root/target-link", "*.txt").ToArray()
         );
 
-        fileSystem.DeleteFile("root/target-link/helper.txt");
+        var exception = Assert.Throws<NotSupportedException>(() =>
+            fileSystem.DeleteFile("root/target-link/helper.txt")
+        );
 
-        Assert.False(fileSystem.FileExists("root/target/helper.txt"));
+        Assert.Contains("symbolic-link", exception.Message, StringComparison.Ordinal);
+        Assert.True(fileSystem.FileExists("root/target/helper.txt"));
     }
 
     [Fact]
@@ -525,6 +925,38 @@ public sealed class InMemoryFileSystemTests
 
         Assert.Throws<IOException>(() =>
             fileSystem.CaptureFileIntegritySnapshot("root/helper-link")
+        );
+    }
+
+    [Fact]
+    public void IntegritySnapshotRejectsNonSymbolicReparsePointFile()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        fileSystem.CreateDirectory("root");
+        fileSystem.WriteAllText("root/helper", "helper contents");
+        fileSystem.SetUnixFileMode("root/helper", HelperExecutableMode);
+        fileSystem.MarkAsNonSymbolicReparsePoint("root/helper");
+
+        Assert.Throws<IOException>(() =>
+            fileSystem.CaptureFileIntegritySnapshot("root/helper")
+        );
+    }
+
+    [Fact]
+    public void IntegritySnapshotRejectsNonSymbolicReparsePointParentComponents()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        fileSystem.CreateDirectory("root");
+        fileSystem.CreateDirectory("root/parent");
+        fileSystem.WriteAllText("root/parent/helper", "helper contents");
+        fileSystem.SetUnixFileMode("root/parent/helper", HelperExecutableMode);
+        fileSystem.MarkAsNonSymbolicReparsePoint("root/parent");
+
+        Assert.Throws<IOException>(() =>
+            fileSystem.CaptureFileIntegritySnapshot("root/parent/helper")
+        );
+        Assert.Throws<IOException>(() =>
+            fileSystem.CaptureTrustedParentDirectorySnapshots("root/parent/helper")
         );
     }
 
@@ -726,6 +1158,8 @@ public sealed class InMemoryFileSystemTests
 
         Assert.False(fileSystem.DirectoryExists("root/deleted"));
         Assert.False(fileSystem.FileExists("root/deleted/helper-link"));
+        Assert.True(fileSystem.DirectoryExists("root/target"));
+        Assert.Equal("helper contents", fileSystem.ReadAllText("root/target/helper"));
     }
 
     [Fact]
@@ -781,6 +1215,35 @@ public sealed class InMemoryFileSystemTests
         return System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(contents)
         );
+    }
+
+    private static string HashText(string contents) =>
+        Convert.ToHexString(Sha256(contents)).ToLowerInvariant();
+
+    private static void InvokeAtomicWrite(
+        InMemoryFileSystem fileSystem,
+        string methodName,
+        string targetPath,
+        FileMutationExpectation expectation
+    )
+    {
+        switch (methodName)
+        {
+            case nameof(IFileSystem.AtomicWriteAllText):
+                fileSystem.AtomicWriteAllText(targetPath, "after", expectation: expectation);
+                break;
+
+            case nameof(IFileSystem.AtomicWriteAllBytes):
+                fileSystem.AtomicWriteAllBytes(
+                    targetPath,
+                    System.Text.Encoding.UTF8.GetBytes("after"),
+                    expectation: expectation
+                );
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(nameof(methodName), methodName, null);
+        }
     }
 
     private static string NormalizePath(string path)

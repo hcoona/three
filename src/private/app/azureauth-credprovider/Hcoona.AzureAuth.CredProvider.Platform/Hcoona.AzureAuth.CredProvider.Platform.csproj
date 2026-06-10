@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Hcoona.AzureAuth.CredProvider.Platform.Tests" />
     <ProjectReference Include="../Hcoona.AzureAuth.CredProvider.Contracts/Hcoona.AzureAuth.CredProvider.Contracts.csproj" />
   </ItemGroup>
 

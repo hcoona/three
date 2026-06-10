@@ -8,6 +8,11 @@ public sealed class SystemFileSystemTests
 {
     private const UnixFileMode HelperExecutableMode =
         UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+    public static bool IsLinux => OperatingSystem.IsLinux();
+    public static bool IsMacOS => OperatingSystem.IsMacOS();
+    public static bool IsWindows => OperatingSystem.IsWindows();
+    public static bool IsKnownSupportedPlatform =>
+        OperatingSystem.IsWindows() || OperatingSystem.IsLinux() || OperatingSystem.IsMacOS();
 
     [Fact]
     public void FileSystemOperationsReadWriteDeleteEnumerateAndAtomicReplaceFiles()
@@ -55,6 +60,136 @@ public sealed class SystemFileSystemTests
     }
 
     [Fact]
+    public void WriteAllTextUsesUtf8WithoutBomByDefault()
+    {
+        var fileSystem = new SystemFileSystem();
+        var root = CreateTestDirectory();
+        var file = Path.Combine(root, "utf8.txt");
+        const string contents = "plain text";
+        byte[] expectedBytes = System.Text.Encoding.UTF8.GetBytes(contents);
+
+        try
+        {
+            fileSystem.WriteAllText(file, contents);
+
+            Assert.Equal(expectedBytes, File.ReadAllBytes(file));
+            Assert.Equal(
+                System.Security.Cryptography.SHA256.HashData(expectedBytes),
+                fileSystem.ComputeSha256Hash(file)
+            );
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void AtomicWriteAllTextUsesUtf8WithoutBomByDefault()
+    {
+        var fileSystem = new SystemFileSystem();
+        var root = CreateTestDirectory();
+        var file = Path.Combine(root, "atomic-utf8.txt");
+        const string contents = "atomic text";
+        byte[] expectedBytes = System.Text.Encoding.UTF8.GetBytes(contents);
+
+        try
+        {
+            fileSystem.AtomicWriteAllText(file, contents);
+
+            Assert.Equal(expectedBytes, File.ReadAllBytes(file));
+            Assert.Equal(
+                System.Security.Cryptography.SHA256.HashData(expectedBytes),
+                fileSystem.ComputeSha256Hash(file)
+            );
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact(Skip = "Not applicable on macOS.", SkipWhen = nameof(IsMacOS))]
+    public void GetFileLengthReturnsRegularFileMetadataLength()
+    {
+        var fileSystem = new SystemFileSystem();
+        var root = CreateTestDirectory();
+        var emptyFile = Path.Combine(root, "empty.lock");
+        var nonEmptyFile = Path.Combine(root, "non-empty.lock");
+
+        try
+        {
+            File.WriteAllBytes(emptyFile, []);
+            File.WriteAllBytes(nonEmptyFile, [1, 2, 3]);
+
+            Assert.Equal(0, fileSystem.GetFileLength(emptyFile));
+            Assert.Equal(3, fileSystem.GetFileLength(nonEmptyFile));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact(Skip = "Not applicable on macOS.", SkipWhen = nameof(IsMacOS))]
+    public void GetFileLengthRejectsFinalSymbolicLinkWhereSupported()
+    {
+        var fileSystem = new SystemFileSystem();
+        var root = CreateTestDirectory();
+        var target = Path.Combine(root, "target.lock");
+        var link = Path.Combine(root, "link.lock");
+
+        try
+        {
+            File.WriteAllText(target, string.Empty);
+            Assert.SkipWhen(
+                !TryCreateFileSymbolicLink(link, target),
+                "File symbolic links are unavailable in this environment."
+            );
+
+            Assert.ThrowsAny<IOException>(() => fileSystem.GetFileLength(link));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact(Skip = "Not applicable on macOS.", SkipWhen = nameof(IsMacOS))]
+    public void GetFileLengthRejectsDirectory()
+    {
+        var fileSystem = new SystemFileSystem();
+        var root = CreateTestDirectory();
+        var directory = Path.Combine(root, "directory.lock");
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+
+            Assert.ThrowsAny<IOException>(() => fileSystem.GetFileLength(directory));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void AtomicWriteAllTextCreatesMissingParentDirectory()
     {
         var fileSystem = new SystemFileSystem();
@@ -68,6 +203,97 @@ public sealed class SystemFileSystemTests
             Assert.True(fileSystem.DirectoryExists(Path.GetDirectoryName(file)!));
             Assert.True(fileSystem.FileExists(file));
             Assert.Equal("created atomically", fileSystem.ReadAllText(file));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void AtomicWriteAllBytesRoundTripsNonUtf8Bytes()
+    {
+        var fileSystem = new SystemFileSystem();
+        var root = CreateTestDirectory();
+        var file = Path.Combine(root, "bytes.bin");
+        byte[] contents = [0x00, 0xff, 0xfe, 0x80, 0x41];
+
+        try
+        {
+            fileSystem.AtomicWriteAllBytes(file, contents);
+            contents[0] = 0x7f;
+            byte[] readContents = fileSystem.ReadAllBytes(file);
+            readContents[1] = 0x7e;
+
+            Assert.Equal(
+                new byte[] { 0x00, 0xff, 0xfe, 0x80, 0x41 },
+                fileSystem.ReadAllBytes(file)
+            );
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void AtomicWriteAllTextFailsClosedForFinalSymbolicLinkWhereSupported()
+    {
+        var fileSystem = new SystemFileSystem();
+        var root = CreateTestDirectory();
+        var target = Path.Combine(root, "target.txt");
+        var link = Path.Combine(root, "link.txt");
+
+        try
+        {
+            File.WriteAllText(target, "target contents");
+            Assert.SkipWhen(
+                !TryCreateFileSymbolicLink(link, target),
+                "Symlink creation unavailable."
+            );
+
+            Assert.Throws<IOException>(() => fileSystem.AtomicWriteAllText(link, "replacement"));
+            Assert.Equal("target contents", File.ReadAllText(target));
+            Assert.True(fileSystem.IsSymbolicLink(link));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void AtomicWriteAllTextFailsClosedForParentDirectorySymbolicLinkWhereSupported()
+    {
+        var fileSystem = new SystemFileSystem();
+        var root = CreateTestDirectory();
+        var targetDirectory = Path.Combine(root, "target");
+        var linkDirectory = Path.Combine(root, "link");
+        var linkedFile = Path.Combine(linkDirectory, "created.txt");
+        var targetFile = Path.Combine(targetDirectory, "created.txt");
+
+        try
+        {
+            Directory.CreateDirectory(targetDirectory);
+            Assert.SkipWhen(
+                !TryCreateDirectorySymbolicLink(linkDirectory, targetDirectory),
+                "Symlink creation unavailable."
+            );
+
+            Assert.Throws<NotSupportedException>(() =>
+                fileSystem.AtomicWriteAllText(linkedFile, "secret contents")
+            );
+            Assert.False(File.Exists(targetFile));
+            Assert.True(fileSystem.IsSymbolicLink(linkDirectory));
         }
         finally
         {
@@ -185,6 +411,30 @@ public sealed class SystemFileSystemTests
         }
     }
 
+    [Fact(Skip = "Targets exotic platforms only.", SkipWhen = nameof(IsKnownSupportedPlatform))]
+    public void DeleteFileFailsClosedOnUnsupportedPlatformsBeforeDeleting()
+    {
+        var fileSystem = new SystemFileSystem();
+        var root = CreateTestDirectory();
+        var file = Path.Combine(root, "delete.txt");
+
+        try
+        {
+            File.WriteAllText(file, "before");
+
+            Assert.Throws<PlatformNotSupportedException>(() => fileSystem.DeleteFile(file));
+            Assert.True(File.Exists(file));
+            Assert.Equal("before", File.ReadAllText(file));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
     [Fact]
     public void AtomicWriteAllTextCreatesNewUnixFileWithOwnerOnlyMode()
     {
@@ -236,6 +486,610 @@ public sealed class SystemFileSystemTests
 
             Assert.Equal("new", fileSystem.ReadAllText(file));
             Assert.Equal(expectedMode, fileSystem.GetUnixFileMode(file));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact(Skip = "Not applicable on macOS.", SkipWhen = nameof(IsMacOS))]
+    public void AtomicWriteAllTextRechecksExpectationImmediatelyBeforeMutation()
+    {
+        var root = CreateTestDirectory();
+        var file = Path.Combine(root, "conditional.txt");
+        var fileSystem = new SystemFileSystem((checkpoint, path) =>
+        {
+            if (
+                checkpoint == FileMutationCheckpoint.BeforeAtomicWriteMutation
+                && string.Equals(path, Path.GetFullPath(file), StringComparison.Ordinal)
+            )
+            {
+                File.WriteAllText(file, "concurrent");
+            }
+        });
+
+        try
+        {
+            File.WriteAllText(file, "before");
+            var expectation = FileMutationExpectation.Existing(ComputeSha256("before"));
+
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                fileSystem.AtomicWriteAllText(file, "after", expectation: expectation)
+            );
+
+            Assert.Contains("conflict", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("concurrent", File.ReadAllText(file));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact(Skip = "Not applicable on macOS.", SkipWhen = nameof(IsMacOS))]
+    public void ConditionalAtomicWriteExistingMissingTargetLeavesNoPersistentParentsOrLock()
+    {
+        var fileSystem = new SystemFileSystem();
+        var root = CreateTestDirectory();
+        var created = Path.Combine(root, "created");
+        var nested = Path.Combine(created, "nested");
+        var file = Path.Combine(nested, "conditional.txt");
+        var lockFile = Path.Combine(nested, ".azureauth-credprovider.fs.lock");
+        var expectation = FileMutationExpectation.Existing(ComputeSha256("missing"));
+
+        try
+        {
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                fileSystem.AtomicWriteAllText(file, "after", expectation: expectation)
+            );
+
+            Assert.Contains("conflict", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.False(Directory.Exists(created));
+            Assert.False(Directory.Exists(nested));
+            Assert.False(File.Exists(file));
+            Assert.False(File.Exists(lockFile));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Theory(Skip = "Not applicable on macOS.", SkipWhen = nameof(IsMacOS))]
+    [InlineData(nameof(IFileSystem.AtomicWriteAllText))]
+    [InlineData(nameof(IFileSystem.AtomicWriteAllBytes))]
+    public void ConditionalAtomicWriteRejectsParentSymlinkBeforeFollowingTargetForHash(
+        string methodName
+    )
+    {
+        var fileSystem = new SystemFileSystem();
+        var root = CreateTestDirectory();
+        var outside = Path.Combine(root, "outside");
+        var link = Path.Combine(root, "link");
+        var externalFile = Path.Combine(outside, "target.txt");
+        var targetPath = Path.Combine(link, "target.txt");
+        var expectation = FileMutationExpectation.Existing(ComputeSha256("wrong-before-state"));
+
+        try
+        {
+            Directory.CreateDirectory(outside);
+            File.WriteAllText(externalFile, "external");
+            Assert.SkipWhen(
+                !TryCreateDirectorySymbolicLink(link, outside),
+                "Directory symbolic-link creation unavailable."
+            );
+
+            var exception = Assert.Throws<NotSupportedException>(() =>
+                InvokeAtomicWrite(fileSystem, methodName, targetPath, expectation)
+            );
+
+            Assert.Contains("symbolic-link", exception.Message, StringComparison.Ordinal);
+            Assert.Equal("external", File.ReadAllText(externalFile));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact(Skip = "Linux-specific symlink race.", SkipUnless = nameof(IsLinux))]
+    public void AtomicWriteAllTextDoesNotCreateExternalLockWhenParentSwappedToSymlinkBeforeLock()
+    {
+        var root = CreateTestDirectory();
+        var parent = Path.Combine(root, "parent");
+        var savedParent = Path.Combine(root, "saved-parent");
+        var outside = Path.Combine(root, "outside");
+        var file = Path.Combine(parent, "race.txt");
+        var escapedLock = Path.Combine(outside, ".azureauth-credprovider.fs.lock");
+        var swapped = false;
+        var fileSystem = new SystemFileSystem((checkpoint, path) =>
+        {
+            if (
+                checkpoint == FileMutationCheckpoint.BeforeMutationLock
+                && string.Equals(path, Path.GetFullPath(file), StringComparison.Ordinal)
+                && !swapped
+            )
+            {
+                swapped = true;
+                Directory.Move(parent, savedParent);
+                Directory.CreateSymbolicLink(parent, outside);
+            }
+        });
+
+        try
+        {
+            Directory.CreateDirectory(parent);
+            Directory.CreateDirectory(outside);
+
+            Assert.Throws<IOException>(() => fileSystem.AtomicWriteAllText(file, "after"));
+
+            Assert.True(swapped);
+            Assert.False(File.Exists(escapedLock));
+            Assert.Empty(Directory.EnumerateFileSystemEntries(outside));
+            Assert.False(File.Exists(Path.Combine(savedParent, "race.txt")));
+        }
+        finally
+        {
+            if (File.GetAttributes(parent).HasFlag(FileAttributes.ReparsePoint))
+            {
+                Directory.Delete(parent);
+            }
+
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact(Skip = "Linux-specific symlink race.", SkipUnless = nameof(IsLinux))]
+    public void AtomicWriteAllTextDoesNotCreateExternalLockWhenAncestorSwappedToSymlinkBeforeLock()
+    {
+        var root = CreateTestDirectory();
+        var ancestor = Path.Combine(root, "ancestor");
+        var savedAncestor = Path.Combine(root, "saved-ancestor");
+        var parent = Path.Combine(ancestor, "parent");
+        var outside = Path.Combine(root, "outside");
+        var outsideParent = Path.Combine(outside, "parent");
+        var file = Path.Combine(parent, "race.txt");
+        var escapedLock = Path.Combine(outsideParent, ".azureauth-credprovider.fs.lock");
+        var swapped = false;
+        var fileSystem = new SystemFileSystem((checkpoint, path) =>
+        {
+            if (
+                checkpoint == FileMutationCheckpoint.BeforeMutationLock
+                && string.Equals(path, Path.GetFullPath(file), StringComparison.Ordinal)
+                && !swapped
+            )
+            {
+                swapped = true;
+                Directory.Move(ancestor, savedAncestor);
+                Directory.CreateSymbolicLink(ancestor, outside);
+            }
+        });
+
+        try
+        {
+            Directory.CreateDirectory(parent);
+            Directory.CreateDirectory(outsideParent);
+
+            Assert.Throws<IOException>(() => fileSystem.AtomicWriteAllText(file, "after"));
+
+            Assert.True(swapped);
+            Assert.False(File.Exists(escapedLock));
+            Assert.Empty(Directory.EnumerateFileSystemEntries(outsideParent));
+            Assert.False(File.Exists(Path.Combine(savedAncestor, "parent", "race.txt")));
+        }
+        finally
+        {
+            if (File.GetAttributes(ancestor).HasFlag(FileAttributes.ReparsePoint))
+            {
+                Directory.Delete(ancestor);
+            }
+
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact(Skip = "Linux-specific symlink race.", SkipUnless = nameof(IsLinux))]
+    public void AtomicWriteAllTextDeletesTemporaryFileWhenParentSwappedToSymlinkAfterTempWrite()
+    {
+        var root = CreateTestDirectory();
+        var parent = Path.Combine(root, "parent");
+        var savedParent = Path.Combine(root, "saved-parent");
+        var outside = Path.Combine(root, "outside");
+        var file = Path.Combine(parent, "secret.txt");
+        var escapedFile = Path.Combine(outside, "secret.txt");
+        var swapped = false;
+        var fileSystem = new SystemFileSystem((checkpoint, path) =>
+        {
+            if (
+                checkpoint == FileMutationCheckpoint.BeforeAtomicWriteMutation
+                && string.Equals(path, Path.GetFullPath(file), StringComparison.Ordinal)
+                && !swapped
+            )
+            {
+                swapped = true;
+                Directory.Move(parent, savedParent);
+                Directory.CreateSymbolicLink(parent, outside);
+            }
+        });
+
+        try
+        {
+            Directory.CreateDirectory(parent);
+            Directory.CreateDirectory(outside);
+
+            var exception = Assert.Throws<NotSupportedException>(() =>
+                fileSystem.AtomicWriteAllText(file, "secret text")
+            );
+
+            Assert.Contains("symbolic-link", exception.Message, StringComparison.Ordinal);
+            Assert.True(swapped);
+            Assert.False(File.Exists(Path.Combine(savedParent, "secret.txt")));
+            Assert.False(File.Exists(escapedFile));
+            Assert.Empty(
+                Directory.EnumerateFiles(savedParent, "*.tmp", SearchOption.AllDirectories)
+            );
+            Assert.Empty(Directory.EnumerateFiles(outside, "*.tmp", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            if (File.GetAttributes(parent).HasFlag(FileAttributes.ReparsePoint))
+            {
+                Directory.Delete(parent);
+            }
+
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact(Skip = "Linux-specific symlink race.", SkipUnless = nameof(IsLinux))]
+    public void AtomicWriteAllBytesDeletesTemporaryFileWhenParentSwappedToSymlinkAfterTempWrite()
+    {
+        var root = CreateTestDirectory();
+        var parent = Path.Combine(root, "parent");
+        var savedParent = Path.Combine(root, "saved-parent");
+        var outside = Path.Combine(root, "outside");
+        var file = Path.Combine(parent, "secret.bin");
+        var escapedFile = Path.Combine(outside, "secret.bin");
+        var swapped = false;
+        var fileSystem = new SystemFileSystem((checkpoint, path) =>
+        {
+            if (
+                checkpoint == FileMutationCheckpoint.BeforeAtomicWriteMutation
+                && string.Equals(path, Path.GetFullPath(file), StringComparison.Ordinal)
+                && !swapped
+            )
+            {
+                swapped = true;
+                Directory.Move(parent, savedParent);
+                Directory.CreateSymbolicLink(parent, outside);
+            }
+        });
+
+        try
+        {
+            Directory.CreateDirectory(parent);
+            Directory.CreateDirectory(outside);
+
+            var exception = Assert.Throws<NotSupportedException>(() =>
+                fileSystem.AtomicWriteAllBytes(file, [1, 2, 3, 4])
+            );
+
+            Assert.Contains("symbolic-link", exception.Message, StringComparison.Ordinal);
+            Assert.True(swapped);
+            Assert.False(File.Exists(Path.Combine(savedParent, "secret.bin")));
+            Assert.False(File.Exists(escapedFile));
+            Assert.Empty(
+                Directory.EnumerateFiles(savedParent, "*.tmp", SearchOption.AllDirectories)
+            );
+            Assert.Empty(Directory.EnumerateFiles(outside, "*.tmp", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            if (File.GetAttributes(parent).HasFlag(FileAttributes.ReparsePoint))
+            {
+                Directory.Delete(parent);
+            }
+
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact(Skip = "Linux-specific symlink race.", SkipUnless = nameof(IsLinux))]
+    public void AtomicWriteAllTextDeletesTemporaryFileWhenTargetSwappedToSymlinkAfterTempWrite()
+    {
+        var root = CreateTestDirectory();
+        var parent = Path.Combine(root, "parent");
+        var file = Path.Combine(parent, "secret.txt");
+        var outside = Path.Combine(root, "outside");
+        var externalFile = Path.Combine(outside, "external.txt");
+        var swapped = false;
+        var fileSystem = new SystemFileSystem((checkpoint, path) =>
+        {
+            if (
+                checkpoint == FileMutationCheckpoint.BeforeAtomicWriteMutation
+                && string.Equals(path, Path.GetFullPath(file), StringComparison.Ordinal)
+                && !swapped
+            )
+            {
+                swapped = true;
+                File.Delete(file);
+                File.CreateSymbolicLink(file, externalFile);
+            }
+        });
+
+        try
+        {
+            Directory.CreateDirectory(parent);
+            Directory.CreateDirectory(outside);
+            File.WriteAllText(file, "original");
+            File.WriteAllText(externalFile, "external");
+
+            var exception = Assert.Throws<IOException>(() =>
+                fileSystem.AtomicWriteAllText(file, "secret text")
+            );
+
+            Assert.Contains("plain file or missing", exception.Message, StringComparison.Ordinal);
+            Assert.True(swapped);
+            Assert.Equal("external", File.ReadAllText(externalFile));
+            Assert.True(fileSystem.IsSymbolicLink(file));
+            Assert.Empty(Directory.EnumerateFiles(parent, "*.tmp", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact(Skip = "Linux-specific symlink race.", SkipUnless = nameof(IsLinux))]
+    public void AtomicWriteAllBytesDeletesTemporaryFileWhenTargetSwappedToSymlinkAfterTempWrite()
+    {
+        var root = CreateTestDirectory();
+        var parent = Path.Combine(root, "parent");
+        var file = Path.Combine(parent, "secret.bin");
+        var outside = Path.Combine(root, "outside");
+        var externalFile = Path.Combine(outside, "external.bin");
+        byte[] externalContents = [9, 8, 7, 6];
+        var swapped = false;
+        var fileSystem = new SystemFileSystem((checkpoint, path) =>
+        {
+            if (
+                checkpoint == FileMutationCheckpoint.BeforeAtomicWriteMutation
+                && string.Equals(path, Path.GetFullPath(file), StringComparison.Ordinal)
+                && !swapped
+            )
+            {
+                swapped = true;
+                File.Delete(file);
+                File.CreateSymbolicLink(file, externalFile);
+            }
+        });
+
+        try
+        {
+            Directory.CreateDirectory(parent);
+            Directory.CreateDirectory(outside);
+            File.WriteAllBytes(file, [1, 2, 3, 4]);
+            File.WriteAllBytes(externalFile, externalContents);
+
+            var exception = Assert.Throws<IOException>(() =>
+                fileSystem.AtomicWriteAllBytes(file, [5, 6, 7, 8])
+            );
+
+            Assert.Contains("plain file or missing", exception.Message, StringComparison.Ordinal);
+            Assert.True(swapped);
+            Assert.Equal(externalContents, File.ReadAllBytes(externalFile));
+            Assert.True(fileSystem.IsSymbolicLink(file));
+            Assert.Empty(Directory.EnumerateFiles(parent, "*.tmp", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact(Skip = "Linux symlink semantics required.", SkipUnless = nameof(IsLinux))]
+    public void AtomicWriteAllTextRejectsPreExistingLinuxLockSymlinkWithoutMutatingExternalFile()
+    {
+        var fileSystem = new SystemFileSystem();
+        var root = CreateTestDirectory();
+        var parent = Path.Combine(root, "parent");
+        var outside = Path.Combine(root, "outside");
+        var file = Path.Combine(parent, "target.txt");
+        var lockFile = Path.Combine(parent, ".azureauth-credprovider.fs.lock");
+        var externalLock = Path.Combine(outside, "external-lock.txt");
+
+        try
+        {
+            Directory.CreateDirectory(parent);
+            Directory.CreateDirectory(outside);
+            File.WriteAllText(externalLock, "external lock before");
+            File.CreateSymbolicLink(lockFile, externalLock);
+
+            Assert.Throws<IOException>(() => fileSystem.AtomicWriteAllText(file, "after"));
+
+            Assert.False(File.Exists(file));
+            Assert.Equal("external lock before", File.ReadAllText(externalLock));
+            Assert.Equal(
+                externalLock,
+                File.ResolveLinkTarget(lockFile, returnFinalTarget: false)?.FullName
+            );
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact(Skip = "Non-Windows symlink test.", SkipWhen = nameof(IsWindows))]
+    public void AtomicWriteAllTextRejectsMissingParentSymlinkEscapeBeforeWriting()
+    {
+        var fileSystem = new SystemFileSystem();
+        var root = CreateTestDirectory();
+        var config = Path.Combine(root, "config");
+        var outside = Path.Combine(root, "outside");
+        var link = Path.Combine(config, "link");
+        var escapedDirectory = Path.Combine(outside, "nested");
+        var escapedFile = Path.Combine(escapedDirectory, "escape.txt");
+        var escapedLock = Path.Combine(escapedDirectory, ".azureauth-credprovider.fs.lock");
+        var fileViaLink = Path.Combine(link, "nested", "escape.txt");
+
+        try
+        {
+            Directory.CreateDirectory(config);
+            Directory.CreateDirectory(outside);
+            Assert.SkipWhen(
+                !TryCreateDirectorySymbolicLink(link, outside),
+                "Symlink creation unavailable."
+            );
+
+            var exception = Assert.Throws<NotSupportedException>(() =>
+                fileSystem.AtomicWriteAllText(fileViaLink, "secret")
+            );
+
+            Assert.Contains("symbolic-link", exception.Message, StringComparison.Ordinal);
+            Assert.False(Directory.Exists(escapedDirectory));
+            Assert.False(File.Exists(escapedFile));
+            Assert.False(File.Exists(escapedLock));
+            Assert.Empty(Directory.EnumerateFiles(outside, "*.tmp", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact(Skip = "Non-Windows symlink test.", SkipWhen = nameof(IsWindows))]
+    public void DeleteFileRejectsParentSymlinkEscapeBeforeCreatingLock()
+    {
+        var fileSystem = new SystemFileSystem();
+        var root = CreateTestDirectory();
+        var config = Path.Combine(root, "config");
+        var outside = Path.Combine(root, "outside");
+        var link = Path.Combine(config, "link");
+        var escapedFile = Path.Combine(outside, "delete.txt");
+        var escapedLock = Path.Combine(outside, ".azureauth-credprovider.fs.lock");
+        var fileViaLink = Path.Combine(link, "delete.txt");
+
+        try
+        {
+            Directory.CreateDirectory(config);
+            Directory.CreateDirectory(outside);
+            File.WriteAllText(escapedFile, "outside");
+            Assert.SkipWhen(
+                !TryCreateDirectorySymbolicLink(link, outside),
+                "Symlink creation unavailable."
+            );
+
+            var exception = Assert.Throws<NotSupportedException>(() =>
+                fileSystem.DeleteFile(fileViaLink)
+            );
+
+            Assert.Contains("symbolic-link", exception.Message, StringComparison.Ordinal);
+            Assert.Equal("outside", File.ReadAllText(escapedFile));
+            Assert.False(File.Exists(escapedLock));
+            Assert.Empty(Directory.EnumerateFiles(outside, "*.tmp", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact(Skip = "macOS-specific behavior.", SkipUnless = nameof(IsMacOS))]
+    public void ConditionalMutationsFailClosedOnMacOs()
+    {
+        var fileSystem = new SystemFileSystem();
+        var root = CreateTestDirectory();
+        var file = Path.Combine(root, "conditional.txt");
+
+        try
+        {
+            File.WriteAllText(file, "before");
+            var expectation = FileMutationExpectation.Existing(ComputeSha256("before"));
+
+            Assert.Throws<PlatformNotSupportedException>(() =>
+                fileSystem.AtomicWriteAllText(file, "after", expectation: expectation)
+            );
+            Assert.Throws<PlatformNotSupportedException>(() =>
+                fileSystem.DeleteFile(file, expectation)
+            );
+            Assert.Equal("before", File.ReadAllText(file));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact(Skip = "macOS-specific behavior.", SkipUnless = nameof(IsMacOS))]
+    public void MutationLockRejectsPreExistingMacOsLockSymlinkWithoutMutatingExternalFile()
+    {
+        var fileSystem = new SystemFileSystem();
+        var root = CreateTestDirectory();
+        var parent = Path.Combine(root, "parent");
+        var outside = Path.Combine(root, "outside");
+        var lockFile = Path.Combine(parent, ".azureauth-credprovider.fs.lock");
+        var externalLock = Path.Combine(outside, "external-lock.txt");
+
+        try
+        {
+            Directory.CreateDirectory(parent);
+            Directory.CreateDirectory(outside);
+            File.WriteAllText(externalLock, "external lock before");
+            Assert.SkipWhen(
+                !TryCreateFileSymbolicLink(lockFile, externalLock),
+                "Symlink creation unavailable."
+            );
+
+            Assert.Throws<IOException>(() =>
+                ((IFileSystemMutationLock)fileSystem).AcquireMutationLock(parent).Dispose()
+            );
+
+            Assert.Equal("external lock before", File.ReadAllText(externalLock));
+            Assert.True(fileSystem.IsSymbolicLink(lockFile));
         }
         finally
         {
@@ -564,10 +1418,10 @@ public sealed class SystemFileSystemTests
         try
         {
             File.WriteAllText(target, "helper contents");
-            if (!TryCreateFileSymbolicLink(link, target))
-            {
-                return;
-            }
+            Assert.SkipWhen(
+                !TryCreateFileSymbolicLink(link, target),
+                "Symlink creation unavailable."
+            );
 
             Assert.Throws<IOException>(() => fileSystem.CaptureFileIntegritySnapshot(link));
             Assert.False(
@@ -1453,6 +2307,40 @@ public sealed class SystemFileSystemTests
         }
 
         return path;
+    }
+
+    private static string ComputeSha256(string contents)
+    {
+        byte[] hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(contents)
+        );
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static void InvokeAtomicWrite(
+        SystemFileSystem fileSystem,
+        string methodName,
+        string targetPath,
+        FileMutationExpectation expectation
+    )
+    {
+        switch (methodName)
+        {
+            case nameof(IFileSystem.AtomicWriteAllText):
+                fileSystem.AtomicWriteAllText(targetPath, "after", expectation: expectation);
+                break;
+
+            case nameof(IFileSystem.AtomicWriteAllBytes):
+                fileSystem.AtomicWriteAllBytes(
+                    targetPath,
+                    System.Text.Encoding.UTF8.GetBytes("after"),
+                    expectation: expectation
+                );
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(nameof(methodName), methodName, null);
+        }
     }
 
     private static bool TryCreateFileSymbolicLink(string linkPath, string targetPath)

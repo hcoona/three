@@ -5,7 +5,12 @@ using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.Tests.TestDoubles;
 
-public sealed class InMemoryFileSystem : IFileSystem
+public sealed class InMemoryFileSystem
+    : IFileSystem,
+        IFileSystemMutationLock,
+        IFileSystemReparsePointSafety,
+        IFileSystemNoFollowEnumeration,
+        IFileSystemFileLength
 {
     private const UnixFileMode OwnerOnlyFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
     private const UnixFileMode OwnerOnlyDirectoryMode =
@@ -13,15 +18,17 @@ public sealed class InMemoryFileSystem : IFileSystem
 
     private readonly InMemoryPathSemantics _pathSemantics;
     private readonly string _rootPath;
-    private readonly Dictionary<string, string> _files = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, byte[]> _files = new(StringComparer.Ordinal);
     private readonly Dictionary<string, FileSystemEntryIdentity> _identities = new(
         StringComparer.Ordinal
     );
     private readonly Dictionary<string, UnixFileMode> _unixFileModes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _symbolicLinks = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _reparsePoints = new(StringComparer.Ordinal);
     private readonly Dictionary<string, FileSystemOwner> _owners = new(StringComparer.Ordinal);
     private readonly HashSet<string> _directories = new(StringComparer.Ordinal);
     private readonly Queue<Exception> _failures = [];
+    private readonly HashSet<string> _heldMutationLocks = new(StringComparer.Ordinal);
     private long _nextIdentity = 1;
 
     public InMemoryFileSystem(InMemoryPathSemantics pathSemantics = InMemoryPathSemantics.Host)
@@ -38,11 +45,20 @@ public sealed class InMemoryFileSystem : IFileSystem
 
     public List<FileSystemCall> Calls { get; } = [];
 
-    public IReadOnlyDictionary<string, string> Files => _files;
+    public bool SupportsConditionalFileMutations { get; set; } = true;
+
+    public IReadOnlyDictionary<string, string> Files =>
+        _files.ToDictionary(
+            pair => pair.Key,
+            pair => Encoding.UTF8.GetString(pair.Value),
+            StringComparer.Ordinal
+        );
 
     public IReadOnlySet<string> Directories => _directories;
 
     public FileSystemOwner CurrentOwner { get; set; } = new("fake:current");
+
+    public Action<FileSystemCall, InMemoryFileSystem>? AfterRecord { get; set; }
 
     public void FailNextCall(Exception exception)
     {
@@ -63,10 +79,41 @@ public sealed class InMemoryFileSystem : IFileSystem
             followFinalComponent: false
         );
         EnsureParentDirectoryExists(resolvedLinkPath);
+        if (
+            _files.ContainsKey(resolvedLinkPath)
+            || _directories.Contains(resolvedLinkPath)
+            || _symbolicLinks.ContainsKey(resolvedLinkPath)
+            || _reparsePoints.Contains(resolvedLinkPath)
+        )
+        {
+            throw new IOException(
+                $"Cannot create in-memory symbolic link '{resolvedLinkPath}' because an entry "
+                    + "already exists at that path."
+            );
+        }
 
         _symbolicLinks[resolvedLinkPath] = NormalizePath(targetPath);
+        _reparsePoints.Add(resolvedLinkPath);
         _identities[resolvedLinkPath] = CreateIdentity();
         _owners.TryAdd(resolvedLinkPath, CurrentOwner);
+    }
+
+    public void MarkAsNonSymbolicReparsePoint(string path)
+    {
+        var normalizedPath = NormalizePath(path);
+        Record(nameof(MarkAsNonSymbolicReparsePoint), normalizedPath);
+        ThrowIfFailureQueued();
+        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
+        EnsureFileOrDirectoryExists(resolvedPath);
+        if (_symbolicLinks.ContainsKey(resolvedPath))
+        {
+            throw new IOException(
+                $"Cannot mark in-memory symbolic link '{resolvedPath}' as a non-symbolic "
+                    + "reparse point."
+            );
+        }
+
+        _reparsePoints.Add(resolvedPath);
     }
 
     public void SetOwner(string path, FileSystemOwner owner)
@@ -134,6 +181,17 @@ public sealed class InMemoryFileSystem : IFileSystem
         return _symbolicLinks.ContainsKey(resolvedPath);
     }
 
+    bool IFileSystemReparsePointSafety.IsReparsePoint(string path)
+    {
+        var normalizedPath = NormalizePath(path);
+        Record(nameof(IFileSystemReparsePointSafety.IsReparsePoint), normalizedPath);
+        ThrowIfFailureQueued();
+
+        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
+        EnsureFileOrDirectoryExists(resolvedPath);
+        return _reparsePoints.Contains(resolvedPath) || _symbolicLinks.ContainsKey(resolvedPath);
+    }
+
     public byte[] ComputeSha256Hash(string path)
     {
         var normalizedPath = NormalizePath(path);
@@ -142,7 +200,7 @@ public sealed class InMemoryFileSystem : IFileSystem
 
         var resolvedPath = ResolveSymbolicLinkPath(normalizedPath);
         return _files.TryGetValue(resolvedPath, out var contents)
-            ? SHA256.HashData(Encoding.UTF8.GetBytes(contents))
+            ? SHA256.HashData(contents)
             : throw new FileNotFoundException("The in-memory file does not exist.", normalizedPath);
     }
 
@@ -234,7 +292,47 @@ public sealed class InMemoryFileSystem : IFileSystem
 
         var resolvedPath = ResolveSymbolicLinkPath(normalizedPath);
         return _files.TryGetValue(resolvedPath, out var contents)
-            ? contents
+            ? (encoding ?? Encoding.UTF8).GetString(contents)
+            : throw new FileNotFoundException("The in-memory file does not exist.", normalizedPath);
+    }
+
+    public byte[] ReadAllBytes(string path)
+    {
+        var normalizedPath = NormalizePath(path);
+        Record(nameof(ReadAllBytes), normalizedPath);
+        ThrowIfFailureQueued();
+
+        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath);
+        return _files.TryGetValue(resolvedPath, out var contents)
+            ? contents.ToArray()
+            : throw new FileNotFoundException("The in-memory file does not exist.", normalizedPath);
+    }
+
+    public long GetFileLength(string path)
+    {
+        var normalizedPath = NormalizePath(path);
+        Record(nameof(GetFileLength), normalizedPath);
+        ThrowIfFailureQueued();
+
+        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
+        if (_symbolicLinks.ContainsKey(resolvedPath) || _reparsePoints.Contains(resolvedPath))
+        {
+            throw new IOException(
+                $"Cannot get the length of in-memory file '{normalizedPath}' because it is "
+                    + "a symbolic link or reparse point."
+            );
+        }
+
+        if (_directories.Contains(resolvedPath))
+        {
+            throw new IOException(
+                $"Cannot get the length of in-memory file '{normalizedPath}' because it is "
+                    + "not a regular file."
+            );
+        }
+
+        return _files.TryGetValue(resolvedPath, out var contents)
+            ? contents.Length
             : throw new FileNotFoundException("The in-memory file does not exist.", normalizedPath);
     }
 
@@ -249,7 +347,7 @@ public sealed class InMemoryFileSystem : IFileSystem
         EnsureParentDirectoryExists(resolvedPath);
         ThrowIfDirectoryExists(resolvedPath);
 
-        _files[resolvedPath] = contents;
+        _files[resolvedPath] = (encoding ?? Encoding.UTF8).GetBytes(contents);
         _identities.TryAdd(resolvedPath, CreateIdentity());
         _unixFileModes.TryAdd(resolvedPath, OwnerOnlyFileMode);
         _owners.TryAdd(resolvedPath, CurrentOwner);
@@ -259,14 +357,46 @@ public sealed class InMemoryFileSystem : IFileSystem
         string path,
         string contents,
         Encoding? encoding = null,
-        AtomicWriteOptions options = AtomicWriteOptions.None
+        AtomicWriteOptions options = AtomicWriteOptions.None,
+        FileMutationExpectation? expectation = null
     )
     {
         ArgumentNullException.ThrowIfNull(contents);
 
         var normalizedPath = NormalizePath(path);
         Record(nameof(AtomicWriteAllText), normalizedPath, contents);
+        AtomicWriteAllBytesCore(
+            normalizedPath,
+            (encoding ?? Encoding.UTF8).GetBytes(contents),
+            options,
+            expectation
+        );
+    }
+
+    public void AtomicWriteAllBytes(
+        string path,
+        byte[] contents,
+        AtomicWriteOptions options = AtomicWriteOptions.None,
+        FileMutationExpectation? expectation = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(contents);
+
+        var normalizedPath = NormalizePath(path);
+        Record(nameof(AtomicWriteAllBytes), normalizedPath, Convert.ToHexString(contents));
+        AtomicWriteAllBytesCore(normalizedPath, contents, options, expectation);
+    }
+
+    private void AtomicWriteAllBytesCore(
+        string normalizedPath,
+        byte[] contents,
+        AtomicWriteOptions options,
+        FileMutationExpectation? expectation
+    )
+    {
         ThrowIfFailureQueued();
+        ValidateParentDirectoryChainHasNoSymbolicLinks(normalizedPath);
+        ValidateMutationExpectation(normalizedPath, expectation);
         var replacementPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
         var createdDirectoryMode =
             (options & AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly) != 0
@@ -275,25 +405,26 @@ public sealed class InMemoryFileSystem : IFileSystem
         AddDirectoryWithParents(GetParentPath(replacementPath), createdDirectoryMode);
         ThrowIfDirectoryExists(replacementPath);
 
-        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath);
-        var targetExists = _files.ContainsKey(resolvedPath);
+        ValidateMutationExpectation(normalizedPath, expectation);
+
+        if (_symbolicLinks.ContainsKey(replacementPath) || _reparsePoints.Contains(replacementPath))
+        {
+            throw new IOException(
+                $"The atomic write destination '{normalizedPath}' must not be a symbolic link or "
+                    + "reparse point."
+            );
+        }
+
+        var targetExists = _files.ContainsKey(replacementPath);
         var mode =
             (options & AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly) != 0 || !targetExists
                 ? OwnerOnlyFileMode
-                : GetUnixFileModeWithoutRecording(resolvedPath);
+                : GetUnixFileModeWithoutRecording(replacementPath);
 
-        var replacingSymbolicLink = _symbolicLinks.Remove(replacementPath);
-        _files[replacementPath] = contents;
+        _files[replacementPath] = contents.ToArray();
         _identities[replacementPath] = CreateIdentity();
         _unixFileModes[replacementPath] = mode;
-        if (replacingSymbolicLink)
-        {
-            _owners[replacementPath] = CurrentOwner;
-        }
-        else
-        {
-            _owners.TryAdd(replacementPath, CurrentOwner);
-        }
+        _owners.TryAdd(replacementPath, CurrentOwner);
     }
 
     public UnixFileMode GetUnixFileMode(string path)
@@ -329,18 +460,144 @@ public sealed class InMemoryFileSystem : IFileSystem
         _owners.TryAdd(resolvedPath, CurrentOwner);
     }
 
-    public void DeleteFile(string path)
+    public void DeleteFile(string path, FileMutationExpectation? expectation = null)
     {
         var normalizedPath = NormalizePath(path);
         Record(nameof(DeleteFile), normalizedPath);
         ThrowIfFailureQueued();
+        ValidateParentDirectoryChainHasNoSymbolicLinks(normalizedPath);
+        ValidateMutationExpectation(normalizedPath, expectation);
         var resolvedPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
+        if (_symbolicLinks.ContainsKey(resolvedPath) || _reparsePoints.Contains(resolvedPath))
+        {
+            throw new IOException(
+                $"The delete target '{normalizedPath}' must not be a symbolic link "
+                + "or reparse point."
+            );
+        }
+
+        if (_directories.Contains(resolvedPath))
+        {
+            throw new IOException(
+                $"Cannot delete in-memory file '{normalizedPath}' because a directory "
+                + "exists at that path."
+            );
+        }
 
         _files.Remove(resolvedPath);
         _identities.Remove(resolvedPath);
         _unixFileModes.Remove(resolvedPath);
-        _symbolicLinks.Remove(resolvedPath);
         _owners.Remove(resolvedPath);
+    }
+
+    IDisposable IFileSystemMutationLock.AcquireMutationLock(
+        string directory,
+        bool createDirectory
+    )
+    {
+        var normalizedPath = NormalizePath(directory);
+        Record(nameof(IFileSystemMutationLock.AcquireMutationLock), normalizedPath);
+        ThrowIfFailureQueued();
+        ValidateParentDirectoryChainHasNoSymbolicLinks(normalizedPath);
+        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
+        if (_symbolicLinks.ContainsKey(resolvedPath) || _reparsePoints.Contains(resolvedPath))
+        {
+            throw new IOException(
+                "The in-memory mutation lock directory must not be a symbolic link or "
+                    + "reparse point."
+            );
+        }
+
+        if (createDirectory)
+        {
+            AddDirectoryWithParents(resolvedPath, OwnerOnlyDirectoryMode);
+        }
+
+        EnsureDirectoryExists(resolvedPath);
+        if (!_heldMutationLocks.Add(resolvedPath))
+        {
+            throw new IOException("The in-memory mutation lock is already held.");
+        }
+
+        return new InMemoryMutationLock(this, resolvedPath);
+    }
+
+    private void ValidateMutationExpectation(
+        string normalizedPath,
+        FileMutationExpectation? expectation
+    )
+    {
+        if (expectation is null)
+        {
+            return;
+        }
+
+        var resolvedPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
+        if (_symbolicLinks.ContainsKey(resolvedPath) || _reparsePoints.Contains(resolvedPath))
+        {
+            throw new InvalidOperationException(
+                "Configuration conflict: mutation target must not be a symbolic link or "
+                    + "reparse point."
+            );
+        }
+
+        bool exists = _files.TryGetValue(resolvedPath, out var contents);
+        bool directoryExists = _directories.Contains(resolvedPath);
+        if (!expectation.Exists)
+        {
+            if (exists || directoryExists)
+            {
+                throw new InvalidOperationException(
+                    "Configuration conflict: expected mutation target to be absent."
+                );
+            }
+
+            return;
+        }
+
+        if (!exists)
+        {
+            throw new InvalidOperationException(
+                "Configuration conflict: expected mutation target to exist."
+            );
+        }
+
+        if (string.IsNullOrWhiteSpace(expectation.Sha256Hash))
+        {
+            throw new InvalidOperationException(
+                "Configuration conflict: mutation target before-state hash is required."
+            );
+        }
+
+        string actualHash = Convert.ToHexString(SHA256.HashData(contents!)).ToLowerInvariant();
+        if (!string.Equals(expectation.Sha256Hash, actualHash, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Configuration conflict: mutation target before-state hash does not match."
+            );
+        }
+    }
+
+    private void ValidateParentDirectoryChainHasNoSymbolicLinks(string normalizedPath)
+    {
+        var parentPath = GetParentPath(normalizedPath);
+        while (!string.IsNullOrEmpty(parentPath))
+        {
+            if (_symbolicLinks.ContainsKey(parentPath) || _reparsePoints.Contains(parentPath))
+            {
+                throw new NotSupportedException(
+                    "Conditional file mutations reject symbolic-link or reparse-point directories "
+                        + "in target parent paths."
+                );
+            }
+
+            if (IsRootPath(parentPath))
+            {
+                return;
+            }
+
+            parentPath = GetParentPath(parentPath);
+        }
     }
 
     public void DeleteDirectory(string path, bool recursive = false)
@@ -357,6 +614,7 @@ public sealed class InMemoryFileSystem : IFileSystem
         {
             _identities.Remove(resolvedPath);
             _unixFileModes.Remove(resolvedPath);
+            _reparsePoints.Remove(resolvedPath);
             _symbolicLinks.Remove(resolvedPath);
             _owners.Remove(resolvedPath);
             return;
@@ -388,6 +646,7 @@ public sealed class InMemoryFileSystem : IFileSystem
             _files.Remove(file);
             _identities.Remove(file);
             _unixFileModes.Remove(file);
+            _reparsePoints.Remove(file);
             _symbolicLinks.Remove(file);
             _owners.Remove(file);
         }
@@ -396,6 +655,7 @@ public sealed class InMemoryFileSystem : IFileSystem
         {
             _identities.Remove(link);
             _unixFileModes.Remove(link);
+            _reparsePoints.Remove(link);
             _symbolicLinks.Remove(link);
             _owners.Remove(link);
         }
@@ -405,6 +665,7 @@ public sealed class InMemoryFileSystem : IFileSystem
             _directories.Remove(directory);
             _identities.Remove(directory);
             _unixFileModes.Remove(directory);
+            _reparsePoints.Remove(directory);
             _symbolicLinks.Remove(directory);
             _owners.Remove(directory);
         }
@@ -412,6 +673,7 @@ public sealed class InMemoryFileSystem : IFileSystem
         _directories.Remove(resolvedPath);
         _identities.Remove(resolvedPath);
         _unixFileModes.Remove(resolvedPath);
+        _reparsePoints.Remove(resolvedPath);
         _symbolicLinks.Remove(resolvedPath);
         _owners.Remove(resolvedPath);
     }
@@ -475,6 +737,59 @@ public sealed class InMemoryFileSystem : IFileSystem
             .ToArray();
 
         return directories;
+    }
+
+    IEnumerable<string> IFileSystemNoFollowEnumeration.EnumerateFileSystemEntriesNoFollow(
+        string path,
+        string searchPattern,
+        SearchOption searchOption
+    )
+    {
+        var normalizedPath = NormalizePath(path);
+        Record(
+            nameof(IFileSystemNoFollowEnumeration.EnumerateFileSystemEntriesNoFollow),
+            normalizedPath,
+            searchPattern
+        );
+        ThrowIfFailureQueued();
+        var resolvedDirectoryPath = ResolveSymbolicLinkPath(normalizedPath);
+        EnsureDirectoryExists(resolvedDirectoryPath);
+
+        return _files
+            .Keys.Concat(
+                _directories.Where(directory =>
+                    !string.Equals(directory, _rootPath, StringComparison.Ordinal)
+                )
+            )
+            .Concat(_symbolicLinks.Keys)
+            .Distinct(StringComparer.Ordinal)
+            .Where(entry =>
+                IsInEnumerationScope(resolvedDirectoryPath, entry, searchOption)
+                && !HasNoFollowEnumerationBoundaryAncestor(resolvedDirectoryPath, entry)
+                && MatchesSearchPattern(entry, searchPattern)
+            )
+            .Select(entry => ProjectResolvedPath(normalizedPath, resolvedDirectoryPath, entry))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private bool HasNoFollowEnumerationBoundaryAncestor(string rootPath, string entryPath)
+    {
+        string parentPath = GetParentPath(entryPath);
+        while (
+            parentPath.Length > 0
+            && !string.Equals(parentPath, rootPath, StringComparison.Ordinal)
+        )
+        {
+            if (_symbolicLinks.ContainsKey(parentPath) || _reparsePoints.Contains(parentPath))
+            {
+                return true;
+            }
+
+            parentPath = GetParentPath(parentPath);
+        }
+
+        return false;
     }
 
     private string NormalizePath(string path)
@@ -764,9 +1079,11 @@ public sealed class InMemoryFileSystem : IFileSystem
     {
         ThrowIfSymbolicLinkParentComponent(normalizedPath);
         var resolvedPath = ResolveSymbolicLinkPath(normalizedPath, followFinalComponent: false);
-        if (_symbolicLinks.ContainsKey(resolvedPath))
+        if (_symbolicLinks.ContainsKey(resolvedPath) || _reparsePoints.Contains(resolvedPath))
         {
-            throw new IOException("Cannot capture an integrity snapshot for a symbolic link.");
+            throw new IOException(
+                "Cannot capture an integrity snapshot for a symbolic link or reparse point."
+            );
         }
 
         if (!_files.TryGetValue(resolvedPath, out var contents))
@@ -783,7 +1100,7 @@ public sealed class InMemoryFileSystem : IFileSystem
             _identities[resolvedPath],
             owner,
             unixFileMode,
-            SHA256.HashData(Encoding.UTF8.GetBytes(contents)),
+            SHA256.HashData(contents),
             CaptureTrustedParentDirectorySnapshotsWithoutRecording(resolvedPath)
         );
     }
@@ -829,9 +1146,11 @@ public sealed class InMemoryFileSystem : IFileSystem
         var parentPath = GetParentPath(normalizedPath);
         while (parentPath.Length > 0)
         {
-            if (_symbolicLinks.ContainsKey(parentPath))
+            if (_symbolicLinks.ContainsKey(parentPath) || _reparsePoints.Contains(parentPath))
             {
-                throw new IOException("Helper parent directories must not be symbolic links.");
+                throw new IOException(
+                    "Helper parent directories must not be symbolic links or reparse points."
+                );
             }
 
             if (IsRootDirectory(parentPath))
@@ -930,7 +1249,9 @@ public sealed class InMemoryFileSystem : IFileSystem
 
     private void Record(string operation, string path, string? value = null)
     {
-        Calls.Add(new FileSystemCall(operation, path, value));
+        var call = new FileSystemCall(operation, path, value);
+        Calls.Add(call);
+        AfterRecord?.Invoke(call, this);
     }
 
     private void ThrowIfFailureQueued()
@@ -991,10 +1312,11 @@ public sealed class InMemoryFileSystem : IFileSystem
             return;
         }
 
-        if (_files.ContainsKey(path))
+        if (_files.ContainsKey(path) || _symbolicLinks.ContainsKey(path))
         {
             throw new IOException(
-                $"Cannot create in-memory directory '{path}' because a file exists at that path."
+                $"Cannot create in-memory directory '{path}' because a file or symbolic link "
+                    + "exists at that path."
             );
         }
 
@@ -1007,6 +1329,35 @@ public sealed class InMemoryFileSystem : IFileSystem
             {
                 _unixFileModes[path] = mode;
             }
+        }
+    }
+
+    private void ReleaseMutationLock(string resolvedPath)
+    {
+        _heldMutationLocks.Remove(resolvedPath);
+    }
+
+    private sealed class InMemoryMutationLock : IDisposable
+    {
+        private readonly InMemoryFileSystem _fileSystem;
+        private readonly string _resolvedPath;
+        private bool _disposed;
+
+        public InMemoryMutationLock(InMemoryFileSystem fileSystem, string resolvedPath)
+        {
+            _fileSystem = fileSystem;
+            _resolvedPath = resolvedPath;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _fileSystem.ReleaseMutationLock(_resolvedPath);
+            _disposed = true;
         }
     }
 }
