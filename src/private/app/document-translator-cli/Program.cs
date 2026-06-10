@@ -26,6 +26,7 @@ internal static class Program
         try
         {
             IDocumentTranslator translator = new AzureDocumentTranslator();
+            using AzureTextSegmentTranslator textSegmentTranslator = new();
             TextWriter standardOutput = Console.Out;
             TextWriter standardError = Console.Error;
             return RunAsync(
@@ -38,6 +39,7 @@ internal static class Program
                         output,
                         standardError,
                         translator,
+                        textSegmentTranslator,
                         token),
                     cancellationTokenSource.Token)
                 .AsTask()
@@ -93,6 +95,7 @@ internal static class Program
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             CommandLineParseResult parseResult = DocumentTranslatorCommandLineParser.Parse(args);
             if (parseResult.ShowHelp)
             {
@@ -156,12 +159,33 @@ internal static class Program
         TextWriter standardOutput,
         TextWriter standardError,
         IDocumentTranslator translator,
+        CancellationToken cancellationToken)
+    {
+        using AzureTextSegmentTranslator textSegmentTranslator = new();
+        return await ExecuteValidatedCommandAsync(
+                options,
+                standardOutput,
+                standardError,
+                translator,
+                textSegmentTranslator,
+                AtomicOutputWriter.WriteAsync,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static async ValueTask<int> ExecuteValidatedCommandAsync(
+        TranslationOptions options,
+        TextWriter standardOutput,
+        TextWriter standardError,
+        IDocumentTranslator translator,
+        ITextSegmentTranslator textSegmentTranslator,
         CancellationToken cancellationToken) =>
         await ExecuteValidatedCommandAsync(
                 options,
                 standardOutput,
                 standardError,
                 translator,
+                textSegmentTranslator,
                 AtomicOutputWriter.WriteAsync,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -172,12 +196,34 @@ internal static class Program
         TextWriter standardError,
         IDocumentTranslator translator,
         OutputWriter outputWriter,
+        CancellationToken cancellationToken)
+    {
+        using AzureTextSegmentTranslator textSegmentTranslator = new();
+        return await ExecuteValidatedCommandAsync(
+                options,
+                standardOutput,
+                standardError,
+                translator,
+                textSegmentTranslator,
+                outputWriter,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static async ValueTask<int> ExecuteValidatedCommandAsync(
+        TranslationOptions options,
+        TextWriter standardOutput,
+        TextWriter standardError,
+        IDocumentTranslator translator,
+        ITextSegmentTranslator textSegmentTranslator,
+        OutputWriter outputWriter,
         CancellationToken cancellationToken) =>
         await ExecuteValidatedCommandAsync(
                 options,
                 standardOutput,
                 standardError,
                 translator,
+                textSegmentTranslator,
                 outputWriter,
                 CreatePreflightTempFile,
                 OpenExistingOutputForReplaceability,
@@ -191,12 +237,36 @@ internal static class Program
         IDocumentTranslator translator,
         OutputWriter outputWriter,
         Func<string, FileStream> createPreflightTempFile,
+        CancellationToken cancellationToken)
+    {
+        using AzureTextSegmentTranslator textSegmentTranslator = new();
+        return await ExecuteValidatedCommandAsync(
+                options,
+                standardOutput,
+                standardError,
+                translator,
+                textSegmentTranslator,
+                outputWriter,
+                createPreflightTempFile,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static async ValueTask<int> ExecuteValidatedCommandAsync(
+        TranslationOptions options,
+        TextWriter standardOutput,
+        TextWriter standardError,
+        IDocumentTranslator translator,
+        ITextSegmentTranslator textSegmentTranslator,
+        OutputWriter outputWriter,
+        Func<string, FileStream> createPreflightTempFile,
         CancellationToken cancellationToken) =>
         await ExecuteValidatedCommandAsync(
                 options,
                 standardOutput,
                 standardError,
                 translator,
+                textSegmentTranslator,
                 outputWriter,
                 createPreflightTempFile,
                 OpenExistingOutputForReplaceability,
@@ -213,19 +283,72 @@ internal static class Program
         Func<string, FileStream> openExistingOutputForReplaceability,
         CancellationToken cancellationToken)
     {
+        using AzureTextSegmentTranslator textSegmentTranslator = new();
+        return await ExecuteValidatedCommandAsync(
+                options,
+                standardOutput,
+                standardError,
+                translator,
+                textSegmentTranslator,
+                outputWriter,
+                createPreflightTempFile,
+                openExistingOutputForReplaceability,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static async ValueTask<int> ExecuteValidatedCommandAsync(
+        TranslationOptions options,
+        TextWriter standardOutput,
+        TextWriter standardError,
+        IDocumentTranslator translator,
+        ITextSegmentTranslator textSegmentTranslator,
+        OutputWriter outputWriter,
+        Func<string, FileStream> createPreflightTempFile,
+        Func<string, FileStream> openExistingOutputForReplaceability,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(standardOutput);
         ArgumentNullException.ThrowIfNull(standardError);
         ArgumentNullException.ThrowIfNull(translator);
+        ArgumentNullException.ThrowIfNull(textSegmentTranslator);
         ArgumentNullException.ThrowIfNull(outputWriter);
         ArgumentNullException.ThrowIfNull(createPreflightTempFile);
         ArgumentNullException.ThrowIfNull(openExistingOutputForReplaceability);
 
         if (options.TranslationRoute == TranslationRoute.MarkdownAware)
         {
-            await WriteMarkdownAwareNotImplementedErrorBestEffortAsync(standardError)
+            return await ExecuteMarkdownAwareValidatedCommandAsync(
+                    options,
+                    standardOutput,
+                    standardError,
+                    textSegmentTranslator,
+                    outputWriter,
+                    createPreflightTempFile,
+                    openExistingOutputForReplaceability,
+                    cancellationToken)
                 .ConfigureAwait(false);
+        }
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PreflightOutputPath(
+                options.OutputPath,
+                options.Force,
+                createPreflightTempFile,
+                openExistingOutputForReplaceability);
+        }
+        catch (OperationCanceledException)
+        {
+            await WriteOperationCanceledErrorBestEffortAsync(standardError).ConfigureAwait(false);
             return UnexpectedErrorExitCode;
+        }
+        catch (Exception ex) when (IsFileIoException(ex))
+        {
+            await WriteFileIoErrorBestEffortAsync(standardError, ex).ConfigureAwait(false);
+            return FileIoErrorExitCode;
         }
 
         FileStream inputStream;
@@ -241,28 +364,6 @@ internal static class Program
         }
         catch (Exception ex) when (IsFileIoException(ex))
         {
-            await WriteFileIoErrorBestEffortAsync(standardError, ex).ConfigureAwait(false);
-            return FileIoErrorExitCode;
-        }
-
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            PreflightOutputPath(
-                options.OutputPath,
-                options.Force,
-                createPreflightTempFile,
-                openExistingOutputForReplaceability);
-        }
-        catch (OperationCanceledException)
-        {
-            await inputStream.DisposeAsync().ConfigureAwait(false);
-            await WriteOperationCanceledErrorBestEffortAsync(standardError).ConfigureAwait(false);
-            return UnexpectedErrorExitCode;
-        }
-        catch (Exception ex) when (IsFileIoException(ex))
-        {
-            await inputStream.DisposeAsync().ConfigureAwait(false);
             await WriteFileIoErrorBestEffortAsync(standardError, ex).ConfigureAwait(false);
             return FileIoErrorExitCode;
         }
@@ -293,14 +394,6 @@ internal static class Program
         catch (AuthenticationFailedException)
         {
             await WriteCredentialErrorBestEffortAsync(standardError).ConfigureAwait(false);
-            return ServiceErrorExitCode;
-        }
-        catch (TextTranslationServiceException ex)
-        {
-            await WriteErrorLineBestEffortAsync(
-                    standardError,
-                    $"Error: Azure Text Translation service error: {ex.Message}")
-                .ConfigureAwait(false);
             return ServiceErrorExitCode;
         }
         catch (OperationCanceledException)
@@ -337,6 +430,108 @@ internal static class Program
         {
             await WriteUnexpectedErrorBestEffortAsync(standardError, ex).ConfigureAwait(false);
             return UnexpectedErrorExitCode;
+        }
+
+        try
+        {
+            await standardOutput
+                .WriteLineAsync("Translation completed.".AsMemory(), CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+        }
+
+        return SuccessExitCode;
+    }
+
+    private static async ValueTask<int> ExecuteMarkdownAwareValidatedCommandAsync(
+        TranslationOptions options,
+        TextWriter standardOutput,
+        TextWriter standardError,
+        ITextSegmentTranslator textSegmentTranslator,
+        OutputWriter outputWriter,
+        Func<string, FileStream> createPreflightTempFile,
+        Func<string, FileStream> openExistingOutputForReplaceability,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PreflightOutputPath(
+                options.OutputPath,
+                options.Force,
+                createPreflightTempFile,
+                openExistingOutputForReplaceability);
+        }
+        catch (OperationCanceledException)
+        {
+            await WriteOperationCanceledErrorBestEffortAsync(standardError).ConfigureAwait(false);
+            return UnexpectedErrorExitCode;
+        }
+        catch (Exception ex) when (IsFileIoException(ex))
+        {
+            await WriteFileIoErrorBestEffortAsync(standardError, ex).ConfigureAwait(false);
+            return FileIoErrorExitCode;
+        }
+
+        MarkdownTranslationCommand command = new(
+            MarkdownDocumentParser.CreateV1(),
+            textSegmentTranslator,
+            outputWriter);
+
+        MarkdownTranslationCommandResult result;
+        try
+        {
+            result = await command.ExecuteAsync(options, cancellationToken).ConfigureAwait(false);
+        }
+        catch (RequestFailedException ex)
+        {
+            await WriteErrorLineBestEffortAsync(
+                    standardError,
+                    $"Error: Azure service error ({ex.Status}, {ex.ErrorCode}).")
+                .ConfigureAwait(false);
+            return ServiceErrorExitCode;
+        }
+        catch (CredentialUnavailableException)
+        {
+            await WriteCredentialErrorBestEffortAsync(standardError).ConfigureAwait(false);
+            return ServiceErrorExitCode;
+        }
+        catch (AuthenticationFailedException)
+        {
+            await WriteCredentialErrorBestEffortAsync(standardError).ConfigureAwait(false);
+            return ServiceErrorExitCode;
+        }
+        catch (TextTranslationServiceException)
+        {
+            await WriteErrorLineBestEffortAsync(
+                    standardError,
+                    "Error: Azure Text Translation service error.")
+                .ConfigureAwait(false);
+            return ServiceErrorExitCode;
+        }
+        catch (MarkdownTranslationFileIoException ex)
+        {
+            await WriteFileIoErrorBestEffortAsync(standardError, ex).ConfigureAwait(false);
+            return FileIoErrorExitCode;
+        }
+        catch (OperationCanceledException)
+        {
+            await WriteOperationCanceledErrorBestEffortAsync(standardError).ConfigureAwait(false);
+            return UnexpectedErrorExitCode;
+        }
+        catch (Exception ex)
+        {
+            await WriteUnexpectedErrorBestEffortAsync(standardError, ex).ConfigureAwait(false);
+            return UnexpectedErrorExitCode;
+        }
+
+        if (!result.Success)
+        {
+            await WriteMarkdownDiagnosticsAsync(standardError, result.Diagnostics)
+                .ConfigureAwait(false);
+            return ValidationErrorExitCode;
         }
 
         try
@@ -479,13 +674,18 @@ internal static class Program
             .ConfigureAwait(false);
     }
 
-    private static async ValueTask WriteMarkdownAwareNotImplementedErrorBestEffortAsync(
-        TextWriter standardError)
+    private static async ValueTask WriteMarkdownDiagnosticsAsync(
+        TextWriter standardError,
+        IReadOnlyCollection<MarkdownDiagnostic> diagnostics)
     {
-        await WriteErrorLineBestEffortAsync(
-                standardError,
-                "Error: Markdown-aware translation is not implemented yet.")
-            .ConfigureAwait(false);
+        foreach (MarkdownDiagnostic diagnostic in diagnostics)
+        {
+            string location = diagnostic.Line is null ? string.Empty : $" line {diagnostic.Line}:";
+            await WriteErrorLineBestEffortAsync(
+                    standardError,
+                    $"Error: Markdown-aware {diagnostic.Kind}{location} {diagnostic.Message}")
+                .ConfigureAwait(false);
+        }
     }
 
     private static async ValueTask WriteUnexpectedErrorBestEffortAsync(
