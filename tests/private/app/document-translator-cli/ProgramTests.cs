@@ -3659,10 +3659,21 @@ public sealed class ProgramTests
         Assert.Equal("old content", File.ReadAllText(outputPath));
         Assert.Equal(string.Empty, standardOutput.ToString());
         Assert.Equal(expectedError + Environment.NewLine, standardError.ToString());
-        Assert.DoesNotContain(
-            exception.Message,
-            standardError.ToString(),
-            StringComparison.Ordinal);
+        if (exception is TextTranslationServiceException)
+        {
+            Assert.Contains(
+                exception.Message,
+                standardError.ToString(),
+                StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.DoesNotContain(
+                exception.Message,
+                standardError.ToString(),
+                StringComparison.Ordinal);
+        }
+
         Assert.DoesNotContain(
             "secret",
             standardError.ToString(),
@@ -3954,8 +3965,10 @@ public sealed class ProgramTests
     {
         yield return
         [
-            new TextTranslationServiceException("service unavailable with secret-token"),
-            "Error: Azure Text Translation service error.",
+            new TextTranslationServiceException(
+                "Azure Text Translation service returned malformed JSON."),
+            "Error: Azure Text Translation service error: "
+                + "Azure Text Translation service returned malformed JSON.",
         ];
         yield return
         [

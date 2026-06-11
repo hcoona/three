@@ -531,11 +531,11 @@ internal static class Program
             await WriteCredentialErrorBestEffortAsync(standardError).ConfigureAwait(false);
             return ServiceErrorExitCode;
         }
-        catch (TextTranslationServiceException)
+        catch (TextTranslationServiceException ex)
         {
             await WriteErrorLineBestEffortAsync(
                     standardError,
-                    "Error: Azure Text Translation service error.")
+                    $"Error: Azure Text Translation service error: {ex.Message}")
                 .ConfigureAwait(false);
             return ServiceErrorExitCode;
         }
