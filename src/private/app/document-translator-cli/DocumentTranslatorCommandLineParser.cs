@@ -25,6 +25,8 @@ internal static class DocumentTranslatorCommandLineParser
         + "  --auth-mode <api-key|entra-id>    Authentication mode. Defaults to api-key.\n"
         + "  --endpoint <uri>                  Azure Document Translation endpoint.\n"
         + "  --key <api-key>                   Azure Translator API key.\n"
+        + "  --region <region>                 API-key text translation resource region.\n"
+        + "  --markdown-mode <auto|aware|legacy> Markdown routing mode. Defaults to auto.\n"
         + "  --force                           Replace an existing output file.\n"
         + "  -h, --help                        Show help.";
 
@@ -68,10 +70,14 @@ internal static class DocumentTranslatorCommandLineParser
             parseResult.GetValue(Definition.AuthModeOption),
             parseResult.GetValue(Definition.EndpointOption),
             parseResult.GetValue(Definition.ApiKeyOption),
+            parseResult.GetValue(Definition.MarkdownModeOption),
             parseResult.GetValue(Definition.ForceOption),
             IsSpecified(parseResult, Definition.TargetLanguageOption),
             IsSpecified(parseResult, Definition.AuthModeOption),
-            IsSpecified(parseResult, Definition.EndpointOption));
+            IsSpecified(parseResult, Definition.EndpointOption),
+            IsSpecified(parseResult, Definition.MarkdownModeOption),
+            parseResult.GetValue(Definition.RegionOption),
+            IsSpecified(parseResult, Definition.RegionOption));
         return new CommandLineParseResult(options, [], ShowHelp: false, HelpText: string.Empty);
     }
 
@@ -114,7 +120,7 @@ internal static class DocumentTranslatorCommandLineParser
         new(EmptyOptions(), [error], ShowHelp: false, HelpText: string.Empty);
 
     private static RawCommandLineOptions EmptyOptions() =>
-        new(null, null, null, null, null, null, Force: false);
+        new(null, null, null, null, null, null, null, Force: false);
 
     private static CommandLineDefinition CreateDefinition()
     {
@@ -148,6 +154,16 @@ internal static class DocumentTranslatorCommandLineParser
             Description = "Azure Translator API key.",
             HelpName = "api-key",
         };
+        Option<string> regionOption = new("--region")
+        {
+            Description = "API-key text translation resource region.",
+            HelpName = "region",
+        };
+        Option<string> markdownModeOption = new("--markdown-mode")
+        {
+            Description = "Markdown routing mode. Defaults to auto.",
+            HelpName = "auto|aware|legacy",
+        };
         Option<bool> forceOption = new("--force")
         {
             Description = "Replace an existing output file.",
@@ -163,6 +179,8 @@ internal static class DocumentTranslatorCommandLineParser
         translateCommand.Add(authModeOption);
         translateCommand.Add(endpointOption);
         translateCommand.Add(apiKeyOption);
+        translateCommand.Add(regionOption);
+        translateCommand.Add(markdownModeOption);
         translateCommand.Add(forceOption);
 
         RootCommand rootCommand = new("Translate one local document.")
@@ -179,6 +197,8 @@ internal static class DocumentTranslatorCommandLineParser
             "--auth-mode",
             "--endpoint",
             "--key",
+            "--region",
+            "--markdown-mode",
             "--force",
             "--help",
             "-h",
@@ -192,6 +212,8 @@ internal static class DocumentTranslatorCommandLineParser
             authModeOption,
             endpointOption,
             apiKeyOption,
+            regionOption,
+            markdownModeOption,
             forceOption,
             knownOptionNames);
     }
@@ -205,6 +227,8 @@ internal static class DocumentTranslatorCommandLineParser
         Option<string> AuthModeOption,
         Option<string> EndpointOption,
         Option<string> ApiKeyOption,
+        Option<string> RegionOption,
+        Option<string> MarkdownModeOption,
         Option<bool> ForceOption,
         IReadOnlySet<string> KnownOptionNames);
 }

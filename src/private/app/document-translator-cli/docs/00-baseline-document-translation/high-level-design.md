@@ -71,6 +71,7 @@ document-translator translate \
   [--auth-mode <api-key|entra-id>] \
   [--endpoint <uri>] \
   [--key <api-key>] \
+  [--region <region>] \
   [--force]
 ```
 
@@ -81,6 +82,7 @@ Environment fallback:
 | `--endpoint`        | `AZURE_TRANSLATOR_ENDPOINT`  | Yes                              |
 | `--auth-mode`       | `AZURE_TRANSLATOR_AUTH_MODE` | No; defaults to `api-key`        |
 | `--key`             | `AZURE_TRANSLATOR_KEY`       | Only when auth mode is `api-key` |
+| `--region`          | `AZURE_TRANSLATOR_REGION`    | No; API-key text backend only    |
 | `--target-language` | None                         | Yes                              |
 | `--input`           | None                         | Yes                              |
 | `--output`          | None                         | Yes                              |
@@ -92,6 +94,7 @@ The endpoint value must be the root custom-domain Document Translation endpoint:
 Authentication mode behavior:
 
 - `api-key` uses `AzureKeyCredential` and requires `--key` or `AZURE_TRANSLATOR_KEY`.
+- `api-key` includes `Ocp-Apim-Subscription-Region` for text translation when `--region` or `AZURE_TRANSLATOR_REGION` is configured; legacy Document Translation ignores region.
 - `entra-id` uses `DefaultAzureCredential` from Azure Identity and does not require an API key.
 - If `--auth-mode` is omitted, the CLI uses `api-key`.
 

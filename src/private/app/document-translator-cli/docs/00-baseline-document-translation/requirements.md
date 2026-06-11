@@ -41,6 +41,7 @@ Configuration comes from environment variables by default:
 - `AZURE_TRANSLATOR_ENDPOINT`
 - `AZURE_TRANSLATOR_AUTH_MODE`, optional, either `api-key` or `entra-id`, defaulting to `api-key`
 - `AZURE_TRANSLATOR_KEY`, required only when using `api-key` authentication
+- `AZURE_TRANSLATOR_REGION`, optional, used only by the API-key text translation backend when provided
 
 The endpoint must be the root custom-domain Document Translation endpoint: `https://<resource-name>.cognitiveservices.azure.com`. The legacy SDK example input with a trailing `/translator` path is accepted for compatibility and normalized internally to the root endpoint.
 
@@ -55,6 +56,7 @@ document-translator translate \
   --target-language zh-Hans \
   --auth-mode api-key \
   --endpoint https://<resource-name>.cognitiveservices.azure.com \
+  --region <region> \
   --key <api-key>
 ```
 
@@ -88,6 +90,7 @@ document-translator translate \
 15. The CLI supports both API key authentication and Entra ID authentication in the MVP.
 16. API key authentication requires an API key from `--key` or `AZURE_TRANSLATOR_KEY`.
 17. Entra ID authentication uses Azure Identity's default credential chain and does not require an API key.
+18. API key text translation sends `Ocp-Apim-Subscription-Region` when `--region` or `AZURE_TRANSLATOR_REGION` is configured; legacy Document Translation ignores region.
 
 ## Non-Functional Requirements
 

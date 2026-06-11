@@ -5,6 +5,8 @@ internal static class TranslationOptionResolver
     public const string EndpointEnvironmentVariable = "AZURE_TRANSLATOR_ENDPOINT";
     public const string AuthModeEnvironmentVariable = "AZURE_TRANSLATOR_AUTH_MODE";
     public const string ApiKeyEnvironmentVariable = "AZURE_TRANSLATOR_KEY";
+    public const string RegionEnvironmentVariable = "AZURE_TRANSLATOR_REGION";
+    public const string MarkdownModeEnvironmentVariable = "DOCUMENT_TRANSLATOR_MARKDOWN_MODE";
 
     public static RawTranslationOptions Resolve(
         RawCommandLineOptions commandLineOptions,
@@ -24,7 +26,9 @@ internal static class TranslationOptionResolver
             FirstConfigured(
                 commandLineOptions.ApiKey,
                 getEnvironmentVariable(ApiKeyEnvironmentVariable)),
-            commandLineOptions.Force);
+            ResolveMarkdownMode(commandLineOptions, getEnvironmentVariable),
+            commandLineOptions.Force,
+            ResolveRegion(commandLineOptions, getEnvironmentVariable));
     }
 
     private static string ResolveAuthMode(
@@ -44,6 +48,26 @@ internal static class TranslationOptionResolver
             ? NormalizeCommandLineNonSecretScalar(commandLineOptions.Endpoint, isSpecified: true)
             : NormalizeEnvironmentNonSecretScalar(
                 getEnvironmentVariable(EndpointEnvironmentVariable));
+
+    private static string? ResolveRegion(
+        RawCommandLineOptions commandLineOptions,
+        Func<string, string?> getEnvironmentVariable) =>
+        commandLineOptions.RegionSpecified
+            ? NormalizeCommandLineNonSecretScalar(commandLineOptions.Region, isSpecified: true)
+            : NormalizeEnvironmentNonSecretScalar(
+                getEnvironmentVariable(RegionEnvironmentVariable));
+
+    private static string ResolveMarkdownMode(
+        RawCommandLineOptions commandLineOptions,
+        Func<string, string?> getEnvironmentVariable) =>
+        commandLineOptions.MarkdownModeSpecified
+            ? NormalizeCommandLineNonSecretScalar(
+                commandLineOptions.MarkdownMode,
+                isSpecified: true)
+                ?? string.Empty
+            : NormalizeEnvironmentNonSecretScalar(
+                getEnvironmentVariable(MarkdownModeEnvironmentVariable))
+                ?? "auto";
 
     private static string? FirstConfigured(string? primary, string? fallback) =>
         primary is null ? fallback : primary;

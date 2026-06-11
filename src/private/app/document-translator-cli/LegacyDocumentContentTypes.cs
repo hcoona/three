@@ -1,6 +1,6 @@
 namespace Hcoona.DocumentTranslatorCli;
 
-internal static class DocumentTranslationContentTypes
+internal static class LegacyDocumentContentTypes
 {
     private static readonly Dictionary<string, string> ContentTypes =
         new(StringComparer.OrdinalIgnoreCase)

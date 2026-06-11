@@ -77,6 +77,7 @@ document-translator translate \
   [--auth-mode <api-key|entra-id>] \
   [--endpoint <uri>] \
   [--key <api-key>] \
+  [--region <region>] \
   [--force]
 ```
 
@@ -90,6 +91,7 @@ Define the documented options exactly:
 | `--auth-mode`       | `api-key` or `entra-id`; defaults to `api-key`.      |
 | `--endpoint`        | Azure Document Translation endpoint.                 |
 | `--key`             | Azure Translator API key for API key authentication. |
+| `--region`          | API-key text translation resource region.            |
 | `--force`           | Allows replacing an existing output file.            |
 
 Resolve configuration with this precedence:
@@ -105,6 +107,7 @@ Use these environment variables:
 | `--endpoint`  | `AZURE_TRANSLATOR_ENDPOINT`  | Yes                               |
 | `--auth-mode` | `AZURE_TRANSLATOR_AUTH_MODE` | No; default is `api-key`          |
 | `--key`       | `AZURE_TRANSLATOR_KEY`       | Only for `api-key` authentication |
+| `--region`    | `AZURE_TRANSLATOR_REGION`    | No; API-key text backend only     |
 
 Keep command parsing separate from command execution so tests can cover parse failures, option resolution, validation, and execution independently.
 

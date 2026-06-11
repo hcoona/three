@@ -7,6 +7,10 @@ internal sealed record TranslationOptions(
     Uri Endpoint,
     AuthMode AuthMode,
     string? ApiKey,
+    MarkdownMode MarkdownMode,
+    TranslationRoute TranslationRoute,
+    bool IsMarkdownExtension,
     bool Force,
     string OriginalFileName,
-    string ContentType);
+    string? LegacyDocumentContentType,
+    string? Region = null);
