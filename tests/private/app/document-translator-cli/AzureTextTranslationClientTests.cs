@@ -401,7 +401,7 @@ public sealed class AzureTextTranslationClientTests
             Force: false,
             OriginalFileName: "source.md",
             LegacyDocumentContentType: null,
-            region);
+            Region: region);
 
     private static HttpResponseMessage JsonResponse(string json) =>
         new(HttpStatusCode.OK)
