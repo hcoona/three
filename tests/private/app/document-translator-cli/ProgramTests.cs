@@ -3673,7 +3673,6 @@ public sealed class ProgramTests
                 standardError.ToString(),
                 StringComparison.Ordinal);
         }
-
         Assert.DoesNotContain(
             "secret",
             standardError.ToString(),
