@@ -63,7 +63,7 @@ jobs:
           python-version: '3.14'
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@a99ac844649df2596b52b4db087cfa0881b172af # v1.311.0
+        uses: ruby/setup-ruby@12fd324f1d0b43274fdc8130f6980590a667c455 # v1.312.0
         with:
           ruby-version: '4.0.5'
           bundler-cache: true
@@ -270,7 +270,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Ruby
-        uses: ruby/setup-ruby@a99ac844649df2596b52b4db087cfa0881b172af # v1.311.0
+        uses: ruby/setup-ruby@12fd324f1d0b43274fdc8130f6980590a667c455 # v1.312.0
         with:
           ruby-version: '4.0.5'
 
