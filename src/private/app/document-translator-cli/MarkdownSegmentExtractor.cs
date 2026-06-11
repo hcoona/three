@@ -298,6 +298,7 @@ internal static class MarkdownSegmentExtractor
     private sealed class ProtectedRangeCursor
     {
         private readonly TextRange[] ranges;
+        private int currentIndex;
 
         public ProtectedRangeCursor(IReadOnlyList<ProtectedSlice> protectedSlices)
         {
@@ -312,30 +313,41 @@ internal static class MarkdownSegmentExtractor
         public IEnumerable<TextRange> GetUnprotectedRanges(TextRange candidateRange)
         {
             int currentStart = candidateRange.Start;
-            foreach (TextRange protectedRange in ranges)
+            int index = currentIndex;
+            while (index < ranges.Length && ranges[index].End <= candidateRange.Start)
             {
-                if (!RangesOverlap(candidateRange, protectedRange))
-                {
-                    if (protectedRange.Start >= candidateRange.End)
-                    {
-                        break;
-                    }
-
-                    continue;
-                }
-
-                if (protectedRange.Start > currentStart)
-                {
-                    yield return new TextRange(currentStart, protectedRange.Start - currentStart);
-                }
-
-                currentStart = Math.Max(currentStart, protectedRange.End);
-                if (currentStart >= candidateRange.End)
-                {
-                    yield break;
-                }
+                index++;
             }
 
+            while (index < ranges.Length)
+            {
+                TextRange protectedRange = ranges[index];
+                if (protectedRange.Start >= candidateRange.End)
+                {
+                    break;
+                }
+
+                if (RangesOverlap(candidateRange, protectedRange))
+                {
+                    if (protectedRange.Start > currentStart)
+                    {
+                        yield return new TextRange(
+                            currentStart,
+                            protectedRange.Start - currentStart);
+                    }
+
+                    currentStart = Math.Max(currentStart, protectedRange.End);
+                    if (currentStart >= candidateRange.End)
+                    {
+                        currentIndex = index;
+                        yield break;
+                    }
+                }
+
+                index++;
+            }
+
+            currentIndex = index;
             yield return new TextRange(currentStart, candidateRange.End - currentStart);
         }
     }

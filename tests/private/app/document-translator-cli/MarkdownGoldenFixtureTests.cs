@@ -483,7 +483,7 @@ public sealed class MarkdownGoldenFixtureTests
     }
 
     private static void AssertSucceeded(IReadOnlyList<MarkdownDiagnostic> diagnostics) =>
-        Assert.Empty(diagnostics.Select(static diagnostic => diagnostic.Message));
+        Assert.Empty(diagnostics);
 
     public sealed record GoldenFixture(
         string Name,

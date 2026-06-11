@@ -26,7 +26,6 @@ internal static class Program
         try
         {
             IDocumentTranslator translator = new AzureDocumentTranslator();
-            using AzureTextSegmentTranslator textSegmentTranslator = new();
             TextWriter standardOutput = Console.Out;
             TextWriter standardError = Console.Error;
             return RunAsync(
@@ -39,7 +38,7 @@ internal static class Program
                         output,
                         standardError,
                         translator,
-                        textSegmentTranslator,
+                        AtomicOutputWriter.WriteAsync,
                         token),
                     cancellationTokenSource.Token)
                 .AsTask()
@@ -198,14 +197,30 @@ internal static class Program
         OutputWriter outputWriter,
         CancellationToken cancellationToken)
     {
-        using AzureTextSegmentTranslator textSegmentTranslator = new();
+        if (options.TranslationRoute == TranslationRoute.MarkdownAware)
+        {
+            using AzureTextSegmentTranslator textSegmentTranslator = new();
+            return await ExecuteMarkdownAwareValidatedCommandAsync(
+                    options,
+                    standardOutput,
+                    standardError,
+                    textSegmentTranslator,
+                    outputWriter,
+                    CreatePreflightTempFile,
+                    OpenExistingOutputForReplaceability,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         return await ExecuteValidatedCommandAsync(
                 options,
                 standardOutput,
                 standardError,
                 translator,
-                textSegmentTranslator,
+                NoOpTextSegmentTranslator.Instance,
                 outputWriter,
+                CreatePreflightTempFile,
+                OpenExistingOutputForReplaceability,
                 cancellationToken)
             .ConfigureAwait(false);
     }
@@ -239,13 +254,12 @@ internal static class Program
         Func<string, FileStream> createPreflightTempFile,
         CancellationToken cancellationToken)
     {
-        using AzureTextSegmentTranslator textSegmentTranslator = new();
         return await ExecuteValidatedCommandAsync(
                 options,
                 standardOutput,
                 standardError,
                 translator,
-                textSegmentTranslator,
+                NoOpTextSegmentTranslator.Instance,
                 outputWriter,
                 createPreflightTempFile,
                 cancellationToken)
@@ -283,13 +297,27 @@ internal static class Program
         Func<string, FileStream> openExistingOutputForReplaceability,
         CancellationToken cancellationToken)
     {
-        using AzureTextSegmentTranslator textSegmentTranslator = new();
+        if (options.TranslationRoute == TranslationRoute.MarkdownAware)
+        {
+            using AzureTextSegmentTranslator textSegmentTranslator = new();
+            return await ExecuteMarkdownAwareValidatedCommandAsync(
+                    options,
+                    standardOutput,
+                    standardError,
+                    textSegmentTranslator,
+                    outputWriter,
+                    createPreflightTempFile,
+                    openExistingOutputForReplaceability,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         return await ExecuteValidatedCommandAsync(
                 options,
                 standardOutput,
                 standardError,
                 translator,
-                textSegmentTranslator,
+                NoOpTextSegmentTranslator.Instance,
                 outputWriter,
                 createPreflightTempFile,
                 openExistingOutputForReplaceability,
@@ -738,6 +766,26 @@ internal static class Program
 
     private static bool IsOutputChannelException(Exception exception) =>
         exception is IOException or ObjectDisposedException or InvalidOperationException;
+
+    private sealed class NoOpTextSegmentTranslator : ITextSegmentTranslator
+    {
+        public static readonly NoOpTextSegmentTranslator Instance = new();
+
+        private NoOpTextSegmentTranslator()
+        {
+        }
+
+        public ValueTask<IReadOnlyList<string>> TranslateAsync(
+            TranslationOptions options,
+            IReadOnlyList<TextSegmentTranslationRequest> segments,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(options);
+            ArgumentNullException.ThrowIfNull(segments);
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult<IReadOnlyList<string>>([]);
+        }
+    }
 
     private static void TryDelete(string path)
     {
