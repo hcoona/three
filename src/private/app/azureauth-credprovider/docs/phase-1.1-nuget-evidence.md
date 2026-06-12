@@ -12,13 +12,13 @@ Owner: **ADAPTER-NUGET**
 
 ## Gate Status and Decision
 
-| Field                      | Decision                                                                                                                                                                         |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Gate status                | Passed for Phase 1.1 evidence gathering.                                                                                                                                         |
-| Decision                   | Implement a NuGet plugin-shaped adapter that supports NuGet protocol plugin mode and delegates credential acquisition to core.                                                   |
-| Evidence scope             | Local launch probe covers `dotnet restore` only. Upstream source and documentation cover the reference provider's handler shape and documented `netcore`/`netfx` install layout. |
-| Implementation may proceed | Yes, for NuGet-dependent design and later Phase 10 implementation after normal upstream contract sequencing.                                                                     |
-| Phase 1R routing           | Not entered. If later mandatory evidence disproves this launch or runtime model, dependent NuGet work must stop and enter 1R.                                                    |
+| Field                      | Decision                                                                                                                                                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gate status                | Passed for Phase 1.1 evidence gathering.                                                                                                                                            |
+| Decision                   | Implement a NuGet plugin-shaped adapter that supports NuGet protocol plugin mode and delegates credential acquisition to core.                                                      |
+| Evidence scope             | Records upstream NuGet credential-provider discovery evidence. Local launch probe covers `dotnet restore` only; Phase 4D MVP uses the `netcore` convention path for .NET 10/dotnet. |
+| Implementation may proceed | Yes, for NuGet-dependent design and later Phase 10 implementation after normal upstream contract sequencing.                                                                        |
+| Phase 1R routing           | Not entered. If later mandatory evidence disproves this launch or runtime model, dependent NuGet work must stop and enter 1R.                                                       |
 
 ## Upstream Snapshot
 
@@ -94,6 +94,12 @@ Upstream source and documentation inspected:
 - [VstsSessionTokenClient.cs][session-token-client]
     - Restricts SPS token exchange to allowed Azure DevOps SPS hostnames before
       posting a bearer token.
+
+Phase 4D MVP scope note: the upstream `netcore`/`netfx` layout above is recorded as
+NuGet discovery evidence. The MVP implementation uses only the conventional
+`netcore` plugin path for .NET 10/dotnet discovery. `netfx` discovery and legacy
+NuGet.exe/MSBuild/Visual Studio host discovery is deferred post-MVP unless later
+explicitly added.
 
 ## Reproducible Local Probe
 
@@ -279,15 +285,15 @@ Accepted constraints for later implementation:
 
 1. A NuGet adapter artifact must include a plugin-shaped entry point that supports
    `-Plugin`.
-2. `dotnet restore` scenarios require a `netcore` plugin layout.
+2. Phase 4D MVP targets .NET 10/dotnet restore discovery through a `netcore`
+   plugin layout.
 3. NuGet.exe and MSBuild scenarios require the `netfx` plugin layout according to
-   upstream documentation, but still require later execution validation for this
-   product.
-4. Conventional user plugin locations are the preferred default:
-    - Windows: `%UserProfile%\.nuget\plugins\netcore\...` and
-      `%UserProfile%\.nuget\plugins\netfx\...`.
-    - Linux/macOS: `$HOME/.nuget/plugins/netcore/...`, with `netfx` only where the
-      target client can consume it.
+   upstream documentation, but legacy NuGet.exe/MSBuild/Visual Studio host
+   discovery is deferred post-MVP unless later explicitly added and validated.
+4. Conventional user plugin locations are the preferred default for MVP `netcore`
+   discovery:
+    - Windows: `%UserProfile%\.nuget\plugins\netcore\...`.
+    - Linux/macOS: `$HOME/.nuget/plugins/netcore/...`.
 5. `NUGET_PLUGIN_PATHS` must be treated as an override or diagnostic input, not as the
    normal persistent setup path.
 6. Linux self-contained artifacts may require native dependencies. Runtime-dependent

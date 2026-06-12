@@ -39,7 +39,7 @@ The human-facing CLI owns:
 
 Protocol adapters are installed and configured by the CLI, but they are not the primary interface users interact with.
 
-The design should explicitly evaluate AzureAuth, also known as `microsoft-authentication-cli`, as a candidate identity substrate. AzureAuth is an MSAL-based CLI for Microsoft Entra authentication and includes Azure DevOps token-oriented commands. If reused, it should sit below the shared credential core or behind a well-defined identity-provider abstraction; it should not replace the Git, NuGet, Python keyring, or npm protocol adapters.
+Phase 1.2 selected direct MSAL integration as the current identity path. AzureAuth (`microsoft-authentication-cli`) remains a deferred optional helper/backend candidate if revisited later, but it is not a required runtime substrate and it does not replace the Git, NuGet, Python keyring, or npm protocol adapters.
 
 ## High-Level Components
 
@@ -80,7 +80,7 @@ The shared core owns credential behavior that must not diverge between ecosystem
 - Azure DevOps host and feed canonicalization,
 - tenant and account selection,
 - interactive browser or device-code login,
-- non-interactive service identity flows,
+- Phase 4D MVP identity-flow policy for interactive browser, device code, narrow explicit PAT compatibility, and Azure Pipelines system access token; generic non-interactive service identity flows such as service principal, managed identity, and workload identity federation are deferred unless explicitly future-labeled,
 - token exchange and refresh,
 - secure credential cache access,
 - cache partitioning,
@@ -88,7 +88,7 @@ The shared core owns credential behavior that must not diverge between ecosystem
 - policy enforcement,
 - diagnostic event generation.
 
-The shared core may use AzureAuth (`microsoft-authentication-cli`) for Microsoft Entra token acquisition and MSAL cache reuse if it satisfies the required token audiences, non-interactive behavior, installation model, logging policy, and protocol-adapter isolation constraints. The design should also permit a direct MSAL integration if shelling out to AzureAuth would make protocol adapters harder to secure or test.
+The shared core uses direct MSAL integration for Microsoft Entra token acquisition in the current plan. AzureAuth (`microsoft-authentication-cli`) is deferred and may be reconsidered only as an optional helper/backend candidate behind the same identity-provider abstraction if future requirements justify it.
 
 The core must not assume a single protocol output format. Protocol adapters are responsible for host-tool input and output.
 
@@ -115,16 +115,36 @@ git-credential-<helper-name> erase
 
 The adapter reads credential records from stdin and writes only Git credential fields to stdout. It delegates account selection and token acquisition to the shared core.
 
-Recommended configuration:
+Recommended resulting configuration:
 
 ```text
-git config --global credential.helper <helper-name>
-git config --global credential.https://dev.azure.com.useHttpPath true
+[credential]
+  helper = <helper-name>
+[credential "https://dev.azure.com"]
+  useHttpPath = true
 ```
+
+`configure git` must not shell out to `git config --global` to apply these
+settings. The product CLI applies them by asking ConfigurationManager or the Git
+configuration writer to write the selected user Git configuration file directly,
+including ownership metadata, dry-run equivalence, conflict handling, and
+rollback/removal behavior. The user Git configuration target follows Git's
+official global target selection: `~/.gitconfig` when it exists, otherwise the
+existing XDG Git config file, and otherwise `~/.gitconfig`. AzureAuth, if
+reused, remains only an identity-acquisition substrate behind the shared core
+abstraction, not the runtime component that mutates Git configuration.
 
 The `useHttpPath` setting is required for `dev.azure.com` because the organization is in the URL path. Legacy `<org>.visualstudio.com` remotes carry the organization in the host name and do not require the same setting.
 
-The angle-bracketed helper name is a substitution placeholder. The configuration command should avoid shell snippets as the default. Shell snippets are useful for development, but they are harder to quote safely on Windows and less reliable in GUI Git clients. The installer must either place `git-credential-<helper-name>` where Git itself can discover it or configure a carefully quoted absolute helper path. `doctor` should validate helper discovery by invoking Git, not just by checking the current shell's `PATH`.
+The angle-bracketed helper name is a substitution placeholder. Any equivalent
+`git config --global` command shown in user guidance is illustrative of the
+resulting file content only, not the implementation mechanism. The configuration
+writer should avoid shell snippets as the default. Shell snippets are useful for
+development, but they are harder to quote safely on Windows and less reliable in
+GUI Git clients. The installer must either place `git-credential-<helper-name>`
+where Git itself can discover it or configure a carefully quoted absolute helper
+path. `doctor` should validate helper discovery by invoking Git, not just by
+checking the current shell's `PATH`.
 
 ## NuGet Adapter
 
@@ -143,20 +163,20 @@ The NuGet adapter must:
 - respect non-interactive restore,
 - emit only protocol-valid content to stdout,
 - route diagnostics safely,
-- support dotnet CLI restore scenarios,
-- support Visual Studio/MSBuild/NuGet.exe scenarios where required by project scope.
+- support Phase 4D MVP dotnet CLI restore scenarios through NuGet `netcore` convention discovery,
+- keep Visual Studio/MSBuild/NuGet.exe (`netfx`) scenarios as deferred post-MVP scope unless explicitly added later.
 
 NuGet discovery options should be documented and diagnosed explicitly:
 
 | Mode                 | Shape                                                                                   | Operational note                                                                               |
 | -------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | Direct plugin path   | Full path to the plugin entry point                                                     | Advanced override; cannot include extra subcommand arguments; can shadow convention discovery. |
-| Convention discovery | `.nuget/plugins/netcore/<name>/<name>.dll` and `.nuget/plugins/netfx/<name>/<name>.exe` | Preferred for broad developer-machine compatibility.                                           |
+| Convention discovery | `.nuget/plugins/netcore/<name>/<name>.dll` and `.nuget/plugins/netfx/<name>/<name>.exe` | `netcore` is the Phase 4D MVP default; `netfx` remains deferred post-MVP compatibility scope.  |
 | PATH discovery       | `nuget-plugin-*` executable where supported                                             | Still must enter NuGet plugin mode and speak the NuGet plugin protocol.                        |
 
-Default setup should prefer conventional plugin discovery. `NUGET_PLUGIN_PATHS` should remain an advanced diagnostic or explicit override path, not a global default, because mixed `dotnet` and NuGet.exe/MSBuild environments may require different plugin shapes.
+Default setup should prefer conventional plugin discovery. In Phase 4D MVP this means the `netcore` convention path for `dotnet` restore. `NUGET_PLUGIN_PATHS` and `NUGET_NETCORE_PLUGIN_PATHS` are optional process-scoped diagnostic or explicit temporary override paths and must not be persisted as user-global or machine-global defaults by MVP configuration flows.
 
-Interactive behavior is controlled by the invoking NuGet client. `dotnet restore` should require `--interactive` before the plugin initiates first-time user interaction. MSBuild restore should require `/p:NuGetInteractive=true`. NuGet.exe may prompt by default. The plugin must honor NuGet protocol `NonInteractive` and `CanShowDialog` values and must not prompt or block when `NonInteractive` is true.
+Interactive behavior is controlled by the invoking NuGet client. `dotnet restore` should require `--interactive` before the plugin initiates first-time user interaction. If deferred `netfx` support is later enabled, MSBuild restore should require `/p:NuGetInteractive=true` and NuGet.exe behavior should follow the invoking client's interactive policy. The plugin must honor NuGet protocol `NonInteractive` and `CanShowDialog` values and must not prompt or block when `NonInteractive` is true.
 
 ## Python Adapter
 
@@ -165,7 +185,7 @@ Python requires two adapter shapes for full coverage:
 1. A Python keyring backend package for twine and pip import mode.
 2. A `keyring` executable-compatible shim for uv and pip subprocess mode.
 
-The Python keyring backend should be intentionally thin. It should delegate credential acquisition to the shared core through an absolute helper path, a signed local broker, or a small trusted library boundary. It should not import a large credential implementation into arbitrary project virtual environments.
+The Python keyring backend should be intentionally thin. It should delegate credential acquisition to a product-owned helper through an absolute path and validate helper ownership and integrity before invocation. It should not import a large credential implementation into arbitrary project virtual environments.
 
 The backend package must be available in the same Python environment as the tool that imports keyring. `configure python` and `doctor` should account for active virtual environments, pipx-installed twine, tox/nox environments, and isolated CI environments. A unified CLI alone cannot satisfy twine because twine imports Python keyring rather than invoking an arbitrary external subcommand.
 

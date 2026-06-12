@@ -166,11 +166,10 @@ ecosystems:
 - Secret redaction.
 - Diagnostic event production.
 
-The core may call AzureAuth (`microsoft-authentication-cli`) behind an identity
-provider abstraction if that integration satisfies the required token audiences,
-non-interactive behavior, installation model, logging behavior, and adapter
-isolation constraints. If those constraints cannot be met, the same abstraction
-must permit direct MSAL integration without changing adapter contracts.
+The core uses direct MSAL integration for the current product phase. AzureAuth
+(`microsoft-authentication-cli`) is deferred and may be reconsidered only as an
+optional helper/backend candidate behind the same identity provider abstraction
+if future requirements justify it.
 
 ### Core Submodules
 
@@ -406,15 +405,29 @@ The Git adapter is installed as:
 git-credential-<helper-name>
 ```
 
-The default Git configuration is:
+The default resulting Git configuration is:
 
 ```text
-git config --global credential.helper <helper-name>
-git config --global credential.https://dev.azure.com.useHttpPath true
+[credential]
+  helper = <helper-name>
+[credential "https://dev.azure.com"]
+  useHttpPath = true
 ```
 
 `<helper-name>` is a substitution placeholder. The installed helper executable
 must be discoverable by Git itself, not only by the current shell.
+
+`configure git` must apply these settings by asking ConfigurationManager or the
+Git configuration writer to directly write the selected user Git configuration
+file. It must not invoke `git config --global` as its writer implementation.
+Target selection must match Git's official global target behavior: use
+`~/.gitconfig` if it exists, otherwise use the existing XDG Git config file,
+otherwise create/use `~/.gitconfig`. ConfigurationManager owns dry-run
+rendering, ownership metadata, conflict handling, rollback, and removal for
+these Git writes. CLI documentation may show `git config --global` only as an
+illustrative equivalent for the resulting configuration, not as the mechanism
+used by the product CLI. AzureAuth is not the runtime component that writes Git
+configuration.
 
 ### Supported Operations
 
@@ -484,9 +497,11 @@ standard subcommand such as:
 <primary-cli> nuget plugin
 ```
 
-Default setup uses conventional NuGet plugin installation locations for the
-relevant client family. `NUGET_PLUGIN_PATHS` is an explicit override and
-diagnostic mechanism, not the default global configuration.
+Default setup for Phase 4D MVP uses conventional NuGet `netcore` plugin
+installation for `dotnet` restore. `NUGET_PLUGIN_PATHS` and
+`NUGET_NETCORE_PLUGIN_PATHS` are optional process-scoped explicit override and
+diagnostic mechanisms, not default global configuration, and must not be
+persisted by MVP configure flows.
 
 ### Plugin Modes
 
@@ -525,8 +540,10 @@ NuGet source, official documentation, or a minimal plugin prototype before
 locking adapter behavior:
 
 - `dotnet restore` uses `--interactive` for first-time user interaction.
-- MSBuild restore uses `/p:NuGetInteractive=true`.
-- NuGet.exe behavior may allow prompting depending on the invoking client.
+- MSBuild restore uses `/p:NuGetInteractive=true` when deferred `netfx` support
+  is implemented.
+- NuGet.exe behavior may allow prompting depending on the invoking client when
+  deferred `netfx` support is implemented.
 - Protocol `NonInteractive` and dialog capability values are expected to be
   authoritative for adapter behavior.
 
@@ -535,15 +552,16 @@ the required explicit interactive invocation through NuGet-compatible channels.
 
 ### Runtime Layout
 
-The default packaging plan includes:
+The packaging plan distinguishes current MVP scope from deferred compatibility:
 
 | Layout                                     | Purpose                                                                                         |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `.nuget/plugins/netcore/<name>/<name>.dll` | `dotnet` and .NET Core-compatible client scenarios.                                             |
-| `.nuget/plugins/netfx/<name>/<name>.exe`   | NuGet.exe, Visual Studio, and MSBuild scenarios that require .NET Framework-compatible plugins. |
+| `.nuget/plugins/netcore/<name>/<name>.dll` | Phase 4D MVP target for `dotnet` and .NET Core-compatible client scenarios.                     |
+| `.nuget/plugins/netfx/<name>/<name>.exe`   | Deferred post-MVP target for NuGet.exe, Visual Studio, and MSBuild .NET Framework plugin hosts. |
 
 The final artifact split remains an implementation decision, but the design must
-preserve separate runtime compatibility where host clients require it.
+preserve separate runtime compatibility where host clients require it when
+deferred `netfx` scope is explicitly enabled.
 
 ### Doctor Checks
 
@@ -554,7 +572,8 @@ preserve separate runtime compatibility where host clients require it.
 3. Plugin launch in plugin mode.
 4. Azure Artifacts source URL canonicalization.
 5. Interactive policy guidance.
-6. Absence of global `NUGET_PLUGIN_PATHS` conflicts unless explicitly chosen.
+6. Absence of global `NUGET_PLUGIN_PATHS` or `NUGET_NETCORE_PLUGIN_PATHS`
+   conflicts unless explicitly chosen for process-scoped diagnostics.
 
 ## Python Adapter Design
 
@@ -942,7 +961,8 @@ Windows is first-class. Design and tests must cover:
 - PowerShell command examples.
 - Paths with spaces.
 - `.exe` and `.cmd` shims.
-- Visual Studio, MSBuild, NuGet.exe, and .NET SDK plugin scenarios.
+- .NET SDK plugin scenarios in MVP, with Visual Studio/MSBuild/NuGet.exe plugin
+  scenarios deferred until explicit `netfx` scope is accepted.
 - Windows secure credential storage.
 
 Linux and macOS design must cover:
@@ -1000,7 +1020,7 @@ Each step has host-tool shape tests before real authentication is enabled.
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Core deployment boundary            | Prototype whether adapters call a library, a single executable, or a local broker before locking packaging and failure-isolation behavior.                                                                                                |
 | NuGet plugin message compatibility  | Implement a minimal source-confirmed plugin handshake before finalizing the adapter runtime package shape.                                                                                                                                |
-| AzureAuth suitability               | Verify required token audiences, non-interactive flows, MSAL cache reuse, logging behavior, and process-boundary security before choosing AzureAuth as the identity substrate.                                                            |
+| AzureAuth optional backend revisit  | If revisited in a later phase, verify required token audiences, non-interactive flows, MSAL cache reuse, logging behavior, and process-boundary security before adopting AzureAuth as an optional helper/backend.                         |
 | Future CI identity flow selection   | MVP CI is limited to explicit Azure Pipelines system access token in explicit CI mode with a non-persistent context; verify service principal, managed identity, WIF, and other short-lived CI identities only for future accepted flows. |
 | Python keyring environment coverage | Prototype backend installation and discovery in virtual environment, pipx, and uv subprocess scenarios.                                                                                                                                   |
 | Git GUI client PATH differences     | Validate helper discovery through Git for Windows and at least one GUI-launched Git environment before relying on PATH-only installation.                                                                                                 |

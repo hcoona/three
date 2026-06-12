@@ -48,7 +48,7 @@ Host tools own:
 
 1. Provide one human-facing CLI for setup, login, logout, status, diagnostics, and ecosystem configuration.
 2. Support Azure Repos HTTPS Git remotes hosted on `dev.azure.com` and legacy `*.visualstudio.com` hosts.
-3. Support Azure Artifacts NuGet v3 feeds for `dotnet`, NuGet.exe, MSBuild, and Visual Studio restore scenarios.
+3. Support Azure Artifacts NuGet v3 feeds for Phase 4D MVP `dotnet` restore through NuGet `netcore` plugin convention discovery; treat NuGet.exe, MSBuild, and Visual Studio (`netfx`) restore support as deferred post-MVP scope.
 4. Support Azure Artifacts Python simple-index and upload endpoints for pip, twine, and uv workflows.
 5. Support Azure Artifacts npm registry endpoints for npm, pnpm, and Yarn workflows.
 6. Reuse a single credential core for token acquisition, account selection, cache access, and policy enforcement.
@@ -57,8 +57,9 @@ Host tools own:
 9. Preserve host-tool protocol boundaries: protocol adapters must write only protocol-valid content to stdout.
 10. Provide configuration commands that can install, verify, and remove each ecosystem integration.
 11. Support non-interactive CI operation without persisting secrets by default.
-12. Evaluate AzureAuth, also known as `microsoft-authentication-cli`, as a candidate identity substrate for Microsoft Entra token acquisition, MSAL cache reuse, and Azure DevOps token-oriented flows.
-13. Provide a `doctor` command that validates Git helper configuration through Git's own discovery behavior, NuGet plugin discovery, Python keyring availability, npm registry configuration, credential cache health, and common CI misconfigurations.
+12. Use direct MSAL-based identity acquisition as the current path; AzureAuth (`microsoft-authentication-cli`) is a deferred optional helper/backend candidate if revisited later and is not a required runtime substrate for Phase 4D MVP.
+13. Treat the Phase 1A identity-flow matrix as frozen for Phase 4D MVP: accept interactive browser, device code, narrow explicit PAT compatibility, and Azure Pipelines system access token; defer service principal, managed identity, and workload identity federation.
+14. Provide a `doctor` command that validates Git helper configuration through Git's own discovery behavior, NuGet plugin discovery, Python keyring availability, npm registry configuration, credential cache health, and common CI misconfigurations.
 
 ## Non-Functional Requirements
 
@@ -89,16 +90,17 @@ Host tools own:
 1. Provide a NuGet plugin-compatible entry point that supports NuGet's plugin handshake and authentication request protocol.
 2. Enter plugin mode when launched by NuGet with fixed plugin arguments.
 3. Support .NET Core plugin discovery for `dotnet restore`.
-4. Support .NET Framework-compatible plugin discovery where Visual Studio, MSBuild, or NuGet.exe scenarios require it.
+4. Keep .NET Framework-compatible plugin discovery for Visual Studio, MSBuild, or NuGet.exe as a deferred post-MVP compatibility target; it is out of Phase 4D MVP scope.
 5. Respect NuGet's interactive and non-interactive restore settings.
-6. Prefer NuGet's conventional plugin installation locations for default setup, with `NUGET_PLUGIN_PATHS` reserved for advanced diagnostics or explicit overrides.
+6. Prefer NuGet's conventional plugin installation locations for default setup, with `NUGET_PLUGIN_PATHS` and `NUGET_NETCORE_PLUGIN_PATHS` reserved for optional process-scoped diagnostics or explicit temporary overrides only.
+7. Do not persist NuGet plugin-path environment overrides as user-global or machine-global state in Phase 4D MVP.
 
 ### Python
 
 1. Provide a Python keyring backend package for tools that import Python keyring directly.
 2. Provide a `keyring` command-compatible shim for tools that use subprocess keyring mode.
 3. Support pip, twine, and uv without requiring credentials in source-controlled project files.
-4. Keep trusted credential logic outside arbitrary project virtual environments where practical.
+4. Keep trusted credential logic outside arbitrary project virtual environments where practical by using a thin backend that invokes a product-owned helper by absolute path and validates helper ownership and integrity before invocation.
 5. Support Azure Artifacts Python simple-index and upload endpoints in both organization-scoped and project-scoped forms.
 6. Provide supported bootstrap paths that make the Python keyring backend discoverable in the exact Python environment running pip or twine, including virtual environments, pipx-managed tools, and isolated CI environments.
 
@@ -125,10 +127,9 @@ Host tools own:
 ## Open Questions
 
 1. Whether the shared credential core should be a library, a local broker process, or a single executable invoked by adapters.
-2. Whether the NuGet adapter should ship as one multi-target package, separate netcore/netfx artifacts, or a top-level executable that also supports `-Plugin`.
-3. Whether the Python keyring backend should call an absolute external helper path or use an embedded shared library.
+2. How to package deferred netfx support if NuGet.exe/MSBuild/Visual Studio compatibility is added after the Phase 4D MVP netcore-only scope.
+3. Which cross-platform integrity verification mechanism (for example signature and hash policy) should be required for the configured absolute Python helper path.
 4. Whether npm compatibility aliases should be provided in addition to the primary npm credential refresh command.
-5. Which identity flows are mandatory for MVP: interactive browser, device code, PAT, service principal, managed identity, workload identity federation, or Azure Pipelines system access token.
 
 ## Acceptance Criteria for the Design Phase
 

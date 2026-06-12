@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
@@ -14,6 +15,165 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 public sealed class ConfigurationManagerTests
 {
     public static bool IsWindows => OperatingSystem.IsWindows();
+
+    public static TheoryData<string, ConfigurationTargetKind, string, string>
+        PhysicalTargetOwnershipManifestCollisionCases
+    {
+        get
+        {
+            var cases = new TheoryData<string, ConfigurationTargetKind, string, string>();
+            string[] methodNames =
+            [
+                nameof(IConfigurationManager.ValidatePlan),
+                nameof(IConfigurationManager.DryRunAsync),
+            ];
+            ConfigurationTargetKind[] targetKinds =
+            [
+                ConfigurationTargetKind.NuGetPluginLayout,
+                ConfigurationTargetKind.PythonKeyringBackend,
+                ConfigurationTargetKind.KeyringShim,
+                ConfigurationTargetKind.GitConfig,
+                ConfigurationTargetKind.Npmrc,
+                ConfigurationTargetKind.Yarnrc,
+            ];
+
+            foreach (string methodName in methodNames)
+            {
+                foreach (ConfigurationTargetKind targetKind in targetKinds)
+                {
+                    string pathSegment = targetKind
+                        .ToString()
+                        .ToLower(CultureInfo.InvariantCulture);
+                    cases.Add(
+                        methodName,
+                        targetKind,
+                        $"/config/{pathSegment}/ownership-manifest.json",
+                        $"/config/{pathSegment}/ownership-manifest.json"
+                    );
+                    cases.Add(
+                        methodName,
+                        targetKind,
+                        $"/config/{pathSegment}/absolute-relative-target",
+                        $"config/{pathSegment}/absolute-relative-target"
+                    );
+                    cases.Add(
+                        methodName,
+                        targetKind,
+                        $"config/{pathSegment}/relative-absolute-target",
+                        $"/config/{pathSegment}/relative-absolute-target"
+                    );
+                    cases.Add(
+                        methodName,
+                        targetKind,
+                        $"/config/{pathSegment}/target-root",
+                        $"/config/{pathSegment}/target-root/ownership-manifest.json"
+                    );
+                    cases.Add(
+                        methodName,
+                        targetKind,
+                        $"/config/{pathSegment}/manifest-root/target",
+                        $"/config/{pathSegment}/manifest-root"
+                    );
+                    cases.Add(
+                        methodName,
+                        targetKind,
+                        $"config/{pathSegment}/ownership-manifest.json",
+                        $"config/{pathSegment}/ownership-manifest.json"
+                    );
+                    cases.Add(
+                        methodName,
+                        targetKind,
+                        $"config/{pathSegment}/sub/../ownership-manifest.json",
+                        $"config/{pathSegment}/ownership-manifest.json"
+                    );
+                    cases.Add(
+                        methodName,
+                        targetKind,
+                        $"config/{pathSegment}/target-root",
+                        $"config/{pathSegment}/target-root/ownership-manifest.json"
+                    );
+                    cases.Add(
+                        methodName,
+                        targetKind,
+                        $"config/{pathSegment}/manifest-root/target",
+                        $"config/{pathSegment}/manifest-root"
+                    );
+                }
+            }
+
+            return cases;
+        }
+    }
+
+    public static TheoryData<ConfigurationTargetKind> Phase4DPhysicalTargetKinds =>
+    [
+        ConfigurationTargetKind.NuGetPluginLayout,
+        ConfigurationTargetKind.PythonKeyringBackend,
+        ConfigurationTargetKind.KeyringShim,
+        ConfigurationTargetKind.GitConfig,
+    ];
+
+    public static TheoryData<ConfigurationTargetKind, ConfigurationTargetKind>
+        Phase4DPhysicalTargetKindConflictCases
+    {
+        get
+        {
+            var cases = new TheoryData<ConfigurationTargetKind, ConfigurationTargetKind>();
+            cases.Add(ConfigurationTargetKind.NuGetPluginLayout, ConfigurationTargetKind.Npmrc);
+            cases.Add(ConfigurationTargetKind.PythonKeyringBackend, ConfigurationTargetKind.Npmrc);
+            cases.Add(ConfigurationTargetKind.KeyringShim, ConfigurationTargetKind.Yarnrc);
+            cases.Add(ConfigurationTargetKind.GitConfig, ConfigurationTargetKind.Yarnrc);
+            cases.Add(
+                ConfigurationTargetKind.NuGetPluginLayout,
+                ConfigurationTargetKind.KeyringShim
+            );
+            cases.Add(
+                ConfigurationTargetKind.PythonKeyringBackend,
+                ConfigurationTargetKind.GitConfig
+            );
+            return cases;
+        }
+    }
+
+    public static TheoryData<ConfigurationTargetKind, string> ReservedPhase4DPhysicalTargetPaths
+    {
+        get
+        {
+            var cases = new TheoryData<ConfigurationTargetKind, string>();
+            string[] reservedPaths =
+            [
+                "/config/.azureauth-credprovider.fs.lock",
+                "/config/.azureauth-credprovider.fs.lock/descendant",
+                "/config/.azureauth-credprovider.lifecycle-locks",
+                "/config/.azureauth-credprovider.lifecycle-locks/descendant",
+                ".azureauth-credprovider.fs.lock",
+                ".azureauth-credprovider.fs.lock/descendant",
+                ".azureauth-credprovider.lifecycle-locks",
+                ".azureauth-credprovider.lifecycle-locks/descendant",
+                "../.azureauth-credprovider.fs.lock",
+                "../.azureauth-credprovider.lifecycle-locks",
+            ];
+            ConfigurationTargetKind[] targetKinds =
+            [
+                ConfigurationTargetKind.NuGetPluginLayout,
+                ConfigurationTargetKind.PythonKeyringBackend,
+                ConfigurationTargetKind.KeyringShim,
+                ConfigurationTargetKind.GitConfig,
+                ConfigurationTargetKind.Npmrc,
+                ConfigurationTargetKind.Yarnrc,
+            ];
+
+            foreach (ConfigurationTargetKind targetKind in targetKinds)
+            {
+                foreach (string reservedPath in reservedPaths)
+                {
+                    cases.Add(targetKind, reservedPath);
+                }
+            }
+
+            return cases;
+        }
+    }
 
     [Fact]
     public void ValidatePlanBindsToFrozenConfigurationChangePlanContract()
@@ -154,6 +314,27 @@ public sealed class ConfigurationManagerTests
     }
 
     [Theory]
+    [InlineData("/state/.azureauth-credprovider.fs.lock")]
+    [InlineData("/state/.azureauth-credprovider.fs.lock/descendant")]
+    [InlineData("/state/.azureauth-credprovider.lifecycle-locks")]
+    [InlineData("/state/.azureauth-credprovider.lifecycle-locks/descendant")]
+    public void ConstructorRejectsReservedInternalOwnershipManifestPath(string manifestPath)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+
+        var exception = Assert.Throws<ArgumentException>(
+            () => new ConfigurationManager(fileSystem, manifestPath)
+        );
+
+        Assert.Equal("ownershipManifestPath", exception.ParamName);
+        Assert.Contains(
+            "reserved internal filesystem artifact",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Theory]
     [InlineData(
         nameof(IConfigurationManager.ValidatePlan),
         "/state/ownership-manifest.json",
@@ -214,12 +395,12 @@ public sealed class ConfigurationManagerTests
         "/config/remove-manifest-parent-collision/target.txt",
         "/config/remove-manifest-parent-collision"
     )]
-public async Task
-FilesystemBackedValidationAndExecutionRejectCiTemporaryFileTargetCollidingWithOwnershipManifestPath(
-        string methodName,
-        string collidingTargetPath,
-        string manifestPath
-    )
+    public async Task
+        FilesystemBackedAllOperationsRejectCiTemporaryTargetCollidingWithOwnershipManifestPath(
+            string methodName,
+            string collidingTargetPath,
+            string manifestPath
+        )
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         var manager = new ConfigurationManager(fileSystem, manifestPath);
@@ -257,6 +438,1275 @@ FilesystemBackedValidationAndExecutionRejectCiTemporaryFileTargetCollidingWithOw
         Assert.Contains("ownership manifest path", exception.Message, StringComparison.Ordinal);
         Assert.False(fileSystem.FileExists(manifestPath));
         Assert.False(fileSystem.FileExists(collidingTargetPath));
+    }
+
+    [Theory]
+    [MemberData(nameof(PhysicalTargetOwnershipManifestCollisionCases))]
+    public async Task
+        FilesystemBackedValidationAndDryRunRejectPhysicalTargetCollidingWithOwnershipManifestPath(
+            string methodName,
+            ConfigurationTargetKind targetKind,
+            string collidingTargetPath,
+            string manifestPath
+        )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(targetKind, collidingTargetPath);
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
+        Assert.Contains(
+            "ownership manifest path",
+            validationResult.Violation,
+            StringComparison.Ordinal
+        );
+
+        if (methodName == nameof(IConfigurationManager.DryRunAsync))
+        {
+            var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+            );
+            Assert.Contains("ownership manifest path", exception.Message, StringComparison.Ordinal);
+        }
+
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.False(fileSystem.FileExists(collidingTargetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Theory]
+    [MemberData(nameof(Phase4DPhysicalTargetKinds))]
+    public async Task FilesystemBackedDryRunProjectsPhase4DPhysicalTargetKindsWithoutMutation(
+        ConfigurationTargetKind targetKind
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-manifest.json";
+        string targetPath =
+            $"/config/{targetKind.ToString().ToLower(CultureInfo.InvariantCulture)}";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(targetKind, targetPath);
+
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Planned, result.State);
+        ConfigurationPlannedOperation operation = Assert.Single(result.PlannedOperations);
+        Assert.Equal(targetKind, operation.Change.TargetKind);
+        ConfigurationOwnershipManifestEntry entry = Assert.Single(
+            result.OwnershipManifest!.Entries
+        );
+        Assert.Equal(targetKind, entry.TargetKind);
+        Assert.Equal(targetPath, entry.TargetPathOrName);
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunRejectsProjectionOnlyPhysicalTargetStaleManifestHash()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/stale-physical-manifest.json";
+        const string targetPath = "/config/stale-physical.gitconfig";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        string existingManifestJson = await CreateDryRunManifestJsonAsync(plan);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan stalePlan = plan with
+        {
+            Manifest = plan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata("not-the-existing-manifest"),
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.DryRunAsync(stalePlan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("before-state hash", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunRejectsProjectionOnlyPhysicalTargetForeignManifest()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/foreign-physical-manifest.json";
+        const string targetPath = "/config/foreign-physical.gitconfig";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(plan);
+        string foreignManifestJson = RawOwnershipManifestJson(
+            plannedManifest with
+            {
+                OwnerProductId = "foreign-product",
+            }
+        );
+        fileSystem.AtomicWriteAllText(manifestPath, foreignManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("existing manifest identity", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(foreignManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunMergesProjectionOnlyPhysicalTargetManifestEntries()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/merge-physical-manifest.json";
+        const string existingTargetPath = "/config/existing-physical.gitconfig";
+        const string newTargetPath = "/config/new-physical.gitconfig";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            newTargetPath
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(plan);
+        ConfigurationOwnershipManifestEntry plannedEntry = Assert.Single(plannedManifest.Entries);
+        ConfigurationOwnershipManifest existingManifest = plannedManifest with
+        {
+            PlanId = "previous-physical-plan",
+            ChangeSetId = "previous-physical-changeset",
+            Entries =
+            [
+                plannedEntry with
+                {
+                    TargetPathOrName = existingTargetPath,
+                    Key = "existing-physical-target",
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan planWithManifestHash = plan with
+        {
+            Manifest = plan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            planWithManifestHash,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Planned, result.State);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(existingTargetPath));
+        Assert.False(fileSystem.FileExists(newTargetPath));
+        ConfigurationOwnershipManifest simulatedManifest = result.OwnershipManifest!;
+        Assert.Equal(plan.PlanId, simulatedManifest.PlanId);
+        Assert.Equal(plan.ChangeSetId, simulatedManifest.ChangeSetId);
+        Assert.Equal(
+            planWithManifestHash.Manifest.PreviousOwnedEntryHash,
+            simulatedManifest.PreviousOwnedEntryHash
+        );
+        Assert.Collection(
+            simulatedManifest.Entries,
+            entry =>
+            {
+                Assert.Equal(1, entry.Sequence);
+                Assert.Equal(existingTargetPath, entry.TargetPathOrName);
+                Assert.Equal("existing-physical-target", entry.Key);
+            },
+            entry =>
+            {
+                Assert.Equal(2, entry.Sequence);
+                Assert.Equal(newTargetPath, entry.TargetPathOrName);
+                Assert.Equal("physical-target", entry.Key);
+            }
+        );
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedDryRunRejectsExistingNonCiManifestEntrySharingPathWithProjectionOnlyTarget()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/existing-npmrc-projection-conflict-manifest.json";
+        const string targetPath = "/config/existing-npmrc-projection-conflict";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(plan);
+        ConfigurationOwnershipManifestEntry plannedEntry = Assert.Single(plannedManifest.Entries);
+        ConfigurationOwnershipManifest existingManifest = plannedManifest with
+        {
+            PlanId = "previous-existing-npmrc-projection-conflict-plan",
+            ChangeSetId = "previous-existing-npmrc-projection-conflict-changeset",
+            Entries =
+            [
+                plannedEntry with
+                {
+                    TargetKind = ConfigurationTargetKind.Npmrc,
+                    Key = "registry",
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan planWithManifestHash = plan with
+        {
+            Manifest = plan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.DryRunAsync(planWithManifestHash, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("same physical target path", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedDryRunRejectsExistingManifestWithSamePathDifferentNonCiPhysicalEntries()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/existing-non-ci-physical-conflict-manifest.json";
+        const string existingTargetPath = "/config/existing-non-ci-physical-conflict";
+        const string planTargetPath = "/config/existing-non-ci-physical-conflict-plan-target";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            planTargetPath
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(plan);
+        ConfigurationOwnershipManifestEntry plannedEntry = Assert.Single(plannedManifest.Entries);
+        ConfigurationOwnershipManifest existingManifest = plannedManifest with
+        {
+            PlanId = "previous-existing-non-ci-physical-conflict-plan",
+            ChangeSetId = "previous-existing-non-ci-physical-conflict-changeset",
+            Entries =
+            [
+                plannedEntry with
+                {
+                    TargetKind = ConfigurationTargetKind.Npmrc,
+                    TargetPathOrName = existingTargetPath,
+                    Key = "registry",
+                },
+                plannedEntry with
+                {
+                    Sequence = 2,
+                    TargetKind = ConfigurationTargetKind.GitConfig,
+                    TargetPathOrName = existingTargetPath,
+                    Key = "credential.helper",
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan planWithManifestHash = plan with
+        {
+            Manifest = plan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.DryRunAsync(planWithManifestHash, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("same physical target path", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(existingTargetPath));
+        Assert.False(fileSystem.FileExists(planTargetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Theory]
+    [MemberData(nameof(ReservedPhase4DPhysicalTargetPaths))]
+    public async Task FilesystemBackedDryRunRejectsExistingReservedNonCiPhysicalManifestEntry(
+        ConfigurationTargetKind existingTargetKind,
+        string reservedTargetPath
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/existing-reserved-physical-entry-manifest.json";
+        const string targetPath = "/config/existing-reserved-physical-entry";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            targetPath
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(plan);
+        ConfigurationOwnershipManifestEntry plannedEntry = Assert.Single(plannedManifest.Entries);
+        ConfigurationOwnershipManifest existingManifest = plannedManifest with
+        {
+            PlanId = "previous-existing-reserved-physical-entry-plan",
+            ChangeSetId = "previous-existing-reserved-physical-entry-changeset",
+            Entries =
+            [
+                plannedEntry with
+                {
+                    TargetKind = existingTargetKind,
+                    TargetPathOrName = reservedTargetPath,
+                    Key = $"{existingTargetKind}.reserved-physical-entry",
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan planWithManifestHash = plan with
+        {
+            Manifest = plan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.DryRunAsync(planWithManifestHash, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "reserved internal filesystem artifact",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Theory]
+    [InlineData("/config/.azureauth-credprovider.fs.lock")]
+    [InlineData("/config/.azureauth-credprovider.lifecycle-locks/descendant")]
+    public async Task FilesystemBackedDryRunRejectsExistingReservedCiTemporaryManifestEntry(
+        string reservedTargetPath
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/existing-reserved-ci-entry-manifest.json";
+        const string targetPath = "/config/existing-reserved-ci-entry";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            targetPath
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(plan);
+        ConfigurationOwnershipManifestEntry plannedEntry = Assert.Single(plannedManifest.Entries);
+        ConfigurationOwnershipManifest existingManifest = plannedManifest with
+        {
+            PlanId = "previous-existing-reserved-ci-entry-plan",
+            ChangeSetId = "previous-existing-reserved-ci-entry-changeset",
+            Entries =
+            [
+                plannedEntry with
+                {
+                    TargetKind = ConfigurationTargetKind.CiTemporaryFile,
+                    TargetPathOrName = reservedTargetPath,
+                    Key = "file",
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan planWithManifestHash = plan with
+        {
+            Manifest = plan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.DryRunAsync(planWithManifestHash, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "reserved internal filesystem artifact",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Theory]
+    [InlineData(
+        "/config/existing-entry-manifest-collision",
+        "config/existing-entry-manifest-collision"
+    )]
+    [InlineData(
+        "config/existing-entry-manifest-collision-reverse",
+        "/config/existing-entry-manifest-collision-reverse"
+    )]
+    public async Task
+        FilesystemBackedDryRunRejectsExistingEntryCollidesWithOwnershipManifestPathAfterGetFullPath(
+            string manifestPath,
+            string existingTargetPath
+        )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string planTargetPath = "/config/existing-entry-manifest-collision-target";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            planTargetPath
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(plan);
+        ConfigurationOwnershipManifestEntry plannedEntry = Assert.Single(plannedManifest.Entries);
+        ConfigurationOwnershipManifest existingManifest = plannedManifest with
+        {
+            PlanId = "previous-existing-entry-manifest-collision-plan",
+            ChangeSetId = "previous-existing-entry-manifest-collision-changeset",
+            Entries =
+            [
+                plannedEntry with
+                {
+                    TargetKind = ConfigurationTargetKind.Npmrc,
+                    TargetPathOrName = existingTargetPath,
+                    Key = "registry",
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan planWithManifestHash = plan with
+        {
+            Manifest = plan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.DryRunAsync(planWithManifestHash, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("ownership manifest path", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(planTargetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunRemovesProjectionOnlyPhysicalTargetManifestEntries()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/remove-physical-manifest.json";
+        const string remainingTargetPath = "/config/remaining-physical.gitconfig";
+        const string removedTargetPath = "/config/removed-physical.gitconfig";
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            removedTargetPath
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(setPlan);
+        ConfigurationOwnershipManifestEntry plannedEntry = Assert.Single(plannedManifest.Entries);
+        ConfigurationOwnershipManifest existingManifest = plannedManifest with
+        {
+            PlanId = "previous-remove-physical-plan",
+            ChangeSetId = "previous-remove-physical-changeset",
+            Entries =
+            [
+                plannedEntry with
+                {
+                    TargetPathOrName = remainingTargetPath,
+                    Key = "remaining-physical-target",
+                },
+                plannedEntry with
+                {
+                    Sequence = 2,
+                    TargetPathOrName = removedTargetPath,
+                    Key = "removed-physical-target",
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan removePlan = setPlan with
+        {
+            Manifest = setPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    TargetPathOrName = removedTargetPath,
+                    Key = "removed-physical-target",
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            removePlan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(remainingTargetPath));
+        Assert.False(fileSystem.FileExists(removedTargetPath));
+        ConfigurationOwnershipManifest simulatedManifest = result.OwnershipManifest!;
+        ConfigurationOwnershipManifestEntry remainingEntry = Assert.Single(
+            simulatedManifest.Entries
+        );
+        Assert.Equal(1, remainingEntry.Sequence);
+        Assert.Equal(remainingTargetPath, remainingEntry.TargetPathOrName);
+        Assert.Equal("remaining-physical-target", remainingEntry.Key);
+        Assert.DoesNotContain(
+            removedTargetPath,
+            RawOwnershipManifestJson(simulatedManifest),
+            StringComparison.Ordinal
+        );
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunRejectsUnownedProjectionOnlyPhysicalTargetRemove()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/unowned-remove-physical-manifest.json";
+        const string ownedTargetPath = "/config/owned-physical.gitconfig";
+        const string unownedTargetPath = "/config/unowned-physical.gitconfig";
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            ownedTargetPath
+        );
+        string existingManifestJson = await CreateDryRunManifestJsonAsync(setPlan);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan removePlan = setPlan with
+        {
+            Manifest = setPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    TargetPathOrName = unownedTargetPath,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.DryRunAsync(removePlan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("remove target is not owned", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(ownedTargetPath));
+        Assert.False(fileSystem.FileExists(unownedTargetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunRejectsMissingManifestForProjectionOnlyRemoveAdapter()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/missing-remove-adapter-physical-manifest.json";
+        const string removedTargetPath = "/config/missing-remove-adapter";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            removedTargetPath
+        );
+        ConfigurationChangePlan removeAdapterPlan = setPlan with
+        {
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.RemoveAdapter,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-adapter-entry",
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.DryRunAsync(removeAdapterPlan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "requires an existing ownership manifest",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.False(fileSystem.FileExists(removedTargetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunRejectsUnownedProjectionOnlyRemoveAdapter()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/unowned-remove-adapter-physical-manifest.json";
+        const string ownedTargetPath = "/config/owned-adapter";
+        const string unownedTargetPath = "/config/unowned-adapter";
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            ownedTargetPath
+        );
+        string existingManifestJson = await CreateDryRunManifestJsonAsync(setPlan);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan removeAdapterPlan = setPlan with
+        {
+            Manifest = setPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.RemoveAdapter,
+                    TargetPathOrName = unownedTargetPath,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-adapter-entry",
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.DryRunAsync(removeAdapterPlan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("remove target is not owned", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(ownedTargetPath));
+        Assert.False(fileSystem.FileExists(unownedTargetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedDryRunRejectsUnownedSamePathDifferentKeyProjectionOnlyRemoveAdapter()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/unowned-key-remove-adapter-physical-manifest.json";
+        const string targetPath = "/config/owned-key-adapter";
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            targetPath
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(setPlan);
+        ConfigurationOwnershipManifestEntry plannedEntry = Assert.Single(plannedManifest.Entries);
+        ConfigurationOwnershipManifest existingManifest = plannedManifest with
+        {
+            PlanId = "previous-unowned-key-remove-adapter-plan",
+            ChangeSetId = "previous-unowned-key-remove-adapter-changeset",
+            Entries =
+            [
+                plannedEntry with
+                {
+                    Key = "owned-adapter-target",
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan removeAdapterPlan = setPlan with
+        {
+            Manifest = setPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.RemoveAdapter,
+                    Key = "unowned-adapter-target",
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-adapter-entry",
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.DryRunAsync(removeAdapterPlan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("remove target is not owned", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunRemovesProjectionOnlyRemoveAdapterManifestEntries()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/remove-adapter-physical-manifest.json";
+        const string remainingTargetPath = "/config/remaining-adapter";
+        const string removedTargetPath = "/config/removed-adapter";
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            removedTargetPath
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(setPlan);
+        ConfigurationOwnershipManifestEntry plannedEntry = Assert.Single(plannedManifest.Entries);
+        ConfigurationOwnershipManifest existingManifest = plannedManifest with
+        {
+            PlanId = "previous-remove-adapter-plan",
+            ChangeSetId = "previous-remove-adapter-changeset",
+            Entries =
+            [
+                plannedEntry with
+                {
+                    TargetPathOrName = remainingTargetPath,
+                    Key = "remaining-adapter-target",
+                },
+                plannedEntry with
+                {
+                    Sequence = 2,
+                    TargetPathOrName = removedTargetPath,
+                    Key = "removed-adapter-target",
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan removeAdapterPlan = setPlan with
+        {
+            Manifest = setPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.RemoveAdapter,
+                    TargetPathOrName = removedTargetPath,
+                    Key = "removed-adapter-target",
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-adapter-entry",
+                },
+            ],
+        };
+
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            removeAdapterPlan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(remainingTargetPath));
+        Assert.False(fileSystem.FileExists(removedTargetPath));
+        ConfigurationOwnershipManifest simulatedManifest = result.OwnershipManifest!;
+        ConfigurationOwnershipManifestEntry remainingEntry = Assert.Single(
+            simulatedManifest.Entries
+        );
+        Assert.Equal(1, remainingEntry.Sequence);
+        Assert.Equal(remainingTargetPath, remainingEntry.TargetPathOrName);
+        Assert.Equal("remaining-adapter-target", remainingEntry.Key);
+        Assert.DoesNotContain(
+            removedTargetPath,
+            RawOwnershipManifestJson(simulatedManifest),
+            StringComparison.Ordinal
+        );
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedDryRunPreservesSamePathDifferentKeyProjectionOnlyRemoveAdapterEntries()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/remove-adapter-preserve-key-physical-manifest.json";
+        const string targetPath = "/config/remove-adapter-preserve-key";
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            targetPath
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(setPlan);
+        ConfigurationOwnershipManifestEntry plannedEntry = Assert.Single(plannedManifest.Entries);
+        ConfigurationOwnershipManifest existingManifest = plannedManifest with
+        {
+            PlanId = "previous-remove-adapter-preserve-key-plan",
+            ChangeSetId = "previous-remove-adapter-preserve-key-changeset",
+            Entries =
+            [
+                plannedEntry with
+                {
+                    Key = "preserved-adapter-target",
+                },
+                plannedEntry with
+                {
+                    Sequence = 2,
+                    Key = "removed-adapter-target",
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan removeAdapterPlan = setPlan with
+        {
+            Manifest = setPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.RemoveAdapter,
+                    Key = "removed-adapter-target",
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-adapter-entry",
+                },
+            ],
+        };
+
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            removeAdapterPlan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+        ConfigurationOwnershipManifestEntry remainingEntry = Assert.Single(
+            result.OwnershipManifest!.Entries
+        );
+        Assert.Equal(1, remainingEntry.Sequence);
+        Assert.Equal(targetPath, remainingEntry.TargetPathOrName);
+        Assert.Equal("preserved-adapter-target", remainingEntry.Key);
+        Assert.DoesNotContain(
+            "removed-adapter-target",
+            RawOwnershipManifestJson(result.OwnershipManifest),
+            StringComparison.Ordinal
+        );
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunMergesProjectionOnlyInstallAdapterAfterRemoveAdapter()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/replace-adapter-physical-manifest.json";
+        const string remainingTargetPath = "/config/remaining-replace-adapter";
+        const string removedTargetPath = "/config/removed-replace-adapter";
+        const string installedTargetPath = "/config/installed-replace-adapter";
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            removedTargetPath
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(setPlan);
+        ConfigurationOwnershipManifestEntry plannedEntry = Assert.Single(plannedManifest.Entries);
+        ConfigurationOwnershipManifest existingManifest = plannedManifest with
+        {
+            PlanId = "previous-replace-adapter-plan",
+            ChangeSetId = "previous-replace-adapter-changeset",
+            Entries =
+            [
+                plannedEntry with
+                {
+                    TargetPathOrName = remainingTargetPath,
+                    Key = "remaining-replace-adapter-target",
+                },
+                plannedEntry with
+                {
+                    Sequence = 2,
+                    TargetPathOrName = removedTargetPath,
+                    Key = "removed-replace-adapter-target",
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan replaceAdapterPlan = setPlan with
+        {
+            Manifest = setPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.RemoveAdapter,
+                    TargetPathOrName = removedTargetPath,
+                    Key = "removed-replace-adapter-target",
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-adapter-entry",
+                },
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.InstallAdapter,
+                    TargetPathOrName = installedTargetPath,
+                    Key = "installed-replace-adapter-target",
+                    Value = null,
+                },
+            ],
+        };
+
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            replaceAdapterPlan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(remainingTargetPath));
+        Assert.False(fileSystem.FileExists(removedTargetPath));
+        Assert.False(fileSystem.FileExists(installedTargetPath));
+        Assert.Collection(
+            result.OwnershipManifest!.Entries,
+            entry =>
+            {
+                Assert.Equal(1, entry.Sequence);
+                Assert.Equal(remainingTargetPath, entry.TargetPathOrName);
+                Assert.Equal("remaining-replace-adapter-target", entry.Key);
+            },
+            entry =>
+            {
+                Assert.Equal(2, entry.Sequence);
+                Assert.Equal(ConfigurationChangeOperation.InstallAdapter, entry.Operation);
+                Assert.Equal(installedTargetPath, entry.TargetPathOrName);
+                Assert.Equal("installed-replace-adapter-target", entry.Key);
+            }
+        );
+        Assert.DoesNotContain(
+            removedTargetPath,
+            RawOwnershipManifestJson(result.OwnershipManifest!),
+            StringComparison.Ordinal
+        );
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedDryRunMergesProjectionOnlyInstallAdapterWithValueWritingChange()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/install-adapter-with-value-physical-manifest.json";
+        const string setTargetPath = "/config/value-writing-physical.gitconfig";
+        const string installedTargetPath = "/config/installed-value-writing-adapter";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            setTargetPath
+        );
+        ConfigurationChangePlan plan = setPlan with
+        {
+            Changes =
+            [
+                setPlan.Changes[0],
+                new ConfigurationChange
+                {
+                    Operation = ConfigurationChangeOperation.InstallAdapter,
+                    TargetKind = ConfigurationTargetKind.NuGetPluginLayout,
+                    TargetPathOrName = installedTargetPath,
+                    Key = "installed-value-writing-adapter-target",
+                    Value = null,
+                    RequiresOwnershipRecord = true,
+                    PreserveDeclarationsAndComments = true,
+                },
+            ],
+        };
+
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.False(fileSystem.FileExists(setTargetPath));
+        Assert.False(fileSystem.FileExists(installedTargetPath));
+        Assert.Collection(
+            result.OwnershipManifest!.Entries,
+            entry =>
+            {
+                Assert.Equal(1, entry.Sequence);
+                Assert.Equal(ConfigurationChangeOperation.Set, entry.Operation);
+                Assert.Equal(ConfigurationTargetKind.GitConfig, entry.TargetKind);
+                Assert.Equal(setTargetPath, entry.TargetPathOrName);
+            },
+            entry =>
+            {
+                Assert.Equal(2, entry.Sequence);
+                Assert.Equal(ConfigurationChangeOperation.InstallAdapter, entry.Operation);
+                Assert.Equal(ConfigurationTargetKind.NuGetPluginLayout, entry.TargetKind);
+                Assert.Equal(installedTargetPath, entry.TargetPathOrName);
+            }
+        );
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Theory]
+    [InlineData(ConfigurationChangeOperation.Set)]
+    [InlineData(ConfigurationChangeOperation.Create)]
+    [InlineData(ConfigurationChangeOperation.Update)]
+    [InlineData(ConfigurationChangeOperation.Refresh)]
+    public async Task
+        FilesystemBackedDryRunRejectsRemoveAdapterMixedWithValueWritingProjectionOnlyPlan(
+        ConfigurationChangeOperation valueWritingOperation
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/remove-adapter-with-value-physical-manifest.json";
+        const string removeAdapterTargetPath = "/config/rejected-remove-adapter";
+        const string valueTargetPath = "/config/rejected-value-writing.gitconfig";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            valueTargetPath
+        );
+        ConfigurationChangePlan plan = setPlan with
+        {
+            Changes =
+            [
+                new ConfigurationChange
+                {
+                    Operation = ConfigurationChangeOperation.RemoveAdapter,
+                    TargetKind = ConfigurationTargetKind.NuGetPluginLayout,
+                    TargetPathOrName = removeAdapterTargetPath,
+                    Key = "removed-adapter-target",
+                    Value = null,
+                    RequiresOwnershipRecord = true,
+                    PreserveDeclarationsAndComments = true,
+                    PreviousOwnedEntryMetadata = "previous-adapter-entry",
+                },
+                setPlan.Changes[0] with
+                {
+                    Operation = valueWritingOperation,
+                    PreviousOwnedEntryMetadata =
+                        valueWritingOperation
+                            is ConfigurationChangeOperation.Update
+                                or ConfigurationChangeOperation.Refresh
+                            ? "previous-value-writing-entry"
+                            : null,
+                },
+            ],
+        };
+        fileSystem.Calls.Clear();
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "cannot be executed by apply or remove",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.False(fileSystem.FileExists(removeAdapterTargetPath));
+        Assert.False(fileSystem.FileExists(valueTargetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedDryRunPreservesCiTemporaryManifestEntriesForProjectionOnlyWithoutContainer()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/projection-only-with-ci-entry-manifest.json";
+        const string ciTargetPath = "/config/projection-only-ci-entry/owned.txt";
+        const string physicalTargetPath = "/config/projection-only-ci-entry.gitconfig";
+        ConfigurationChangePlan setProjectionPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            physicalTargetPath
+        );
+        ConfigurationChangePlan projectionPlan = setProjectionPlan with
+        {
+            Changes =
+            [
+                setProjectionPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.InstallAdapter,
+                    Value = null,
+                },
+            ],
+        };
+        ConfigurationOwnershipManifest projectedManifest = await CreateDryRunManifestAsync(
+            projectionPlan
+        );
+        ConfigurationOwnershipManifest ciManifest = await CreateDryRunManifestAsync(
+            CreateGenericFilePlan(ConfigurationChangeOperation.Create, ciTargetPath, "owned-value")
+        );
+        ConfigurationOwnershipManifestEntry ciEntry = Assert.Single(ciManifest.Entries);
+        ConfigurationOwnershipManifest existingManifest = projectedManifest with
+        {
+            PlanId = "previous-projection-only-with-ci-entry-plan",
+            ChangeSetId = "previous-projection-only-with-ci-entry-changeset",
+            Entries = [ciEntry],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan projectionPlanWithManifestHash = projectionPlan with
+        {
+            Manifest = projectionPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            projectionPlanWithManifestHash,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(ciTargetPath));
+        Assert.False(fileSystem.FileExists(physicalTargetPath));
+        Assert.Collection(
+            result.OwnershipManifest!.Entries,
+            entry =>
+            {
+                Assert.Equal(ConfigurationTargetKind.CiTemporaryFile, entry.TargetKind);
+                Assert.Equal(ciTargetPath, entry.TargetPathOrName);
+            },
+            entry =>
+            {
+                Assert.Equal(ConfigurationTargetKind.GitConfig, entry.TargetKind);
+                Assert.Equal(physicalTargetPath, entry.TargetPathOrName);
+            }
+        );
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunDoesNotTreatEmptyPlanAsProjectionOnlyPhysicalTarget()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/manifest.json";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan plan = CreateGenericFilePlan(
+            ConfigurationChangeOperation.Create,
+            "/config/unused.txt",
+            "unused"
+        ) with
+        {
+            Changes = [],
+        };
+
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Empty(result.PlannedOperations);
+        Assert.Null(result.OwnershipManifest);
+        Assert.Contains(
+            fileSystem.Calls,
+            call =>
+                string.Equals(
+                    call.Operation,
+                    nameof(IFileSystem.FileExists),
+                    StringComparison.Ordinal
+                )
+                && string.Equals(call.Path, manifestPath, StringComparison.Ordinal)
+        );
+    }
+
+    [Theory]
+    [MemberData(nameof(ReservedPhase4DPhysicalTargetPaths))]
+    public async Task ValidatePlanAndNoFilesystemDryRunRejectReservedPhase4DPhysicalTargetPaths(
+        ConfigurationTargetKind targetKind,
+        string reservedTargetPath
+    )
+    {
+        var manager = new ConfigurationManager();
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(targetKind, reservedTargetPath);
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
+        Assert.Contains(
+            "reserved internal filesystem artifact",
+            validationResult.Violation,
+            StringComparison.Ordinal
+        );
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(
+            "reserved internal filesystem artifact",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Theory]
+    [InlineData("config/reserved-cancelled/.azureauth-credprovider.fs.lock/../target")]
+    [InlineData("config/reserved-cancelled/.azureauth-credprovider.lifecycle-locks/../target")]
+    public async Task ValidatePlanAndNoFilesystemDryRunAllowCancelledReservedPhysicalTargetSegments(
+        string targetPath
+    )
+    {
+        var manager = new ConfigurationManager();
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            targetPath
+        );
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+
+        Assert.True(validationResult.IsValid);
+        Assert.Null(validationResult.Violation);
+        ConfigurationPlanResult dryRun = await manager.DryRunAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+        Assert.Equal(ConfigurationPlanState.Planned, dryRun.State);
     }
 
     [Fact]
@@ -472,6 +1922,332 @@ FilesystemBackedValidationAndExecutionRejectCiTemporaryFileTargetCollidingWithOw
                     ciTemporaryFilePath,
                     "file-value"
                 ),
+                CreateYarnrcFileChange(yarnrcPath),
+            ],
+        };
+
+        ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
+
+        Assert.False(result.IsValid);
+        Assert.NotNull(result.Violation);
+        Assert.Contains("same physical target path", result.Violation, StringComparison.Ordinal);
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains("same physical target path", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ValidatePlanAndDryRunRejectNpmrcAndYarnrcSamePhysicalPath()
+    {
+        var manager = new ConfigurationManager();
+        const string targetPath = "/config/npm-yarn-same-path/.npmrc";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            targetPath
+        ) with
+        {
+            Changes =
+            [
+                CreateNpmrcFileChange(targetPath),
+                CreateYarnrcFileChange(targetPath),
+            ],
+        };
+
+        ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
+
+        Assert.False(result.IsValid);
+        Assert.NotNull(result.Violation);
+        Assert.Contains("same physical target path", result.Violation, StringComparison.Ordinal);
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains("same physical target path", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ValidatePlanAndDryRunRejectRelativeNpmrcAndYarnrcSamePhysicalPath()
+    {
+        var manager = new ConfigurationManager();
+        const string npmrcPath = "config/npm-yarn-relative/sub/../.npmrc";
+        const string yarnrcPath = "config/npm-yarn-relative/.npmrc";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            npmrcPath
+        ) with
+        {
+            Changes =
+            [
+                CreateNpmrcFileChange(npmrcPath),
+                CreateYarnrcFileChange(yarnrcPath),
+            ],
+        };
+
+        ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
+
+        Assert.False(result.IsValid);
+        Assert.NotNull(result.Violation);
+        Assert.Contains("same physical target path", result.Violation, StringComparison.Ordinal);
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains("same physical target path", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedValidatePlanAndDryRunRejectAbsoluteAndRelativeSameLocationPhysicalPath()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var manager = new ConfigurationManager(
+            fileSystem,
+            "/state/absolute-relative-manifest.json"
+        );
+        const string absoluteTargetPath = "/config/absolute-relative/.npmrc";
+        const string relativeTargetPath = "config/absolute-relative/.npmrc";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            absoluteTargetPath
+        ) with
+        {
+            Changes =
+            [
+                CreateNpmrcFileChange(absoluteTargetPath),
+                CreateYarnrcFileChange(relativeTargetPath),
+            ],
+        };
+
+        ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
+
+        Assert.False(result.IsValid);
+        Assert.NotNull(result.Violation);
+        Assert.Contains("same physical target path", result.Violation, StringComparison.Ordinal);
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains("same physical target path", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task
+        ValidatePlanAndDryRunAllowLeadingDotDotRelativePhysicalPathsDistinctFromSibling()
+    {
+        var manager = new ConfigurationManager();
+        const string leadingDotDotTargetPath = "../config/leading-dotdot/.npmrc";
+        const string siblingTargetPath = "config/leading-dotdot/.npmrc";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            leadingDotDotTargetPath
+        ) with
+        {
+            Changes =
+            [
+                CreateNpmrcFileChange(leadingDotDotTargetPath),
+                CreateYarnrcFileChange(siblingTargetPath),
+            ],
+        };
+
+        ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
+
+        Assert.True(result.IsValid, result.Violation);
+        Assert.Null(result.Violation);
+        ConfigurationPlanResult dryRun = await manager.DryRunAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+        Assert.Equal(ConfigurationPlanState.Planned, dryRun.State);
+        Assert.Equal(2, dryRun.PlannedOperations.Count);
+    }
+
+    [Theory]
+    [MemberData(nameof(Phase4DPhysicalTargetKindConflictCases))]
+    public async Task ValidatePlanAndDryRunRejectPhase4DPhysicalTargetKindSharingPhysicalTargetPath(
+        ConfigurationTargetKind phase4DTargetKind,
+        ConfigurationTargetKind otherTargetKind
+    )
+    {
+        var manager = new ConfigurationManager();
+        string targetPath =
+            $"config/phase4d/{phase4DTargetKind.ToString().ToLower(CultureInfo.InvariantCulture)}";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(phase4DTargetKind, targetPath) with
+        {
+            Changes =
+            [
+                CreatePhysicalTargetChange(phase4DTargetKind, targetPath),
+                CreatePhysicalTargetChange(otherTargetKind, targetPath),
+            ],
+        };
+
+        ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
+
+        Assert.False(result.IsValid);
+        Assert.NotNull(result.Violation);
+        Assert.Contains("same physical target path", result.Violation, StringComparison.Ordinal);
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains("same physical target path", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(Phase4DPhysicalTargetKindConflictCases))]
+    public async Task
+        FilesystemBackedValidateAndDryRunRejectPhase4DPhysicalTargetSharingAbsoluteRelativeLocation(
+            ConfigurationTargetKind phase4DTargetKind,
+            ConfigurationTargetKind otherTargetKind
+        )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var manager = new ConfigurationManager(
+            fileSystem,
+            "/state/phase4d-absolute-relative-manifest.json"
+        );
+        string targetPath =
+            $"config/phase4d-absolute-relative/{phase4DTargetKind
+                .ToString()
+                .ToLower(CultureInfo.InvariantCulture)}";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(phase4DTargetKind, targetPath) with
+        {
+            Changes =
+            [
+                CreatePhysicalTargetChange(phase4DTargetKind, "/" + targetPath),
+                CreatePhysicalTargetChange(otherTargetKind, targetPath),
+            ],
+        };
+
+        ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
+
+        Assert.False(result.IsValid);
+        Assert.NotNull(result.Violation);
+        Assert.Contains("same physical target path", result.Violation, StringComparison.Ordinal);
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains("same physical target path", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ValidatePlanAndDryRunRejectNpmrcAndYarnrcDotDotEquivalentPhysicalPath()
+    {
+        var manager = new ConfigurationManager();
+        const string npmrcPath = "/config/npm-yarn-dotdot/sub/../.npmrc";
+        const string yarnrcPath = "/config/npm-yarn-dotdot/.npmrc";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            npmrcPath
+        ) with
+        {
+            Changes =
+            [
+                CreateNpmrcFileChange(npmrcPath),
+                CreateYarnrcFileChange(yarnrcPath),
+            ],
+        };
+
+        ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
+
+        Assert.False(result.IsValid);
+        Assert.NotNull(result.Violation);
+        Assert.Contains("same physical target path", result.Violation, StringComparison.Ordinal);
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains("same physical target path", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(
+        @"/config/npm-yarn-distinct-paths/.npmrc",
+        @"/config/npm-yarn-distinct-paths/.yarnrc.yml"
+    )]
+    [InlineData(
+        @"/config/npm-yarn-case-sensitive/.npmrc",
+        @"/config/npm-yarn-case-sensitive/.NPMRC"
+    )]
+    public async Task ValidatePlanAndDryRunAllowNpmrcAndYarnrcDistinctPhysicalPaths(
+        string npmrcPath,
+        string yarnrcPath
+    )
+    {
+        var manager = new ConfigurationManager();
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            npmrcPath
+        ) with
+        {
+            Changes =
+            [
+                CreateNpmrcFileChange(npmrcPath),
+                CreateYarnrcFileChange(yarnrcPath),
+            ],
+        };
+
+        ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
+
+        Assert.True(result.IsValid);
+        Assert.Null(result.Violation);
+        ConfigurationPlanResult dryRun = await manager.DryRunAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+        Assert.Equal(ConfigurationPlanState.Planned, dryRun.State);
+        Assert.Equal(2, dryRun.PlannedOperations.Count);
+    }
+
+    [Fact]
+    public async Task ValidatePlanAndDryRunAllowMultipleNpmrcChangesAtSamePhysicalPath()
+    {
+        var manager = new ConfigurationManager();
+        const string targetPath = "/config/npm-same-path/.npmrc";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            targetPath
+        ) with
+        {
+            Changes =
+            [
+                CreateNpmrcFileChange(targetPath),
+                CreateNpmrcFileChange(targetPath) with
+                {
+                    Key = "always-auth",
+                    Value = "true",
+                },
+            ],
+        };
+
+        ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
+
+        Assert.True(result.IsValid);
+        Assert.Null(result.Violation);
+        ConfigurationPlanResult dryRun = await manager.DryRunAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+        Assert.Equal(ConfigurationPlanState.Planned, dryRun.State);
+        Assert.Equal(2, dryRun.PlannedOperations.Count);
+    }
+
+    [Theory]
+    [InlineData(@"C:\config\npm-yarn-case\.npmrc", @"C:\CONFIG\NPM-YARN-CASE\.NPMRC")]
+    [InlineData(
+        "//server/share/config/npm-yarn-case/.npmrc",
+        "//SERVER/SHARE/CONFIG/NPM-YARN-CASE/.NPMRC"
+    )]
+    public async Task
+        ValidatePlanAndDryRunRejectWindowsConfigurationPathCaseVariantNpmrcYarnrcConflicts(
+            string npmrcPath,
+            string yarnrcPath
+        )
+    {
+        var manager = new ConfigurationManager();
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            npmrcPath
+        ) with
+        {
+            Changes =
+            [
+                CreateNpmrcFileChange(npmrcPath),
                 CreateYarnrcFileChange(yarnrcPath),
             ],
         };
@@ -926,7 +2702,7 @@ FilesystemBackedValidationAndExecutionRejectCiTemporaryFileTargetCollidingWithOw
                 {
                     Operation = ConfigurationChangeOperation.Set,
                     TargetKind = ConfigurationTargetKind.GitConfig,
-                    TargetPathOrName = "global git config",
+                    TargetPathOrName = "/config/non-ci-temporary-file-target/.gitconfig",
                     Key = "credential.helper",
                     Value = secret,
                     RequiresOwnershipRecord = true,
@@ -1895,6 +3671,150 @@ FilesystemBackedValidationAndExecutionRejectCiTemporaryFileTargetCollidingWithOw
     }
 
     [Fact]
+    public async Task FilesystemBackedDryRunRejectsMixedRemoveAndSetCiTemporaryPlan()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string removeTargetPath = "/config/dry-run-mixed-remove-set/remove.txt";
+        const string setTargetPath = "/config/dry-run-mixed-remove-set/set.txt";
+        const string manifestPath = "/state/dry-run-mixed-remove-set-manifest.json";
+        const string before = "owned-before";
+        const string after = "owned-after";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        await manager.ApplyAsync(
+            CreateGenericFilePlan(ConfigurationChangeOperation.Create, removeTargetPath, before),
+            TestContext.Current.CancellationToken
+        );
+        string manifestBefore = fileSystem.ReadAllText(manifestPath);
+        ConfigurationChangePlan plan = CreateGenericFilePlan(
+            ConfigurationChangeOperation.Remove,
+            removeTargetPath,
+            value: null,
+            previousOwnedEntryMetadata: HashMetadata(before),
+            previousManifestHash: HashMetadata(manifestBefore)
+        ) with
+        {
+            Changes =
+            [
+                CreateGenericFileChange(
+                    ConfigurationChangeOperation.Remove,
+                    removeTargetPath,
+                    value: null,
+                    previousOwnedEntryMetadata: HashMetadata(before)
+                ),
+                CreateGenericFileChange(ConfigurationChangeOperation.Set, setTargetPath, after),
+            ],
+        };
+        fileSystem.Calls.Clear();
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "cannot be executed by apply or remove",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+        Assert.Equal(before, fileSystem.ReadAllText(removeTargetPath));
+        Assert.False(fileSystem.FileExists(setTargetPath));
+        Assert.Equal(manifestBefore, fileSystem.ReadAllText(manifestPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunSimulatesRemoveOnlyPartialCiTemporaryPlan()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string removeTargetPath = "/config/dry-run-remove-only-partial/remove.txt";
+        const string keepTargetPath = "/config/dry-run-remove-only-partial/keep.txt";
+        const string manifestPath = "/state/dry-run-remove-only-partial-manifest.json";
+        const string removeValue = "remove-owned";
+        const string keepValue = "keep-owned";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan createPlan = CreateGenericFilePlan(
+            ConfigurationChangeOperation.Create,
+            removeTargetPath,
+            removeValue
+        ) with
+        {
+            Changes =
+            [
+                CreateGenericFileChange(
+                    ConfigurationChangeOperation.Create,
+                    removeTargetPath,
+                    removeValue
+                ),
+                CreateGenericFileChange(
+                    ConfigurationChangeOperation.Create,
+                    keepTargetPath,
+                    keepValue
+                ),
+            ],
+        };
+        await manager.ApplyAsync(createPlan, TestContext.Current.CancellationToken);
+        string manifestBefore = fileSystem.ReadAllText(manifestPath);
+        ConfigurationChangePlan removePlan = CreateGenericFilePlan(
+            ConfigurationChangeOperation.Remove,
+            removeTargetPath,
+            value: null,
+            previousOwnedEntryMetadata: HashMetadata(removeValue),
+            previousManifestHash: HashMetadata(manifestBefore)
+        );
+        fileSystem.Calls.Clear();
+
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            removePlan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Planned, result.State);
+        ConfigurationOwnershipManifest manifest = Assert.IsType<ConfigurationOwnershipManifest>(
+            result.OwnershipManifest
+        );
+        ConfigurationOwnershipManifestEntry entry = Assert.Single(manifest.Entries);
+        Assert.Equal(keepTargetPath, entry.TargetPathOrName);
+        Assert.Equal(ConfigurationChangeOperation.Create, entry.Operation);
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+        Assert.Equal(removeValue, fileSystem.ReadAllText(removeTargetPath));
+        Assert.Equal(keepValue, fileSystem.ReadAllText(keepTargetPath));
+        Assert.Equal(manifestBefore, fileSystem.ReadAllText(manifestPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunSimulatesRemoveOnlyFullCiTemporaryPlan()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string targetPath = "/config/dry-run-remove-only-full/remove.txt";
+        const string manifestPath = "/state/dry-run-remove-only-full-manifest.json";
+        const string value = "remove-owned";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        await manager.ApplyAsync(
+            CreateGenericFilePlan(ConfigurationChangeOperation.Create, targetPath, value),
+            TestContext.Current.CancellationToken
+        );
+        string manifestBefore = fileSystem.ReadAllText(manifestPath);
+        ConfigurationChangePlan removePlan = CreateGenericFilePlan(
+            ConfigurationChangeOperation.Remove,
+            targetPath,
+            value: null,
+            previousOwnedEntryMetadata: HashMetadata(value),
+            previousManifestHash: HashMetadata(manifestBefore)
+        );
+        fileSystem.Calls.Clear();
+
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            removePlan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Planned, result.State);
+        Assert.Null(result.OwnershipManifest);
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+        Assert.Equal(value, fileSystem.ReadAllText(targetPath));
+        Assert.Equal(manifestBefore, fileSystem.ReadAllText(manifestPath));
+    }
+
+    [Fact]
     public async Task ApplyRejectsRemoveChangeWithoutExistingManifestBeforeMutation()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
@@ -2005,12 +3925,56 @@ FilesystemBackedValidationAndExecutionRejectCiTemporaryFileTargetCollidingWithOw
     }
 
     [Fact]
+    public async Task DryRunRejectsReservedCiTemporaryFileSystemLockTargetBeforeMutation()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string targetPath = "/config/.azureauth-credprovider.fs.lock";
+        const string manifestPath = "/state/reserved-lock-dry-run-manifest.json";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan plan = CreateGenericFilePlan(
+            ConfigurationChangeOperation.Create,
+            targetPath,
+            "owned-after"
+        );
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "reserved internal filesystem artifact",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
     public void ReservedCiTemporaryFileSystemLockComparisonUsesPathIdentitySemantics()
     {
         Assert.True(
             ConfigurationManager.IsReservedInternalFileSystemArtifact(
                 "/config/.AZUREAUTH-CREDPROVIDER.FS.LOCK",
                 StringComparison.OrdinalIgnoreCase
+            )
+        );
+        Assert.True(
+            ConfigurationManager.IsReservedInternalFileSystemArtifact(
+                "/config/.AZUREAUTH-CREDPROVIDER.FS.LOCK/descendant",
+                StringComparison.OrdinalIgnoreCase
+            )
+        );
+        Assert.True(
+            ConfigurationManager.IsReservedInternalFileSystemArtifact(
+                "/config/.AZUREAUTH-CREDPROVIDER.LIFECYCLE-LOCKS/descendant",
+                StringComparison.OrdinalIgnoreCase
+            )
+        );
+        Assert.True(
+            ConfigurationManager.IsReservedInternalFileSystemArtifact(
+                "/config/.azureauth-credprovider.lifecycle-locks/descendant",
+                StringComparison.Ordinal
             )
         );
         Assert.False(
@@ -3198,12 +5162,14 @@ FilesystemBackedValidationAndExecutionRejectCiTemporaryFileTargetCollidingWithOw
             targetPath,
             "owned-value"
         );
+        fileSystem.Calls.Clear();
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
         );
 
         Assert.Contains("directory", exception.Message, StringComparison.OrdinalIgnoreCase);
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
         Assert.True(fileSystem.DirectoryExists(targetPath));
         Assert.False(fileSystem.FileExists(manifestPath));
     }
@@ -3222,12 +5188,14 @@ FilesystemBackedValidationAndExecutionRejectCiTemporaryFileTargetCollidingWithOw
             targetPath,
             "owned-value"
         );
+        fileSystem.Calls.Clear();
 
         var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
             await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
         );
 
         Assert.Contains("non-directory", exception.Message, StringComparison.Ordinal);
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
         Assert.Equal("parent-file", fileSystem.ReadAllText(parentPath));
         Assert.False(fileSystem.FileExists(targetPath));
         Assert.False(fileSystem.FileExists(manifestPath));
@@ -3247,12 +5215,14 @@ FilesystemBackedValidationAndExecutionRejectCiTemporaryFileTargetCollidingWithOw
             targetPath,
             "owned-value"
         );
+        fileSystem.Calls.Clear();
 
         var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
             await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
         );
 
         Assert.Contains("non-directory", exception.Message, StringComparison.Ordinal);
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
         Assert.Equal("ancestor-file", fileSystem.ReadAllText(ancestorPath));
         Assert.False(fileSystem.FileExists(targetPath));
         Assert.False(fileSystem.FileExists(manifestPath));
@@ -4016,16 +5986,112 @@ FilesystemBackedValidationAndExecutionRejectCiTemporaryFileTargetCollidingWithOw
         );
 
         Assert.Contains("CI temporary", exception.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            fileSystem.Calls,
-            call =>
-                string.Equals(
-                    call.Operation,
-                    nameof(IFileSystemMutationLock.AcquireMutationLock),
-                    StringComparison.Ordinal
-                )
-        );
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
         Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunRejectsCiTemporaryPlanWithNonCiTemporaryFileTarget()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/non-ci-temporary-file-target-dry-run-manifest.json";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan plan = ConfigurationChangePlanPolicy.Create(
+            "plan-non-ci-temporary-file-target-dry-run",
+            "changeset-non-ci-temporary-file-target-dry-run",
+            "azureauth-credprovider",
+            ConfigurationScope.CiTemporary,
+            new ConfigurationManifestMetadata
+            {
+                ManifestId = "manifest-non-ci-temporary-file-target-dry-run",
+                OwnerProductId = "azureauth-credprovider",
+                EntrySelector = "yarn.nodeLinker",
+                ProductVersion = "0.0.0-test",
+            },
+            [
+                new ConfigurationChange
+                {
+                    Operation = ConfigurationChangeOperation.Set,
+                    TargetKind = ConfigurationTargetKind.Yarnrc,
+                    TargetPathOrName = "/config/non-ci-temporary-file-target/.yarnrc.yml",
+                    Key = "nodeLinker",
+                    Value = "node-modules",
+                    RequiresOwnershipRecord = true,
+                    PreserveDeclarationsAndComments = true,
+                },
+            ],
+            temporaryContainer: CreateTemporaryHomeContainer(
+                "/config/non-ci-temporary-file-target"
+            ),
+            declarationPreservation:
+                ConfigurationDeclarationPreservation.CompleteMergedTemporaryConfig
+        );
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "supports only CI temporary file targets",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+        Assert.Empty(fileSystem.Files);
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task
+        ApplyAsyncReportsTargetKindErrorForNonCiTemporaryFileWithUnsupportedOperation()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath =
+            "/state/non-ci-temporary-file-unsupported-operation-manifest.json";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan plan = ConfigurationChangePlanPolicy.Create(
+            "plan-non-ci-temporary-file-unsupported-operation",
+            "changeset-non-ci-temporary-file-unsupported-operation",
+            "azureauth-credprovider",
+            ConfigurationScope.CiTemporary,
+            new ConfigurationManifestMetadata
+            {
+                ManifestId = "manifest-non-ci-temporary-file-unsupported-operation",
+                OwnerProductId = "azureauth-credprovider",
+                EntrySelector = "yarn.adapter",
+                ProductVersion = "0.0.0-test",
+            },
+            [
+                new ConfigurationChange
+                {
+                    Operation = ConfigurationChangeOperation.InstallAdapter,
+                    TargetKind = ConfigurationTargetKind.Yarnrc,
+                    TargetPathOrName = "/config/non-ci-temporary-file-target/.yarnrc.yml",
+                    Key = "nodeLinker",
+                    Value = null,
+                    RequiresOwnershipRecord = true,
+                    PreserveDeclarationsAndComments = true,
+                },
+            ],
+            temporaryContainer: CreateTemporaryHomeContainer(
+                "/config/non-ci-temporary-file-target"
+            ),
+            declarationPreservation:
+                ConfigurationDeclarationPreservation.CompleteMergedTemporaryConfig
+        );
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "supports only CI temporary file targets",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain("operations only", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(fileSystem.Files);
         Assert.False(fileSystem.FileExists(manifestPath));
     }
 
@@ -6185,7 +8251,7 @@ FilesystemBackedValidationAndExecutionRejectCiTemporaryFileTargetCollidingWithOw
     }
 
     [Fact]
-    public async Task DryRunAsyncAcquiresLifecycleLockBeforeReadingFilesystemState()
+    public async Task DryRunAsyncDoesNotAcquireLifecycleLock()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string targetPath = "/config/dry-run-lifecycle-lock/owned.txt";
@@ -6201,17 +8267,94 @@ FilesystemBackedValidationAndExecutionRejectCiTemporaryFileTargetCollidingWithOw
             fileSystem.GetFullPath(plan.TemporaryContainer!.ProductOwnedPath),
             manifestPath
         );
-        using IDisposable heldLifecycleLock = (
-            (IFileSystemMutationLock)fileSystem
-        ).AcquireMutationLock(lifecycleLockPath);
         fileSystem.Calls.Clear();
 
-        await Assert.ThrowsAsync<IOException>(async () =>
-            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            plan,
+            TestContext.Current.CancellationToken
         );
 
-        AssertLifecycleLockWasAttempted(fileSystem.Calls, lifecycleLockPath);
-        AssertNoFilesystemStateReadCallsBeforeLockAcquisition(fileSystem.Calls);
+        Assert.Equal(ConfigurationPlanState.Planned, result.State);
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+        AssertNoLifecycleLockWasAttempted(fileSystem.Calls, lifecycleLockPath);
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunDoesNotCreateLifecycleLockDirectory()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string targetPath = "/config/dry-run-no-lock-mutation/owned.txt";
+        const string manifestPath = "/state/dry-run-no-lock-mutation-manifest.json";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan plan = CreateGenericFilePlan(
+            ConfigurationChangeOperation.Create,
+            targetPath,
+            "owned-value"
+        );
+        string lifecycleLockPath = ConfigurationManager.CreateConfigurationExecutionLockDirectory(
+            fileSystem,
+            fileSystem.GetFullPath(plan.TemporaryContainer!.ProductOwnedPath),
+            manifestPath
+        );
+        fileSystem.Calls.Clear();
+
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Planned, result.State);
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+        AssertNoLifecycleLockWasAttempted(fileSystem.Calls, lifecycleLockPath);
+        Assert.DoesNotContain(
+            fileSystem.Directories,
+            directory =>
+                directory.Contains(
+                    ".azureauth-credprovider.lifecycle-locks",
+                    StringComparison.Ordinal
+                )
+        );
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunDoesNotMutateExistingLifecycleLockDirectory()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string targetPath = "/config/dry-run-existing-lock-directory/owned.txt";
+        const string manifestPath = "/state/dry-run-existing-lock-directory-manifest.json";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan plan = CreateGenericFilePlan(
+            ConfigurationChangeOperation.Create,
+            targetPath,
+            "owned-value"
+        );
+        string lifecycleLockPath = ConfigurationManager.CreateConfigurationExecutionLockDirectory(
+            fileSystem,
+            fileSystem.GetFullPath(plan.TemporaryContainer!.ProductOwnedPath),
+            manifestPath
+        );
+        fileSystem.CreateDirectory(lifecycleLockPath);
+        fileSystem.Calls.Clear();
+
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Planned, result.State);
+        Assert.True(fileSystem.DirectoryExists(lifecycleLockPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+        AssertNoLifecycleLockWasAttempted(fileSystem.Calls, lifecycleLockPath);
+        Assert.DoesNotContain(
+            fileSystem.Files.Keys,
+            path => path.StartsWith(lifecycleLockPath + "/", StringComparison.Ordinal)
+        );
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
     }
 
     [Fact]
@@ -6307,6 +8450,7 @@ FilesystemBackedValidationAndExecutionRejectCiTemporaryFileTargetCollidingWithOw
             exception.Message,
             StringComparison.OrdinalIgnoreCase
         );
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
         Assert.DoesNotContain(
             fileSystem.Calls,
             call =>
@@ -7303,6 +9447,21 @@ FilesystemBackedValidationAndExecutionRejectCiTemporaryFileTargetCollidingWithOw
                 ConfigurationDeclarationPreservation.CompleteMergedTemporaryConfig
         );
 
+    private static async Task<string> CreateDryRunManifestJsonAsync(ConfigurationChangePlan plan) =>
+        RawOwnershipManifestJson(await CreateDryRunManifestAsync(plan));
+
+    private static async Task<ConfigurationOwnershipManifest> CreateDryRunManifestAsync(
+        ConfigurationChangePlan plan
+    )
+    {
+        var manager = new ConfigurationManager();
+        ConfigurationPlanResult dryRun = await manager.DryRunAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+        return dryRun.OwnershipManifest!;
+    }
+
     private static async Task<string> CreateDuplicateCiTemporaryFileManifestJsonAsync(
         string targetPath,
         string value
@@ -7576,6 +9735,44 @@ FilesystemBackedValidationAndExecutionRejectCiTemporaryFileTargetCollidingWithOw
         Assert.Equal(lifecycleLockPath, lockCall.Path);
     }
 
+    private static void AssertNoLifecycleLockWasAttempted(
+        IEnumerable<FileSystemCall> calls,
+        string lifecycleLockPath
+    )
+    {
+        Assert.DoesNotContain(
+            calls,
+            call =>
+                string.Equals(
+                    call.Operation,
+                    nameof(IFileSystemMutationLock.AcquireMutationLock),
+                    StringComparison.Ordinal
+                )
+                && string.Equals(call.Path, lifecycleLockPath, StringComparison.Ordinal)
+        );
+    }
+
+    private static void AssertNoFilesystemMutationOrLockCalls(IEnumerable<FileSystemCall> calls)
+    {
+        string[] forbiddenOperations =
+        [
+            nameof(IFileSystem.WriteAllText),
+            nameof(IFileSystem.AtomicWriteAllText),
+            nameof(IFileSystem.AtomicWriteAllBytes),
+            nameof(IFileSystem.SetUnixFileMode),
+            nameof(IFileSystem.CreateDirectory),
+            nameof(IFileSystem.DeleteFile),
+            nameof(IFileSystem.DeleteDirectory),
+            nameof(IFileSystemMutationLock.AcquireMutationLock),
+            nameof(InMemoryFileSystem.AddSymbolicLink),
+        ];
+
+        Assert.DoesNotContain(
+            calls,
+            call => forbiddenOperations.Contains(call.Operation, StringComparer.Ordinal)
+        );
+    }
+
     private static void AssertNoFilesystemStateReadCallsBeforeLockAcquisition(
         IEnumerable<FileSystemCall> calls
     )
@@ -7676,6 +9873,49 @@ FilesystemBackedValidationAndExecutionRejectCiTemporaryFileTargetCollidingWithOw
             PreserveDeclarationsAndComments = false,
         };
 
+    private static ConfigurationChangePlan CreatePhysicalTargetPlan(
+        ConfigurationTargetKind targetKind,
+        string targetPath
+    ) =>
+        ConfigurationChangePlanPolicy.Create(
+            $"plan-{targetKind}-physical-target",
+            $"changeset-{targetKind}-physical-target",
+            "azureauth-credprovider",
+            ConfigurationScope.User,
+            CreateManifest() with
+            {
+                ManifestId = $"manifest-{targetKind}-physical-target",
+                EntrySelector = $"{targetKind}.physical-target",
+            },
+            [
+                new ConfigurationChange
+                {
+                    Operation = ConfigurationChangeOperation.Set,
+                    TargetKind = targetKind,
+                    TargetPathOrName = targetPath,
+                    Key = "physical-target",
+                    Value = "planned-value",
+                    RequiresOwnershipRecord = true,
+                    PreserveDeclarationsAndComments = true,
+                },
+            ]
+        );
+
+    private static ConfigurationChange CreatePhysicalTargetChange(
+        ConfigurationTargetKind targetKind,
+        string targetPath
+    ) =>
+        new()
+        {
+            Operation = ConfigurationChangeOperation.Set,
+            TargetKind = targetKind,
+            TargetPathOrName = targetPath,
+            Key = $"{targetKind}.physical-target",
+            Value = "planned-value",
+            RequiresOwnershipRecord = true,
+            PreserveDeclarationsAndComments = true,
+        };
+
     private static ConfigurationChange CreateYarnrcFileChange(string targetPath) =>
         new()
         {
@@ -7684,6 +9924,19 @@ FilesystemBackedValidationAndExecutionRejectCiTemporaryFileTargetCollidingWithOw
             TargetPathOrName = targetPath,
             Key = "nodeLinker",
             Value = "node-modules",
+            RequiresOwnershipRecord = true,
+            IsSecretValue = false,
+            PreserveDeclarationsAndComments = true,
+        };
+
+    private static ConfigurationChange CreateNpmrcFileChange(string targetPath) =>
+        new()
+        {
+            Operation = ConfigurationChangeOperation.Set,
+            TargetKind = ConfigurationTargetKind.Npmrc,
+            TargetPathOrName = targetPath,
+            Key = "registry",
+            Value = "https://registry.npmjs.org/",
             RequiresOwnershipRecord = true,
             IsSecretValue = false,
             PreserveDeclarationsAndComments = true,

@@ -74,6 +74,10 @@ internal static class ConfigurationPlanProjector
         };
     }
 
+    public static IReadOnlyList<ConfigurationTargetLayoutProjection> CreateTargetLayoutProjections(
+        ConfigurationLayoutProjectionContext context
+    ) => ConfigurationLayoutProjector.ProjectTargets(context);
+
     private static ConfigurationPlannedOperation CreatePlannedOperation(
         ConfigurationChange change,
         int index

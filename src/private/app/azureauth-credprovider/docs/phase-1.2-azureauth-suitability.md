@@ -59,9 +59,10 @@ runtime dependency.
 The main blockers are:
 
 1. AzureAuth is centered on user public-client flows and Azure DevOps PAT/token
-   helpers. The current product still needs MVP identity-flow selection for
-   service principal, managed identity, workload identity federation, and Azure
-   Pipelines system access token behavior before freezing core contracts.
+   helpers. The product identity matrix is already frozen for Phase 1A and
+   Phase 2: browser, device code, narrow PAT compatibility, and Azure Pipelines
+   system access token are accepted; service principal, managed identity, and
+   workload identity federation are deferred.
 2. AzureAuth non-interactive behavior is environment-driven and platform-specific
    rather than an explicit per-request policy surface matching this product's
    adapter needs.
@@ -102,15 +103,18 @@ Evidence:
 Finding:
 
 AzureAuth covers Microsoft Entra public-client tokens and Azure DevOps bearer or
-PAT-oriented outputs. It does not by itself close product support for service
-principal, managed identity, workload identity federation, or Azure Pipelines
-system access token flows. The latter appears only as PAT-like environment input
+PAT-oriented outputs. This aligns only with the accepted browser, device-code,
+narrow PAT compatibility, and Azure Pipelines system access token portions of
+the frozen product identity matrix. It does not add MVP support for the deferred
+service principal, managed identity, or workload identity federation flows. The
+Azure Pipelines system access token appears only as PAT-like environment input
 for `ado token`, not as a complete product policy model.
 
 Decision impact:
 
-Use direct MSAL for the core so Phase 1A can select identity flows without being
-constrained by AzureAuth's current public-client CLI surface.
+Use direct MSAL for the core so the frozen Phase 1A and Phase 2 identity matrix
+can be implemented without being constrained by AzureAuth's current public-client
+CLI surface.
 
 ### Non-Interactive Behavior
 
@@ -130,10 +134,14 @@ Evidence:
 Finding:
 
 AzureAuth has some non-interactive safeguards, but they are not the same as this
-product's required per-request adapter policy. In particular, CI mode for this
-product must prefer explicit workload identity federation, managed identity,
-Azure Pipelines system access token, or other configured short-lived identity
-material, and must forbid desktop-cache discovery by default.
+product's required per-request adapter policy. In particular, explicit CI mode
+for the current MVP must accept only the explicit Azure Pipelines system access
+token flow under the frozen non-persistent CI policy, must not advertise PAT
+compatibility as usable in explicit CI mode, must not imply MVP support for the
+deferred service principal, managed identity, or workload identity federation
+flows, and must forbid desktop-cache discovery by default. Narrow explicit PAT
+compatibility remains accepted only when the PAT request itself is an accepted
+MVP request outside explicit CI availability.
 
 Decision impact:
 
@@ -315,14 +323,17 @@ The disposable `.copilot-scratch` directory was removed after the attempt.
 - **External executable risk:** A mandatory AzureAuth dependency would add PATH,
   installation integrity, version skew, and update-channel concerns to every
   adapter invocation.
-- **Scope gap risk:** Required MVP flows are not selected yet. AzureAuth source
-  inspection does not prove coverage for all candidate service-identity flows.
+- **Scope gap risk:** Required MVP flows are limited by the frozen Phase 1A and
+  Phase 2 identity matrix. AzureAuth source inspection does not prove support for
+  the deferred service principal, managed identity, or workload identity
+  federation flows.
 
 ## Follow-ups
 
-1. Phase 1A must explicitly accept, defer, or remove interactive browser, device
-   code, PAT compatibility, service principal, managed identity, workload
-   identity federation, and Azure Pipelines system access token for MVP.
+1. Preserve the frozen Phase 1A and Phase 2 identity matrix: accepted browser,
+   device code, narrow PAT compatibility, and Azure Pipelines system access token
+   flows; deferred service principal, managed identity, and workload identity
+   federation flows.
 2. Phase 6 should implement the identity-provider abstraction with a fake
    provider first, then a direct MSAL provider that enforces product cache and
    redaction policy.
