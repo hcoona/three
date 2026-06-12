@@ -30,8 +30,8 @@ importers:
         specifier: 0.22.1
         version: 0.22.1
       prettier:
-        specifier: 3.8.3
-        version: 3.8.3
+        specifier: 3.8.4
+        version: 3.8.4
 
   src/private/app/im-acp-gateway/poc/telegram-bot-verifier:
     devDependencies:
