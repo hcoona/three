@@ -14,104 +14,123 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 
 public sealed class ConfigurationManagerTests
 {
-    public static bool IsWindows => OperatingSystem.IsWindows();
+    private static readonly ConfigurationTargetKind[] NonPhase4DPhysicalTargetKindValues =
+    [
+        ConfigurationTargetKind.Npmrc,
+        ConfigurationTargetKind.Yarnrc,
+    ];
 
-    public static TheoryData<string, ConfigurationTargetKind, string, string>
-        PhysicalTargetOwnershipManifestCollisionCases
-    {
-        get
-        {
-            var cases = new TheoryData<string, ConfigurationTargetKind, string, string>();
-            string[] methodNames =
-            [
-                nameof(IConfigurationManager.ValidatePlan),
-                nameof(IConfigurationManager.DryRunAsync),
-            ];
-            ConfigurationTargetKind[] targetKinds =
-            [
-                ConfigurationTargetKind.NuGetPluginLayout,
-                ConfigurationTargetKind.PythonKeyringBackend,
-                ConfigurationTargetKind.KeyringShim,
-                ConfigurationTargetKind.GitConfig,
-                ConfigurationTargetKind.Npmrc,
-                ConfigurationTargetKind.Yarnrc,
-            ];
-
-            foreach (string methodName in methodNames)
-            {
-                foreach (ConfigurationTargetKind targetKind in targetKinds)
-                {
-                    string pathSegment = targetKind
-                        .ToString()
-                        .ToLower(CultureInfo.InvariantCulture);
-                    cases.Add(
-                        methodName,
-                        targetKind,
-                        $"/config/{pathSegment}/ownership-manifest.json",
-                        $"/config/{pathSegment}/ownership-manifest.json"
-                    );
-                    cases.Add(
-                        methodName,
-                        targetKind,
-                        $"/config/{pathSegment}/absolute-relative-target",
-                        $"config/{pathSegment}/absolute-relative-target"
-                    );
-                    cases.Add(
-                        methodName,
-                        targetKind,
-                        $"config/{pathSegment}/relative-absolute-target",
-                        $"/config/{pathSegment}/relative-absolute-target"
-                    );
-                    cases.Add(
-                        methodName,
-                        targetKind,
-                        $"/config/{pathSegment}/target-root",
-                        $"/config/{pathSegment}/target-root/ownership-manifest.json"
-                    );
-                    cases.Add(
-                        methodName,
-                        targetKind,
-                        $"/config/{pathSegment}/manifest-root/target",
-                        $"/config/{pathSegment}/manifest-root"
-                    );
-                    cases.Add(
-                        methodName,
-                        targetKind,
-                        $"config/{pathSegment}/ownership-manifest.json",
-                        $"config/{pathSegment}/ownership-manifest.json"
-                    );
-                    cases.Add(
-                        methodName,
-                        targetKind,
-                        $"config/{pathSegment}/sub/../ownership-manifest.json",
-                        $"config/{pathSegment}/ownership-manifest.json"
-                    );
-                    cases.Add(
-                        methodName,
-                        targetKind,
-                        $"config/{pathSegment}/target-root",
-                        $"config/{pathSegment}/target-root/ownership-manifest.json"
-                    );
-                    cases.Add(
-                        methodName,
-                        targetKind,
-                        $"config/{pathSegment}/manifest-root/target",
-                        $"config/{pathSegment}/manifest-root"
-                    );
-                }
-            }
-
-            return cases;
-        }
-    }
-
-    public static TheoryData<ConfigurationTargetKind> Phase4DPhysicalTargetKinds =>
+    private static readonly ConfigurationTargetKind[] Phase4DPhysicalTargetKindValues =
     [
         ConfigurationTargetKind.NuGetPluginLayout,
         ConfigurationTargetKind.PythonKeyringBackend,
         ConfigurationTargetKind.KeyringShim,
         ConfigurationTargetKind.GitConfig,
     ];
+
+    public static bool IsWindows => OperatingSystem.IsWindows();
+
+    public static TheoryData<string, ConfigurationTargetKind, string, string>
+        PhysicalTargetOwnershipManifestCollisionCases =>
+        CreatePhysicalTargetOwnershipManifestCollisionCases(
+            NonPhase4DPhysicalTargetKindValues
+        );
+
+    public static TheoryData<string, ConfigurationTargetKind, string, string>
+        Phase4DPhysicalTargetOwnershipManifestCollisionCases =>
+        CreatePhysicalTargetOwnershipManifestCollisionCases(
+            Phase4DPhysicalTargetKindValues
+        );
+
+    public static TheoryData<ConfigurationTargetKind> Phase4DPhysicalTargetKinds
+    {
+        get
+        {
+            var cases = new TheoryData<ConfigurationTargetKind>();
+            foreach (ConfigurationTargetKind targetKind in Phase4DPhysicalTargetKindValues)
+            {
+                cases.Add(targetKind);
+            }
+            return cases;
+        }
+    }
+
+    private static TheoryData<string, ConfigurationTargetKind, string, string>
+        CreatePhysicalTargetOwnershipManifestCollisionCases(
+            IEnumerable<ConfigurationTargetKind> targetKinds
+        )
+    {
+        var cases = new TheoryData<string, ConfigurationTargetKind, string, string>();
+        string[] methodNames =
+        [
+            nameof(IConfigurationManager.ValidatePlan),
+            nameof(IConfigurationManager.DryRunAsync),
+        ];
+
+        foreach (string methodName in methodNames)
+        {
+            foreach (ConfigurationTargetKind targetKind in targetKinds)
+            {
+                string pathSegment = targetKind.ToString().ToLower(CultureInfo.InvariantCulture);
+                cases.Add(
+                    methodName,
+                    targetKind,
+                    $"/config/{pathSegment}/ownership-manifest.json",
+                    $"/config/{pathSegment}/ownership-manifest.json"
+                );
+                cases.Add(
+                    methodName,
+                    targetKind,
+                    $"/config/{pathSegment}/absolute-relative-target",
+                    $"config/{pathSegment}/absolute-relative-target"
+                );
+                cases.Add(
+                    methodName,
+                    targetKind,
+                    $"config/{pathSegment}/relative-absolute-target",
+                    $"/config/{pathSegment}/relative-absolute-target"
+                );
+                cases.Add(
+                    methodName,
+                    targetKind,
+                    $"/config/{pathSegment}/target-root",
+                    $"/config/{pathSegment}/target-root/ownership-manifest.json"
+                );
+                cases.Add(
+                    methodName,
+                    targetKind,
+                    $"/config/{pathSegment}/manifest-root/target",
+                    $"/config/{pathSegment}/manifest-root"
+                );
+                cases.Add(
+                    methodName,
+                    targetKind,
+                    $"config/{pathSegment}/ownership-manifest.json",
+                    $"config/{pathSegment}/ownership-manifest.json"
+                );
+                cases.Add(
+                    methodName,
+                    targetKind,
+                    $"config/{pathSegment}/sub/../ownership-manifest.json",
+                    $"config/{pathSegment}/ownership-manifest.json"
+                );
+                cases.Add(
+                    methodName,
+                    targetKind,
+                    $"config/{pathSegment}/target-root",
+                    $"config/{pathSegment}/target-root/ownership-manifest.json"
+                );
+                cases.Add(
+                    methodName,
+                    targetKind,
+                    $"config/{pathSegment}/manifest-root/target",
+                    $"config/{pathSegment}/manifest-root"
+                );
+            }
+        }
+
+        return cases;
+    }
 
     public static TheoryData<ConfigurationTargetKind, ConfigurationTargetKind>
         Phase4DPhysicalTargetKindConflictCases
@@ -313,6 +332,318 @@ public sealed class ConfigurationManagerTests
         Assert.Contains("CI temporary file", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task
+        ValidatePlanDryRunApplyRemovePreserveGenericCiTempProjectionOrdering()
+    {
+        var manager = new ConfigurationManager();
+        ConfigurationChangePlan plan = CreateGenericFilePlan(
+            ConfigurationChangeOperation.EnsureFile,
+            "/config/projection-first-generic-file.txt",
+            value: null
+        ) with
+        {
+            Manifest = new ConfigurationManifestMetadata
+            {
+                ManifestId = "manifest-generic-file-null-metadata",
+                OwnerProductId = "azureauth-credprovider",
+                EntrySelector = "generic.file",
+                ProductVersion = "0.0.0-test",
+                SafeMetadata = null!,
+            },
+        };
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
+        Assert.Contains("metadata", validationResult.Violation, StringComparison.OrdinalIgnoreCase);
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains("metadata", exception.Message, StringComparison.OrdinalIgnoreCase);
+        var applyException = Assert.Throws<ArgumentException>(() =>
+        {
+            ValueTask<ConfigurationPlanResult> result = manager.ApplyAsync(
+                plan,
+                TestContext.Current.CancellationToken
+            );
+            _ = result.AsTask();
+        });
+        Assert.Contains("metadata", applyException.Message, StringComparison.OrdinalIgnoreCase);
+        var removeException = Assert.Throws<ArgumentException>(() =>
+        {
+            ValueTask<ConfigurationPlanResult> result = manager.RemoveAsync(
+                plan,
+                TestContext.Current.CancellationToken
+            );
+            _ = result.AsTask();
+        });
+        Assert.Contains("metadata", removeException.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task
+        ValidateAcceptDryRunRejectMultiplePhase4DPhysicalChangesBeforeProjection()
+    {
+        var manager = new ConfigurationManager();
+        const string firstTargetPath = "/config/planning-multi-phase4d-first.gitconfig";
+        const string secondTargetPath = "/config/planning-multi-phase4d-second.gitconfig";
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            firstTargetPath
+        );
+        ConfigurationChangePlan plan = setPlan with
+        {
+            // Null safe metadata is contract-valid but ownership-manifest projection-invalid.
+            // The Phase 4D physical scaffold guard must reject before projection sees it.
+            Manifest = setPlan.Manifest with { SafeMetadata = null! },
+            Changes =
+            [
+                setPlan.Changes[0],
+                setPlan.Changes[0] with
+                {
+                    Key = "credential.useHttpPath",
+                    TargetPathOrName = secondTargetPath,
+                    Value = "true",
+                },
+            ],
+        };
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+        ConfigurationPlanValidationResult acceptResult = await manager.AcceptPlanAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
+        Assert.Contains(
+            "only one 4D physical target change",
+            validationResult.Violation,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            "metadata",
+            validationResult.Violation,
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.False(acceptResult.IsValid);
+        Assert.NotNull(acceptResult.Violation);
+        Assert.Contains(
+            "only one 4D physical target change",
+            acceptResult.Violation,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            "metadata",
+            acceptResult.Violation,
+            StringComparison.OrdinalIgnoreCase
+        );
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(
+            "only one 4D physical target change",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain("metadata", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task
+        ValidateAcceptDryRunRejectUnsupportedPhase4DInstallAdapterBeforeProjection()
+    {
+        var manager = new ConfigurationManager();
+        const string targetPath = "/config/planning-install-adapter-phase4d";
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            targetPath
+        );
+        ConfigurationChangePlan plan = setPlan with
+        {
+            // Null safe metadata is contract-valid but ownership-manifest projection-invalid.
+            // The Phase 4D physical scaffold guard must reject before projection sees it.
+            Manifest = setPlan.Manifest with { SafeMetadata = null! },
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.InstallAdapter,
+                    Value = null,
+                },
+            ],
+        };
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+        ConfigurationPlanValidationResult acceptResult = await manager.AcceptPlanAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
+        Assert.Contains(
+            "can be executed by apply or remove",
+            validationResult.Violation,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            "metadata",
+            validationResult.Violation,
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.False(acceptResult.IsValid);
+        Assert.NotNull(acceptResult.Violation);
+        Assert.Contains(
+            "can be executed by apply or remove",
+            acceptResult.Violation,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            "metadata",
+            acceptResult.Violation,
+            StringComparison.OrdinalIgnoreCase
+        );
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(
+            "can be executed by apply or remove",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain("metadata", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task
+        ValidateAcceptDryRunRejectMixedPhase4DAndNonPhase4DTargetsBeforeProjection()
+    {
+        var manager = new ConfigurationManager();
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            "/config/planning-mixed-phase4d.gitconfig"
+        );
+        ConfigurationChangePlan plan = setPlan with
+        {
+            // Null safe metadata is contract-valid but ownership-manifest projection-invalid.
+            // The Phase 4D physical scaffold guard must reject before projection sees it.
+            Manifest = setPlan.Manifest with { SafeMetadata = null! },
+            Changes =
+            [
+                setPlan.Changes[0],
+                CreateNpmrcFileChange("/config/planning-mixed-phase4d.npmrc"),
+            ],
+        };
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+        ConfigurationPlanValidationResult acceptResult = await manager.AcceptPlanAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
+        Assert.Contains(
+            "mixing 4D physical configuration targets",
+            validationResult.Violation,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            "metadata",
+            validationResult.Violation,
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.False(acceptResult.IsValid);
+        Assert.NotNull(acceptResult.Violation);
+        Assert.Contains(
+            "mixing 4D physical configuration targets",
+            acceptResult.Violation,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            "metadata",
+            acceptResult.Violation,
+            StringComparison.OrdinalIgnoreCase
+        );
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(
+            "mixing 4D physical configuration targets",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain("metadata", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task
+        ValidateAcceptDryRunRejectMultiplePhase4DTargetKindsBeforeProjection()
+    {
+        var manager = new ConfigurationManager();
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            "/config/planning-multi-kind-phase4d.gitconfig"
+        );
+        ConfigurationChangePlan plan = setPlan with
+        {
+            // Null safe metadata is contract-valid but ownership-manifest projection-invalid.
+            // The Phase 4D physical scaffold guard must reject before projection sees it.
+            Manifest = setPlan.Manifest with { SafeMetadata = null! },
+            Changes =
+            [
+                setPlan.Changes[0],
+                CreatePhysicalTargetChange(
+                    ConfigurationTargetKind.KeyringShim,
+                    "/config/planning-multi-kind-phase4d-keyring-shim"
+                ),
+            ],
+        };
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+        ConfigurationPlanValidationResult acceptResult = await manager.AcceptPlanAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
+        Assert.Contains(
+            "only one 4D physical target kind",
+            validationResult.Violation,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            "metadata",
+            validationResult.Violation,
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.False(acceptResult.IsValid);
+        Assert.NotNull(acceptResult.Violation);
+        Assert.Contains(
+            "only one 4D physical target kind",
+            acceptResult.Violation,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            "metadata",
+            acceptResult.Violation,
+            StringComparison.OrdinalIgnoreCase
+        );
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(
+            "only one 4D physical target kind",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain("metadata", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData("/state/.azureauth-credprovider.fs.lock")]
     [InlineData("/state/.azureauth-credprovider.fs.lock/descendant")]
@@ -331,6 +662,74 @@ public sealed class ConfigurationManagerTests
             "reserved internal filesystem artifact",
             exception.Message,
             StringComparison.Ordinal
+        );
+    }
+
+    [Theory]
+    [InlineData("state/manifest.json", "/state/.azureauth-credprovider.fs.lock")]
+    [InlineData(
+        "state/nested-manifest.json",
+        "/state/.azureauth-credprovider.fs.lock/manifest.json"
+    )]
+    [InlineData("locks/manifest.json", "/state/.azureauth-credprovider.lifecycle-locks")]
+    [InlineData(
+        "locks/nested-manifest.json",
+        "/state/.azureauth-credprovider.lifecycle-locks/manifest.json"
+    )]
+    public void
+        ConstructorRejectsOwnershipManifestPathWhenFullPathResolvesToReservedInternalArtifact(
+            string rawManifestPath,
+            string normalizedManifestPath
+        )
+    {
+        var innerFileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var fileSystem = new FullPathRemappingFileSystem(
+            innerFileSystem,
+            rawManifestPath,
+            normalizedManifestPath
+        );
+
+        var exception = Assert.Throws<ArgumentException>(
+            () => new ConfigurationManager(fileSystem, rawManifestPath)
+        );
+
+        Assert.Equal("ownershipManifestPath", exception.ParamName);
+        Assert.Contains(
+            "reserved internal filesystem artifact",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public void ConstructorWrapsOwnershipManifestPathNormalizationFailure()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var injectedException = new IOException(
+            "Injected ownership manifest path normalization failure."
+        );
+        fileSystem.FailNextCall(injectedException);
+
+        var exception = Assert.Throws<ArgumentException>(
+            () => new ConfigurationManager(fileSystem, "state/manifest.json")
+        );
+
+        Assert.Equal("ownershipManifestPath", exception.ParamName);
+        Assert.Same(injectedException, exception.InnerException);
+        Assert.Contains(
+            "normalizable physical path",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            fileSystem.Calls,
+            call =>
+                string.Equals(
+                    call.Operation,
+                    nameof(IFileSystem.GetFullPath),
+                    StringComparison.Ordinal
+                )
+                && string.Equals(call.Path, "/state/manifest.json", StringComparison.Ordinal)
         );
     }
 
@@ -450,31 +849,30 @@ public sealed class ConfigurationManagerTests
             string manifestPath
         )
     {
-        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
-        var manager = new ConfigurationManager(fileSystem, manifestPath);
-        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(targetKind, collidingTargetPath);
-
-        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
-
-        Assert.False(validationResult.IsValid);
-        Assert.NotNull(validationResult.Violation);
-        Assert.Contains(
-            "ownership manifest path",
-            validationResult.Violation,
-            StringComparison.Ordinal
+        await AssertPhysicalTargetOwnershipManifestCollisionRejectedAsync(
+            methodName,
+            targetKind,
+            collidingTargetPath,
+            manifestPath
         );
+    }
 
-        if (methodName == nameof(IConfigurationManager.DryRunAsync))
-        {
-            var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
-                await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
-            );
-            Assert.Contains("ownership manifest path", exception.Message, StringComparison.Ordinal);
-        }
-
-        Assert.False(fileSystem.FileExists(manifestPath));
-        Assert.False(fileSystem.FileExists(collidingTargetPath));
-        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    [Theory]
+    [MemberData(nameof(Phase4DPhysicalTargetOwnershipManifestCollisionCases))]
+    public async Task
+        FilesystemBackedPhase4DValidationAndDryRunRejectPhysicalTargetManifestCollision(
+            string methodName,
+            ConfigurationTargetKind targetKind,
+            string collidingTargetPath,
+            string manifestPath
+        )
+    {
+        await AssertPhysicalTargetOwnershipManifestCollisionRejectedAsync(
+            methodName,
+            targetKind,
+            collidingTargetPath,
+            manifestPath
+        );
     }
 
     [Theory]
@@ -509,7 +907,219 @@ public sealed class ConfigurationManagerTests
     }
 
     [Fact]
-    public async Task FilesystemBackedDryRunRejectsProjectionOnlyPhysicalTargetStaleManifestHash()
+    public async Task
+        FilesystemBackedValidateAcceptDryRunApplyRejectsNormalizedReservedPhase4DTarget()
+    {
+        var innerFileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/normalized-reserved-first-physical-manifest.json";
+        const string rawTargetPath = "/config/normalizes-to-reserved-phase4d-target";
+        const string normalizedReservedTargetPath =
+            "/config/.azureauth-credprovider.lifecycle-locks/phase4d-target";
+        var fileSystem = new FullPathRemappingFileSystem(
+            innerFileSystem,
+            rawTargetPath,
+            normalizedReservedTargetPath
+        );
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            rawTargetPath
+        );
+        ConfigurationChangePlan plan = setPlan with
+        {
+            // Null safe metadata is contract-valid but ownership-manifest projection-invalid.
+            // The filesystem-aware reserved path guard must reject normalized physical target
+            // paths before projection validates manifest metadata.
+            Manifest = setPlan.Manifest with { SafeMetadata = null! },
+        };
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+        ConfigurationPlanValidationResult acceptResult = await manager.AcceptPlanAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
+        Assert.Contains(
+            "reserved internal filesystem artifact",
+            validationResult.Violation,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            "metadata",
+            validationResult.Violation,
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.False(acceptResult.IsValid);
+        Assert.NotNull(acceptResult.Violation);
+        Assert.Contains(
+            "reserved internal filesystem artifact",
+            acceptResult.Violation,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            "metadata",
+            acceptResult.Violation,
+            StringComparison.OrdinalIgnoreCase
+        );
+        var dryRunException = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(
+            "reserved internal filesystem artifact",
+            dryRunException.Message,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            "metadata",
+            dryRunException.Message,
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.Empty(dispatcher.Requests);
+        Assert.False(innerFileSystem.Files.ContainsKey(manifestPath));
+        Assert.False(innerFileSystem.Files.ContainsKey(rawTargetPath));
+        Assert.False(innerFileSystem.Files.ContainsKey(normalizedReservedTargetPath));
+        AssertNoFilesystemMutationOrLockCalls(innerFileSystem.Calls);
+
+        innerFileSystem.Calls.Clear();
+        var applyException = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(
+            "reserved internal filesystem artifact",
+            applyException.Message,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain(
+            "metadata",
+            applyException.Message,
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.Empty(dispatcher.Requests);
+        Assert.False(innerFileSystem.Files.ContainsKey(manifestPath));
+        Assert.False(innerFileSystem.Files.ContainsKey(rawTargetPath));
+        Assert.False(innerFileSystem.Files.ContainsKey(normalizedReservedTargetPath));
+        AssertNoFilesystemMutationOrLockCalls(innerFileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedDryRunRejectsUnsupportedPhase4DPhysicalShapeBeforeManifestProjection()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/shape-first-physical-manifest.json";
+        const string firstTargetPath = "/config/shape-first-physical.gitconfig";
+        const string secondTargetPath = "/config/shape-first-physical-second.gitconfig";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            firstTargetPath
+        );
+        ConfigurationChangePlan plan = setPlan with
+        {
+            Manifest = setPlan.Manifest with { SafeMetadata = null! },
+            Changes =
+            [
+                setPlan.Changes[0],
+                setPlan.Changes[0] with
+                {
+                    Key = "credential.useHttpPath",
+                    TargetPathOrName = secondTargetPath,
+                    Value = "true",
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "only one 4D physical target change",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain("metadata", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(dispatcher.Requests);
+        Assert.False(fileSystem.Files.ContainsKey(manifestPath));
+        Assert.False(fileSystem.Files.ContainsKey(firstTargetPath));
+        Assert.False(fileSystem.Files.ContainsKey(secondTargetPath));
+        AssertNoFilesystemStateReadCallsBeforeLockAcquisition(fileSystem.Calls);
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Theory]
+    [InlineData(nameof(IConfigurationManager.ApplyAsync))]
+    [InlineData(nameof(IConfigurationManager.RemoveAsync))]
+    public async Task
+        FilesystemBackedApplyRemoveRejectUnsupportedPhase4DPhysicalShapeBeforeManifestProjection(
+            string methodName
+        )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/shape-first-apply-remove-physical-manifest.json";
+        const string firstTargetPath = "/config/shape-first-apply-remove-physical.gitconfig";
+        const string secondTargetPath =
+            "/config/shape-first-apply-remove-physical-second.gitconfig";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            firstTargetPath
+        );
+        bool remove = methodName == nameof(IConfigurationManager.RemoveAsync);
+        ConfigurationChangeOperation operation = remove
+            ? ConfigurationChangeOperation.Remove
+            : ConfigurationChangeOperation.Set;
+        string? firstValue = remove ? null : "helper";
+        string? secondValue = remove ? null : "true";
+        string? previousMetadata = remove ? "previous-physical-target-entry" : null;
+        ConfigurationChangePlan plan = setPlan with
+        {
+            Manifest = setPlan.Manifest with { SafeMetadata = null! },
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Key = "credential.helper",
+                    Operation = operation,
+                    Value = firstValue,
+                    PreviousOwnedEntryMetadata = previousMetadata,
+                },
+                setPlan.Changes[0] with
+                {
+                    Key = "credential.useHttpPath",
+                    TargetPathOrName = secondTargetPath,
+                    Operation = operation,
+                    Value = secondValue,
+                    PreviousOwnedEntryMetadata = previousMetadata,
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await CreateExecutionCall(manager, methodName, plan)()
+        );
+
+        Assert.Contains(
+            "only one 4D physical target change",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.DoesNotContain("metadata", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(dispatcher.Requests);
+        Assert.False(fileSystem.Files.ContainsKey(manifestPath));
+        Assert.False(fileSystem.Files.ContainsKey(firstTargetPath));
+        Assert.False(fileSystem.Files.ContainsKey(secondTargetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedPhase4DDryRunRejectsProjectionOnlyPhysicalTargetStaleManifestHash()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/stale-physical-manifest.json";
@@ -541,7 +1151,8 @@ public sealed class ConfigurationManagerTests
     }
 
     [Fact]
-    public async Task FilesystemBackedDryRunRejectsProjectionOnlyPhysicalTargetForeignManifest()
+    public async Task
+        FilesystemBackedPhase4DDryRunRejectsProjectionOnlyPhysicalTargetForeignManifest()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/foreign-physical-manifest.json";
@@ -572,7 +1183,8 @@ public sealed class ConfigurationManagerTests
     }
 
     [Fact]
-    public async Task FilesystemBackedDryRunMergesProjectionOnlyPhysicalTargetManifestEntries()
+    public async Task
+        FilesystemBackedPhase4DDryRunMergesProjectionOnlyPhysicalTargetManifestEntries()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/merge-physical-manifest.json";
@@ -645,7 +1257,109 @@ public sealed class ConfigurationManagerTests
 
     [Fact]
     public async Task
-        FilesystemBackedDryRunRejectsExistingNonCiManifestEntrySharingPathWithProjectionOnlyTarget()
+        FilesystemBackedPhase4DDryRunMatchesPhysicalTargetsByNormalizedEquivalentPath()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/normalized-physical-manifest.json";
+        const string manifestTargetPath = "/config/normalized-physical/.gitconfig";
+        const string planTargetPath = "/config/normalized-physical/sub/../.gitconfig";
+        ConfigurationChangePlan createPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            manifestTargetPath
+        );
+        ConfigurationOwnershipManifest existingManifest = await CreateDryRunManifestAsync(
+            createPlan
+        );
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan updatePlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            planTargetPath
+        ) with
+        {
+            Manifest = createPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                createPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Update,
+                    TargetPathOrName = planTargetPath,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                    Value = "updated-planned-value",
+                },
+            ],
+        };
+
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            updatePlan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Planned, result.State);
+        ConfigurationOwnershipManifestEntry entry = Assert.Single(
+            result.OwnershipManifest!.Entries
+        );
+        Assert.Equal(planTargetPath, entry.TargetPathOrName);
+        Assert.Equal(ConfigurationChangeOperation.Update, entry.Operation);
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedPhase4DDryRunKeepsPhysicalTargetKeyCasingDistinctWhenMerging()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/key-casing-physical-manifest.json";
+        const string targetPath = "/config/key-casing/.gitconfig";
+        ConfigurationChangePlan createPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        ConfigurationOwnershipManifest existingManifest = await CreateDryRunManifestAsync(
+            createPlan
+        );
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan casingPlan = createPlan with
+        {
+            Manifest = createPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                createPlan.Changes[0] with
+                {
+                    Key = "Physical-Target",
+                    Value = "case-distinct-planned-value",
+                },
+            ],
+        };
+
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            casingPlan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Planned, result.State);
+        Assert.Collection(
+            result.OwnershipManifest!.Entries,
+            entry => Assert.Equal("physical-target", entry.Key),
+            entry => Assert.Equal("Physical-Target", entry.Key)
+        );
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedPhase4DDryRunRejectsExistingNonCiEntrySharingProjectionPath()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/existing-npmrc-projection-conflict-manifest.json";
@@ -693,7 +1407,7 @@ public sealed class ConfigurationManagerTests
 
     [Fact]
     public async Task
-        FilesystemBackedDryRunRejectsExistingManifestWithSamePathDifferentNonCiPhysicalEntries()
+        FilesystemBackedPhase4DDryRunRejectsSamePathDifferentNonCiPhysicalEntries()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/existing-non-ci-physical-conflict-manifest.json";
@@ -751,7 +1465,7 @@ public sealed class ConfigurationManagerTests
 
     [Theory]
     [MemberData(nameof(ReservedPhase4DPhysicalTargetPaths))]
-    public async Task FilesystemBackedDryRunRejectsExistingReservedNonCiPhysicalManifestEntry(
+    public async Task FilesystemBackedPhase4DDryRunRejectsExistingReservedNonCiPhysicalEntry(
         ConfigurationTargetKind existingTargetKind,
         string reservedTargetPath
     )
@@ -808,7 +1522,7 @@ public sealed class ConfigurationManagerTests
     [Theory]
     [InlineData("/config/.azureauth-credprovider.fs.lock")]
     [InlineData("/config/.azureauth-credprovider.lifecycle-locks/descendant")]
-    public async Task FilesystemBackedDryRunRejectsExistingReservedCiTemporaryManifestEntry(
+    public async Task FilesystemBackedPhase4DDryRunRejectsExistingReservedCiTemporaryEntry(
         string reservedTargetPath
     )
     {
@@ -871,7 +1585,7 @@ public sealed class ConfigurationManagerTests
         "/config/existing-entry-manifest-collision-reverse"
     )]
     public async Task
-        FilesystemBackedDryRunRejectsExistingEntryCollidesWithOwnershipManifestPathAfterGetFullPath(
+        FilesystemBackedPhase4DDryRunRejectsExistingEntryCollidingWithManifestPath(
             string manifestPath,
             string existingTargetPath
         )
@@ -921,7 +1635,7 @@ public sealed class ConfigurationManagerTests
     }
 
     [Fact]
-    public async Task FilesystemBackedDryRunRemovesProjectionOnlyPhysicalTargetManifestEntries()
+    public async Task FilesystemBackedPhase4DDryRunRemovesProjectionOnlyPhysicalTargetEntries()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/remove-physical-manifest.json";
@@ -999,7 +1713,7 @@ public sealed class ConfigurationManagerTests
     }
 
     [Fact]
-    public async Task FilesystemBackedDryRunRejectsUnownedProjectionOnlyPhysicalTargetRemove()
+    public async Task FilesystemBackedPhase4DDryRunRejectsUnownedProjectionOnlyPhysicalRemove()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/unowned-remove-physical-manifest.json";
@@ -1043,7 +1757,8 @@ public sealed class ConfigurationManagerTests
     }
 
     [Fact]
-    public async Task FilesystemBackedDryRunRejectsMissingManifestForProjectionOnlyRemoveAdapter()
+    public async Task
+        FilesystemBackedPhase4DDryRunRejectsMissingManifestForProjectionOnlyRemoveAdapter()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/missing-remove-adapter-physical-manifest.json";
@@ -1081,7 +1796,7 @@ public sealed class ConfigurationManagerTests
     }
 
     [Fact]
-    public async Task FilesystemBackedDryRunRejectsUnownedProjectionOnlyRemoveAdapter()
+    public async Task FilesystemBackedPhase4DDryRunRejectsUnownedProjectionOnlyRemoveAdapter()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/unowned-remove-adapter-physical-manifest.json";
@@ -1126,7 +1841,7 @@ public sealed class ConfigurationManagerTests
 
     [Fact]
     public async Task
-        FilesystemBackedDryRunRejectsUnownedSamePathDifferentKeyProjectionOnlyRemoveAdapter()
+        FilesystemBackedPhase4DDryRunRejectsUnownedSamePathKeyProjectionOnlyRemoveAdapter()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/unowned-key-remove-adapter-physical-manifest.json";
@@ -1182,7 +1897,7 @@ public sealed class ConfigurationManagerTests
     }
 
     [Fact]
-    public async Task FilesystemBackedDryRunRemovesProjectionOnlyRemoveAdapterManifestEntries()
+    public async Task FilesystemBackedPhase4DDryRunRemovesProjectionOnlyRemoveAdapterEntries()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/remove-adapter-physical-manifest.json";
@@ -1261,7 +1976,7 @@ public sealed class ConfigurationManagerTests
 
     [Fact]
     public async Task
-        FilesystemBackedDryRunPreservesSamePathDifferentKeyProjectionOnlyRemoveAdapterEntries()
+        FilesystemBackedPhase4DDryRunPreservesSamePathKeyProjectionOnlyRemoveAdapterEntries()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/remove-adapter-preserve-key-physical-manifest.json";
@@ -1333,7 +2048,8 @@ public sealed class ConfigurationManagerTests
     }
 
     [Fact]
-    public async Task FilesystemBackedDryRunMergesProjectionOnlyInstallAdapterAfterRemoveAdapter()
+    public async Task
+        FilesystemBackedPhase4DDryRunRejectsProjectionOnlyInstallAdapterAfterRemoveAdapter()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/replace-adapter-physical-manifest.json";
@@ -1395,50 +2111,33 @@ public sealed class ConfigurationManagerTests
             ],
         };
 
-        ConfigurationPlanResult result = await manager.DryRunAsync(
-            replaceAdapterPlan,
-            TestContext.Current.CancellationToken
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.DryRunAsync(replaceAdapterPlan, TestContext.Current.CancellationToken)
         );
 
+        Assert.Contains(
+            "only one 4D physical target change",
+            exception.Message,
+            StringComparison.Ordinal
+        );
         Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
         Assert.False(fileSystem.FileExists(remainingTargetPath));
         Assert.False(fileSystem.FileExists(removedTargetPath));
         Assert.False(fileSystem.FileExists(installedTargetPath));
-        Assert.Collection(
-            result.OwnershipManifest!.Entries,
-            entry =>
-            {
-                Assert.Equal(1, entry.Sequence);
-                Assert.Equal(remainingTargetPath, entry.TargetPathOrName);
-                Assert.Equal("remaining-replace-adapter-target", entry.Key);
-            },
-            entry =>
-            {
-                Assert.Equal(2, entry.Sequence);
-                Assert.Equal(ConfigurationChangeOperation.InstallAdapter, entry.Operation);
-                Assert.Equal(installedTargetPath, entry.TargetPathOrName);
-                Assert.Equal("installed-replace-adapter-target", entry.Key);
-            }
-        );
-        Assert.DoesNotContain(
-            removedTargetPath,
-            RawOwnershipManifestJson(result.OwnershipManifest!),
-            StringComparison.Ordinal
-        );
         AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
     }
 
     [Fact]
     public async Task
-        FilesystemBackedDryRunMergesProjectionOnlyInstallAdapterWithValueWritingChange()
+        FilesystemBackedPhase4DDryRunRejectsProjectionOnlyInstallAdapterWithValueWritingChange()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/install-adapter-with-value-physical-manifest.json";
-        const string setTargetPath = "/config/value-writing-physical.gitconfig";
+        const string setTargetPath = "/config/value-writing-physical-nuget";
         const string installedTargetPath = "/config/installed-value-writing-adapter";
         var manager = new ConfigurationManager(fileSystem, manifestPath);
         ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
-            ConfigurationTargetKind.GitConfig,
+            ConfigurationTargetKind.NuGetPluginLayout,
             setTargetPath
         );
         ConfigurationChangePlan plan = setPlan with
@@ -1459,31 +2158,18 @@ public sealed class ConfigurationManagerTests
             ],
         };
 
-        ConfigurationPlanResult result = await manager.DryRunAsync(
-            plan,
-            TestContext.Current.CancellationToken
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
         );
 
+        Assert.Contains(
+            "only one 4D physical target change",
+            exception.Message,
+            StringComparison.Ordinal
+        );
         Assert.False(fileSystem.FileExists(manifestPath));
         Assert.False(fileSystem.FileExists(setTargetPath));
         Assert.False(fileSystem.FileExists(installedTargetPath));
-        Assert.Collection(
-            result.OwnershipManifest!.Entries,
-            entry =>
-            {
-                Assert.Equal(1, entry.Sequence);
-                Assert.Equal(ConfigurationChangeOperation.Set, entry.Operation);
-                Assert.Equal(ConfigurationTargetKind.GitConfig, entry.TargetKind);
-                Assert.Equal(setTargetPath, entry.TargetPathOrName);
-            },
-            entry =>
-            {
-                Assert.Equal(2, entry.Sequence);
-                Assert.Equal(ConfigurationChangeOperation.InstallAdapter, entry.Operation);
-                Assert.Equal(ConfigurationTargetKind.NuGetPluginLayout, entry.TargetKind);
-                Assert.Equal(installedTargetPath, entry.TargetPathOrName);
-            }
-        );
         AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
     }
 
@@ -1493,7 +2179,7 @@ public sealed class ConfigurationManagerTests
     [InlineData(ConfigurationChangeOperation.Update)]
     [InlineData(ConfigurationChangeOperation.Refresh)]
     public async Task
-        FilesystemBackedDryRunRejectsRemoveAdapterMixedWithValueWritingProjectionOnlyPlan(
+        FilesystemBackedPhase4DDryRunRejectsRemoveAdapterMixedWithValueWritingProjectionOnlyPlan(
         ConfigurationChangeOperation valueWritingOperation
     )
     {
@@ -1503,7 +2189,7 @@ public sealed class ConfigurationManagerTests
         const string valueTargetPath = "/config/rejected-value-writing.gitconfig";
         var manager = new ConfigurationManager(fileSystem, manifestPath);
         ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
-            ConfigurationTargetKind.GitConfig,
+            ConfigurationTargetKind.NuGetPluginLayout,
             valueTargetPath
         );
         ConfigurationChangePlan plan = setPlan with
@@ -1540,7 +2226,7 @@ public sealed class ConfigurationManagerTests
         );
 
         Assert.Contains(
-            "cannot be executed by apply or remove",
+            "only one 4D physical target change",
             exception.Message,
             StringComparison.Ordinal
         );
@@ -1552,7 +2238,7 @@ public sealed class ConfigurationManagerTests
 
     [Fact]
     public async Task
-        FilesystemBackedDryRunPreservesCiTemporaryManifestEntriesForProjectionOnlyWithoutContainer()
+        FilesystemBackedPhase4DDryRunRejectsProjectionOnlyInstallAdapterWithoutContainer()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/projection-only-with-ci-entry-manifest.json";
@@ -1574,7 +2260,7 @@ public sealed class ConfigurationManagerTests
             ],
         };
         ConfigurationOwnershipManifest projectedManifest = await CreateDryRunManifestAsync(
-            projectionPlan
+            setProjectionPlan
         );
         ConfigurationOwnershipManifest ciManifest = await CreateDryRunManifestAsync(
             CreateGenericFilePlan(ConfigurationChangeOperation.Create, ciTargetPath, "owned-value")
@@ -1598,32 +2284,27 @@ public sealed class ConfigurationManagerTests
             },
         };
 
-        ConfigurationPlanResult result = await manager.DryRunAsync(
-            projectionPlanWithManifestHash,
-            TestContext.Current.CancellationToken
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.DryRunAsync(
+                projectionPlanWithManifestHash,
+                TestContext.Current.CancellationToken
+            )
         );
 
+        Assert.Contains(
+            "can be executed by apply or remove",
+            exception.Message,
+            StringComparison.Ordinal
+        );
         Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
         Assert.False(fileSystem.FileExists(ciTargetPath));
         Assert.False(fileSystem.FileExists(physicalTargetPath));
-        Assert.Collection(
-            result.OwnershipManifest!.Entries,
-            entry =>
-            {
-                Assert.Equal(ConfigurationTargetKind.CiTemporaryFile, entry.TargetKind);
-                Assert.Equal(ciTargetPath, entry.TargetPathOrName);
-            },
-            entry =>
-            {
-                Assert.Equal(ConfigurationTargetKind.GitConfig, entry.TargetKind);
-                Assert.Equal(physicalTargetPath, entry.TargetPathOrName);
-            }
-        );
         AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
     }
 
     [Fact]
-    public async Task FilesystemBackedDryRunDoesNotTreatEmptyPlanAsProjectionOnlyPhysicalTarget()
+    public async Task
+        FilesystemBackedPhase4DDryRunDoesNotTreatEmptyPlanAsProjectionOnlyPhysicalTarget()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/manifest.json";
@@ -1686,9 +2367,103 @@ public sealed class ConfigurationManagerTests
     }
 
     [Theory]
+    [InlineData("/config/.azureauth-credprovider.fs.lock")]
+    [InlineData("/config/.azureauth-credprovider.fs.lock/descendant")]
+    [InlineData("/config/.azureauth-credprovider.lifecycle-locks")]
+    [InlineData("/config/.azureauth-credprovider.lifecycle-locks/descendant")]
+    public async Task
+        ValidateAcceptPlanAndNoFilesystemDryRunRejectReservedCiTemporaryFileTargetPaths(
+            string reservedTargetPath
+        )
+    {
+        var manager = new ConfigurationManager();
+        ConfigurationChangePlan plan = CreateGenericFilePlan(
+            ConfigurationChangeOperation.Create,
+            reservedTargetPath,
+            "owned-after"
+        );
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+        ConfigurationPlanValidationResult acceptResult = await manager.AcceptPlanAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
+        Assert.Contains(
+            "reserved internal filesystem artifact",
+            validationResult.Violation,
+            StringComparison.Ordinal
+        );
+        Assert.False(acceptResult.IsValid);
+        Assert.NotNull(acceptResult.Violation);
+        Assert.Contains(
+            "reserved internal filesystem artifact",
+            acceptResult.Violation,
+            StringComparison.Ordinal
+        );
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(
+            "reserved internal filesystem artifact",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedValidateDryRunApplyRejectReservedPhase4DTargetWithoutManifest()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/reserved-phase4d-apply-without-manifest.json";
+        const string reservedTargetPath =
+            "/config/.azureauth-credprovider.lifecycle-locks/phase4d-target";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            reservedTargetPath
+        );
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
+        Assert.Contains(
+            "reserved internal filesystem artifact",
+            validationResult.Violation,
+            StringComparison.Ordinal
+        );
+        var dryRunException = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(
+            "reserved internal filesystem artifact",
+            dryRunException.Message,
+            StringComparison.Ordinal
+        );
+        fileSystem.Calls.Clear();
+        var applyException = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(
+            "reserved internal filesystem artifact",
+            applyException.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Empty(dispatcher.Requests);
+        Assert.False(fileSystem.FileExists(manifestPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Theory]
     [InlineData("config/reserved-cancelled/.azureauth-credprovider.fs.lock/../target")]
     [InlineData("config/reserved-cancelled/.azureauth-credprovider.lifecycle-locks/../target")]
-    public async Task ValidatePlanAndNoFilesystemDryRunAllowCancelledReservedPhysicalTargetSegments(
+    public async Task
+        ValidatePlanAndNoFilesystemDryRunAllowCancelledReservedPhase4DPhysicalSegments(
         string targetPath
     )
     {
@@ -2515,6 +3290,76 @@ public sealed class ConfigurationManagerTests
         );
     }
 
+    [Theory]
+    [InlineData(nameof(IConfigurationManager.ApplyAsync))]
+    [InlineData(nameof(IConfigurationManager.RemoveAsync))]
+    public void ExecutionMethodsRejectNullPlansSynchronouslyBeforeReturningValueTask(
+        string methodName
+    )
+    {
+        var manager = new ConfigurationManager();
+
+        Assert.Throws<ArgumentNullException>(() =>
+        {
+            ValueTask<ConfigurationPlanResult> result =
+                methodName == nameof(IConfigurationManager.ApplyAsync)
+                ? manager.ApplyAsync(null!, TestContext.Current.CancellationToken)
+                : manager.RemoveAsync(null!, TestContext.Current.CancellationToken);
+            _ = result.AsTask();
+        });
+    }
+
+    [Theory]
+    [InlineData(nameof(IConfigurationManager.ApplyAsync))]
+    [InlineData(nameof(IConfigurationManager.RemoveAsync))]
+    public void ExecutionMethodsRejectCanceledTokenSynchronouslyBeforeReturningValueTask(
+        string methodName
+    )
+    {
+        var manager = new ConfigurationManager();
+        ConfigurationChangePlan plan = CreateValidPlan();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        Assert.Throws<OperationCanceledException>(() =>
+        {
+            ValueTask<ConfigurationPlanResult> result =
+                methodName == nameof(IConfigurationManager.ApplyAsync)
+                ? manager.ApplyAsync(plan, cancellation.Token)
+                : manager.RemoveAsync(plan, cancellation.Token);
+            _ = result.AsTask();
+        });
+    }
+
+    [Theory]
+    [InlineData(nameof(IConfigurationManager.ApplyAsync))]
+    [InlineData(nameof(IConfigurationManager.RemoveAsync))]
+    public void ExecutionMethodsValidatePlansSynchronouslyBeforeReturningValueTask(
+        string methodName
+    )
+    {
+        var manager = new ConfigurationManager();
+        ConfigurationChangePlan invalidPlan = CreateValidPlan() with
+        {
+            Scope = ConfigurationScope.WorkspaceReadOnly,
+        };
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+        {
+            ValueTask<ConfigurationPlanResult> result =
+                methodName == nameof(IConfigurationManager.ApplyAsync)
+                ? manager.ApplyAsync(invalidPlan, TestContext.Current.CancellationToken)
+                : manager.RemoveAsync(invalidPlan, TestContext.Current.CancellationToken);
+            _ = result.AsTask();
+        });
+
+        Assert.Contains(
+            "workspace read-only",
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase
+        );
+    }
+
     [Fact]
     public async Task DryRunProjectsPlannedOperationsAndOwnershipManifest()
     {
@@ -3074,6 +3919,3296 @@ public sealed class ConfigurationManagerTests
     }
 
     [Theory]
+    [MemberData(nameof(Phase4DPhysicalTargetKinds))]
+    public async Task FilesystemBackedApplyRejectsPhase4DPhysicalTargetsWithoutRegisteredWriter(
+        ConfigurationTargetKind targetKind
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/no-writer-apply-manifest.json";
+        string targetPath =
+            "/config/no-writer-apply-"
+            + targetKind.ToString().ToLower(CultureInfo.InvariantCulture);
+        const string existingTargetContents = "pre-existing physical target contents";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(targetKind, targetPath);
+        string existingManifestJson = await CreateDryRunManifestJsonAsync(plan);
+        fileSystem.AtomicWriteAllText(targetPath, existingTargetContents);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        plan = plan with
+        {
+            Manifest = plan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("no registered writer", exception.Message, StringComparison.Ordinal);
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+        Assert.Equal(existingTargetContents, fileSystem.ReadAllText(targetPath));
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+    }
+
+    [Theory]
+    [MemberData(nameof(Phase4DPhysicalTargetKinds))]
+    public async Task FilesystemBackedRemoveRejectsPhase4DPhysicalTargetsWithoutRegisteredWriter(
+        ConfigurationTargetKind targetKind
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/no-writer-remove-manifest.json";
+        string targetPath =
+            "/config/no-writer-remove-"
+            + targetKind.ToString().ToLower(CultureInfo.InvariantCulture);
+        const string existingTargetContents = "pre-existing physical target contents";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(targetKind, targetPath);
+        string existingManifestJson = await CreateDryRunManifestJsonAsync(setPlan);
+        fileSystem.AtomicWriteAllText(targetPath, existingTargetContents);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        ConfigurationChangePlan removePlan = setPlan with
+        {
+            Manifest = setPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.RemoveAsync(removePlan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("no registered writer", exception.Message, StringComparison.Ordinal);
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+        Assert.Equal(existingTargetContents, fileSystem.ReadAllText(targetPath));
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+    }
+
+    [Theory]
+    [InlineData(nameof(IConfigurationManager.ApplyAsync))]
+    [InlineData(nameof(IConfigurationManager.RemoveAsync))]
+    public async Task
+        FilesystemBackedPhase4DPhysicalExecutionRejectsUnsupportedConditionalMutationBeforeDispatch(
+        string methodName
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/physical-unsupported-conditional-manifest.json";
+        const string targetPath = "/config/physical-unsupported-conditional.gitconfig";
+        const string existingTargetContents = "pre-existing physical target contents";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        ConfigurationChangePlan plan = setPlan;
+        string? existingManifestJson = null;
+        if (methodName == nameof(IConfigurationManager.RemoveAsync))
+        {
+            existingManifestJson = await CreateDryRunManifestJsonAsync(setPlan);
+            fileSystem.AtomicWriteAllText(targetPath, existingTargetContents);
+            fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+            plan = setPlan with
+            {
+                Manifest = setPlan.Manifest with
+                {
+                    PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+                },
+                Changes =
+                [
+                    setPlan.Changes[0] with
+                    {
+                        Operation = ConfigurationChangeOperation.Remove,
+                        Value = null,
+                        PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                    },
+                ],
+            };
+        }
+
+        fileSystem.SupportsConditionalFileMutations = false;
+        fileSystem.Calls.Clear();
+
+        var exception = await Assert.ThrowsAsync<PlatformNotSupportedException>(async () =>
+            await CreateExecutionCall(manager, methodName, plan)()
+        );
+
+        Assert.Contains(
+            "conditional file mutation",
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.Empty(dispatcher.Requests);
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+        if (existingManifestJson is null)
+        {
+            Assert.False(fileSystem.FileExists(targetPath));
+            Assert.False(fileSystem.FileExists(manifestPath));
+        }
+        else
+        {
+            Assert.Equal(existingTargetContents, fileSystem.ReadAllText(targetPath));
+            Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        }
+    }
+
+    [Fact]
+    public async Task FilesystemBackedApplyRejectsPhase4DManifestMergeConflictsBeforeDispatch()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-merge-conflict-manifest.json";
+        const string targetPath = "/config/phase4d-merge-conflict.gitconfig";
+        const string existingTargetContents = "pre-existing physical target contents";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        ConfigurationOwnershipManifest projectedManifest = await CreateDryRunManifestAsync(plan);
+        ConfigurationOwnershipManifestEntry projectedEntry =
+            Assert.Single(projectedManifest.Entries);
+        ConfigurationOwnershipManifest conflictingExistingManifest = projectedManifest with
+        {
+            Entries =
+            [
+                projectedEntry with
+                {
+                    TargetKind = ConfigurationTargetKind.Npmrc,
+                    Key = "registry",
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(conflictingExistingManifest);
+        fileSystem.AtomicWriteAllText(targetPath, existingTargetContents);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        plan = plan with
+        {
+            Manifest = plan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("same physical target path", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(dispatcher.Requests);
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+        Assert.Equal(existingTargetContents, fileSystem.ReadAllText(targetPath));
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+    }
+
+    [Theory]
+    [InlineData(ConfigurationChangeOperation.InstallAdapter)]
+    [InlineData(ConfigurationChangeOperation.RemoveAdapter)]
+    [InlineData(ConfigurationChangeOperation.Remove)]
+    public async Task
+        FilesystemBackedApplyRejectsNonValueWritingPhase4DPhysicalTargetsWithoutMutation(
+        ConfigurationChangeOperation operation
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/non-value-writing-apply-manifest.json";
+        const string targetPath = "/config/non-value-writing-apply-nuget";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            targetPath
+        );
+        ConfigurationChangePlan plan = setPlan with
+        {
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = operation,
+                    Value = null,
+                    PreviousOwnedEntryMetadata =
+                        operation
+                            is ConfigurationChangeOperation.RemoveAdapter
+                                or ConfigurationChangeOperation.Remove
+                            ? "previous-physical-target-entry"
+                            : null,
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "apply currently supports only value-writing",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Empty(dispatcher.Requests);
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedRemoveRejectsNonOwnershipRemovingPhase4DPhysicalTargetsWithoutMutation()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/non-ownership-removing-remove-manifest.json";
+        const string targetPath = "/config/non-ownership-removing-remove-nuget";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            targetPath
+        );
+        ConfigurationChangePlan plan = setPlan with
+        {
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.InstallAdapter,
+                    Value = null,
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.RemoveAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "remove currently supports only ownership-removing",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Empty(dispatcher.Requests);
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Theory]
+    [InlineData(ConfigurationPlanOperation.Apply)]
+    [InlineData(ConfigurationPlanOperation.Remove)]
+    public async Task
+        FilesystemBackedDispatchRejectsMultiplePhase4DChangesBeforeManifestMutation(
+            ConfigurationPlanOperation operation
+        )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/multi-physical-target-dispatch-manifest.json";
+        const string targetPath = "/config/multi-physical-target-dispatch.gitconfig";
+        const string existingManifestJson = """{"sentinel":"manifest must remain unchanged"}""";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        ConfigurationChangeOperation changeOperation =
+            operation == ConfigurationPlanOperation.Apply
+                ? ConfigurationChangeOperation.Set
+                : ConfigurationChangeOperation.Remove;
+        string? value =
+            operation == ConfigurationPlanOperation.Apply ? "planned-value" : null;
+        string? previousOwnedEntryMetadata =
+            operation == ConfigurationPlanOperation.Remove
+                ? "previous-physical-target-entry"
+                : null;
+        ConfigurationChangePlan plan = setPlan with
+        {
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Key = "credential.helper",
+                    Operation = changeOperation,
+                    Value = value,
+                    PreviousOwnedEntryMetadata = previousOwnedEntryMetadata,
+                },
+                setPlan.Changes[0] with
+                {
+                    Key = "credential.useHttpPath",
+                    Operation = changeOperation,
+                    Value =
+                        operation == ConfigurationPlanOperation.Apply
+                            ? "true"
+                            : null,
+                    PreviousOwnedEntryMetadata = previousOwnedEntryMetadata,
+                },
+            ],
+        };
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+        {
+            if (operation == ConfigurationPlanOperation.Apply)
+            {
+                await manager.ApplyAsync(plan, TestContext.Current.CancellationToken);
+            }
+            else
+            {
+                await manager.RemoveAsync(plan, TestContext.Current.CancellationToken);
+            }
+        });
+
+        Assert.Contains(
+            "only one 4D physical target change",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Empty(dispatcher.Requests);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Theory]
+    [InlineData(ConfigurationChangeOperation.Set)]
+    [InlineData(ConfigurationChangeOperation.Remove)]
+    public async Task
+        FilesystemBackedDryRunRejectsMultiplePhase4DPhysicalTargetChangesBeforeMutation(
+        ConfigurationChangeOperation operation
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/multi-physical-target-dry-run-manifest.json";
+        const string firstTargetPath = "/config/multi-physical-target-dry-run-first.gitconfig";
+        const string secondTargetPath = "/config/multi-physical-target-dry-run-second.gitconfig";
+        const string existingManifestJson = """{"sentinel":"manifest must remain unchanged"}""";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            firstTargetPath
+        );
+        ConfigurationChangePlan plan = setPlan with
+        {
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Key = "credential.helper",
+                    Operation = operation,
+                    Value = operation == ConfigurationChangeOperation.Set ? "helper" : null,
+                    PreviousOwnedEntryMetadata =
+                        operation == ConfigurationChangeOperation.Remove
+                            ? "previous-helper-entry"
+                            : null,
+                },
+                setPlan.Changes[0] with
+                {
+                    Key = "credential.useHttpPath",
+                    TargetPathOrName = secondTargetPath,
+                    Operation = operation,
+                    Value = operation == ConfigurationChangeOperation.Set ? "true" : null,
+                    PreviousOwnedEntryMetadata =
+                        operation == ConfigurationChangeOperation.Remove
+                            ? "previous-use-http-path-entry"
+                            : null,
+                },
+            ],
+        };
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "only one 4D physical target change",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(firstTargetPath));
+        Assert.False(fileSystem.FileExists(secondTargetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Theory]
+    [MemberData(nameof(Phase4DPhysicalTargetKinds))]
+    public async Task FilesystemBackedApplyDispatchesSinglePhase4DPhysicalTarget(
+        ConfigurationTargetKind targetKind
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/fake-writer-apply-manifest.json";
+        string targetPath =
+            "/config/fake-writer-apply-"
+            + targetKind.ToString().ToLower(CultureInfo.InvariantCulture);
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(targetKind, targetPath);
+
+        ConfigurationPlanResult result = await manager.ApplyAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Collection(
+            dispatcher.Requests,
+            request =>
+            {
+                Assert.Equal(ConfigurationPlanOperation.Apply, request.PlanOperation);
+                Assert.Equal(targetKind, request.TargetKind);
+                Assert.Equal(ConfigurationChangeOperation.Set, request.ChangeOperation);
+                Assert.Equal("physical-target", request.Change.Key);
+            }
+        );
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.DoesNotContain(
+            fileSystem.Calls,
+            call =>
+                call.Operation == nameof(IFileSystem.AtomicWriteAllText)
+                && call.Path == targetPath
+        );
+        Assert.True(fileSystem.FileExists(manifestPath));
+    }
+
+    [Theory]
+    [MemberData(nameof(Phase4DPhysicalTargetKinds))]
+    public async Task FilesystemBackedRemoveDispatchesSinglePhase4DPhysicalTarget(
+        ConfigurationTargetKind targetKind
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/fake-writer-remove-manifest.json";
+        string targetPath =
+            "/config/fake-writer-remove-"
+            + targetKind.ToString().ToLower(CultureInfo.InvariantCulture);
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan applyPlan = CreatePhysicalTargetPlan(targetKind, targetPath);
+        await manager.ApplyAsync(applyPlan, TestContext.Current.CancellationToken);
+        string manifestBeforeRemove = fileSystem.ReadAllText(manifestPath);
+        dispatcher.Requests.Clear();
+        ConfigurationChangePlan removePlan = applyPlan with
+        {
+            Manifest = applyPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(manifestBeforeRemove),
+            },
+            Changes =
+            [
+                applyPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+
+        ConfigurationPlanResult result = await manager.RemoveAsync(
+            removePlan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Collection(
+            dispatcher.Requests,
+            request =>
+            {
+                Assert.Equal(ConfigurationPlanOperation.Remove, request.PlanOperation);
+                Assert.Equal(targetKind, request.TargetKind);
+                Assert.Equal(ConfigurationChangeOperation.Remove, request.ChangeOperation);
+                Assert.Equal("physical-target", request.Change.Key);
+            }
+        );
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyMergesEquivalentPhase4DPhysicalTargetManifestPathInOriginalSlot()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-normalized-merge-manifest.json";
+        const string targetPath = "/config/phase4d-normalized-merge.gitconfig";
+        const string equivalentTargetPath = "/config/sub/../phase4d-normalized-merge.gitconfig";
+        const string otherTargetPath = "/config/phase4d-normalized-merge-other.gitconfig";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(plan);
+        ConfigurationOwnershipManifestEntry plannedEntry = Assert.Single(plannedManifest.Entries);
+        ConfigurationOwnershipManifest existingManifest = plannedManifest with
+        {
+            PlanId = "previous-phase4d-normalized-merge-plan",
+            ChangeSetId = "previous-phase4d-normalized-merge-changeset",
+            Entries =
+            [
+                plannedEntry with
+                {
+                    TargetPathOrName = equivalentTargetPath,
+                },
+                plannedEntry with
+                {
+                    Sequence = 2,
+                    TargetPathOrName = otherTargetPath,
+                    Key = "other-physical-target",
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        ConfigurationChangePlan planWithManifestHash = plan with
+        {
+            Manifest = plan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        ConfigurationPlanResult result = await manager.ApplyAsync(
+            planWithManifestHash,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Single(dispatcher.Requests);
+        ConfigurationOwnershipManifest appliedManifest = result.OwnershipManifest!;
+        Assert.Collection(
+            appliedManifest.Entries,
+            entry =>
+            {
+                Assert.Equal(1, entry.Sequence);
+                Assert.Equal(targetPath, entry.TargetPathOrName);
+                Assert.Equal("physical-target", entry.Key);
+            },
+            entry =>
+            {
+                Assert.Equal(2, entry.Sequence);
+                Assert.Equal(otherTargetPath, entry.TargetPathOrName);
+                Assert.Equal("other-physical-target", entry.Key);
+            }
+        );
+        Assert.DoesNotContain(
+            equivalentTargetPath,
+            RawOwnershipManifestJson(appliedManifest),
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedRemoveUsesEquivalentPhase4DPhysicalTargetManifestPathIdentity()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-normalized-remove-manifest.json";
+        const string targetPath = "/config/phase4d-normalized-remove.gitconfig";
+        const string equivalentTargetPath = "/config/sub/../phase4d-normalized-remove.gitconfig";
+        const string remainingTargetPath = "/config/phase4d-normalized-remove-other.gitconfig";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            equivalentTargetPath
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(setPlan);
+        ConfigurationOwnershipManifestEntry plannedEntry = Assert.Single(plannedManifest.Entries);
+        ConfigurationOwnershipManifest existingManifest = plannedManifest with
+        {
+            PlanId = "previous-phase4d-normalized-remove-plan",
+            ChangeSetId = "previous-phase4d-normalized-remove-changeset",
+            Entries =
+            [
+                plannedEntry with
+                {
+                    TargetPathOrName = targetPath,
+                },
+                plannedEntry with
+                {
+                    Sequence = 2,
+                    TargetPathOrName = remainingTargetPath,
+                    Key = "remaining-physical-target",
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        ConfigurationChangePlan removePlan = setPlan with
+        {
+            Manifest = setPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+
+        ConfigurationPlanResult result = await manager.RemoveAsync(
+            removePlan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Single(dispatcher.Requests);
+        ConfigurationOwnershipManifest remainingManifest = result.OwnershipManifest!;
+        ConfigurationOwnershipManifestEntry entry = Assert.Single(remainingManifest.Entries);
+        Assert.Equal(1, entry.Sequence);
+        Assert.Equal(remainingTargetPath, entry.TargetPathOrName);
+        Assert.Equal("remaining-physical-target", entry.Key);
+        string remainingManifestJson = fileSystem.ReadAllText(manifestPath);
+        Assert.DoesNotContain(targetPath, remainingManifestJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            equivalentTargetPath,
+            remainingManifestJson,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public async Task FilesystemBackedApplyRestoresPhase4DManifestWhenDispatcherThrowsAfterMerge()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-apply-dispatch-rollback-manifest.json";
+        const string targetPath = "/config/phase4d-apply-dispatch-rollback.gitconfig";
+        const string equivalentTargetPath =
+            "/config/sub/../phase4d-apply-dispatch-rollback.gitconfig";
+        const string remainingTargetPath =
+            "/config/phase4d-apply-dispatch-rollback-other.gitconfig";
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new IOException("Injected Phase 4D apply dispatch failure.");
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(plan);
+        ConfigurationOwnershipManifestEntry plannedEntry = Assert.Single(plannedManifest.Entries);
+        ConfigurationOwnershipManifest existingManifest = plannedManifest with
+        {
+            PlanId = "previous-phase4d-apply-dispatch-rollback-plan",
+            ChangeSetId = "previous-phase4d-apply-dispatch-rollback-changeset",
+            Entries =
+            [
+                plannedEntry with
+                {
+                    TargetPathOrName = equivalentTargetPath,
+                },
+                plannedEntry with
+                {
+                    Sequence = 2,
+                    TargetPathOrName = remainingTargetPath,
+                    Key = "remaining-physical-target",
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        ConfigurationChangePlan planWithManifestHash = plan with
+        {
+            Manifest = plan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<IOException>(async () =>
+            await manager.ApplyAsync(planWithManifestHash, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("dispatch failure", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dispatcher.Requests);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(remainingTargetPath));
+        var followUpDispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var followUpManager = new ConfigurationManager(
+            fileSystem,
+            manifestPath,
+            followUpDispatcher
+        );
+        ConfigurationChangePlan followUpPlan = plan with
+        {
+            Manifest = plan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                plan.Changes[0] with
+                {
+                    Value = "follow-up-planned-value",
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+        ConfigurationPlanResult followUpResult = await followUpManager.ApplyAsync(
+            followUpPlan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Applied, followUpResult.State);
+        Assert.Single(followUpDispatcher.Requests);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyRollbackLeavesOtherPhase4DManifestAfterDispatcherMutation()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-apply-dispatch-resequence-rollback.json";
+        const string targetPath = "/config/phase4d-apply-dispatch-resequence-rollback.gitconfig";
+        const string independentTargetPath =
+            "/config/phase4d-apply-dispatch-resequence-independent.gitconfig";
+        string? mutatedManifestJson = null;
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ConfigurationOwnershipManifest preparedManifest =
+                ConfigurationOwnershipManifestSerializer.Deserialize(
+                    fileSystem.ReadAllText(manifestPath)
+                );
+            ConfigurationOwnershipManifestEntry failedPrewrite = preparedManifest
+                .Entries.Single(entry => entry.Key == "physical-target") with
+            {
+                PlannedValueSha256 =
+                    "0000000000000000000000000000000000000000000000000000000000000000",
+                Sequence = 1,
+            };
+            mutatedManifestJson = RawOwnershipManifestJson(
+                preparedManifest with
+                {
+                    ContainsCredentialMaterial = failedPrewrite.IsSecretValue,
+                    Entries = [failedPrewrite],
+                }
+            );
+            fileSystem.AtomicWriteAllText(manifestPath, mutatedManifestJson);
+            throw new IOException("Injected Phase 4D apply dispatch failure after resequence.");
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan independentPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            independentTargetPath
+        ) with
+        {
+            Changes =
+            [
+                CreatePhysicalTargetChange(ConfigurationTargetKind.GitConfig, independentTargetPath)
+                    with
+                    {
+                        Key = "independent-physical-target",
+                        Value = "independent-planned-value",
+                    },
+            ],
+        };
+        string existingManifestJson = await CreateDryRunManifestJsonAsync(independentPlan);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        ) with
+        {
+            Manifest = independentPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        AssertPhase4DRollbackConflict(exception);
+        Assert.Single(dispatcher.Requests);
+        Assert.NotNull(mutatedManifestJson);
+        Assert.Equal(mutatedManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.Contains(targetPath, mutatedManifestJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(independentTargetPath, mutatedManifestJson, StringComparison.Ordinal);
+        Assert.Contains(
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            mutatedManifestJson,
+            StringComparison.Ordinal
+        );
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(independentTargetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyPhase4DRollbackSurfacesConflictWhenDispatcherConflictFailsRollback()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-apply-dispatch-conflict-rollback-conflict.json";
+        const string targetPath = "/config/phase4d-apply-dispatch-conflict-rollback.gitconfig";
+        const string replacementTargetPath =
+            "/config/phase4d-apply-dispatch-conflict-replacement.gitconfig";
+        ConfigurationChangePlan replacementPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            replacementTargetPath
+        ) with
+        {
+            Changes =
+            [
+                CreatePhysicalTargetChange(
+                    ConfigurationTargetKind.GitConfig,
+                    replacementTargetPath
+                ) with
+                {
+                    Key = "replacement-physical-target",
+                    Value = "replacement-planned-value",
+                },
+            ],
+        };
+        string replacementManifestJson = await CreateDryRunManifestJsonAsync(replacementPlan);
+        const string dispatchFailureMessage =
+            "Injected Phase 4D apply dispatch conflict after manifest replacement.";
+        var dispatchFailure = new InvalidOperationException(dispatchFailureMessage);
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            fileSystem.AtomicWriteAllText(manifestPath, replacementManifestJson);
+            throw dispatchFailure;
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        AssertPhase4DRollbackConflict(exception);
+        Assert.DoesNotContain(dispatchFailureMessage, exception.Message, StringComparison.Ordinal);
+        Assert.False(exception.Data.Contains("ConfigurationDispatchFailure"));
+        Assert.False(exception.Data.Contains("ConfigurationDispatchException"));
+        Assert.Equal(
+            typeof(InvalidOperationException).FullName,
+            Assert.IsType<string>(exception.Data["ConfigurationDispatchExceptionType"])
+        );
+        Assert.Equal(
+            dispatchFailure.HResult,
+            Assert.IsType<int>(exception.Data["ConfigurationDispatchExceptionHResult"])
+        );
+        Assert.Single(dispatcher.Requests);
+        Assert.Equal(replacementManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(replacementTargetPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedApplyPhase4DRollbackConflictNoSecretDispatchFailureDetails()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-apply-secret-dispatch-rollback-conflict.json";
+        const string targetPath = "/config/phase4d-apply-secret-dispatch-rollback.gitconfig";
+        const string replacementTargetPath =
+            "/config/phase4d-apply-secret-dispatch-replacement.gitconfig";
+        const string secret = "phase4d-dispatch-secret-value";
+        ConfigurationChangePlan replacementPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            replacementTargetPath
+        ) with
+        {
+            Changes =
+            [
+                CreatePhysicalTargetChange(
+                    ConfigurationTargetKind.GitConfig,
+                    replacementTargetPath
+                ) with
+                {
+                    Key = "replacement-physical-target",
+                    Value = "replacement-planned-value",
+                },
+            ],
+        };
+        string replacementManifestJson = await CreateDryRunManifestJsonAsync(replacementPlan);
+        var dispatchFailure = new InvalidOperationException(
+            $"Injected Phase 4D dispatch failure containing {secret}."
+        );
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            fileSystem.AtomicWriteAllText(manifestPath, replacementManifestJson);
+            throw dispatchFailure;
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        ) with
+        {
+            ContainsCredentialMaterial = true,
+            Changes =
+            [
+                CreatePhysicalTargetChange(ConfigurationTargetKind.GitConfig, targetPath) with
+                {
+                    Key = "secret-physical-target",
+                    Value = secret,
+                    IsSecretValue = true,
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        AssertPhase4DRollbackConflict(exception);
+        AssertExceptionAndDataDoNotContainSecret(exception, secret);
+        Assert.False(exception.Data.Contains("ConfigurationDispatchFailure"));
+        Assert.False(exception.Data.Contains("ConfigurationDispatchException"));
+        Assert.Equal(
+            typeof(InvalidOperationException).FullName,
+            Assert.IsType<string>(exception.Data["ConfigurationDispatchExceptionType"])
+        );
+        Assert.Equal(
+            dispatchFailure.HResult,
+            Assert.IsType<int>(exception.Data["ConfigurationDispatchExceptionHResult"])
+        );
+        Assert.Single(dispatcher.Requests);
+        Assert.Equal(replacementManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(replacementTargetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyRollbackLeavesNormalizedEquivalentPhase4DManifestUntouchedOnConflict()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-apply-normalized-current-rollback.json";
+        const string targetPath = "/config/phase4d-apply-normalized-current-rollback.gitconfig";
+        const string equivalentTargetPath =
+            "/config/sub/../phase4d-apply-normalized-current-rollback.gitconfig";
+        string? equivalentManifestJson = null;
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ConfigurationOwnershipManifest preparedManifest =
+                ConfigurationOwnershipManifestSerializer.Deserialize(
+                    fileSystem.ReadAllText(manifestPath)
+                );
+            ConfigurationOwnershipManifestEntry failedPreclaim = preparedManifest
+                .Entries.Single(entry => entry.Key == "physical-target") with
+            {
+                TargetPathOrName = equivalentTargetPath,
+            };
+            equivalentManifestJson = RawOwnershipManifestJson(
+                preparedManifest with
+                {
+                    ContainsCredentialMaterial = failedPreclaim.IsSecretValue,
+                    Entries = [failedPreclaim],
+                }
+            );
+            fileSystem.AtomicWriteAllText(manifestPath, equivalentManifestJson);
+            throw new IOException(
+                "Injected Phase 4D apply dispatch failure after normalized preclaim."
+            );
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        AssertPhase4DRollbackConflict(exception);
+        Assert.Single(dispatcher.Requests);
+        Assert.NotNull(equivalentManifestJson);
+        Assert.Equal(equivalentManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.Contains(equivalentTargetPath, equivalentManifestJson, StringComparison.Ordinal);
+        Assert.False(fileSystem.FileExists(targetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyDeletesPhase4DManifestAfterMissingOriginalDispatchFailure()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-apply-missing-original-rollback.json";
+        const string targetPath = "/config/phase4d-apply-missing-original-rollback.gitconfig";
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new IOException("Injected Phase 4D apply dispatch failure.");
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+
+        var exception = await Assert.ThrowsAsync<IOException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("dispatch failure", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dispatcher.Requests);
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyPhase4DRollbackReportsConflictWhenMissingOriginalPreclaimDeleted()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-apply-deleted-preclaim-rollback.json";
+        const string targetPath = "/config/phase4d-apply-deleted-preclaim-rollback.gitconfig";
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            fileSystem.DeleteFile(manifestPath);
+            throw new IOException(
+                "Injected Phase 4D apply dispatch failure after preclaim deletion."
+            );
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        AssertPhase4DRollbackConflict(exception);
+        Assert.Single(dispatcher.Requests);
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyRollbackLeavesMissingPhase4DManifestWhenPreclaimDeleted()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-apply-missing-current-rollback.json";
+        const string targetPath = "/config/phase4d-apply-missing-current-rollback.gitconfig";
+        const string independentTargetPath =
+            "/config/phase4d-apply-missing-current-independent.gitconfig";
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            fileSystem.DeleteFile(manifestPath);
+            throw new IOException(
+                "Injected Phase 4D apply dispatch failure after manifest deletion."
+            );
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan independentPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            independentTargetPath
+        ) with
+        {
+            Changes =
+            [
+                CreatePhysicalTargetChange(ConfigurationTargetKind.GitConfig, independentTargetPath)
+                    with
+                    {
+                        Key = "independent-physical-target",
+                        Value = "independent-planned-value",
+                    },
+            ],
+        };
+        string existingManifestJson = await CreateDryRunManifestJsonAsync(independentPlan);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        ) with
+        {
+            Manifest = independentPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        AssertPhase4DRollbackConflict(exception);
+        Assert.Single(dispatcher.Requests);
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(independentTargetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedRemoveRestoresPhase4DManifestWhenDispatcherThrowsAfterPreremoval()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-remove-dispatch-rollback-manifest.json";
+        const string targetPath = "/config/phase4d-remove-dispatch-rollback.gitconfig";
+        const string remainingTargetPath =
+            "/config/phase4d-remove-dispatch-rollback-other.gitconfig";
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new IOException("Injected Phase 4D remove dispatch failure.");
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(setPlan);
+        ConfigurationOwnershipManifestEntry plannedEntry = Assert.Single(plannedManifest.Entries);
+        ConfigurationOwnershipManifest existingManifest = plannedManifest with
+        {
+            PlanId = "previous-phase4d-remove-dispatch-rollback-plan",
+            ChangeSetId = "previous-phase4d-remove-dispatch-rollback-changeset",
+            Entries =
+            [
+                plannedEntry with
+                {
+                    TargetPathOrName = targetPath,
+                },
+                plannedEntry with
+                {
+                    Sequence = 2,
+                    TargetPathOrName = remainingTargetPath,
+                    Key = "remaining-physical-target",
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        ConfigurationChangePlan removePlan = setPlan with
+        {
+            Manifest = setPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<IOException>(async () =>
+            await manager.RemoveAsync(removePlan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("dispatch failure", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dispatcher.Requests);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(remainingTargetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyRollbackLeavesForeignPhase4DManifestWhenReplaced()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-apply-foreign-dispatch-rollback.json";
+        const string targetPath = "/config/phase4d-apply-foreign-dispatch-rollback.gitconfig";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        ConfigurationOwnershipManifest preparedManifest = await CreateDryRunManifestAsync(plan);
+        ConfigurationOwnershipManifestEntry preparedEntry = Assert.Single(preparedManifest.Entries);
+        ConfigurationOwnershipManifest foreignManifest = preparedManifest with
+        {
+            ManifestId = "foreign-phase4d-dispatch-rollback-manifest",
+            PlanId = "foreign-phase4d-dispatch-rollback-plan",
+            ChangeSetId = "foreign-phase4d-dispatch-rollback-changeset",
+            OwnerProductId = "foreign-product",
+            EntrySelector = "foreign.phase4d.selector",
+            Entries =
+            [
+                preparedEntry with
+                {
+                    TargetPathOrName = targetPath,
+                    Key = "physical-target",
+                },
+            ],
+        };
+        string foreignManifestJson = RawOwnershipManifestJson(foreignManifest);
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            fileSystem.AtomicWriteAllText(manifestPath, foreignManifestJson);
+            throw new IOException(
+                "Injected Phase 4D apply dispatch failure after foreign manifest replacement."
+            );
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        AssertPhase4DRollbackConflict(exception);
+        Assert.Single(dispatcher.Requests);
+        Assert.Equal(foreignManifestJson, fileSystem.ReadAllText(manifestPath));
+        ConfigurationOwnershipManifest currentManifest =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(manifestPath)
+            );
+        Assert.Equal("foreign-phase4d-dispatch-rollback-manifest", currentManifest.ManifestId);
+        Assert.Equal("foreign-product", currentManifest.OwnerProductId);
+        Assert.Equal("foreign.phase4d.selector", currentManifest.EntrySelector);
+        ConfigurationOwnershipManifestEntry currentEntry = Assert.Single(currentManifest.Entries);
+        Assert.Equal(targetPath, currentEntry.TargetPathOrName);
+        Assert.Equal("physical-target", currentEntry.Key);
+        Assert.False(fileSystem.FileExists(targetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyRollbackLeavesPhase4DManifestWithUnrelatedEntryAddedAfterPreclaim()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-apply-unrelated-post-preclaim.json";
+        const string targetPath = "/config/phase4d-apply-unrelated-post-preclaim.gitconfig";
+        const string unrelatedTargetPath =
+            "/config/phase4d-apply-unrelated-post-preclaim-unrelated.gitconfig";
+        ConfigurationChangePlan unrelatedPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            unrelatedTargetPath
+        ) with
+        {
+            Changes =
+            [
+                CreatePhysicalTargetChange(ConfigurationTargetKind.GitConfig, unrelatedTargetPath)
+                    with
+                    {
+                        Key = "unrelated-physical-target",
+                        Value = "unrelated-planned-value",
+                    },
+            ],
+        };
+        ConfigurationOwnershipManifest unrelatedManifest = await CreateDryRunManifestAsync(
+            unrelatedPlan
+        );
+        ConfigurationOwnershipManifestEntry unrelatedEntry = Assert.Single(
+            unrelatedManifest.Entries
+        );
+        string? postPreclaimManifestJson = null;
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ConfigurationOwnershipManifest preparedManifest =
+                ConfigurationOwnershipManifestSerializer.Deserialize(
+                    fileSystem.ReadAllText(manifestPath)
+                );
+            ConfigurationOwnershipManifestEntry failedPreclaim = preparedManifest
+                .Entries.Single(entry => entry.Key == "physical-target") with
+            {
+                Sequence = 1,
+            };
+            postPreclaimManifestJson = RawOwnershipManifestJson(
+                preparedManifest with
+                {
+                    ContainsCredentialMaterial =
+                        failedPreclaim.IsSecretValue || unrelatedEntry.IsSecretValue,
+                    Entries =
+                    [
+                        failedPreclaim,
+                        unrelatedEntry with
+                        {
+                            Sequence = 2,
+                        },
+                    ],
+                }
+            );
+            fileSystem.AtomicWriteAllText(manifestPath, postPreclaimManifestJson);
+            throw new IOException("Injected Phase 4D apply dispatch failure after preclaim.");
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        AssertPhase4DRollbackConflict(exception);
+        Assert.Single(dispatcher.Requests);
+        Assert.NotNull(postPreclaimManifestJson);
+        Assert.Equal(postPreclaimManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.Contains(targetPath, postPreclaimManifestJson, StringComparison.Ordinal);
+        Assert.Contains(unrelatedTargetPath, postPreclaimManifestJson, StringComparison.Ordinal);
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(unrelatedTargetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyRollbackLeavesMutatedSameKeyPhase4DPreclaimManifestUntouched()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-apply-mutated-same-key-preclaim.json";
+        const string targetPath = "/config/phase4d-apply-mutated-same-key-preclaim.gitconfig";
+        const string unrelatedTargetPath =
+            "/config/phase4d-apply-mutated-same-key-preclaim-unrelated.gitconfig";
+        ConfigurationChangePlan unrelatedPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            unrelatedTargetPath
+        ) with
+        {
+            Changes =
+            [
+                CreatePhysicalTargetChange(ConfigurationTargetKind.GitConfig, unrelatedTargetPath)
+                    with
+                    {
+                        Key = "unrelated-physical-target",
+                        Value = "unrelated-planned-value",
+                    },
+            ],
+        };
+        string existingManifestJson = await CreateDryRunManifestJsonAsync(unrelatedPlan);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        string? mutatedManifestJson = null;
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ConfigurationOwnershipManifest preparedManifest =
+                ConfigurationOwnershipManifestSerializer.Deserialize(
+                    fileSystem.ReadAllText(manifestPath)
+                );
+            ConfigurationOwnershipManifestEntry failedPreclaim = preparedManifest
+                .Entries.Single(entry => entry.Key == "physical-target") with
+            {
+                PlannedValueSha256 =
+                    "0000000000000000000000000000000000000000000000000000000000000000",
+            };
+            ConfigurationOwnershipManifestEntry unrelatedEntry = preparedManifest
+                .Entries.Single(entry => entry.Key == "unrelated-physical-target") with
+            {
+                Sequence = 1,
+            };
+            mutatedManifestJson = RawOwnershipManifestJson(
+                preparedManifest with
+                {
+                    ContainsCredentialMaterial =
+                        failedPreclaim.IsSecretValue || unrelatedEntry.IsSecretValue,
+                    Entries =
+                    [
+                        unrelatedEntry,
+                        failedPreclaim with
+                        {
+                            Sequence = 2,
+                        },
+                    ],
+                }
+            );
+            fileSystem.AtomicWriteAllText(manifestPath, mutatedManifestJson);
+            throw new IOException(
+                "Injected Phase 4D apply dispatch failure after same-key preclaim mutation."
+            );
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        ) with
+        {
+            Manifest = unrelatedPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        AssertPhase4DRollbackConflict(exception);
+        Assert.Single(dispatcher.Requests);
+        Assert.NotNull(mutatedManifestJson);
+        Assert.Equal(mutatedManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.Contains(targetPath, mutatedManifestJson, StringComparison.Ordinal);
+        Assert.Contains(unrelatedTargetPath, mutatedManifestJson, StringComparison.Ordinal);
+        Assert.Contains(
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            mutatedManifestJson,
+            StringComparison.Ordinal
+        );
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(unrelatedTargetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyRollbackLeavesSameKeyPhase4DManifestUntouchedAfterDispatcherMutation()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-apply-mutated-same-key-restore.json";
+        const string targetPath = "/config/phase4d-apply-mutated-same-key-restore.gitconfig";
+        const string unrelatedTargetPath =
+            "/config/phase4d-apply-mutated-same-key-restore-unrelated.gitconfig";
+        ConfigurationChangePlan originalPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        ) with
+        {
+            Changes =
+            [
+                CreatePhysicalTargetChange(ConfigurationTargetKind.GitConfig, targetPath) with
+                {
+                    Key = "same-key-physical-target",
+                    Value = "original-value",
+                },
+                CreatePhysicalTargetChange(ConfigurationTargetKind.GitConfig, unrelatedTargetPath)
+                    with
+                    {
+                        Key = "unrelated-physical-target",
+                        Value = "unrelated-original-value",
+                    },
+            ],
+        };
+        ConfigurationOwnershipManifest originalManifest =
+            await CreatePhase4DPhysicalManifestForTestAsync(originalPlan);
+        string existingManifestJson = RawOwnershipManifestJson(originalManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        string? mutatedManifestJson = null;
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ConfigurationOwnershipManifest preparedManifest =
+                ConfigurationOwnershipManifestSerializer.Deserialize(
+                    fileSystem.ReadAllText(manifestPath)
+                );
+            ConfigurationOwnershipManifestEntry mutatedTargetEntry = preparedManifest
+                .Entries.Single(entry => entry.Key == "same-key-physical-target") with
+            {
+                PlannedValueSha256 =
+                    "0000000000000000000000000000000000000000000000000000000000000000",
+            };
+            ConfigurationOwnershipManifestEntry unrelatedEntry = preparedManifest
+                .Entries.Single(entry => entry.Key == "unrelated-physical-target") with
+            {
+                Sequence = 1,
+            };
+            mutatedManifestJson = RawOwnershipManifestJson(
+                preparedManifest with
+                {
+                    ContainsCredentialMaterial =
+                        mutatedTargetEntry.IsSecretValue || unrelatedEntry.IsSecretValue,
+                    Entries =
+                    [
+                        unrelatedEntry,
+                        mutatedTargetEntry with
+                        {
+                            Sequence = 2,
+                        },
+                    ],
+                }
+            );
+            fileSystem.AtomicWriteAllText(manifestPath, mutatedManifestJson);
+            throw new IOException(
+                "Injected Phase 4D apply dispatch failure after same-key target mutation."
+            );
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan updatePlan = originalPlan with
+        {
+            Manifest = originalPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                originalPlan.Changes[0] with
+                {
+                    Value = "updated-value",
+                    PreviousOwnedEntryMetadata = "previous-same-key-entry",
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.ApplyAsync(updatePlan, TestContext.Current.CancellationToken)
+        );
+
+        AssertPhase4DRollbackConflict(exception);
+        Assert.Single(dispatcher.Requests);
+        Assert.NotNull(mutatedManifestJson);
+        Assert.Equal(mutatedManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.Contains(targetPath, mutatedManifestJson, StringComparison.Ordinal);
+        Assert.Contains(unrelatedTargetPath, mutatedManifestJson, StringComparison.Ordinal);
+        Assert.Contains(
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            mutatedManifestJson,
+            StringComparison.Ordinal
+        );
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(unrelatedTargetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedRemoveRollbackLeavesPhase4DManifestWithUnrelatedEntryAddedAfterPreremoval()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-remove-unrelated-post-preremoval.json";
+        const string targetPath = "/config/phase4d-remove-unrelated-post-preremoval.gitconfig";
+        const string unrelatedTargetPath =
+            "/config/phase4d-remove-unrelated-post-preremoval-unrelated.gitconfig";
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(setPlan);
+        ConfigurationOwnershipManifestEntry plannedEntry = Assert.Single(plannedManifest.Entries);
+        ConfigurationOwnershipManifestEntry removedEntry = plannedEntry with
+        {
+            TargetPathOrName = targetPath,
+            Key = "removed-physical-target",
+        };
+        ConfigurationOwnershipManifestEntry unrelatedEntry = plannedEntry with
+        {
+            Sequence = 2,
+            TargetPathOrName = unrelatedTargetPath,
+            Key = "unrelated-physical-target",
+        };
+        ConfigurationOwnershipManifest existingManifest = plannedManifest with
+        {
+            PlanId = "previous-phase4d-remove-unrelated-post-preremoval-plan",
+            ChangeSetId = "previous-phase4d-remove-unrelated-post-preremoval-changeset",
+            Entries =
+            [
+                removedEntry,
+                unrelatedEntry,
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        string? postPreremovalManifestJson = null;
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ConfigurationOwnershipManifest preparedManifest =
+                ConfigurationOwnershipManifestSerializer.Deserialize(
+                    fileSystem.ReadAllText(manifestPath)
+                );
+            postPreremovalManifestJson = RawOwnershipManifestJson(
+                preparedManifest with
+                {
+                    ContainsCredentialMaterial =
+                        preparedManifest.ContainsCredentialMaterial || removedEntry.IsSecretValue,
+                    Entries =
+                    [
+                        preparedManifest.Entries.Single(),
+                        removedEntry with
+                        {
+                            Sequence = 2,
+                        },
+                    ],
+                }
+            );
+            fileSystem.AtomicWriteAllText(manifestPath, postPreremovalManifestJson);
+            throw new IOException("Injected Phase 4D remove dispatch failure after preremoval.");
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan removePlan = setPlan with
+        {
+            Manifest = setPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Key = "removed-physical-target",
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.RemoveAsync(removePlan, TestContext.Current.CancellationToken)
+        );
+
+        AssertPhase4DRollbackConflict(exception);
+        Assert.Single(dispatcher.Requests);
+        Assert.NotNull(postPreremovalManifestJson);
+        Assert.Equal(postPreremovalManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.Contains(targetPath, postPreremovalManifestJson, StringComparison.Ordinal);
+        Assert.Contains(unrelatedTargetPath, postPreremovalManifestJson, StringComparison.Ordinal);
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(unrelatedTargetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedRemoveRestoresPhase4DManifestForNormalizedEquivalentTargetOnFailure()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-remove-normalized-dispatch-rollback.json";
+        const string manifestTargetPath = "/config/file.gitconfig";
+        const string removeTargetPath = "/config/sub/../file.gitconfig";
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new IOException("Injected Phase 4D remove dispatch failure.");
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            manifestTargetPath
+        );
+        string existingManifestJson = await CreateDryRunManifestJsonAsync(setPlan);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        ConfigurationChangePlan removePlan = setPlan with
+        {
+            Manifest = setPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    TargetPathOrName = removeTargetPath,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<IOException>(async () =>
+            await manager.RemoveAsync(removePlan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("dispatch failure", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dispatcher.Requests);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(manifestTargetPath));
+        Assert.False(fileSystem.FileExists(removeTargetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedRemoveRestoresByteExactNonCanonicalPhase4DManifestAfterPreremovalFailure()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-remove-byte-exact-rollback.json";
+        const string removedTargetPath = "/config/phase4d-remove-byte-exact-removed.gitconfig";
+        const string remainingTargetPath = "/config/phase4d-remove-byte-exact-remaining.gitconfig";
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new IOException("Injected Phase 4D remove dispatch failure after preremoval.");
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan originalPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            removedTargetPath
+        ) with
+        {
+            Changes =
+            [
+                CreatePhysicalTargetChange(ConfigurationTargetKind.GitConfig, removedTargetPath)
+                    with
+                    {
+                        Key = "removed-physical-target",
+                        Value = "removed-planned-value",
+                    },
+                CreatePhysicalTargetChange(ConfigurationTargetKind.GitConfig, remainingTargetPath)
+                    with
+                    {
+                        Key = "remaining-physical-target",
+                        Value = "remaining-planned-value",
+                    },
+            ],
+        };
+        ConfigurationOwnershipManifest originalManifest =
+            await CreatePhase4DPhysicalManifestForTestAsync(originalPlan);
+        string canonicalManifestJson = RawOwnershipManifestJson(originalManifest);
+        string nonCanonicalManifestJson = " \n\t" + canonicalManifestJson + "\n";
+        byte[] originalManifestBytes = CreateUtf8BomBytes(nonCanonicalManifestJson);
+        fileSystem.AtomicWriteAllBytes(manifestPath, originalManifestBytes);
+        ConfigurationChangePlan removePlan = originalPlan with
+        {
+            Manifest = originalPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(originalManifestBytes),
+            },
+            Changes =
+            [
+                originalPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<IOException>(async () =>
+            await manager.RemoveAsync(removePlan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("dispatch failure", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dispatcher.Requests);
+        Assert.Equal(originalManifestBytes, fileSystem.ReadAllBytes(manifestPath));
+        Assert.NotEqual(Encoding.UTF8.GetBytes(canonicalManifestJson), originalManifestBytes);
+        Assert.False(fileSystem.FileExists(removedTargetPath));
+        Assert.False(fileSystem.FileExists(remainingTargetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedRemoveRollbackLeavesRecreatedPhase4DManifestUntouchedAfterPreremoval()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-remove-recreated-dispatch-rollback.json";
+        const string targetPath = "/config/phase4d-remove-recreated-dispatch-rollback.gitconfig";
+        const string replacementTargetPath =
+            "/config/phase4d-remove-recreated-dispatch-rollback-replacement.gitconfig";
+        ConfigurationChangePlan replacementPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            replacementTargetPath
+        ) with
+        {
+            Changes =
+            [
+                CreatePhysicalTargetChange(ConfigurationTargetKind.GitConfig, replacementTargetPath)
+                    with
+                    {
+                        Key = "replacement-physical-target",
+                        Value = "replacement-planned-value",
+                    },
+            ],
+        };
+        string replacementManifestJson = await CreateDryRunManifestJsonAsync(replacementPlan);
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            fileSystem.AtomicWriteAllText(manifestPath, replacementManifestJson);
+            throw new IOException(
+                "Injected Phase 4D remove dispatch failure after manifest recreation."
+            );
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        string existingManifestJson = await CreateDryRunManifestJsonAsync(setPlan);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        ConfigurationChangePlan removePlan = setPlan with
+        {
+            Manifest = setPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.RemoveAsync(removePlan, TestContext.Current.CancellationToken)
+        );
+
+        AssertPhase4DRollbackConflict(exception);
+        Assert.Single(dispatcher.Requests);
+        Assert.Equal(replacementManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(replacementTargetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyRejectsReentrantPhase4DDispatchWithoutDeadlockOrStaleClaim()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-apply-reentrant-rollback-manifest.json";
+        const string outerTargetPath = "/config/phase4d-apply-reentrant-rollback-outer.gitconfig";
+        const string reentryTargetPath = "/config/phase4d-apply-reentrant-rollback-inner.gitconfig";
+        int entered = 0;
+        ConfigurationManager? manager = null;
+        ConfigurationChangePlan reentryPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            reentryTargetPath
+        );
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher(
+            async (request, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (Interlocked.Exchange(ref entered, 1) == 0)
+                {
+                    string currentManifestJson = fileSystem.ReadAllText(manifestPath);
+                    ConfigurationChangePlan reentryPlanWithHash = reentryPlan with
+                    {
+                        Manifest = reentryPlan.Manifest with
+                        {
+                            PreviousOwnedEntryHash = HashMetadata(currentManifestJson),
+                        },
+                    };
+                    await manager!.ApplyAsync(reentryPlanWithHash, cancellationToken);
+                }
+            }
+        );
+        manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan outerPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            outerTargetPath
+        );
+
+        var exception = await Assert
+            .ThrowsAsync<InvalidOperationException>(async () =>
+                await manager
+                    .ApplyAsync(outerPlan, TestContext.Current.CancellationToken)
+                    .AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+            );
+
+        Assert.Contains("reentrant execution", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dispatcher.Requests);
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.False(fileSystem.FileExists(outerTargetPath));
+        Assert.False(fileSystem.FileExists(reentryTargetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedRemoveRejectsReentrantPhase4DDispatchWithoutDeadlockOrStaleRemoval()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-remove-reentrant-rollback-manifest.json";
+        const string outerTargetPath = "/config/phase4d-remove-reentrant-rollback-outer.gitconfig";
+        const string reentryTargetPath =
+            "/config/phase4d-remove-reentrant-rollback-inner.gitconfig";
+        int entered = 0;
+        ConfigurationManager? manager = null;
+        ConfigurationChangePlan applyPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            outerTargetPath
+        ) with
+        {
+            Changes =
+            [
+                CreatePhysicalTargetChange(ConfigurationTargetKind.GitConfig, outerTargetPath) with
+                {
+                    Key = "remove-rollback.outer",
+                    Value = "outer-planned-value",
+                },
+                CreatePhysicalTargetChange(
+                    ConfigurationTargetKind.GitConfig,
+                    reentryTargetPath
+                ) with
+                {
+                    Key = "remove-rollback.inner",
+                    Value = "inner-planned-value",
+                },
+            ],
+        };
+        string existingManifestJson = await CreatePhase4DPhysicalManifestJsonForTestAsync(
+            applyPlan
+        );
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        ConfigurationChangePlan innerRemovePlan = applyPlan with
+        {
+            Changes =
+            [
+                applyPlan.Changes[1] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-reentry-physical-target-entry",
+                },
+            ],
+        };
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher(
+            async (request, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (Interlocked.Exchange(ref entered, 1) == 0)
+                {
+                    string currentManifestJson = fileSystem.ReadAllText(manifestPath);
+                    ConfigurationChangePlan reentryRemovePlan = innerRemovePlan with
+                    {
+                        Manifest = innerRemovePlan.Manifest with
+                        {
+                            PreviousOwnedEntryHash = HashMetadata(currentManifestJson),
+                        },
+                    };
+                    await manager!.RemoveAsync(reentryRemovePlan, cancellationToken);
+                }
+            }
+        );
+        manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan outerRemovePlan = applyPlan with
+        {
+            Manifest = applyPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                applyPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-outer-physical-target-entry",
+                },
+            ],
+        };
+
+        var exception = await Assert
+            .ThrowsAsync<InvalidOperationException>(async () =>
+                await manager
+                    .RemoveAsync(outerRemovePlan, TestContext.Current.CancellationToken)
+                    .AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+            );
+
+        Assert.Contains("reentrant execution", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dispatcher.Requests);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyRejectsReentrantOverlappingPhase4DDispatchWithoutStaleClaim()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath =
+            "/state/phase4d-apply-overlapping-reentrant-rollback-manifest.json";
+        const string targetPath = "/config/phase4d-apply-overlapping-reentrant-rollback.gitconfig";
+        int entered = 0;
+        ConfigurationManager? manager = null;
+        ConfigurationChangePlan originalPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        ) with
+        {
+            Changes =
+            [
+                CreatePhysicalTargetChange(ConfigurationTargetKind.GitConfig, targetPath) with
+                {
+                    Key = "overlapping-rollback.target",
+                    Value = "original-value",
+                },
+            ],
+        };
+        string existingManifestJson = await CreateDryRunManifestJsonAsync(originalPlan);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        ConfigurationChangePlan reentryPlan = originalPlan with
+        {
+            Changes =
+            [
+                originalPlan.Changes[0] with
+                {
+                    Value = "reentrant-value",
+                },
+            ],
+        };
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher(
+            async (request, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (Interlocked.Exchange(ref entered, 1) == 0)
+                {
+                    string currentManifestJson = fileSystem.ReadAllText(manifestPath);
+                    ConfigurationChangePlan reentryPlanWithHash = reentryPlan with
+                    {
+                        Manifest = reentryPlan.Manifest with
+                        {
+                            PreviousOwnedEntryHash = HashMetadata(currentManifestJson),
+                        },
+                    };
+                    await manager!.ApplyAsync(reentryPlanWithHash, cancellationToken);
+                }
+            }
+        );
+        manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan outerPlan = originalPlan with
+        {
+            Manifest = originalPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                originalPlan.Changes[0] with
+                {
+                    Value = "outer-value",
+                },
+            ],
+        };
+
+        var exception = await Assert
+            .ThrowsAsync<InvalidOperationException>(async () =>
+                await manager
+                    .ApplyAsync(outerPlan, TestContext.Current.CancellationToken)
+                    .AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+            );
+
+        Assert.Contains("reentrant execution", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dispatcher.Requests);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedRemoveRejectsReentrantOverlappingPhase4DDispatchWithoutStaleClaim()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath =
+            "/state/phase4d-remove-overlapping-reentrant-rollback-manifest.json";
+        const string targetPath = "/config/phase4d-remove-overlapping-reentrant-rollback.gitconfig";
+        int entered = 0;
+        ConfigurationManager? manager = null;
+        ConfigurationChangePlan originalPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        ) with
+        {
+            Changes =
+            [
+                CreatePhysicalTargetChange(ConfigurationTargetKind.GitConfig, targetPath) with
+                {
+                    Key = "overlapping-remove-rollback.target",
+                    Value = "original-value",
+                },
+            ],
+        };
+        string existingManifestJson = await CreateDryRunManifestJsonAsync(originalPlan);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        ConfigurationChangePlan reentryPlan = originalPlan with
+        {
+            Changes =
+            [
+                originalPlan.Changes[0] with
+                {
+                    Value = "reentrant-value",
+                },
+            ],
+        };
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher(
+            async (request, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (Interlocked.Exchange(ref entered, 1) == 0)
+                {
+                    await manager!.ApplyAsync(reentryPlan, cancellationToken);
+                }
+            }
+        );
+        manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan outerRemovePlan = originalPlan with
+        {
+            Manifest = originalPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                originalPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-overlapping-physical-target-entry",
+                },
+            ],
+        };
+
+        var exception = await Assert
+            .ThrowsAsync<InvalidOperationException>(async () =>
+                await manager
+                    .RemoveAsync(outerRemovePlan, TestContext.Current.CancellationToken)
+                    .AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+            );
+
+        Assert.Contains("reentrant execution", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dispatcher.Requests);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedApplyRejectsPhase4DStaleManifestBeforeDispatch()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-stale-manifest-apply.json";
+        const string targetPath = "/config/phase4d-stale-manifest-apply.gitconfig";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan physicalPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        string existingManifestJson = await CreateDryRunManifestJsonAsync(physicalPlan);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        ConfigurationChangePlan plan = physicalPlan with
+        {
+            Manifest = physicalPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata("some-other-manifest"),
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "before-state hash does not match",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Empty(dispatcher.Requests);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task FilesystemBackedRemoveRejectsPhase4DStaleManifestBeforeDispatch()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-stale-manifest-remove.json";
+        const string targetPath = "/config/phase4d-stale-manifest-remove.gitconfig";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan applyPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        string existingManifestJson = await CreatePhase4DPhysicalManifestJsonForTestAsync(
+            applyPlan
+        );
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        ConfigurationChangePlan removePlan = applyPlan with
+        {
+            Manifest = applyPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata("some-other-manifest"),
+            },
+            Changes =
+            [
+                applyPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.RemoveAsync(removePlan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "before-state hash does not match",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Empty(dispatcher.Requests);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task FilesystemBackedApplyDoesNotRejectAfterPhase4DDispatchWhenManifestChanges()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-no-post-dispatch-reject.json";
+        const string targetPath = "/config/phase4d-no-post-dispatch-reject.gitconfig";
+        ConfigurationChangePlan concurrentManifestPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            "/config/phase4d-no-post-dispatch-reject-foreign.gitconfig"
+        );
+        string concurrentManifestJson = await CreateDryRunManifestJsonAsync(concurrentManifestPlan);
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            fileSystem.AtomicWriteAllText(manifestPath, concurrentManifestJson);
+            return ValueTask.CompletedTask;
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+
+        ConfigurationPlanResult result = await manager.ApplyAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Single(dispatcher.Requests);
+        Assert.True(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedRemoveDoesNotRejectAfterPhase4DDispatchWhenManifestChanges()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-remove-no-post-dispatch-reject.json";
+        const string targetPath = "/config/phase4d-remove-no-post-dispatch-reject.gitconfig";
+        ConfigurationChangePlan applyPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        string existingManifestJson = await CreatePhase4DPhysicalManifestJsonForTestAsync(
+            applyPlan
+        );
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        ConfigurationChangePlan concurrentManifestPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            "/config/phase4d-remove-no-post-dispatch-reject-foreign.gitconfig"
+        );
+        string concurrentManifestJson = await CreateDryRunManifestJsonAsync(concurrentManifestPlan);
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            fileSystem.AtomicWriteAllText(manifestPath, concurrentManifestJson);
+            return ValueTask.CompletedTask;
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan removePlan = applyPlan with
+        {
+            Manifest = applyPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                applyPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+
+        ConfigurationPlanResult result = await manager.RemoveAsync(
+            removePlan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Single(dispatcher.Requests);
+    }
+
+    [Fact]
+    public async Task FilesystemBackedApplyFailsFastOnPhase4DDispatcherReentryWithoutDeadlock()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-dispatch-reentry-manifest.json";
+        const string outerTargetPath = "/config/phase4d-dispatch-reentry-outer.gitconfig";
+        const string reentryTargetPath = "/config/phase4d-dispatch-reentry-inner.gitconfig";
+        int entered = 0;
+        ConfigurationManager? manager = null;
+        ConfigurationChangePlan reentryPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            reentryTargetPath
+        );
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher(
+            async (request, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (Interlocked.Exchange(ref entered, 1) == 0)
+                {
+                    string currentManifestJson = fileSystem.ReadAllText(manifestPath);
+                    ConfigurationChangePlan reentryPlanWithHash = reentryPlan with
+                    {
+                        Manifest = reentryPlan.Manifest with
+                        {
+                            PreviousOwnedEntryHash = HashMetadata(currentManifestJson),
+                        },
+                    };
+                    await manager!.ApplyAsync(reentryPlanWithHash, cancellationToken);
+                }
+            }
+        );
+        manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan outerPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            outerTargetPath
+        );
+
+        var exception = await Assert
+            .ThrowsAsync<InvalidOperationException>(async () =>
+                await manager
+                    .ApplyAsync(outerPlan, TestContext.Current.CancellationToken)
+                    .AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+            );
+
+        Assert.Contains("reentrant execution", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dispatcher.Requests);
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyFailsFastOnIdenticalSameKeyPhase4DReentryWithoutStaleClaim()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-identical-reentry-manifest.json";
+        const string targetPath = "/config/phase4d-identical-reentry.gitconfig";
+        int entered = 0;
+        ConfigurationManager? manager = null;
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher(
+            async (request, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (Interlocked.Exchange(ref entered, 1) == 0)
+                {
+                    string currentManifestJson = fileSystem.ReadAllText(manifestPath);
+                    ConfigurationChangePlan identicalReentryPlan = plan with
+                    {
+                        Manifest = plan.Manifest with
+                        {
+                            PreviousOwnedEntryHash = HashMetadata(currentManifestJson),
+                        },
+                    };
+                    await manager!.ApplyAsync(identicalReentryPlan, cancellationToken);
+                }
+            }
+        );
+        manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+
+        var exception = await Assert
+            .ThrowsAsync<InvalidOperationException>(async () =>
+                await manager
+                    .ApplyAsync(plan, TestContext.Current.CancellationToken)
+                    .AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+            );
+
+        Assert.Contains("reentrant execution", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dispatcher.Requests);
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedApplyFailsFastOnConcurrentPhase4DDispatch()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-concurrent-dispatch-manifest.json";
+        const string outerTargetPath = "/config/phase4d-concurrent-dispatch-outer.gitconfig";
+        var dispatchEntered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var releaseDispatch = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher(
+            async (request, cancellationToken) =>
+            {
+                dispatchEntered.TrySetResult();
+                await releaseDispatch.Task.WaitAsync(cancellationToken);
+            }
+        );
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan outerPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            outerTargetPath
+        );
+        ConfigurationChangePlan concurrentPlan = outerPlan;
+        Task<ConfigurationPlanResult> outerTask = manager
+            .ApplyAsync(outerPlan, TestContext.Current.CancellationToken)
+            .AsTask();
+        await dispatchEntered.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken
+        );
+
+        InvalidOperationException exception;
+        try
+        {
+            exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await manager
+                    .ApplyAsync(concurrentPlan, TestContext.Current.CancellationToken)
+                    .AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+            );
+        }
+        finally
+        {
+            releaseDispatch.TrySetResult();
+        }
+
+        ConfigurationPlanResult result = await outerTask.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Contains(
+            "concurrent or reentrant execution",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Single(dispatcher.Requests);
+    }
+
+    [Fact]
+    public async Task FilesystemBackedRemoveFailsFastOnConcurrentPhase4DDispatch()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-concurrent-remove-dispatch-manifest.json";
+        const string targetPath = "/config/phase4d-concurrent-remove-dispatch.gitconfig";
+        var dispatchEntered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var releaseDispatch = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher(
+            async (request, cancellationToken) =>
+            {
+                dispatchEntered.TrySetResult();
+                await releaseDispatch.Task.WaitAsync(cancellationToken);
+            }
+        );
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan applyPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        string existingManifestJson = await CreatePhase4DPhysicalManifestJsonForTestAsync(
+            applyPlan
+        );
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        ConfigurationChangePlan removePlan = applyPlan with
+        {
+            Manifest = applyPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                applyPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+        Task<ConfigurationPlanResult> outerTask = manager
+            .RemoveAsync(removePlan, TestContext.Current.CancellationToken)
+            .AsTask();
+        await dispatchEntered.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken
+        );
+
+        InvalidOperationException exception;
+        try
+        {
+            exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await manager
+                    .RemoveAsync(removePlan, TestContext.Current.CancellationToken)
+                    .AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+            );
+        }
+        finally
+        {
+            releaseDispatch.TrySetResult();
+        }
+
+        ConfigurationPlanResult result = await outerTask.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Contains(
+            "concurrent or reentrant execution",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Single(dispatcher.Requests);
+    }
+
+    [Theory]
+    [InlineData(nameof(IConfigurationManager.DryRunAsync))]
+    [InlineData(nameof(IConfigurationManager.ApplyAsync))]
+    [InlineData(nameof(IConfigurationManager.RemoveAsync))]
+    public async Task FilesystemBackedProjectionOnlyDryRunFailsFastOnConcurrentPhase4DExecution(
+        string concurrentMethodName
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-concurrent-dry-run-lock-manifest.json";
+        const string targetPath = "/config/phase4d-concurrent-dry-run-lock.gitconfig";
+        var dryRunEntered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var releaseDryRun = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan applyPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        string existingManifestJson = await CreatePhase4DPhysicalManifestJsonForTestAsync(
+            applyPlan
+        );
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        ConfigurationChangePlan dryRunAndApplyPlan = applyPlan with
+        {
+            Manifest = applyPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+        ConfigurationChangePlan removePlan = dryRunAndApplyPlan with
+        {
+            Changes =
+            [
+                dryRunAndApplyPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+        ConfigurationChangePlan concurrentPlan =
+            concurrentMethodName == nameof(IConfigurationManager.RemoveAsync)
+                ? removePlan
+                : dryRunAndApplyPlan;
+        int entered = 0;
+        fileSystem.AfterRecord = (call, fs) =>
+        {
+            if (
+                !string.Equals(
+                    call.Operation,
+                    nameof(InMemoryFileSystem.FileExists),
+                    StringComparison.Ordinal
+                )
+                || !string.Equals(call.Path, manifestPath, StringComparison.Ordinal)
+                || Interlocked.Exchange(ref entered, 1) != 0
+            )
+            {
+                return;
+            }
+
+            dryRunEntered.TrySetResult();
+            releaseDryRun.Task.GetAwaiter().GetResult();
+            fs.AfterRecord = null;
+        };
+        Task<ConfigurationPlanResult> dryRunTask = Task.Run(async () =>
+            await manager.DryRunAsync(dryRunAndApplyPlan, TestContext.Current.CancellationToken)
+        );
+        await dryRunEntered.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken
+        );
+
+        InvalidOperationException exception;
+        try
+        {
+            exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await CreateExecutionCall(manager, concurrentMethodName, concurrentPlan)()
+                    .AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+            );
+        }
+        finally
+        {
+            releaseDryRun.TrySetResult();
+        }
+
+        ConfigurationPlanResult dryRunResult = await dryRunTask.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Contains(
+            "execution is already in progress",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(ConfigurationPlanState.Planned, dryRunResult.State);
+        Assert.Empty(dispatcher.Requests);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(targetPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedRemoveFailsFastOnPhase4DDispatcherReentryWithoutDeadlock()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-remove-dispatch-reentry-manifest.json";
+        const string outerTargetPath = "/config/phase4d-remove-dispatch-reentry-outer.gitconfig";
+        const string reentryTargetPath = "/config/phase4d-remove-dispatch-reentry-inner.gitconfig";
+        int entered = 0;
+        ConfigurationManager? manager = null;
+        ConfigurationChangePlan applyPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            outerTargetPath
+        ) with
+        {
+            Changes =
+            [
+                CreatePhysicalTargetChange(ConfigurationTargetKind.GitConfig, outerTargetPath) with
+                {
+                    Key = "remove.outer",
+                    Value = "outer-planned-value",
+                },
+                CreatePhysicalTargetChange(
+                    ConfigurationTargetKind.GitConfig,
+                    reentryTargetPath
+                ) with
+                {
+                    Key = "remove.inner",
+                    Value = "inner-planned-value",
+                },
+            ],
+        };
+        string existingManifestJson = await CreatePhase4DPhysicalManifestJsonForTestAsync(
+            applyPlan
+        );
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        ConfigurationChangePlan innerRemovePlan = applyPlan with
+        {
+            Changes =
+            [
+                applyPlan.Changes[1] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-reentry-physical-target-entry",
+                },
+            ],
+        };
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher(
+            async (request, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (Interlocked.Exchange(ref entered, 1) == 0)
+                {
+                    string currentManifestJson = fileSystem.ReadAllText(manifestPath);
+                    ConfigurationChangePlan reentryRemovePlan = innerRemovePlan with
+                    {
+                        Manifest = innerRemovePlan.Manifest with
+                        {
+                            PreviousOwnedEntryHash = HashMetadata(currentManifestJson),
+                        },
+                    };
+                    await manager!.RemoveAsync(reentryRemovePlan, cancellationToken);
+                }
+            }
+        );
+        manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan outerRemovePlan = applyPlan with
+        {
+            Manifest = applyPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                applyPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-outer-physical-target-entry",
+                },
+            ],
+        };
+
+        var exception = await Assert
+            .ThrowsAsync<InvalidOperationException>(async () =>
+                await manager
+                    .RemoveAsync(outerRemovePlan, TestContext.Current.CancellationToken)
+                    .AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+            );
+
+        Assert.Contains("reentrant execution", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dispatcher.Requests);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+    }
+
+    [Theory]
+    [InlineData(nameof(IConfigurationManager.ApplyAsync))]
+    [InlineData(nameof(IConfigurationManager.RemoveAsync))]
+    public async Task
+        FilesystemBackedPhase4DPhysicalDispatchRejectsReentrantDryRunWithoutDeadlockOrStaleClaim(
+        string methodName
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-dispatch-dry-run-reentry-manifest.json";
+        const string outerTargetPath = "/config/phase4d-dispatch-dry-run-reentry-outer.gitconfig";
+        const string reentryTargetPath = "/config/phase4d-dispatch-dry-run-reentry-inner.gitconfig";
+        int entered = 0;
+        ConfigurationManager? manager = null;
+        ConfigurationChangePlan reentryDryRunPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            reentryTargetPath
+        );
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher(
+            async (request, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (Interlocked.Exchange(ref entered, 1) == 0)
+                {
+                    await manager!.DryRunAsync(reentryDryRunPlan, cancellationToken);
+                }
+            }
+        );
+        manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan outerSetPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            outerTargetPath
+        );
+        string? existingManifestJson = null;
+        ConfigurationChangePlan outerPlan = outerSetPlan;
+        if (methodName == nameof(IConfigurationManager.RemoveAsync))
+        {
+            existingManifestJson = await CreateDryRunManifestJsonAsync(outerSetPlan);
+            fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+            outerPlan = outerSetPlan with
+            {
+                Manifest = outerSetPlan.Manifest with
+                {
+                    PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+                },
+                Changes =
+                [
+                    outerSetPlan.Changes[0] with
+                    {
+                        Operation = ConfigurationChangeOperation.Remove,
+                        Value = null,
+                        PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                    },
+                ],
+            };
+        }
+
+        var exception = await Assert
+            .ThrowsAsync<InvalidOperationException>(async () =>
+                await CreateExecutionCall(manager, methodName, outerPlan)()
+                    .AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+            );
+
+        Assert.Contains("reentrant execution", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dispatcher.Requests);
+        if (existingManifestJson is null)
+        {
+            Assert.False(fileSystem.FileExists(manifestPath));
+        }
+        else
+        {
+            Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        }
+
+        Assert.False(fileSystem.FileExists(outerTargetPath));
+        Assert.False(fileSystem.FileExists(reentryTargetPath));
+    }
+
+    [Theory]
+    [InlineData(nameof(IConfigurationManager.ApplyAsync))]
+    [InlineData(nameof(IConfigurationManager.RemoveAsync))]
+    [InlineData(nameof(IConfigurationManager.DryRunAsync))]
+    public async Task
+        FilesystemBackedDryRunRejectsGenericReentryFromSameAsyncFlowWithoutDeadlock(
+        string reentryMethodName
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-dry-run-generic-reentry-manifest.json";
+        const string outerTargetPath = "/config/phase4d-dry-run-generic-reentry-outer.txt";
+        const string reentryTargetPath = "/config/phase4d-dry-run-generic-reentry-inner.txt";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan outerPlan = CreateGenericFilePlan(
+            ConfigurationChangeOperation.Create,
+            outerTargetPath,
+            "outer-value"
+        );
+        ConfigurationChangePlan reentryPlan = CreateGenericFilePlan(
+            ConfigurationChangeOperation.Create,
+            reentryTargetPath,
+            "inner-value"
+        );
+        string? existingManifestJson = null;
+        if (reentryMethodName == nameof(IConfigurationManager.RemoveAsync))
+        {
+            existingManifestJson = await CreateDryRunManifestJsonAsync(reentryPlan);
+            fileSystem.AtomicWriteAllText(reentryTargetPath, "inner-value");
+            fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+            outerPlan = CreateGenericFilePlan(
+                ConfigurationChangeOperation.Create,
+                outerTargetPath,
+                "outer-value",
+                previousManifestHash: HashMetadata(existingManifestJson)
+            );
+            reentryPlan = CreateGenericFilePlan(
+                ConfigurationChangeOperation.Remove,
+                reentryTargetPath,
+                null,
+                HashMetadata("inner-value"),
+                HashMetadata(existingManifestJson)
+            );
+        }
+
+        Exception? reentryException = null;
+        int entered = 0;
+        fileSystem.AfterRecord = (call, _) =>
+        {
+            if (
+                !string.Equals(
+                    call.Operation,
+                    nameof(InMemoryFileSystem.FileExists),
+                    StringComparison.Ordinal
+                )
+                || !string.Equals(call.Path, manifestPath, StringComparison.Ordinal)
+                || Interlocked.Exchange(ref entered, 1) != 0
+            )
+            {
+                return;
+            }
+
+            using var reentryTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                ValueTask<ConfigurationPlanResult> reentryCall = reentryMethodName switch
+                {
+                    nameof(IConfigurationManager.ApplyAsync) =>
+                        manager.ApplyAsync(reentryPlan, reentryTimeout.Token),
+                    nameof(IConfigurationManager.RemoveAsync) =>
+                        manager.RemoveAsync(reentryPlan, reentryTimeout.Token),
+                    nameof(IConfigurationManager.DryRunAsync) =>
+                        manager.DryRunAsync(reentryPlan, reentryTimeout.Token),
+                    _ => throw new ArgumentOutOfRangeException(
+                        nameof(reentryMethodName),
+                        reentryMethodName,
+                        null
+                    ),
+                };
+                reentryCall.AsTask().GetAwaiter().GetResult();
+            }
+            catch (Exception exception)
+            {
+                reentryException = exception;
+            }
+        };
+
+        ConfigurationPlanResult result = await manager
+            .DryRunAsync(outerPlan, TestContext.Current.CancellationToken)
+            .AsTask()
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.Equal(ConfigurationPlanState.Planned, result.State);
+        var invalidOperationException = Assert.IsType<InvalidOperationException>(reentryException);
+        Assert.Contains(
+            "reentrant execution",
+            invalidOperationException.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(1, entered);
+        Assert.False(fileSystem.FileExists(outerTargetPath));
+        if (existingManifestJson is null)
+        {
+            Assert.False(fileSystem.FileExists(manifestPath));
+        }
+        else
+        {
+            Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        }
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyRejectsMixedPhase4DPhysicalAndNonPhase4DTargetsWithoutMutation()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/mixed-physical-manifest.json";
+        const string gitTargetPath = "/config/mixed-physical.gitconfig";
+        const string npmrcTargetPath = "/config/mixed-physical.npmrc";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan physicalPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            gitTargetPath
+        );
+        ConfigurationChangePlan plan = physicalPlan with
+        {
+            Changes =
+            [
+                physicalPlan.Changes[0],
+                CreateNpmrcFileChange(npmrcTargetPath),
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("mixing 4D physical", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(dispatcher.Requests);
+        Assert.False(fileSystem.FileExists(gitTargetPath));
+        Assert.False(fileSystem.FileExists(npmrcTargetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedRemoveRejectsMixedPhase4DPhysicalAndNonPhase4DTargetsWithoutMutation()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/mixed-remove-physical-manifest.json";
+        const string gitTargetPath = "/config/mixed-remove-physical.gitconfig";
+        const string npmrcTargetPath = "/config/mixed-remove-physical.npmrc";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan physicalPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            gitTargetPath
+        );
+        ConfigurationChange physicalRemove = physicalPlan.Changes[0] with
+        {
+            Operation = ConfigurationChangeOperation.Remove,
+            Value = null,
+            PreviousOwnedEntryMetadata = "previous-physical-entry",
+        };
+        ConfigurationChange npmrcRemove = CreateNpmrcFileChange(npmrcTargetPath) with
+        {
+            Operation = ConfigurationChangeOperation.Remove,
+            Value = null,
+            PreviousOwnedEntryMetadata = "previous-npmrc-entry",
+        };
+        ConfigurationChangePlan plan = physicalPlan with
+        {
+            Changes =
+            [
+                physicalRemove,
+                npmrcRemove,
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.RemoveAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("mixing 4D physical", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(dispatcher.Requests);
+        Assert.False(fileSystem.FileExists(gitTargetPath));
+        Assert.False(fileSystem.FileExists(npmrcTargetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Theory]
+    [InlineData(nameof(IConfigurationManager.ApplyAsync))]
+    [InlineData(nameof(IConfigurationManager.RemoveAsync))]
+    public async Task
+        FilesystemBackedExecutionRejectsMixedPhase4DTargetKindsAtDistinctPathsWithoutMutation(
+        string methodName
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/mixed-phase4d-distinct-paths-manifest.json";
+        const string gitTargetPath = "/config/mixed-phase4d-distinct-paths.gitconfig";
+        const string keyringTargetPath = "/config/mixed-phase4d-distinct-paths-keyring";
+        const string existingGitTargetContents = "pre-existing git target contents";
+        const string existingKeyringTargetContents = "pre-existing keyring target contents";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan gitPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            gitTargetPath
+        );
+        string existingManifestJson = await CreateDryRunManifestJsonAsync(gitPlan);
+        fileSystem.AtomicWriteAllText(gitTargetPath, existingGitTargetContents);
+        fileSystem.AtomicWriteAllText(keyringTargetPath, existingKeyringTargetContents);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        bool remove = methodName == nameof(IConfigurationManager.RemoveAsync);
+        ConfigurationChange gitChange = remove
+            ? gitPlan.Changes[0] with
+            {
+                Operation = ConfigurationChangeOperation.Remove,
+                Value = null,
+                PreviousOwnedEntryMetadata = "previous-git-physical-entry",
+            }
+            : gitPlan.Changes[0];
+        ConfigurationChange keyringChange = CreatePhysicalTargetChange(
+            ConfigurationTargetKind.KeyringShim,
+            keyringTargetPath
+        );
+        if (remove)
+        {
+            keyringChange = keyringChange with
+            {
+                Operation = ConfigurationChangeOperation.Remove,
+                Value = null,
+                PreviousOwnedEntryMetadata = "previous-keyring-physical-entry",
+            };
+        }
+
+        ConfigurationChangePlan plan = gitPlan with
+        {
+            Manifest = gitPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                gitChange,
+                keyringChange,
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await CreateExecutionCall(manager, methodName, plan)()
+        );
+
+        Assert.Contains("one 4D physical target kind", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(dispatcher.Requests);
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+        Assert.Equal(existingGitTargetContents, fileSystem.ReadAllText(gitTargetPath));
+        Assert.Equal(existingKeyringTargetContents, fileSystem.ReadAllText(keyringTargetPath));
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunWithDispatcherDoesNotDispatchPhase4DPhysicalTargets()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/dry-run-dispatcher-manifest.json";
+        const string targetPath = "/config/dry-run-dispatcher.gitconfig";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Planned, result.State);
+        Assert.Empty(dispatcher.Requests);
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedPhase4DDryRunRejectsUnsupportedConditionalMutationsBeforeRead()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix)
+        {
+            SupportsConditionalFileMutations = false,
+        };
+        const string manifestPath = "/state/phase4d-dry-run-unsupported-conditional.json";
+        const string targetPath = "/config/phase4d-dry-run-unsupported-conditional.gitconfig";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+
+        var exception = await Assert.ThrowsAsync<PlatformNotSupportedException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "conditional file mutation",
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.Empty(dispatcher.Requests);
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+        AssertNoFilesystemStateReadCallsBeforeLockAcquisition(fileSystem.Calls);
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedPhase4DPhysicalDryRunThenApplyKeepsOneChangeShapeConsistent()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-dry-run-then-apply-shape.json";
+        const string targetPath = "/config/phase4d-dry-run-then-apply-shape.gitconfig";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+
+        ConfigurationPlanResult dryRun = await manager.DryRunAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationPlanResult result = await manager.ApplyAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Planned, dryRun.State);
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Equal(dryRun.PlannedOperations, result.PlannedOperations);
+        Assert.Equal(dryRun.Changes, result.Changes);
+        ConfigurationPlannedOperation plannedOperation = Assert.Single(dryRun.PlannedOperations);
+        Assert.Equal(ConfigurationChangeOperation.Set, plannedOperation.Change.Operation);
+        Assert.Equal(ConfigurationTargetKind.GitConfig, plannedOperation.Change.TargetKind);
+        Assert.Equal(targetPath, plannedOperation.Change.TargetPathOrName);
+        Assert.Single(result.PlannedOperations);
+        ConfigurationPlannedChange plannedChange = Assert.Single(dryRun.Changes);
+        Assert.Equal(ConfigurationChangeOperation.Set, plannedChange.Operation);
+        Assert.Equal(ConfigurationTargetKind.GitConfig, plannedChange.TargetKind);
+        Assert.Equal(targetPath, plannedChange.TargetPathOrName);
+        Assert.Single(result.Changes);
+        Assert.Equal(
+            ConfigurationOwnershipManifestSerializer.Serialize(dryRun.OwnershipManifest!),
+            ConfigurationOwnershipManifestSerializer.Serialize(result.OwnershipManifest!)
+        );
+        Assert.Equal(
+            ConfigurationOwnershipManifestSerializer.Serialize(result.OwnershipManifest!),
+            fileSystem.ReadAllText(manifestPath)
+        );
+        Assert.Single(dispatcher.Requests);
+        Assert.False(fileSystem.FileExists(targetPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedPhase4DPhysicalDryRunThenRemoveKeepsOneChangeShapeConsistent()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-dry-run-then-remove-shape.json";
+        const string targetPath = "/config/phase4d-dry-run-then-remove-shape.gitconfig";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher();
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        string existingManifestJson = await CreateDryRunManifestJsonAsync(setPlan);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        ConfigurationChangePlan removePlan = setPlan with
+        {
+            Manifest = setPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+
+        ConfigurationPlanResult dryRun = await manager.DryRunAsync(
+            removePlan,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationPlanResult result = await manager.RemoveAsync(
+            removePlan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Planned, dryRun.State);
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Equal(dryRun.PlannedOperations, result.PlannedOperations);
+        Assert.Equal(dryRun.Changes, result.Changes);
+        ConfigurationPlannedOperation plannedOperation = Assert.Single(dryRun.PlannedOperations);
+        Assert.Equal(ConfigurationChangeOperation.Remove, plannedOperation.Change.Operation);
+        Assert.Equal(ConfigurationTargetKind.GitConfig, plannedOperation.Change.TargetKind);
+        Assert.Equal(targetPath, plannedOperation.Change.TargetPathOrName);
+        Assert.Single(result.PlannedOperations);
+        ConfigurationPlannedChange plannedChange = Assert.Single(dryRun.Changes);
+        Assert.Equal(ConfigurationChangeOperation.Remove, plannedChange.Operation);
+        Assert.Equal(ConfigurationTargetKind.GitConfig, plannedChange.TargetKind);
+        Assert.Equal(targetPath, plannedChange.TargetPathOrName);
+        Assert.Single(result.Changes);
+        Assert.Null(dryRun.OwnershipManifest);
+        Assert.Null(result.OwnershipManifest);
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.Single(dispatcher.Requests);
+        Assert.False(fileSystem.FileExists(targetPath));
+    }
+
+    [Theory]
     [InlineData(ConfigurationChangeOperation.Create, null, "created-value")]
     [InlineData(ConfigurationChangeOperation.Update, "before-update", "after-update")]
     [InlineData(ConfigurationChangeOperation.Refresh, "before-refresh", "after-refresh")]
@@ -3215,6 +7350,98 @@ public sealed class ConfigurationManagerTests
             entry =>
                 entry.TargetPathOrName == secondPath
                 && entry.Operation == ConfigurationChangeOperation.Create
+        );
+    }
+
+    [Fact]
+    public async Task ApplyUpdateReplacesMiddleManifestEntryInOriginalOrder()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string firstPath = "/config/middle-merge-first.txt";
+        const string secondPath = "/config/middle-merge-second.txt";
+        const string thirdPath = "/config/middle-merge-third.txt";
+        const string manifestPath = "/state/middle-merge-manifest.json";
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan createPlan = CreateGenericFilePlan(
+            ConfigurationChangeOperation.Create,
+            firstPath,
+            "first-owned"
+        ) with
+        {
+            Changes =
+            [
+                CreateGenericFileChange(
+                    ConfigurationChangeOperation.Create,
+                    firstPath,
+                    "first-owned"
+                ),
+                CreateGenericFileChange(
+                    ConfigurationChangeOperation.Create,
+                    secondPath,
+                    "second-owned"
+                ),
+                CreateGenericFileChange(
+                    ConfigurationChangeOperation.Create,
+                    thirdPath,
+                    "third-owned"
+                ),
+            ],
+        };
+        await manager.ApplyAsync(createPlan, TestContext.Current.CancellationToken);
+        string manifestBefore = fileSystem.ReadAllText(manifestPath);
+        ConfigurationChangePlan updatePlan = CreateGenericFilePlan(
+            ConfigurationChangeOperation.Update,
+            secondPath,
+            "second-updated",
+            HashMetadata("second-owned"),
+            previousManifestHash: HashMetadata(manifestBefore)
+        );
+
+        ConfigurationPlanResult result = await manager.ApplyAsync(
+            updatePlan,
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationOwnershipManifest manifest =
+            ConfigurationOwnershipManifestSerializer.Deserialize(
+                fileSystem.ReadAllText(manifestPath)
+            );
+        Assert.Equal(
+            ConfigurationOwnershipManifestSerializer.Serialize(result.OwnershipManifest!),
+            ConfigurationOwnershipManifestSerializer.Serialize(manifest)
+        );
+        Assert.Collection(
+            manifest.Entries,
+            entry =>
+            {
+                Assert.Equal(1, entry.Sequence);
+                Assert.Equal(firstPath, entry.TargetPathOrName);
+                Assert.Equal(ConfigurationChangeOperation.Create, entry.Operation);
+                Assert.Equal(
+                    HashMetadata("first-owned")["sha256:".Length..],
+                    entry.PlannedValueSha256
+                );
+            },
+            entry =>
+            {
+                Assert.Equal(2, entry.Sequence);
+                Assert.Equal(secondPath, entry.TargetPathOrName);
+                Assert.Equal(ConfigurationChangeOperation.Update, entry.Operation);
+                Assert.Equal(
+                    HashMetadata("second-updated")["sha256:".Length..],
+                    entry.PlannedValueSha256
+                );
+            },
+            entry =>
+            {
+                Assert.Equal(3, entry.Sequence);
+                Assert.Equal(thirdPath, entry.TargetPathOrName);
+                Assert.Equal(ConfigurationChangeOperation.Create, entry.Operation);
+                Assert.Equal(
+                    HashMetadata("third-owned")["sha256:".Length..],
+                    entry.PlannedValueSha256
+                );
+            }
         );
     }
 
@@ -3543,6 +7770,61 @@ public sealed class ConfigurationManagerTests
         finally
         {
             DeleteSystemFileSystemTestDirectory(root);
+        }
+    }
+
+    [Theory]
+    [InlineData(nameof(IConfigurationManager.ApplyAsync))]
+    [InlineData(nameof(IConfigurationManager.RemoveAsync))]
+    [InlineData(nameof(IConfigurationManager.DryRunAsync))]
+    public async Task ExistingCiTemporaryFileManifestEntryMergesWhenEntryMergeKeyHasNoKeyPart(
+        string methodName
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string targetPath = "/config/existing-ci-temporary-merge-key.txt";
+        const string manifestPath = "/state/existing-ci-temporary-merge-key-manifest.json";
+        const string before = "owned-before";
+        const string after = "owned-after";
+        string manifestBefore = await CreateSingleGenericFileManifestJsonAsync(targetPath, before);
+        fileSystem.AtomicWriteAllText(targetPath, before);
+        fileSystem.AtomicWriteAllText(manifestPath, manifestBefore);
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        bool remove = methodName == nameof(IConfigurationManager.RemoveAsync);
+        ConfigurationChangePlan plan = CreateGenericFilePlan(
+            remove ? ConfigurationChangeOperation.Remove : ConfigurationChangeOperation.Update,
+            targetPath,
+            remove ? null : after,
+            HashMetadata(before),
+            HashMetadata(manifestBefore)
+        );
+
+        ConfigurationPlanResult result = await CreateExecutionCall(manager, methodName, plan)();
+
+        if (methodName == nameof(IConfigurationManager.DryRunAsync))
+        {
+            Assert.Equal(before, fileSystem.ReadAllText(targetPath));
+            Assert.Equal(manifestBefore, fileSystem.ReadAllText(manifestPath));
+            ConfigurationOwnershipManifestEntry entry = Assert.Single(
+                result.OwnershipManifest!.Entries
+            );
+            Assert.Equal(HashMetadata(after)["sha256:".Length..], entry.PlannedValueSha256);
+        }
+        else if (remove)
+        {
+            Assert.Equal(ConfigurationPlanState.Applied, result.State);
+            Assert.Null(result.OwnershipManifest);
+            Assert.False(fileSystem.FileExists(targetPath));
+            Assert.False(fileSystem.FileExists(manifestPath));
+        }
+        else
+        {
+            Assert.Equal(ConfigurationPlanState.Applied, result.State);
+            Assert.Equal(after, fileSystem.ReadAllText(targetPath));
+            ConfigurationOwnershipManifestEntry entry = Assert.Single(
+                result.OwnershipManifest!.Entries
+            );
+            Assert.Equal(targetPath, entry.TargetPathOrName);
         }
     }
 
@@ -3937,7 +8219,7 @@ public sealed class ConfigurationManagerTests
             "owned-after"
         );
 
-        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
             await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
         );
 
@@ -8701,10 +12983,11 @@ public sealed class ConfigurationManagerTests
         await manager.RemoveAsync(removePlan, TestContext.Current.CancellationToken);
 
         Assert.NotNull(interleavedApplyException);
+        Assert.IsType<InvalidOperationException>(interleavedApplyException);
         Assert.Contains(
-            "lock",
+            "reentrant execution",
             interleavedApplyException.Message,
-            StringComparison.OrdinalIgnoreCase
+            StringComparison.Ordinal
         );
         Assert.False(fileSystem.DirectoryExists(containerPath));
         Assert.False(fileSystem.FileExists(targetPath));
@@ -9351,6 +13634,51 @@ public sealed class ConfigurationManagerTests
         );
     }
 
+    private sealed class RecordingPhysicalTargetWriterDispatcher
+        : IConfigurationPhysicalTargetWriterDispatcher
+    {
+        public List<ConfigurationPhysicalTargetWriterRequest> Requests { get; } = [];
+
+        public ValueTask Dispatch(
+            ConfigurationPhysicalTargetWriterRequest request,
+            CancellationToken cancellationToken
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Requests.Add(request);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class CallbackPhysicalTargetWriterDispatcher(
+        Func<ConfigurationPhysicalTargetWriterRequest, CancellationToken, ValueTask> callback
+    ) : IConfigurationPhysicalTargetWriterDispatcher
+    {
+        public List<ConfigurationPhysicalTargetWriterRequest> Requests { get; } = [];
+
+        public ValueTask Dispatch(
+            ConfigurationPhysicalTargetWriterRequest request,
+            CancellationToken cancellationToken
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Requests.Add(request);
+            return callback(request, cancellationToken);
+        }
+    }
+
+    private static void AssertPhase4DRollbackConflict(InvalidOperationException exception)
+    {
+        Assert.Contains("rollback failed", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(exception.InnerException);
+        Exception innerException = exception.InnerException!;
+        Assert.Contains(
+            "Configuration conflict",
+            innerException.Message,
+            StringComparison.OrdinalIgnoreCase
+        );
+    }
+
     private static ConfigurationChangePlan CreateValidPlan() =>
         ConfigurationChangePlanPolicy.Create(
             "plan-git-user-config",
@@ -9460,6 +13788,40 @@ public sealed class ConfigurationManagerTests
             TestContext.Current.CancellationToken
         );
         return dryRun.OwnershipManifest!;
+    }
+
+    private static async Task<string> CreatePhase4DPhysicalManifestJsonForTestAsync(
+        ConfigurationChangePlan plan
+    ) => RawOwnershipManifestJson(await CreatePhase4DPhysicalManifestForTestAsync(plan));
+
+    private static async Task<ConfigurationOwnershipManifest>
+        CreatePhase4DPhysicalManifestForTestAsync(ConfigurationChangePlan plan)
+    {
+        ConfigurationOwnershipManifest? manifest = null;
+        var entries = new List<ConfigurationOwnershipManifestEntry>();
+        foreach (ConfigurationChange change in plan.Changes)
+        {
+            ConfigurationOwnershipManifest singleChangeManifest = await CreateDryRunManifestAsync(
+                plan with { Changes = [change] }
+            );
+            manifest ??= singleChangeManifest;
+            ConfigurationOwnershipManifestEntry entry = Assert.Single(
+                singleChangeManifest.Entries
+            );
+            entries.Add(entry with { Sequence = entries.Count + 1 });
+        }
+
+        if (manifest is null)
+        {
+            return await CreateDryRunManifestAsync(plan);
+        }
+
+        return manifest with
+        {
+            ContainsCredentialMaterial =
+                manifest.ContainsCredentialMaterial || entries.Any(entry => entry.IsSecretValue),
+            Entries = entries.ToArray(),
+        };
     }
 
     private static async Task<string> CreateDuplicateCiTemporaryFileManifestJsonAsync(
@@ -9750,6 +14112,40 @@ public sealed class ConfigurationManagerTests
                 )
                 && string.Equals(call.Path, lifecycleLockPath, StringComparison.Ordinal)
         );
+    }
+
+    private static async Task AssertPhysicalTargetOwnershipManifestCollisionRejectedAsync(
+        string methodName,
+        ConfigurationTargetKind targetKind,
+        string collidingTargetPath,
+        string manifestPath
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(targetKind, collidingTargetPath);
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
+        Assert.Contains(
+            "ownership manifest path",
+            validationResult.Violation,
+            StringComparison.Ordinal
+        );
+
+        if (methodName == nameof(IConfigurationManager.DryRunAsync))
+        {
+            var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+            );
+            Assert.Contains("ownership manifest path", exception.Message, StringComparison.Ordinal);
+        }
+
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.False(fileSystem.FileExists(collidingTargetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
     }
 
     private static void AssertNoFilesystemMutationOrLockCalls(IEnumerable<FileSystemCall> calls)
@@ -10641,6 +15037,31 @@ public sealed class ConfigurationManagerTests
             _ => throw new ArgumentOutOfRangeException(nameof(exceptionKind), exceptionKind, null),
         };
 
+    private static void AssertExceptionAndDataDoNotContainSecret(Exception exception, string secret)
+    {
+        Assert.DoesNotContain(secret, exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(secret, exception.ToString(), StringComparison.Ordinal);
+        if (exception.InnerException is { } innerException)
+        {
+            Assert.DoesNotContain(secret, innerException.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain(secret, innerException.ToString(), StringComparison.Ordinal);
+        }
+
+        foreach (System.Collections.DictionaryEntry entry in exception.Data)
+        {
+            Assert.DoesNotContain(
+                secret,
+                Convert.ToString(entry.Key, CultureInfo.InvariantCulture) ?? string.Empty,
+                StringComparison.Ordinal
+            );
+            Assert.DoesNotContain(
+                secret,
+                Convert.ToString(entry.Value, CultureInfo.InvariantCulture) ?? string.Empty,
+                StringComparison.Ordinal
+            );
+        }
+    }
+
     private static void AssertObjectGraphDoesNotContainSecret(object? value, string secret)
     {
         var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
@@ -10894,6 +15315,103 @@ public sealed class ConfigurationManagerTests
             string directory,
             bool createDirectory
         ) => ((IFileSystemMutationLock)inner).AcquireMutationLock(directory, createDirectory);
+    }
+
+    private sealed class FullPathRemappingFileSystem : IFileSystem
+    {
+        private readonly InMemoryFileSystem inner;
+        private readonly string sourcePath;
+        private readonly string mappedFullPath;
+
+        public FullPathRemappingFileSystem(
+            InMemoryFileSystem inner,
+            string sourcePath,
+            string mappedFullPath
+        )
+        {
+            this.inner = inner;
+            this.sourcePath = sourcePath;
+            this.mappedFullPath = mappedFullPath;
+        }
+
+        public bool SupportsConditionalFileMutations => inner.SupportsConditionalFileMutations;
+
+        public bool FileExists(string path) => inner.FileExists(path);
+
+        public bool DirectoryExists(string path) => inner.DirectoryExists(path);
+
+        public string GetFullPath(string path) =>
+            string.Equals(path, sourcePath, StringComparison.Ordinal)
+                ? mappedFullPath
+                : inner.GetFullPath(path);
+
+        public bool IsPathFullyQualified(string path) => inner.IsPathFullyQualified(path);
+
+        public bool IsSymbolicLink(string path) => inner.IsSymbolicLink(path);
+
+        public byte[] ComputeSha256Hash(string path) => inner.ComputeSha256Hash(path);
+
+        public FileIntegritySnapshot CaptureFileIntegritySnapshot(string path) =>
+            inner.CaptureFileIntegritySnapshot(path);
+
+        public bool FileMatchesIntegritySnapshot(string path, FileIntegritySnapshot snapshot) =>
+            inner.FileMatchesIntegritySnapshot(path, snapshot);
+
+        public IReadOnlyList<TrustedDirectorySnapshot> CaptureTrustedParentDirectorySnapshots(
+            string path
+        ) => inner.CaptureTrustedParentDirectorySnapshots(path);
+
+        public FileSystemOwner GetCurrentOwner() => inner.GetCurrentOwner();
+
+        public FileSystemOwner GetOwner(string path) => inner.GetOwner(path);
+
+        public string ReadAllText(string path, Encoding? encoding = null) =>
+            inner.ReadAllText(path, encoding);
+
+        public byte[] ReadAllBytes(string path) => inner.ReadAllBytes(path);
+
+        public void WriteAllText(string path, string contents, Encoding? encoding = null) =>
+            inner.WriteAllText(path, contents, encoding);
+
+        public void AtomicWriteAllText(
+            string path,
+            string contents,
+            Encoding? encoding = null,
+            AtomicWriteOptions options = AtomicWriteOptions.None,
+            FileMutationExpectation? expectation = null
+        ) => inner.AtomicWriteAllText(path, contents, encoding, options, expectation);
+
+        public void AtomicWriteAllBytes(
+            string path,
+            byte[] contents,
+            AtomicWriteOptions options = AtomicWriteOptions.None,
+            FileMutationExpectation? expectation = null
+        ) => inner.AtomicWriteAllBytes(path, contents, options, expectation);
+
+        public UnixFileMode GetUnixFileMode(string path) => inner.GetUnixFileMode(path);
+
+        public void SetUnixFileMode(string path, UnixFileMode mode) =>
+            inner.SetUnixFileMode(path, mode);
+
+        public void CreateDirectory(string path) => inner.CreateDirectory(path);
+
+        public void DeleteFile(string path, FileMutationExpectation? expectation = null) =>
+            inner.DeleteFile(path, expectation);
+
+        public void DeleteDirectory(string path, bool recursive = false) =>
+            inner.DeleteDirectory(path, recursive);
+
+        public IEnumerable<string> EnumerateFiles(
+            string path,
+            string searchPattern = "*",
+            SearchOption searchOption = SearchOption.TopDirectoryOnly
+        ) => inner.EnumerateFiles(path, searchPattern, searchOption);
+
+        public IEnumerable<string> EnumerateDirectories(
+            string path,
+            string searchPattern = "*",
+            SearchOption searchOption = SearchOption.TopDirectoryOnly
+        ) => inner.EnumerateDirectories(path, searchPattern, searchOption);
     }
 
     private sealed class InMemoryManifestFileSystem : IFileSystem

@@ -47,27 +47,39 @@ public sealed class ConfigurationManager : IConfigurationManager
     private const string FileSystemLockFileName = ".azureauth-credprovider.fs.lock";
     private const string LifecycleLockDirectoryName = ".azureauth-credprovider.lifecycle-locks";
     private const string Sha256MetadataPrefix = "sha256:";
-    private static readonly object ExecutionLock = new();
+    private static readonly SemaphoreSlim ExecutionLock = new(1, 1);
+    private static readonly AsyncLocal<bool> ExecutionLockHeldByCurrentAsyncFlow = new();
     private readonly IFileSystem? fileSystem;
     private readonly string? ownershipManifestPath;
+    private readonly IConfigurationPhysicalTargetWriterDispatcher?
+        physicalTargetWriterDispatcher;
 
     public ConfigurationManager() { }
 
-    internal ConfigurationManager(IFileSystem fileSystem, string ownershipManifestPath)
+    internal ConfigurationManager(
+        IFileSystem fileSystem,
+        string ownershipManifestPath,
+        IConfigurationPhysicalTargetWriterDispatcher? physicalTargetWriterDispatcher = null
+    )
     {
         this.fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
         ArgumentException.ThrowIfNullOrWhiteSpace(ownershipManifestPath);
-        EnsureOwnershipManifestPathIsNotReservedInternalFileSystemArtifact(ownershipManifestPath);
-        this.ownershipManifestPath = ownershipManifestPath;
+        string normalizedOwnershipManifestPath = GetNormalizableOwnershipManifestPath(
+            this.fileSystem,
+            ownershipManifestPath
+        );
+        EnsureOwnershipManifestPathIsNotReservedInternalFileSystemArtifact(
+            normalizedOwnershipManifestPath
+        );
+        this.ownershipManifestPath = normalizedOwnershipManifestPath;
+        this.physicalTargetWriterDispatcher = physicalTargetWriterDispatcher;
     }
 
     public ConfigurationPlanValidationResult ValidatePlan(ConfigurationChangePlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
 
-        string? violation = GetPlanningValidationViolation(plan);
-        violation ??= GetOwnershipManifestPathCollisionWithPhysicalTargetsViolation(plan);
-        violation ??= GetFilesystemBackedPhysicalTargetKindSamePathConflictViolation(plan);
+        string? violation = GetValidatePlanValidationViolation(plan);
         return new ConfigurationPlanValidationResult
         {
             Plan = plan,
@@ -91,43 +103,76 @@ public sealed class ConfigurationManager : IConfigurationManager
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        EnsureValidForPlanning(plan);
+        ArgumentNullException.ThrowIfNull(plan);
+        EnsureValidContract(plan);
+        bool filesystemBacked = fileSystem is not null && ownershipManifestPath is not null;
+        bool containsProjectionOnlyPhysicalTarget = ContainsProjectionOnlyPhysicalTarget(plan);
+        if (filesystemBacked && containsProjectionOnlyPhysicalTarget)
+        {
+            EnsureValidForPhysicalTargetDryRunBeforeProjection(plan);
+        }
+        else if (filesystemBacked)
+        {
+            EnsureValidForPlanning(plan);
+        }
+        else
+        {
+            EnsureValidForNoFilesystemPlanning(plan);
+        }
+
         EnsureNoOwnershipManifestPathCollisionWithPhysicalTargets(plan);
         EnsureNoFilesystemBackedPhysicalTargetKindSamePathConflicts(plan);
+
+        if (filesystemBacked && containsProjectionOnlyPhysicalTarget)
+        {
+            EnsurePhysicalTargetDryRunDispatchPlanShapeSupported(plan);
+            EnsureNoReservedInternalNonCiPhysicalTargetPaths(plan);
+        }
+
         ConfigurationPlanResult plannedResult = CreatePlannedResult(
             plan,
             ConfigurationPlanOperation.DryRun
         );
-        if (fileSystem is null || ownershipManifestPath is null)
+        if (!filesystemBacked)
         {
             return ValueTask.FromResult(plannedResult);
         }
 
         EnsureFilesystemBackedDryRunOperationSupported(plan);
-        return ValueTask.FromResult(SimulateFilesystemBackedDryRun(plannedResult, plan));
+        return ValueTask.FromResult(
+            SimulateFilesystemBackedDryRun(plannedResult, plan, cancellationToken)
+        );
     }
 
     public ValueTask<ConfigurationPlanResult> ApplyAsync(
         ConfigurationChangePlan plan,
         CancellationToken cancellationToken = default
-    ) => ExecuteAsync(plan, ConfigurationPlanOperation.Apply, cancellationToken);
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        EnsureValidForExecution(plan, ConfigurationPlanOperation.Apply);
+        return ExecuteAsync(plan, ConfigurationPlanOperation.Apply, cancellationToken);
+    }
 
     public ValueTask<ConfigurationPlanResult> RemoveAsync(
         ConfigurationChangePlan plan,
         CancellationToken cancellationToken = default
-    ) => ExecuteAsync(plan, ConfigurationPlanOperation.Remove, cancellationToken);
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        EnsureValidForExecution(plan, ConfigurationPlanOperation.Remove);
+        return ExecuteAsync(plan, ConfigurationPlanOperation.Remove, cancellationToken);
+    }
 
-    private ValueTask<ConfigurationPlanResult> ExecuteAsync(
+    private async ValueTask<ConfigurationPlanResult> ExecuteAsync(
         ConfigurationChangePlan plan,
         ConfigurationPlanOperation operation,
         CancellationToken cancellationToken
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        EnsureValid(plan);
         if (fileSystem is null || ownershipManifestPath is null)
         {
-            return ValueTask.FromException<ConfigurationPlanResult>(
+            return await ValueTask.FromException<ConfigurationPlanResult>(
                 new InvalidOperationException(
                     "Configuration apply/remove execution requires a filesystem-backed "
                         + "configuration manager with an ownership manifest path."
@@ -137,6 +182,20 @@ public sealed class ConfigurationManager : IConfigurationManager
 
         EnsureNoOwnershipManifestPathCollisionWithPhysicalTargets(plan);
         EnsureNoFilesystemBackedPhysicalTargetKindSamePathConflicts(plan);
+        if (ContainsProjectionOnlyPhysicalTarget(plan))
+        {
+            EnsurePhysicalTargetDispatchPlanShapeSupported(plan, operation);
+            EnsureNoReservedInternalNonCiPhysicalTargetPaths(plan);
+            EnsureConditionalFileMutationsSupported(fileSystem);
+            ConfigurationPlanResult physicalPlannedResult = CreatePlannedResult(plan, operation);
+            return await ExecutePhysicalTargetPlan(
+                physicalPlannedResult,
+                plan,
+                operation,
+                cancellationToken
+            );
+        }
+
         EnsureOperationSupported(plan, operation);
         EnsureExecutableGenericTargetPlanShapeSupported(fileSystem, plan);
         ConfigurationPlanResult plannedResult = CreatePlannedResult(plan, operation);
@@ -149,26 +208,361 @@ public sealed class ConfigurationManager : IConfigurationManager
                 operation,
                 cancellationToken
             );
-            return ValueTask.FromResult(
-                plannedResult with
-                {
-                    State = ConfigurationPlanState.Applied,
-                    OwnershipManifest = appliedOwnershipManifest,
-                }
-            );
+            return plannedResult with
+            {
+                State = ConfigurationPlanState.Applied,
+                OwnershipManifest = appliedOwnershipManifest,
+            };
         }
         catch (Exception exception)
             when (exception is not OperationCanceledException)
         {
-            return ValueTask.FromException<ConfigurationPlanResult>(exception);
+            return await ValueTask.FromException<ConfigurationPlanResult>(exception);
         }
     }
 
-    private static void EnsureValid(ConfigurationChangePlan plan)
+    private async ValueTask<ConfigurationPlanResult> ExecutePhysicalTargetPlan(
+        ConfigurationPlanResult plannedResult,
+        ConfigurationChangePlan plan,
+        ConfigurationPlanOperation operation,
+        CancellationToken cancellationToken
+    )
+    {
+        if (physicalTargetWriterDispatcher is null)
+        {
+            return await ValueTask.FromException<ConfigurationPlanResult>(
+                new NotSupportedException(
+                    "Configuration apply/remove has no registered writer for 4D physical "
+                        + "configuration targets."
+                )
+            );
+        }
+
+        try
+        {
+            ConfigurationOwnershipManifest? appliedOwnershipManifest =
+                await ExecutePhysicalTargetPlanWithManifest(
+                    plannedResult,
+                    plan,
+                    operation,
+                    cancellationToken
+                );
+            return plannedResult with
+            {
+                State = ConfigurationPlanState.Applied,
+                OwnershipManifest = appliedOwnershipManifest,
+            };
+        }
+        catch (Exception exception)
+            when (exception is not OperationCanceledException)
+        {
+            return await ValueTask.FromException<ConfigurationPlanResult>(exception);
+        }
+    }
+
+    private async ValueTask<ConfigurationOwnershipManifest?> ExecutePhysicalTargetPlanWithManifest(
+        ConfigurationPlanResult plannedResult,
+        ConfigurationChangePlan plan,
+        ConfigurationPlanOperation operation,
+        CancellationToken cancellationToken
+    )
+    {
+        EnsureNoConfigurationExecutionAlreadyInProgress();
+        if (!ExecutionLock.Wait(0, cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "Configuration apply/remove execution is already in progress; Phase 4D physical "
+                    + "target dispatch does not allow concurrent or reentrant execution."
+            );
+        }
+
+        ExecutionLockHeldByCurrentAsyncFlow.Value = true;
+        try
+        {
+            PhysicalTargetManifestDispatchPreparation preparation =
+                await PreparePhysicalTargetManifestDispatch(
+                    plannedResult,
+                    plan,
+                    operation,
+                    cancellationToken
+                );
+            try
+            {
+                foreach (ConfigurationChange change in plan.Changes)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await physicalTargetWriterDispatcher!.Dispatch(
+                        new ConfigurationPhysicalTargetWriterRequest(
+                            operation,
+                            change.TargetKind,
+                            change.Operation,
+                            change
+                        ),
+                        cancellationToken
+                    );
+                }
+
+                return preparation.AppliedOwnershipManifest;
+            }
+            catch (Exception exception)
+            {
+                await RollBackPhysicalTargetManifestDispatchPreparation(
+                    plan,
+                    preparation,
+                    exception
+                );
+                throw;
+            }
+        }
+        finally
+        {
+            ExecutionLockHeldByCurrentAsyncFlow.Value = false;
+            ExecutionLock.Release();
+        }
+    }
+
+    private async ValueTask<PhysicalTargetManifestDispatchPreparation>
+        PreparePhysicalTargetManifestDispatch(
+        ConfigurationPlanResult plannedResult,
+        ConfigurationChangePlan plan,
+        ConfigurationPlanOperation operation,
+        CancellationToken cancellationToken
+    )
+    {
+        IFileSystem executionFileSystem = fileSystem!;
+        string manifestPath = ownershipManifestPath!;
+        using IDisposable crossProcessExecutionLock =
+            plan.TemporaryContainer is null
+                ? NullDisposable.Instance
+                : AcquireConfigurationExecutionLock(executionFileSystem, plan, manifestPath);
+        EnsureManifestParentChainIsUsable(executionFileSystem, manifestPath);
+        EnsurePathIsNotUnsupportedReparsePoint(
+            executionFileSystem,
+            manifestPath,
+            "configuration ownership manifest"
+        );
+        FileRollbackSnapshot manifestSnapshot = CaptureRollbackSnapshot(
+            executionFileSystem,
+            manifestPath
+        );
+        ValidateExistingManifest(executionFileSystem, plan, manifestSnapshot, operation);
+        ConfigurationOwnershipManifest ownershipManifest =
+            plannedResult.OwnershipManifest
+            ?? throw new InvalidOperationException(
+                "Configuration execution requires a projected ownership manifest."
+            );
+        ConfigurationOwnershipManifest? manifestToWrite = null;
+        bool deleteManifest = false;
+        if (operation == ConfigurationPlanOperation.Remove)
+        {
+            ConfigurationOwnershipManifest existingManifest =
+                ConfigurationOwnershipManifestSerializer.Deserialize(
+                    manifestSnapshot.Contents!
+                );
+            manifestToWrite = CreateRemainingManifestAfterRemove(
+                executionFileSystem,
+                existingManifest,
+                ownershipManifest,
+                plan
+            );
+            deleteManifest = manifestToWrite is null;
+        }
+        else
+        {
+            manifestToWrite = CreateMergedManifestForApply(
+                executionFileSystem,
+                manifestSnapshot,
+                ownershipManifest,
+                plan
+            );
+        }
+
+        manifestSnapshot = ValidateCurrentManifestBeforeMutation(
+            executionFileSystem,
+            manifestPath,
+            plan,
+            operation
+        );
+        var completedWrites = new Stack<FileRollbackSnapshot>();
+        try
+        {
+            if (deleteManifest)
+            {
+                ExecuteDeleteWithRollbackRegistration(
+                    executionFileSystem,
+                    manifestPath,
+                    manifestSnapshot,
+                    expectedCurrentHashForRollback: null,
+                    completedWrites
+                );
+                return new PhysicalTargetManifestDispatchPreparation(null, completedWrites.Peek());
+            }
+
+            string manifestContents = ConfigurationOwnershipManifestSerializer.Serialize(
+                manifestToWrite
+                    ?? throw new InvalidOperationException(
+                        "Configuration execution requires a prepared ownership manifest."
+                    )
+            );
+            ExecuteAtomicWriteWithRollbackRegistration(
+                executionFileSystem,
+                manifestPath,
+                manifestContents,
+                options: AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly,
+                snapshot: manifestSnapshot,
+                expectedCurrentHashForRollback: ComputeSha256(manifestContents),
+                completedWrites: completedWrites
+            );
+            return new PhysicalTargetManifestDispatchPreparation(
+                manifestToWrite,
+                completedWrites.Peek()
+            );
+        }
+        catch (Exception exception)
+        {
+            RollBackWithoutMaskingConflict(executionFileSystem, completedWrites, exception);
+            throw;
+        }
+    }
+
+    private ValueTask RollBackPhysicalTargetManifestDispatchPreparation(
+        ConfigurationChangePlan plan,
+        PhysicalTargetManifestDispatchPreparation preparation,
+        Exception originalException
+    )
+    {
+        IFileSystem executionFileSystem = fileSystem!;
+        string manifestPath = ownershipManifestPath!;
+        try
+        {
+            using IDisposable crossProcessExecutionLock =
+                plan.TemporaryContainer is null
+                    ? NullDisposable.Instance
+                    : AcquireConfigurationExecutionLock(executionFileSystem, plan, manifestPath);
+            EnsureManifestParentChainIsUsable(executionFileSystem, manifestPath);
+            EnsurePathIsNotUnsupportedReparsePoint(
+                executionFileSystem,
+                manifestPath,
+                "configuration ownership manifest"
+            );
+            RollBackPreparedPhysicalTargetManifestDispatchPreparation(
+                executionFileSystem,
+                preparation
+            );
+        }
+        catch (Exception rollbackException)
+            when (rollbackException is not OperationCanceledException)
+        {
+            var rollbackFailure = new InvalidOperationException(
+                "Configuration rollback failed after an apply/remove error.",
+                rollbackException
+            );
+            rollbackFailure.Data["ConfigurationDispatchExceptionType"] =
+                originalException.GetType().FullName ?? originalException.GetType().Name;
+            rollbackFailure.Data["ConfigurationDispatchExceptionHResult"] =
+                originalException.HResult;
+            throw rollbackFailure;
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    private void EnsureValidForExecution(
+        ConfigurationChangePlan plan,
+        ConfigurationPlanOperation operation
+    )
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        EnsureValidContract(plan);
+
+        if (ContainsProjectionOnlyPhysicalTarget(plan))
+        {
+            EnsureValidForPhysicalTargetExecutionBeforeProjection(plan, operation);
+        }
+
+        EnsureProjectedOwnershipManifestValid(plan);
+    }
+
+    private void EnsureValidForPhysicalTargetExecutionBeforeProjection(
+        ConfigurationChangePlan plan,
+        ConfigurationPlanOperation operation
+    )
+    {
+        string? violation = GetPhase4DPhysicalScaffoldPrecedencePlanningValidationViolation(plan);
+        if (violation is not null)
+        {
+            throw new ArgumentException(violation, nameof(plan));
+        }
+
+        EnsureNoOwnershipManifestPathCollisionWithPhysicalTargets(plan);
+        EnsureNoFilesystemBackedPhysicalTargetKindSamePathConflicts(plan);
+        EnsurePhysicalTargetDispatchPlanShapeSupported(plan, operation);
+        EnsureNoReservedInternalNonCiPhysicalTargetPaths(plan);
+    }
+
+    private static void EnsureProjectedOwnershipManifestValid(ConfigurationChangePlan plan)
+    {
+        string? violation = GetProjectionValidationViolation(plan);
+        if (violation is not null)
+        {
+            throw new ArgumentException(violation, nameof(plan));
+        }
+    }
+
+    private string? GetValidatePlanValidationViolation(ConfigurationChangePlan plan)
+    {
+        string? violation = GetContractValidationViolation(plan);
+        if (violation is not null)
+        {
+            return violation;
+        }
+
+        if (ContainsProjectionOnlyPhysicalTarget(plan))
+        {
+            violation = GetPhase4DPhysicalScaffoldPrecedencePlanningValidationViolation(plan);
+            violation ??= GetOwnershipManifestPathCollisionWithPhysicalTargetsViolation(plan);
+            violation ??= GetFilesystemBackedPhysicalTargetKindSamePathConflictViolation(plan);
+            violation ??= GetPhase4DPhysicalScaffoldPlanningViolation(plan);
+            violation ??= GetReservedInternalPlanningPhysicalTargetPathViolation(plan);
+            return violation ?? GetProjectionValidationViolation(plan);
+        }
+
+        violation = GetProjectionValidationViolation(plan);
+        violation ??= GetAdditionalPlanningValidationViolation(
+            plan,
+            includeCiTemporaryFileReservedPaths: true
+        );
+        violation ??= GetOwnershipManifestPathCollisionWithPhysicalTargetsViolation(plan);
+        violation ??= GetFilesystemBackedPhysicalTargetKindSamePathConflictViolation(plan);
+        return violation;
+    }
+
+    private static void EnsureValidForPhysicalTargetDryRunBeforeProjection(
+        ConfigurationChangePlan plan
+    )
     {
         ArgumentNullException.ThrowIfNull(plan);
 
-        string? violation = GetValidationViolation(plan);
+        string? violation = GetPhase4DPhysicalScaffoldPrecedencePlanningValidationViolation(plan);
+        if (violation is not null)
+        {
+            throw new ArgumentException(violation, nameof(plan));
+        }
+    }
+
+    private void
+        EnsureNoReservedInternalNonCiPhysicalTargetPaths(ConfigurationChangePlan plan)
+    {
+        string? violation = GetReservedInternalNonCiPhysicalTargetPathViolation(plan);
+        if (violation is not null)
+        {
+            throw new ArgumentException(violation, nameof(plan));
+        }
+    }
+
+    private static void EnsureValidContract(ConfigurationChangePlan plan)
+    {
+        string? violation = GetContractValidationViolation(plan);
         if (violation is not null)
         {
             throw new ArgumentException(violation, nameof(plan));
@@ -186,14 +580,22 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
     }
 
-    private static string? GetValidationViolation(ConfigurationChangePlan plan)
+    private static void EnsureValidForNoFilesystemPlanning(ConfigurationChangePlan plan)
     {
-        string? contractViolation = ConfigurationChangePlanPolicy.GetViolation(plan);
-        if (contractViolation is not null)
-        {
-            return contractViolation;
-        }
+        ArgumentNullException.ThrowIfNull(plan);
 
+        string? violation = GetPhase4DPhysicalScaffoldFirstPlanningValidationViolation(plan);
+        if (violation is not null)
+        {
+            throw new ArgumentException(violation, nameof(plan));
+        }
+    }
+
+    private static string? GetContractValidationViolation(ConfigurationChangePlan plan) =>
+        ConfigurationChangePlanPolicy.GetViolation(plan);
+
+    private static string? GetProjectionValidationViolation(ConfigurationChangePlan plan)
+    {
         ConfigurationPlannedOperation[] plannedOperations =
             ConfigurationPlanProjector.CreatePlannedOperations(plan);
         ConfigurationOwnershipManifest manifest =
@@ -203,16 +605,110 @@ public sealed class ConfigurationManager : IConfigurationManager
 
     private static string? GetPlanningValidationViolation(ConfigurationChangePlan plan)
     {
-        string? violation = GetValidationViolation(plan);
+        string? violation = GetContractValidationViolation(plan);
+        violation ??= GetProjectionValidationViolation(plan);
         if (violation is not null)
         {
             return violation;
         }
 
-        return GetCiTemporaryFilePlanWholeFileOwnershipViolation(plan)
-            ?? GetPhysicalTargetKindSamePathConflictViolation(plan)
-            ?? GetReservedInternalPhysicalTargetPathViolation(plan)
+        return GetAdditionalPlanningValidationViolation(plan);
+    }
+
+    private static string? GetPhase4DPhysicalScaffoldFirstPlanningValidationViolation(
+        ConfigurationChangePlan plan
+    )
+    {
+        string? violation = GetContractValidationViolation(plan);
+        if (violation is not null)
+        {
+            return violation;
+        }
+
+        if (!ContainsProjectionOnlyPhysicalTarget(plan))
+        {
+            return GetProjectionValidationViolation(plan)
+                ?? GetAdditionalPlanningValidationViolation(
+                    plan,
+                    includeCiTemporaryFileReservedPaths: true
+                );
+        }
+
+        violation = GetPhase4DPhysicalScaffoldPrecedencePlanningValidationViolation(plan);
+        if (violation is not null)
+        {
+            return violation;
+        }
+
+        violation = GetPhase4DPhysicalScaffoldPlanningViolation(plan);
+        if (violation is not null)
+        {
+            return violation;
+        }
+
+        violation = GetLexicalReservedInternalPlanningPhysicalTargetPathViolation(plan);
+        if (violation is not null)
+        {
+            return violation;
+        }
+
+        violation = GetProjectionValidationViolation(plan);
+        if (violation is not null)
+        {
+            return violation;
+        }
+
+        return null;
+    }
+
+    private static string? GetAdditionalPlanningValidationViolation(ConfigurationChangePlan plan) =>
+        GetAdditionalPlanningValidationViolation(
+            plan,
+            includeCiTemporaryFileReservedPaths: false
+        );
+
+    private static string? GetAdditionalPlanningValidationViolation(
+        ConfigurationChangePlan plan,
+        bool includeCiTemporaryFileReservedPaths
+    ) =>
+        GetPlanningValidationViolationBeforeReservedPath(plan)
+            ?? (
+                includeCiTemporaryFileReservedPaths
+                    ? GetLexicalReservedInternalPlanningPhysicalTargetPathViolation(plan)
+                    : GetLexicalReservedInternalNonCiPhysicalTargetPathViolation(plan)
+            )
             ?? GetCiTemporaryFileUnsupportedOperationViolation(plan);
+
+    private static string? GetPhase4DPhysicalScaffoldPrecedencePlanningValidationViolation(
+        ConfigurationChangePlan plan
+    ) =>
+        GetPlanningValidationViolationBeforeReservedPath(plan)
+            ?? GetCiTemporaryFileUnsupportedOperationViolation(plan);
+
+    private static string? GetPlanningValidationViolationBeforeReservedPath(
+        ConfigurationChangePlan plan
+    ) =>
+        GetCiTemporaryFilePlanWholeFileOwnershipViolation(plan)
+            ?? GetPhysicalTargetKindSamePathConflictViolation(plan);
+
+    private static string? GetPhase4DPhysicalScaffoldPlanningViolation(
+        ConfigurationChangePlan plan
+    )
+    {
+        if (!ContainsProjectionOnlyPhysicalTarget(plan))
+        {
+            return null;
+        }
+
+        try
+        {
+            EnsurePhysicalTargetDryRunDispatchPlanShapeSupported(plan);
+            return null;
+        }
+        catch (NotSupportedException exception)
+        {
+            return exception.Message;
+        }
     }
 
     private void EnsureNoOwnershipManifestPathCollisionWithPhysicalTargets(
@@ -341,6 +837,26 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
     }
 
+    private static string GetNormalizableOwnershipManifestPath(
+        IFileSystem fileSystem,
+        string ownershipManifestPath
+    )
+    {
+        try
+        {
+            return fileSystem.GetFullPath(ownershipManifestPath);
+        }
+        catch (Exception exception)
+            when (exception is ArgumentException or NotSupportedException or IOException)
+        {
+            throw new ArgumentException(
+                "Configuration ownership manifest path must be a normalizable physical path.",
+                nameof(ownershipManifestPath),
+                exception
+            );
+        }
+    }
+
     private static string? GetCiTemporaryFileUnsupportedOperationViolation(
         ConfigurationChangePlan plan
     ) =>
@@ -352,11 +868,81 @@ public sealed class ConfigurationManager : IConfigurationManager
                 + "update, refresh, set, and remove operations."
             : null;
 
-    private static string? GetReservedInternalPhysicalTargetPathViolation(
+    private string? GetReservedInternalPlanningPhysicalTargetPathViolation(
         ConfigurationChangePlan plan
     ) =>
+        GetReservedInternalPhysicalTargetPathViolation(
+            plan,
+            includeCiTemporaryFileTargets: true
+        );
+
+    private string? GetReservedInternalNonCiPhysicalTargetPathViolation(
+        ConfigurationChangePlan plan
+    ) =>
+        GetReservedInternalPhysicalTargetPathViolation(
+            plan,
+            includeCiTemporaryFileTargets: false
+        );
+
+    private string? GetReservedInternalPhysicalTargetPathViolation(
+        ConfigurationChangePlan plan,
+        bool includeCiTemporaryFileTargets
+    )
+    {
+        return plan.Changes.Any(change =>
+            (
+                includeCiTemporaryFileTargets
+                    ? IsPhysicalFileSystemTarget(change.TargetKind)
+                    : IsNonCiPhysicalFileSystemTarget(change.TargetKind)
+            )
+            && IsReservedInternalPhysicalTargetPath(change)
+        )
+            ? "Protocol violation: physical configuration targets must not use reserved "
+                + "internal filesystem artifact paths."
+            : null;
+    }
+
+    private bool IsReservedInternalPhysicalTargetPath(ConfigurationChange change)
+    {
+        if (fileSystem is null || change.TargetKind == ConfigurationTargetKind.CiTemporaryFile)
+        {
+            return IsReservedInternalConfigurationPathArtifact(change.TargetPathOrName);
+        }
+
+        string targetPath = GetNormalizablePhysicalPath(
+            fileSystem,
+            change.TargetPathOrName,
+            $"{change.TargetKind} target"
+        );
+        return IsReservedInternalFileSystemArtifact(targetPath);
+    }
+
+    private static string? GetLexicalReservedInternalPlanningPhysicalTargetPathViolation(
+        ConfigurationChangePlan plan
+    ) =>
+        GetLexicalReservedInternalPhysicalTargetPathViolation(
+            plan,
+            includeCiTemporaryFileTargets: true
+        );
+
+    private static string? GetLexicalReservedInternalNonCiPhysicalTargetPathViolation(
+        ConfigurationChangePlan plan
+    ) =>
+        GetLexicalReservedInternalPhysicalTargetPathViolation(
+            plan,
+            includeCiTemporaryFileTargets: false
+        );
+
+    private static string? GetLexicalReservedInternalPhysicalTargetPathViolation(
+        ConfigurationChangePlan plan,
+        bool includeCiTemporaryFileTargets
+    ) =>
         plan.Changes.Any(change =>
-            IsPhysicalFileSystemTarget(change.TargetKind)
+            (
+                includeCiTemporaryFileTargets
+                    ? IsPhysicalFileSystemTarget(change.TargetKind)
+                    : IsNonCiPhysicalFileSystemTarget(change.TargetKind)
+            )
             && IsReservedInternalConfigurationPathArtifact(change.TargetPathOrName)
         )
             ? "Protocol violation: physical configuration targets must not use reserved "
@@ -487,7 +1073,10 @@ public sealed class ConfigurationManager : IConfigurationManager
         CancellationToken cancellationToken
     )
     {
-        lock (ExecutionLock)
+        EnsureNoConfigurationExecutionAlreadyInProgress();
+        ExecutionLock.Wait(cancellationToken);
+        ExecutionLockHeldByCurrentAsyncFlow.Value = true;
+        try
         {
             IFileSystem executionFileSystem = fileSystem!;
             string manifestPath = ownershipManifestPath!;
@@ -612,19 +1201,60 @@ public sealed class ConfigurationManager : IConfigurationManager
                 throw;
             }
         }
+        finally
+        {
+            ExecutionLockHeldByCurrentAsyncFlow.Value = false;
+            ExecutionLock.Release();
+        }
+    }
+
+    private static void EnsureNoConfigurationExecutionAlreadyInProgress()
+    {
+        if (ExecutionLockHeldByCurrentAsyncFlow.Value)
+        {
+            throw new InvalidOperationException(
+                "Configuration apply/remove execution is already in progress and does not allow "
+                    + "reentrant execution."
+            );
+        }
     }
 
     private ConfigurationPlanResult SimulateFilesystemBackedDryRun(
         ConfigurationPlanResult plannedResult,
-        ConfigurationChangePlan plan
+        ConfigurationChangePlan plan,
+        CancellationToken cancellationToken
     )
     {
-        lock (ExecutionLock)
+        bool failFastOnLockedExecution = IsProjectionOnlyPhysicalTargetPlan(plan);
+        if (failFastOnLockedExecution)
+        {
+            EnsureNoConfigurationExecutionAlreadyInProgress();
+            if (!ExecutionLock.Wait(0, cancellationToken))
+            {
+                throw new InvalidOperationException(
+                    "Configuration dry-run execution is already in progress; filesystem-backed "
+                        + "4D physical target dry-run does not allow concurrent or reentrant "
+                        + "execution."
+                );
+            }
+        }
+        else
+        {
+            EnsureNoConfigurationExecutionAlreadyInProgress();
+            ExecutionLock.Wait(cancellationToken);
+        }
+
+        bool executionLockHeldByCurrentAsyncFlow =
+            ExecutionLockHeldByCurrentAsyncFlow.Value;
+        ExecutionLockHeldByCurrentAsyncFlow.Value = true;
+        try
         {
             IFileSystem dryRunFileSystem = fileSystem!;
             string manifestPath = ownershipManifestPath!;
             if (IsProjectionOnlyPhysicalTargetPlan(plan))
             {
+                EnsurePhysicalTargetDryRunDispatchPlanShapeSupported(plan);
+                EnsureConditionalFileMutationsSupported(dryRunFileSystem);
                 return SimulateProjectionOnlyPhysicalTargetDryRun(
                     dryRunFileSystem,
                     manifestPath,
@@ -703,6 +1333,12 @@ public sealed class ConfigurationManager : IConfigurationManager
             {
                 OwnershipManifest = simulatedOwnershipManifest,
             };
+        }
+        finally
+        {
+            ExecutionLockHeldByCurrentAsyncFlow.Value =
+                executionLockHeldByCurrentAsyncFlow;
+            ExecutionLock.Release();
         }
     }
 
@@ -939,7 +1575,7 @@ public sealed class ConfigurationManager : IConfigurationManager
                     .Select((entry, index) => entry with { Sequence = index + 1 })
                     .ToArray(),
             };
-            ValidateCiTemporaryFileManifestWholeFileOwnership(fileSystem, plan, valueOnlyManifest);
+            ValidateMergedManifestForApply(fileSystem, plan, valueOnlyManifest);
             return valueOnlyManifest;
         }
 
@@ -952,17 +1588,17 @@ public sealed class ConfigurationManager : IConfigurationManager
 
         foreach (ConfigurationOwnershipManifestEntry existingEntry in existingManifest.Entries)
         {
-            if (!PlanTargetsEntry(fileSystem, plan, existingEntry))
-            {
-                mergedEntries.Add(existingEntry);
-                continue;
-            }
-
             string key = CreateEntryMergeKey(fileSystem, plan, existingEntry);
             if (replacements.TryGetValue(key, out ConfigurationOwnershipManifestEntry? replacement))
             {
                 mergedEntries.Add(replacement);
                 replacedKeys.Add(key);
+                continue;
+            }
+
+            if (!PlanTargetsEntry(fileSystem, plan, existingEntry))
+            {
+                mergedEntries.Add(existingEntry);
             }
         }
 
@@ -980,10 +1616,19 @@ public sealed class ConfigurationManager : IConfigurationManager
             Entries = mergedEntries.Select((entry, index) => entry with { Sequence = index + 1 })
                 .ToArray(),
         };
-        ConfigurationOwnershipManifestPolicy.EnsureValid(mergedManifest);
-        ValidatePhysicalTargetManifestEntries(fileSystem, mergedManifest);
-        ValidateCiTemporaryFileManifestWholeFileOwnership(fileSystem, plan, mergedManifest);
+        ValidateMergedManifestForApply(fileSystem, plan, mergedManifest);
         return mergedManifest;
+    }
+
+    private static void ValidateMergedManifestForApply(
+        IFileSystem fileSystem,
+        ConfigurationChangePlan plan,
+        ConfigurationOwnershipManifest manifest
+    )
+    {
+        ConfigurationOwnershipManifestPolicy.EnsureValid(manifest);
+        ValidatePhysicalTargetManifestEntries(fileSystem, manifest);
+        ValidateCiTemporaryFileManifestWholeFileOwnership(fileSystem, plan, manifest);
     }
 
     private static ConfigurationOwnershipManifest CreateMergedManifestForProjectionOnlyDryRun(
@@ -995,6 +1640,7 @@ public sealed class ConfigurationManager : IConfigurationManager
     {
         if (existingManifest is null)
         {
+            ValidateMergedManifestForProjectionOnlyDryRun(fileSystem, plan, projectedManifest);
             return projectedManifest;
         }
 
@@ -1007,17 +1653,17 @@ public sealed class ConfigurationManager : IConfigurationManager
 
         foreach (ConfigurationOwnershipManifestEntry existingEntry in existingManifest.Entries)
         {
-            if (!PlanTargetsEntry(fileSystem, plan, existingEntry))
-            {
-                mergedEntries.Add(existingEntry);
-                continue;
-            }
-
             string key = CreateEntryMergeKey(fileSystem, plan, existingEntry);
             if (replacements.TryGetValue(key, out ConfigurationOwnershipManifestEntry? replacement))
             {
                 mergedEntries.Add(replacement);
                 replacedKeys.Add(key);
+                continue;
+            }
+
+            if (!PlanTargetsEntry(fileSystem, plan, existingEntry))
+            {
+                mergedEntries.Add(existingEntry);
             }
         }
 
@@ -1035,10 +1681,19 @@ public sealed class ConfigurationManager : IConfigurationManager
             Entries = mergedEntries.Select((entry, index) => entry with { Sequence = index + 1 })
                 .ToArray(),
         };
-        ConfigurationOwnershipManifestPolicy.EnsureValid(mergedManifest);
-        ValidatePhysicalTargetManifestEntries(fileSystem, mergedManifest);
-        ValidateCiTemporaryFileManifestWholeFileOwnership(fileSystem, plan, mergedManifest);
+        ValidateMergedManifestForProjectionOnlyDryRun(fileSystem, plan, mergedManifest);
         return mergedManifest;
+    }
+
+    private static void ValidateMergedManifestForProjectionOnlyDryRun(
+        IFileSystem fileSystem,
+        ConfigurationChangePlan plan,
+        ConfigurationOwnershipManifest manifest
+    )
+    {
+        ConfigurationOwnershipManifestPolicy.EnsureValid(manifest);
+        ValidatePhysicalTargetManifestEntries(fileSystem, manifest);
+        ValidateCiTemporaryFileManifestWholeFileOwnership(fileSystem, plan, manifest);
     }
 
     private static ConfigurationOwnershipManifest CreateProjectionOnlyNonRemoveManifest(
@@ -1125,19 +1780,16 @@ public sealed class ConfigurationManager : IConfigurationManager
             );
         }
 
-        StringComparison targetPathComparison =
-            HasCollisionCheckedPhysicalTargetPath(change.TargetKind)
-            && HasCollisionCheckedPhysicalTargetPath(entry.TargetKind)
-                ? GetPathIdentityComparison()
-                : StringComparison.Ordinal;
-        string changeTargetPathOrName =
-            targetPathComparison == StringComparison.Ordinal
-                ? change.TargetPathOrName
-                : CreatePhysicalPathIdentity(fileSystem, change.TargetPathOrName);
-        string entryTargetPathOrName =
-            targetPathComparison == StringComparison.Ordinal
-                ? entry.TargetPathOrName
-                : CreatePhysicalPathIdentity(fileSystem, entry.TargetPathOrName);
+        bool comparePhysicalTargetPath = HasCollisionCheckedPhysicalTargetPath(change.TargetKind);
+        string changeTargetPathOrName = comparePhysicalTargetPath
+            ? CreatePhysicalPathIdentity(fileSystem, change.TargetPathOrName)
+            : change.TargetPathOrName;
+        string entryTargetPathOrName = comparePhysicalTargetPath
+            ? CreatePhysicalPathIdentity(fileSystem, entry.TargetPathOrName)
+            : entry.TargetPathOrName;
+        StringComparison targetPathComparison = comparePhysicalTargetPath
+            ? GetPathIdentityComparison()
+            : StringComparison.Ordinal;
         return string.Equals(changeTargetPathOrName, entryTargetPathOrName, targetPathComparison)
             && string.Equals(change.Key, entry.Key, StringComparison.Ordinal);
     }
@@ -1158,13 +1810,116 @@ public sealed class ConfigurationManager : IConfigurationManager
             return $"{entry.TargetKind}\n{targetIdentity}";
         }
 
-        return CreateEntryKey(entry);
+        string mergeTargetIdentity = HasCollisionCheckedPhysicalTargetPath(entry.TargetKind)
+            ? CreatePhysicalPathIdentity(fileSystem, entry.TargetPathOrName)
+            : entry.TargetPathOrName;
+        return CreateEntryKey(entry.TargetKind, mergeTargetIdentity, entry.Key);
     }
 
-    private static StringComparer GetEntryMergeKeyComparer() => GetPathIdentityComparer();
+    private static EntryMergeKeyComparer GetEntryMergeKeyComparer() =>
+        EntryMergeKeyComparer.Instance;
 
-    private static string CreateEntryKey(ConfigurationOwnershipManifestEntry entry) =>
-        $"{entry.TargetKind}\n{entry.TargetPathOrName}\n{entry.Key}";
+    private static string CreateEntryKey(
+        ConfigurationTargetKind targetKind,
+        string targetPathOrName,
+        string key
+    ) => $"{targetKind}\n{targetPathOrName}\n{key}";
+
+    private sealed class EntryMergeKeyComparer : IEqualityComparer<string>
+    {
+        public static readonly EntryMergeKeyComparer Instance = new();
+
+        private EntryMergeKeyComparer() { }
+
+        public bool Equals(string? x, string? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return true;
+            }
+
+            if (x is null || y is null)
+            {
+                return false;
+            }
+
+            EntryMergeKeyParts xParts = ParseEntryMergeKey(x);
+            EntryMergeKeyParts yParts = ParseEntryMergeKey(y);
+            return string.Equals(xParts.TargetKind, yParts.TargetKind, StringComparison.Ordinal)
+                && EntryMergeKeyPathsEqual(xParts, yParts)
+                && string.Equals(xParts.Key, yParts.Key, StringComparison.Ordinal);
+        }
+
+        public int GetHashCode(string obj)
+        {
+            ArgumentNullException.ThrowIfNull(obj);
+
+            EntryMergeKeyParts parts = ParseEntryMergeKey(obj);
+            var hashCode = new HashCode();
+            hashCode.Add(parts.TargetKind, StringComparer.Ordinal);
+            hashCode.Add(
+                parts.TargetPathOrName,
+                EntryMergeKeyUsesPhysicalPathComparison(parts.TargetKind)
+                    ? GetPathIdentityComparer()
+                    : StringComparer.Ordinal
+            );
+            hashCode.Add(parts.Key is null);
+            if (parts.Key is not null)
+            {
+                hashCode.Add(parts.Key, StringComparer.Ordinal);
+            }
+
+            return hashCode.ToHashCode();
+        }
+    }
+
+    private readonly record struct EntryMergeKeyParts(
+        string TargetKind,
+        string TargetPathOrName,
+        string? Key
+    );
+
+    private static EntryMergeKeyParts ParseEntryMergeKey(string mergeKey)
+    {
+        int firstSeparatorIndex = mergeKey.IndexOf('\n', StringComparison.Ordinal);
+        if (firstSeparatorIndex < 0)
+        {
+            return new EntryMergeKeyParts(mergeKey, string.Empty, null);
+        }
+
+        int secondSeparatorIndex = mergeKey.IndexOf('\n', firstSeparatorIndex + 1);
+        if (secondSeparatorIndex < 0)
+        {
+            return new EntryMergeKeyParts(
+                mergeKey[..firstSeparatorIndex],
+                mergeKey[(firstSeparatorIndex + 1)..],
+                null
+            );
+        }
+
+        return new EntryMergeKeyParts(
+            mergeKey[..firstSeparatorIndex],
+            mergeKey[(firstSeparatorIndex + 1)..secondSeparatorIndex],
+            mergeKey[(secondSeparatorIndex + 1)..]
+        );
+    }
+
+    private static bool EntryMergeKeyPathsEqual(
+        EntryMergeKeyParts xParts,
+        EntryMergeKeyParts yParts
+    )
+    {
+        StringComparison comparison =
+            EntryMergeKeyUsesPhysicalPathComparison(xParts.TargetKind)
+            || EntryMergeKeyUsesPhysicalPathComparison(yParts.TargetKind)
+                ? GetPathIdentityComparison()
+                : StringComparison.Ordinal;
+        return string.Equals(xParts.TargetPathOrName, yParts.TargetPathOrName, comparison);
+    }
+
+    private static bool EntryMergeKeyUsesPhysicalPathComparison(string targetKind) =>
+        Enum.TryParse(targetKind, out ConfigurationTargetKind parsedTargetKind)
+        && HasCollisionCheckedPhysicalTargetPath(parsedTargetKind);
 
     private static void ValidateCiTemporaryFileManifestWholeFileOwnership(
         IFileSystem fileSystem,
@@ -1834,6 +2589,99 @@ public sealed class ConfigurationManager : IConfigurationManager
         );
     }
 
+    private static void EnsurePhysicalTargetDispatchPlanShapeSupported(
+        ConfigurationChangePlan plan,
+        ConfigurationPlanOperation operation
+    )
+    {
+        EnsurePhysicalTargetDispatchTargetShapeSupported(plan, "apply/remove");
+        if (plan.Changes.Count != 1)
+        {
+            throw new NotSupportedException(
+                "Configuration apply/remove currently supports dispatching only one 4D "
+                    + "physical target change per plan."
+            );
+        }
+
+        if (
+            operation == ConfigurationPlanOperation.Apply
+            && plan.Changes.Any(change => !IsValueWritingOperation(change.Operation))
+        )
+        {
+            throw new NotSupportedException(
+                "Configuration apply currently supports only value-writing 4D physical "
+                    + "target changes."
+            );
+        }
+
+        if (
+            operation == ConfigurationPlanOperation.Remove
+            && plan.Changes.Any(change => !IsOwnershipRemoveOperation(change.Operation))
+        )
+        {
+            throw new NotSupportedException(
+                "Configuration remove currently supports only ownership-removing 4D physical "
+                    + "target changes."
+            );
+        }
+    }
+
+    private static void EnsurePhysicalTargetDryRunDispatchPlanShapeSupported(
+        ConfigurationChangePlan plan
+    )
+    {
+        EnsurePhysicalTargetDispatchTargetShapeSupported(plan, "dry-run");
+        if (plan.Changes.Count != 1)
+        {
+            throw new NotSupportedException(
+                "Configuration dry-run currently supports dispatching only one 4D physical target "
+                    + "change per plan."
+            );
+        }
+
+        bool allValueWriting = plan.Changes.All(change =>
+            IsValueWritingOperation(change.Operation)
+        );
+        bool allOwnershipRemoving = plan.Changes.All(change =>
+            IsOwnershipRemoveOperation(change.Operation)
+        );
+        if (!allValueWriting && !allOwnershipRemoving)
+        {
+            throw new NotSupportedException(
+                "Configuration dry-run currently supports only 4D physical target plans that "
+                    + "can be executed by apply or remove."
+            );
+        }
+    }
+
+    private static void EnsurePhysicalTargetDispatchTargetShapeSupported(
+        ConfigurationChangePlan plan,
+        string operationDescription
+    )
+    {
+        if (!plan.Changes.All(change => IsProjectionOnlyPhysicalTarget(change.TargetKind)))
+        {
+            throw new NotSupportedException(
+                $"Configuration {operationDescription} does not support mixing 4D physical "
+                    + "configuration targets with other target kinds."
+            );
+        }
+
+        if (
+            plan
+                .Changes.Select(change => change.TargetKind)
+                .Distinct()
+                .Skip(1)
+                .Any()
+        )
+        {
+            throw new NotSupportedException(
+                $"Configuration {operationDescription} currently supports dispatching only one "
+                    + "4D physical target kind per plan."
+            );
+        }
+    }
+
     private static void EnsureSupportedChangeOperations(ConfigurationChangePlan plan)
     {
         if (
@@ -2475,6 +3323,29 @@ public sealed class ConfigurationManager : IConfigurationManager
 
             throw;
         }
+    }
+
+    private static void RollBackPreparedPhysicalTargetManifestDispatchPreparation(
+        IFileSystem fileSystem,
+        PhysicalTargetManifestDispatchPreparation preparation
+    )
+    {
+        FileRollbackSnapshot manifestSnapshot = preparation.ManifestRollbackSnapshot;
+        if (manifestSnapshot.Existed)
+        {
+            fileSystem.AtomicWriteAllBytes(
+                manifestSnapshot.Path,
+                manifestSnapshot.ContentsBytes!,
+                options: AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly,
+                expectation: CreateRollbackCurrentExpectation(manifestSnapshot)
+            );
+            return;
+        }
+
+        fileSystem.DeleteFile(
+            manifestSnapshot.Path,
+            CreateRollbackCurrentExpectation(manifestSnapshot)
+        );
     }
 
     private static void DeleteTemporaryContainerAfterFullRemove(
@@ -3385,7 +4256,9 @@ public sealed class ConfigurationManager : IConfigurationManager
     )
     {
         string targetPath = fileSystem.GetFullPath(targetPathOrName);
-        return Path.TrimEndingDirectorySeparator(targetPath);
+        return NormalizePhysicalTargetConfigurationPathSegments(
+            Path.TrimEndingDirectorySeparator(targetPath)
+        );
     }
 
     private static StringComparer GetPathIdentityComparer() =>
@@ -3836,6 +4709,9 @@ public sealed class ConfigurationManager : IConfigurationManager
         plan.Changes.Count > 0
         && plan.Changes.All(change => IsProjectionOnlyPhysicalTarget(change.TargetKind));
 
+    private static bool ContainsProjectionOnlyPhysicalTarget(ConfigurationChangePlan plan) =>
+        plan.Changes.Any(change => IsProjectionOnlyPhysicalTarget(change.TargetKind));
+
     private static bool IsProjectionOnlyPhysicalTarget(ConfigurationTargetKind targetKind) =>
         targetKind
             is ConfigurationTargetKind.GitConfig
@@ -3913,6 +4789,11 @@ public sealed class ConfigurationManager : IConfigurationManager
         bool Existed,
         IReadOnlyList<string> ExistingFiles,
         IReadOnlyList<string> ExistingDirectories
+    );
+
+    private sealed record PhysicalTargetManifestDispatchPreparation(
+        ConfigurationOwnershipManifest? AppliedOwnershipManifest,
+        FileRollbackSnapshot ManifestRollbackSnapshot
     );
 
     private sealed class NullDisposable : IDisposable
