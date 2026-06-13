@@ -35,7 +35,7 @@
     <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
     <PackageVersion Include="Nito.Guids" Version="1.1.1" />
     <PackageVersion Include="NuGet.ProjectModel" Version="7.6.0" />
-    <PackageVersion Include="RocksDB" Version="10.10.1.649" />
+    <PackageVersion Include="RocksDB" Version="10.10.1.1747" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageVersion Include="Svg" Version="3.4.7" />
