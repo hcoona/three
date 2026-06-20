@@ -205,7 +205,7 @@ jobs:
       # SYNC[tool-versions]: keep in step with the workflow-level env: block above.
       # These EXPECTED_* values are what the lint check validates hardcoded with: values against.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Verify hardcoded versions match env declarations
         shell: bash
@@ -266,7 +266,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout (policy scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -314,7 +314,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout (policy publish-target scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -794,7 +794,7 @@ jobs:
 
       - name: Checkout (non-clobber guard scripts)
         if: inputs.enforce_non_clobber
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -910,7 +910,7 @@ jobs:
           version: '1.7.1'
 
       - name: Checkout (workflow scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           ref: ${{ needs.resolve.outputs.target }}
@@ -1140,7 +1140,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout (workflow scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           ref: ${{ needs.resolve.outputs.target }}
@@ -1284,7 +1284,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout (workflow scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           ref: ${{ needs.resolve.outputs.target }}
@@ -1499,7 +1499,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout (workflow scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           ref: ${{ needs.resolve.outputs.target }}
@@ -1616,7 +1616,7 @@ jobs:
           version: '1.7.1'
 
       - name: Checkout (workflow scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           ref: ${{ needs.resolve.outputs.target }}
@@ -1963,7 +1963,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout (release sentinel scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
