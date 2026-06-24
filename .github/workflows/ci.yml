@@ -69,7 +69,7 @@ jobs:
           bundler-cache: true
 
       - name: Install pkl
-        uses: pkl-community/setup-pkl@a862c198115338598d769aaf03f5fa8c5123036e # v0
+        uses: pkl-community/setup-pkl@0bffd1602015ccf46333e880f81087e73fd1a361 # v0
         with:
           pkl-version: 0.31.1
 
