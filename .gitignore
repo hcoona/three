@@ -26,6 +26,7 @@ mono_crash.*
 [Rr]elease/
 !eng/release/
 eng/release/*
+!eng/release/buddy-target-refs.yml
 !eng/release/target-instances.yml
 [Rr]eleases/
 x64/

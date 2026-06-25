@@ -13,6 +13,10 @@ permissions:
   contents: read
   actions: read
 
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('ci/pr/{0}', github.event.pull_request.number) || github.event_name == 'push' && format('ci/push/{0}', github.ref) || format('ci/{0}/{1}', github.event_name, github.run_id) }}
+  cancel-in-progress: true
+
 jobs:
   normalize-input:
     name: normalize-input
@@ -40,14 +44,18 @@ jobs:
       - name: Install uv
         id: setup-uv
         continue-on-error: true
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
       - name: Retry uv installation
         if: ${{ steps.setup-uv.outcome == 'failure' }}
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
+      - name: Validate bootstrap CODEOWNERS coverage
+        run: |
+          uv run python eng/scripts/workflow_release_control.py validate-bootstrap-codeowners \
+            --repo-root .
       - name: Compute artifact refs
         id: refs
         run: |
@@ -311,12 +319,12 @@ jobs:
       - name: Install uv
         id: setup-uv
         continue-on-error: true
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
       - name: Retry uv installation
         if: ${{ steps.setup-uv.outcome == 'failure' }}
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
       - name: Install .NET for NBGV-backed release planning
@@ -426,12 +434,12 @@ jobs:
       - name: Install uv
         id: setup-uv
         continue-on-error: true
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
       - name: Retry uv installation
         if: ${{ steps.setup-uv.outcome == 'failure' }}
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
       - name: Verify planning artifact producer boundaries
@@ -534,12 +542,12 @@ jobs:
       - name: Install uv
         id: setup-uv
         continue-on-error: true
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
       - name: Retry uv installation
         if: ${{ steps.setup-uv.outcome == 'failure' }}
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
       - name: Install .NET for NBGV-backed release planning
@@ -1282,12 +1290,12 @@ jobs:
       - name: Install uv
         id: setup-uv
         continue-on-error: true
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
       - name: Retry uv installation
         if: ${{ steps.setup-uv.outcome == 'failure' }}
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
       - name: Install .NET for NBGV-backed release planning
@@ -2019,12 +2027,12 @@ jobs:
       - name: Install uv
         id: setup-uv
         continue-on-error: true
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
       - name: Retry uv installation
         if: ${{ steps.setup-uv.outcome == 'failure' }}
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
       - name: Install .NET for NBGV-backed release planning
@@ -2759,12 +2767,12 @@ jobs:
       - name: Install uv
         id: setup-uv
         continue-on-error: true
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
       - name: Retry uv installation
         if: ${{ steps.setup-uv.outcome == 'failure' }}
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
       - name: Prepare aggregate input directories

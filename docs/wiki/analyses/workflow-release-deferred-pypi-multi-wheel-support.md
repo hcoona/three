@@ -34,7 +34,8 @@ work would need to define how planner-owned wheel identity is frozen and
 matched across:
 
 - descriptor contract compatibility rules;
-- plan `projection.final-distribution-filenames-by-artifact-id`;
+- plan `projection.final-distribution-filenames-by-artifact-id` and
+  `projection.final-distribution-sha256-by-artifact-id`;
 - immutable-registry remote-member matching and replay classification;
 - executor upload obligations for wheel basenames and wheel tags.
 

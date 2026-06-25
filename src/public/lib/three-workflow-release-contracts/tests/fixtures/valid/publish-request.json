@@ -33,18 +33,6 @@
     }
   },
   "commit-sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "github-release-asset-attestations": {
-    "artifact/package": {
-      "attestation-id": "att-1",
-      "attestation-url": "https://github.com/hcoona/three/attestations/1",
-      "bundle-path": "attestations/Example.1.2.3.nupkg.json"
-    },
-    "artifact/symbols": {
-      "attestation-id": "att-2",
-      "attestation-url": "https://github.com/hcoona/three/attestations/2",
-      "bundle-path": "attestations/Example.1.2.3.snupkg.json"
-    }
-  },
   "kind": "publish-request",
   "plan-id": "plan/abc123",
   "profile": "buddy",
@@ -52,10 +40,7 @@
     "descriptor-path": "src/public/lib/Example/three.release.yml",
     "display-name": "Example Package",
     "ecosystem": "dotnet",
-    "publish-node-ids": [
-      "publish-node/gh",
-      "publish-node/nuget"
-    ],
+    "publish-node-ids": ["publish-node/gh", "publish-node/nuget"],
     "release-kind": "lib",
     "release-root": "src/public/lib/Example",
     "resolved-version": "1.2.3",
@@ -64,17 +49,12 @@
       "primary-manifest-path": "src/public/lib/Example/Example.csproj",
       "version-authority-kind": "build-system-nbgv"
     },
-    "variant-ids": [
-      "variant/v1"
-    ]
+    "variant-ids": ["variant/v1"]
   },
   "publish-node": {
-    "artifact-ids": [
-      "artifact/package",
-      "artifact/symbols"
-    ],
+    "artifact-ids": ["artifact/package", "artifact/symbols"],
     "attestation": {
-      "signer-workflow": "hcoona/three/.github/workflows/release-publish-node.yml"
+      "signer-workflow": "hcoona/three/.github/workflows/release-orchestrate.yml"
     },
     "descriptor-target-index": 0,
     "desired-publish-state": {
@@ -150,18 +130,18 @@
             "role": "primary-package"
           },
           {
-            "role": "primary-package",
-            "kind-family": "package",
             "concrete-kind": "browser-zip",
+            "kind-family": "package",
+            "max-count": null,
             "min-count": 0,
-            "max-count": null
+            "role": "primary-package"
           },
           {
-            "role": "sources",
-            "kind-family": "archive",
             "concrete-kind": "sources-zip",
+            "kind-family": "archive",
+            "max-count": null,
             "min-count": 0,
-            "max-count": null
+            "role": "sources"
           },
           {
             "concrete-kind": "rubygem",
@@ -213,14 +193,14 @@
           "role": "primary-package"
         },
         {
-          "role": "primary-package",
+          "concrete-kind": "browser-zip",
           "kind-family": "package",
-          "concrete-kind": "browser-zip"
+          "role": "primary-package"
         },
         {
-          "role": "sources",
+          "concrete-kind": "sources-zip",
           "kind-family": "archive",
-          "concrete-kind": "sources-zip"
+          "role": "sources"
         },
         {
           "concrete-kind": "rubygem",

@@ -40,7 +40,8 @@ def main() -> int:
 
     github = subparsers.add_parser("github-release-asset-proofs")
     github.add_argument("--publish-request", required=True)
-    github.add_argument("--publish-result", required=True)
+    github.add_argument("--github-release-result", required=True)
+    github.add_argument("--asset-attestations", required=True)
     github.add_argument("--run", required=True)
     github.add_argument("--out-dir", required=True)
 
@@ -78,7 +79,8 @@ def main() -> int:
         elif args.command == "github-release-asset-proofs":
             proofs = github_release_asset_proofs(
                 publish_request=_load_json(Path(args.publish_request)),
-                publish_result=_load_json(Path(args.publish_result)),
+                github_release_result=_load_json(Path(args.github_release_result)),
+                asset_attestations=_load_json(Path(args.asset_attestations)),
                 run=_load_json(Path(args.run)),
             )
             _write_proofs(Path(args.out_dir), proofs, "github-release-asset-proof")

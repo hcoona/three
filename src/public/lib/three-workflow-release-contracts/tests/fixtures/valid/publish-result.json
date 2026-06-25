@@ -5,9 +5,10 @@
   "outcome": "published",
   "plan-id": "plan/abc123",
   "project-id": "example",
-  "publish-node-id": "publish-node/gh",
+  "publish-node-id": "publish-node/nuget",
   "resolved-publish-identity": {
-    "release-tag": "release/example/v1.2.3"
+    "package-name": "Example",
+    "version": "1.2.3"
   },
-  "target-instance-snapshot-id": "github-release/public"
+  "target-instance-snapshot-id": "nuget/github-packages"
 }

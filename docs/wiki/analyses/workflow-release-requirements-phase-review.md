@@ -82,17 +82,21 @@ items well:
 7. **Initial lifecycle rule**
     - The first delivery scope prioritizes manual `workflow_dispatch`
       initiation.
-    - One workflow-dispatch run may target one or more projects selected by
-      input parameters.
+    - One workflow-dispatch run targets exactly one `project` plus `version`,
+      with only the documented optional inputs where applicable.
     - `buddy` and `official` are separate workflow entry points.
     - The first delivery scope requires whole-release rerun.
-    - The first delivery scope requires dry-run validation mode.
+    - The first delivery scope does not expose dry-run validation mode inputs.
     - The first delivery scope does not require single-target retry.
-    - The first delivery scope does not require a repo-defined supersession
-      model across release requests.
-    - If optional native duplicate-run cancellation is used, duplicate means the
-      same workflow entry point and the same commit, regardless of project
-      subset selection or other inputs.
+    - The first delivery scope does not adopt repo-defined in-progress
+      duplicate-run auto-cancellation.
+    - After resolving the canonical release identity, both `buddy` and
+      `official` serialize only the job-level `orchestrate` call with
+      `cancel-in-progress: false` on the shared release group
+      `release/${project_id}/v${release_version}`.
+    - The only accepted automatic replacement is GitHub's native replacement of
+      an older pending run in the same concurrency group; in-progress runs are
+      not auto-cancelled.
 8. **Initial failure rule**
     - The first delivery scope may preserve partial success.
     - The first delivery scope allows manual remediation and does not mandate
@@ -153,9 +157,10 @@ is now small and mostly design-facing.
 ### 1. Release trigger and lifecycle model
 
 Replay handling has now been narrowed to automatic skip detection plus
-idempotent retry, without extra operator-choice controls. The release-request
-scope is also now frozen as multi-project workflow dispatch within one profile
-entry point at a time.
+idempotent retry, without extra operator-choice controls. The earlier
+multi-project workflow-dispatch framing is superseded; the active request scope
+is one project plus version per run, with optional `target` and
+`force_update_tag` where applicable.
 
 This is no longer a major requirements gap unless new lifecycle scenarios appear.
 
@@ -244,14 +249,15 @@ must:
 
 - use real projects instead of only synthetic workflow tests;
 - cover a C# library, both C# app packaging paths, Python, Node, and Ruby;
-- include real publication rather than only dry-run validation;
+- include real publication rather than validation-only evidence;
 - include at least one real `official` publication;
 - include live `official` PyPI publication for at least one valid active
   `pypi/pypi` target in first delivery;
 - prove both same-commit `buddy` to `official` promotion and direct
   `official` publication;
-- explicitly prove multi-project `workflow_dispatch` scope;
-- explicitly prove dry-run or validation-only behavior;
+- explicitly prove single-project `workflow_dispatch` scope;
+- explicitly prove the live release path without dry-run or validation-only
+  inputs;
 - explicitly prove whole-release rerun behavior against the same input,
   including rerun after partial success on immutable targets;
 - explicitly prove manual cancellation behavior;
@@ -277,9 +283,10 @@ must:
   `GITHUB_TOKEN` for GitHub Packages;
 - role-based approval and initiation rules;
 - first-delivery-scope manual triggering priority;
-- multi-project workflow-dispatch scope within one profile entry point;
+- single-project workflow-dispatch scope within one profile entry point;
 - workflow-managed Git tag creation for both `buddy` and `official`;
-- whole-release rerun plus dry run, without mandatory single-target retry;
+- whole-release rerun, without active dry-run inputs, and without mandatory
+  single-target retry;
 - partial-success preservation with manual remediation instead of mandatory
   rollback;
 - manual operator cancellation, without a mandatory repo-defined supersession
@@ -295,9 +302,9 @@ must:
 - project-declared registry targets with no repo-wide default mapping;
 - immutable registries excluded from same-name cross-profile promotion;
 - acceptance based on real projects and real publication, including live
-  `official` PyPI first-delivery publication, rather than on dry-run evidence
-  alone;
-- explicit acceptance proof for multi-project dispatch, dry-run, rerun,
+  `official` PyPI first-delivery publication, rather than on validation-only
+  evidence alone;
+- explicit acceptance proof for single-project dispatch, rerun,
   cancellation, approval boundaries, and GitHub Packages when in scope;
 - GitHub-native audit history as the current sufficient audit baseline.
 

@@ -28,7 +28,7 @@
     "request-flags": {
       "force": false
     },
-    "requested-project-ids": [],
+    "requested-project-ids": ["example"],
     "selected-project-ids": ["example"]
   },
   "graph": {
@@ -56,7 +56,7 @@
       "publish-node/gh": {
         "artifact-ids": ["artifact/package", "artifact/symbols"],
         "attestation": {
-          "signer-workflow": "hcoona/three/.github/workflows/release-publish-node.yml"
+          "signer-workflow": "hcoona/three/.github/workflows/release-orchestrate.yml"
         },
         "descriptor-target-index": 0,
         "desired-publish-state": {
@@ -151,18 +151,18 @@
                 "role": "primary-package"
               },
               {
-                "role": "primary-package",
-                "kind-family": "package",
                 "concrete-kind": "browser-zip",
+                "kind-family": "package",
+                "max-count": null,
                 "min-count": 0,
-                "max-count": null
+                "role": "primary-package"
               },
               {
-                "role": "sources",
-                "kind-family": "archive",
                 "concrete-kind": "sources-zip",
+                "kind-family": "archive",
+                "max-count": null,
                 "min-count": 0,
-                "max-count": null
+                "role": "sources"
               },
               {
                 "concrete-kind": "rubygem",
@@ -214,14 +214,14 @@
               "role": "primary-package"
             },
             {
-              "role": "primary-package",
+              "concrete-kind": "browser-zip",
               "kind-family": "package",
-              "concrete-kind": "browser-zip"
+              "role": "primary-package"
             },
             {
-              "role": "sources",
+              "concrete-kind": "sources-zip",
               "kind-family": "archive",
-              "concrete-kind": "sources-zip"
+              "role": "sources"
             },
             {
               "concrete-kind": "rubygem",

@@ -1,19 +1,23 @@
-# ruff: noqa: SLF001
+# ruff: noqa: ARG001, E501, EM102, F841, PLR0913, PLR0915, PT018, RUF043, S105, S603, S607, SLF001, TRY003
 """Tests for workflow-release control-plane helper script."""
 
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import importlib.util
 import io
 import json
 import math
+import os
+import re
 import shlex
 import shutil
 import subprocess
 import sys
 import tarfile
+import zipfile
 from copy import deepcopy
 from itertools import pairwise
 from pathlib import Path
@@ -38,6 +42,7 @@ from three_workflow_release_contracts import (
     ci_validation_execution_batch_manifest_payload_digest,
     ci_validation_execution_batch_matrix,
     ci_validation_plan_digest,
+    github_release_asset_binding_json,
     validate_ci_validation_aggregate_evidence_manifest,
     validate_ci_validation_aggregate_summary,
     validate_ci_validation_batch_evidence_bundle,
@@ -55,10 +60,15 @@ from three_workflow_release_proof import (
 from tests import ci_validation_batch_fixtures as batch_contracts
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
 REPO_ROOT = Path(__file__).parents[1]
 SCRIPT = REPO_ROOT / "eng/scripts/workflow_release_control.py"
+FIND_PROJECT_PATH_SCRIPT = REPO_ROOT / "eng/scripts/find_project_path.py"
+PYPI_DIGEST_SCRIPT = REPO_ROOT / "eng/scripts/validate_pypi_remote_digests.sh"
+POLICY_PUBLISH_TARGETS_SCRIPT = (
+    REPO_ROOT / "eng/scripts/release_orchestrate_policy_publish_targets.sh"
+)
 FIXTURES = (
     REPO_ROOT
     / "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid"
@@ -80,9 +90,11 @@ CI_LOW_LEVEL_DESIGN = REPO_ROOT / (
 ACCEPTANCE_GATE = REPO_ROOT / "eng/scripts/workflow_release_acceptance_gate.py"
 SCRATCH = REPO_ROOT / ".pytest-workflow-release-control"
 GIT = shutil.which("git")
+SHA_A = "a" * 40
+SHA_D = "d" * 40
 SHA_B = "b" * 64
 SHA_C = "c" * 64
-SIGNER_WORKFLOW = "hcoona/three/.github/workflows/release-publish-node.yml"
+SIGNER_WORKFLOW = "hcoona/three/.github/workflows/release-orchestrate.yml"
 FORBIDDEN_FAIL_CLOSED_OUTPUTS = {
     "release-plan.json",
     "execution-sets.json",
@@ -90,6 +102,7 @@ FORBIDDEN_FAIL_CLOSED_OUTPUTS = {
     "tag-result.json",
     "publish-request.json",
     "publish-result.json",
+    "github-release-result.json",
     "skip-result.json",
     "immutable-proof.json",
     "github-release-asset-proof.json",
@@ -125,6 +138,7 @@ FAIL_CLOSED_ARTIFACT_CONTRACTS = {
         "absent": {
             "tag-result.json",
             "publish-result.json",
+            "github-release-result.json",
             "skip-result.json",
             "immutable-proof.json",
             "github-release-asset-proof.json",
@@ -142,6 +156,7 @@ FAIL_CLOSED_ARTIFACT_CONTRACTS = {
             "tag-result.json",
             "publish-request.json",
             "publish-result.json",
+            "github-release-result.json",
             "skip-result.json",
             "immutable-proof.json",
             "github-release-asset-proof.json",
@@ -158,10 +173,15 @@ FAIL_CLOSED_ARTIFACT_CONTRACTS = {
         "absent": {
             "tag-result.json",
             "publish-result.json",
+            "github-release-result.json",
             "skip-result.json",
             "immutable-proof.json",
             "github-release-asset-proof.json",
         },
+    },
+    "buddy-to-official-promotion": {
+        "allowed": {"release-report.json"},
+        "absent": FORBIDDEN_FAIL_CLOSED_OUTPUTS,
     },
 }
 NO_SIDE_EFFECT_ARTIFACT_CONTRACTS = {
@@ -176,6 +196,7 @@ NO_SIDE_EFFECT_ARTIFACT_CONTRACTS = {
             "tag-result.json",
             "publish-request.json",
             "publish-result.json",
+            "github-release-result.json",
             "skip-result.json",
             "immutable-proof.json",
             "github-release-asset-proof.json",
@@ -193,6 +214,7 @@ NO_SIDE_EFFECT_ARTIFACT_CONTRACTS = {
             "tag-result.json",
             "publish-request.json",
             "publish-result.json",
+            "github-release-result.json",
             "immutable-proof.json",
             "github-release-asset-proof.json",
         },
@@ -208,6 +230,7 @@ NO_SIDE_EFFECT_ARTIFACT_CONTRACTS = {
             "tag-result.json",
             "publish-request.json",
             "publish-result.json",
+            "github-release-result.json",
             "skip-result.json",
             "immutable-proof.json",
             "github-release-asset-proof.json",
@@ -224,6 +247,7 @@ NO_SIDE_EFFECT_ARTIFACT_CONTRACTS = {
             "tag-result.json",
             "publish-request.json",
             "publish-result.json",
+            "github-release-result.json",
             "skip-result.json",
             "immutable-proof.json",
             "github-release-asset-proof.json",
@@ -239,6 +263,15 @@ control = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(control)
 
+find_project_spec = importlib.util.spec_from_file_location(
+    "find_project_path", FIND_PROJECT_PATH_SCRIPT
+)
+assert find_project_spec is not None
+find_project_path = importlib.util.module_from_spec(find_project_spec)
+assert find_project_spec.loader is not None
+sys.modules[find_project_spec.name] = find_project_path
+find_project_spec.loader.exec_module(find_project_path)
+
 gate_spec = importlib.util.spec_from_file_location(
     "workflow_release_acceptance_gate", ACCEPTANCE_GATE
 )
@@ -253,9 +286,814 @@ def _load(name: str) -> dict[str, object]:
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
 
 
+def _split_fixture_github_release_nodes(
+    plan: dict[str, object],
+) -> tuple[str, str]:
+    """Split fixture GitHub Release node into package and symbols siblings."""
+    graph = cast("dict[str, Any]", plan["graph"])
+    nodes = cast("dict[str, Any]", graph["publish-nodes"])
+    package_node_id = "publish-node/gh"
+    symbols_node_id = "publish-node/gh-symbols"
+    package_node = cast("dict[str, Any]", nodes[package_node_id])
+    symbols_node = deepcopy(package_node)
+    symbols_node["publish-node-id"] = symbols_node_id
+    package_node["artifact-ids"] = ["artifact/package"]
+    package_node["projection"]["asset-names-by-artifact-id"] = {
+        "artifact/package": "Example.1.2.3.nupkg",
+    }
+    symbols_node["artifact-ids"] = ["artifact/symbols"]
+    symbols_node["projection"]["asset-names-by-artifact-id"] = {
+        "artifact/symbols": "Example.1.2.3.snupkg",
+    }
+    nodes[symbols_node_id] = symbols_node
+    project = cast(
+        "dict[str, Any]",
+        cast("dict[str, Any]", plan["envelope"])["projects"]["example"],
+    )
+    project["publish-node-ids"] = [
+        package_node_id,
+        symbols_node_id,
+        "publish-node/nuget",
+    ]
+    return package_node_id, symbols_node_id
+
+
+def _github_release_asset_attestations() -> dict[str, object]:
+    """Return GitHub Release asset attestation evidence keyed by artifact ID."""
+    return {
+        "artifact/package": {
+            "asset-name": "Example.1.2.3.nupkg",
+            "sha256": SHA_B,
+            "predicate-type": "https://slsa.dev/provenance/v1",
+            "signer-workflow": SIGNER_WORKFLOW,
+            "source-repository": "hcoona/three",
+            "source-digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "attestation-id": "att-1",
+            "attestation-url": "https://github.com/hcoona/three/attestations/1",
+        },
+        "artifact/symbols": {
+            "asset-name": "Example.1.2.3.snupkg",
+            "sha256": SHA_C,
+            "predicate-type": "https://slsa.dev/provenance/v1",
+            "signer-workflow": SIGNER_WORKFLOW,
+            "source-repository": "hcoona/three",
+            "source-digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "attestation-id": "att-2",
+            "attestation-url": "https://github.com/hcoona/three/attestations/2",
+        },
+    }
+
+
+def _github_release_asset_proofs(
+    *,
+    package_sha: str = SHA_B,
+    symbols_sha: str = SHA_C,
+    package_size: int = 123,
+    symbols_size: int = 456,
+    source_digest: str = "a" * 40,
+    release_target_sha: str | None = None,
+) -> list[dict[str, object]]:
+    """Return GitHub Release asset proof wrappers for package and symbols."""
+    if release_target_sha is None:
+        release_target_sha = source_digest
+    proof = _load("github-release-asset-proof.json")
+    package_proof = deepcopy(proof)
+    package_proof["run"]["run-id"] = 123
+    package_proof["run"]["run-attempt"] = 4
+    package_proof["run"]["head-sha"] = source_digest
+    package_proof["release-target-sha"] = release_target_sha
+    package_proof["artifact"]["sha256"] = package_sha
+    package_proof["artifact"]["byte-size"] = package_size
+    package_proof["attestation"]["subject-digest"] = f"sha256:{package_sha}"
+    package_proof["attestation"]["source-digest"] = source_digest
+    symbols_proof = deepcopy(proof)
+    symbols_proof["run"]["run-id"] = 123
+    symbols_proof["run"]["run-attempt"] = 4
+    symbols_proof["run"]["head-sha"] = source_digest
+    symbols_proof["release-target-sha"] = release_target_sha
+    symbols_proof["binding"]["artifact-id"] = "artifact/symbols"
+    symbols_proof["binding"]["asset-name"] = "Example.1.2.3.snupkg"
+    symbols_proof["artifact"]["bundle-relative-path"] = (
+        "dist/Example.1.2.3.snupkg"
+    )
+    symbols_proof["artifact"]["sha256"] = symbols_sha
+    symbols_proof["artifact"]["byte-size"] = symbols_size
+    symbols_proof["attestation"]["subject-name"] = "Example.1.2.3.snupkg"
+    symbols_proof["attestation"]["subject-digest"] = f"sha256:{symbols_sha}"
+    symbols_proof["attestation"]["source-digest"] = source_digest
+    return [package_proof, symbols_proof]
+
+
+def _github_release_asset_proof_sidecar_name(
+    proof: Mapping[str, object],
+) -> str:
+    """Return the release-sidecar filename bound to a proof wrapper."""
+    run = cast("Mapping[str, object]", proof["run"])
+    binding = cast("Mapping[str, object]", proof["binding"])
+    name = artifact_name(
+        "github-release-asset-proof",
+        ArtifactNameInputs(
+            int(cast("int", run["run-id"])),
+            int(cast("int", run["run-attempt"])),
+            binding_json=github_release_asset_binding_json(
+                publish_node_id=str(binding["publish-node-id"]),
+                artifact_id=str(binding["artifact-id"]),
+                release_tag=str(binding["release-tag"]),
+                asset_name=str(binding["asset-name"]),
+            ),
+        ),
+    )
+    return f"{name}.json"
+
+
+def _mismatched_github_release_asset_proof_sidecar_name(
+    proof: Mapping[str, object],
+) -> str:
+    """Return a sidecar-shaped filename that is not bound to the proof body."""
+    name = _github_release_asset_proof_sidecar_name(proof)
+    prefix = "release-github-release-asset-proof-v1-"
+    return f"{prefix}{'0' * 24}{name[len(prefix) + 24 :]}"
+
+
+def _github_release_asset_proof_sidecar_name_with_run_suffix(
+    proof: Mapping[str, object],
+    *,
+    run_id: int,
+    attempt: int,
+) -> str:
+    """Return a proof-bound name with a different run suffix."""
+    name = _github_release_asset_proof_sidecar_name(proof)
+    stem = name.removesuffix(".json")
+    prefix, _old_run_id, _old_attempt = stem.rsplit("-", 2)
+    return f"{prefix}-{run_id}-{attempt}.json"
+
+
+def _planned_artifact_variant_ids(
+    plan: Mapping[str, Any],
+    node: Mapping[str, Any],
+) -> dict[str, str]:
+    artifacts = cast(
+        "Mapping[str, Mapping[str, object]]", plan["graph"]["artifacts"]
+    )
+    return {
+        artifact_id: str(artifacts[artifact_id]["variant-id"])
+        for artifact_id in cast("Sequence[str]", node["artifact-ids"])
+    }
+
+
+def _write_github_release_completion_evidence(
+    artifacts_root: Path,
+    *,
+    run_id: int = 123,
+    attempt: int = 4,
+    plan_id: str = "plan/abc123",
+    include_build_result: bool = True,
+    proof_mutator: Callable[[dict[str, object]], None] | None = None,
+) -> None:
+    """Write completion test proof artifacts.
+
+    Optionally mutate proof wrappers before writing them.
+    """
+    if include_build_result:
+        build_name = artifact_name(
+            "build-result",
+            ArtifactNameInputs(
+                run_id,
+                attempt,
+                plan_id=plan_id,
+                variant_id="variant/v1",
+            ),
+        )
+        build_dir = artifacts_root / build_name
+        build_dir.mkdir(parents=True, exist_ok=True)
+        (build_dir / "build-result.json").write_text(
+            json.dumps(_load("build-result.json")),
+            encoding="utf-8",
+        )
+    proof_dir = artifacts_root / (
+        f"release-github-release-asset-proofs-v1-{run_id}-{attempt}-test"
+    )
+    proof_dir.mkdir(parents=True, exist_ok=True)
+    for proof in _github_release_asset_proofs():
+        proof["run"]["run-id"] = run_id
+        proof["run"]["run-attempt"] = attempt
+        if proof_mutator is not None:
+            proof_mutator(proof)
+        binding = cast("dict[str, object]", proof["binding"])
+        proof_name = artifact_name(
+            "github-release-asset-proof",
+            ArtifactNameInputs(
+                run_id,
+                attempt,
+                binding_json=github_release_asset_binding_json(
+                    publish_node_id=str(binding["publish-node-id"]),
+                    artifact_id=str(binding["artifact-id"]),
+                    release_tag=str(binding["release-tag"]),
+                    asset_name=str(binding["asset-name"]),
+                ),
+            ),
+        )
+        (proof_dir / f"{proof_name}.json").write_text(
+            json.dumps(proof),
+            encoding="utf-8",
+        )
+
+
+def _prepare_artifact_names(
+    plan: Mapping[str, Any],
+    *,
+    run_id: int = 123,
+    attempt: int = 4,
+) -> dict[str, str]:
+    """Return exact prepare-release-plan artifact names for a plan."""
+    plan_id = str(cast("Mapping[str, object]", plan["envelope"])["plan-id"])
+    return {
+        "plan_artifact_name": artifact_name(
+            "plan",
+            ArtifactNameInputs(run_id, attempt, plan_id=plan_id),
+        ),
+        "execution_sets_artifact_name": artifact_name(
+            "execution-sets",
+            ArtifactNameInputs(run_id, attempt, plan_id=plan_id),
+        ),
+        "entry_publish_handoff_artifact_name": artifact_name(
+            "entry-publish-handoff",
+            ArtifactNameInputs(run_id, attempt, plan_id=plan_id),
+        ),
+    }
+
+
+def _write_prepare_artifacts(
+    artifacts_root: Path,
+    plan: Mapping[str, Any],
+    execution_sets: Mapping[str, Any],
+    *,
+    run_id: int = 123,
+    attempt: int = 4,
+) -> dict[str, str]:
+    """Write exact prepare-release-plan artifacts and return their names."""
+    names = _prepare_artifact_names(plan, run_id=run_id, attempt=attempt)
+    payloads = {
+        names["plan_artifact_name"]: ("release-plan.json", plan),
+        names["execution_sets_artifact_name"]: (
+            "execution-sets.json",
+            execution_sets,
+        ),
+        names["entry_publish_handoff_artifact_name"]: (
+            "entry-publish-handoff.json",
+            control._entry_publish_handoff(
+                dict(plan),
+                dict(execution_sets),
+                run_id,
+                attempt,
+            ),
+        ),
+    }
+    for name, (payload_name, payload) in payloads.items():
+        artifact_dir = artifacts_root / name
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        (artifact_dir / payload_name).write_text(
+            json.dumps(payload),
+            encoding="utf-8",
+        )
+    return names
+
+
+def _report_prepare_artifact_args(
+    names: Mapping[str, str],
+) -> dict[str, str]:
+    """Return Namespace kwargs for exact prepare-release-plan artifact names."""
+    return {
+        "plan_artifact_name": names["plan_artifact_name"],
+        "execution_sets_artifact_name": names["execution_sets_artifact_name"],
+        "entry_publish_handoff_artifact_name": names[
+            "entry_publish_handoff_artifact_name"
+        ],
+    }
+
+
+def _publish_result_for_node(
+    plan: Mapping[str, Any],
+    publish_node_id: str,
+) -> dict[str, object]:
+    """Return a valid package publish result for a planned node."""
+    node = cast(
+        "Mapping[str, Any]",
+        cast("Mapping[str, Any]", plan["graph"])["publish-nodes"][
+            publish_node_id
+        ],
+    )
+    return {
+        "api-version": "three.release.publish-result/v1alpha1",
+        "kind": "publish-result",
+        "plan-id": cast("Mapping[str, object]", plan["envelope"])["plan-id"],
+        "project-id": node["project-id"],
+        "publish-node-id": publish_node_id,
+        "target-instance-snapshot-id": node["target-instance-snapshot-id"],
+        "resolved-publish-identity": node["resolved-publish-identity"],
+        "outcome": "published",
+        "evidence": {},
+    }
+
+
+def _skip_result_for_node(
+    plan: Mapping[str, Any],
+    publish_node_id: str,
+) -> dict[str, object]:
+    """Return a valid skip result for a planned node."""
+    node = cast(
+        "Mapping[str, Any]",
+        cast("Mapping[str, Any]", plan["graph"])["publish-nodes"][
+            publish_node_id
+        ],
+    )
+    return {
+        "api-version": "three.release.skip-result/v1alpha1",
+        "kind": "skip-result",
+        "plan-id": cast("Mapping[str, object]", plan["envelope"])["plan-id"],
+        "project-id": node["project-id"],
+        "publish-node-id": publish_node_id,
+        "target-instance-snapshot-id": node["target-instance-snapshot-id"],
+        "resolved-publish-identity": node["resolved-publish-identity"],
+        "outcome": "skip-satisfied",
+        "reason-source": "planner",
+        "evidence": {"planner-disposition": "skip-satisfied"},
+    }
+
+
+def _all_skip_plan_and_sets() -> tuple[dict[str, object], dict[str, object]]:
+    """Return a finalized plan where every publish node is skip-satisfied."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    graph = cast("dict[str, Any]", plan["graph"])
+    publish_nodes = cast("dict[str, Any]", graph["publish-nodes"])
+    publish_nodes["publish-node/gh"]["publish-disposition"] = "skip-satisfied"
+    cast("dict[str, Any]", publish_nodes["publish-node/gh"]).pop(
+        "publish-mode",
+        None,
+    )
+    execution_sets["active-variant-ids"] = []
+    execution_sets["active-publish-node-ids"] = []
+    execution_sets["active-github-release-publish-node-ids"] = []
+    execution_sets["publish-intent-node-ids"] = []
+    execution_sets["skip-satisfied-publish-node-ids"] = [
+        "publish-node/gh",
+        "publish-node/nuget",
+    ]
+    for selector in execution_sets["active-publish-selectors"].values():
+        selector.clear()
+    return plan, execution_sets
+
+
+def _write_skip_result_artifacts(
+    artifacts_root: Path,
+    plan: Mapping[str, Any],
+    publish_node_ids: Iterable[str],
+    *,
+    run_id: int = 123,
+    attempt: int = 4,
+) -> list[str]:
+    """Write valid skip-result artifacts and return their names."""
+    plan_id = str(cast("Mapping[str, object]", plan["envelope"])["plan-id"])
+    names: list[str] = []
+    for publish_node_id in publish_node_ids:
+        name = artifact_name(
+            "skip-result",
+            ArtifactNameInputs(
+                run_id,
+                attempt,
+                plan_id=plan_id,
+                publish_node_id=publish_node_id,
+            ),
+        )
+        artifact_dir = artifacts_root / name
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        (artifact_dir / "skip-result.json").write_text(
+            json.dumps(_skip_result_for_node(plan, publish_node_id)),
+            encoding="utf-8",
+        )
+        names.append(name)
+    return names
+
+
+def _run_release_completed_active_github_release_check(
+    scratch: Path,
+    *,
+    proof_mutator: Callable[[dict[str, object]], None] | None = None,
+    needs_mutator: Callable[[dict[str, object]], None] | None = None,
+    env_extra: Mapping[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run release-completed against active GitHub Release artifacts."""
+    summary = scratch / "summary.md"
+    artifacts_root = scratch / "artifacts"
+    plan = _load("release-plan.json")
+    execution_sets = _load("execution-sets.json")
+    plan_name = artifact_name(
+        "plan",
+        ArtifactNameInputs(123, 4, plan_id="plan/abc123"),
+    )
+    execution_sets_name = artifact_name(
+        "execution-sets",
+        ArtifactNameInputs(123, 4, plan_id="plan/abc123"),
+    )
+    handoff_name = artifact_name(
+        "entry-publish-handoff",
+        ArtifactNameInputs(123, 4, plan_id="plan/abc123"),
+    )
+    github_release_result_name = artifact_name(
+        "github-release-result",
+        ArtifactNameInputs(
+            123,
+            4,
+            binding_json=(
+                '{"tagName":"release/example/v1.2.3",'
+                '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+            ),
+        ),
+    )
+    for name in (
+        plan_name,
+        execution_sets_name,
+        handoff_name,
+        github_release_result_name,
+    ):
+        (artifacts_root / name).mkdir(parents=True)
+    _write_github_release_completion_evidence(
+        artifacts_root,
+        include_build_result=False,
+        proof_mutator=proof_mutator,
+    )
+    _write_skip_result_artifacts(
+        artifacts_root,
+        plan,
+        cast(
+            "Sequence[str]", execution_sets["skip-satisfied-publish-node-ids"]
+        ),
+    )
+    (artifacts_root / plan_name / "release-plan.json").write_text(
+        json.dumps(plan),
+        encoding="utf-8",
+    )
+    (artifacts_root / execution_sets_name / "execution-sets.json").write_text(
+        json.dumps(execution_sets),
+        encoding="utf-8",
+    )
+    (artifacts_root / handoff_name / "entry-publish-handoff.json").write_text(
+        json.dumps(
+            control._entry_publish_handoff(plan, execution_sets, 123, 4)
+        ),
+        encoding="utf-8",
+    )
+    (
+        artifacts_root
+        / github_release_result_name
+        / "github-release-result.json"
+    ).write_text(
+        json.dumps(_load("github-release-result.json")),
+        encoding="utf-8",
+    )
+    needs = {
+        "prepare-release-plan": {
+            "result": "success",
+            "outputs": {
+                "has_skip_results": "true",
+                "has_live_side_effects": "true",
+                "has_active_github_release": "true",
+                "has_active_node_gpr": "false",
+                "has_active_node_npmjs": "false",
+                "plan_artifact_name": plan_name,
+                "execution_sets_artifact_name": execution_sets_name,
+                "entry_publish_handoff_artifact_name": handoff_name,
+            },
+        },
+        "release-node-with-npmjs": {"result": "skipped"},
+        "release-node-no-npmjs": {"result": "skipped"},
+    }
+    if needs_mutator is not None:
+        needs_mutator(needs)
+    return subprocess.run(
+        [
+            "bash",
+            "eng/scripts/release_orchestrate_release_completed_check.sh",
+        ],
+        cwd=REPO_ROOT,
+        env={
+            **os.environ,
+            "NEEDS_JSON": json.dumps(needs),
+            "GITHUB_STEP_SUMMARY": str(summary),
+            "ARTIFACTS_ROOT": str(artifacts_root),
+            "RUN_ID": "123",
+            "RUN_ATTEMPT": "4",
+            **(env_extra or {}),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
 def _workflow(name: str) -> str:
     """Read one workflow file as text for structural assertions."""
     return (REPO_ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+
+
+def _workflow_yaml(name: str) -> dict[str, object]:
+    """Read one workflow file as parsed YAML."""
+    return cast("dict[str, object]", yaml.safe_load(_workflow(name)))
+
+
+def _release_create_github_release_run() -> str:
+    """Return the GitHub Release reusable mutation step script."""
+    workflow = _workflow_yaml("release-create-github-release.yml")
+    steps = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", workflow["jobs"]["create-release"])["steps"],
+    )
+    create_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Create or update tag + release + assets"
+    )
+    return cast("str", create_step["run"])
+
+
+def _release_create_authorization_jq_program() -> str:
+    """Extract the reusable GitHub Release planner authorization jq program."""
+    run = _release_create_github_release_run()
+    authorization_body = run.split(
+        "require_planner_authorized_publish() {",
+        maxsplit=1,
+    )[1].split('if [[ "${PUBLISH_MODE}" == "overwrite-mutable" ]]', 1)[0]
+    start_marker = "\n    '\n      def expected_state:"
+    start = authorization_body.index(start_marker) + len("\n    '\n")
+    end = authorization_body.index(
+        '\n    \' "${plan_path}" >/dev/null; then',
+        start,
+    )
+    return authorization_body[start:end]
+
+
+def _release_create_authorization_asset_handoff(
+    plan: dict[str, object],
+    node_ids: Sequence[str],
+) -> tuple[list[str], dict[str, str]]:
+    """Return expected asset names and labels for selected GitHub Release nodes."""
+    nodes = cast(
+        "dict[str, dict[str, Any]]",
+        cast("dict[str, Any]", plan["graph"])["publish-nodes"],
+    )
+    asset_names: set[str] = set()
+    asset_labels: dict[str, str] = {}
+    for node_id in node_ids:
+        projection = cast("dict[str, Any]", nodes[node_id]["projection"])
+        names_by_artifact = cast(
+            "dict[str, str]",
+            projection.get("asset-names-by-artifact-id", {}),
+        )
+        labels_by_artifact = cast(
+            "dict[str, str]",
+            projection.get("asset-labels-by-artifact-id", {}),
+        )
+        asset_names.update(names_by_artifact.values())
+        for artifact_id, label in labels_by_artifact.items():
+            asset_labels[names_by_artifact[artifact_id]] = label
+    return sorted(asset_names), asset_labels
+
+
+def _run_release_create_authorization_jq(
+    *,
+    plan: dict[str, object],
+    node_ids: Sequence[str],
+    scratch: Path,
+    publish_mode: str = "create-only",
+    prerelease: str = "true",
+    expected_asset_labels: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run the workflow's exact planner authorization jq predicate."""
+    jq = shutil.which("jq")
+    assert jq is not None
+    scratch.mkdir(parents=True)
+    plan_path = scratch / "release-plan.json"
+    node_ids_path = scratch / "active-node-ids.json"
+    expected_names_path = scratch / "expected-asset-names.json"
+    expected_labels_path = scratch / "expected-asset-labels.json"
+    expected_names, expected_labels = (
+        _release_create_authorization_asset_handoff(
+            plan,
+            node_ids,
+        )
+    )
+    if expected_asset_labels is not None:
+        expected_labels = expected_asset_labels
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    node_ids_path.write_text(json.dumps(list(node_ids)), encoding="utf-8")
+    expected_names_path.write_text(json.dumps(expected_names), encoding="utf-8")
+    expected_labels_path.write_text(
+        json.dumps(expected_labels), encoding="utf-8"
+    )
+    envelope = cast("dict[str, Any]", plan["envelope"])
+    return subprocess.run(
+        [
+            jq,
+            "-e",
+            "--slurpfile",
+            "nodeIds",
+            str(node_ids_path),
+            "--slurpfile",
+            "expectedNames",
+            str(expected_names_path),
+            "--slurpfile",
+            "expectedLabels",
+            str(expected_labels_path),
+            "--arg",
+            "tagName",
+            "release/example/v1.2.3",
+            "--arg",
+            "targetSha",
+            cast("str", envelope["commit-sha"]),
+            "--arg",
+            "publishMode",
+            publish_mode,
+            "--arg",
+            "plannerProfile",
+            cast("str", envelope["profile"]),
+            "--arg",
+            "prerelease",
+            prerelease,
+            _release_create_authorization_jq_program(),
+            str(plan_path),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def _run_policy_publish_targets(
+    *,
+    project_kind: str,
+    project: str,
+    channel: str,
+    is_wxt: str = "false",
+    publish_python_pypi: str = "false",
+    publish_node_gpr: str = "false",
+    publish_node_npmjs: str = "false",
+    publish_ruby_gpr: str = "false",
+    publish_ruby_rubygems: str = "false",
+) -> subprocess.CompletedProcess[str]:
+    scratch = SCRATCH / "policy-publish-targets"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    return subprocess.run(
+        ["bash", str(POLICY_PUBLISH_TARGETS_SCRIPT)],
+        cwd=REPO_ROOT,
+        env={
+            **os.environ,
+            "PROJECT": project,
+            "PROJECT_KIND": project_kind,
+            "IS_WXT": is_wxt,
+            "CHANNEL": channel,
+            "PUBLISH_PYTHON_PYPI": publish_python_pypi,
+            "PUBLISH_NODE_GPR": publish_node_gpr,
+            "PUBLISH_NODE_NPMJS": publish_node_npmjs,
+            "PUBLISH_RUBY_GPR": publish_ruby_gpr,
+            "PUBLISH_RUBY_RUBYGEMS": publish_ruby_rubygems,
+            "GITHUB_STEP_SUMMARY": str(scratch / "summary.md"),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("project_kind", "project", "expected_message"),
+    [
+        (
+            "node",
+            "hcoona-release-smoke-npm",
+            "Node project 'hcoona-release-smoke-npm' has no Node registry publish targets enabled",
+        ),
+        (
+            "ruby",
+            "hcoona-release-smoke-rubygems",
+            "Ruby project 'hcoona-release-smoke-rubygems' has no Ruby registry publish targets enabled",
+        ),
+    ],
+)
+def test_publish_target_policy_allows_custom_github_release_only(
+    project_kind: str,
+    project: str,
+    expected_message: str,
+) -> None:
+    """Custom Node/Ruby releases may disable registries and use GitHub Release."""
+    result = _run_policy_publish_targets(
+        project_kind=project_kind,
+        project=project,
+        channel="staging",
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert expected_message in result.stdout
+    assert f"{project_kind.capitalize()} publish-target policy passed" in (
+        result.stdout
+    )
+
+
+@pytest.mark.parametrize(
+    ("project_kind", "project"),
+    [
+        ("node", "hcoona-release-smoke-npm"),
+        ("ruby", "hcoona-release-smoke-rubygems"),
+    ],
+)
+def test_publish_target_policy_rejects_builtin_channel_without_registry(
+    project_kind: str,
+    project: str,
+) -> None:
+    """Built-in channel profiles still fail closed when registry flags are invalid."""
+    result = _run_policy_publish_targets(
+        project_kind=project_kind,
+        project=project,
+        channel="official",
+    )
+
+    assert result.returncode == 1
+    assert "requires at least one" in result.stderr
+    assert "built-in channel 'official'" in result.stderr
+
+
+def test_publish_target_policy_still_rejects_custom_cross_kind_flags() -> None:
+    """Allowing GitHub Release-only does not bypass cross-kind contamination."""
+    result = _run_policy_publish_targets(
+        project_kind="node",
+        project="hcoona-release-smoke-npm",
+        channel="staging",
+        publish_node_gpr="true",
+        publish_ruby_gpr="true",
+    )
+
+    assert result.returncode == 1
+    assert "Cross-kind contamination" in result.stderr
+    assert "publish_ruby_gpr" in result.stderr
+
+
+def _has_ci_release_pipeline_architecture() -> bool:
+    """Return whether release workflows use CI release v2 jobs."""
+    workflows = REPO_ROOT / ".github/workflows"
+    expected_workflow_names = {
+        "buddy.yml",
+        "official.yml",
+        "release-orchestrate.yml",
+        "release-resolve.yml",
+        "release-build-python.yml",
+        "release-build-node-pack.yml",
+        "release-build-ruby-gem.yml",
+        "release-build-wxt.yml",
+        "release-build-dotnet.yml",
+        "release-create-github-release.yml",
+        "release-prepare-release-notes.yml",
+    }
+    if not expected_workflow_names <= {
+        path.name for path in workflows.iterdir() if path.is_file()
+    }:
+        return False
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    jobs = cast("dict[str, object]", orchestrate["jobs"])
+    expected_job_names = {
+        "release-python-with-pypi",
+        "release-python-no-pypi",
+        "release-wxt",
+        "release-node-with-npmjs",
+        "release-node-no-npmjs",
+        "release-dotnet",
+        "release-ruby-with-rubygems",
+        "release-ruby-no-rubygems",
+        "release-completed",
+    }
+    workflow_triggers = cast(
+        "dict[str, object]", orchestrate.get("on", orchestrate.get(True, {}))
+    )
+    return (
+        expected_job_names <= set(jobs) and "workflow_call" in workflow_triggers
+    )
+
+
+def _require_ci_release_pipeline_architecture() -> None:
+    """Skip assertions that target the CI release v2 workflow shape."""
+    if not _has_ci_release_pipeline_architecture():
+        pytest.skip(
+            "Active split release topology is not present; release-orchestrate "
+            "workflow assertions are skipped."
+        )
+
+
+def test_ci_release_pipeline_architecture_detects_active_split_topology() -> (
+    None
+):
+    """Current split release topology should keep the release workflow tests live."""
+    assert _has_ci_release_pipeline_architecture()
 
 
 def _write_npm_tarball(path: Path, entries: dict[str, bytes]) -> None:
@@ -348,6 +1186,7 @@ def _all_test_nodeids() -> set[str]:
             part
             in {
                 ".git",
+                ".copilot",
                 ".pytest-workflow-release-control",
                 ".three-workflow-release-planner",
                 ".venv",
@@ -428,7 +1267,7 @@ def _dotnet_metadata_for_planner_input(
 def _copy_authoring_repo(destination: Path) -> None:
     """Copy authoring candidate inputs into an isolated git worktree."""
     assert GIT is not None
-    paths = subprocess.run(  # noqa: S603
+    paths = subprocess.run(
         [
             GIT,
             "ls-files",
@@ -452,12 +1291,12 @@ def _copy_authoring_repo(destination: Path) -> None:
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
-    subprocess.run(  # noqa: S603
+    subprocess.run(
         [GIT, "init", "--quiet"],
         cwd=destination,
         check=True,
     )
-    subprocess.run(  # noqa: S603
+    subprocess.run(
         [GIT, "add", "src", "eng/release"],
         cwd=destination,
         check=True,
@@ -485,7 +1324,7 @@ def _run_authoring_validate(
     repo_root: Path, diagnostics_out: Path
 ) -> subprocess.CompletedProcess[object]:
     """Run the authoring validator against an isolated repository."""
-    return subprocess.run(  # noqa: S603
+    return subprocess.run(
         [
             sys.executable,
             "-m",
@@ -575,7 +1414,7 @@ def _mutate_profile_coexistence_conflict(repo_root: Path) -> None:
 
 
 def _external_oidc_plan_and_sets(
-    topology: str = "external-oidc-entry-workflow",
+    topology: str = "external-oidc-reusable-workflow",
 ) -> tuple[dict[str, object], dict[str, object]]:
     """Return a valid plan/execution-set pair with an active OIDC target."""
     plan = deepcopy(_load("release-plan.json"))
@@ -650,6 +1489,231 @@ def _external_oidc_plan_and_sets(
     node["publish-disposition"] = "publish"
     node["publish-mode"] = "create-only"
     node["target-instance-snapshot-id"] = "pypi/pypi"
+    node["projection"] = {
+        "final-distribution-filenames-by-artifact-id": {
+            "artifact/package": "example-1.2.3-py3-none-any.whl"
+        },
+        "final-distribution-sha256-by-artifact-id": {
+            "artifact/package": "a" * 64
+        },
+    }
+    return plan, execution_sets
+
+
+def _single_package_contract(
+    contract_id: str, concrete_kind: str
+) -> dict[str, object]:
+    return {
+        "allowed-artifact-tuples": [
+            {
+                "role": "primary-package",
+                "kind-family": "package",
+                "concrete-kind": concrete_kind,
+            }
+        ],
+        "aggregate-rules": {
+            "min-artifact-count": 1,
+            "max-artifact-count": 1,
+            "cross-variant-policy": "forbid",
+            "tuple-rules": [
+                {
+                    "role": "primary-package",
+                    "kind-family": "package",
+                    "concrete-kind": concrete_kind,
+                    "min-count": 1,
+                    "max-count": 1,
+                }
+            ],
+        },
+        "id": contract_id,
+    }
+
+
+def _node_all_registry_disabled_plan_and_sets() -> tuple[
+    dict[str, object], dict[str, object]
+]:
+    plan, execution_sets = _external_oidc_plan_and_sets(
+        "external-oidc-caller-workflow",
+    )
+    graph = cast("dict[str, Any]", plan["graph"])
+    graph["artifacts"]["artifact/package"]["concrete-kind"] = "npm-package"
+    plan["envelope"]["projects"]["example"]["ecosystem"] = "node"
+    npmjs_snapshot = graph["target-instance-snapshots"].pop("pypi/pypi")
+    npmjs_snapshot["catalog-ref"] = "npm/npmjs"
+    npmjs_snapshot["contract"] = _single_package_contract(
+        "npm-publish",
+        "npm-package",
+    )
+    npmjs_snapshot["destination"] = {"host": "registry.npmjs.org"}
+    npmjs_snapshot["family"] = "npm"
+    npmjs_snapshot["instance-id"] = "npmjs"
+    npmjs_snapshot["capabilities"]["name-uniqueness-scope"] = "package-name"
+    npmjs_snapshot["capabilities"]["profile-coexistence-rule"] = (
+        "requires-distinct-name"
+    )
+    npmjs_snapshot["capabilities"]["publish-topology"] = (
+        "external-oidc-caller-workflow"
+    )
+    graph["target-instance-snapshots"]["npm/npmjs"] = npmjs_snapshot
+
+    gpr_snapshot = deepcopy(npmjs_snapshot)
+    gpr_snapshot["catalog-ref"] = "npm/github-packages"
+    gpr_snapshot["destination"] = {
+        "host": "npm.pkg.github.com",
+        "owner": "hcoona",
+    }
+    gpr_snapshot["instance-id"] = "github-packages"
+    gpr_snapshot["capabilities"]["credential-posture"] = "github-token"
+    gpr_snapshot["capabilities"]["name-uniqueness-scope"] = (
+        "package-name-with-owner"
+    )
+    gpr_snapshot["capabilities"]["profile-coexistence-rule"] = (
+        "same-name-allowed"
+    )
+    gpr_snapshot["capabilities"]["publish-topology"] = "github-token"
+    graph["target-instance-snapshots"]["npm/github-packages"] = gpr_snapshot
+
+    npmjs_node = graph["publish-nodes"].pop("publish-node/nuget")
+    npmjs_node["publish-node-id"] = "publish-node/npmjs"
+    npmjs_node["publish-disposition"] = "publish"
+    npmjs_node["target-instance-snapshot-id"] = "npm/npmjs"
+    npmjs_node["projection"] = {
+        "final-distribution-filenames-by-artifact-id": {
+            "artifact/package": "example-1.2.3.tgz"
+        },
+        "final-distribution-sha256-by-artifact-id": {
+            "artifact/package": "b" * 64
+        },
+    }
+    npmjs_node["resolved-publish-identity"] = {
+        "package-name": "example",
+        "version": "1.2.3",
+    }
+    graph["publish-nodes"]["publish-node/npmjs"] = npmjs_node
+    gpr_node = deepcopy(npmjs_node)
+    gpr_node["publish-node-id"] = "publish-node/gpr"
+    gpr_node["target-instance-snapshot-id"] = "npm/github-packages"
+    gpr_node["resolved-publish-identity"] = {
+        "package-name": "@hcoona/example",
+        "version": "1.2.3",
+    }
+    graph["publish-nodes"]["publish-node/gpr"] = gpr_node
+
+    execution_sets["active-publish-node-ids"] = [
+        "publish-node/gh",
+        "publish-node/npmjs",
+        "publish-node/gpr",
+    ]
+    execution_sets["publish-intent-node-ids"] = [
+        "publish-node/gh",
+        "publish-node/npmjs",
+        "publish-node/gpr",
+    ]
+    execution_sets["selected-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    for selector in execution_sets["active-publish-selectors"].values():
+        selector.clear()
+    execution_sets["active-publish-selectors"]["github-token"] = [
+        "publish-node/gh",
+        "publish-node/gpr",
+    ]
+    execution_sets["active-publish-selectors"][
+        "external-oidc-caller-workflow"
+    ] = ["publish-node/npmjs"]
+    return plan, execution_sets
+
+
+def _ruby_all_registry_disabled_plan_and_sets() -> tuple[
+    dict[str, object], dict[str, object]
+]:
+    plan, execution_sets = _external_oidc_plan_and_sets()
+    graph = cast("dict[str, Any]", plan["graph"])
+    graph["artifacts"]["artifact/package"]["concrete-kind"] = "rubygem"
+    plan["envelope"]["projects"]["example"]["ecosystem"] = "ruby"
+    rubygems_snapshot = graph["target-instance-snapshots"].pop("pypi/pypi")
+    rubygems_snapshot["catalog-ref"] = "rubygems/rubygems-org"
+    rubygems_snapshot["contract"] = _single_package_contract(
+        "rubygems-publish",
+        "rubygem",
+    )
+    rubygems_snapshot["destination"] = {"host": "rubygems.org"}
+    rubygems_snapshot["family"] = "rubygems"
+    rubygems_snapshot["instance-id"] = "rubygems-org"
+    rubygems_snapshot["capabilities"]["name-uniqueness-scope"] = "package-name"
+    rubygems_snapshot["capabilities"]["profile-coexistence-rule"] = (
+        "requires-distinct-name"
+    )
+    graph["target-instance-snapshots"]["rubygems/rubygems-org"] = (
+        rubygems_snapshot
+    )
+
+    gpr_snapshot = deepcopy(rubygems_snapshot)
+    gpr_snapshot["catalog-ref"] = "rubygems/github-packages"
+    gpr_snapshot["destination"] = {"host": "rubygems.pkg.github.com"}
+    gpr_snapshot["instance-id"] = "github-packages"
+    gpr_snapshot["capabilities"]["credential-posture"] = "github-token"
+    gpr_snapshot["capabilities"]["name-uniqueness-scope"] = (
+        "package-name-with-owner"
+    )
+    gpr_snapshot["capabilities"]["profile-coexistence-rule"] = (
+        "same-name-allowed"
+    )
+    gpr_snapshot["capabilities"]["publish-topology"] = "github-token"
+    graph["target-instance-snapshots"]["rubygems/github-packages"] = (
+        gpr_snapshot
+    )
+
+    rubygems_node = graph["publish-nodes"].pop("publish-node/nuget")
+    rubygems_node["publish-node-id"] = "publish-node/rubygems"
+    rubygems_node["publish-disposition"] = "publish"
+    rubygems_node["target-instance-snapshot-id"] = "rubygems/rubygems-org"
+    rubygems_node["projection"] = {
+        "final-distribution-filenames-by-artifact-id": {
+            "artifact/package": "Example-1.2.3.gem"
+        },
+        "final-distribution-sha256-by-artifact-id": {
+            "artifact/package": "c" * 64
+        },
+    }
+    rubygems_node["resolved-publish-identity"] = {
+        "package-name": "Example",
+        "version": "1.2.3",
+    }
+    graph["publish-nodes"]["publish-node/rubygems"] = rubygems_node
+    gpr_node = deepcopy(rubygems_node)
+    gpr_node["publish-node-id"] = "publish-node/ruby-gpr"
+    gpr_node["target-instance-snapshot-id"] = "rubygems/github-packages"
+    graph["publish-nodes"]["publish-node/ruby-gpr"] = gpr_node
+
+    execution_sets["active-publish-node-ids"] = [
+        "publish-node/gh",
+        "publish-node/rubygems",
+        "publish-node/ruby-gpr",
+    ]
+    execution_sets["publish-intent-node-ids"] = [
+        "publish-node/gh",
+        "publish-node/rubygems",
+        "publish-node/ruby-gpr",
+    ]
+    execution_sets["selected-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    for selector in execution_sets["active-publish-selectors"].values():
+        selector.clear()
+    execution_sets["active-publish-selectors"]["github-token"] = [
+        "publish-node/gh",
+        "publish-node/ruby-gpr",
+    ]
+    execution_sets["active-publish-selectors"][
+        "external-oidc-reusable-workflow"
+    ] = ["publish-node/rubygems"]
     return plan, execution_sets
 
 
@@ -661,6 +1725,34 @@ def _pypi_only_observation_plan() -> dict[str, object]:
     plan["graph"]["publish-nodes"] = {"publish-node/nuget": pypi_node}
     plan["graph"]["target-instance-snapshots"] = {"pypi/pypi": pypi_snapshot}
     return plan
+
+
+def _add_duplicate_pypi_planned_filename(plan: dict[str, object]) -> None:
+    """Mutate a PyPI plan to contain duplicate planned distribution filenames."""
+    graph = cast("dict[str, Any]", plan["graph"])
+    artifacts = cast("dict[str, Any]", graph["artifacts"])
+    sdist_artifact = deepcopy(artifacts["artifact/package"])
+    sdist_artifact["descriptor-handle"] = "sdist"
+    sdist_artifact["concrete-kind"] = "sdist"
+    artifacts["artifact/sdist"] = sdist_artifact
+
+    node = cast(
+        "dict[str, Any]",
+        graph["publish-nodes"]["publish-node/nuget"],
+    )
+    node["artifact-ids"] = ["artifact/package", "artifact/sdist"]
+    projection = cast("dict[str, Any]", node["projection"])
+    filenames = cast(
+        "dict[str, str]",
+        projection["final-distribution-filenames-by-artifact-id"],
+    )
+    duplicate_filename = filenames["artifact/package"]
+    filenames["artifact/sdist"] = duplicate_filename
+    sha256 = cast(
+        "dict[str, str]",
+        projection["final-distribution-sha256-by-artifact-id"],
+    )
+    sha256["artifact/sdist"] = "b" * 64
 
 
 def _unsupported_rubygems_oidc_plan_and_sets() -> tuple[
@@ -742,10 +1834,28 @@ def _public_registry_observation_plan(family: str) -> dict[str, object]:
         raise AssertionError(msg)
     node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
     node["target-instance-snapshot-id"] = snapshot["catalog-ref"]
+    projection = node["projection"]
+    if family == "nuget":
+        projection.pop("final-distribution-sha256-by-artifact-id", None)
+    filenames = projection["final-distribution-filenames-by-artifact-id"]
+    if family == "npm":
+        projection.pop("final-distribution-sha256-by-artifact-id", None)
+        projection["final-distribution-digests-by-artifact-id"] = {
+            "artifact/package": {"sha256": "a" * 64}
+        }
+        filenames["artifact/package"] = "Example-1.2.3.tgz"
+    elif family == "rubygems":
+        filenames["artifact/package"] = "Example-1.2.3.gem"
     plan["graph"]["target-instance-snapshots"] = {
         snapshot["catalog-ref"]: snapshot
     }
     return plan
+
+
+def _npm_sri(algorithm: str, digest: str) -> str:
+    """Return an SRI token for a lowercase hexadecimal digest."""
+    encoded = base64.b64encode(bytes.fromhex(digest)).decode("ascii")
+    return f"{algorithm}-{encoded}"
 
 
 def _github_packages_nuget_observation_plan() -> dict[str, object]:
@@ -773,7 +1883,7 @@ def _github_packages_nuget_observation_plan() -> dict[str, object]:
 
 
 def _single_active_oidc_execution_sets(
-    topology: str = "external-oidc-entry-workflow",
+    topology: str = "external-oidc-reusable-workflow",
 ) -> dict[str, object]:
     """Return sets with only the fixture package publish node active."""
     execution_sets = deepcopy(_load("execution-sets.json"))
@@ -835,6 +1945,7 @@ def _run_normalize_entry_case(
         "dry_run": "true",
         "validation_build": "false",
         "force": "false",
+        "requested_project_ids": "CircularList",
     } | (overrides or {})
 
     result = control._cmd_normalize_entry(
@@ -846,7 +1957,7 @@ def _run_normalize_entry_case(
             ref_name="main",
             ref_type="branch",
             pinned_sha=SHA_B,
-            requested_project_ids="",
+            requested_project_ids=inputs["requested_project_ids"],
             dry_run=inputs["dry_run"],
             validation_build=inputs["validation_build"],
             force=inputs["force"],
@@ -931,6 +2042,7 @@ def test_acceptance_matrix_rows_are_ci_actionable() -> None:
         "manual-live-gated",
     }
     valid_artifacts = {path.name for path in (FIXTURES).glob("*.json")} | {
+        "github-release-result.json",
         "github-release-asset-proof.json",
         "immutable-proof.json",
         "execution-sets.json",
@@ -969,6 +2081,243 @@ def test_acceptance_matrix_rows_are_ci_actionable() -> None:
                     assert live_gates[value]["evidence"]
                 else:
                     raise AssertionError((row["id"], column, ref_type))
+
+
+def test_superseded_acceptance_rows_do_not_require_live_evidence() -> None:
+    """Superseded/deferred fixture-only rows must not block on live manual runs."""
+    matrix = _acceptance_matrix()
+    superseded_rows = [
+        row
+        for row in matrix["rows"]
+        if "superseded" in str(row.get("status", "")).lower()
+        or "deferred" in str(row.get("status", "")).lower()
+        or str(row["scenario"]).lower().startswith("superseded ")
+    ]
+
+    assert superseded_rows
+    multi_project = next(
+        row for row in superseded_rows if row["id"] == "multi-project-dispatch"
+    )
+    assert multi_project["validation-mode"] == "ci-fixture"
+    assert "fixture-only" in multi_project["status"]
+    for row in superseded_rows:
+        assert "manual-live" not in row["validation-mode"], row["id"]
+        for references in row["evidence"].values():
+            assert all(
+                reference["type"] != "live-gate" for reference in references
+            ), row["id"]
+
+
+def test_superseded_node_publish_workflow_is_deleted() -> None:
+    """The deleted Node publish reusable workflow must not remain callable."""
+    workflow_path = REPO_ROOT / ".github/workflows/release-publish-node.yml"
+    low_level = LOW_LEVEL_DESIGN.read_text(encoding="utf-8")
+
+    assert not workflow_path.exists()
+    assert "deleted `release-publish-node.yml` workflow" in low_level
+
+
+def test_low_level_design_skips_ensure_tag_without_active_github_release() -> (
+    None
+):
+    """Tag orchestration docs must match the no-side-effect workflow contract."""
+    low_level = LOW_LEVEL_DESIGN.read_text(encoding="utf-8")
+
+    assert (
+        "`ensure-tag` must not run when there are no active GitHub Release "
+        "publish nodes."
+    ) in low_level
+    assert "the job is read-only tag verification" not in low_level
+    assert (
+        "Read-only tag verification for all-`skip-satisfied` GitHub Release "
+        "nodes"
+    ) not in low_level
+
+
+def test_executor_boundary_docs_skip_ensure_tag_for_skip_only_github_release() -> (
+    None
+):
+    """Boundary docs must keep ensure-tag active-only and skip-only safe."""
+    docs = (
+        REPO_ROOT
+        / "docs/wiki/analyses/workflow-release-workflow-executor-boundaries.md"
+    ).read_text(encoding="utf-8")
+    docs_words = " ".join(docs.split())
+
+    assert (
+        "runs only when the frozen execution sets contain at least one active "
+        "GitHub Release publish node" in docs_words
+    )
+    assert (
+        "does not verify, create, or fail on tags referenced only by "
+        "`skip-satisfied` GitHub Release nodes" in docs_words
+    )
+    assert (
+        "planner observation plus synthetic skip receipts are the evidence for "
+        "those satisfied no-side-effect nodes" in docs_words
+    )
+    assert "the job is read-only tag verification" not in docs_words
+    assert (
+        "Read-only tag verification for all-`skip-satisfied` GitHub Release "
+        "nodes"
+    ) not in docs_words
+
+
+def test_low_level_design_documents_github_release_attestation_boundaries() -> (
+    None
+):
+    """GitHub Release attestation docs must match workflow-side checks."""
+    low_level = LOW_LEVEL_DESIGN.read_text(encoding="utf-8")
+    low_level_words = " ".join(low_level.split())
+
+    assert (
+        "The `release-orchestrate.yml` attestation jobs generate GitHub Actions "
+        "build provenance for produced asset bytes and verify that those "
+        "provenance jobs completed when attestation is enabled"
+        in low_level_words
+    )
+    assert (
+        "The `.github/workflows/release-create-github-release.yml` upload path "
+        "verifies the staged GitHub Release asset attestations before release "
+        "mutation, generates `github-release-asset-proof` sidecars after upload, "
+        "persists those proofs on the release, and verifies the live uploaded "
+        "assets against the persisted proof evidence before finalization"
+        in low_level_words
+    )
+    assert (
+        "does not perform executor-side attestation verification"
+        not in low_level_words
+    )
+
+
+def test_low_level_design_scopes_tag_permission_row_to_ensure_tag() -> None:
+    """Tag permission docs keep tag writes on orchestrator ensure-tag only."""
+    low_level = LOW_LEVEL_DESIGN.read_text(encoding="utf-8")
+    tag_creation_row = next(
+        (
+            line
+            for line in low_level.splitlines()
+            if line.startswith("| Tag creation or retargeting ")
+        ),
+        None,
+    )
+    tag_verification_row = next(
+        (
+            line
+            for line in low_level.splitlines()
+            if line.startswith("| Tag verification only ")
+        ),
+        None,
+    )
+
+    assert tag_creation_row is not None
+    tag_creation_words = " ".join(tag_creation_row.split())
+    assert "`contents: write`" in tag_creation_words
+    assert (
+        "scoped only to the active `.github/workflows/release-orchestrate.yml` "
+        "`ensure-tag` job" in tag_creation_words
+    )
+    assert "may create missing active release tags" in tag_creation_words
+    assert (
+        "execute the reviewed `force_update_tag=true` retarget path"
+        in tag_creation_words
+    )
+    assert "release-create-github-release.yml" not in tag_creation_words
+
+    assert tag_verification_row is not None
+    tag_verification_words = " ".join(tag_verification_row.split())
+    assert "`contents: read`" in tag_verification_words
+    assert (
+        "The `.github/workflows/release-create-github-release.yml` "
+        "`create-release` job verifies the preexisting tag before GitHub Release "
+        "mutation" in tag_verification_words
+    )
+    assert "it does not create or retarget tags" in tag_verification_words
+
+
+def test_acceptance_matrix_uses_github_release_result_receipt() -> None:
+    """GitHub Release rows use the active GitHub Release result contract."""
+    matrix = _acceptance_matrix()
+    rows = {
+        row["id"]: row
+        for row in cast("list[dict[str, object]]", matrix["rows"])
+    }
+    github_release_positive_rows = {
+        "csharp-library-package-build-and-release",
+        "csharp-app-binary-release",
+        "csharp-app-inno-installer-release",
+        "node-package-build-and-github-release",
+        "ruby-gem-build-and-github-release",
+        "rerun-after-partial-success",
+        "github-release-asset-content-equivalence",
+        "direct-official-publication",
+    }
+    github_release_fail_closed_rows = {"buddy-to-official-promotion"}
+    github_release_no_side_effect_rows = {"github-release-tag-atomicity"}
+    package_registry_positive_rows = {
+        "first-delivery-pypi-official-publish",
+        "dual-npmjs-trusted-publication",
+        "rubygems-org-reusable-workflow-bound-trusted-publication",
+        "mixed-topology-graph",
+    }
+    package_registry_fail_closed_rows = {
+        "external-trusted-publisher-misconfiguration-fails-closed"
+    }
+
+    for row_id in github_release_positive_rows:
+        receipts = [
+            reference["value"]
+            for reference in rows[row_id]["evidence"][
+                "request-result-or-receipt"
+            ]
+            if reference["type"] != "absent-artifact"
+        ]
+        assert "github-release-result.json" in receipts, row_id
+        assert "github-release-asset-proof.json" in receipts, row_id
+        assert "publish-result.json" not in receipts, row_id
+
+    for row_id in github_release_fail_closed_rows:
+        absent_receipts = [
+            reference["value"]
+            for reference in rows[row_id]["evidence"][
+                "request-result-or-receipt"
+            ]
+            if reference["type"] == "absent-artifact"
+        ]
+        assert "github-release-result.json" in absent_receipts, row_id
+        assert "github-release-asset-proof.json" in absent_receipts, row_id
+        assert "publish-result.json" in absent_receipts, row_id
+
+    for row_id in github_release_no_side_effect_rows:
+        absent_receipts = [
+            reference["value"]
+            for reference in rows[row_id]["evidence"][
+                "request-result-or-receipt"
+            ]
+            if reference["type"] == "absent-artifact"
+        ]
+        assert "publish-result.json" in absent_receipts, row_id
+        assert "github-release-result.json" in absent_receipts, row_id
+
+    for row_id in package_registry_positive_rows:
+        receipts = [
+            reference["value"]
+            for reference in rows[row_id]["evidence"][
+                "request-result-or-receipt"
+            ]
+            if reference["type"] != "absent-artifact"
+        ]
+        assert "publish-result.json" in receipts, row_id
+
+    for row_id in package_registry_fail_closed_rows:
+        absent_receipts = [
+            reference["value"]
+            for reference in rows[row_id]["evidence"][
+                "request-result-or-receipt"
+            ]
+            if reference["type"] == "absent-artifact"
+        ]
+        assert "publish-result.json" in absent_receipts, row_id
 
 
 def test_ci_acceptance_matrix_fixture_tracks_lld_scenarios() -> None:
@@ -1018,11 +2367,14 @@ def test_ci_acceptance_matrix_rows_are_actionable() -> None:
             references = evidence[column]
             assert isinstance(references, list)
             assert references
+            reference_keys: list[tuple[str, str]] = []
             for reference in references:
                 assert set(reference) == {"type", "value"}
                 ref_type = reference["type"]
                 value = reference["value"]
+                assert isinstance(ref_type, str)
                 assert isinstance(value, str)
+                reference_keys.append((ref_type, value))
                 if ref_type == "path":
                     assert (REPO_ROOT / value).is_file(), (row["id"], column)
                 elif ref_type == "test":
@@ -1032,6 +2384,10 @@ def test_ci_acceptance_matrix_rows_are_actionable() -> None:
                     assert (REPO_ROOT / value).is_file(), (row["id"], column)
                 else:
                     raise AssertionError((row["id"], column, ref_type))
+            assert len(reference_keys) == len(set(reference_keys)), (
+                row["id"],
+                column,
+            )
         assert row_test_refs, row["id"]
 
 
@@ -1094,6 +2450,106 @@ def test_ci_acceptance_matrix_pins_group1_r204_regressions() -> None:
                 if reference["type"] == "test"
             }
             assert expected_nodeids <= actual_nodeids, (row_id, column)
+
+
+def test_ci_acceptance_matrix_pins_targeted_invalid_claim_evidence() -> None:
+    """Invalid binding/source-chain/work-group rows cite targeted evidence."""
+    matrix = _ci_acceptance_matrix()
+    rows_by_id = {row["id"]: row for row in matrix["rows"]}
+    generic_placeholder = (
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_batch_evidence_writer_isolates_matrix_legs"
+    )
+    required_row_refs = {
+        "release-shaped-artifact-obligation-references-a-mismatched-subject-"
+        "descriptor-owner-validation-o": {
+            "aggregate-or-verdict": {
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_batches.py::"
+                "test_release_shaped_batch_rejects_missing_obligation_results",
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_batches.py::"
+                "test_release_shaped_batch_rejects_obligation_detail_plan_"
+                "mismatch",
+            },
+        },
+        "work-group-has-a-missing-or-mismatched-ecosystem-for-ecosystem-"
+        "specific-execution": {
+            "planning-evidence": {
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_plans.py::"
+                "test_freeze_rejects_non_null_ecosystem_for_non_ecosystem_work",
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_plans.py::"
+                "test_freeze_rejects_descriptor_ecosystem_mismatched_owner",
+            },
+        },
+        "validation-obligation-references-a-mismatched-or-shared-work-group-"
+        "evidence-expectation": {
+            "planning-evidence": {
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_plans.py::"
+                "test_descriptor_validation_rejects_mismatched_obligation",
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_plans.py::"
+                "test_descriptor_validation_rejects_evidence_field_mismatch",
+            },
+            "execution-evidence": {
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_batches.py::"
+                "test_execution_batch_manifest_rejects_cross_group_evidence",
+            },
+            "aggregate-or-verdict": {
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_batches.py::"
+                "test_aggregate_summary_rejects_forged_work_group_failure_"
+                "source",
+            },
+        },
+        "executable-work-group-or-evidence-expectation-is-not-referenced-by-"
+        "its-required-source-obligatio": {
+            "planning-evidence": {
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_plans.py::"
+                "test_validate_plan_rejects_missing_obligation_ids",
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_plans.py::"
+                "test_validate_plan_rejects_unresolved_artifact_validation_"
+                "obligation_id",
+            },
+            "execution-evidence": {
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_plans.py::"
+                "test_executable_plan_rejects_mismatched_binding_fields",
+            },
+            "aggregate-or-verdict": {
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_plans.py::"
+                "test_obligation_source_impacts_must_resolve_to_classification",
+                "src/public/lib/three-workflow-release-contracts/tests/"
+                "test_ci_validation_plans.py::"
+                "test_executable_obligations_are_verdict_relevant",
+            },
+        },
+    }
+
+    for row_id, columns in required_row_refs.items():
+        row = rows_by_id[row_id]
+        for column, expected_nodeids in columns.items():
+            actual_nodeids = {
+                reference["value"]
+                for reference in row["evidence"][column]
+                if reference["type"] == "test"
+            }
+            assert expected_nodeids <= actual_nodeids, (row_id, column)
+        row_test_nodeids = {
+            reference["value"]
+            for column, references in row["evidence"].items()
+            if column not in {"design-contract", "no-publication-boundary"}
+            for reference in references
+            if reference["type"] == "test"
+        }
+        assert generic_placeholder not in row_test_nodeids, row_id
 
 
 def test_acceptance_gate_pins_group1_r204_gate_only_regressions() -> None:
@@ -1162,15 +2618,35 @@ def test_acceptance_gate_pins_group1_r204_gate_only_regressions() -> None:
         "tests/test_workflow_release_control.py::"
         "test_final_uploaded_byte_gate_validates_manifest_with_context",
         "tests/test_workflow_release_control.py::"
-        "test_official_entry_publish_sets_up_npm_trusted_runtime",
+        "test_orchestrator_npmjs_publish_uses_trusted_publisher_runtime",
         "tests/test_workflow_release_control.py::"
-        "test_entry_publish_sets_up_nuget_trusted_publishing",
+        "test_active_split_topology_does_not_model_nuget_registry_targets",
         "tests/test_workflow_release_control.py::"
-        "test_buddy_entry_publish_is_dry_run_gated",
+        "test_ci_release_pipeline_architecture_detects_active_split_topology",
         "tests/test_workflow_release_control.py::"
-        "test_reusable_publish_jobs_are_dry_run_gated",
+        "test_buddy_entry_is_not_restricted_by_public_release_ref",
         "tests/test_workflow_release_control.py::"
-        "test_skip_only_tag_verification_is_read_only_without_environment",
+        "test_entry_authorization_requires_profile_scoped_permissions",
+        "tests/test_workflow_release_control.py::"
+        "test_entry_workflows_authorize_before_write_capable_orchestration",
+        "tests/test_workflow_release_control.py::"
+        "test_entry_workflows_concurrency_on_canonical_release_identity",
+        "tests/test_workflow_release_control.py::"
+        "test_official_manual_dispatch_allows_display_name_alias",
+        "tests/test_workflow_release_control.py::"
+        "test_resolve_project_canonicalizes_display_name_alias",
+        "tests/test_workflow_release_control.py::"
+        "test_release_resolve_workflow_canonicalizes_project_alias_before_detection",
+        "tests/test_workflow_release_control.py::"
+        "test_official_tag_push_allows_branch_only_project_spec",
+        "tests/test_workflow_release_control.py::"
+        "test_official_default_rejects_non_public_release_ref",
+        "tests/test_workflow_release_control.py::"
+        "test_release_workflows_generate_final_release_reports",
+        "tests/test_workflow_release_control.py::"
+        "test_release_orchestrate_prepares_plan_artifacts_before_ensure_tag",
+        "tests/test_workflow_release_control.py::"
+        "test_release_orchestrate_ensures_tags_before_publish_fanout",
         "src/public/lib/three-workflow-release-contracts/tests/"
         "test_ci_validation_batches.py::"
         "test_invalid_plan_rejects_final_producer_verified_manifest",
@@ -1180,6 +2656,10 @@ def test_acceptance_gate_pins_group1_r204_gate_only_regressions() -> None:
         "src/public/lib/three-workflow-release-contracts/tests/"
         "test_ci_validation_batches.py::"
         "test_release_batch_rejects_blocking_available_malformed_digest",
+        "src/public/lib/three-workflow-release-proof/tests/test_proof.py::"
+        "test_github_release_exact_requires_build_receipt_evidence",
+        "src/public/lib/three-workflow-release-proof/tests/test_proof.py::"
+        "test_github_release_asset_proof_requires_publish_request_evidence",
     }
     matrix_nodeids = set().union(
         _matrix_test_nodeids(_acceptance_matrix()),
@@ -1190,6 +2670,452 @@ def test_acceptance_gate_pins_group1_r204_gate_only_regressions() -> None:
     assert required_nodeids.isdisjoint(matrix_nodeids), (
         "gate-only pins must not be duplicated by acceptance matrices",
         sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r22_release_reconciliation_regressions() -> None:
+    """Focused release acceptance must pin R22 release-reconciliation fixes."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_buddy_github_release_deactivation_blocks_publish_handoff",
+        "tests/test_workflow_release_control.py::"
+        "test_github_release_mixed_same_release_requires_union",
+        "tests/test_workflow_release_control.py::"
+        "test_matrix_outputs_filter_disabled_all_node_registry_targets",
+        "tests/test_workflow_release_control.py::"
+        "test_matrix_outputs_filter_disabled_all_ruby_registry_targets",
+        "tests/test_workflow_release_control.py::"
+        "test_release_create_authorization_allows_skip_satisfied_same_release_coverage",
+        "tests/test_workflow_release_control.py::"
+        "test_report_accepts_all_registry_disabled_github_release_only",
+        "tests/test_workflow_release_control.py::"
+        "test_release_completed_accepts_all_registry_disabled_github_release_only",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r23_release_reconciliation_regression() -> None:
+    """Focused release acceptance must pin R23 GitHub Release auth coverage."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_release_create_authorization_accepts_mixed_publish_and_skip_satisfied_nodes",
+        "tests/test_workflow_release_control.py::"
+        "test_release_create_authorization_rejects_skip_only_node_ids",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r26_r27_release_reconciliation_regressions() -> (
+    None
+):
+    """Focused release acceptance must pin R26/R27 reconciliation fixes."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_release_create_finalization_requires_complete_sidecar_coverage",
+        "tests/test_workflow_release_control.py::"
+        "test_matrix_outputs_filter_disabled_target_only_variant",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r32_release_reconciliation_regressions() -> None:
+    """Focused release acceptance must pin R32 reconciliation fixes."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_release_create_workflow_uses_actual_publish_assets_for_mutation",
+        "tests/test_workflow_release_control.py::"
+        "test_report_ignores_disabled_package_target_for_completion_check",
+        "tests/test_workflow_release_control.py::"
+        "test_report_counts_skip_results_after_disabled_target_filter",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r35_release_planner_regression() -> None:
+    """Focused release acceptance must pin R35 planner sibling fixes."""
+    required_nodeids = {
+        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
+        "test_github_release_mixed_siblings_keep_skip_satisfied",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r36_dotnet_dist_boundary_regression() -> None:
+    """Focused release acceptance must pin R36 .NET dist boundary fixes."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_validate_dotnet_dist_ignores_skip_satisfied_inactive_variant_sibling",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r37_github_release_skip_satisfied_regressions() -> (
+    None
+):
+    """Focused release acceptance must pin R37 skip-satisfied receipt fixes."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_github_release_receipt_accepts_skip_satisfied_same_release_sibling",
+        "tests/test_workflow_release_control.py::"
+        "test_release_create_normalize_allows_skip_satisfied_coverage_without_current_receipt",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r38_workflow_helper_regression() -> None:
+    """Focused release acceptance must pin R38 helper invocation coverage."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_workflow_helper_invocations_use_uv_workspace_python",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r39_github_release_coverage_regression() -> None:
+    """Focused release acceptance must pin R39 GitHub Release coverage closure."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_release_create_coverage_preflight_rejects_missing_skip_satisfied_sibling",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r40_observer_regression() -> None:
+    """Focused release acceptance must pin R40 observer regression coverage."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_observe_remote_publications_mixed_same_release_exact_and_partial",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r41_release_completion_and_buddy_regressions() -> (
+    None
+):
+    """Focused release acceptance must pin R41 fail-closed regressions."""
+    required_nodeids = {
+        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
+        "test_buddy_mixed_github_release_fails_closed_when_deactivated",
+        "tests/test_workflow_release_control.py::"
+        "test_github_release_completion_requires_skip_satisfied_receipt",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r42_all_skip_completion_receipt_regressions() -> (
+    None
+):
+    """Focused release acceptance must pin R42 all-skip receipt validation."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_release_completed_accepts_finalized_all_skip_execution_sets",
+        "tests/test_workflow_release_control.py::"
+        "test_release_completed_rejects_finalized_all_skip_without_skip_receipts",
+        "tests/test_workflow_release_control.py::"
+        "test_release_completed_rejects_finalized_all_skip_stale_or_misbound_skip_receipts",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r43_ensure_tag_and_pypi_dependency_regressions() -> (
+    None
+):
+    """Focused release acceptance must pin R43 ensure-tag and PyPI regressions."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_ensure_tags_fails_missing_skip_satisfied_tags",
+        "tests/test_workflow_release_control.py::"
+        "test_ensure_tags_fails_mixed_missing_skip_satisfied_tag",
+        "tests/test_workflow_release_control.py::"
+        "test_publish_python_allows_skipped_ensure_tag_when_no_active_github_release",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r45_final_coverage_only_sidecar_regression() -> (
+    None
+):
+    """Focused release acceptance must pin R45 final coverage-only proof checks."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_release_create_finalization_requires_live_coverage_only_sidecars",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r46_r48_release_report_plan_identity_regression() -> (
+    None
+):
+    """Focused release acceptance must pin R46/R48 report identity checks."""
+    required_nodeids = {
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_contracts.py::"
+        "test_successful_release_report_requires_plan_identity",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_contracts.py::"
+        "test_successful_release_report_requires_plan_tuple_when_plan_skipped",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r49_release_no_side_effect_regressions() -> None:
+    """Focused release acceptance must pin R49 no-side-effect boundaries."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_low_level_design_skips_ensure_tag_without_active_github_release",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_contracts.py::test_publish_request_rejects_skip_satisfied_node",
+        "tests/test_workflow_release_control.py::"
+        "test_publish_request_command_rejects_skip_satisfied_node",
+        "tests/test_workflow_release_control.py::"
+        "test_github_release_publish_request_rejects_skip_satisfied_asset_"
+        "receipt_path",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r50_executor_boundary_ensure_tag_doc_regression() -> (
+    None
+):
+    """Focused release acceptance must pin R50 executor-boundary docs."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_executor_boundary_docs_skip_ensure_tag_for_skip_only_github_release",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r51_doc_boundary_regressions() -> None:
+    """Focused release acceptance must pin R51 doc boundary regressions."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_executor_boundary_docs_skip_ensure_tag_for_skip_only_github_release",
+        "tests/test_workflow_release_control.py::"
+        "test_low_level_design_documents_github_release_attestation_boundaries",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r52_tag_permission_boundary_regression() -> None:
+    """Focused release acceptance must pin R52 tag permission boundaries."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_low_level_design_scopes_tag_permission_row_to_ensure_tag",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r53_tag_permission_acceptance_regression() -> (
+    None
+):
+    """Focused release acceptance must pin R53 tag-permission acceptance."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_low_level_design_scopes_tag_permission_row_to_ensure_tag",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_r54_hook_trigger_surface_traceability() -> None:
+    """Focused release acceptance must pin R54 hook-trigger traceability."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_hk_runs_focused_workflow_release_validation",
+        "tests/test_workflow_release_control.py::"
+        "test_acceptance_matrix_test_nodeids_are_collected_by_gate",
+        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
+        "test_ci_validation_plans_workflow_governance_markdown_as_tooling",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert (
+        "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
+        "test_ci_validation_plans_workflow_governance_markdown_as_tooling"
+        in matrix_nodeids
     )
 
 
@@ -1241,61 +3167,28 @@ def test_acceptance_matrix_test_nodeids_are_collected_by_gate() -> None:
     ci_matrix = _ci_acceptance_matrix()
     gate_nodeids = set(acceptance_gate._collect_test_nodeids(matrix))
     ci_gate_nodeids = set(acceptance_gate._collect_test_nodeids(ci_matrix))
-    mandatory_nodeids = {
-        "tests/test_workflow_release_control.py::"
-        "test_ci_acceptance_matrix_pins_group1_r204_regressions",
-        "tests/test_workflow_release_control.py::"
-        "test_acceptance_gate_pins_group1_r204_gate_only_regressions",
-        "tests/test_workflow_release_control.py::"
-        "test_acceptance_gate_rejects_option_like_nodeids_and_uses_separator",
-        "tests/test_workflow_release_control.py::"
-        "test_ci_acceptance_matrix_fixture_tracks_lld_scenarios",
-        "tests/test_workflow_release_control.py::"
-        "test_ci_acceptance_matrix_rows_are_actionable",
-        "tests/test_workflow_release_control.py::"
-        "test_ci_acceptance_matrix_preserves_no_publish_boundaries",
-        "tests/test_workflow_release_control.py::"
-        "test_hk_runs_focused_workflow_release_validation",
-        "tests/test_workflow_release_control.py::"
-        "test_final_uploaded_byte_gate_requires_expected_digest",
-        "tests/test_workflow_release_control.py::"
-        "test_bound_aggregate_manifest_digest_uses_manifest_bytes",
-        "tests/test_workflow_release_control.py::"
-        "test_verify_ci_validation_artifact_boundaries_allows_final_total_cap",
-        "tests/test_workflow_release_control.py::"
-        "test_verify_final_uploaded_bytes_rejects_noncanonical_summary",
-        "tests/test_workflow_release_control.py::"
-        "test_final_uploaded_byte_gate_recomputes_manifest_digest",
-        "tests/test_workflow_release_control.py::"
-        "test_ci_batch_aggregate_all_does_not_self_verify_unbound_manifest",
-        "tests/test_workflow_release_control.py::"
-        "test_ci_orchestrator_wait_returns_promptly_when_all_batches_uploaded",
-        "tests/test_workflow_release_control.py::"
-        "test_entry_publish_sets_up_nuget_trusted_publishing",
-        "tests/test_workflow_release_control.py::"
-        "test_buddy_entry_publish_is_dry_run_gated",
-        "tests/test_workflow_release_control.py::"
-        "test_skip_only_tag_verification_is_read_only_without_environment",
-        "src/public/lib/three-workflow-release-contracts/tests/"
-        "test_ci_validation_batches.py::"
-        "test_invalid_plan_unbound_manifest_rejects_self_authority_"
-        "diagnostics",
-        "src/public/lib/three-workflow-release-contracts/tests/"
-        "test_ci_validation_batches.py::"
-        "test_invalid_plan_rejects_self_authorized_final_producer_evidence",
-        "src/public/lib/three-workflow-release-contracts/tests/"
-        "test_ci_validation_batches.py::"
-        "test_release_batch_rejects_blocking_available_malformed_digest",
+    all_nodeids = _all_test_nodeids()
+    mandatory_nodeids = set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    gate_pin_nodeids = {
+        nodeid
+        for nodeid in all_nodeids
+        if nodeid.startswith(
+            "tests/test_workflow_release_control.py::test_acceptance_gate_pins_"
+        )
     }
+
+    assert gate_pin_nodeids <= mandatory_nodeids
 
     assert _matrix_test_nodeids(matrix)
     for nodeid in _matrix_test_nodeids(matrix):
-        assert nodeid in _all_test_nodeids()
+        assert nodeid in all_nodeids
         assert nodeid in gate_nodeids
     assert _matrix_test_nodeids(ci_matrix)
     for nodeid in _matrix_test_nodeids(ci_matrix):
-        assert nodeid in _all_test_nodeids()
+        assert nodeid in all_nodeids
         assert nodeid in ci_gate_nodeids
+    for nodeid in mandatory_nodeids:
+        assert nodeid in all_nodeids
     assert mandatory_nodeids <= gate_nodeids
 
 
@@ -1328,6 +3221,45 @@ def test_acceptance_gate_rejects_option_like_nodeids_and_uses_separator() -> (
     assert command[separator_index + 1].startswith("tests/")
 
 
+def test_acceptance_gate_rejects_duplicate_same_column_evidence() -> None:
+    """Acceptance gate rejects duplicate evidence hidden by nodeid sets."""
+    for kind in (
+        "workflow-release-acceptance-matrix",
+        "workflow-release-ci-validation-acceptance-matrix",
+    ):
+        duplicate = {
+            "kind": kind,
+            "rows": [
+                {
+                    "id": "duplicate-placeholder",
+                    "evidence": {
+                        "planning-evidence": [
+                            {
+                                "type": "test",
+                                "value": (
+                                    "tests/test_workflow_release_control.py::"
+                                    "test_hk_runs_focused_workflow_release_"
+                                    "validation"
+                                ),
+                            },
+                            {
+                                "type": "test",
+                                "value": (
+                                    "tests/test_workflow_release_control.py::"
+                                    "test_hk_runs_focused_workflow_release_"
+                                    "validation"
+                                ),
+                            },
+                        ]
+                    },
+                }
+            ],
+        }
+
+        with pytest.raises(ValueError, match="duplicate evidence"):
+            acceptance_gate._collect_test_nodeids(duplicate)
+
+
 def test_confirmed_scope_descriptor_matrix_matches_current_descriptors() -> (
     None
 ):
@@ -1348,24 +3280,22 @@ def test_confirmed_scope_descriptor_matrix_matches_current_descriptors() -> (
     assert descriptor_paths == _confirmed_scope_descriptor_paths()
 
 
-def test_unfiltered_first_delivery_plan_includes_confirmed_scope_projects(
+def test_single_project_first_delivery_plan_includes_requested_project(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Unfiltered planning selects every confirmed first-delivery project."""
+    """Active planning selects the single normalized project request."""
     commit_sha = "a" * 40
     snapshot = validate_authoring(REPO_ROOT)
-    expected_project_ids = _confirmed_scope_project_ids()
-    metadata_input = snapshot.dotnet_metadata_input(commit_sha)
-    dotnet_metadata = _dotnet_metadata_for_planner_input(metadata_input)
-
-    assert expected_project_ids == sorted(snapshot.projects)
+    requested_project_id = "nbgv-python"
 
     def fake_run(
         args: list[str],
-        **_kwargs: object,
+        **kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
         command = Path(str(args[0])).name
-        if len(args) > 2 and args[1] == "show":
+        if len(args) >= 5 and args[1:4] == ["show", "-s", "--format=%ct"]:
+            return subprocess.CompletedProcess(args, 0, "1712345678", "")
+        if len(args) > 2 and args[1] == "show" and ":" in str(args[2]):
             relative = str(args[2]).split(":", maxsplit=1)[1]
             return subprocess.CompletedProcess(
                 args,
@@ -1377,24 +3307,20 @@ def test_unfiltered_first_delivery_plan_includes_confirmed_scope_projects(
             if "add" in args:
                 Path(str(args[-2])).mkdir(parents=True, exist_ok=True)
             return subprocess.CompletedProcess(args, 0, "", "")
-        if command == "dotnet" and "nbgv" in args:
+        if command == "nbgv" or (command == "dotnet" and "nbgv" in args):
             return subprocess.CompletedProcess(
                 args, 0, json.dumps({"SemVer2": "1.2.3"}), ""
             )
         if command == "uv" and "build" in args:
             out_dir = Path(str(args[args.index("--out-dir") + 1]))
             out_dir.mkdir(parents=True, exist_ok=True)
-            release_root = str(args[-1])
-            package, version = {
-                "src/public/lib/hcoona-release-smoke-pypi": (
-                    "hcoona_release_smoke_pypi",
-                    "1.2.3",
-                ),
-                "src/public/lib/nbgv-python": (
-                    "nbgv_python",
-                    "2.1.0.dev1",
-                ),
-            }[release_root]
+            assert (
+                cast("Path", kwargs["cwd"])
+                .as_posix()
+                .endswith("src/public/lib/nbgv-python")
+            )
+            package = "nbgv_python"
+            version = "2.1.0.dev1"
             (out_dir / f"{package}-{version}-py3-none-any.whl").write_text(
                 "",
                 encoding="utf-8",
@@ -1429,12 +3355,11 @@ def test_unfiltered_first_delivery_plan_includes_confirmed_scope_projects(
                     "kind": "planner-request",
                     "profile": "buddy",
                     "commit-sha": commit_sha,
-                    "requested-project-ids": [],
+                    "requested-project-ids": [requested_project_id],
                     "request-flags": {"force": False},
                 },
                 repo_root=REPO_ROOT,
                 dry_run=True,
-                dotnet_metadata=dotnet_metadata,
             ),
         )
     finally:
@@ -1447,9 +3372,141 @@ def test_unfiltered_first_delivery_plan_includes_confirmed_scope_projects(
     assert isinstance(envelope, dict)
     projects = envelope["projects"]
     assert isinstance(projects, dict)
-    assert envelope["requested-project-ids"] == []
-    assert envelope["selected-project-ids"] == expected_project_ids
-    assert sorted(projects) == expected_project_ids
+    assert envelope["requested-project-ids"] == [requested_project_id]
+    assert envelope["selected-project-ids"] == [requested_project_id]
+    assert sorted(projects) == [requested_project_id]
+
+
+def test_python_plan_gates_allow_github_release_only_descriptors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Official Python plan outputs are descriptor-controlled for PyPI."""
+    commit_sha = "a" * 40
+    snapshot = validate_authoring(REPO_ROOT)
+
+    def fake_run(
+        args: list[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        command = Path(str(args[0])).name
+        if len(args) >= 5 and args[1:4] == ["show", "-s", "--format=%ct"]:
+            return subprocess.CompletedProcess(args, 0, "1712345678", "")
+        if len(args) > 2 and args[1] == "show" and ":" in str(args[2]):
+            relative = str(args[2]).split(":", maxsplit=1)[1]
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                (REPO_ROOT / relative).read_text(encoding="utf-8"),
+                "",
+            )
+        if "worktree" in args:
+            if "add" in args:
+                Path(str(args[-2])).mkdir(parents=True, exist_ok=True)
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if command == "nbgv" or (command == "dotnet" and "nbgv" in args):
+            return subprocess.CompletedProcess(
+                args, 0, json.dumps({"SemVer2": "1.2.3"}), ""
+            )
+        if command == "uv" and "build" in args:
+            out_dir = Path(str(args[args.index("--out-dir") + 1]))
+            out_dir.mkdir(parents=True, exist_ok=True)
+            cwd = cast("Path", kwargs["cwd"])
+            release_root = next(
+                key
+                for key in (
+                    "src/public/lib/hcoona-release-smoke-pypi",
+                    "src/public/lib/nbgv-python",
+                )
+                if cwd.as_posix().endswith(key)
+            )
+            package, version = {
+                "src/public/lib/hcoona-release-smoke-pypi": (
+                    "hcoona_release_smoke_pypi",
+                    "1.2.3",
+                ),
+                "src/public/lib/nbgv-python": (
+                    "nbgv_python",
+                    "2.1.0.dev1",
+                ),
+            }[release_root]
+            (out_dir / f"{package}-{version}-py3-none-any.whl").write_text(
+                "",
+                encoding="utf-8",
+            )
+            (out_dir / f"{package}-{version}.tar.gz").write_text(
+                "",
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args, 0, "", "")
+        message = f"unexpected planner subprocess: {args}"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_run,
+    )
+    try:
+        outputs_by_project: dict[str, dict[str, str]] = {}
+        for project_id in (
+            "nbgv-python",
+            "hcoona-release-smoke-pypi",
+        ):
+            result = plan_release(
+                snapshot,
+                PlannerInputs(
+                    request={
+                        "api-version": "three.release.planner-request/v1alpha1",
+                        "kind": "planner-request",
+                        "profile": "official",
+                        "commit-sha": commit_sha,
+                        "requested-project-ids": [project_id],
+                        "request-flags": {"force": False},
+                    },
+                    repo_root=REPO_ROOT,
+                    dry_run=True,
+                ),
+            )
+            output = SCRATCH / project_id / "matrix-output.txt"
+            output.parent.mkdir(parents=True, exist_ok=True)
+            plan_path = output.parent / "release-plan.json"
+            sets_path = output.parent / "execution-sets.json"
+            plan_path.write_text(json.dumps(result.plan), encoding="utf-8")
+            sets_path.write_text(
+                json.dumps(result.execution_sets), encoding="utf-8"
+            )
+
+            assert (
+                control._cmd_matrix_outputs(
+                    control.argparse.Namespace(
+                        plan=str(plan_path),
+                        execution_sets=str(sets_path),
+                        run_id=123,
+                        attempt=4,
+                        github_output=str(output),
+                    )
+                )
+                == 0
+            )
+            outputs_by_project[project_id] = _github_outputs(output)
+    finally:
+        shutil.rmtree(
+            REPO_ROOT / ".three-workflow-release-planner",
+            ignore_errors=True,
+        )
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+    assert (
+        outputs_by_project["nbgv-python"]["has_selected_python_pypi"] == "false"
+    )
+    assert (
+        outputs_by_project["nbgv-python"]["has_active_python_pypi"] == "false"
+    )
+    assert (
+        outputs_by_project["hcoona-release-smoke-pypi"][
+            "has_selected_python_pypi"
+        ]
+        == "true"
+    )
 
 
 def test_fail_closed_acceptance_rows_match_phase_artifact_contracts() -> None:
@@ -1637,7 +3694,7 @@ def test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs() -> (
                     "kind": "planner-request",
                     "profile": "buddy",
                     "commit-sha": SHA_B,
-                    "requested-project-ids": ["nbgv-python", "missing-project"],
+                    "requested-project-ids": ["missing-project"],
                     "request-flags": {"force": False},
                 },
                 indent=2,
@@ -1647,7 +3704,7 @@ def test_fail_closed_acceptance_flows_emit_diagnostics_without_outputs() -> (
             encoding="utf-8",
         )
         unknown_project_diag = unknown_project / "planner-diagnostics.json"
-        unknown_project_result = subprocess.run(  # noqa: S603
+        unknown_project_result = subprocess.run(
             [
                 sys.executable,
                 "-m",
@@ -1788,8 +3845,8 @@ def test_external_oidc_fail_closed_gates_emit_diagnostics_without_outputs(
             "_TOPOLOGIES",
             (
                 "github-token",
+                "external-oidc-entry-workflow",
                 "external-oidc-caller-workflow",
-                "external-oidc-reusable-workflow",
             ),
         )
         _run_plan_gate_case(
@@ -1825,7 +3882,7 @@ def test_entry_fail_closed_gates_emit_diagnostics_without_outputs(
         monkeypatch.setattr(control, "_actor_permission", lambda *_: "maintain")
         _run_normalize_entry_case(
             scratch / "invalid-input",
-            {"REQ_INVALID_INPUT", "REQ_FORCE_FOR_OFFICIAL"},
+            {"REQ_INVALID_INPUT"},
             overrides={
                 "dry_run": "false",
                 "validation_build": "true",
@@ -1842,6 +3899,96 @@ def test_entry_fail_closed_gates_emit_diagnostics_without_outputs(
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def test_entry_authorization_requires_profile_scoped_permissions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Official requires maintain+, while buddy accepts write+."""
+    scratch = SCRATCH / "entry-profile-permissions"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        scratch.mkdir(parents=True)
+        monkeypatch.setattr(
+            control,
+            "_resolve_ref",
+            lambda *_: (SHA_B, {"object-type": "commit"}),
+        )
+        monkeypatch.setattr(control, "_trusted_ref", lambda *_: True)
+
+        monkeypatch.setattr(control, "_actor_permission", lambda *_: "write")
+        _run_normalize_entry_case(
+            scratch / "official-write-rejected",
+            {"REQ_ACTOR_UNAUTHORIZED"},
+            overrides={"profile": "official"},
+        )
+
+        for profile, permission in (
+            ("buddy", "write"),
+            ("official", "maintain"),
+        ):
+            case_dir = scratch / f"{profile}-{permission}-accepted"
+            case_dir.mkdir()
+            monkeypatch.setattr(
+                control, "_actor_permission", lambda *_, p=permission: p
+            )
+            result = control._cmd_normalize_entry(
+                control.argparse.Namespace(
+                    profile=profile,
+                    repository="hcoona/three",
+                    actor="candidate",
+                    ref="refs/heads/main",
+                    ref_name="main",
+                    ref_type="branch",
+                    pinned_sha=SHA_B,
+                    requested_project_ids="CircularList",
+                    dry_run="true",
+                    validation_build="false",
+                    force="false",
+                    canary_override_non_public_ref="false",
+                    metadata_out=str(case_dir / "entry-metadata.json"),
+                    diagnostics_out=str(case_dir / "planner-diagnostics.json"),
+                    github_output=str(case_dir / "github-output.txt"),
+                )
+            )
+            assert result == 0, profile
+            assert (case_dir / "entry-metadata.json").is_file(), profile
+            assert not (case_dir / "planner-diagnostics.json").exists(), profile
+
+        official_force_dir = scratch / "official-force-accepted"
+        official_force_dir.mkdir()
+        monkeypatch.setattr(control, "_actor_permission", lambda *_: "maintain")
+        result = control._cmd_normalize_entry(
+            control.argparse.Namespace(
+                profile="official",
+                repository="hcoona/three",
+                actor="candidate",
+                ref="refs/heads/main",
+                ref_name="main",
+                ref_type="branch",
+                pinned_sha=SHA_B,
+                requested_project_ids="CircularList",
+                dry_run="false",
+                validation_build="false",
+                force="true",
+                canary_override_non_public_ref="false",
+                metadata_out=str(official_force_dir / "entry-metadata.json"),
+                diagnostics_out=str(
+                    official_force_dir / "planner-diagnostics.json"
+                ),
+                github_output=str(official_force_dir / "github-output.txt"),
+            )
+        )
+        assert result == 0
+        metadata = json.loads(
+            (official_force_dir / "entry-metadata.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert metadata["force"] is True
+        assert not (official_force_dir / "planner-diagnostics.json").exists()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def test_normalize_project_ids_trims_splits_deduplicates_and_sorts() -> None:
     """Normalize UI project input into a stable planner filter list."""
     assert control._normalize_project_ids(" beta,alpha\n beta ,,gamma ") == [
@@ -1849,6 +3996,50 @@ def test_normalize_project_ids_trims_splits_deduplicates_and_sorts() -> None:
         "beta",
         "gamma",
     ]
+
+
+@pytest.mark.parametrize(
+    ("requested_project_ids", "normalized_project_ids"),
+    [
+        ("", []),
+        ("CircularList,nbgv-python", ["CircularList", "nbgv-python"]),
+    ],
+)
+def test_normalize_entry_rejects_non_single_requested_project_ids(
+    monkeypatch: pytest.MonkeyPatch,
+    requested_project_ids: str,
+    normalized_project_ids: list[str],
+) -> None:
+    """Entry normalization enforces the active single-project contract."""
+    scratch = SCRATCH / "entry-requested-project-cardinality"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        monkeypatch.setattr(control, "_actor_permission", lambda *_: "maintain")
+        monkeypatch.setattr(
+            control,
+            "_resolve_ref",
+            lambda *_: (SHA_B, {"object-type": "commit"}),
+        )
+        monkeypatch.setattr(control, "_trusted_ref", lambda *_: True)
+        _run_normalize_entry_case(
+            scratch / f"case-{len(normalized_project_ids)}",
+            {"REQ_INVALID_INPUT"},
+            overrides={"requested_project_ids": requested_project_ids},
+        )
+        diagnostics = json.loads(
+            (
+                scratch
+                / f"case-{len(normalized_project_ids)}"
+                / "planner-diagnostics.json"
+            ).read_text(encoding="utf-8")
+        )
+        diagnostic = diagnostics["diagnostics"][0]
+        assert diagnostic["details"]["requested-project-ids"] == (
+            normalized_project_ids
+        )
+        assert diagnostic["details"]["count"] == len(normalized_project_ids)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def _authorize_entry(
@@ -1932,6 +4123,85 @@ def test_official_default_rejects_non_public_release_ref(
         shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
+def test_official_tag_push_allows_branch_only_project_spec(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Official tag-triggered releases accept a matching release tag."""
+    try:
+        result, metadata, diagnostics = _authorize_entry(
+            monkeypatch,
+            {
+                "profile": "official",
+                "ref": "refs/tags/release/CircularList/v1.2.3",
+                "ref_name": "release/CircularList/v1.2.3",
+                "ref_type": "tag",
+                "requested_project_ids": "CircularList",
+                "canary_override_non_public_ref": "false",
+            },
+        )
+
+        assert result == 0
+        assert diagnostics is None
+        assert metadata is not None
+        assert metadata["requested-project-ids"] == ["CircularList"]
+        assert metadata["ref-type"] == "tag"
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_official_manual_dispatch_allows_display_name_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Official manual releases accept display-name aliases on public refs."""
+    try:
+        result, metadata, diagnostics = _authorize_entry(
+            monkeypatch,
+            {
+                "profile": "official",
+                "ref": "refs/heads/main",
+                "ref_name": "main",
+                "ref_type": "branch",
+                "requested_project_ids": "CircularList",
+                "canary_override_non_public_ref": "false",
+            },
+        )
+
+        assert result == 0
+        assert diagnostics is None
+        assert metadata is not None
+        assert metadata["requested-project-ids"] == ["CircularList"]
+        assert metadata["ref-name"] == "main"
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_official_tag_push_rejects_mismatched_project_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Official tag-triggered authorization stays project-specific."""
+    try:
+        result, metadata, diagnostics = _authorize_entry(
+            monkeypatch,
+            {
+                "profile": "official",
+                "ref": "refs/tags/release/CircularList/v1.2.3",
+                "ref_name": "release/CircularList/v1.2.3",
+                "ref_type": "tag",
+                "requested_project_ids": "PhiFailureDetector",
+                "canary_override_non_public_ref": "false",
+            },
+        )
+
+        assert result == 1
+        assert metadata is None
+        assert diagnostics is not None
+        assert _diagnostic_codes(SCRATCH / "planner-diagnostics.json") == [
+            "REQ_UNTRUSTED_WORKFLOW_REF"
+        ]
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
 def test_official_canary_override_allows_allowlisted_project(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2001,6 +4271,386 @@ def test_official_canary_override_rejects_non_allowlisted_project(
         shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
+def test_resolve_project_canonicalizes_display_name_alias() -> None:
+    """Project resolution canonicalizes display-name aliases."""
+    assert control._resolve_release_project_id("CircularList") == (
+        "circular-list"
+    )
+    assert control._resolve_release_project_id("circular-list") == (
+        "circular-list"
+    )
+
+
+def test_official_manual_dispatch_docs_match_alias_behavior() -> None:
+    """Official docs keep exact display-name alias canonicalization guidance."""
+    docs = (REPO_ROOT / ".github/workflows/docs/DESIGN.v2.md").read_text(
+        encoding="utf-8"
+    )
+    assert "exact display-name aliases are canonicalized" in docs
+    assert "fuzzy matching remains forbidden" in docs
+
+
+def test_low_level_design_describes_github_release_receipt_schema() -> None:
+    """GitHub Release result docs should match the receipt contract schema."""
+    low_level = LOW_LEVEL_DESIGN.read_text(encoding="utf-8")
+    boundaries = (
+        REPO_ROOT
+        / "docs/wiki/analyses/workflow-release-workflow-executor-boundaries.md"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        "`github-release-result.json`; both use the same `publish-node-id`"
+        not in low_level
+    )
+    for field in (
+        "`tagName`",
+        "`targetSha`",
+        "`releaseId`",
+        "`releaseExisted`",
+    ):
+        assert field in low_level
+    assert "planned asset names" in low_level
+    assert "sizes, and SHA-256 digests" in low_level
+    assert "release-github-release-result-v1-<run-id>-<attempt>" in low_level
+    assert "rather than through a" in low_level
+    assert "`publish-node-id` field" in low_level
+    assert "`github-release-result` artifact" not in boundaries
+    assert "`github-release-result`" not in boundaries
+    assert (
+        "release-github-release-result-v1-<run-id>-<attempt>-<digest>"
+        in boundaries
+    )
+    assert "github-release-result.json" in boundaries
+
+
+def test_low_level_design_describes_active_dotnet_metadata_collection() -> None:
+    """Low-level design should not describe the removed Windows metadata job."""
+    low_level = LOW_LEVEL_DESIGN.read_text(encoding="utf-8")
+
+    assert "pre-plan Windows metadata" not in low_level
+    assert "Windows `dotnet-metadata` job" not in low_level
+    assert "Windows metadata job" not in low_level
+    assert "Windows helper" not in low_level
+    assert (
+        "current .NET metadata collection runs inside `prepare-release-plan` "
+        "on Ubuntu with a trusted NBGV CLI"
+    ) in low_level
+    assert (
+        "trusted NBGV-based metadata phase in `prepare-release-plan`"
+        in low_level
+    )
+
+
+def test_low_level_design_uses_plural_planner_request_project_contract() -> (
+    None
+):
+    """Planner request docs must match the plural normalized project contract."""
+    low_level = LOW_LEVEL_DESIGN.read_text(encoding="utf-8")
+    planner_request_start = low_level.index("`planner-request.json` is")
+    planner_request_end = low_level.index(
+        "`dotnet-planner-metadata-input.json` is",
+        planner_request_start,
+    )
+    planner_request_section = low_level[
+        planner_request_start:planner_request_end
+    ]
+
+    assert '"requested-project-ids": ["..."]' in planner_request_section
+    assert '"request-flags": {' in planner_request_section
+    assert '"project-id": "...",' not in planner_request_section
+    assert "superseded `requested-project-ids`" not in low_level
+    assert (
+        "manual entry workflows normalize to a\nsingle-entry array" in low_level
+    )
+
+
+def test_low_level_design_documents_entry_pinned_target_concurrency() -> None:
+    """LLD must distinguish entry-pinned targets from reusable selector fallback."""
+    low_level = LOW_LEVEL_DESIGN.read_text(encoding="utf-8")
+
+    assert "pass the pinned `release_target_sha`" in low_level
+    assert "Direct reusable callers" in low_level
+    assert "delegates to `release-resolve.yml`" in low_level
+    assert "`release/${project_id}/v${release_version}`" in (low_level)
+    assert "`${{ needs.authorize-entry.outputs.release_group }}`" in low_level
+    assert "inputs.target || github.sha" not in low_level
+
+
+def test_release_docs_describe_active_concurrency_contract() -> None:
+    """Release docs should match active job-level concurrency semantics."""
+    overview = (REPO_ROOT / "docs/wiki/overview.md").read_text(encoding="utf-8")
+    requirements = (
+        REPO_ROOT
+        / "docs/wiki/analyses/workflow-release-requirements-phase-review.md"
+    ).read_text(encoding="utf-8")
+    boundaries = (
+        REPO_ROOT
+        / "docs/wiki/analyses/workflow-release-workflow-executor-boundaries.md"
+    ).read_text(encoding="utf-8")
+    all_docs = "\n".join((overview, requirements, boundaries))
+
+    assert "same workflow entry point and the same commit" not in all_docs
+    assert "same-entry workflow runs" not in all_docs
+    assert "pending same-entry run" not in all_docs
+    assert "in-progress" in all_docs
+    assert "duplicate-run auto-cancellation" in all_docs
+    assert "optional native duplicate-run cancellation" not in all_docs
+    assert "`release/${project_id}/v${release_version}`" in all_docs
+    assert "`cancel-in-progress: false`" in all_docs
+    assert "active `buddy` and `official` entry workflows" in boundaries
+    assert "newer pending run from either entry workflow" in boundaries
+
+
+def test_design_monitoring_metrics_use_active_concurrency_terms() -> None:
+    """Active observability docs must not require superseded topology metrics."""
+    docs = (REPO_ROOT / ".github/workflows/docs/DESIGN.v2.md").read_text(
+        encoding="utf-8"
+    )
+    required_start = docs.index(
+        "Operational observability is a required part of the design"
+    )
+    required_end = docs.index(
+        "- Historical/future-only diagnostics",
+        required_start,
+    )
+    required = docs[required_start:required_end]
+
+    assert "registry-environment approval" in required
+    assert (
+        "active buddy/official entry workflow job-level `orchestrate` "
+        "dynamic release-identity concurrency group"
+    ) in required
+    assert "entry or `orchestrate` concurrency groups" not in required
+    assert (
+        "`orchestrate` job age while it holds "
+        "`release/${project_id}/v${release_version}`"
+    ) in required
+    assert "runner-start delay" in required
+    assert "baseline-approval wait age" not in required
+    assert "pending shared-slot queue age" not in required
+    assert (
+        "active official-run age while holding the shared concurrency slot"
+        not in required
+    )
+
+
+def test_official_rerun_docs_allow_normal_idempotent_flow() -> None:
+    """Official docs must allow reruns through the normal idempotent flow."""
+    docs = (REPO_ROOT / ".github/workflows/docs/DESIGN.v2.md").read_text(
+        encoding="utf-8"
+    )
+    assert "official `allow_idempotent` rerun policy" in docs
+    assert "Official reruns are not a green no-op path." in docs
+    assert "normal idempotent authorize/orchestrate/report flow" in docs
+    assert "Buddy publication remains single-attempt only." in docs
+    assert "lockIdentity.runAttempt` must equal `1`" not in docs
+    assert "never a GitHub rerun attempt under the same `run_id`" not in docs
+
+
+def test_official_rollout_readiness_docs_match_active_topology() -> None:
+    """Rollout readiness docs should describe active direct workflow controls."""
+    docs = (REPO_ROOT / ".github/workflows/docs/DESIGN.v2.md").read_text(
+        encoding="utf-8"
+    )
+    rollout_start = docs.index("5. **Enable project release traffic only after")
+    rollout_end = docs.index(
+        "There is no supported partial rollout", rollout_start
+    )
+    rollout = docs[rollout_start:rollout_end]
+
+    assert (
+        "descriptor/catalog/workflow/tag/environment/registry controls"
+        in rollout
+    )
+    assert (
+        "historical durable-store, broker-readiness, and monitor-bootstrap"
+        in rollout
+    )
+    assert "durable store, broker path, and monitor coverage" not in rollout
+    assert (
+        "official release still requires the broker before enablement"
+        not in rollout
+    )
+    assert "time-boxed monitor-bootstrap mode" not in rollout
+
+
+def test_manual_release_project_input_descriptions_match_alias_behavior() -> (
+    None
+):
+    """Manual release input descriptions should document alias canonicalization."""
+    for workflow_name in (
+        "official.yml",
+        "buddy.yml",
+        "release-official.yml",
+        "release-buddy.yml",
+    ):
+        workflow = _workflow_yaml(workflow_name)
+        workflow_dispatch = cast(
+            "dict[str, object]", workflow.get("on", workflow.get(True, {}))
+        )["workflow_dispatch"]
+        inputs = cast("dict[str, object]", workflow_dispatch)["inputs"]
+        description = cast(
+            "str", cast("dict[str, object]", inputs["project"])["description"]
+        )
+        assert description.startswith("Workspace release project id")
+        assert "Node/.NET: three.release.yml project.id" in description
+        assert "package.json name" not in description
+        assert "exact display-name aliases are canonicalized" in description
+        assert "fuzzy matching remains forbidden" in description
+
+
+def test_manual_release_target_input_descriptions_match_ref_resolution() -> (
+    None
+):
+    """Manual release target descriptions should document empty/ref/SHA pinning."""
+    for workflow_name in (
+        "official.yml",
+        "buddy.yml",
+        "release-official.yml",
+        "release-buddy.yml",
+    ):
+        workflow = _workflow_yaml(workflow_name)
+        workflow_dispatch = cast(
+            "dict[str, object]", workflow.get("on", workflow.get(True, {}))
+        )["workflow_dispatch"]
+        inputs = cast("dict[str, object]", workflow_dispatch)["inputs"]
+        description = cast(
+            "str", cast("dict[str, object]", inputs["target"])["description"]
+        )
+
+        assert (
+            "leave empty to use the dispatch-selected ref/commit" in description
+        )
+        assert "branch, tag, ref, or 40-hex commit SHA" in description
+        assert "resolves it once and pins the commit" in description
+
+
+def test_release_resolve_project_input_description_matches_alias_behavior() -> (
+    None
+):
+    """Release resolution should document alias canonicalization in its inputs."""
+    for workflow_name in ("release-resolve.yml", "release-orchestrate.yml"):
+        workflow = _workflow_yaml(workflow_name)
+        workflow_call = cast(
+            "dict[str, object]", workflow.get("on", workflow.get(True, {}))
+        )["workflow_call"]
+        inputs = cast("dict[str, object]", workflow_call["inputs"])
+        description = cast(
+            "str", cast("dict[str, object]", inputs["project"])["description"]
+        )
+
+        assert description.startswith("Workspace release project id")
+        assert "Node/.NET: three.release.yml project.id" in description
+        assert "package.json name" not in description
+        assert "exact display-name aliases are canonicalized" in description
+        assert "fuzzy matching remains forbidden" in description
+
+
+def test_compatibility_release_stubs_match_active_entry_contract() -> None:
+    """Compatibility stubs should expose the same release entry inputs as active workflows."""
+    for stub_name, active_name in (
+        ("release-official.yml", "official.yml"),
+        ("release-buddy.yml", "buddy.yml"),
+    ):
+        stub_workflow = _workflow_yaml(stub_name)
+        active_workflow = _workflow_yaml(active_name)
+        stub_dispatch = cast(
+            "dict[str, object]",
+            stub_workflow.get("on", stub_workflow.get(True, {})),
+        )["workflow_dispatch"]
+        active_dispatch = cast(
+            "dict[str, object]",
+            active_workflow.get("on", active_workflow.get(True, {})),
+        )["workflow_dispatch"]
+
+        assert (
+            cast("dict[str, object]", stub_dispatch)["inputs"]
+            == cast("dict[str, object]", active_dispatch)["inputs"]
+        )
+
+
+def test_release_stub_workflows_are_documented_as_non_active() -> None:
+    """Workflow identity docs should document compatibility dispatch stubs."""
+    design = (REPO_ROOT / ".github/workflows/docs/DESIGN.v2.md").read_text(
+        encoding="utf-8"
+    )
+    rollout = (
+        REPO_ROOT / "docs/wiki/analyses/workflow-release-operator-rollout.md"
+    ).read_text(encoding="utf-8")
+
+    for docs in (design, rollout):
+        assert "release-buddy.yml" in docs
+        assert "release-official.yml" in docs
+        assert "dispatch-registration stubs" in docs
+        assert "fail closed" in docs
+        assert "trusted" in docs and "publisher" in docs
+
+
+def test_release_docs_match_active_target_catalog_status() -> None:
+    """Docs must not describe active NuGet GitHub Packages publication."""
+    overview = (REPO_ROOT / "docs/wiki/overview.md").read_text(encoding="utf-8")
+    boundaries = (
+        REPO_ROOT
+        / "docs/wiki/analyses/workflow-release-workflow-executor-boundaries.md"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        "host-specific GitHub Packages instances inside the NuGet"
+        not in overview
+    )
+    assert (
+        "active host-specific GitHub Packages instances only inside the npm"
+        in overview
+    )
+    assert "NuGet GitHub Packages is deferred/future vocabulary" in overview
+    assert "40-hex commit SHA" in boundaries
+    assert "non-empty `target`" in boundaries
+    assert "resolved commit as the planner request `commit-sha`" in boundaries
+
+
+def test_gh_api_uses_typed_boolean_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Gh api helper should emit typed boolean fields for ref update calls."""
+    completed = subprocess.CompletedProcess(
+        args=["gh", "api"],
+        returncode=0,
+        stdout="{}",
+        stderr="",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_run(*args, **kwargs):
+        captured["command"] = args[0]
+        captured["kwargs"] = kwargs
+        return completed
+
+    monkeypatch.setattr(control.subprocess, "run", fake_run)
+
+    assert (
+        control._gh_api(
+            "hcoona/three",
+            "repos/hcoona/three/git/refs/tags/release%2Fdemo%2Fv1.2.3",
+            method="PATCH",
+            fields={"sha": "deadbeef", "force": True},
+        )
+        == {}
+    )
+
+    command = cast("list[str]", captured["command"])
+    assert command[0:5] == [
+        "gh",
+        "api",
+        "repos/hcoona/three/git/refs/tags/release%2Fdemo%2Fv1.2.3",
+        "--method",
+        "PATCH",
+    ]
+    assert "-f" in command
+    assert "-F" in command
+    assert "sha=deadbeef" in command
+    assert "force=true" in command
+
+
 def test_buddy_entry_is_not_restricted_by_public_release_ref(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2052,7 +4702,7 @@ def test_normalize_entry_uses_dispatch_pinned_sha(monkeypatch) -> None:
                 ref_name="main",
                 ref_type="branch",
                 pinned_sha=pinned_sha,
-                requested_project_ids="",
+                requested_project_ids="CircularList",
                 dry_run="true",
                 validation_build="false",
                 force="false",
@@ -2194,6 +4844,239 @@ def test_matrix_outputs_route_non_dotnet_variants_to_ubuntu() -> None:
     assert control._variant_runner(plan, "variant/v1") == "ubuntu-latest"
 
 
+def test_matrix_outputs_expose_node_github_release_asset_name() -> None:
+    """GitHub-Release-only Node packing uses the planned release asset name."""
+    plan = deepcopy(_load("release-plan.json"))
+    plan["envelope"]["projects"]["example"]["ecosystem"] = "node"
+    plan["graph"]["artifacts"]["artifact/package"]["concrete-kind"] = (
+        "npm-package"
+    )
+    plan["graph"]["artifacts"]["artifact/package"]["projection"] = {
+        "package-name": "@hcoona/projected-example"
+    }
+    plan["graph"]["publish-nodes"]["publish-node/gh"]["artifact-ids"] = [
+        "artifact/package"
+    ]
+    plan["graph"]["publish-nodes"]["publish-node/gh"]["projection"][
+        "asset-names-by-artifact-id"
+    ] = {"artifact/package": "example-1.2.3.tgz"}
+    plan["graph"]["publish-nodes"]["publish-node/gh"]["projection"][
+        "asset-labels-by-artifact-id"
+    ] = {"artifact/package": "Example package"}
+    output = SCRATCH / "matrix-output.txt"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    try:
+        SCRATCH.mkdir()
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(_load("execution-sets.json")),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._cmd_matrix_outputs(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    run_id=123,
+                    attempt=4,
+                    github_output=str(output),
+                )
+            )
+            == 0
+        )
+
+        values = _github_outputs(output)
+        assert values["expected_node_github_release_asset_name"] == (
+            "example-1.2.3.tgz"
+        )
+        assert values["expected_node_github_release_package_name"] == (
+            "@hcoona/projected-example"
+        )
+        assert values["expected_node_github_release_asset_sha256"] == ""
+        assert values["expected_node_gpr_package_name"] == ""
+        assert values["expected_node_npmjs_package_name"] == ""
+        assert values["active_github_release_asset_labels_json"] == (
+            '{"example-1.2.3.tgz":"Example package"}'
+        )
+        assert values["active_github_release_asset_names_json"] == (
+            '["example-1.2.3.tgz"]'
+        )
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_matrix_outputs_use_target_projected_node_github_release_package_name() -> (
+    None
+):
+    """GitHub Release Node package names use effective target projections."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    plan["envelope"]["projects"]["example"]["ecosystem"] = "node"
+    graph = plan["graph"]
+    graph["artifacts"]["artifact/package"]["concrete-kind"] = "npm-package"
+    graph["artifacts"]["artifact/package"].pop("projection", None)
+    graph["publish-nodes"]["publish-node/gh"]["artifact-ids"] = [
+        "artifact/package"
+    ]
+    graph["publish-nodes"]["publish-node/gh"]["projection"][
+        "asset-names-by-artifact-id"
+    ] = {"artifact/package": "projected-example-1.2.3.tgz"}
+    graph["target-instance-snapshots"]["target/npmjs"] = {
+        "family": "npm",
+        "instance-id": "npmjs",
+        "destination": {"host": "registry.npmjs.org"},
+    }
+    graph["publish-nodes"]["publish-node/npmjs"] = {
+        "artifact-ids": ["artifact/package"],
+        "project-id": "example",
+        "projection": {"package-name": "@hcoona/projected-example"},
+        "resolved-publish-identity": {
+            "package-name": "@hcoona/projected-example",
+            "version": "1.2.3",
+        },
+        "target-instance-snapshot-id": "target/npmjs",
+    }
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    output = SCRATCH / "matrix-output.txt"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    try:
+        SCRATCH.mkdir()
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._cmd_matrix_outputs(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    run_id=123,
+                    attempt=4,
+                    github_output=str(output),
+                )
+            )
+            == 0
+        )
+
+        values = _github_outputs(output)
+        assert values["expected_node_github_release_package_name"] == (
+            "@hcoona/projected-example"
+        )
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_matrix_outputs_expose_python_distribution_filenames() -> None:
+    """Python build inputs carry planned dist filenames, not planner SHA digests."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    graph = plan["graph"]
+    plan["envelope"]["projects"]["example"]["ecosystem"] = "python"
+    graph["artifacts"]["artifact/package"]["concrete-kind"] = "wheel"
+    graph["artifacts"]["artifact/symbols"]["concrete-kind"] = "sdist"
+    graph["publish-nodes"]["publish-node/gh"]["projection"][
+        "asset-names-by-artifact-id"
+    ] = {
+        "artifact/package": "example-1.2.3-py3-none-any.whl",
+        "artifact/symbols": "example-1.2.3.tar.gz",
+    }
+    graph["publish-nodes"]["publish-node/gh"]["projection"][
+        "asset-sha256-by-artifact-id"
+    ] = {
+        "artifact/package": "a" * 64,
+        "artifact/symbols": "b" * 64,
+    }
+    graph["publish-nodes"]["publish-node/gh"]["projection"][
+        "asset-sizes-by-artifact-id"
+    ] = {
+        "artifact/package": 123,
+        "artifact/symbols": 456,
+    }
+    graph["publish-nodes"]["publish-node/pypi"] = {
+        "artifact-ids": ["artifact/package", "artifact/symbols"],
+        "descriptor-target-index": 1,
+        "profile": "official",
+        "project-id": "example",
+        "projection": {
+            "final-distribution-filenames-by-artifact-id": {
+                "artifact/package": "example-1.2.3-py3-none-any.whl",
+                "artifact/symbols": "example-1.2.3.tar.gz",
+            },
+            "final-distribution-sha256-by-artifact-id": {
+                "artifact/package": "a" * 64,
+                "artifact/symbols": "b" * 64,
+            },
+        },
+        "publish-disposition": "publish",
+        "publish-node-id": "publish-node/pypi",
+        "resolved-publish-identity": {
+            "package-name": "example",
+            "version": "1.2.3",
+        },
+        "target-instance-snapshot-id": "pypi/pypi",
+    }
+    graph["target-instance-snapshots"]["pypi/pypi"] = {
+        "capabilities": {"publish-topology": "external-oidc-reusable-workflow"},
+        "catalog-ref": "pypi/pypi",
+        "contract": {
+            "aggregate-rules": {},
+            "allowed-artifact-tuples": [],
+            "contract-id": "pypi-publish",
+        },
+        "destination": {"host": "pypi.org"},
+        "family": "pypi",
+        "publish-topology": "external-oidc-reusable-workflow",
+    }
+    execution_sets["active-publish-node-ids"] = [
+        "publish-node/gh",
+        "publish-node/pypi",
+    ]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    execution_sets["active-publish-selectors"][
+        "external-oidc-reusable-workflow"
+    ] = ["publish-node/pypi"]
+    output = SCRATCH / "matrix-output.txt"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    try:
+        SCRATCH.mkdir()
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._cmd_matrix_outputs(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    run_id=123,
+                    attempt=4,
+                    github_output=str(output),
+                )
+            )
+            == 0
+        )
+
+        values = _github_outputs(output)
+        assert values["expected_python_distribution_filenames_json"] == (
+            '["example-1.2.3-py3-none-any.whl","example-1.2.3.tar.gz"]'
+        )
+        assert (
+            values["expected_python_distribution_sha256_by_filename_json"]
+            == "{}"
+        )
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
 def test_dotnet_executable_linux_variant_uses_ubuntu_runner() -> None:
     """NativeAOT Linux executable variants must build on Linux."""
     plan = _dotnet_executable_runner_plan({"rid": "linux-x64"})
@@ -2283,12 +5166,12 @@ def test_dry_run_acceptance_control_plane_has_no_side_effect_matrix() -> None:
         validate_contract(handoff)
         assert handoff["entry-publish-node-ids"] == []
 
-        for artifact_value in (
-            "plan_artifact_name",
-            "execution_sets_artifact_name",
-            "entry_publish_handoff_artifact_name",
-        ):
-            (artifacts_root / values[artifact_value]).mkdir(parents=True)
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        assert prepare_names == {name: values[name] for name in prepare_names}
         assert (
             control._cmd_report(
                 control.argparse.Namespace(
@@ -2304,6 +5187,7 @@ def test_dry_run_acceptance_control_plane_has_no_side_effect_matrix() -> None:
                     out=str(report_path),
                     plan=str(plan_path),
                     execution_sets=str(sets_path),
+                    **_report_prepare_artifact_args(prepare_names),
                     diagnostics="",
                     artifacts_root=str(artifacts_root),
                     authorize_conclusion="success",
@@ -2367,24 +5251,42 @@ def test_live_zero_target_acceptance_has_no_side_effect_gates() -> None:
         assert values["has_live_side_effects"] == "false"
         assert values["variant_matrix"] == "[]"
 
-        environment_block_start = workflow.index(
-            "  ensure-tag-with-environment:\n"
-        )
-        environment_block_end = workflow.index(
-            "\n  ensure-tag-without-environment:\n",
-            environment_block_start,
-        )
-        environment_block = workflow[
-            environment_block_start:environment_block_end
-        ]
-        assert "has-active-github-release == 'true'" in environment_block
+        workflow_yaml = _workflow_yaml("release-orchestrate.yml")
+        workflow_jobs = cast("dict[str, object]", workflow_yaml["jobs"])
+        if "ensure-tag-with-environment" in workflow_jobs:
+            environment_block_start = workflow.index(
+                "  ensure-tag-with-environment:\n"
+            )
+            environment_block_end = workflow.index(
+                "\n  ensure-tag-without-environment:\n",
+                environment_block_start,
+            )
+            environment_block = workflow[
+                environment_block_start:environment_block_end
+            ]
+            assert "has-active-github-release == 'true'" in environment_block
+        else:
+            release_jobs = {
+                job_id: cast("dict[str, object]", job)
+                for job_id, job in workflow_jobs.items()
+                if (
+                    isinstance(job, dict)
+                    and job.get("uses")
+                    == "./.github/workflows/release-create-github-release.yml"
+                )
+            }
+            assert release_jobs
+            for job_id, job in release_jobs.items():
+                condition = str(job.get("if", ""))
+                assert "needs.resolve.outputs.project_kind" in condition, job_id
+                assert "always()" not in condition, job_id
 
-        for artifact_value in (
-            "plan_artifact_name",
-            "execution_sets_artifact_name",
-            "entry_publish_handoff_artifact_name",
-        ):
-            (artifacts_root / values[artifact_value]).mkdir(parents=True)
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        assert prepare_names == {name: values[name] for name in prepare_names}
         assert (
             control._cmd_report(
                 control.argparse.Namespace(
@@ -2400,6 +5302,7 @@ def test_live_zero_target_acceptance_has_no_side_effect_gates() -> None:
                     out=str(report_path),
                     plan=str(plan_path),
                     execution_sets=str(sets_path),
+                    **_report_prepare_artifact_args(prepare_names),
                     diagnostics="",
                     artifacts_root=str(artifacts_root),
                     authorize_conclusion="success",
@@ -2503,12 +5406,12 @@ def test_live_all_skip_acceptance_emits_only_skip_receipts() -> None:
             validate_contract(skip_result)
             assert skip_result["outcome"] == "skip-satisfied"
 
-        for artifact_value in (
-            "plan_artifact_name",
-            "execution_sets_artifact_name",
-            "entry_publish_handoff_artifact_name",
-        ):
-            (artifacts_root / values[artifact_value]).mkdir(parents=True)
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        assert prepare_names == {name: values[name] for name in prepare_names}
         assert (
             control._cmd_report(
                 control.argparse.Namespace(
@@ -2524,6 +5427,7 @@ def test_live_all_skip_acceptance_emits_only_skip_receipts() -> None:
                     out=str(report_path),
                     plan=str(plan_path),
                     execution_sets=str(sets_path),
+                    **_report_prepare_artifact_args(prepare_names),
                     diagnostics="",
                     artifacts_root=str(artifacts_root),
                     authorize_conclusion="success",
@@ -2561,6 +5465,65 @@ def test_live_all_skip_acceptance_emits_only_skip_receipts() -> None:
         shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
+def test_skip_results_can_materialize_one_receipt_for_matrix_upload() -> None:
+    """The orchestrator can upload each skip-satisfied receipt separately."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    plan["graph"]["publish-nodes"]["publish-node/gh"]["publish-disposition"] = (
+        "skip-satisfied"
+    )
+    execution_sets["skip-satisfied-publish-node-ids"] = [
+        "publish-node/gh",
+        "publish-node/nuget",
+    ]
+    output_path = SCRATCH / "skip-output.txt"
+    manifest = SCRATCH / "skip-manifest.json"
+    artifacts_root = SCRATCH / "skip-results"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    try:
+        plan_path = SCRATCH / "release-plan.json"
+        sets_path = SCRATCH / "execution-sets.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+
+        assert (
+            control._cmd_skip_results(
+                control.argparse.Namespace(
+                    plan=str(plan_path),
+                    execution_sets=str(sets_path),
+                    run_id=123,
+                    attempt=4,
+                    publish_node_id="publish-node/nuget",
+                    out_dir=str(artifacts_root),
+                    manifest_out=str(manifest),
+                    github_output=str(output_path),
+                )
+            )
+            == 0
+        )
+
+        names = json.loads(manifest.read_text(encoding="utf-8"))[
+            "skip-result-artifact-names"
+        ]
+        outputs = dict(
+            line.split("=", maxsplit=1)
+            for line in output_path.read_text(encoding="utf-8").splitlines()
+            if "=" in line
+        )
+        assert len(names) == 1
+        assert outputs["skip_result_artifact_name"] == names[0]
+        receipt = json.loads(
+            (artifacts_root / names[0] / "skip-result.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert receipt["publish-node-id"] == "publish-node/nuget"
+        assert receipt["outcome"] == "skip-satisfied"
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
 def test_validation_build_acceptance_records_build_without_publish_proof() -> (
     None
 ):
@@ -2593,12 +5556,14 @@ def test_validation_build_acceptance_records_build_without_publish_proof() -> (
             line.split("=", 1)
             for line in matrix_output.read_text(encoding="utf-8").splitlines()
         )
-        for artifact_value in (
-            "plan_artifact_name",
-            "execution_sets_artifact_name",
-            "entry_publish_handoff_artifact_name",
-        ):
-            (artifacts_root / matrix_values[artifact_value]).mkdir(parents=True)
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        assert prepare_names == {
+            name: matrix_values[name] for name in prepare_names
+        }
 
         build_result_name = artifact_name(
             "build-result",
@@ -2628,6 +5593,7 @@ def test_validation_build_acceptance_records_build_without_publish_proof() -> (
                     out=str(report_path),
                     plan=str(plan_path),
                     execution_sets=str(sets_path),
+                    **_report_prepare_artifact_args(prepare_names),
                     diagnostics="",
                     artifacts_root=str(artifacts_root),
                     authorize_conclusion="success",
@@ -2702,8 +5668,8 @@ def test_validation_only_immutable_proof_rejection_emits_no_outputs() -> None:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_live_external_oidc_enablement_routes_entry_publish() -> None:
-    """Enabled official external OIDC targets reach the entry workflow path."""
+def test_live_external_oidc_enablement_routes_reusable_publish() -> None:
+    """Enabled official PyPI OIDC targets stay on the orchestrator path."""
     plan = deepcopy(_load("release-plan.json"))
     execution_sets = deepcopy(_load("execution-sets.json"))
     plan["envelope"]["profile"] = "official"
@@ -2714,7 +5680,7 @@ def test_live_external_oidc_enablement_routes_entry_publish() -> None:
     execution_sets["skip-satisfied-publish-node-ids"] = []
     execution_sets["active-publish-selectors"]["github-token"] = []
     execution_sets["active-publish-selectors"][
-        "external-oidc-entry-workflow"
+        "external-oidc-reusable-workflow"
     ] = ["publish-node/nuget"]
     snapshot = deepcopy(
         plan["graph"]["target-instance-snapshots"]["nuget/github-packages"]
@@ -2730,7 +5696,7 @@ def test_live_external_oidc_enablement_routes_entry_publish() -> None:
         "requires-distinct-name"
     )
     snapshot["capabilities"]["publish-topology"] = (
-        "external-oidc-entry-workflow"
+        "external-oidc-reusable-workflow"
     )
     snapshot["contract"] = deepcopy(
         plan["graph"]["target-instance-snapshots"]["github-release/public"][
@@ -2777,6 +5743,14 @@ def test_live_external_oidc_enablement_routes_entry_publish() -> None:
     node["publish-disposition"] = "publish"
     node["publish-mode"] = "create-only"
     node["target-instance-snapshot-id"] = "pypi/pypi"
+    node["projection"] = {
+        "final-distribution-filenames-by-artifact-id": {
+            "artifact/package": "example-1.2.3-py3-none-any.whl"
+        },
+        "final-distribution-sha256-by-artifact-id": {
+            "artifact/package": "a" * 64
+        },
+    }
     output = SCRATCH / "entry-matrix-output.txt"
     shutil.rmtree(SCRATCH, ignore_errors=True)
     SCRATCH.mkdir()
@@ -2802,10 +5776,14 @@ def test_live_external_oidc_enablement_routes_entry_publish() -> None:
             line.split("=", 1)
             for line in output.read_text(encoding="utf-8").splitlines()
         )
-        assert values["entry_publish_node_ids"] == '["publish-node/nuget"]'
-        assert values["has_entry_publish"] == "true"
-        assert values["reusable_publish_node_ids"] == "[]"
-        assert values["has_reusable_publish"] == "false"
+        assert values["entry_publish_node_ids"] == "[]"
+        assert values["has_entry_publish"] == "false"
+        assert values["reusable_publish_node_ids"] == '["publish-node/nuget"]'
+        assert values["reusable_external_oidc_publish_node_ids"] == (
+            '["publish-node/nuget"]'
+        )
+        assert values["has_reusable_publish"] == "true"
+        assert values["has_reusable_external_oidc_publish"] == "true"
     finally:
         shutil.rmtree(SCRATCH, ignore_errors=True)
 
@@ -3075,7 +6053,8 @@ def test_disabled_pypi_observation_skips_lookup_failure(monkeypatch) -> None:
                 control.argparse.Namespace(
                     plan=str(SCRATCH / "plan.json"),
                     execution_sets=str(SCRATCH / "execution-sets.json"),
-                    enabled_external_oidc_targets="",
+                    enabled_external_oidc_targets="pypi/pypi#example#Example",
+                    disabled_package_target_keys="python-pypi",
                     repository="hcoona/three",
                     out=str(out),
                     diagnostics_out=str(diagnostics),
@@ -3167,19 +6146,418 @@ def test_enabled_pypi_gate_requires_observation() -> None:
         shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
-def test_pypi_existing_exact_version_observation_is_skip_satisfied(
+def test_pypi_existing_version_filename_only_is_partial(
     monkeypatch,
 ) -> None:
-    """Existing PyPI package/version maps to exact-satisfied replay."""
+    """Filename-only PyPI package/version evidence is non-exact."""
     plan = _pypi_only_observation_plan()
     node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
     monkeypatch.setattr(
         control,
         "_pypi_project_json",
-        lambda _: {"releases": {"1.2.3": [{"filename": "example-1.2.3.whl"}]}},
+        lambda _: {
+            "releases": {
+                "1.2.3": [{"filename": "example-1.2.3-py3-none-any.whl"}]
+            }
+        },
+    )
+
+    assert control._observe_pypi_publication(node) == "partial"
+
+
+def test_pypi_existing_version_missing_planned_file_is_partial(
+    monkeypatch,
+) -> None:
+    """Existing PyPI version without the planned distribution is non-exact."""
+    plan = _pypi_only_observation_plan()
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    monkeypatch.setattr(
+        control,
+        "_pypi_project_json",
+        lambda _: {"releases": {"1.2.3": []}},
+    )
+
+    assert control._observe_pypi_publication(node) == "partial"
+
+
+def test_pypi_existing_version_mismatched_filename_is_conflicting(
+    monkeypatch,
+) -> None:
+    """Existing PyPI version with only an unplanned file is conflicting."""
+    plan = _pypi_only_observation_plan()
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    monkeypatch.setattr(
+        control,
+        "_pypi_project_json",
+        lambda _: {
+            "releases": {"1.2.3": [{"filename": "example-1.2.3.tar.gz"}]}
+        },
+    )
+
+    assert control._observe_pypi_publication(node) == "conflicting"
+
+
+def test_pypi_existing_version_matching_digest_is_exact(
+    monkeypatch,
+) -> None:
+    """Matching PyPI filename plus available digest evidence is exact."""
+    expected_sha256 = "a" * 64
+    plan = _pypi_only_observation_plan()
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["projection"]["final-distribution-sha256-by-artifact-id"] = {
+        "artifact/package": expected_sha256
+    }
+    monkeypatch.setattr(
+        control,
+        "_pypi_project_json",
+        lambda _: {
+            "releases": {
+                "1.2.3": [
+                    {
+                        "filename": "example-1.2.3-py3-none-any.whl",
+                        "digests": {"sha256": expected_sha256},
+                    }
+                ]
+            }
+        },
     )
 
     assert control._observe_pypi_publication(node) == "exact-satisfied"
+
+
+def test_pypi_duplicate_remote_filenames_are_conflicting(
+    monkeypatch,
+) -> None:
+    """Duplicate PyPI JSON filenames cannot exact-satisfy a planned file."""
+    expected_sha256 = "a" * 64
+    plan = _pypi_only_observation_plan()
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["projection"]["final-distribution-sha256-by-artifact-id"] = {
+        "artifact/package": expected_sha256
+    }
+    monkeypatch.setattr(
+        control,
+        "_pypi_project_json",
+        lambda _: {
+            "releases": {
+                "1.2.3": [
+                    {
+                        "filename": "example-1.2.3-py3-none-any.whl",
+                        "digests": {"sha256": "b" * 64},
+                    },
+                    {
+                        "filename": "example-1.2.3-py3-none-any.whl",
+                        "digests": {"sha256": expected_sha256},
+                    },
+                ]
+            }
+        },
+    )
+
+    assert control._observe_pypi_publication(node) == "conflicting"
+
+
+def test_pypi_duplicate_planned_filenames_are_conflicting(
+    monkeypatch,
+) -> None:
+    """Duplicate planned PyPI filenames cannot exact-satisfy one remote file."""
+    expected_sha256 = "a" * 64
+    plan = _pypi_only_observation_plan()
+    _add_duplicate_pypi_planned_filename(plan)
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    projection = node["projection"]
+    projection["final-distribution-sha256-by-artifact-id"] = {
+        "artifact/package": expected_sha256,
+        "artifact/sdist": expected_sha256,
+    }
+    monkeypatch.setattr(
+        control,
+        "_pypi_project_json",
+        lambda _: {
+            "releases": {
+                "1.2.3": [
+                    {
+                        "filename": "example-1.2.3-py3-none-any.whl",
+                        "digests": {"sha256": expected_sha256},
+                    }
+                ]
+            }
+        },
+    )
+
+    assert control._observe_pypi_publication(node) == "conflicting"
+
+
+def test_pypi_existing_version_matching_digest_with_extra_file_is_conflicting(
+    monkeypatch,
+) -> None:
+    """PyPI exact satisfaction rejects extra unplanned remote files."""
+    expected_sha256 = "a" * 64
+    plan = _pypi_only_observation_plan()
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["projection"]["final-distribution-sha256-by-artifact-id"] = {
+        "artifact/package": expected_sha256
+    }
+    monkeypatch.setattr(
+        control,
+        "_pypi_project_json",
+        lambda _: {
+            "releases": {
+                "1.2.3": [
+                    {
+                        "filename": "example-1.2.3-py3-none-any.whl",
+                        "digests": {"sha256": expected_sha256},
+                    },
+                    {
+                        "filename": "example-1.2.3.tar.gz",
+                        "digests": {"sha256": "b" * 64},
+                    },
+                ]
+            }
+        },
+    )
+
+    assert control._observe_pypi_publication(node) == "conflicting"
+
+
+def test_planner_pypi_projection_does_not_emit_digest_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Planner projects PyPI filenames without building or freezing digests."""
+    commit_sha = "a" * 40
+    snapshot = validate_authoring(REPO_ROOT)
+
+    def fake_run(
+        args: list[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        command = Path(str(args[0])).name
+        if len(args) > 2 and args[1] == "show" and ":" in str(args[2]):
+            relative = str(args[2]).split(":", maxsplit=1)[1]
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                (REPO_ROOT / relative).read_text(encoding="utf-8"),
+                "",
+            )
+        if "worktree" in args:
+            raise AssertionError(
+                f"planner must not materialize PyPI build worktrees: {args}"
+            )
+        if command in {"dotnet", "nbgv"} and "get-version" in args:
+            return subprocess.CompletedProcess(
+                args, 0, json.dumps({"SemVer2": "1.2.3"}), ""
+            )
+        if command == "uv" and "build" in args:
+            raise AssertionError(
+                f"planner must not build PyPI distributions: {args}"
+            )
+        message = f"unexpected planner subprocess: {args}"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_run,
+    )
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request={
+                "api-version": "three.release.planner-request/v1alpha1",
+                "kind": "planner-request",
+                "profile": "official",
+                "commit-sha": commit_sha,
+                "requested-project-ids": ["hcoona-release-smoke-pypi"],
+                "request-flags": {"force": False},
+            },
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+    validate_contract(result.plan)
+    pypi_node_id = next(
+        node_id
+        for node_id, node in cast(
+            "dict[str, dict[str, object]]",
+            result.plan["graph"]["publish-nodes"],
+        ).items()
+        if node["target-instance-snapshot-id"] == "pypi/pypi"
+    )
+    node = cast(
+        "dict[str, object]",
+        result.plan["graph"]["publish-nodes"][pypi_node_id],
+    )
+    projection = cast("dict[str, dict[str, str]]", node["projection"])
+    filenames = projection["final-distribution-filenames-by-artifact-id"]
+    assert "final-distribution-sha256-by-artifact-id" not in projection
+    files = [
+        {
+            "filename": filename,
+            "digests": {"sha256": "a" * 64},
+        }
+        for filename in filenames.values()
+    ]
+    monkeypatch.setattr(
+        control,
+        "_pypi_project_json",
+        lambda _: {"releases": {"1.2.3": files}},
+    )
+
+    assert control._observe_pypi_publication(node) == "partial"
+
+
+def test_pypi_plan_allows_missing_compatibility_sha256() -> None:
+    """Contract-valid current PyPI plans may omit planner SHA-256 evidence."""
+    plan = _pypi_only_observation_plan()
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    del node["projection"]["final-distribution-sha256-by-artifact-id"]
+
+    validate_contract(plan)
+
+
+def test_pypi_plan_rejects_duplicate_planned_filenames() -> None:
+    """Contract validation rejects duplicate PyPI final distribution filenames."""
+    plan = _pypi_only_observation_plan()
+    _add_duplicate_pypi_planned_filename(plan)
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(plan)
+
+    assert "distribution filenames must be unique" in str(error.value)
+
+
+def test_pypi_existing_version_missing_planned_digest_is_partial(
+    monkeypatch,
+) -> None:
+    """Observed PyPI digests cannot exact-satisfy without planned evidence."""
+    plan = _pypi_only_observation_plan()
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    del node["projection"]["final-distribution-sha256-by-artifact-id"]
+    monkeypatch.setattr(
+        control,
+        "_pypi_project_json",
+        lambda _: {
+            "releases": {
+                "1.2.3": [
+                    {
+                        "filename": "example-1.2.3-py3-none-any.whl",
+                        "digests": {"sha256": "a" * 64},
+                    }
+                ]
+            }
+        },
+    )
+
+    assert control._observe_pypi_publication(node) == "partial"
+
+
+def test_pypi_existing_version_digest_conflict_is_conflicting(
+    monkeypatch,
+) -> None:
+    """Conflicting digest evidence for the planned PyPI file is not exact."""
+    plan = _pypi_only_observation_plan()
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["projection"]["final-distribution-sha256-by-artifact-id"] = {
+        "artifact/package": "a" * 64
+    }
+    monkeypatch.setattr(
+        control,
+        "_pypi_project_json",
+        lambda _: {
+            "releases": {
+                "1.2.3": [
+                    {
+                        "filename": "example-1.2.3-py3-none-any.whl",
+                        "digests": {"sha256": "b" * 64},
+                    }
+                ]
+            }
+        },
+    )
+
+    assert control._observe_pypi_publication(node) == "conflicting"
+
+
+def test_pypi_existing_version_prefixed_remote_sha256_is_partial(
+    monkeypatch,
+) -> None:
+    """PyPI remote digests.sha256 must be lowercase 64-hex without prefixes."""
+    plan = _pypi_only_observation_plan()
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["projection"]["final-distribution-sha256-by-artifact-id"] = {
+        "artifact/package": "a" * 64
+    }
+    monkeypatch.setattr(
+        control,
+        "_pypi_project_json",
+        lambda _: {
+            "releases": {
+                "1.2.3": [
+                    {
+                        "filename": "example-1.2.3-py3-none-any.whl",
+                        "digests": {"sha256": f"sha256:{'a' * 64}"},
+                    }
+                ]
+            }
+        },
+    )
+
+    assert control._observe_pypi_publication(node) == "partial"
+
+
+def test_pypi_existing_version_missing_observed_digest_is_partial(
+    monkeypatch,
+) -> None:
+    """Matching PyPI filenames without observed sha256 evidence are non-exact."""
+    plan = _pypi_only_observation_plan()
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["projection"]["final-distribution-sha256-by-artifact-id"] = {
+        "artifact/package": "a" * 64
+    }
+    monkeypatch.setattr(
+        control,
+        "_pypi_project_json",
+        lambda _: {
+            "releases": {
+                "1.2.3": [{"filename": "example-1.2.3-py3-none-any.whl"}]
+            }
+        },
+    )
+
+    assert control._observe_pypi_publication(node) == "partial"
+
+
+@pytest.mark.parametrize(
+    "release_file",
+    [
+        {
+            "filename": "example-1.2.3-py3-none-any.whl",
+            "sha256": "a" * 64,
+        },
+        {
+            "filename": "example-1.2.3-py3-none-any.whl",
+            "digests": {"sha256": "A" * 64},
+            "sha256": "a" * 64,
+        },
+    ],
+)
+def test_pypi_ignores_top_level_digest_fallback(
+    monkeypatch,
+    release_file: dict[str, object],
+) -> None:
+    """PyPI exact satisfaction requires valid digests.sha256 evidence."""
+    plan = _pypi_only_observation_plan()
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["projection"]["final-distribution-sha256-by-artifact-id"] = {
+        "artifact/package": "a" * 64
+    }
+    monkeypatch.setattr(
+        control,
+        "_pypi_project_json",
+        lambda _: {"releases": {"1.2.3": [release_file]}},
+    )
+
+    assert control._observe_pypi_publication(node) == "partial"
 
 
 def test_pypi_missing_version_observation_is_absent(monkeypatch) -> None:
@@ -3208,13 +6586,28 @@ def test_pypi_missing_version_observation_is_absent(monkeypatch) -> None:
             "npm",
             "_npm_package_json",
             None,
-            {"versions": {"1.2.3": {"name": "Example"}}},
+            {
+                "versions": {
+                    "1.2.3": {
+                        "dist": {
+                            "tarball": (
+                                "https://registry.npmjs.org/Example/-/"
+                                "Example-1.2.3.tgz"
+                            ),
+                            "integrity": (
+                                "sha256-"
+                                "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo="
+                            ),
+                        }
+                    }
+                }
+            },
         ),
         (
             "rubygems",
             "_rubygems_versions_json",
             None,
-            [{"number": "1.2.3", "platform": "ruby"}],
+            [{"number": "1.2.3", "platform": "ruby", "sha": "a" * 64}],
         ),
     ],
 )
@@ -3235,6 +6628,372 @@ def test_public_registry_missing_and_existing_observations(
 
     monkeypatch.setattr(control, payload_attr, lambda _: existing_payload)
     assert observe(node) == "exact-satisfied"
+
+
+def test_npm_existing_version_sha512_integrity_is_exact(monkeypatch) -> None:
+    """Npm exact satisfaction compares planned SHA-512 to dist.integrity."""
+    expected_sha512 = "a" * 128
+    plan = _public_registry_observation_plan("npm")
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["projection"].pop("final-distribution-sha256-by-artifact-id", None)
+    node["projection"]["final-distribution-digests-by-artifact-id"] = {
+        "artifact/package": {"sha512": expected_sha512}
+    }
+    monkeypatch.setattr(
+        control,
+        "_npm_package_json",
+        lambda _: {
+            "versions": {
+                "1.2.3": {
+                    "dist": {
+                        "tarball": (
+                            "https://registry.npmjs.org/Example/-/"
+                            "Example-1.2.3.tgz"
+                        ),
+                        "integrity": _npm_sri("sha512", expected_sha512),
+                    }
+                }
+            }
+        },
+    )
+
+    assert control._observe_npm_publication(node) == "exact-satisfied"
+
+
+def test_npm_existing_version_sha512_integrity_mismatch_is_conflicting(
+    monkeypatch,
+) -> None:
+    """Npm comparable SHA-512 mismatches are target-side conflicts."""
+    plan = _public_registry_observation_plan("npm")
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["projection"].pop("final-distribution-sha256-by-artifact-id", None)
+    node["projection"]["final-distribution-digests-by-artifact-id"] = {
+        "artifact/package": {"sha512": "a" * 128}
+    }
+    monkeypatch.setattr(
+        control,
+        "_npm_package_json",
+        lambda _: {
+            "versions": {
+                "1.2.3": {
+                    "dist": {
+                        "tarball": (
+                            "https://registry.npmjs.org/Example/-/"
+                            "Example-1.2.3.tgz"
+                        ),
+                        "integrity": _npm_sri("sha512", "b" * 128),
+                    }
+                }
+            }
+        },
+    )
+
+    assert control._observe_npm_publication(node) == "conflicting"
+
+
+def test_npm_existing_version_conflicting_sha512_fields_are_conflicting(
+    monkeypatch,
+) -> None:
+    """Npm remote digest fields for one algorithm must agree before exact replay."""
+    expected_sha512 = "a" * 128
+    plan = _public_registry_observation_plan("npm")
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["projection"].pop("final-distribution-sha256-by-artifact-id", None)
+    node["projection"]["final-distribution-digests-by-artifact-id"] = {
+        "artifact/package": {"sha512": expected_sha512}
+    }
+    monkeypatch.setattr(
+        control,
+        "_npm_package_json",
+        lambda _: {
+            "versions": {
+                "1.2.3": {
+                    "dist": {
+                        "tarball": (
+                            "https://registry.npmjs.org/Example/-/"
+                            "Example-1.2.3.tgz"
+                        ),
+                        "sha512": "b" * 128,
+                        "sha512_digest": expected_sha512,
+                    }
+                }
+            }
+        },
+    )
+
+    assert control._observe_npm_publication(node) == "conflicting"
+
+
+@pytest.mark.parametrize(
+    ("integrity", "expected"),
+    [
+        (
+            f"{_npm_sri('sha512', 'a' * 128)} {_npm_sri('sha512', 'a' * 128)}",
+            "exact-satisfied",
+        ),
+        (
+            f"{_npm_sri('sha512', 'b' * 128)} {_npm_sri('sha512', 'a' * 128)}",
+            "conflicting",
+        ),
+    ],
+)
+def test_npm_existing_version_duplicate_sri_digest_evidence(
+    monkeypatch, integrity, expected
+) -> None:
+    """Duplicate SRI tokens are exact only when same-algorithm values agree."""
+    plan = _public_registry_observation_plan("npm")
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["projection"].pop("final-distribution-sha256-by-artifact-id", None)
+    node["projection"]["final-distribution-digests-by-artifact-id"] = {
+        "artifact/package": {"sha512": "a" * 128}
+    }
+    monkeypatch.setattr(
+        control,
+        "_npm_package_json",
+        lambda _: {
+            "versions": {
+                "1.2.3": {
+                    "dist": {
+                        "tarball": (
+                            "https://registry.npmjs.org/Example/-/"
+                            "Example-1.2.3.tgz"
+                        ),
+                        "integrity": integrity,
+                    }
+                }
+            }
+        },
+    )
+
+    assert control._observe_npm_publication(node) == expected
+
+
+def test_npm_existing_version_without_shared_digest_evidence_is_partial(
+    monkeypatch,
+) -> None:
+    """Npm exact satisfaction requires a shared planned and remote algorithm."""
+    plan = _public_registry_observation_plan("npm")
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["projection"].pop("final-distribution-sha256-by-artifact-id", None)
+    node["projection"]["final-distribution-digests-by-artifact-id"] = {
+        "artifact/package": {"sha512": "a" * 128}
+    }
+    monkeypatch.setattr(
+        control,
+        "_npm_package_json",
+        lambda _: {
+            "versions": {
+                "1.2.3": {
+                    "dist": {
+                        "tarball": (
+                            "https://registry.npmjs.org/Example/-/"
+                            "Example-1.2.3.tgz"
+                        ),
+                        "sha256": "a" * 64,
+                    }
+                }
+            }
+        },
+    )
+
+    assert control._observe_npm_publication(node) == "partial"
+
+
+@pytest.mark.parametrize(
+    ("family", "payload_attr", "payload"),
+    [
+        (
+            "npm",
+            "_npm_package_json",
+            {
+                "versions": {
+                    "1.2.3": {
+                        "dist": {
+                            "tarball": (
+                                "https://registry.npmjs.org/Example/-/"
+                                "Example-1.2.3.tgz"
+                            ),
+                            "sha256": "a" * 64,
+                        }
+                    }
+                }
+            },
+        ),
+        (
+            "rubygems",
+            "_rubygems_versions_json",
+            [{"number": "1.2.3", "platform": "ruby", "sha": "a" * 64}],
+        ),
+    ],
+)
+def test_public_registry_digest_evidence_without_planned_sha_is_partial(
+    monkeypatch,
+    family,
+    payload_attr,
+    payload,
+) -> None:
+    """Registry observations cannot exact-satisfy without planned digest evidence."""
+    plan = _public_registry_observation_plan(family)
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["projection"].pop("final-distribution-sha256-by-artifact-id", None)
+    node["projection"].pop("final-distribution-digests-by-artifact-id", None)
+    observe = getattr(control, f"_observe_{family}_publication")
+
+    monkeypatch.setattr(control, payload_attr, lambda _: payload)
+
+    assert observe(node) == "partial"
+
+
+@pytest.mark.parametrize(
+    ("family", "payload_attr", "payload"),
+    [
+        (
+            "npm",
+            "_npm_package_json",
+            {
+                "versions": {
+                    "1.2.3": {
+                        "dist": {
+                            "tarball": (
+                                "https://registry.npmjs.org/Example/-/"
+                                "Example-1.2.3.tgz"
+                            ),
+                            "sha256": "d" * 64,
+                        }
+                    }
+                }
+            },
+        ),
+        (
+            "rubygems",
+            "_rubygems_versions_json",
+            [{"number": "1.2.3", "platform": "ruby", "sha": "d" * 64}],
+        ),
+    ],
+)
+def test_public_registry_mismatched_digest_is_conflicting(
+    monkeypatch,
+    family,
+    payload_attr,
+    payload,
+) -> None:
+    """Npm and RubyGems exact filenames with different digest evidence conflict."""
+    plan = _public_registry_observation_plan(family)
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    observe = getattr(control, f"_observe_{family}_publication")
+
+    monkeypatch.setattr(control, payload_attr, lambda _: payload)
+
+    assert observe(node) == "conflicting"
+
+
+def test_npm_existing_version_mismatched_tarball_is_conflicting(
+    monkeypatch,
+) -> None:
+    """NPM exact satisfaction requires the planned final tarball member."""
+    plan = _public_registry_observation_plan("npm")
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    monkeypatch.setattr(
+        control,
+        "_npm_package_json",
+        lambda _: {
+            "versions": {
+                "1.2.3": {
+                    "dist": {
+                        "tarball": (
+                            "https://registry.npmjs.org/Example/-/"
+                            "Other-1.2.3.tgz"
+                        ),
+                        "shasum": "0" * 40,
+                    }
+                }
+            }
+        },
+    )
+
+    assert control._observe_npm_publication(node) == "conflicting"
+
+
+def test_npm_existing_version_missing_tarball_proof_is_partial(
+    monkeypatch,
+) -> None:
+    """NPM version presence without tarball proof is not exact satisfaction."""
+    plan = _public_registry_observation_plan("npm")
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    monkeypatch.setattr(
+        control,
+        "_npm_package_json",
+        lambda _: {"versions": {"1.2.3": {"dist": {"shasum": "0" * 40}}}},
+    )
+
+    assert control._observe_npm_publication(node) == "partial"
+
+
+def test_scoped_npm_registry_tarball_basename_matches_pack_filename(
+    monkeypatch,
+) -> None:
+    """Scoped npm registry URLs omit the scope from the tarball basename."""
+    expected_sha256 = "a" * 64
+    plan = _public_registry_observation_plan("npm")
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["resolved-publish-identity"]["package-name"] = "@scope/name"
+    node["projection"]["final-distribution-filenames-by-artifact-id"] = {
+        "artifact/package": "scope-name-1.2.3.tgz"
+    }
+    node["projection"]["final-distribution-sha256-by-artifact-id"] = {
+        "artifact/package": expected_sha256
+    }
+    monkeypatch.setattr(
+        control,
+        "_npm_package_json",
+        lambda _: {
+            "versions": {
+                "1.2.3": {
+                    "dist": {
+                        "tarball": (
+                            "https://registry.npmjs.org/@scope/name/-/"
+                            "name-1.2.3.tgz"
+                        ),
+                        "sha256": expected_sha256,
+                    }
+                }
+            }
+        },
+    )
+
+    assert control._observe_npm_publication(node) == "exact-satisfied"
+
+
+def test_rubygems_existing_version_mismatched_platform_is_conflicting(
+    monkeypatch,
+) -> None:
+    """RubyGems exact satisfaction requires the planned platform member."""
+    plan = _public_registry_observation_plan("rubygems")
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    monkeypatch.setattr(
+        control,
+        "_rubygems_versions_json",
+        lambda _: [
+            {"number": "1.2.3", "platform": "x86_64-linux", "sha": "a" * 64}
+        ],
+    )
+
+    assert control._observe_rubygems_publication(node) == "conflicting"
+
+
+def test_rubygems_existing_version_missing_sha_proof_is_partial(
+    monkeypatch,
+) -> None:
+    """RubyGems version/platform presence without sha proof is not exact."""
+    plan = _public_registry_observation_plan("rubygems")
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    monkeypatch.setattr(
+        control,
+        "_rubygems_versions_json",
+        lambda _: [{"number": "1.2.3", "platform": "ruby"}],
+    )
+
+    assert control._observe_rubygems_publication(node) == "partial"
 
 
 def test_github_packages_nuget_missing_version_and_existing_observations(
@@ -3370,7 +7129,7 @@ def test_github_packages_nuget_package_404_is_absent(
         ),
     ],
 )
-def test_github_packages_package_404_is_absent_for_supported_families(  # noqa: PLR0913
+def test_github_packages_package_404_is_absent_for_supported_families(
     monkeypatch,
     capsys,
     family,
@@ -3380,7 +7139,7 @@ def test_github_packages_package_404_is_absent_for_supported_families(  # noqa: 
     package_name,
     endpoint,
 ) -> None:
-    """GitHub Packages 404-as-absent is not limited to smoke packages."""
+    """GitHub Packages npm/RubyGems observations defer to publishers."""
     plan = _github_packages_nuget_observation_plan()
     plan["envelope"]["profile"] = "buddy"
     snapshot = plan["graph"]["target-instance-snapshots"].pop(
@@ -3440,11 +7199,185 @@ def test_github_packages_package_404_is_absent_for_supported_families(  # noqa: 
             "publish-node/nuget": "absent"
         }
         assert not diagnostics.exists()
-        assert (
-            "GitHub Packages 404 treated as absent" in capsys.readouterr().err
-        )
+        assert capsys.readouterr().err == ""
     finally:
         shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("family", "host", "catalog_ref", "package_name", "endpoint"),
+    [
+        (
+            "npm",
+            "npm.pkg.github.com",
+            "npm/github-packages",
+            "@hcoona/demo",
+            "orgs/hcoona/packages/npm/%40hcoona%2Fdemo",
+        ),
+        (
+            "rubygems",
+            "rubygems.pkg.github.com",
+            "rubygems/github-packages",
+            "demo",
+            "orgs/hcoona/packages/rubygems/demo",
+        ),
+    ],
+)
+def test_github_packages_npm_and_rubygems_version_presence_defers_to_publisher(
+    monkeypatch,
+    family,
+    host,
+    catalog_ref,
+    package_name,
+    endpoint,
+) -> None:
+    """GitHub Packages npm/RubyGems version presence is verified by publishers."""
+    plan = _github_packages_nuget_observation_plan()
+    snapshot = plan["graph"]["target-instance-snapshots"].pop(
+        "nuget/github-packages"
+    )
+    snapshot["catalog-ref"] = catalog_ref
+    snapshot["destination"]["host"] = host
+    snapshot["family"] = family
+    plan["graph"]["target-instance-snapshots"][catalog_ref] = snapshot
+    node = plan["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["target-instance-snapshot-id"] = catalog_ref
+    node["resolved-publish-identity"]["package-name"] = package_name
+
+    def fake_gh_api(*args, **_kwargs):
+        actual_endpoint = args[1]
+        if actual_endpoint == "repos/hcoona/three":
+            return {"owner": {"login": "hcoona", "type": "Organization"}}
+        if actual_endpoint == endpoint:
+            return {"name": package_name}
+        raise AssertionError(actual_endpoint)
+
+    def fake_paginated(*args, **_kwargs):
+        actual_endpoint = args[1]
+        if actual_endpoint == f"{endpoint}/versions?per_page=100":
+            return [{"name": "1.2.3"}]
+        raise AssertionError(actual_endpoint)
+
+    monkeypatch.setattr(control, "_gh_api", fake_gh_api)
+    monkeypatch.setattr(control, "_gh_api_paginated", fake_paginated)
+
+    assert (
+        control._observe_github_packages_publication(
+            "hcoona/three",
+            node,
+            plan["graph"]["target-instance-snapshots"][catalog_ref],
+        )
+        == "absent"
+    )
+
+
+def test_existing_gpr_version_keeps_publish_node_active_for_publisher_skip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GPR version presence alone must not block idempotent publisher verification."""
+    snapshot = validate_authoring(REPO_ROOT)
+    commit_sha = "b" * 40
+
+    def fake_plan_run(
+        args: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            '{"SemVer2": "1.2.3"}',
+            "",
+        )
+
+    def fake_gh_api(*args, **_kwargs):
+        actual_endpoint = args[1]
+        if actual_endpoint == "repos/hcoona/three":
+            return {"owner": {"login": "hcoona", "type": "Organization"}}
+        if (
+            actual_endpoint
+            == "orgs/hcoona/packages/npm/%40hcoona%2Fhcoona-release-smoke-npm"
+        ):
+            return {"name": "@hcoona/hcoona-release-smoke-npm"}
+        raise AssertionError(actual_endpoint)
+
+    def fake_paginated(*args, **_kwargs):
+        actual_endpoint = args[1]
+        if (
+            actual_endpoint
+            == "orgs/hcoona/packages/npm/%40hcoona%2Fhcoona-release-smoke-npm"
+            "/versions?per_page=100"
+        ):
+            return [{"name": "1.2.3"}]
+        raise AssertionError(actual_endpoint)
+
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_plan_run,
+    )
+    monkeypatch.setattr(control, "_gh_api", fake_gh_api)
+    monkeypatch.setattr(control, "_gh_api_paginated", fake_paginated)
+
+    request = {
+        "api-version": "three.release.planner-request/v1alpha1",
+        "kind": "planner-request",
+        "profile": "buddy",
+        "commit-sha": commit_sha,
+        "requested-project-ids": ["hcoona-release-smoke-npm"],
+        "request-flags": {"force": False},
+    }
+    bootstrap = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=request,
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+    graph = bootstrap.plan["graph"]
+    snapshots = graph["target-instance-snapshots"]
+    gpr_node_id = next(
+        node_id
+        for node_id, node in graph["publish-nodes"].items()
+        if snapshots[node["target-instance-snapshot-id"]]["catalog-ref"]
+        == "npm/github-packages"
+    )
+    github_release_node_id = next(
+        node_id
+        for node_id, node in graph["publish-nodes"].items()
+        if snapshots[node["target-instance-snapshot-id"]]["family"]
+        == "github-release"
+    )
+    gpr_node = graph["publish-nodes"][gpr_node_id]
+    gpr_snapshot = snapshots[gpr_node["target-instance-snapshot-id"]]
+    gpr_observation = control._observe_github_packages_publication(
+        "hcoona/three",
+        gpr_node,
+        gpr_snapshot,
+    )
+    remote_observations = {
+        github_release_node_id: "absent",
+        gpr_node_id: gpr_observation,
+    }
+
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=request,
+            repo_root=REPO_ROOT,
+            remote_observations=remote_observations,
+        ),
+    )
+
+    assert gpr_observation == "absent"
+    assert gpr_node_id in result.execution_sets["active-publish-node-ids"]
+    assert (
+        github_release_node_id
+        in result.execution_sets["active-publish-node-ids"]
+    )
+    assert (
+        gpr_node_id
+        in result.execution_sets["active-publish-selectors"]["github-token"]
+    )
 
 
 @pytest.mark.parametrize("status", [401, 403])
@@ -3769,7 +7702,6 @@ def test_public_registry_malformed_observation_fails_closed(
 @pytest.mark.parametrize(
     ("family", "enablement"),
     [
-        ("nuget", "nuget/nuget-org#example#Example"),
         ("npm", "npm/npmjs#example#Example"),
         ("rubygems", "rubygems/rubygems-org#example#Example"),
     ],
@@ -3999,7 +7931,12 @@ def test_github_release_observation_preserves_partial_and_conflicting_states(
     monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_B)
 
     assert (
-        control._observe_github_release_publication("hcoona/three", SHA_C, node)
+        control._observe_github_release_publication(
+            "hcoona/three",
+            SHA_C,
+            "publish-node/gh",
+            node,
+        )
         == "conflicting"
     )
 
@@ -4014,8 +7951,2211 @@ def test_github_release_observation_preserves_partial_and_conflicting_states(
     )
 
     assert (
-        control._observe_github_release_publication("hcoona/three", SHA_C, node)
+        control._observe_github_release_publication(
+            "hcoona/three",
+            SHA_C,
+            "publish-node/gh",
+            node,
+        )
         == "partial"
+    )
+
+
+def test_official_force_github_release_tag_mismatch_observes_for_retarget(
+    monkeypatch,
+) -> None:
+    """Official force lets tag mismatches reach final planning."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    plan["envelope"]["profile"] = "official"
+    plan["envelope"]["request-flags"] = {"force": True}
+    execution_sets["active-publish-node-ids"] = ["publish-node/gh"]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    node["profile"] = "official"
+    node["desired-publish-state"] = {"release-state": "release"}
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_B)
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": True,
+            "assets": [
+                {"name": "Example.1.2.3.nupkg"},
+                {"name": "Example.1.2.3.snupkg"},
+            ],
+        },
+    )
+    scratch = SCRATCH / "official-force-gh-retarget-observe"
+    out = scratch / "observations.json"
+    diagnostics = scratch / "diagnostics.json"
+    try:
+        shutil.rmtree(scratch, ignore_errors=True)
+        scratch.mkdir(parents=True)
+        (scratch / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (scratch / "execution-sets.json").write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(scratch / "plan.json"),
+                    execution_sets=str(scratch / "execution-sets.json"),
+                    enabled_external_oidc_targets="",
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 0
+        )
+
+        observations = json.loads(out.read_text(encoding="utf-8"))
+        assert observations["publish-node/gh"] == "partial-authoritative"
+        assert not diagnostics.exists()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_buddy_force_github_release_tag_mismatch_stays_conflicting(
+    monkeypatch,
+) -> None:
+    """Buddy force does not authorize release-tag retarget observation."""
+    plan = deepcopy(_load("release-plan.json"))
+    plan["envelope"]["request-flags"] = {"force": True}
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_B)
+
+    assert (
+        control._observe_github_release_publication(
+            "hcoona/three",
+            SHA_C,
+            "publish-node/gh",
+            node,
+            allow_official_tag_retarget=control._plan_allows_official_tag_retarget(
+                plan
+            ),
+        )
+        == "conflicting"
+    )
+
+
+def test_github_release_same_names_without_content_proof_is_partial(
+    monkeypatch,
+) -> None:
+    """Same-name GitHub Release assets are not exact without content evidence."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_C)
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": True,
+            "assets": [
+                {"name": "Example.1.2.3.nupkg"},
+                {"name": "Example.1.2.3.snupkg"},
+            ],
+        },
+    )
+
+    assert (
+        control._observe_github_release_publication(
+            "hcoona/three",
+            SHA_C,
+            "publish-node/gh",
+            node,
+        )
+        == "partial"
+    )
+
+
+def test_github_release_wrong_content_proof_is_partial(monkeypatch) -> None:
+    """Wrong GitHub Release asset digest proof does not become exact-satisfied."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    node["projection"]["asset-sizes-by-artifact-id"] = {
+        "artifact/package": 10,
+        "artifact/symbols": 20,
+    }
+    node["projection"]["asset-sha256-by-artifact-id"] = {
+        "artifact/package": "a" * 64,
+        "artifact/symbols": "b" * 64,
+    }
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_C)
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": True,
+            "github-release-asset-proofs": _github_release_asset_proofs(
+                package_sha="a" * 64,
+                symbols_sha="b" * 64,
+                package_size=10,
+                symbols_size=20,
+                source_digest=SHA_C,
+            ),
+            "assets": [
+                {
+                    "name": "Example.1.2.3.nupkg",
+                    "size": 10,
+                    "digest": f"sha256:{'c' * 64}",
+                },
+                {
+                    "name": "Example.1.2.3.snupkg",
+                    "size": 20,
+                    "digest": f"sha256:{'b' * 64}",
+                },
+            ],
+        },
+    )
+
+    assert (
+        control._observe_github_release_publication(
+            "hcoona/three",
+            SHA_C,
+            "publish-node/gh",
+            node,
+        )
+        == "partial"
+    )
+
+
+def test_github_release_digest_only_content_proof_is_partial(
+    monkeypatch,
+) -> None:
+    """Digest and size evidence alone cannot exact-satisfy without attestation."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    node["projection"]["asset-sizes-by-artifact-id"] = {
+        "artifact/package": 10,
+        "artifact/symbols": 20,
+    }
+    node["projection"]["asset-sha256-by-artifact-id"] = {
+        "artifact/package": "a" * 64,
+        "artifact/symbols": "b" * 64,
+    }
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_C)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **_: False,
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": True,
+            "github-release-asset-proofs": _github_release_asset_proofs(
+                package_sha="a" * 64,
+                symbols_sha="b" * 64,
+                package_size=10,
+                symbols_size=20,
+                source_digest=SHA_C,
+            ),
+            "assets": [
+                {
+                    "name": "Example.1.2.3.nupkg",
+                    "size": 10,
+                    "digest": f"sha256:{'a' * 64}",
+                },
+                {
+                    "name": "Example.1.2.3.snupkg",
+                    "size": 20,
+                    "digest": f"sha256:{'b' * 64}",
+                },
+            ],
+        },
+    )
+
+    assert (
+        control._observe_github_release_publication(
+            "hcoona/three",
+            SHA_C,
+            "publish-node/gh",
+            node,
+        )
+        == "partial"
+    )
+
+
+def test_github_release_attestation_without_wrapper_proofs_is_partial(
+    monkeypatch,
+) -> None:
+    """Verified attestations still need admissible wrapper proof evidence."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_C)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **_: True,
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": True,
+            "assets": [
+                {
+                    "name": "Example.1.2.3.nupkg",
+                    "size": 123,
+                    "digest": f"sha256:{SHA_B}",
+                },
+                {
+                    "name": "Example.1.2.3.snupkg",
+                    "size": 456,
+                    "digest": f"sha256:{SHA_C}",
+                },
+            ],
+        },
+    )
+
+    assert (
+        control._observe_github_release_publication(
+            "hcoona/three",
+            SHA_C,
+            "publish-node/gh",
+            node,
+        )
+        == "partial"
+    )
+
+
+def test_github_release_attestation_backed_content_proof_is_exact_satisfied(
+    monkeypatch,
+) -> None:
+    """Remote download plus wrapper and attestation evidence can exact-satisfy."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    node["projection"]["asset-sizes-by-artifact-id"] = {
+        "artifact/package": 10,
+        "artifact/symbols": 20,
+    }
+    node["projection"]["asset-sha256-by-artifact-id"] = {
+        "artifact/package": "a" * 64,
+        "artifact/symbols": "b" * 64,
+    }
+    verified: list[tuple[str, int, str, str, str]] = []
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_C)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **kwargs: verified.append(
+            (
+                kwargs["asset_name"],
+                kwargs["expected_size"],
+                kwargs["expected_sha256"],
+                kwargs["signer_workflow"],
+                kwargs["commit_sha"],
+            )
+        )
+        is None,
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": True,
+            "github-release-asset-proofs": _github_release_asset_proofs(
+                package_sha="a" * 64,
+                symbols_sha="b" * 64,
+                package_size=10,
+                symbols_size=20,
+                source_digest=SHA_C,
+            ),
+            "assets": [
+                {
+                    "name": "Example.1.2.3.nupkg",
+                    "size": 10,
+                    "digest": f"sha256:{'a' * 64}",
+                },
+                {
+                    "name": "Example.1.2.3.snupkg",
+                    "size": 20,
+                    "digest": f"sha256:{'b' * 64}",
+                },
+            ],
+        },
+    )
+
+    assert (
+        control._observe_github_release_publication(
+            "hcoona/three",
+            SHA_C,
+            "publish-node/gh",
+            node,
+            plan_id=str(plan["envelope"]["plan-id"]),
+            artifact_variant_ids_by_id=_planned_artifact_variant_ids(
+                plan, node
+            ),
+        )
+        == "exact-satisfied"
+    )
+    assert sorted(verified) == [
+        (
+            "Example.1.2.3.nupkg",
+            10,
+            "a" * 64,
+            SIGNER_WORKFLOW,
+            SHA_C,
+        ),
+        (
+            "Example.1.2.3.snupkg",
+            20,
+            "b" * 64,
+            SIGNER_WORKFLOW,
+            SHA_C,
+        ),
+    ]
+
+
+def test_github_release_remote_exact_accepts_union_release_for_disjoint_nodes(
+    monkeypatch,
+) -> None:
+    """Same-release nodes exact-satisfy against release-level asset union."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    graph = cast("dict[str, Any]", plan["graph"])
+    nodes = cast("dict[str, Any]", graph["publish-nodes"])
+    package_node = cast("dict[str, Any]", nodes["publish-node/gh"])
+    symbols_node = deepcopy(package_node)
+    symbols_node["publish-node-id"] = "publish-node/gh-symbols"
+    package_node["artifact-ids"] = ["artifact/package"]
+    package_node["projection"]["asset-names-by-artifact-id"] = {
+        "artifact/package": "Example.1.2.3.nupkg",
+    }
+    symbols_node["artifact-ids"] = ["artifact/symbols"]
+    symbols_node["projection"]["asset-names-by-artifact-id"] = {
+        "artifact/symbols": "Example.1.2.3.snupkg",
+    }
+    nodes["publish-node/gh-symbols"] = symbols_node
+    project = cast(
+        "dict[str, Any]",
+        cast("dict[str, Any]", plan["envelope"])["projects"]["example"],
+    )
+    project["publish-node-ids"] = [
+        "publish-node/gh",
+        "publish-node/gh-symbols",
+        "publish-node/nuget",
+    ]
+    execution_sets["active-publish-node-ids"] = [
+        "publish-node/gh",
+        "publish-node/gh-symbols",
+    ]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh",
+        "publish-node/gh-symbols",
+    ]
+    commit_sha = str(plan["envelope"]["commit-sha"])
+    proofs = _github_release_asset_proofs(
+        source_digest=commit_sha,
+        release_target_sha=commit_sha,
+    )
+    symbols_binding = cast("dict[str, object]", proofs[1]["binding"])
+    symbols_binding["publish-node-id"] = "publish-node/gh-symbols"
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: commit_sha)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **_: True,
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": True,
+            "github-release-asset-proofs": proofs,
+            "assets": [
+                {
+                    "name": "Example.1.2.3.nupkg",
+                    "size": 123,
+                    "digest": f"sha256:{SHA_B}",
+                },
+                {
+                    "name": "Example.1.2.3.snupkg",
+                    "size": 456,
+                    "digest": f"sha256:{SHA_C}",
+                },
+            ],
+        },
+    )
+    scratch = SCRATCH / "github-release-remote-union-disjoint-nodes"
+    out = scratch / "observations.json"
+    diagnostics = scratch / "diagnostics.json"
+    try:
+        shutil.rmtree(scratch, ignore_errors=True)
+        scratch.mkdir(parents=True)
+        (scratch / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (scratch / "execution-sets.json").write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(scratch / "plan.json"),
+                    execution_sets=str(scratch / "execution-sets.json"),
+                    enabled_external_oidc_targets="",
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 0
+        )
+
+        observations = json.loads(out.read_text(encoding="utf-8"))
+        assert observations["publish-node/gh"] == "exact-satisfied"
+        assert observations["publish-node/gh-symbols"] == "exact-satisfied"
+        assert not diagnostics.exists()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_github_release_dry_run_exact_groups_publish_intent_siblings(
+    monkeypatch,
+) -> None:
+    """Dry-run observations exact-satisfy same-release publish-intent groups."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    package_node_id, symbols_node_id = _split_fixture_github_release_nodes(plan)
+    execution_sets["dry-run"] = True
+    execution_sets["active-publish-node-ids"] = []
+    execution_sets["active-github-release-publish-node-ids"] = []
+    execution_sets["publish-intent-node-ids"] = [
+        package_node_id,
+        symbols_node_id,
+    ]
+    execution_sets["selected-github-release-publish-node-ids"] = [
+        package_node_id,
+        symbols_node_id,
+    ]
+    for selector in execution_sets["active-publish-selectors"].values():
+        selector.clear()
+    commit_sha = str(plan["envelope"]["commit-sha"])
+    proofs = _github_release_asset_proofs(
+        source_digest=commit_sha,
+        release_target_sha=commit_sha,
+    )
+    symbols_binding = cast("dict[str, object]", proofs[1]["binding"])
+    symbols_binding["publish-node-id"] = symbols_node_id
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: commit_sha)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **_: True,
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": True,
+            "github-release-asset-proofs": proofs,
+            "assets": [
+                {
+                    "name": "Example.1.2.3.nupkg",
+                    "size": 123,
+                    "digest": f"sha256:{SHA_B}",
+                },
+                {
+                    "name": "Example.1.2.3.snupkg",
+                    "size": 456,
+                    "digest": f"sha256:{SHA_C}",
+                },
+            ],
+        },
+    )
+    scratch = SCRATCH / "github-release-dry-run-remote-union"
+    out = scratch / "observations.json"
+    diagnostics = scratch / "diagnostics.json"
+    try:
+        shutil.rmtree(scratch, ignore_errors=True)
+        scratch.mkdir(parents=True)
+        (scratch / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (scratch / "execution-sets.json").write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(scratch / "plan.json"),
+                    execution_sets=str(scratch / "execution-sets.json"),
+                    enabled_external_oidc_targets="",
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 0
+        )
+
+        observations = json.loads(out.read_text(encoding="utf-8"))
+        assert observations[package_node_id] == "exact-satisfied"
+        assert observations[symbols_node_id] == "exact-satisfied"
+        assert not diagnostics.exists()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_observe_remote_publications_mixed_same_release_exact_and_partial(
+    monkeypatch,
+) -> None:
+    """Live observation can exact-satisfy one same-release sibling for repair."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    package_node_id, symbols_node_id = _split_fixture_github_release_nodes(plan)
+    execution_sets["active-publish-node-ids"] = [
+        package_node_id,
+        symbols_node_id,
+    ]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        package_node_id,
+        symbols_node_id,
+    ]
+    execution_sets["publish-intent-node-ids"] = [
+        package_node_id,
+        symbols_node_id,
+    ]
+    execution_sets["selected-github-release-publish-node-ids"] = [
+        package_node_id,
+        symbols_node_id,
+    ]
+    commit_sha = str(plan["envelope"]["commit-sha"])
+    proofs = _github_release_asset_proofs(
+        source_digest=commit_sha,
+        release_target_sha=commit_sha,
+    )
+    symbols_binding = cast("dict[str, object]", proofs[1]["binding"])
+    symbols_binding["publish-node-id"] = symbols_node_id
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: commit_sha)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **_: True,
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": True,
+            "github-release-asset-proofs": proofs,
+            "assets": [
+                {
+                    "name": "Example.1.2.3.nupkg",
+                    "size": 123,
+                    "digest": f"sha256:{SHA_B}",
+                },
+            ],
+        },
+    )
+    scratch = SCRATCH / "github-release-remote-mixed-siblings"
+    out = scratch / "observations.json"
+    diagnostics = scratch / "diagnostics.json"
+    try:
+        shutil.rmtree(scratch, ignore_errors=True)
+        scratch.mkdir(parents=True)
+        (scratch / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (scratch / "execution-sets.json").write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._cmd_observe_remote_publications(
+                control.argparse.Namespace(
+                    plan=str(scratch / "plan.json"),
+                    execution_sets=str(scratch / "execution-sets.json"),
+                    enabled_external_oidc_targets="",
+                    repository="hcoona/three",
+                    out=str(out),
+                    diagnostics_out=str(diagnostics),
+                )
+            )
+            == 0
+        )
+
+        observations = json.loads(out.read_text(encoding="utf-8"))
+        assert observations[package_node_id] == "exact-satisfied"
+        assert observations[symbols_node_id] == "partial"
+        assert not diagnostics.exists()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_github_release_mixed_same_release_requires_union() -> None:
+    """Partial same-release repair carries skipped sibling assets as a union."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    package_node_id, symbols_node_id = _split_fixture_github_release_nodes(plan)
+    nodes = cast(
+        "dict[str, Any]", cast("dict[str, Any]", plan["graph"])["publish-nodes"]
+    )
+    package_node = cast("dict[str, Any]", nodes[package_node_id])
+    symbols_node = cast("dict[str, Any]", nodes[symbols_node_id])
+    package_node["publish-disposition"] = "skip-satisfied"
+    package_node["publish-mode"] = "create-only"
+    symbols_node["publish-disposition"] = "publish"
+    symbols_node["publish-mode"] = "overwrite-mutable"
+    symbols_node["overwrite-mutable-authorization"] = {
+        "kind": "planner-validated-buddy-force",
+        "profile": "buddy",
+        "force": True,
+        "remote-observation": "partial",
+        "mutability": "mutable-prerelease",
+    }
+    execution_sets["active-publish-node-ids"] = [symbols_node_id]
+    execution_sets["active-github-release-publish-node-ids"] = [symbols_node_id]
+    execution_sets["publish-intent-node-ids"] = [symbols_node_id]
+    execution_sets["skip-satisfied-publish-node-ids"] = [
+        package_node_id,
+        "publish-node/nuget",
+    ]
+    execution_sets["selected-github-release-publish-node-ids"] = [
+        package_node_id,
+        symbols_node_id,
+    ]
+    execution_sets["active-publish-selectors"]["github-token"] = [
+        symbols_node_id
+    ]
+    output = SCRATCH / "mixed-gh-output.txt"
+    artifacts_root = SCRATCH / "mixed-gh-artifacts"
+    github_release_name = artifact_name(
+        "github-release-result",
+        ArtifactNameInputs(
+            123,
+            4,
+            binding_json=(
+                '{"tagName":"release/example/v1.2.3",'
+                '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+            ),
+        ),
+    )
+    artifacts = {
+        "publish-result-artifact-names": [],
+        "github-release-result-artifact-names": [github_release_name],
+        "skip-result-artifact-names": [],
+        "build-result-artifact-names": [],
+    }
+    try:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+        SCRATCH.mkdir()
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._cmd_matrix_outputs(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    run_id=123,
+                    attempt=4,
+                    github_output=str(output),
+                )
+            )
+            == 0
+        )
+
+        values = dict(
+            line.split("=", 1)
+            for line in output.read_text(encoding="utf-8").splitlines()
+        )
+        assert json.loads(values["active_github_release_node_ids"]) == [
+            package_node_id,
+            symbols_node_id,
+        ]
+        assert (
+            values["active_github_release_publish_mode"] == "overwrite-mutable"
+        )
+        assert json.loads(values["active_github_release_asset_names_json"]) == [
+            "Example.1.2.3.nupkg",
+            "Example.1.2.3.snupkg",
+        ]
+
+        (artifacts_root / github_release_name).mkdir(parents=True)
+        receipt = deepcopy(_load("github-release-result.json"))
+        receipt["assets"] = [
+            asset
+            for asset in receipt["assets"]
+            if asset["name"] == "Example.1.2.3.snupkg"
+        ]
+        (
+            artifacts_root / github_release_name / "github-release-result.json"
+        ).write_text(
+            json.dumps(receipt),
+            encoding="utf-8",
+        )
+        assert control._unsatisfied_github_release_publish_node_ids(
+            plan,
+            execution_sets,
+            artifacts_root,
+            artifacts,
+            run_id=123,
+            attempt=4,
+        ) == [package_node_id, symbols_node_id]
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_github_release_remote_exact_rejects_rebound_sidecar_plan(
+    monkeypatch,
+) -> None:
+    """Release-bound proof sidecars must bind to the current plan identity."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    proofs = _github_release_asset_proofs(source_digest=SHA_C)
+    for proof in proofs:
+        proof["plan-id"] = "plan/other"
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_C)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **_: True,
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": True,
+            "github-release-asset-proofs": proofs,
+            "assets": [
+                {
+                    "name": "Example.1.2.3.nupkg",
+                    "size": 123,
+                    "digest": f"sha256:{SHA_B}",
+                },
+                {
+                    "name": "Example.1.2.3.snupkg",
+                    "size": 456,
+                    "digest": f"sha256:{SHA_C}",
+                },
+            ],
+        },
+    )
+
+    assert (
+        control._observe_github_release_publication(
+            "hcoona/three",
+            SHA_C,
+            "publish-node/gh",
+            node,
+            plan_id=str(plan["envelope"]["plan-id"]),
+        )
+        == "partial"
+    )
+
+
+def test_github_release_remote_exact_ignores_proof_sidecar_assets(
+    monkeypatch,
+) -> None:
+    """Proof wrapper sidecars are evidence, not extra payload assets."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    commit_sha = "c" * 40
+    proofs = _github_release_asset_proofs(source_digest=commit_sha)
+    sidecar_name = _github_release_asset_proof_sidecar_name(proofs[0])
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: commit_sha)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **_: True,
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": True,
+            "github-release-asset-proofs": proofs,
+            "_github-release-asset-proof-sidecars": [
+                {
+                    "asset-name": sidecar_name,
+                    "valid": True,
+                    "proof": proofs[0],
+                },
+            ],
+            "assets": [
+                {
+                    "name": "Example.1.2.3.nupkg",
+                    "size": 123,
+                    "digest": f"sha256:{SHA_B}",
+                },
+                {
+                    "name": "Example.1.2.3.snupkg",
+                    "size": 456,
+                    "digest": f"sha256:{SHA_C}",
+                },
+                {
+                    "name": sidecar_name,
+                    "size": 1000,
+                    "digest": f"sha256:{'d' * 64}",
+                },
+            ],
+        },
+    )
+
+    assert (
+        control._observe_github_release_publication(
+            "hcoona/three",
+            commit_sha,
+            "publish-node/gh",
+            node,
+            plan_id=str(plan["envelope"]["plan-id"]),
+            artifact_variant_ids_by_id=_planned_artifact_variant_ids(
+                plan, node
+            ),
+        )
+        == "exact-satisfied"
+    )
+
+
+@pytest.mark.parametrize(
+    ("proof_section", "proof_key"),
+    [
+        ("run", "repository"),
+        ("attestation", "source-repository"),
+    ],
+)
+def test_github_release_remote_exact_rejects_repository_misbound_sidecar_asset(
+    monkeypatch,
+    proof_section: str,
+    proof_key: str,
+) -> None:
+    """Proof wrapper sidecars must bind to the current repository."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    commit_sha = "c" * 40
+    proofs = _github_release_asset_proofs(source_digest=commit_sha)
+    proof = proofs[0]
+    cast("dict[str, object]", proof[proof_section])[proof_key] = "other/repo"
+    sidecar_name = _github_release_asset_proof_sidecar_name(proof)
+    release = {
+        "prerelease": True,
+        "github-release-asset-proofs": proofs,
+        "_github-release-asset-proof-sidecars": [
+            {
+                "asset-name": sidecar_name,
+                "valid": True,
+                "proof": proof,
+            },
+        ],
+        "assets": [
+            {
+                "name": "Example.1.2.3.nupkg",
+                "size": 123,
+                "digest": f"sha256:{SHA_B}",
+            },
+            {
+                "name": "Example.1.2.3.snupkg",
+                "size": 456,
+                "digest": f"sha256:{SHA_C}",
+            },
+            {
+                "name": sidecar_name,
+                "size": 1000,
+                "digest": f"sha256:{'d' * 64}",
+            },
+        ],
+    }
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: commit_sha)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **_: True,
+    )
+    monkeypatch.setattr(control, "_github_release_by_tag", lambda *_: release)
+
+    assert (
+        sidecar_name
+        not in control._valid_github_release_asset_proof_sidecar_names(
+            release,
+            "publish-node/gh",
+            node,
+            "release/example/v1.2.3",
+            repository="hcoona/three",
+        )
+    )
+    assert (
+        control._observe_github_release_publication(
+            "hcoona/three",
+            commit_sha,
+            "publish-node/gh",
+            node,
+            plan_id=str(plan["envelope"]["plan-id"]),
+        )
+        == "partial"
+    )
+
+
+def test_github_release_remote_exact_rejects_wrong_signer_sidecar_asset(
+    monkeypatch,
+) -> None:
+    """Proof wrapper sidecars must bind to the active node signer workflow."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    commit_sha = "c" * 40
+    current_proofs = _github_release_asset_proofs(source_digest=commit_sha)
+    sidecar_proof = deepcopy(current_proofs[0])
+    sidecar_proof["plan-id"] = "plan/old"
+    sidecar_proof["run"]["run-id"] = 122
+    sidecar_proof["attestation"]["signer-workflow"] = (
+        "hcoona/three/.github/workflows/other.yml"
+    )
+    sidecar_name = _github_release_asset_proof_sidecar_name(sidecar_proof)
+    release = {
+        "prerelease": True,
+        "github-release-asset-proofs": current_proofs,
+        "_github-release-asset-proof-sidecars": [
+            {
+                "asset-name": sidecar_name,
+                "valid": True,
+                "proof": sidecar_proof,
+            },
+        ],
+        "assets": [
+            {
+                "name": "Example.1.2.3.nupkg",
+                "size": 123,
+                "digest": f"sha256:{SHA_B}",
+            },
+            {
+                "name": "Example.1.2.3.snupkg",
+                "size": 456,
+                "digest": f"sha256:{SHA_C}",
+            },
+            {
+                "name": sidecar_name,
+                "size": 1000,
+                "digest": f"sha256:{'d' * 64}",
+            },
+        ],
+    }
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: commit_sha)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **_: True,
+    )
+    monkeypatch.setattr(control, "_github_release_by_tag", lambda *_: release)
+
+    assert (
+        sidecar_name
+        not in control._valid_github_release_asset_proof_sidecar_names(
+            release,
+            "publish-node/gh",
+            node,
+            "release/example/v1.2.3",
+            repository="hcoona/three",
+            release_target_sha=commit_sha,
+        )
+    )
+    assert (
+        control._observe_github_release_publication(
+            "hcoona/three",
+            commit_sha,
+            "publish-node/gh",
+            node,
+            plan_id=str(plan["envelope"]["plan-id"]),
+        )
+        == "partial"
+    )
+
+
+def test_github_release_remote_exact_rejects_unvalidated_sidecar_asset(
+    monkeypatch,
+) -> None:
+    """Sidecar-shaped assets are extras until their downloaded proof validates."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_C)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **_: True,
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": True,
+            "github-release-asset-proofs": _github_release_asset_proofs(
+                source_digest=SHA_C,
+            ),
+            "assets": [
+                {
+                    "name": "Example.1.2.3.nupkg",
+                    "size": 123,
+                    "digest": f"sha256:{SHA_B}",
+                },
+                {
+                    "name": "Example.1.2.3.snupkg",
+                    "size": 456,
+                    "digest": f"sha256:{SHA_C}",
+                },
+                {
+                    "name": (
+                        "release-github-release-asset-proof-v1-"
+                        "fedcba9876543210fedcba98-123-4.json"
+                    ),
+                    "size": 1000,
+                    "digest": f"sha256:{'d' * 64}",
+                },
+            ],
+        },
+    )
+
+    assert (
+        control._observe_github_release_publication(
+            "hcoona/three",
+            SHA_C,
+            "publish-node/gh",
+            node,
+            plan_id=str(plan["envelope"]["plan-id"]),
+        )
+        == "partial"
+    )
+
+
+def test_github_release_by_tag_keeps_invalid_sidecar_asset_visible(
+    monkeypatch,
+) -> None:
+    """Downloaded sidecar-shaped assets must validate before exact can hide them."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    sidecar_name = (
+        "release-github-release-asset-proof-v1-"
+        "fedcba9876543210fedcba98-123-4.json"
+    )
+    monkeypatch.setattr(
+        control,
+        "_gh_api",
+        lambda *_: {"id": 1, "prerelease": True},
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_release_assets",
+        lambda *_: [
+            {
+                "name": "Example.1.2.3.nupkg",
+                "size": 123,
+                "digest": f"sha256:{SHA_B}",
+            },
+            {
+                "name": "Example.1.2.3.snupkg",
+                "size": 456,
+                "digest": f"sha256:{SHA_C}",
+            },
+            {
+                "name": sidecar_name,
+                "size": 1000,
+                "digest": f"sha256:{'d' * 64}",
+            },
+        ],
+    )
+
+    def fake_download(
+        *,
+        asset_name: str,
+        destination_dir: Path,
+        **_: object,
+    ) -> bool:
+        (destination_dir / asset_name).write_text("{", encoding="utf-8")
+        return True
+
+    monkeypatch.setattr(control, "_gh_release_download_asset", fake_download)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **_: True,
+    )
+
+    release = control._github_release_by_tag("hcoona/three", "v1.2.3")
+
+    assert release is not None
+    assert release["_github-release-asset-proof-sidecars"] == [
+        {"asset-name": sidecar_name, "valid": False},
+    ]
+    assert (
+        control._classify_github_release_payload(
+            release,
+            "publish-node/gh",
+            node,
+            "hcoona/three",
+            SHA_C,
+            "release/example/v1.2.3",
+            plan_id=str(plan["envelope"]["plan-id"]),
+        )
+        == "partial"
+    )
+
+
+def test_github_release_by_tag_keeps_misnamed_valid_sidecar_asset_visible(
+    monkeypatch,
+) -> None:
+    """A valid proof body also needs an asset-name binding."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    commit_sha = "c" * 40
+    proof = _github_release_asset_proofs(source_digest=commit_sha)[0]
+    sidecar_name = _mismatched_github_release_asset_proof_sidecar_name(proof)
+    monkeypatch.setattr(
+        control,
+        "_gh_api",
+        lambda *_: {"id": 1, "prerelease": True},
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_release_assets",
+        lambda *_: [
+            {
+                "name": "Example.1.2.3.nupkg",
+                "size": 123,
+                "digest": f"sha256:{SHA_B}",
+            },
+            {
+                "name": "Example.1.2.3.snupkg",
+                "size": 456,
+                "digest": f"sha256:{SHA_C}",
+            },
+            {
+                "name": sidecar_name,
+                "size": 1000,
+                "digest": f"sha256:{'d' * 64}",
+            },
+        ],
+    )
+
+    def fake_download(
+        *,
+        asset_name: str,
+        destination_dir: Path,
+        **_: object,
+    ) -> bool:
+        (destination_dir / asset_name).write_text(
+            json.dumps(proof),
+            encoding="utf-8",
+        )
+        return True
+
+    monkeypatch.setattr(control, "_gh_release_download_asset", fake_download)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **_: True,
+    )
+
+    release = control._github_release_by_tag("hcoona/three", "v1.2.3")
+
+    assert release is not None
+    assert release["_github-release-asset-proof-sidecars"] == [
+        {"asset-name": sidecar_name, "valid": False},
+    ]
+    assert (
+        control._classify_github_release_payload(
+            release,
+            "publish-node/gh",
+            node,
+            "hcoona/three",
+            commit_sha,
+            "release/example/v1.2.3",
+            plan_id=str(plan["envelope"]["plan-id"]),
+        )
+        == "partial"
+    )
+
+
+@pytest.mark.parametrize(
+    ("binding_field", "binding_value"),
+    [
+        ("publish-node-id", "publish-node/rebound"),
+        ("artifact-id", "artifact/symbols"),
+    ],
+)
+def test_github_release_by_tag_keeps_rebound_sidecar_asset_visible(
+    monkeypatch,
+    binding_field: str,
+    binding_value: str,
+) -> None:
+    """A schema-valid sidecar must still bind to the active node artifact map."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    commit_sha = "c" * 40
+    proof = _github_release_asset_proofs(source_digest=commit_sha)[0]
+    binding = cast("dict[str, object]", proof["binding"])
+    binding[binding_field] = binding_value
+    sidecar_name = _github_release_asset_proof_sidecar_name(proof)
+    monkeypatch.setattr(
+        control, "_gh_api", lambda *_: {"id": 1, "prerelease": True}
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_release_assets",
+        lambda *_: [
+            {
+                "name": "Example.1.2.3.nupkg",
+                "size": 123,
+                "digest": f"sha256:{SHA_B}",
+            },
+            {
+                "name": "Example.1.2.3.snupkg",
+                "size": 456,
+                "digest": f"sha256:{SHA_C}",
+            },
+            {
+                "name": sidecar_name,
+                "size": 1000,
+                "digest": f"sha256:{'d' * 64}",
+            },
+        ],
+    )
+
+    def fake_download(
+        *,
+        asset_name: str,
+        destination_dir: Path,
+        **_: object,
+    ) -> bool:
+        (destination_dir / asset_name).write_text(
+            json.dumps(proof),
+            encoding="utf-8",
+        )
+        return True
+
+    monkeypatch.setattr(control, "_gh_release_download_asset", fake_download)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **_: True,
+    )
+
+    release = control._github_release_by_tag("hcoona/three", "v1.2.3")
+
+    assert release is not None
+    assert release["_github-release-asset-proof-sidecars"] == [
+        {"asset-name": sidecar_name, "valid": True, "proof": proof},
+    ]
+    assert (
+        control._classify_github_release_payload(
+            release,
+            "publish-node/gh",
+            node,
+            "hcoona/three",
+            commit_sha,
+            "release/example/v1.2.3",
+            plan_id=str(plan["envelope"]["plan-id"]),
+        )
+        == "partial"
+    )
+
+
+@pytest.mark.parametrize(
+    ("binding_field", "binding_value"),
+    [
+        ("publish-node-id", "publish-node/rebound"),
+        ("artifact-id", "artifact/symbols"),
+    ],
+)
+def test_github_release_remote_exact_rejects_rebound_wrapper_proof_binding(
+    monkeypatch,
+    binding_field: str,
+    binding_value: str,
+) -> None:
+    """Exact matching requires wrapper proof binding to the active node asset."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    proofs = _github_release_asset_proofs(source_digest=SHA_C)
+    binding = cast("dict[str, object]", proofs[0]["binding"])
+    binding[binding_field] = binding_value
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_C)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **_: True,
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": True,
+            "github-release-asset-proofs": proofs,
+            "assets": [
+                {
+                    "name": "Example.1.2.3.nupkg",
+                    "size": 123,
+                    "digest": f"sha256:{SHA_B}",
+                },
+                {
+                    "name": "Example.1.2.3.snupkg",
+                    "size": 456,
+                    "digest": f"sha256:{SHA_C}",
+                },
+            ],
+        },
+    )
+
+    assert (
+        control._observe_github_release_publication(
+            "hcoona/three",
+            SHA_C,
+            "publish-node/gh",
+            node,
+            plan_id=str(plan["envelope"]["plan-id"]),
+        )
+        == "partial"
+    )
+
+
+@pytest.mark.parametrize(
+    ("run_id", "attempt"),
+    [
+        (124, 4),
+        (123, 5),
+        (124, 5),
+    ],
+)
+def test_github_release_by_tag_keeps_run_suffix_mismatched_sidecar_visible(
+    monkeypatch,
+    run_id: int,
+    attempt: int,
+) -> None:
+    """Sidecar filenames bind run id and attempt as well as binding digest."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    commit_sha = "c" * 40
+    proof = _github_release_asset_proofs(source_digest=commit_sha)[0]
+    sidecar_name = _github_release_asset_proof_sidecar_name_with_run_suffix(
+        proof,
+        run_id=run_id,
+        attempt=attempt,
+    )
+    monkeypatch.setattr(
+        control, "_gh_api", lambda *_: {"id": 1, "prerelease": True}
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_release_assets",
+        lambda *_: [
+            {
+                "name": "Example.1.2.3.nupkg",
+                "size": 123,
+                "digest": f"sha256:{SHA_B}",
+            },
+            {
+                "name": "Example.1.2.3.snupkg",
+                "size": 456,
+                "digest": f"sha256:{SHA_C}",
+            },
+            {
+                "name": sidecar_name,
+                "size": 1000,
+                "digest": f"sha256:{'d' * 64}",
+            },
+        ],
+    )
+
+    def fake_download(
+        *,
+        asset_name: str,
+        destination_dir: Path,
+        **_: object,
+    ) -> bool:
+        (destination_dir / asset_name).write_text(
+            json.dumps(proof),
+            encoding="utf-8",
+        )
+        return True
+
+    monkeypatch.setattr(control, "_gh_release_download_asset", fake_download)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **_: True,
+    )
+
+    release = control._github_release_by_tag("hcoona/three", "v1.2.3")
+
+    assert release is not None
+    assert release["_github-release-asset-proof-sidecars"] == [
+        {"asset-name": sidecar_name, "valid": False},
+    ]
+    assert (
+        control._classify_github_release_payload(
+            release,
+            "publish-node/gh",
+            node,
+            "hcoona/three",
+            commit_sha,
+            "release/example/v1.2.3",
+            plan_id=str(plan["envelope"]["plan-id"]),
+        )
+        == "partial"
+    )
+
+
+def test_validate_github_release_sidecar_accepts_stale_bound_proof_only_with_matching_name() -> (
+    None
+):
+    """Workflow predicate validates schema, filename, and current target binding."""
+    scratch = SCRATCH / "github-release-sidecar-validator"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        scratch.mkdir(parents=True)
+        plan_path = scratch / "release-plan.json"
+        proof_path = scratch / "proof.json"
+        node_ids_path = scratch / "active-node-ids.json"
+        plan_path.write_text(
+            json.dumps(_load("release-plan.json")), encoding="utf-8"
+        )
+        node_ids_path.write_text(
+            json.dumps(["publish-node/gh"]),
+            encoding="utf-8",
+        )
+        proof = _github_release_asset_proofs(source_digest="c" * 40)[0]
+        proof["plan-id"] = "plan/old"
+        proof["run"]["run-id"] = 122
+        proof["run"]["run-attempt"] = 1
+        proof_path.write_text(json.dumps(proof), encoding="utf-8")
+        valid_name = _github_release_asset_proof_sidecar_name(proof)
+        mismatched_name = _mismatched_github_release_asset_proof_sidecar_name(
+            proof
+        )
+        args = argparse.Namespace(
+            name=valid_name,
+            proof=str(proof_path),
+            plan=str(plan_path),
+            active_github_release_node_ids=str(node_ids_path),
+            repository="hcoona/three",
+            tag="release/example/v1.2.3",
+            release_target_sha="c" * 40,
+        )
+
+        assert (
+            control._cmd_validate_github_release_asset_proof_sidecar(args) == 0
+        )
+        args.release_target_sha = "d" * 40
+        assert (
+            control._cmd_validate_github_release_asset_proof_sidecar(args) == 1
+        )
+        args.release_target_sha = "c" * 40
+        proof["variant-id"] = "variant/other"
+        proof_path.write_text(json.dumps(proof), encoding="utf-8")
+        assert (
+            control._cmd_validate_github_release_asset_proof_sidecar(args) == 1
+        )
+        proof["variant-id"] = "variant/v1"
+        proof_path.write_text(json.dumps(proof), encoding="utf-8")
+        args.name = mismatched_name
+        assert (
+            control._cmd_validate_github_release_asset_proof_sidecar(args) == 1
+        )
+        args.name = valid_name
+        proof["attestation"]["signer-workflow"] = (
+            "hcoona/three/.github/workflows/other.yml"
+        )
+        proof_path.write_text(json.dumps(proof), encoding="utf-8")
+        assert (
+            control._cmd_validate_github_release_asset_proof_sidecar(args) == 1
+        )
+        proof["attestation"]["signer-workflow"] = SIGNER_WORKFLOW
+        del proof["attestation"]["attestation-url"]
+        proof_path.write_text(json.dumps(proof), encoding="utf-8")
+        assert (
+            control._cmd_validate_github_release_asset_proof_sidecar(args) == 1
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_validate_github_release_sidecar_current_coverage_rejects_stale_plan_run() -> (
+    None
+):
+    """Final coverage accepts only sidecars from the current plan and run."""
+    scratch = SCRATCH / "github-release-sidecar-current-coverage"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        scratch.mkdir(parents=True)
+        plan = _load("release-plan.json")
+        plan_path = scratch / "release-plan.json"
+        proof_path = scratch / "proof.json"
+        node_ids_path = scratch / "active-node-ids.json"
+        manifest_path = scratch / "planned-assets.tsv"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        node_ids_path.write_text(
+            json.dumps(["publish-node/gh"]),
+            encoding="utf-8",
+        )
+        manifest_path.write_text(
+            f"Example.1.2.3.nupkg\t123\t{SHA_B}\n",
+            encoding="utf-8",
+        )
+        proof = _github_release_asset_proofs(source_digest="c" * 40)[0]
+        proof["plan-id"] = "plan/old"
+        proof["run"]["run-id"] = 122
+        proof["run"]["run-attempt"] = 1
+        proof_path.write_text(json.dumps(proof), encoding="utf-8")
+        args = argparse.Namespace(
+            name=_github_release_asset_proof_sidecar_name(proof),
+            proof=str(proof_path),
+            plan=str(plan_path),
+            active_github_release_node_ids=str(node_ids_path),
+            repository="hcoona/three",
+            tag="release/example/v1.2.3",
+            release_target_sha="c" * 40,
+        )
+
+        assert (
+            control._cmd_validate_github_release_asset_proof_sidecar(args) == 0
+        )
+        args.expected_plan_id = str(plan["envelope"]["plan-id"])
+        args.expected_run_id = 123
+        args.expected_run_attempt = 4
+        args.asset_manifest = str(manifest_path)
+        assert (
+            control._cmd_validate_github_release_asset_proof_sidecar(args) == 1
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_validate_github_release_sidecar_rejects_sibling_node_binding() -> None:
+    """A sidecar for one active node must not satisfy its identical sibling."""
+    scratch = SCRATCH / "github-release-sidecar-sibling-node-binding"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        scratch.mkdir(parents=True)
+        plan = deepcopy(_load("release-plan.json"))
+        publish_nodes = cast(
+            "dict[str, object]",
+            plan["graph"]["publish-nodes"],
+        )
+        sibling_node_id = "publish-node/gh-sibling"
+        sibling_node = deepcopy(publish_nodes["publish-node/gh"])
+        cast("dict[str, object]", sibling_node)["publish-node-id"] = (
+            sibling_node_id
+        )
+        publish_nodes[sibling_node_id] = sibling_node
+        projects = cast(
+            "dict[str, dict[str, object]]",
+            plan["envelope"]["projects"],
+        )
+        cast("list[str]", projects["example"]["publish-node-ids"]).append(
+            sibling_node_id
+        )
+        plan_path = scratch / "release-plan.json"
+        proof_path = scratch / "proof.json"
+        node_ids_path = scratch / "active-node-ids.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        node_ids_path.write_text(
+            json.dumps([sibling_node_id]),
+            encoding="utf-8",
+        )
+        proof = _github_release_asset_proofs(source_digest="c" * 40)[0]
+        proof_path.write_text(json.dumps(proof), encoding="utf-8")
+
+        args = argparse.Namespace(
+            name=_github_release_asset_proof_sidecar_name(proof),
+            proof=str(proof_path),
+            plan=str(plan_path),
+            active_github_release_node_ids=str(node_ids_path),
+            repository="hcoona/three",
+            tag="release/example/v1.2.3",
+            release_target_sha="c" * 40,
+        )
+
+        assert (
+            control._cmd_validate_github_release_asset_proof_sidecar(args) == 1
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("artifact_key", "artifact_value"),
+    [
+        ("byte-size", 124),
+        ("sha256", "d" * 64),
+    ],
+)
+def test_validate_github_release_sidecar_current_coverage_rejects_payload_mismatch(
+    artifact_key: str,
+    artifact_value: object,
+) -> None:
+    """Final coverage requires the sidecar artifact metadata to match payloads."""
+    scratch = SCRATCH / f"github-release-sidecar-current-{artifact_key}"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        scratch.mkdir(parents=True)
+        plan = _load("release-plan.json")
+        plan_path = scratch / "release-plan.json"
+        proof_path = scratch / "proof.json"
+        node_ids_path = scratch / "active-node-ids.json"
+        manifest_path = scratch / "planned-assets.tsv"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        node_ids_path.write_text(
+            json.dumps(["publish-node/gh"]),
+            encoding="utf-8",
+        )
+        manifest_path.write_text(
+            f"Example.1.2.3.nupkg\t123\t{SHA_B}\n",
+            encoding="utf-8",
+        )
+        proof = _github_release_asset_proofs(source_digest="c" * 40)[0]
+        artifact = cast("dict[str, object]", proof["artifact"])
+        attestation = cast("dict[str, object]", proof["attestation"])
+        artifact[artifact_key] = artifact_value
+        if artifact_key == "sha256":
+            attestation["subject-digest"] = f"sha256:{artifact_value}"
+        proof_path.write_text(json.dumps(proof), encoding="utf-8")
+
+        assert (
+            control._cmd_validate_github_release_asset_proof_sidecar(
+                argparse.Namespace(
+                    name=_github_release_asset_proof_sidecar_name(proof),
+                    proof=str(proof_path),
+                    plan=str(plan_path),
+                    active_github_release_node_ids=str(node_ids_path),
+                    repository="hcoona/three",
+                    tag="release/example/v1.2.3",
+                    release_target_sha="c" * 40,
+                    expected_plan_id=str(plan["envelope"]["plan-id"]),
+                    expected_run_id=123,
+                    expected_run_attempt=4,
+                    asset_manifest=str(manifest_path),
+                )
+            )
+            == 1
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("binding_field", "binding_value"),
+    [
+        ("publish-node-id", "publish-node/rebound"),
+        ("artifact-id", "artifact/symbols"),
+    ],
+)
+def test_validate_github_release_sidecar_rejects_rebound_node_artifact_binding(
+    binding_field: str,
+    binding_value: str,
+) -> None:
+    """Workflow validation binds sidecars to the active node artifact projection."""
+    scratch = SCRATCH / f"github-release-sidecar-{binding_field}"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        scratch.mkdir(parents=True)
+        plan_path = scratch / "release-plan.json"
+        proof_path = scratch / "proof.json"
+        node_ids_path = scratch / "active-node-ids.json"
+        plan_path.write_text(
+            json.dumps(_load("release-plan.json")), encoding="utf-8"
+        )
+        node_ids_path.write_text(
+            json.dumps(["publish-node/gh"]),
+            encoding="utf-8",
+        )
+        proof = _github_release_asset_proofs(source_digest="c" * 40)[0]
+        binding = cast("dict[str, object]", proof["binding"])
+        binding[binding_field] = binding_value
+        proof_path.write_text(json.dumps(proof), encoding="utf-8")
+
+        assert (
+            control._cmd_validate_github_release_asset_proof_sidecar(
+                argparse.Namespace(
+                    name=_github_release_asset_proof_sidecar_name(proof),
+                    proof=str(proof_path),
+                    plan=str(plan_path),
+                    active_github_release_node_ids=str(node_ids_path),
+                    repository="hcoona/three",
+                    tag="release/example/v1.2.3",
+                    release_target_sha="c" * 40,
+                )
+            )
+            == 1
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("run_id", "attempt"),
+    [
+        (124, 4),
+        (123, 5),
+        (124, 5),
+    ],
+)
+def test_validate_github_release_sidecar_rejects_run_suffix_mismatch(
+    run_id: int,
+    attempt: int,
+) -> None:
+    """The sidecar filename suffix must match proof run id and attempt."""
+    scratch = SCRATCH / f"github-release-sidecar-run-{run_id}-{attempt}"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        scratch.mkdir(parents=True)
+        plan_path = scratch / "release-plan.json"
+        proof_path = scratch / "proof.json"
+        node_ids_path = scratch / "active-node-ids.json"
+        plan_path.write_text(
+            json.dumps(_load("release-plan.json")), encoding="utf-8"
+        )
+        node_ids_path.write_text(
+            json.dumps(["publish-node/gh"]),
+            encoding="utf-8",
+        )
+        proof = _github_release_asset_proofs(source_digest="c" * 40)[0]
+        proof_path.write_text(json.dumps(proof), encoding="utf-8")
+
+        assert (
+            control._cmd_validate_github_release_asset_proof_sidecar(
+                argparse.Namespace(
+                    name=_github_release_asset_proof_sidecar_name_with_run_suffix(
+                        proof,
+                        run_id=run_id,
+                        attempt=attempt,
+                    ),
+                    proof=str(proof_path),
+                    plan=str(plan_path),
+                    active_github_release_node_ids=str(node_ids_path),
+                    repository="hcoona/three",
+                    tag="release/example/v1.2.3",
+                    release_target_sha="c" * 40,
+                )
+            )
+            == 1
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_github_release_remote_exact_ignores_stale_sidecars_with_current_proofs(
+    monkeypatch,
+) -> None:
+    """Stale old-plan sidecars do not poison current exact proof matching."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    commit_sha = "c" * 40
+    current_proofs = _github_release_asset_proofs(source_digest=commit_sha)
+    stale_proof = deepcopy(current_proofs[0])
+    stale_proof["plan-id"] = "plan/old"
+    stale_proof["run"]["run-id"] = 122
+    stale_proof["run"]["run-attempt"] = 1
+    current_sidecar = _github_release_asset_proof_sidecar_name(
+        current_proofs[0],
+    )
+    stale_sidecar = _github_release_asset_proof_sidecar_name(stale_proof)
+    proofs = [stale_proof, *current_proofs]
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: commit_sha)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **_: True,
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": True,
+            "github-release-asset-proofs": proofs,
+            "_github-release-asset-proof-sidecars": [
+                {
+                    "asset-name": stale_sidecar,
+                    "valid": True,
+                    "proof": stale_proof,
+                },
+                {
+                    "asset-name": current_sidecar,
+                    "valid": True,
+                    "proof": current_proofs[0],
+                },
+            ],
+            "assets": [
+                {
+                    "name": "Example.1.2.3.nupkg",
+                    "size": 123,
+                    "digest": f"sha256:{SHA_B}",
+                },
+                {
+                    "name": "Example.1.2.3.snupkg",
+                    "size": 456,
+                    "digest": f"sha256:{SHA_C}",
+                },
+                {
+                    "name": stale_sidecar,
+                    "size": 1000,
+                    "digest": f"sha256:{'d' * 64}",
+                },
+                {
+                    "name": current_sidecar,
+                    "size": 1001,
+                    "digest": f"sha256:{'e' * 64}",
+                },
+            ],
+        },
+    )
+
+    assert (
+        control._observe_github_release_publication(
+            "hcoona/three",
+            commit_sha,
+            "publish-node/gh",
+            node,
+            plan_id=str(plan["envelope"]["plan-id"]),
+            artifact_variant_ids_by_id=_planned_artifact_variant_ids(
+                plan, node
+            ),
+        )
+        == "exact-satisfied"
+    )
+
+
+def test_github_release_asset_attestation_verification_uses_required_gh_filters(
+    monkeypatch,
+) -> None:
+    """The exact-proof verifier downloads bytes and verifies attestation filters."""
+    asset_name = "Example.1.2.3.nupkg"
+    payload = b"content"
+    sha256 = hashlib.sha256(payload).hexdigest()
+    commands: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        commands.append(list(args))
+        if args[:3] == ["gh", "release", "download"]:
+            destination_dir = Path(args[args.index("--dir") + 1])
+            (destination_dir / asset_name).write_bytes(payload)
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if args[:3] == ["gh", "attestation", "verify"]:
+            assert args[args.index("--repo") + 1] == "hcoona/three"
+            assert args[args.index("--signer-workflow") + 1] == SIGNER_WORKFLOW
+            assert args[args.index("--source-digest") + 1] == SHA_C
+            assert (
+                args[args.index("--predicate-type") + 1]
+                == "https://slsa.dev/provenance/v1"
+            )
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                json.dumps(
+                    [
+                        {
+                            "verificationResult": {
+                                "statement": {
+                                    "predicateType": (
+                                        "https://slsa.dev/provenance/v1"
+                                    ),
+                                    "subject": [
+                                        {
+                                            "name": asset_name,
+                                            "digest": {"sha256": sha256},
+                                        }
+                                    ],
+                                }
+                            }
+                        }
+                    ]
+                ),
+                "",
+            )
+        raise AssertionError(args)
+
+    monkeypatch.setattr(control.subprocess, "run", fake_run)
+
+    assert control._download_and_verify_github_release_asset_attestation(
+        repository="hcoona/three",
+        tag="release/example/v1.2.3",
+        asset_name=asset_name,
+        expected_size=len(payload),
+        expected_sha256=sha256,
+        signer_workflow=SIGNER_WORKFLOW,
+        commit_sha=SHA_C,
+    )
+    assert [command[:3] for command in commands] == [
+        ["gh", "release", "download"],
+        ["gh", "attestation", "verify"],
+    ]
+
+
+def test_github_release_asset_attestation_ignores_nested_spoofed_statements(
+    monkeypatch,
+) -> None:
+    """Only verified gh attestation statement locations may satisfy subjects."""
+    asset_name = "Example.1.2.3.nupkg"
+    payload = b"content"
+    sha256 = hashlib.sha256(payload).hexdigest()
+
+    def fake_run(args, **kwargs):
+        if args[:3] == ["gh", "release", "download"]:
+            destination_dir = Path(args[args.index("--dir") + 1])
+            (destination_dir / asset_name).write_bytes(payload)
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if args[:3] == ["gh", "attestation", "verify"]:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                json.dumps(
+                    [
+                        {
+                            "verificationResult": {
+                                "statement": {
+                                    "predicateType": (
+                                        "https://slsa.dev/provenance/v1"
+                                    ),
+                                    "subject": [
+                                        {
+                                            "name": "other-asset.tgz",
+                                            "digest": {"sha256": sha256},
+                                        }
+                                    ],
+                                }
+                            },
+                            "nested": {
+                                "statement": {
+                                    "predicateType": (
+                                        "https://slsa.dev/provenance/v1"
+                                    ),
+                                    "subject": [
+                                        {
+                                            "name": asset_name,
+                                            "digest": {"sha256": sha256},
+                                        }
+                                    ],
+                                }
+                            },
+                        }
+                    ]
+                ),
+                "",
+            )
+        raise AssertionError(args)
+
+    monkeypatch.setattr(control.subprocess, "run", fake_run)
+
+    assert not control._download_and_verify_github_release_asset_attestation(
+        repository="hcoona/three",
+        tag="release/example/v1.2.3",
+        asset_name=asset_name,
+        expected_size=len(payload),
+        expected_sha256=sha256,
+        signer_workflow=SIGNER_WORKFLOW,
+        commit_sha=SHA_C,
+    )
+
+
+def test_github_release_asset_attestation_ignores_top_level_spoofed_statement(
+    monkeypatch,
+) -> None:
+    """Top-level statements are not verified gh attestation results."""
+    asset_name = "Example.1.2.3.nupkg"
+    payload = b"content"
+    sha256 = hashlib.sha256(payload).hexdigest()
+
+    def fake_run(args, **kwargs):
+        if args[:3] == ["gh", "release", "download"]:
+            destination_dir = Path(args[args.index("--dir") + 1])
+            (destination_dir / asset_name).write_bytes(payload)
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if args[:3] == ["gh", "attestation", "verify"]:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                json.dumps(
+                    [
+                        {
+                            "statement": {
+                                "predicateType": (
+                                    "https://slsa.dev/provenance/v1"
+                                ),
+                                "subject": [
+                                    {
+                                        "name": asset_name,
+                                        "digest": {"sha256": sha256},
+                                    }
+                                ],
+                            },
+                            "verificationResult": {
+                                "statement": {
+                                    "predicateType": (
+                                        "https://slsa.dev/provenance/v1"
+                                    ),
+                                    "subject": [
+                                        {
+                                            "name": "other-asset.tgz",
+                                            "digest": {"sha256": sha256},
+                                        }
+                                    ],
+                                }
+                            },
+                        }
+                    ]
+                ),
+                "",
+            )
+        raise AssertionError(args)
+
+    monkeypatch.setattr(control.subprocess, "run", fake_run)
+
+    assert not control._download_and_verify_github_release_asset_attestation(
+        repository="hcoona/three",
+        tag="release/example/v1.2.3",
+        asset_name=asset_name,
+        expected_size=len(payload),
+        expected_sha256=sha256,
+        signer_workflow=SIGNER_WORKFLOW,
+        commit_sha=SHA_C,
+    )
+
+
+def test_github_release_unexpected_label_on_planned_unlabeled_asset_is_partial(
+    monkeypatch,
+) -> None:
+    """Remote labels on planned-unlabeled assets prevent exact-satisfied."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    node["projection"]["asset-sizes-by-artifact-id"] = {
+        "artifact/package": 10,
+        "artifact/symbols": 20,
+    }
+    node["projection"]["asset-sha256-by-artifact-id"] = {
+        "artifact/package": "a" * 64,
+        "artifact/symbols": "b" * 64,
+    }
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_C)
+    monkeypatch.setattr(
+        control,
+        "_download_and_verify_github_release_asset_attestation",
+        lambda **_: pytest.fail("label mismatch must stop before attestation"),
+    )
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": True,
+            "assets": [
+                {
+                    "name": "Example.1.2.3.nupkg",
+                    "label": "unexpected",
+                    "size": 10,
+                    "digest": f"sha256:{'a' * 64}",
+                },
+                {
+                    "name": "Example.1.2.3.snupkg",
+                    "size": 20,
+                    "digest": f"sha256:{'b' * 64}",
+                },
+            ],
+        },
+    )
+
+    assert (
+        control._observe_github_release_publication(
+            "hcoona/three",
+            SHA_C,
+            "publish-node/gh",
+            node,
+        )
+        == "partial"
+    )
+
+
+def test_github_release_draft_is_conflicting(monkeypatch) -> None:
+    """Draft GitHub Releases cannot satisfy or promote release intent."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_C)
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "draft": True,
+            "prerelease": True,
+            "assets": [
+                {"name": "Example.1.2.3.nupkg"},
+                {"name": "Example.1.2.3.snupkg"},
+            ],
+        },
+    )
+
+    assert (
+        control._observe_github_release_publication(
+            "hcoona/three",
+            SHA_C,
+            "publish-node/gh",
+            node,
+        )
+        == "conflicting"
+    )
+
+
+def test_official_github_release_prerelease_mismatch_is_authoritative_partial(
+    monkeypatch,
+) -> None:
+    """Same-tag prerelease-to-release state is classified for promotion replay."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    node["desired-publish-state"] = {"release-state": "release"}
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_C)
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": True,
+            "assets": [
+                {"name": "Example.1.2.3.nupkg"},
+                {"name": "Example.1.2.3.snupkg"},
+            ],
+        },
+    )
+
+    assert (
+        control._observe_github_release_publication(
+            "hcoona/three",
+            SHA_C,
+            "publish-node/gh",
+            node,
+        )
+        == "partial-authoritative"
+    )
+
+
+def test_official_github_release_non_exact_release_is_conflicting(
+    monkeypatch,
+) -> None:
+    """Already-release same-tag non-exact state cannot enter mutable replay."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    node["desired-publish-state"] = {"release-state": "release"}
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_C)
+    monkeypatch.setattr(
+        control,
+        "_github_release_by_tag",
+        lambda *_: {
+            "prerelease": False,
+            "assets": [
+                {"name": "Example.1.2.3.nupkg"},
+                {"name": "Example.1.2.3.snupkg"},
+            ],
+        },
+    )
+
+    assert (
+        control._observe_github_release_publication(
+            "hcoona/three",
+            SHA_C,
+            "publish-node/gh",
+            node,
+        )
+        == "conflicting"
     )
 
 
@@ -4313,6 +10453,288 @@ def test_ensure_tags_is_atomic_for_mixed_missing_and_conflicting_tags(
         shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
+def test_ensure_tags_force_updates_only_after_full_validation(
+    monkeypatch,
+) -> None:
+    """Force-updated tags wait for later validation failures before mutating refs."""
+    plan = deepcopy(_load("release-plan.json"))
+    plan["envelope"]["profile"] = "official"
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    force_node_id = "publish-node/gh-force"
+    skip_node_id = "publish-node/gh-skip"
+    plan["graph"]["publish-nodes"][force_node_id] = deepcopy(
+        plan["graph"]["publish-nodes"]["publish-node/gh"]
+    )
+    plan["graph"]["publish-nodes"][force_node_id]["publish-node-id"] = (
+        force_node_id
+    )
+    plan["graph"]["publish-nodes"][force_node_id][
+        "resolved-publish-identity"
+    ] = {"release-tag": "release/example/aaa-force"}
+    plan["graph"]["publish-nodes"][skip_node_id] = deepcopy(
+        plan["graph"]["publish-nodes"]["publish-node/gh"]
+    )
+    plan["graph"]["publish-nodes"][skip_node_id]["publish-node-id"] = (
+        skip_node_id
+    )
+    plan["graph"]["publish-nodes"][skip_node_id]["publish-disposition"] = (
+        "skip-satisfied"
+    )
+    plan["graph"]["publish-nodes"][skip_node_id][
+        "resolved-publish-identity"
+    ] = {"release-tag": "release/example/zzz-skip"}
+    execution_sets["selected-github-release-publish-node-ids"] = [
+        force_node_id,
+        skip_node_id,
+    ]
+    execution_sets["active-github-release-publish-node-ids"] = [force_node_id]
+    execution_sets["active-publish-node-ids"] = [force_node_id]
+    execution_sets["publish-intent-node-ids"] = [force_node_id, skip_node_id]
+    execution_sets["skip-satisfied-publish-node-ids"] = [skip_node_id]
+    gh_calls = []
+
+    def fake_remote_tag_commit(_repository: str, tag: str) -> str | None:
+        if tag.endswith("-force"):
+            return SHA_C
+        if tag.endswith("-skip"):
+            return None
+        raise AssertionError(tag)
+
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    monkeypatch.setattr(control, "_remote_tag_commit", fake_remote_tag_commit)
+    monkeypatch.setattr(
+        control,
+        "_gh_api",
+        lambda *args, **kwargs: gh_calls.append((args, kwargs)),
+    )
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(RuntimeError, match="missing"):
+            control._cmd_ensure_tags(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    repository="hcoona/three",
+                    force_update_tag="true",
+                    out=str(SCRATCH / "tag-result.json"),
+                )
+            )
+        assert gh_calls == []
+        for output_name in (
+            "tag-result.json",
+            "publish-request.json",
+            "publish-result.json",
+            "skip-result.json",
+            "immutable-proof.json",
+            "github-release-asset-proof.json",
+        ):
+            assert not (SCRATCH / output_name).exists()
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_ensure_tags_force_updates_existing_active_tag(monkeypatch) -> None:
+    """Explicit official force-update permission retargets active release tags."""
+    plan = deepcopy(_load("release-plan.json"))
+    plan["envelope"]["profile"] = "official"
+    commit_sha = str(plan["envelope"]["commit-sha"])
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    execution_sets["selected-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    gh_calls = []
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_C)
+    monkeypatch.setattr(
+        control,
+        "_gh_api",
+        lambda *args, **kwargs: gh_calls.append((args, kwargs)),
+    )
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._cmd_ensure_tags(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    repository="hcoona/three",
+                    force_update_tag="true",
+                    out=str(SCRATCH / "tag-result.json"),
+                )
+            )
+            == 0
+        )
+
+        assert gh_calls
+        assert gh_calls[0][1]["method"] == "PATCH"
+        assert gh_calls[0][1]["fields"] == {"sha": commit_sha, "force": True}
+
+        result = json.loads(
+            (SCRATCH / "tag-result.json").read_text(encoding="utf-8")
+        )
+        validate_contract(result)
+        assert len(result["tags"]) == 1
+        assert result["tags"][0]["outcome"] == "created"
+        assert result["tags"][0]["expected-commit-sha"] == commit_sha
+        assert result["tags"][0]["peeled-commit-sha"] == commit_sha
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_ensure_tags_buddy_force_does_not_retarget_existing_active_tag(
+    monkeypatch,
+) -> None:
+    """Buddy force keeps release tags immutable and fails closed on mismatch."""
+    plan = deepcopy(_load("release-plan.json"))
+    commit_sha = str(plan["envelope"]["commit-sha"])
+    assert plan["envelope"]["profile"] == "buddy"
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    execution_sets["selected-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    gh_calls = []
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    monkeypatch.setattr(control, "_remote_tag_commit", lambda *_: SHA_C)
+    monkeypatch.setattr(
+        control,
+        "_gh_api",
+        lambda *args, **kwargs: gh_calls.append((args, kwargs)),
+    )
+    try:
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(RuntimeError, match=f"expected {commit_sha}"):
+            control._cmd_ensure_tags(
+                control.argparse.Namespace(
+                    plan=str(SCRATCH / "plan.json"),
+                    execution_sets=str(SCRATCH / "execution-sets.json"),
+                    repository="hcoona/three",
+                    force_update_tag="true",
+                    out=str(SCRATCH / "tag-result.json"),
+                )
+            )
+
+        assert gh_calls == []
+        assert not (SCRATCH / "tag-result.json").exists()
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_official_frozen_versions_include_selected_project_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Official-frozen evidence comes from stable GitHub Releases by project."""
+
+    def fake_gh_api_paginated(repository: str, endpoint: str) -> list[object]:
+        assert repository == "hcoona/three"
+        assert endpoint == "repos/hcoona/three/releases?per_page=100"
+        return [
+            {
+                "tag_name": "release/nbgv-python/v1.0.0",
+                "draft": False,
+                "prerelease": False,
+            },
+            {
+                "tag_name": "release/nbgv-python/v2.0.0",
+                "draft": False,
+                "prerelease": False,
+            },
+            {
+                "tag_name": "release/nbgv-python/v3.0.0-dev.1",
+                "draft": False,
+                "prerelease": True,
+            },
+            {
+                "tag_name": "release/nbgv-python/v4.0.0",
+                "draft": True,
+                "prerelease": False,
+            },
+            {
+                "tag_name": "release/other/v9.9.9",
+                "draft": False,
+                "prerelease": False,
+            },
+        ]
+
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    monkeypatch.setattr(control, "_gh_api_paginated", fake_gh_api_paginated)
+    try:
+        assert (
+            control._cmd_official_frozen_versions(
+                control.argparse.Namespace(
+                    repository="hcoona/three",
+                    project="nbgv-python",
+                    out=str(SCRATCH / "official-frozen-versions.json"),
+                    diagnostics_out=str(SCRATCH / "planner-diagnostics.json"),
+                )
+            )
+            == 0
+        )
+
+        document = json.loads(
+            (SCRATCH / "official-frozen-versions.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert document == {"nbgv-python": ["1.0.0", "2.0.0"]}
+        assert not (SCRATCH / "planner-diagnostics.json").exists()
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_official_frozen_versions_preserve_empty_selected_project_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empty official release state is still explicit evidence for the project."""
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir()
+    monkeypatch.setattr(control, "_gh_api_paginated", lambda *_: [])
+    try:
+        assert (
+            control._cmd_official_frozen_versions(
+                control.argparse.Namespace(
+                    repository="hcoona/three",
+                    project="nbgv-python",
+                    out=str(SCRATCH / "official-frozen-versions.json"),
+                    diagnostics_out=str(SCRATCH / "planner-diagnostics.json"),
+                )
+            )
+            == 0
+        )
+        document = json.loads(
+            (SCRATCH / "official-frozen-versions.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert document == {"nbgv-python": []}
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
 def test_entry_publish_handoff_is_closed_for_empty_selectors() -> None:
     """Entry publish handoff is present even when no entry selectors exist."""
     plan = _load("release-plan.json")
@@ -4369,7 +10791,7 @@ def test_entry_proof_upload_matrix_precomputes_final_artifact_uploads() -> None:
     plan = _load("release-plan.json")
 
     matrix = control._entry_proof_upload_matrix(
-        plan, ["publish-node/gh"], 123, 4
+        plan, ["publish-node/nuget"], 123, 4
     )
 
     publish_result_name = artifact_name(
@@ -4378,21 +10800,47 @@ def test_entry_proof_upload_matrix_precomputes_final_artifact_uploads() -> None:
             123,
             4,
             plan_id="plan/abc123",
-            publish_node_id="publish-node/gh",
+            publish_node_id="publish-node/nuget",
         ),
     )
-    assert len(matrix) == 2
+    assert len(matrix) == 1
     assert {entry["staging-artifact-name"] for entry in matrix} == {
         f"proof-staging-{publish_result_name}"
     }
     assert all(
-        entry["name"].startswith("release-github-release-asset-proof-v1-")
+        entry["name"].startswith("release-immutable-proof-v1-")
         for entry in matrix
     )
     assert all(entry["file"] == f"{entry['name']}.json" for entry in matrix)
 
+    github_release_result_name = artifact_name(
+        "github-release-result",
+        ArtifactNameInputs(
+            123,
+            4,
+            binding_json=(
+                '{"tagName":"release/example/v1.2.3",'
+                '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+            ),
+        ),
+    )
+    github_matrix = control._entry_proof_upload_matrix(
+        plan, ["publish-node/gh"], 123, 4
+    )
+    assert len(github_matrix) == 2
+    assert {entry["staging-artifact-name"] for entry in github_matrix} == {
+        f"proof-staging-{github_release_result_name}"
+    }
+    assert all(
+        entry["name"].startswith("release-github-release-asset-proof-v1-")
+        for entry in github_matrix
+    )
+    assert all(
+        entry["file"] == f"{entry['name']}.json" for entry in github_matrix
+    )
 
-def test_dual_artifact_npm_projection_flows_from_plan_to_pack(  # noqa: PLR0915
+
+def test_dual_artifact_npm_projection_flows_from_plan_to_pack(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Artifact-level npm projection drives distinct tarball identities."""
@@ -4656,6 +11104,7 @@ def test_publish_request_materializes_build_receipts() -> None:
 
         assert request["kind"] == "publish-request"
         assert request["publish-node-id"] == "publish-node/gh"
+        assert request["publish-node"]["publish-disposition"] == "publish"
         assert "github-release-asset-attestations" not in request
         validate_contract(request)
         package = request["artifacts"]["artifact/package"]
@@ -4676,6 +11125,38 @@ def test_publish_request_materializes_build_receipts() -> None:
         shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
+def test_publish_request_command_rejects_skip_satisfied_node() -> None:
+    """Publish-request materialization is only for active publish nodes."""
+    plan = _load("release-plan.json")
+    scratch = SCRATCH / "publish-request-skip-satisfied"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        scratch.mkdir(parents=True)
+        plan_path = scratch / "release-plan.json"
+        out_path = scratch / "publish-request.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="publish-disposition 'publish'"):
+            control._cmd_publish_request(
+                control.argparse.Namespace(
+                    plan=str(plan_path),
+                    publish_node_id="publish-node/nuget",
+                    run_id=123,
+                    attempt=4,
+                    build_results_dir=str(scratch / "build-results"),
+                    bundles_dir=str(scratch / "bundles"),
+                    github_release_asset_receipts="",
+                    github_release_assets_dir="",
+                    attestation_source_sha="",
+                    handoff="",
+                    out=str(out_path),
+                ),
+            )
+        assert not out_path.exists()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def test_report_derives_failed_build_and_publish_ids_from_receipts() -> None:
     """Failed stages report expected active IDs missing valid receipts."""
     plan = _load("release-plan.json")
@@ -4683,7 +11164,11 @@ def test_report_derives_failed_build_and_publish_ids_from_receipts() -> None:
     execution_sets["active-variant-ids"] = ["variant/missing", "variant/v1"]
     execution_sets["active-publish-node-ids"] = [
         "publish-node/gh",
+        "publish-node/nuget",
         "publish-node/missing",
+    ]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh"
     ]
     artifacts_root = SCRATCH / "artifacts"
     report_path = SCRATCH / "report.json"
@@ -4713,21 +11198,26 @@ def test_report_derives_failed_build_and_publish_ids_from_receipts() -> None:
                 publish_node_id="publish-node/gh",
             ),
         )
+        github_release_result_name = artifact_name(
+            "github-release-result",
+            ArtifactNameInputs(
+                123,
+                4,
+                binding_json=(
+                    '{"tagName":"release/example/v1.2.3",'
+                    '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+                ),
+            ),
+        )
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
         required_names = [
-            artifact_name(
-                "plan",
-                ArtifactNameInputs(123, 4, plan_id="plan/abc123"),
-            ),
-            artifact_name(
-                "execution-sets",
-                ArtifactNameInputs(123, 4, plan_id="plan/abc123"),
-            ),
-            artifact_name(
-                "entry-publish-handoff",
-                ArtifactNameInputs(123, 4, plan_id="plan/abc123"),
-            ),
             build_name,
             publish_name,
+            github_release_result_name,
         ]
         for required_name in required_names:
             (artifacts_root / required_name).mkdir(parents=True)
@@ -4735,9 +11225,23 @@ def test_report_derives_failed_build_and_publish_ids_from_receipts() -> None:
             json.dumps(_load("build-result.json")),
             encoding="utf-8",
         )
+        publish_result = _load("publish-result.json")
+        publish_result["publish-node-id"] = "publish-node/nuget"
         (artifacts_root / publish_name / "publish-result.json").write_text(
-            json.dumps(_load("publish-result.json")),
+            json.dumps(publish_result),
             encoding="utf-8",
+        )
+        (
+            artifacts_root
+            / github_release_result_name
+            / "github-release-result.json"
+        ).write_text(
+            json.dumps(_load("github-release-result.json")),
+            encoding="utf-8",
+        )
+        _write_github_release_completion_evidence(
+            artifacts_root,
+            include_build_result=False,
         )
 
         result = control._cmd_report(
@@ -4754,6 +11258,7 @@ def test_report_derives_failed_build_and_publish_ids_from_receipts() -> None:
                 out=str(report_path),
                 plan=str(SCRATCH / "plan.json"),
                 execution_sets=str(SCRATCH / "execution-sets.json"),
+                **_report_prepare_artifact_args(prepare_names),
                 diagnostics="",
                 artifacts_root=str(artifacts_root),
                 authorize_conclusion="success",
@@ -4774,8 +11279,1346 @@ def test_report_derives_failed_build_and_publish_ids_from_receipts() -> None:
         assert report["jobs"]["publish"]["failed-publish-node-ids"] == [
             "publish-node/missing",
         ]
+        assert report["artifacts"]["github-release-result-artifact-names"] == [
+            github_release_result_name
+        ]
+        assert report["counts"]["published-nodes"] == 2
     finally:
         shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_report_does_not_satisfy_github_release_node_with_publish_result() -> (
+    None
+):
+    """GitHub Release nodes require github-release-result receipts."""
+    plan = _load("release-plan.json")
+    execution_sets = _load("execution-sets.json")
+    execution_sets["active-publish-node-ids"] = ["publish-node/gh"]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh",
+    ]
+    artifacts_root = SCRATCH / "artifacts"
+    report_path = SCRATCH / "report.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    try:
+        SCRATCH.mkdir()
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+        publish_name = artifact_name(
+            "publish-result",
+            ArtifactNameInputs(
+                123,
+                4,
+                plan_id="plan/abc123",
+                publish_node_id="publish-node/gh",
+            ),
+        )
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        (artifacts_root / publish_name).mkdir(parents=True)
+        github_shaped_publish_result = {
+            "api-version": "three.release.publish-result/v1alpha1",
+            "evidence": {},
+            "kind": "publish-result",
+            "outcome": "published",
+            "plan-id": "plan/abc123",
+            "project-id": "example",
+            "publish-node-id": "publish-node/gh",
+            "resolved-publish-identity": {
+                "release-tag": "release/example/v1.2.3",
+            },
+            "target-instance-snapshot-id": "github-release/public",
+        }
+        (artifacts_root / publish_name / "publish-result.json").write_text(
+            json.dumps(github_shaped_publish_result),
+            encoding="utf-8",
+        )
+
+        result = control._cmd_report(
+            control.argparse.Namespace(
+                repository="hcoona/three",
+                workflow="Release Buddy",
+                run_id=123,
+                attempt=4,
+                head_sha=SHA_B,
+                profile="buddy",
+                dry_run="false",
+                validation_build="false",
+                canary_override_non_public_ref="false",
+                out=str(report_path),
+                plan=str(SCRATCH / "plan.json"),
+                execution_sets=str(SCRATCH / "execution-sets.json"),
+                **_report_prepare_artifact_args(prepare_names),
+                diagnostics="",
+                artifacts_root=str(artifacts_root),
+                authorize_conclusion="success",
+                validate_conclusion="success",
+                metadata_conclusion="skipped",
+                plan_conclusion="success",
+                build_conclusion="success",
+                tag_conclusion="success",
+                publish_conclusion="failure",
+            ),
+        )
+
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        assert result == 0
+        assert report["jobs"]["publish"]["failed-publish-node-ids"] == [
+            "publish-node/gh",
+        ]
+        assert report["counts"]["published-nodes"] == 0
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_report_fails_successful_publish_without_github_release_receipt() -> (
+    None
+):
+    """Successful publish jobs do not complete GitHub Release nodes without receipts."""
+    plan = _load("release-plan.json")
+    execution_sets = _load("execution-sets.json")
+    execution_sets["active-publish-node-ids"] = ["publish-node/gh"]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh",
+    ]
+    artifacts_root = SCRATCH / "artifacts"
+    report_path = SCRATCH / "report.json"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    try:
+        SCRATCH.mkdir()
+        (SCRATCH / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (SCRATCH / "execution-sets.json").write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        _write_skip_result_artifacts(
+            artifacts_root,
+            plan,
+            cast(
+                "Sequence[str]",
+                execution_sets["skip-satisfied-publish-node-ids"],
+            ),
+        )
+
+        result = control._cmd_report(
+            control.argparse.Namespace(
+                repository="hcoona/three",
+                workflow="Release Buddy",
+                run_id=123,
+                attempt=4,
+                head_sha=SHA_B,
+                profile="buddy",
+                dry_run="false",
+                validation_build="false",
+                canary_override_non_public_ref="false",
+                out=str(report_path),
+                plan=str(SCRATCH / "plan.json"),
+                execution_sets=str(SCRATCH / "execution-sets.json"),
+                **_report_prepare_artifact_args(prepare_names),
+                diagnostics="",
+                artifacts_root=str(artifacts_root),
+                authorize_conclusion="success",
+                validate_conclusion="success",
+                metadata_conclusion="skipped",
+                plan_conclusion="success",
+                build_conclusion="success",
+                tag_conclusion="success",
+                release_completed_check_conclusion="success",
+                publish_conclusion="success",
+            ),
+        )
+
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        assert result == 0
+        assert report["run"]["conclusion"] == "failure"
+        assert report["jobs"]["release-completed-check"]["conclusion"] == (
+            "failure"
+        )
+        assert report["jobs"]["publish"]["failed-publish-node-ids"] == [
+            "publish-node/gh",
+        ]
+        assert report["counts"]["published-nodes"] == 0
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_report_completion_check_failure_lists_missing_registry_receipts() -> (
+    None
+):
+    """Completion failures list active registry nodes missing receipts."""
+    plan, execution_sets = _external_oidc_plan_and_sets()
+    plan_id = str(plan["envelope"]["plan-id"])
+    succeeded_node_id = "publish-node/nuget"
+    missing_node_id = "publish-node/npmjs"
+    npm_snapshot = deepcopy(
+        plan["graph"]["target-instance-snapshots"]["pypi/pypi"]
+    )
+    npm_snapshot["catalog-ref"] = "npm/npmjs"
+    npm_snapshot["family"] = "npm"
+    npm_snapshot["instance-id"] = "npmjs"
+    npm_snapshot["destination"] = {"host": "registry.npmjs.org"}
+    npm_snapshot["contract"]["id"] = "npm-publish"
+    plan["graph"]["target-instance-snapshots"]["npm/npmjs"] = npm_snapshot
+    npm_node = deepcopy(plan["graph"]["publish-nodes"][succeeded_node_id])
+    npm_node["publish-node-id"] = missing_node_id
+    npm_node["target-instance-snapshot-id"] = "npm/npmjs"
+    npm_node["resolved-publish-identity"] = {
+        "package-name": "example",
+        "version": "1.2.3",
+    }
+    plan["graph"]["publish-nodes"][missing_node_id] = npm_node
+    execution_sets["active-publish-node-ids"] = [
+        succeeded_node_id,
+        missing_node_id,
+    ]
+    execution_sets["publish-intent-node-ids"] = [
+        succeeded_node_id,
+        missing_node_id,
+    ]
+    execution_sets["active-github-release-publish-node-ids"] = []
+    execution_sets["selected-github-release-publish-node-ids"] = []
+    for selector in execution_sets["active-publish-selectors"].values():
+        selector.clear()
+    execution_sets["active-publish-selectors"][
+        "external-oidc-reusable-workflow"
+    ] = [succeeded_node_id, missing_node_id]
+
+    report_path = SCRATCH / "missing-registry-receipt-report.json"
+    artifacts_root = SCRATCH / "missing-registry-receipt-artifacts"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    try:
+        SCRATCH.mkdir()
+        plan_path = SCRATCH / "release-plan.json"
+        execution_sets_path = SCRATCH / "execution-sets.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        execution_sets_path.write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+        plan_name = artifact_name(
+            "plan",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        execution_sets_name = artifact_name(
+            "execution-sets",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        handoff_name = artifact_name(
+            "entry-publish-handoff",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        assert prepare_names == {
+            "plan_artifact_name": plan_name,
+            "execution_sets_artifact_name": execution_sets_name,
+            "entry_publish_handoff_artifact_name": handoff_name,
+        }
+        publish_name = artifact_name(
+            "publish-result",
+            ArtifactNameInputs(
+                123,
+                4,
+                plan_id=plan_id,
+                publish_node_id=succeeded_node_id,
+            ),
+        )
+        publish_result = _load("publish-result.json")
+        publish_result["plan-id"] = plan_id
+        publish_result["project-id"] = "example"
+        publish_result["publish-node-id"] = succeeded_node_id
+        publish_result["target-instance-snapshot-id"] = "pypi/pypi"
+        publish_result["resolved-publish-identity"] = {
+            "package-name": "Example",
+            "version": "1.2.3",
+        }
+        (artifacts_root / publish_name).mkdir(parents=True)
+        (artifacts_root / publish_name / "publish-result.json").write_text(
+            json.dumps(publish_result),
+            encoding="utf-8",
+        )
+
+        result = control._cmd_report(
+            control.argparse.Namespace(
+                repository="hcoona/three",
+                workflow="release-orchestrate.yml",
+                run_id=123,
+                attempt=4,
+                head_sha=SHA_B,
+                profile="official",
+                dry_run="false",
+                validation_build="false",
+                canary_override_non_public_ref="false",
+                out=str(report_path),
+                plan=str(plan_path),
+                execution_sets=str(execution_sets_path),
+                **_report_prepare_artifact_args(prepare_names),
+                diagnostics="",
+                artifacts_root=str(artifacts_root),
+                authorize_conclusion="success",
+                validate_conclusion="success",
+                metadata_conclusion="success",
+                plan_conclusion="success",
+                build_conclusion="success",
+                tag_conclusion="success",
+                release_completed_check_conclusion="failure",
+                publish_conclusion="success",
+            )
+        )
+
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        validate_contract(report)
+        assert result == 0
+        assert report["run"]["conclusion"] == "failure"
+        assert report["jobs"]["publish"]["failed-publish-node-ids"] == [
+            missing_node_id
+        ]
+        assert report["counts"]["published-nodes"] == 1
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_report_fails_successful_publish_without_registry_receipt() -> None:
+    """Successful publish jobs do not complete registry nodes without receipts."""
+    plan, execution_sets = _external_oidc_plan_and_sets()
+    plan_id = str(plan["envelope"]["plan-id"])
+    node_id = "publish-node/nuget"
+    report_path = SCRATCH / "missing-registry-success-report.json"
+    artifacts_root = SCRATCH / "missing-registry-success-artifacts"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    try:
+        SCRATCH.mkdir()
+        plan_path = SCRATCH / "release-plan.json"
+        execution_sets_path = SCRATCH / "execution-sets.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        execution_sets_path.write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+        plan_name = artifact_name(
+            "plan",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        execution_sets_name = artifact_name(
+            "execution-sets",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        handoff_name = artifact_name(
+            "entry-publish-handoff",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        assert prepare_names == {
+            "plan_artifact_name": plan_name,
+            "execution_sets_artifact_name": execution_sets_name,
+            "entry_publish_handoff_artifact_name": handoff_name,
+        }
+
+        result = control._cmd_report(
+            control.argparse.Namespace(
+                repository="hcoona/three",
+                workflow="release-orchestrate.yml",
+                run_id=123,
+                attempt=4,
+                head_sha=SHA_B,
+                profile="official",
+                dry_run="false",
+                validation_build="false",
+                canary_override_non_public_ref="false",
+                out=str(report_path),
+                plan=str(plan_path),
+                execution_sets=str(execution_sets_path),
+                **_report_prepare_artifact_args(prepare_names),
+                diagnostics="",
+                artifacts_root=str(artifacts_root),
+                authorize_conclusion="success",
+                validate_conclusion="success",
+                metadata_conclusion="success",
+                plan_conclusion="success",
+                build_conclusion="success",
+                tag_conclusion="success",
+                release_completed_check_conclusion="success",
+                publish_conclusion="success",
+            )
+        )
+
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        validate_contract(report)
+        assert result == 0
+        assert report["run"]["conclusion"] == "failure"
+        assert report["jobs"]["release-completed-check"]["conclusion"] == (
+            "failure"
+        )
+        assert report["jobs"]["publish"]["failed-publish-node-ids"] == [node_id]
+        assert report["counts"]["published-nodes"] == 0
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    (
+        "case",
+        "receipt_project_id",
+        "receipt_target_id",
+        "receipt_identity",
+    ),
+    [
+        (
+            "project-id",
+            "other-project",
+            "pypi/pypi",
+            {"package-name": "Example", "version": "1.2.3"},
+        ),
+        (
+            "target",
+            "example",
+            "npm/npmjs",
+            {"package-name": "Example", "version": "1.2.3"},
+        ),
+        (
+            "package",
+            "example",
+            "pypi/pypi",
+            {"package-name": "Other", "version": "1.2.3"},
+        ),
+        (
+            "version",
+            "example",
+            "pypi/pypi",
+            {"package-name": "Example", "version": "9.9.9"},
+        ),
+    ],
+)
+def test_registry_publish_receipt_must_match_planned_node_identity(
+    case: str,
+    receipt_project_id: str,
+    receipt_target_id: str,
+    receipt_identity: dict[str, str],
+) -> None:
+    """Registry receipts with mismatched planned identity remain unsatisfied."""
+    plan, execution_sets = _external_oidc_plan_and_sets()
+    plan_id = str(plan["envelope"]["plan-id"])
+    node_id = "publish-node/nuget"
+    artifacts_root = SCRATCH / f"registry-receipt-{case}"
+    publish_name = artifact_name(
+        "publish-result",
+        ArtifactNameInputs(
+            123,
+            4,
+            plan_id=plan_id,
+            publish_node_id=node_id,
+        ),
+    )
+    artifacts = {
+        "publish-result-artifact-names": [publish_name],
+        "github-release-result-artifact-names": [],
+        "skip-result-artifact-names": [],
+    }
+    receipt = _load("publish-result.json")
+    receipt["plan-id"] = plan_id
+    receipt["publish-node-id"] = node_id
+    receipt["project-id"] = receipt_project_id
+    receipt["target-instance-snapshot-id"] = receipt_target_id
+    receipt["resolved-publish-identity"] = receipt_identity
+    shutil.rmtree(artifacts_root, ignore_errors=True)
+    try:
+        (artifacts_root / publish_name).mkdir(parents=True)
+        (artifacts_root / publish_name / "publish-result.json").write_text(
+            json.dumps(receipt),
+            encoding="utf-8",
+        )
+
+        assert control._unsatisfied_active_publish_node_ids(
+            plan,
+            execution_sets,
+            artifacts_root,
+            artifacts,
+        ) == [node_id]
+        assert (
+            control._report_counts(
+                plan,
+                execution_sets,
+                artifacts,
+                artifacts_root,
+            )["published-nodes"]
+            == 0
+        )
+    finally:
+        shutil.rmtree(artifacts_root, ignore_errors=True)
+
+
+def test_github_release_receipt_must_match_planned_asset_names() -> None:
+    """Final reports bind GitHub Release receipts to planned asset names."""
+    plan = _load("release-plan.json")
+    execution_sets = _load("execution-sets.json")
+    execution_sets["active-publish-node-ids"] = ["publish-node/gh"]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    artifacts_root = SCRATCH / "github-release-receipt-wrong-name"
+    github_release_name = artifact_name(
+        "github-release-result",
+        ArtifactNameInputs(
+            123,
+            4,
+            binding_json=(
+                '{"tagName":"release/example/v1.2.3",'
+                '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+            ),
+        ),
+    )
+    artifacts = {
+        "publish-result-artifact-names": [],
+        "github-release-result-artifact-names": [github_release_name],
+        "skip-result-artifact-names": [],
+        "build-result-artifact-names": [
+            artifact_name(
+                "build-result",
+                ArtifactNameInputs(
+                    123,
+                    4,
+                    plan_id="plan/abc123",
+                    variant_id="variant/v1",
+                ),
+            )
+        ],
+    }
+    receipt = _load("github-release-result.json")
+    receipt["assets"][0]["name"] = "unexpected-name.nupkg"
+    shutil.rmtree(artifacts_root, ignore_errors=True)
+    try:
+        (artifacts_root / github_release_name).mkdir(parents=True)
+        (
+            artifacts_root / github_release_name / "github-release-result.json"
+        ).write_text(
+            json.dumps(receipt),
+            encoding="utf-8",
+        )
+
+        assert control._unsatisfied_github_release_publish_node_ids(
+            plan,
+            execution_sets,
+            artifacts_root,
+            artifacts,
+        ) == ["publish-node/gh"]
+        assert (
+            control._report_counts(
+                plan,
+                execution_sets,
+                artifacts,
+                artifacts_root,
+            )["published-nodes"]
+            == 0
+        )
+    finally:
+        shutil.rmtree(artifacts_root, ignore_errors=True)
+
+
+def test_github_release_receipt_requires_proof_byte_binding() -> None:
+    """Positive GitHub Release receipts bind names to proof wrapper bytes."""
+    plan = _load("release-plan.json")
+    execution_sets = _load("execution-sets.json")
+    execution_sets["active-publish-node-ids"] = ["publish-node/gh"]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    artifacts_root = SCRATCH / "github-release-receipt-names-only"
+    github_release_name = artifact_name(
+        "github-release-result",
+        ArtifactNameInputs(
+            123,
+            4,
+            binding_json=(
+                '{"tagName":"release/example/v1.2.3",'
+                '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+            ),
+        ),
+    )
+    artifacts = {
+        "publish-result-artifact-names": [],
+        "github-release-result-artifact-names": [github_release_name],
+        "skip-result-artifact-names": [],
+        "build-result-artifact-names": [],
+    }
+    shutil.rmtree(artifacts_root, ignore_errors=True)
+    try:
+        _write_github_release_completion_evidence(
+            artifacts_root,
+            include_build_result=False,
+        )
+        assert not list(artifacts_root.glob("release-build-result-v1-*"))
+        (artifacts_root / github_release_name).mkdir(parents=True)
+        (
+            artifacts_root / github_release_name / "github-release-result.json"
+        ).write_text(
+            json.dumps(_load("github-release-result.json")),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._unsatisfied_github_release_publish_node_ids(
+                plan,
+                execution_sets,
+                artifacts_root,
+                artifacts,
+            )
+            == []
+        )
+    finally:
+        shutil.rmtree(artifacts_root, ignore_errors=True)
+
+
+def test_github_release_receipt_accepts_union_result_for_disjoint_nodes() -> (
+    None
+):
+    """One release-level result can satisfy disjoint per-node proof coverage."""
+    plan = _load("release-plan.json")
+    execution_sets = _load("execution-sets.json")
+    graph = cast("dict[str, Any]", plan["graph"])
+    nodes = cast("dict[str, Any]", graph["publish-nodes"])
+    package_node = cast("dict[str, Any]", nodes["publish-node/gh"])
+    symbols_node = deepcopy(package_node)
+    symbols_node["publish-node-id"] = "publish-node/gh-symbols"
+    package_node["artifact-ids"] = ["artifact/package"]
+    package_node["projection"]["asset-names-by-artifact-id"] = {
+        "artifact/package": "Example.1.2.3.nupkg",
+    }
+    symbols_node["artifact-ids"] = ["artifact/symbols"]
+    symbols_node["projection"]["asset-names-by-artifact-id"] = {
+        "artifact/symbols": "Example.1.2.3.snupkg",
+    }
+    nodes["publish-node/gh-symbols"] = symbols_node
+    project = cast(
+        "dict[str, Any]",
+        cast("dict[str, Any]", plan["envelope"])["projects"]["example"],
+    )
+    project["publish-node-ids"] = [
+        "publish-node/gh",
+        "publish-node/gh-symbols",
+        "publish-node/nuget",
+    ]
+    execution_sets["active-publish-node-ids"] = [
+        "publish-node/gh",
+        "publish-node/gh-symbols",
+    ]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh",
+        "publish-node/gh-symbols",
+    ]
+    artifacts_root = SCRATCH / "github-release-receipt-union-disjoint-nodes"
+    github_release_name = artifact_name(
+        "github-release-result",
+        ArtifactNameInputs(
+            123,
+            4,
+            binding_json=(
+                '{"tagName":"release/example/v1.2.3",'
+                '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+            ),
+        ),
+    )
+    artifacts = {
+        "publish-result-artifact-names": [],
+        "github-release-result-artifact-names": [github_release_name],
+        "skip-result-artifact-names": [],
+        "build-result-artifact-names": [],
+    }
+
+    def split_symbol_proof(proof: dict[str, object]) -> None:
+        binding = cast("dict[str, object]", proof["binding"])
+        if binding.get("artifact-id") == "artifact/symbols":
+            binding["publish-node-id"] = "publish-node/gh-symbols"
+
+    shutil.rmtree(artifacts_root, ignore_errors=True)
+    try:
+        _write_github_release_completion_evidence(
+            artifacts_root,
+            include_build_result=False,
+            proof_mutator=split_symbol_proof,
+        )
+        (artifacts_root / github_release_name).mkdir(parents=True)
+        (
+            artifacts_root / github_release_name / "github-release-result.json"
+        ).write_text(
+            json.dumps(_load("github-release-result.json")),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._unsatisfied_github_release_publish_node_ids(
+                plan,
+                execution_sets,
+                artifacts_root,
+                artifacts,
+                run_id=123,
+                attempt=4,
+            )
+            == []
+        )
+    finally:
+        shutil.rmtree(artifacts_root, ignore_errors=True)
+
+
+def test_github_release_receipt_accepts_skip_satisfied_same_release_sibling() -> (
+    None
+):
+    """Skip-satisfied siblings require release asset coverage, not current proof."""
+    plan = _load("release-plan.json")
+    execution_sets = _load("execution-sets.json")
+    package_node_id, symbols_node_id = _split_fixture_github_release_nodes(plan)
+    plan_id = str(cast("Mapping[str, object]", plan["envelope"])["plan-id"])
+    nodes = cast("dict[str, Any]", plan["graph"]["publish-nodes"])
+    package_node = cast("dict[str, Any]", nodes[package_node_id])
+    symbols_node = cast("dict[str, Any]", nodes[symbols_node_id])
+    package_node["publish-disposition"] = "skip-satisfied"
+    package_node.pop("publish-mode", None)
+    symbols_node["publish-disposition"] = "publish"
+    symbols_node["publish-mode"] = "create-only"
+    execution_sets["active-publish-node-ids"] = [symbols_node_id]
+    execution_sets["active-github-release-publish-node-ids"] = [symbols_node_id]
+    execution_sets["selected-github-release-publish-node-ids"] = [
+        package_node_id,
+        symbols_node_id,
+    ]
+    execution_sets["skip-satisfied-publish-node-ids"] = [package_node_id]
+    artifacts_root = SCRATCH / "github-release-receipt-skip-sibling"
+    github_release_name = artifact_name(
+        "github-release-result",
+        ArtifactNameInputs(
+            123,
+            4,
+            binding_json=(
+                '{"tagName":"release/example/v1.2.3",'
+                '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+            ),
+        ),
+    )
+    skip_result_name = artifact_name(
+        "skip-result",
+        ArtifactNameInputs(
+            123,
+            4,
+            plan_id=plan_id,
+            publish_node_id=package_node_id,
+        ),
+    )
+    artifacts = {
+        "publish-result-artifact-names": [],
+        "github-release-result-artifact-names": [github_release_name],
+        "skip-result-artifact-names": [skip_result_name],
+        "build-result-artifact-names": [],
+    }
+
+    def split_symbol_proof(proof: dict[str, object]) -> None:
+        binding = cast("dict[str, object]", proof["binding"])
+        if binding.get("artifact-id") == "artifact/symbols":
+            binding["publish-node-id"] = symbols_node_id
+
+    receipt = _load("github-release-result.json")
+    receipt["releaseExisted"] = True
+    shutil.rmtree(artifacts_root, ignore_errors=True)
+    try:
+        _write_github_release_completion_evidence(
+            artifacts_root,
+            include_build_result=False,
+            proof_mutator=split_symbol_proof,
+        )
+        for proof_path in artifacts_root.rglob("*.json"):
+            proof = json.loads(proof_path.read_text(encoding="utf-8"))
+            binding = cast("Mapping[str, object]", proof.get("binding", {}))
+            if binding.get("artifact-id") == "artifact/package":
+                proof_path.unlink()
+        (artifacts_root / github_release_name).mkdir(parents=True)
+        (
+            artifacts_root / github_release_name / "github-release-result.json"
+        ).write_text(
+            json.dumps(receipt),
+            encoding="utf-8",
+        )
+        (artifacts_root / skip_result_name).mkdir(parents=True)
+        skip_result = _skip_result_for_node(plan, package_node_id)
+        validate_contract(skip_result)
+        (artifacts_root / skip_result_name / "skip-result.json").write_text(
+            json.dumps(skip_result),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._unsatisfied_github_release_publish_node_ids(
+                plan,
+                execution_sets,
+                artifacts_root,
+                artifacts,
+                run_id=123,
+                attempt=4,
+            )
+            == []
+        )
+        assert (
+            control._unsatisfied_active_publish_node_ids(
+                plan,
+                execution_sets,
+                artifacts_root,
+                artifacts,
+                run_id=123,
+                attempt=4,
+            )
+            == []
+        )
+        counts = control._report_counts(
+            plan,
+            execution_sets,
+            artifacts,
+            artifacts_root,
+            run_id=123,
+            attempt=4,
+        )
+        assert counts["published-nodes"] == 1
+        assert counts["skipped-publish-nodes"] == 1
+
+        receipt["assets"] = [
+            asset
+            for asset in receipt["assets"]
+            if asset["name"] != "Example.1.2.3.nupkg"
+        ]
+        (
+            artifacts_root / github_release_name / "github-release-result.json"
+        ).write_text(
+            json.dumps(receipt),
+            encoding="utf-8",
+        )
+        assert control._unsatisfied_active_publish_node_ids(
+            plan,
+            execution_sets,
+            artifacts_root,
+            artifacts,
+            run_id=123,
+            attempt=4,
+        ) == [symbols_node_id]
+    finally:
+        shutil.rmtree(artifacts_root, ignore_errors=True)
+
+
+def test_github_release_completion_requires_skip_satisfied_receipt() -> None:
+    """Release coverage does not replace required skip-satisfied receipts."""
+    plan = _load("release-plan.json")
+    execution_sets = _load("execution-sets.json")
+    package_node_id, symbols_node_id = _split_fixture_github_release_nodes(plan)
+    nodes = cast("dict[str, Any]", plan["graph"]["publish-nodes"])
+    package_node = cast("dict[str, Any]", nodes[package_node_id])
+    symbols_node = cast("dict[str, Any]", nodes[symbols_node_id])
+    package_node["publish-disposition"] = "skip-satisfied"
+    package_node.pop("publish-mode", None)
+    symbols_node["publish-disposition"] = "publish"
+    symbols_node["publish-mode"] = "create-only"
+    execution_sets["active-publish-node-ids"] = [symbols_node_id]
+    execution_sets["active-github-release-publish-node-ids"] = [symbols_node_id]
+    execution_sets["selected-github-release-publish-node-ids"] = [
+        package_node_id,
+        symbols_node_id,
+    ]
+    execution_sets["skip-satisfied-publish-node-ids"] = [package_node_id]
+    artifacts_root = SCRATCH / "github-release-completion-missing-skip-receipt"
+    github_release_name = artifact_name(
+        "github-release-result",
+        ArtifactNameInputs(
+            123,
+            4,
+            binding_json=(
+                '{"tagName":"release/example/v1.2.3",'
+                '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+            ),
+        ),
+    )
+    artifacts = {
+        "publish-result-artifact-names": [],
+        "github-release-result-artifact-names": [github_release_name],
+        "skip-result-artifact-names": [],
+        "build-result-artifact-names": [],
+    }
+
+    def split_symbol_proof(proof: dict[str, object]) -> None:
+        binding = cast("dict[str, object]", proof["binding"])
+        if binding.get("artifact-id") == "artifact/symbols":
+            binding["publish-node-id"] = symbols_node_id
+
+    receipt = _load("github-release-result.json")
+    receipt["releaseExisted"] = True
+    shutil.rmtree(artifacts_root, ignore_errors=True)
+    try:
+        _write_github_release_completion_evidence(
+            artifacts_root,
+            include_build_result=False,
+            proof_mutator=split_symbol_proof,
+        )
+        for proof_path in artifacts_root.rglob("*.json"):
+            proof = json.loads(proof_path.read_text(encoding="utf-8"))
+            binding = cast("Mapping[str, object]", proof.get("binding", {}))
+            if binding.get("artifact-id") == "artifact/package":
+                proof_path.unlink()
+        (artifacts_root / github_release_name).mkdir(parents=True)
+        (
+            artifacts_root / github_release_name / "github-release-result.json"
+        ).write_text(
+            json.dumps(receipt),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._unsatisfied_github_release_publish_node_ids(
+                plan,
+                execution_sets,
+                artifacts_root,
+                artifacts,
+                run_id=123,
+                attempt=4,
+            )
+            == []
+        )
+        assert control._unsatisfied_active_publish_node_ids(
+            plan,
+            execution_sets,
+            artifacts_root,
+            artifacts,
+            run_id=123,
+            attempt=4,
+        ) == [package_node_id]
+        assert control._failed_publish_node_ids(
+            "success",
+            plan,
+            execution_sets,
+            artifacts_root,
+            artifacts,
+            "failure",
+            run_id=123,
+            attempt=4,
+        ) == [package_node_id]
+    finally:
+        shutil.rmtree(artifacts_root, ignore_errors=True)
+
+
+def test_github_release_receipt_rejects_missing_proof_evidence() -> None:
+    """GitHub Release result names alone do not satisfy completion receipts."""
+    plan = _load("release-plan.json")
+    execution_sets = _load("execution-sets.json")
+    execution_sets["active-publish-node-ids"] = ["publish-node/gh"]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    artifacts_root = SCRATCH / "github-release-receipt-missing-proof"
+    github_release_name = artifact_name(
+        "github-release-result",
+        ArtifactNameInputs(
+            123,
+            4,
+            binding_json=(
+                '{"tagName":"release/example/v1.2.3",'
+                '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+            ),
+        ),
+    )
+    artifacts = {
+        "publish-result-artifact-names": [],
+        "github-release-result-artifact-names": [github_release_name],
+        "skip-result-artifact-names": [],
+        "build-result-artifact-names": [],
+    }
+    shutil.rmtree(artifacts_root, ignore_errors=True)
+    try:
+        (artifacts_root / github_release_name).mkdir(parents=True)
+        (
+            artifacts_root / github_release_name / "github-release-result.json"
+        ).write_text(
+            json.dumps(_load("github-release-result.json")),
+            encoding="utf-8",
+        )
+
+        assert control._unsatisfied_github_release_publish_node_ids(
+            plan,
+            execution_sets,
+            artifacts_root,
+            artifacts,
+        ) == ["publish-node/gh"]
+    finally:
+        shutil.rmtree(artifacts_root, ignore_errors=True)
+
+
+def test_github_release_completion_ignores_stale_proof_artifact_attempt() -> (
+    None
+):
+    """Completion proof lookup is scoped to the current run attempt."""
+    plan = _load("release-plan.json")
+    artifacts_root = SCRATCH / "github-release-stale-proof-attempt"
+    shutil.rmtree(artifacts_root, ignore_errors=True)
+    try:
+        _write_github_release_completion_evidence(
+            artifacts_root,
+            run_id=123,
+            attempt=3,
+        )
+
+        assert (
+            control._github_release_asset_proof_receipts_by_artifact_id(
+                plan,
+                artifacts_root,
+                "publish-node/gh",
+                run_id=123,
+                attempt=4,
+            )
+            == {}
+        )
+    finally:
+        shutil.rmtree(artifacts_root, ignore_errors=True)
+
+
+def test_github_release_completion_rejects_embedded_stale_proof_attempt() -> (
+    None
+):
+    """Proof file names and embedded run provenance must both match completion."""
+    plan = _load("release-plan.json")
+    artifacts_root = SCRATCH / "github-release-stale-proof-run-field"
+    proof_dir = (
+        artifacts_root / "release-github-release-asset-proofs-v1-123-4-test"
+    )
+    shutil.rmtree(artifacts_root, ignore_errors=True)
+    try:
+        proof_dir.mkdir(parents=True)
+        proof = _github_release_asset_proofs()[0]
+        proof["run"]["run-id"] = 123
+        proof["run"]["run-attempt"] = 3
+        binding = cast("dict[str, object]", proof["binding"])
+        current_name = artifact_name(
+            "github-release-asset-proof",
+            ArtifactNameInputs(
+                123,
+                4,
+                binding_json=github_release_asset_binding_json(
+                    publish_node_id=str(binding["publish-node-id"]),
+                    artifact_id=str(binding["artifact-id"]),
+                    release_tag=str(binding["release-tag"]),
+                    asset_name=str(binding["asset-name"]),
+                ),
+            ),
+        )
+        (proof_dir / f"{current_name}.json").write_text(
+            json.dumps(proof),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._github_release_asset_proof_receipts_by_artifact_id(
+                plan,
+                artifacts_root,
+                "publish-node/gh",
+                run_id=123,
+                attempt=4,
+            )
+            == {}
+        )
+    finally:
+        shutil.rmtree(artifacts_root, ignore_errors=True)
+
+
+def test_github_release_completion_rejects_mismatched_proof_sidecar_name() -> (
+    None
+):
+    """Completion proof recovery requires sidecar filename binding to match."""
+    plan = _load("release-plan.json")
+    artifacts_root = SCRATCH / "github-release-mismatched-proof-name"
+    proof_dir = (
+        artifacts_root / "release-github-release-asset-proofs-v1-123-4-test"
+    )
+    shutil.rmtree(artifacts_root, ignore_errors=True)
+    try:
+        proof_dir.mkdir(parents=True)
+        proof = _github_release_asset_proofs()[0]
+        proof["run"]["run-id"] = 123
+        proof["run"]["run-attempt"] = 4
+        mismatched_name = _mismatched_github_release_asset_proof_sidecar_name(
+            proof
+        )
+        (proof_dir / mismatched_name).write_text(
+            json.dumps(proof),
+            encoding="utf-8",
+        )
+
+        assert (
+            control._github_release_asset_proof_receipts_by_artifact_id(
+                plan,
+                artifacts_root,
+                "publish-node/gh",
+                run_id=123,
+                attempt=4,
+            )
+            == {}
+        )
+    finally:
+        shutil.rmtree(artifacts_root, ignore_errors=True)
+
+
+def test_github_release_receipt_rejects_same_names_with_wrong_bytes() -> None:
+    """Same-name GitHub Release receipts cannot carry wrong bytes."""
+    plan = _load("release-plan.json")
+    execution_sets = _load("execution-sets.json")
+    execution_sets["active-publish-node-ids"] = ["publish-node/gh"]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    artifacts_root = SCRATCH / "github-release-receipt-wrong-bytes"
+    github_release_name = artifact_name(
+        "github-release-result",
+        ArtifactNameInputs(
+            123,
+            4,
+            binding_json=(
+                '{"tagName":"release/example/v1.2.3",'
+                '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+            ),
+        ),
+    )
+    artifacts = {
+        "publish-result-artifact-names": [],
+        "github-release-result-artifact-names": [github_release_name],
+        "skip-result-artifact-names": [],
+        "build-result-artifact-names": [],
+    }
+    receipt = _load("github-release-result.json")
+    receipt["assets"][0]["sha256"] = "d" * 64
+    shutil.rmtree(artifacts_root, ignore_errors=True)
+    try:
+        _write_github_release_completion_evidence(
+            artifacts_root,
+            include_build_result=False,
+        )
+        (artifacts_root / github_release_name).mkdir(parents=True)
+        (
+            artifacts_root / github_release_name / "github-release-result.json"
+        ).write_text(
+            json.dumps(receipt),
+            encoding="utf-8",
+        )
+
+        assert control._unsatisfied_github_release_publish_node_ids(
+            plan,
+            execution_sets,
+            artifacts_root,
+            artifacts,
+        ) == ["publish-node/gh"]
+    finally:
+        shutil.rmtree(artifacts_root, ignore_errors=True)
+
+
+def test_github_release_receipt_rejects_extra_asset_with_names_only_plan() -> (
+    None
+):
+    """GitHub Release receipt matching rejects extra assets."""
+    plan = _load("release-plan.json")
+    execution_sets = _load("execution-sets.json")
+    execution_sets["active-publish-node-ids"] = ["publish-node/gh"]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    artifacts_root = SCRATCH / "github-release-receipt-extra-asset"
+    github_release_name = artifact_name(
+        "github-release-result",
+        ArtifactNameInputs(
+            123,
+            4,
+            binding_json=(
+                '{"tagName":"release/example/v1.2.3",'
+                '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+            ),
+        ),
+    )
+    artifacts = {
+        "publish-result-artifact-names": [],
+        "github-release-result-artifact-names": [github_release_name],
+        "skip-result-artifact-names": [],
+    }
+    receipt = _load("github-release-result.json")
+    receipt["assets"].append(
+        {
+            "name": "unexpected-extra.zip",
+            "size": 999,
+            "sha256": "d" * 64,
+        }
+    )
+    shutil.rmtree(artifacts_root, ignore_errors=True)
+    try:
+        (artifacts_root / github_release_name).mkdir(parents=True)
+        (
+            artifacts_root / github_release_name / "github-release-result.json"
+        ).write_text(
+            json.dumps(receipt),
+            encoding="utf-8",
+        )
+
+        assert control._unsatisfied_github_release_publish_node_ids(
+            plan,
+            execution_sets,
+            artifacts_root,
+            artifacts,
+        ) == ["publish-node/gh"]
+    finally:
+        shutil.rmtree(artifacts_root, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("publish_mode", "release_existed", "profile", "release_state"),
+    [
+        ("create-only", True, "buddy", "prerelease"),
+        ("overwrite-mutable", False, "buddy", "prerelease"),
+        ("replace-authoritative", False, "official", "release"),
+    ],
+)
+def test_github_release_receipt_must_match_publish_mode_release_existed(
+    publish_mode: str,
+    release_existed: bool,
+    profile: str,
+    release_state: str,
+) -> None:
+    """Report matching rejects the wrong releaseExisted flag."""
+    plan = _load("release-plan.json")
+    execution_sets = _load("execution-sets.json")
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    plan["envelope"]["profile"] = profile
+    node["profile"] = profile
+    node["publish-mode"] = publish_mode
+    node["desired-publish-state"] = {"release-state": release_state}
+    execution_sets["active-publish-node-ids"] = ["publish-node/gh"]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    artifacts_root = SCRATCH / f"github-release-release-existed-{publish_mode}"
+    github_release_name = artifact_name(
+        "github-release-result",
+        ArtifactNameInputs(
+            123,
+            4,
+            binding_json=(
+                '{"tagName":"release/example/v1.2.3",'
+                '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+            ),
+        ),
+    )
+    artifacts = {
+        "publish-result-artifact-names": [],
+        "github-release-result-artifact-names": [github_release_name],
+        "skip-result-artifact-names": [],
+    }
+    receipt = _load("github-release-result.json")
+    receipt["releaseExisted"] = release_existed
+    shutil.rmtree(artifacts_root, ignore_errors=True)
+    try:
+        (artifacts_root / github_release_name).mkdir(parents=True)
+        (
+            artifacts_root / github_release_name / "github-release-result.json"
+        ).write_text(
+            json.dumps(receipt),
+            encoding="utf-8",
+        )
+
+        assert control._unsatisfied_github_release_publish_node_ids(
+            plan,
+            execution_sets,
+            artifacts_root,
+            artifacts,
+        ) == ["publish-node/gh"]
+    finally:
+        shutil.rmtree(artifacts_root, ignore_errors=True)
+
+
+def test_package_publish_result_materializes_receipt_for_active_target() -> (
+    None
+):
+    """Inline registry publishes materialize durable publish-result receipts."""
+    plan, execution_sets = _external_oidc_plan_and_sets()
+    scratch = SCRATCH / "package-publish-result"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        scratch.mkdir(parents=True)
+        plan_path = scratch / "release-plan.json"
+        execution_sets_path = scratch / "execution-sets.json"
+        outputs_path = scratch / "outputs.txt"
+        out_dir = scratch / "receipt"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        execution_sets_path.write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+
+        result = control._cmd_package_publish_result(
+            control.argparse.Namespace(
+                plan=str(plan_path),
+                execution_sets=str(execution_sets_path),
+                target_key="python-pypi",
+                run_id=123,
+                attempt=4,
+                repository="hcoona/three",
+                workflow="release-orchestrate.yml",
+                head_sha=SHA_B,
+                environment="pypi",
+                publish_script="pypa/gh-action-pypi-publish",
+                out_dir=str(out_dir),
+                github_output=str(outputs_path),
+            )
+        )
+
+        receipt = json.loads(
+            (out_dir / "publish-result.json").read_text(encoding="utf-8")
+        )
+        validate_contract(receipt)
+        assert result == 0
+        assert receipt["kind"] == "publish-result"
+        assert receipt["api-version"] == (
+            "three.release.publish-result/v1alpha1"
+        )
+        assert receipt["publish-node-id"] == "publish-node/nuget"
+        assert receipt["target-instance-snapshot-id"] == "pypi/pypi"
+        assert receipt["resolved-publish-identity"] == {
+            "package-name": "Example",
+            "version": "1.2.3",
+        }
+        assert receipt["evidence"]["target-key"] == "python-pypi"
+        assert receipt["evidence"]["environment"] == "pypi"
+        assert (
+            "final-distribution-filenames-by-artifact-id" in receipt["evidence"]
+        )
+        assert (
+            "final-distribution-sha256-by-artifact-id"
+            not in receipt["evidence"]
+        )
+        assert (
+            "final-distribution-digests-by-artifact-id"
+            not in receipt["evidence"]
+        )
+        outputs = outputs_path.read_text(encoding="utf-8")
+        assert "plan_id=plan/abc123" in outputs
+        assert "publish_node_id=publish-node/nuget" in outputs
+        assert (
+            f"publish_result_path={out_dir.as_posix()}/publish-result.json"
+            in outputs
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def test_report_leaves_failed_id_lists_empty_without_failed_stage() -> None:
@@ -4805,6 +12648,82 @@ def test_report_leaves_failed_id_lists_empty_without_failed_stage() -> None:
         )
         == []
     )
+
+
+def test_artifact_inventory_ignores_legacy_fixed_github_release_result() -> (
+    None
+):
+    """Report inventory must not admit stale fixed-name GitHub Release results."""
+    root = SCRATCH / "legacy-github-release-result"
+    shutil.rmtree(root, ignore_errors=True)
+    try:
+        legacy = root / "github-release-result"
+        scoped = root / artifact_name(
+            "github-release-result",
+            ArtifactNameInputs(
+                123,
+                4,
+                binding_json=(
+                    '{"tagName":"release/example/v1.2.3",'
+                    '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+                ),
+            ),
+        )
+        legacy.mkdir(parents=True)
+        scoped.mkdir(parents=True)
+        for artifact_dir in (legacy, scoped):
+            (artifact_dir / "github-release-result.json").write_text(
+                json.dumps(_load("github-release-result.json")),
+                encoding="utf-8",
+            )
+
+        names = control._collect_artifact_names(root)
+
+        assert names["github-release-result-artifact-names"] == [scoped.name]
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_artifact_inventory_filters_github_release_result_by_attempt() -> None:
+    """Report inventory must ignore previous-attempt GitHub Release receipts."""
+    root = SCRATCH / "scoped-github-release-result"
+    shutil.rmtree(root, ignore_errors=True)
+    try:
+        previous = root / artifact_name(
+            "github-release-result",
+            ArtifactNameInputs(
+                123,
+                3,
+                binding_json=(
+                    '{"tagName":"release/example/v1.2.3",'
+                    '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+                ),
+            ),
+        )
+        current = root / artifact_name(
+            "github-release-result",
+            ArtifactNameInputs(
+                123,
+                4,
+                binding_json=(
+                    '{"tagName":"release/example/v1.2.3",'
+                    '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+                ),
+            ),
+        )
+        previous.mkdir(parents=True)
+        current.mkdir(parents=True)
+        for artifact_dir in (previous, current):
+            (artifact_dir / "github-release-result.json").write_text(
+                json.dumps(_load("github-release-result.json")),
+                encoding="utf-8",
+            )
+
+        names = control._collect_artifact_names(root, run_id=123, attempt=4)
+
+        assert names["github-release-result-artifact-names"] == [current.name]
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def test_prepare_attestation_uses_planned_asset_names() -> None:
@@ -4859,7 +12778,7 @@ def test_prepare_attestation_uses_planned_asset_names() -> None:
 
 
 def test_proof_documents_generate_named_github_release_asset_proofs() -> None:
-    """Publish proof generation produces deterministic upload artifact names."""
+    """GitHub Release proof generation is not driven by publish-result."""
     plan = _load("release-plan.json")
     build_result = _load("build-result.json")
     build_dir = SCRATCH / "build-results"
@@ -4889,54 +12808,14 @@ def test_proof_documents_generate_named_github_release_asset_proofs() -> None:
         )
         for entry in request["artifacts"].values():
             entry["input-path"] = entry["bundle-relative-path"]
-        request["github-release-asset-attestations"] = {
-            "artifact/package": {
-                "attestation-id": "1",
-                "attestation-url": "https://github.com/hcoona/three/attestations/1",
-                "bundle-path": "attestation.json",
-            },
-            "artifact/symbols": {
-                "attestation-id": "1",
-                "attestation-url": "https://github.com/hcoona/three/attestations/1",
-                "bundle-path": "attestation.json",
-            },
-        }
-        result = deepcopy(_load("publish-result.json"))
-        result["evidence"] = {
-            "asset-attestations": {
-                "artifact/package": {
-                    "asset-name": "Example.1.2.3.nupkg",
-                    "sha256": SHA_B,
-                    "predicate-type": "https://slsa.dev/provenance/v1",
-                    "signer-workflow": SIGNER_WORKFLOW,
-                    "source-repository": "hcoona/three",
-                    "source-digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    "attestation-id": "1",
-                    "attestation-url": "https://github.com/hcoona/three/attestations/1",
-                    "bundle-path": "attestation.json",
-                },
-                "artifact/symbols": {
-                    "asset-name": "Example.1.2.3.snupkg",
-                    "sha256": SHA_C,
-                    "predicate-type": "https://slsa.dev/provenance/v1",
-                    "signer-workflow": SIGNER_WORKFLOW,
-                    "source-repository": "hcoona/three",
-                    "source-digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    "attestation-id": "1",
-                    "attestation-url": "https://github.com/hcoona/three/attestations/1",
-                    "bundle-path": "attestation.json",
-                },
-            }
-        }
-
         proofs = control._proof_documents(
             plan,
             request,
-            result,
+            _load("github-release-result.json"),
             "publish-node/gh",
             {
                 "repository": "hcoona/three",
-                "workflow": "release-publish-node.yml",
+                "workflow": "release-orchestrate.yml",
                 "run-id": 123,
                 "run-attempt": 4,
                 "head-sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -4948,22 +12827,366 @@ def test_proof_documents_generate_named_github_release_asset_proofs() -> None:
             build_dir,
             123,
             4,
+            _github_release_asset_attestations(),
         )
 
         assert len(proofs) == 2
-        assert all(
-            name.startswith("release-github-release-asset-proof-v1-")
-            for name, _ in proofs
+        planned_names = control._planned_proof_artifact_names(
+            plan,
+            "publish-node/gh",
+            123,
+            4,
         )
-        for _, proof in proofs:
+        assert planned_names == [name for name, _proof in proofs]
+        for name, proof in proofs:
+            assert name.startswith("release-github-release-asset-proof-v1-")
+            assert proof["kind"] == "github-release-asset-proof"
             validate_contract(proof)
     finally:
         shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
+def test_proof_documents_bind_distinct_github_release_target_and_source() -> (
+    None
+):
+    """GitHub Release proof generation keeps release target and source digest apart."""
+    plan = _load("release-plan.json")
+    request = _load("publish-request.json")
+    request["attestation-source-sha"] = SHA_D
+    attestations = _github_release_asset_attestations()
+    for evidence in attestations.values():
+        evidence["source-digest"] = SHA_D
+    run = {
+        "repository": "hcoona/three",
+        "workflow": "release-orchestrate.yml",
+        "run-id": 123,
+        "run-attempt": 4,
+        "head-sha": SHA_D,
+        "live": True,
+        "dry-run": False,
+        "validation-only": False,
+    }
+
+    proofs = control._proof_documents(
+        plan,
+        request,
+        _load("github-release-result.json"),
+        "publish-node/gh",
+        run,
+        {},
+        SCRATCH / "unused-build-results",
+        123,
+        4,
+        attestations,
+    )
+
+    assert proofs
+    for _name, proof in proofs:
+        validate_contract(proof)
+        assert proof["release-target-sha"] == SHA_A
+        assert proof["run"]["head-sha"] == SHA_D
+        assert proof["attestation"]["source-digest"] == SHA_D
+
+
+def test_github_release_publish_request_can_use_staged_asset_receipts() -> None:
+    """GitHub Release proof generation uses active build dist receipt artifacts."""
+    plan = _load("release-plan.json")
+    scratch = SCRATCH / "github-release-publish-request-receipts"
+    assets_dir = scratch / "assets"
+    receipts_path = scratch / "release-asset-receipts.json"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        assets_dir.mkdir(parents=True)
+        payloads = {
+            "Example.1.2.3.nupkg": b"package",
+            "Example.1.2.3.snupkg": b"symbols",
+        }
+        receipts = []
+        for name, payload in payloads.items():
+            (assets_dir / name).write_bytes(payload)
+            receipts.append(
+                {
+                    "name": name,
+                    "size": len(payload),
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                },
+            )
+        receipts_path.write_text(json.dumps(receipts), encoding="utf-8")
+
+        request = control._github_release_publish_request_from_asset_receipts(
+            plan,
+            "publish-node/gh",
+            receipts_path,
+            assets_dir,
+        )
+
+        validate_contract(request)
+        assert set(request["artifacts"]) == {
+            "artifact/package",
+            "artifact/symbols",
+        }
+        assert request["artifacts"]["artifact/package"]["input-path"] == (
+            "release-assets/Example.1.2.3.nupkg"
+        )
+        assert (
+            request["artifacts"]["artifact/symbols"]["sha256"]
+            == hashlib.sha256(
+                b"symbols",
+            ).hexdigest()
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_github_release_publish_request_filters_global_asset_receipts() -> None:
+    """Per-node proof requests validate only their planned receipt subset."""
+    plan = _load("release-plan.json")
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    node["artifact-ids"] = ["artifact/package"]
+    node["projection"]["asset-names-by-artifact-id"] = {
+        "artifact/package": "Example.1.2.3.nupkg",
+    }
+    scratch = SCRATCH / "github-release-publish-request-global-receipts"
+    assets_dir = scratch / "assets"
+    receipts_path = scratch / "release-asset-receipts.json"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        assets_dir.mkdir(parents=True)
+        payloads = {
+            "Example.1.2.3.nupkg": b"package",
+            "Example.1.2.3.snupkg": b"symbols",
+        }
+        receipts = []
+        for name, payload in payloads.items():
+            (assets_dir / name).write_bytes(payload)
+            receipts.append(
+                {
+                    "name": name,
+                    "size": len(payload),
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                },
+            )
+        receipts_path.write_text(json.dumps(receipts), encoding="utf-8")
+
+        request = control._github_release_publish_request_from_asset_receipts(
+            plan,
+            "publish-node/gh",
+            receipts_path,
+            assets_dir,
+        )
+
+        validate_contract(request)
+        assert set(request["artifacts"]) == {"artifact/package"}
+        assert request["artifacts"]["artifact/package"]["sha256"] == (
+            hashlib.sha256(b"package").hexdigest()
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_github_release_publish_request_rejects_skip_satisfied_asset_receipt_path() -> (
+    None
+):
+    """GitHub Release asset receipts cannot materialize skip-satisfied nodes."""
+    plan = _load("release-plan.json")
+    plan["graph"]["publish-nodes"]["publish-node/gh"]["publish-disposition"] = (
+        "skip-satisfied"
+    )
+
+    with pytest.raises(ValueError, match="publish-disposition 'publish'"):
+        control._github_release_publish_request_from_asset_receipts(
+            plan,
+            "publish-node/gh",
+            SCRATCH / "missing-release-asset-receipts.json",
+            SCRATCH / "missing-release-assets",
+        )
+
+
+def test_github_release_asset_attestations_command_verifies_staged_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GitHub Release proof handoff binds attestations to staged bytes."""
+    scratch = SCRATCH / "github-release-asset-attestations"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        assets_dir = scratch / "assets"
+        assets_dir.mkdir(parents=True)
+        payloads = {
+            "Example.1.2.3.nupkg": b"package",
+            "Example.1.2.3.snupkg": b"symbols",
+        }
+        shas = {
+            name: hashlib.sha256(payload).hexdigest()
+            for name, payload in payloads.items()
+        }
+        for name, payload in payloads.items():
+            (assets_dir / name).write_bytes(payload)
+        publish_request = _load("publish-request.json")
+        github_result = _load("github-release-result.json")
+        for artifact_id, asset_name in (
+            ("artifact/package", "Example.1.2.3.nupkg"),
+            ("artifact/symbols", "Example.1.2.3.snupkg"),
+        ):
+            artifact = publish_request["artifacts"][artifact_id]
+            artifact["byte-size"] = len(payloads[asset_name])
+            artifact["sha256"] = shas[asset_name]
+            result_asset = next(
+                item
+                for item in github_result["assets"]
+                if item["name"] == asset_name
+            )
+            result_asset["size"] = len(payloads[asset_name])
+            result_asset["sha256"] = shas[asset_name]
+        calls: list[tuple[str, str]] = []
+
+        def fake_verify(**kwargs: object) -> dict[str, object]:
+            asset_name = cast("str", kwargs["asset_name"])
+            expected_sha256 = cast("str", kwargs["expected_sha256"])
+            assert kwargs["commit_sha"] == "d" * 40
+            calls.append((asset_name, expected_sha256))
+            return {
+                "asset-name": asset_name,
+                "sha256": expected_sha256,
+                "predicate-type": "https://slsa.dev/provenance/v1",
+                "signer-workflow": SIGNER_WORKFLOW,
+                "source-repository": "hcoona/three",
+                "source-digest": "d" * 40,
+                "attestation-id": f"att-{asset_name}",
+                "attestation-url": (
+                    "https://github.com/hcoona/three/attestations/1"
+                ),
+            }
+
+        monkeypatch.setattr(
+            control,
+            "_gh_attestation_verify_asset_evidence",
+            fake_verify,
+        )
+        request_path = scratch / "publish-request.json"
+        result_path = scratch / "github-release-result.json"
+        out = scratch / "asset-attestations.json"
+        request_path.write_text(json.dumps(publish_request), encoding="utf-8")
+        result_path.write_text(json.dumps(github_result), encoding="utf-8")
+
+        assert (
+            control._cmd_github_release_asset_attestations(
+                control.argparse.Namespace(
+                    publish_request=str(request_path),
+                    github_release_result=str(result_path),
+                    attestation_source_sha="d" * 40,
+                    repository="hcoona/three",
+                    assets_dir=str(assets_dir),
+                    out=str(out),
+                ),
+            )
+            == 0
+        )
+
+        evidence = json.loads(out.read_text(encoding="utf-8"))
+        assert (
+            evidence["artifact/package"]["sha256"]
+            == shas["Example.1.2.3.nupkg"]
+        )
+        assert (
+            evidence["artifact/symbols"]["sha256"]
+            == shas["Example.1.2.3.snupkg"]
+        )
+        assert sorted(calls) == [
+            ("Example.1.2.3.nupkg", shas["Example.1.2.3.nupkg"]),
+            ("Example.1.2.3.snupkg", shas["Example.1.2.3.snupkg"]),
+        ]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_github_release_asset_attestations_can_preflight_before_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GitHub Release attestation source mismatches fail before release mutation."""
+    scratch = SCRATCH / "github-release-asset-attestations-preflight"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        assets_dir = scratch / "assets"
+        assets_dir.mkdir(parents=True)
+        payloads = {
+            "Example.1.2.3.nupkg": b"package",
+            "Example.1.2.3.snupkg": b"symbols",
+        }
+        publish_request = _load("publish-request.json")
+        for artifact_id, asset_name in (
+            ("artifact/package", "Example.1.2.3.nupkg"),
+            ("artifact/symbols", "Example.1.2.3.snupkg"),
+        ):
+            payload = payloads[asset_name]
+            (assets_dir / asset_name).write_bytes(payload)
+            publish_request["artifacts"][artifact_id]["byte-size"] = len(
+                payload,
+            )
+            publish_request["artifacts"][artifact_id]["sha256"] = (
+                hashlib.sha256(payload).hexdigest()
+            )
+
+        observed_source_digests: list[str] = []
+
+        def fake_verify(**kwargs: object) -> dict[str, object]:
+            asset_name = cast("str", kwargs["asset_name"])
+            expected_sha256 = cast("str", kwargs["expected_sha256"])
+            source_digest = cast("str", kwargs["commit_sha"])
+            observed_source_digests.append(source_digest)
+            return {
+                "asset-name": asset_name,
+                "sha256": expected_sha256,
+                "predicate-type": "https://slsa.dev/provenance/v1",
+                "signer-workflow": SIGNER_WORKFLOW,
+                "source-repository": "hcoona/three",
+                "source-digest": source_digest,
+                "attestation-id": f"att-{asset_name}",
+                "attestation-url": (
+                    "https://github.com/hcoona/three/attestations/1"
+                ),
+            }
+
+        monkeypatch.setattr(
+            control,
+            "_gh_attestation_verify_asset_evidence",
+            fake_verify,
+        )
+        request_path = scratch / "publish-request.json"
+        out = scratch / "asset-attestations.json"
+        request_path.write_text(json.dumps(publish_request), encoding="utf-8")
+
+        assert (
+            control._cmd_github_release_asset_attestations(
+                control.argparse.Namespace(
+                    publish_request=str(request_path),
+                    github_release_result="",
+                    attestation_source_sha="d" * 40,
+                    repository="hcoona/three",
+                    assets_dir=str(assets_dir),
+                    out=str(out),
+                ),
+            )
+            == 0
+        )
+
+        assert observed_source_digests == ["d" * 40, "d" * 40]
+        evidence = json.loads(out.read_text(encoding="utf-8"))
+        assert {item["source-digest"] for item in evidence.values()} == {
+            "d" * 40,
+        }
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def test_proof_documents_generate_named_immutable_proofs() -> None:
     """Immutable registry proof generation records Actions artifact identity."""
     plan = _load("release-plan.json")
+    plan["graph"]["publish-nodes"]["publish-node/nuget"][
+        "publish-disposition"
+    ] = "publish"
+    plan["graph"]["publish-nodes"]["publish-node/nuget"]["publish-mode"] = (
+        "create-only"
+    )
     build_result = _load("build-result.json")
     build_dir = SCRATCH / "build-results"
     bundle_dir = SCRATCH / "bundles"
@@ -4998,7 +13221,7 @@ def test_proof_documents_generate_named_immutable_proofs() -> None:
             "publish-node/nuget",
             {
                 "repository": "hcoona/three",
-                "workflow": "release-publish-node.yml",
+                "workflow": "release-orchestrate.yml",
                 "run-id": 123,
                 "run-attempt": 4,
                 "head-sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -5045,6 +13268,388 @@ def test_external_oidc_gate_requires_live_enablement_token() -> None:
     assert diagnostics[0]["details"]["required-enable-token"] == (
         "github-release/public#example#Example"
     )
+
+
+def test_external_oidc_plan_gate_ignores_disabled_package_target() -> None:
+    """Disabled registry targets do not block GitHub Release-only delivery."""
+    plan, execution_sets = _external_oidc_plan_and_sets()
+    execution_sets["active-publish-node-ids"] = [
+        "publish-node/nuget",
+        "publish-node/gh",
+    ]
+    execution_sets["publish-intent-node-ids"] = [
+        "publish-node/nuget",
+        "publish-node/gh",
+    ]
+    execution_sets["selected-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    execution_sets["active-publish-selectors"]["github-token"] = [
+        "publish-node/gh"
+    ]
+    scratch = SCRATCH / "external-oidc-disabled-package-target"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        scratch.mkdir(parents=True)
+        plan_path = scratch / "release-plan.json"
+        sets_path = scratch / "execution-sets.json"
+        diagnostics_path = scratch / "planner-diagnostics.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+
+        result = control._cmd_plan_gate(
+            control.argparse.Namespace(
+                plan=str(plan_path),
+                execution_sets=str(sets_path),
+                remote_observations="",
+                enabled_external_oidc_targets="",
+                disabled_package_target_keys="python-pypi",
+                diagnostics_out=str(diagnostics_path),
+            )
+        )
+
+        assert result == 0
+        assert not diagnostics_path.exists()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_report_ignores_disabled_package_target_for_completion_check() -> None:
+    """Report completion revalidation uses the same disabled registry filter."""
+    plan, execution_sets = _external_oidc_plan_and_sets()
+    plan_id = str(plan["envelope"]["plan-id"])
+    registry_node_id = "publish-node/nuget"
+    github_node_id = "publish-node/gh"
+    execution_sets["active-publish-node-ids"] = [
+        registry_node_id,
+        github_node_id,
+    ]
+    execution_sets["publish-intent-node-ids"] = [
+        registry_node_id,
+        github_node_id,
+    ]
+    execution_sets["selected-github-release-publish-node-ids"] = [
+        github_node_id,
+    ]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        github_node_id,
+    ]
+    for selector in execution_sets["active-publish-selectors"].values():
+        selector.clear()
+    execution_sets["active-publish-selectors"][
+        "external-oidc-reusable-workflow"
+    ] = [registry_node_id]
+    execution_sets["active-publish-selectors"]["github-token"] = [
+        github_node_id
+    ]
+    report_path = SCRATCH / "disabled-registry-report.json"
+    artifacts_root = SCRATCH / "disabled-registry-report-artifacts"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    try:
+        SCRATCH.mkdir()
+        plan_path = SCRATCH / "release-plan.json"
+        execution_sets_path = SCRATCH / "execution-sets.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        execution_sets_path.write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        github_release_result_name = artifact_name(
+            "github-release-result",
+            ArtifactNameInputs(
+                123,
+                4,
+                binding_json=(
+                    '{"tagName":"release/example/v1.2.3",'
+                    '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+                ),
+            ),
+        )
+        (artifacts_root / github_release_result_name).mkdir(parents=True)
+        (
+            artifacts_root
+            / github_release_result_name
+            / "github-release-result.json"
+        ).write_text(
+            json.dumps(_load("github-release-result.json")),
+            encoding="utf-8",
+        )
+        _write_github_release_completion_evidence(
+            artifacts_root,
+            plan_id=plan_id,
+        )
+        disabled_publish_result_name = artifact_name(
+            "publish-result",
+            ArtifactNameInputs(
+                123,
+                4,
+                plan_id=plan_id,
+                publish_node_id=registry_node_id,
+            ),
+        )
+        disabled_publish_result = _publish_result_for_node(
+            plan,
+            registry_node_id,
+        )
+        validate_contract(disabled_publish_result)
+        (artifacts_root / disabled_publish_result_name).mkdir(parents=True)
+        (
+            artifacts_root
+            / disabled_publish_result_name
+            / "publish-result.json"
+        ).write_text(
+            json.dumps(disabled_publish_result),
+            encoding="utf-8",
+        )
+
+        result = control._cmd_report(
+            control.argparse.Namespace(
+                repository="hcoona/three",
+                workflow="release-orchestrate.yml",
+                run_id=123,
+                attempt=4,
+                head_sha=SHA_A,
+                profile="official",
+                dry_run="false",
+                validation_build="false",
+                canary_override_non_public_ref="false",
+                out=str(report_path),
+                plan=str(plan_path),
+                execution_sets=str(execution_sets_path),
+                **_report_prepare_artifact_args(prepare_names),
+                diagnostics="",
+                artifacts_root=str(artifacts_root),
+                authorize_conclusion="success",
+                validate_conclusion="success",
+                metadata_conclusion="success",
+                plan_conclusion="success",
+                build_conclusion="success",
+                tag_conclusion="success",
+                release_completed_check_conclusion="success",
+                disabled_package_target_keys="python-pypi",
+                publish_conclusion="success",
+            )
+        )
+
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        validate_contract(report)
+        assert result == 0
+        assert report["run"]["conclusion"] == "success"
+        assert report["jobs"]["release-completed-check"]["conclusion"] == (
+            "success"
+        )
+        assert report["jobs"]["publish"]["failed-publish-node-ids"] == []
+        assert report["counts"]["published-nodes"] == 1
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_report_counts_skip_results_after_disabled_target_filter() -> None:
+    """Report counts only enabled skip-satisfied receipts."""
+    plan, execution_sets = _external_oidc_plan_and_sets()
+    plan_id = str(plan["envelope"]["plan-id"])
+    registry_node_id = "publish-node/nuget"
+    github_node_id = "publish-node/gh"
+    execution_sets["active-publish-node-ids"] = [registry_node_id]
+    execution_sets["publish-intent-node-ids"] = [
+        registry_node_id,
+        github_node_id,
+    ]
+    execution_sets["skip-satisfied-publish-node-ids"] = [
+        registry_node_id,
+        github_node_id,
+    ]
+    for selector in execution_sets["active-publish-selectors"].values():
+        selector.clear()
+    execution_sets["active-publish-selectors"][
+        "external-oidc-reusable-workflow"
+    ] = [registry_node_id]
+    report_path = SCRATCH / "disabled-skip-report.json"
+    artifacts_root = SCRATCH / "disabled-skip-report-artifacts"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    try:
+        SCRATCH.mkdir()
+        plan_path = SCRATCH / "release-plan.json"
+        execution_sets_path = SCRATCH / "execution-sets.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        execution_sets_path.write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        for node_id in (registry_node_id, github_node_id):
+            skip_result_name = artifact_name(
+                "skip-result",
+                ArtifactNameInputs(
+                    123,
+                    4,
+                    plan_id=plan_id,
+                    publish_node_id=node_id,
+                ),
+            )
+            skip_result = _skip_result_for_node(plan, node_id)
+            validate_contract(skip_result)
+            (artifacts_root / skip_result_name).mkdir(parents=True)
+            (artifacts_root / skip_result_name / "skip-result.json").write_text(
+                json.dumps(skip_result),
+                encoding="utf-8",
+            )
+
+        result = control._cmd_report(
+            control.argparse.Namespace(
+                repository="hcoona/three",
+                workflow="release-orchestrate.yml",
+                run_id=123,
+                attempt=4,
+                head_sha=SHA_A,
+                profile="official",
+                dry_run="false",
+                validation_build="false",
+                canary_override_non_public_ref="false",
+                out=str(report_path),
+                plan=str(plan_path),
+                execution_sets=str(execution_sets_path),
+                **_report_prepare_artifact_args(prepare_names),
+                diagnostics="",
+                artifacts_root=str(artifacts_root),
+                authorize_conclusion="success",
+                validate_conclusion="success",
+                metadata_conclusion="success",
+                plan_conclusion="success",
+                build_conclusion="success",
+                tag_conclusion="success",
+                release_completed_check_conclusion="success",
+                disabled_package_target_keys="python-pypi",
+                publish_conclusion="success",
+            )
+        )
+
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        validate_contract(report)
+        assert result == 0
+        assert report["run"]["conclusion"] == "success"
+        assert report["counts"]["skipped-publish-nodes"] == 1
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("case", "plan_factory", "disabled_keys"),
+    [
+        (
+            "node",
+            _node_all_registry_disabled_plan_and_sets,
+            "node-gpr,node-npmjs",
+        ),
+        (
+            "ruby",
+            _ruby_all_registry_disabled_plan_and_sets,
+            "ruby-gpr,ruby-rubygems",
+        ),
+    ],
+)
+def test_report_accepts_all_registry_disabled_github_release_only(
+    case: str,
+    plan_factory: Callable[[], tuple[dict[str, object], dict[str, object]]],
+    disabled_keys: str,
+) -> None:
+    """Report revalidation ignores disabled registries and requires GitHub Release evidence."""
+    plan, execution_sets = plan_factory()
+    plan_id = str(plan["envelope"]["plan-id"])
+    report_path = SCRATCH / f"{case}-disabled-registries-report.json"
+    artifacts_root = SCRATCH / f"{case}-disabled-registries-artifacts"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    try:
+        SCRATCH.mkdir()
+        plan_path = SCRATCH / "release-plan.json"
+        execution_sets_path = SCRATCH / "execution-sets.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        execution_sets_path.write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        github_release_result_name = artifact_name(
+            "github-release-result",
+            ArtifactNameInputs(
+                123,
+                4,
+                binding_json=(
+                    '{"tagName":"release/example/v1.2.3",'
+                    '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+                ),
+            ),
+        )
+        (artifacts_root / github_release_result_name).mkdir(parents=True)
+        (
+            artifacts_root
+            / github_release_result_name
+            / "github-release-result.json"
+        ).write_text(
+            json.dumps(_load("github-release-result.json")),
+            encoding="utf-8",
+        )
+        _write_github_release_completion_evidence(
+            artifacts_root,
+            plan_id=plan_id,
+        )
+
+        result = control._cmd_report(
+            control.argparse.Namespace(
+                repository="hcoona/three",
+                workflow="release-orchestrate.yml",
+                run_id=123,
+                attempt=4,
+                head_sha=SHA_A,
+                profile="official",
+                dry_run="false",
+                validation_build="false",
+                canary_override_non_public_ref="false",
+                out=str(report_path),
+                plan=str(plan_path),
+                execution_sets=str(execution_sets_path),
+                **_report_prepare_artifact_args(prepare_names),
+                diagnostics="",
+                artifacts_root=str(artifacts_root),
+                authorize_conclusion="success",
+                validate_conclusion="success",
+                metadata_conclusion="success",
+                plan_conclusion="success",
+                build_conclusion="success",
+                tag_conclusion="success",
+                release_completed_check_conclusion="success",
+                disabled_package_target_keys=disabled_keys,
+                publish_conclusion="success",
+            )
+        )
+
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        validate_contract(report)
+        assert result == 0
+        assert report["run"]["conclusion"] == "success"
+        assert report["jobs"]["release-completed-check"]["conclusion"] == (
+            "success"
+        )
+        assert report["jobs"]["publish"]["failed-publish-node-ids"] == []
+        assert report["counts"]["published-nodes"] == 1
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
 def test_external_oidc_gate_blocks_unsupported_remote_observation() -> None:
@@ -5138,10 +13743,7 @@ def test_oidc_allowlist_preserves_scoped_npm_package_tokens() -> None:
 
 def test_plan_gate_writes_invalid_oidc_allowlist_diagnostics() -> None:
     """Invalid live-enable allowlists populate planner diagnostics artifact."""
-    plan = deepcopy(_load("release-plan.json"))
-    execution_sets = deepcopy(_load("execution-sets.json"))
-    plan["envelope"]["profile"] = "official"
-    execution_sets["active-publish-node-ids"] = ["publish-node/gh"]
+    plan, execution_sets = _external_oidc_plan_and_sets()
     out_dir = SCRATCH / "invalid-oidc"
     shutil.rmtree(SCRATCH, ignore_errors=True)
     try:
@@ -5172,131 +13774,6652 @@ def test_plan_gate_writes_invalid_oidc_allowlist_diagnostics() -> None:
         shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
-def test_windows_build_variant_steps_pin_bash_shell() -> None:
-    """Windows-routed reusable builds must not run Bash syntax in PowerShell."""
-    workflow = _workflow("release-build-variant.yml")
+def test_matrix_outputs_expose_plan_derived_publish_targets() -> None:
+    """Matrix outputs include selected and active target keys for workflow gating."""
+    scratch = SCRATCH / "matrix-plan-targets"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan = deepcopy(_load("release-plan.json"))
+        execution_sets = deepcopy(_load("execution-sets.json"))
+        plan_path = scratch / "release-plan.json"
+        sets_path = scratch / "execution-sets.json"
+        outputs_path = scratch / "github-output.txt"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
 
-    for step_name in (
-        "Compute artifact names",
-        "Materialize build request",
-        "Restore local .NET tools",
-        "Execute build unit",
+        result = control._cmd_matrix_outputs(
+            control.argparse.Namespace(
+                plan=str(plan_path),
+                execution_sets=str(sets_path),
+                run_id=123,
+                attempt=4,
+                github_output=str(outputs_path),
+            )
+        )
+
+        assert result == 0
+        outputs = dict(
+            line.split("=", maxsplit=1)
+            for line in outputs_path.read_text(encoding="utf-8").splitlines()
+            if "=" in line
+        )
+        assert outputs["has_selected_github_release"] == "true"
+        assert outputs["has_active_github_release"] == "true"
+        assert outputs["active_github_release_publish_mode"] == "create-only"
+        assert (
+            outputs["active_github_release_overwrite_mutable_authorized"]
+            == "false"
+        )
+        assert "has_selected_node_npmjs" in outputs
+        assert "has_active_node_npmjs" in outputs
+        assert "has_selected_ruby_rubygems" in outputs
+        assert "has_active_ruby_rubygems" in outputs
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_matrix_outputs_filter_disabled_node_gpr_target() -> None:
+    """Disabled Node GPR does not require the skipped GPR gate."""
+    scratch = SCRATCH / "matrix-disabled-node-gpr"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan = deepcopy(_load("release-plan.json"))
+        execution_sets = deepcopy(_load("execution-sets.json"))
+        graph = plan["graph"]
+        plan["envelope"]["projects"]["example"]["ecosystem"] = "node"
+        graph["artifacts"]["artifact/package"]["concrete-kind"] = "npm-package"
+        graph["target-instance-snapshots"]["npm/npmjs"] = {
+            "capabilities": {
+                "publish-topology": "external-oidc-caller-workflow"
+            },
+            "destination": {"host": "registry.npmjs.org"},
+            "family": "npm",
+            "instance-id": "npmjs",
+        }
+        graph["target-instance-snapshots"]["npm/github-packages"] = {
+            "capabilities": {"publish-topology": "github-token"},
+            "destination": {"host": "npm.pkg.github.com", "owner": "hcoona"},
+            "family": "npm",
+            "instance-id": "github-packages",
+        }
+        graph["publish-nodes"]["publish-node/npmjs"] = {
+            "artifact-ids": ["artifact/package"],
+            "project-id": "example",
+            "publish-disposition": "publish",
+            "publish-node-id": "publish-node/npmjs",
+            "resolved-publish-identity": {
+                "package-name": "example",
+                "version": "1.2.3",
+            },
+            "target-instance-snapshot-id": "npm/npmjs",
+        }
+        graph["publish-nodes"]["publish-node/gpr"] = {
+            "artifact-ids": ["artifact/package"],
+            "project-id": "example",
+            "publish-disposition": "publish",
+            "publish-node-id": "publish-node/gpr",
+            "resolved-publish-identity": {
+                "package-name": "@hcoona/example",
+                "version": "1.2.3",
+            },
+            "target-instance-snapshot-id": "npm/github-packages",
+        }
+        execution_sets["active-publish-node-ids"] = [
+            "publish-node/gh",
+            "publish-node/npmjs",
+            "publish-node/gpr",
+        ]
+        execution_sets["selected-github-release-publish-node-ids"] = [
+            "publish-node/gh"
+        ]
+        execution_sets["active-github-release-publish-node-ids"] = [
+            "publish-node/gh"
+        ]
+        execution_sets["skip-satisfied-publish-node-ids"] = []
+        for selector in execution_sets["active-publish-selectors"].values():
+            selector.clear()
+        execution_sets["active-publish-selectors"]["github-token"] = [
+            "publish-node/gh",
+            "publish-node/gpr",
+        ]
+        execution_sets["active-publish-selectors"][
+            "external-oidc-caller-workflow"
+        ] = ["publish-node/npmjs"]
+        plan_path = scratch / "release-plan.json"
+        sets_path = scratch / "execution-sets.json"
+        output_path = scratch / "github-output.txt"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+
+        result = control._cmd_matrix_outputs(
+            control.argparse.Namespace(
+                plan=str(plan_path),
+                execution_sets=str(sets_path),
+                disabled_package_target_keys="node-gpr",
+                run_id=123,
+                attempt=4,
+                github_output=str(output_path),
+            )
+        )
+
+        assert result == 0
+        outputs = _github_outputs(output_path)
+        assert outputs["has_selected_node_gpr"] == "false"
+        assert outputs["has_active_node_gpr"] == "false"
+        assert outputs["has_active_node_npmjs"] == "true"
+        assert outputs["has_active_github_release"] == "true"
+        assert outputs["reusable_github_packages_publish_node_ids"] == "[]"
+        assert outputs["expected_node_gpr_package_name"] == ""
+        assert outputs["expected_node_gpr_package_version"] == ""
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_matrix_outputs_filter_disabled_target_only_variant() -> None:
+    """Disabled package targets do not keep otherwise unused variants active."""
+    scratch = SCRATCH / "matrix-disabled-target-variant"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan = deepcopy(_load("release-plan.json"))
+        execution_sets = deepcopy(_load("execution-sets.json"))
+        graph = plan["graph"]
+        plan["envelope"]["projects"]["example"]["ecosystem"] = "node"
+        plan["envelope"]["projects"]["example"]["variant-ids"].append(
+            "variant/disabled-gpr",
+        )
+        graph["variants"]["variant/disabled-gpr"] = {
+            "artifact-ids": ["artifact/disabled-gpr"],
+            "descriptor-handle": "disabled-gpr",
+            "dimensions": {},
+            "project-id": "example",
+        }
+        graph["artifacts"]["artifact/disabled-gpr"] = {
+            "concrete-kind": "npm-package",
+            "descriptor-handle": "disabled-gpr",
+            "kind-family": "package",
+            "produced-from-artifact-ids": [],
+            "project-id": "example",
+            "role": "primary-package",
+            "variant-id": "variant/disabled-gpr",
+        }
+        graph["target-instance-snapshots"]["npm/github-packages"] = {
+            "capabilities": {"publish-topology": "github-token"},
+            "destination": {"host": "npm.pkg.github.com", "owner": "hcoona"},
+            "family": "npm",
+            "instance-id": "github-packages",
+        }
+        graph["publish-nodes"]["publish-node/gpr"] = {
+            "artifact-ids": ["artifact/disabled-gpr"],
+            "project-id": "example",
+            "publish-disposition": "publish",
+            "publish-node-id": "publish-node/gpr",
+            "resolved-publish-identity": {
+                "package-name": "@hcoona/example",
+                "version": "1.2.3",
+            },
+            "target-instance-snapshot-id": "npm/github-packages",
+        }
+        execution_sets["active-publish-node-ids"] = [
+            "publish-node/gh",
+            "publish-node/gpr",
+        ]
+        execution_sets["active-publish-selectors"]["github-token"] = [
+            "publish-node/gh",
+            "publish-node/gpr",
+        ]
+        execution_sets["active-variant-ids"] = [
+            "variant/v1",
+            "variant/disabled-gpr",
+        ]
+        plan_path = scratch / "release-plan.json"
+        sets_path = scratch / "execution-sets.json"
+        output_path = scratch / "github-output.txt"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+
+        result = control._cmd_matrix_outputs(
+            control.argparse.Namespace(
+                plan=str(plan_path),
+                execution_sets=str(sets_path),
+                disabled_package_target_keys="node-gpr",
+                run_id=123,
+                attempt=4,
+                github_output=str(output_path),
+            )
+        )
+
+        assert result == 0
+        outputs = _github_outputs(output_path)
+        assert outputs["variant_ids"] == '["variant/v1"]'
+        assert outputs["variant_matrix"] == (
+            '[{"variant-id":"variant/v1","runner":"ubuntu-latest"}]'
+        )
+        assert outputs["has_variants"] == "true"
+        assert outputs["has_active_node_gpr"] == "false"
+        assert outputs["has_active_github_release"] == "true"
+
+        report_path = scratch / "release-report.json"
+        result = control._cmd_report(
+            control.argparse.Namespace(
+                repository="hcoona/three",
+                workflow="release-orchestrate.yml",
+                run_id=123,
+                attempt=4,
+                head_sha=SHA_B,
+                profile="official",
+                dry_run="false",
+                validation_build="false",
+                canary_override_non_public_ref="false",
+                out=str(report_path),
+                plan=str(plan_path),
+                execution_sets=str(sets_path),
+                plan_artifact_name="",
+                execution_sets_artifact_name="",
+                entry_publish_handoff_artifact_name="",
+                diagnostics="",
+                artifacts_root="",
+                authorize_conclusion="success",
+                validate_conclusion="success",
+                metadata_conclusion="success",
+                plan_conclusion="failure",
+                build_conclusion="skipped",
+                tag_conclusion="skipped",
+                release_completed_check_conclusion="skipped",
+                disabled_package_target_keys="node-gpr",
+                publish_conclusion="skipped",
+            ),
+        )
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        validate_contract(report)
+        assert result == 0
+        assert report["counts"]["active-variants"] == 1
+        assert report["counts"]["active-publish-nodes"] == 1
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_matrix_outputs_filter_disabled_ruby_gpr_target() -> None:
+    """Disabled Ruby GPR does not require the skipped GPR gate."""
+    scratch = SCRATCH / "matrix-disabled-ruby-gpr"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan = deepcopy(_load("release-plan.json"))
+        execution_sets = deepcopy(_load("execution-sets.json"))
+        graph = plan["graph"]
+        plan["envelope"]["projects"]["example"]["ecosystem"] = "ruby"
+        graph["artifacts"]["artifact/package"]["concrete-kind"] = "rubygem"
+        graph["target-instance-snapshots"]["rubygems/rubygems-org"] = {
+            "capabilities": {
+                "publish-topology": "external-oidc-reusable-workflow"
+            },
+            "destination": {"host": "rubygems.org"},
+            "family": "rubygems",
+            "instance-id": "rubygems-org",
+        }
+        graph["target-instance-snapshots"]["rubygems/github-packages"] = {
+            "capabilities": {"publish-topology": "github-token"},
+            "destination": {"host": "rubygems.pkg.github.com"},
+            "family": "rubygems",
+            "instance-id": "github-packages",
+        }
+        graph["publish-nodes"]["publish-node/rubygems"] = {
+            "artifact-ids": ["artifact/package"],
+            "project-id": "example",
+            "publish-disposition": "publish",
+            "publish-node-id": "publish-node/rubygems",
+            "projection": {
+                "final-distribution-filenames-by-artifact-id": {
+                    "artifact/package": "Example-1.2.3.gem"
+                }
+            },
+            "resolved-publish-identity": {
+                "package-name": "Example",
+                "version": "1.2.3",
+            },
+            "target-instance-snapshot-id": "rubygems/rubygems-org",
+        }
+        graph["publish-nodes"]["publish-node/ruby-gpr"] = {
+            "artifact-ids": ["artifact/package"],
+            "project-id": "example",
+            "publish-disposition": "publish",
+            "publish-node-id": "publish-node/ruby-gpr",
+            "projection": {
+                "final-distribution-filenames-by-artifact-id": {
+                    "artifact/package": "Example-1.2.3.gem"
+                }
+            },
+            "resolved-publish-identity": {
+                "package-name": "Example",
+                "version": "1.2.3",
+            },
+            "target-instance-snapshot-id": "rubygems/github-packages",
+        }
+        graph["publish-nodes"]["publish-node/gh"]["artifact-ids"] = [
+            "artifact/package"
+        ]
+        graph["publish-nodes"]["publish-node/gh"]["projection"] = {
+            "asset-names-by-artifact-id": {
+                "artifact/package": "Example-1.2.3.gem"
+            },
+            "asset-labels-by-artifact-id": {},
+        }
+        execution_sets["active-publish-node-ids"] = [
+            "publish-node/gh",
+            "publish-node/rubygems",
+            "publish-node/ruby-gpr",
+        ]
+        execution_sets["selected-github-release-publish-node-ids"] = [
+            "publish-node/gh"
+        ]
+        execution_sets["active-github-release-publish-node-ids"] = [
+            "publish-node/gh"
+        ]
+        execution_sets["skip-satisfied-publish-node-ids"] = []
+        for selector in execution_sets["active-publish-selectors"].values():
+            selector.clear()
+        execution_sets["active-publish-selectors"]["github-token"] = [
+            "publish-node/gh",
+            "publish-node/ruby-gpr",
+        ]
+        execution_sets["active-publish-selectors"][
+            "external-oidc-reusable-workflow"
+        ] = ["publish-node/rubygems"]
+        plan_path = scratch / "release-plan.json"
+        sets_path = scratch / "execution-sets.json"
+        output_path = scratch / "github-output.txt"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+
+        result = control._cmd_matrix_outputs(
+            control.argparse.Namespace(
+                plan=str(plan_path),
+                execution_sets=str(sets_path),
+                disabled_package_target_keys="ruby-gpr",
+                run_id=123,
+                attempt=4,
+                github_output=str(output_path),
+            )
+        )
+
+        assert result == 0
+        outputs = _github_outputs(output_path)
+        assert outputs["has_selected_ruby_gpr"] == "false"
+        assert outputs["has_active_ruby_gpr"] == "false"
+        assert outputs["has_active_ruby_rubygems"] == "true"
+        assert outputs["has_active_github_release"] == "true"
+        assert outputs["reusable_github_packages_publish_node_ids"] == "[]"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_matrix_outputs_filter_disabled_all_node_registry_targets() -> None:
+    """Disabled Node registries leave GitHub Release as the only live output."""
+    scratch = SCRATCH / "matrix-disabled-node-registries"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan = deepcopy(_load("release-plan.json"))
+        execution_sets = deepcopy(_load("execution-sets.json"))
+        graph = plan["graph"]
+        plan["envelope"]["projects"]["example"]["ecosystem"] = "node"
+        graph["artifacts"]["artifact/package"]["concrete-kind"] = "npm-package"
+        graph["target-instance-snapshots"]["npm/npmjs"] = {
+            "capabilities": {
+                "publish-topology": "external-oidc-caller-workflow"
+            },
+            "destination": {"host": "registry.npmjs.org"},
+            "family": "npm",
+            "instance-id": "npmjs",
+        }
+        graph["target-instance-snapshots"]["npm/github-packages"] = {
+            "capabilities": {"publish-topology": "github-token"},
+            "destination": {"host": "npm.pkg.github.com", "owner": "hcoona"},
+            "family": "npm",
+            "instance-id": "github-packages",
+        }
+        graph["publish-nodes"]["publish-node/npmjs"] = {
+            "artifact-ids": ["artifact/package"],
+            "project-id": "example",
+            "publish-disposition": "publish",
+            "publish-node-id": "publish-node/npmjs",
+            "resolved-publish-identity": {
+                "package-name": "example",
+                "version": "1.2.3",
+            },
+            "target-instance-snapshot-id": "npm/npmjs",
+        }
+        graph["publish-nodes"]["publish-node/gpr"] = {
+            "artifact-ids": ["artifact/package"],
+            "project-id": "example",
+            "publish-disposition": "publish",
+            "publish-node-id": "publish-node/gpr",
+            "resolved-publish-identity": {
+                "package-name": "@hcoona/example",
+                "version": "1.2.3",
+            },
+            "target-instance-snapshot-id": "npm/github-packages",
+        }
+        execution_sets["active-publish-node-ids"] = [
+            "publish-node/gh",
+            "publish-node/npmjs",
+            "publish-node/gpr",
+        ]
+        execution_sets["selected-github-release-publish-node-ids"] = [
+            "publish-node/gh"
+        ]
+        execution_sets["active-github-release-publish-node-ids"] = [
+            "publish-node/gh"
+        ]
+        execution_sets["skip-satisfied-publish-node-ids"] = []
+        for selector in execution_sets["active-publish-selectors"].values():
+            selector.clear()
+        execution_sets["active-publish-selectors"]["github-token"] = [
+            "publish-node/gh",
+            "publish-node/gpr",
+        ]
+        execution_sets["active-publish-selectors"][
+            "external-oidc-caller-workflow"
+        ] = ["publish-node/npmjs"]
+        plan_path = scratch / "release-plan.json"
+        sets_path = scratch / "execution-sets.json"
+        output_path = scratch / "github-output.txt"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+
+        result = control._cmd_matrix_outputs(
+            control.argparse.Namespace(
+                plan=str(plan_path),
+                execution_sets=str(sets_path),
+                disabled_package_target_keys="node-gpr,node-npmjs",
+                run_id=123,
+                attempt=4,
+                github_output=str(output_path),
+            )
+        )
+
+        assert result == 0
+        outputs = _github_outputs(output_path)
+        assert outputs["has_selected_node_gpr"] == "false"
+        assert outputs["has_active_node_gpr"] == "false"
+        assert outputs["has_selected_node_npmjs"] == "false"
+        assert outputs["has_active_node_npmjs"] == "false"
+        assert outputs["has_active_github_release"] == "true"
+        assert outputs["has_live_side_effects"] == "true"
+        assert outputs["reusable_github_packages_publish_node_ids"] == "[]"
+        assert outputs["reusable_external_oidc_publish_node_ids"] == "[]"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_matrix_outputs_filter_disabled_all_ruby_registry_targets() -> None:
+    """Disabled Ruby registries leave GitHub Release as the only live output."""
+    scratch = SCRATCH / "matrix-disabled-ruby-registries"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan = deepcopy(_load("release-plan.json"))
+        execution_sets = deepcopy(_load("execution-sets.json"))
+        graph = plan["graph"]
+        plan["envelope"]["projects"]["example"]["ecosystem"] = "ruby"
+        graph["artifacts"]["artifact/package"]["concrete-kind"] = "rubygem"
+        graph["target-instance-snapshots"]["rubygems/rubygems-org"] = {
+            "capabilities": {
+                "publish-topology": "external-oidc-reusable-workflow"
+            },
+            "destination": {"host": "rubygems.org"},
+            "family": "rubygems",
+            "instance-id": "rubygems-org",
+        }
+        graph["target-instance-snapshots"]["rubygems/github-packages"] = {
+            "capabilities": {"publish-topology": "github-token"},
+            "destination": {"host": "rubygems.pkg.github.com"},
+            "family": "rubygems",
+            "instance-id": "github-packages",
+        }
+        graph["publish-nodes"]["publish-node/rubygems"] = {
+            "artifact-ids": ["artifact/package"],
+            "project-id": "example",
+            "publish-disposition": "publish",
+            "publish-node-id": "publish-node/rubygems",
+            "projection": {
+                "final-distribution-filenames-by-artifact-id": {
+                    "artifact/package": "Example-1.2.3.gem"
+                }
+            },
+            "resolved-publish-identity": {
+                "package-name": "Example",
+                "version": "1.2.3",
+            },
+            "target-instance-snapshot-id": "rubygems/rubygems-org",
+        }
+        graph["publish-nodes"]["publish-node/ruby-gpr"] = {
+            "artifact-ids": ["artifact/package"],
+            "project-id": "example",
+            "publish-disposition": "publish",
+            "publish-node-id": "publish-node/ruby-gpr",
+            "projection": {
+                "final-distribution-filenames-by-artifact-id": {
+                    "artifact/package": "Example-1.2.3.gem"
+                }
+            },
+            "resolved-publish-identity": {
+                "package-name": "Example",
+                "version": "1.2.3",
+            },
+            "target-instance-snapshot-id": "rubygems/github-packages",
+        }
+        graph["publish-nodes"]["publish-node/gh"]["artifact-ids"] = [
+            "artifact/package"
+        ]
+        graph["publish-nodes"]["publish-node/gh"]["projection"] = {
+            "asset-names-by-artifact-id": {
+                "artifact/package": "Example-1.2.3.gem"
+            },
+            "asset-labels-by-artifact-id": {},
+        }
+        execution_sets["active-publish-node-ids"] = [
+            "publish-node/gh",
+            "publish-node/rubygems",
+            "publish-node/ruby-gpr",
+        ]
+        execution_sets["selected-github-release-publish-node-ids"] = [
+            "publish-node/gh"
+        ]
+        execution_sets["active-github-release-publish-node-ids"] = [
+            "publish-node/gh"
+        ]
+        execution_sets["skip-satisfied-publish-node-ids"] = []
+        for selector in execution_sets["active-publish-selectors"].values():
+            selector.clear()
+        execution_sets["active-publish-selectors"]["github-token"] = [
+            "publish-node/gh",
+            "publish-node/ruby-gpr",
+        ]
+        execution_sets["active-publish-selectors"][
+            "external-oidc-reusable-workflow"
+        ] = ["publish-node/rubygems"]
+        plan_path = scratch / "release-plan.json"
+        sets_path = scratch / "execution-sets.json"
+        output_path = scratch / "github-output.txt"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+
+        result = control._cmd_matrix_outputs(
+            control.argparse.Namespace(
+                plan=str(plan_path),
+                execution_sets=str(sets_path),
+                disabled_package_target_keys="ruby-gpr,ruby-rubygems",
+                run_id=123,
+                attempt=4,
+                github_output=str(output_path),
+            )
+        )
+
+        assert result == 0
+        outputs = _github_outputs(output_path)
+        assert outputs["has_selected_ruby_gpr"] == "false"
+        assert outputs["has_active_ruby_gpr"] == "false"
+        assert outputs["has_selected_ruby_rubygems"] == "false"
+        assert outputs["has_active_ruby_rubygems"] == "false"
+        assert outputs["has_active_github_release"] == "true"
+        assert outputs["has_live_side_effects"] == "true"
+        assert outputs["reusable_github_packages_publish_node_ids"] == "[]"
+        assert outputs["reusable_external_oidc_publish_node_ids"] == "[]"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_matrix_outputs_expose_ruby_gem_identity_without_planner_digest() -> (
+    None
+):
+    """Ruby build/publish jobs receive finalized identity without planner digest."""
+    scratch = SCRATCH / "matrix-ruby-gem-exactness"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan = deepcopy(_load("release-plan.json"))
+        execution_sets = deepcopy(_load("execution-sets.json"))
+        graph = plan["graph"]
+        ruby_node = graph["publish-nodes"]["publish-node/nuget"]
+        ruby_node["target-instance-snapshot-id"] = "rubygems/rubygems-org"
+        ruby_node["artifact-ids"] = ["artifact/package"]
+        ruby_node["resolved-publish-identity"] = {
+            "package-name": "Example",
+            "version": "1.2.3",
+        }
+        ruby_node["projection"] = {
+            "final-distribution-filenames-by-artifact-id": {
+                "artifact/package": "Example-1.2.3.gem"
+            },
+            "final-distribution-sha256-by-artifact-id": {
+                "artifact/package": "d" * 64
+            },
+        }
+        graph["publish-nodes"]["publish-node/gh"]["artifact-ids"] = [
+            "artifact/package"
+        ]
+        graph["publish-nodes"]["publish-node/gh"]["projection"] = {
+            "asset-names-by-artifact-id": {
+                "artifact/package": "Example-1.2.3.gem"
+            },
+            "asset-labels-by-artifact-id": {},
+        }
+        graph["artifacts"]["artifact/package"]["concrete-kind"] = "rubygem"
+        graph["target-instance-snapshots"]["rubygems/rubygems-org"] = {
+            "capabilities": {
+                "publish-topology": "external-oidc-reusable-workflow"
+            },
+            "destination": {"host": "rubygems.org"},
+            "family": "rubygems",
+            "instance-id": "rubygems-org",
+        }
+        del graph["target-instance-snapshots"]["nuget/github-packages"]
+        execution_sets["active-publish-node-ids"] = [
+            "publish-node/gh",
+            "publish-node/nuget",
+        ]
+        execution_sets["active-publish-selectors"][
+            "external-oidc-reusable-workflow"
+        ] = ["publish-node/nuget"]
+        output = scratch / "github-output.txt"
+        (scratch / "release-plan.json").write_text(
+            json.dumps(plan), encoding="utf-8"
+        )
+        (scratch / "execution-sets.json").write_text(
+            json.dumps(execution_sets), encoding="utf-8"
+        )
+
+        result = control._cmd_matrix_outputs(
+            control.argparse.Namespace(
+                plan=str(scratch / "release-plan.json"),
+                execution_sets=str(scratch / "execution-sets.json"),
+                run_id=123,
+                attempt=4,
+                github_output=str(output),
+            )
+        )
+
+        assert result == 0
+        outputs = _github_outputs(output)
+        assert outputs["expected_ruby_package_name"] == "Example"
+        assert outputs["expected_ruby_package_version"] == "1.2.3"
+        assert outputs["expected_ruby_gem_filename"] == "Example-1.2.3.gem"
+        assert outputs["expected_ruby_gem_sha256"] == ""
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_matrix_outputs_accept_active_rubygems_without_planner_sha256() -> None:
+    """Active RubyGems matrix outputs do not require planner SHA-256 evidence."""
+    scratch = SCRATCH / "matrix-ruby-gem-missing-sha"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan = deepcopy(_load("release-plan.json"))
+        execution_sets = deepcopy(_load("execution-sets.json"))
+        graph = plan["graph"]
+        ruby_node = graph["publish-nodes"]["publish-node/nuget"]
+        ruby_node["target-instance-snapshot-id"] = "rubygems/rubygems-org"
+        ruby_node["artifact-ids"] = ["artifact/package"]
+        ruby_node["resolved-publish-identity"] = {
+            "package-name": "Example",
+            "version": "1.2.3",
+        }
+        ruby_node["projection"] = {
+            "final-distribution-filenames-by-artifact-id": {
+                "artifact/package": "Example-1.2.3.gem"
+            }
+        }
+        graph["artifacts"]["artifact/package"]["concrete-kind"] = "rubygem"
+        graph["target-instance-snapshots"]["rubygems/rubygems-org"] = {
+            "capabilities": {
+                "publish-topology": "external-oidc-reusable-workflow"
+            },
+            "destination": {"host": "rubygems.org"},
+            "family": "rubygems",
+            "instance-id": "rubygems-org",
+        }
+        del graph["target-instance-snapshots"]["nuget/github-packages"]
+        execution_sets["active-publish-node-ids"] = ["publish-node/nuget"]
+        execution_sets["active-publish-selectors"][
+            "external-oidc-reusable-workflow"
+        ] = ["publish-node/nuget"]
+        (scratch / "release-plan.json").write_text(
+            json.dumps(plan), encoding="utf-8"
+        )
+        (scratch / "execution-sets.json").write_text(
+            json.dumps(execution_sets), encoding="utf-8"
+        )
+
+        result = control._cmd_matrix_outputs(
+            control.argparse.Namespace(
+                plan=str(scratch / "release-plan.json"),
+                execution_sets=str(scratch / "execution-sets.json"),
+                run_id=123,
+                attempt=4,
+                github_output=str(scratch / "github-output.txt"),
+            )
+        )
+
+        assert result == 0
+        outputs = _github_outputs(scratch / "github-output.txt")
+        assert outputs["expected_ruby_gem_filename"] == "Example-1.2.3.gem"
+        assert outputs["expected_ruby_gem_sha256"] == ""
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_matrix_outputs_expose_github_release_only_ruby_identity() -> None:
+    """Ruby GitHub Release builds use package identity from planned gem assets."""
+    scratch = SCRATCH / "matrix-ruby-github-release-identity"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan = deepcopy(_load("release-plan.json"))
+        execution_sets = deepcopy(_load("execution-sets.json"))
+        graph = plan["graph"]
+        plan["envelope"]["projects"]["example"]["resolved-version"] = (
+            "2.1.0-alpha.1"
+        )
+        graph["artifacts"]["artifact/package"]["concrete-kind"] = "rubygem"
+        graph["publish-nodes"]["publish-node/gh"]["artifact-ids"] = [
+            "artifact/package"
+        ]
+        graph["publish-nodes"]["publish-node/gh"]["projection"] = {
+            "asset-names-by-artifact-id": {
+                "artifact/package": "Example-2.1.0.pre.alpha.1.gem"
+            },
+            "asset-labels-by-artifact-id": {},
+        }
+        execution_sets["active-publish-node-ids"] = ["publish-node/gh"]
+        execution_sets["selected-github-release-publish-node-ids"] = [
+            "publish-node/gh"
+        ]
+        execution_sets["active-github-release-publish-node-ids"] = [
+            "publish-node/gh"
+        ]
+        execution_sets["skip-satisfied-publish-node-ids"] = []
+        output = scratch / "github-output.txt"
+        (scratch / "release-plan.json").write_text(
+            json.dumps(plan), encoding="utf-8"
+        )
+        (scratch / "execution-sets.json").write_text(
+            json.dumps(execution_sets), encoding="utf-8"
+        )
+
+        result = control._cmd_matrix_outputs(
+            control.argparse.Namespace(
+                plan=str(scratch / "release-plan.json"),
+                execution_sets=str(scratch / "execution-sets.json"),
+                run_id=123,
+                attempt=4,
+                github_output=str(output),
+            )
+        )
+
+        assert result == 0
+        outputs = _github_outputs(output)
+        assert outputs["expected_ruby_package_name"] == "Example"
+        assert outputs["expected_ruby_package_version"] == ("2.1.0.pre.alpha.1")
+        assert outputs["expected_ruby_gem_filename"] == (
+            "Example-2.1.0.pre.alpha.1.gem"
+        )
+        assert outputs["expected_ruby_gem_sha256"] == ""
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_matrix_outputs_expose_plan_authorized_node_publish_identities() -> (
+    None
+):
+    """Node pack/publish jobs use finalized plan identities, not target package.json."""
+    scratch = SCRATCH / "matrix-node-identities"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan = deepcopy(_load("release-plan.json"))
+        execution_sets = deepcopy(_load("execution-sets.json"))
+        graph = plan["graph"]
+        graph["target-instance-snapshots"]["npm/npmjs"] = {
+            "capabilities": {
+                "publish-topology": "external-oidc-caller-workflow"
+            },
+            "destination": {"host": "registry.npmjs.org"},
+            "family": "npm",
+            "instance-id": "npmjs",
+        }
+        graph["target-instance-snapshots"]["npm/github-packages"] = {
+            "capabilities": {"publish-topology": "github-token"},
+            "destination": {"host": "npm.pkg.github.com", "owner": "hcoona"},
+            "family": "npm",
+            "instance-id": "github-packages",
+        }
+        graph["publish-nodes"]["publish-node/npmjs"] = {
+            "artifact-ids": ["artifact/package"],
+            "project-id": "example",
+            "publish-disposition": "publish",
+            "publish-node-id": "publish-node/npmjs",
+            "resolved-publish-identity": {
+                "package-name": "example",
+                "version": "1.2.3",
+            },
+            "target-instance-snapshot-id": "npm/npmjs",
+        }
+        graph["publish-nodes"]["publish-node/gpr"] = {
+            "artifact-ids": ["artifact/package"],
+            "project-id": "example",
+            "publish-disposition": "publish",
+            "publish-node-id": "publish-node/gpr",
+            "resolved-publish-identity": {
+                "package-name": "@hcoona/example",
+                "version": "1.2.3",
+            },
+            "target-instance-snapshot-id": "npm/github-packages",
+        }
+        execution_sets["active-publish-node-ids"] = [
+            "publish-node/npmjs",
+            "publish-node/gpr",
+        ]
+        execution_sets["active-publish-selectors"]["github-token"] = [
+            "publish-node/gpr"
+        ]
+        execution_sets["active-publish-selectors"][
+            "external-oidc-caller-workflow"
+        ] = ["publish-node/npmjs"]
+        output_path = scratch / "github-output.txt"
+        plan_path = scratch / "release-plan.json"
+        sets_path = scratch / "execution-sets.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+
+        result = control._cmd_matrix_outputs(
+            control.argparse.Namespace(
+                plan=str(plan_path),
+                execution_sets=str(sets_path),
+                run_id=123,
+                attempt=4,
+                github_output=str(output_path),
+            )
+        )
+
+        assert result == 0
+        outputs = dict(
+            line.split("=", maxsplit=1)
+            for line in output_path.read_text(encoding="utf-8").splitlines()
+            if "=" in line
+        )
+        assert outputs["has_active_node_gpr"] == "true"
+        assert outputs["has_active_node_npmjs"] == "true"
+        assert outputs["expected_node_gpr_package_name"] == "@hcoona/example"
+        assert outputs["expected_node_gpr_package_version"] == "1.2.3"
+        assert outputs["expected_node_npmjs_package_name"] == "example"
+        assert outputs["expected_node_npmjs_package_version"] == "1.2.3"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_matrix_outputs_expose_combined_node_registry_and_github_release_assets() -> (
+    None
+):
+    """Combined Node registry and GitHub Release plans keep release asset identity."""
+    scratch = SCRATCH / "matrix-node-combined-release"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan = deepcopy(_load("release-plan.json"))
+        execution_sets = deepcopy(_load("execution-sets.json"))
+        graph = plan["graph"]
+        plan["envelope"]["projects"]["example"]["ecosystem"] = "node"
+        graph["artifacts"]["artifact/package"]["concrete-kind"] = "npm-package"
+        graph["artifacts"]["artifact/package"]["projection"] = {
+            "package-name": "@hcoona/release-asset"
+        }
+        graph["publish-nodes"]["publish-node/gh"]["artifact-ids"] = [
+            "artifact/package"
+        ]
+        graph["publish-nodes"]["publish-node/gh"]["projection"] = {
+            "asset-names-by-artifact-id": {
+                "artifact/package": "release-asset-1.2.3.tgz"
+            },
+            "asset-labels-by-artifact-id": {
+                "artifact/package": "Release npm package"
+            },
+            "asset-sizes-by-artifact-id": {"artifact/package": 123},
+            "asset-sha256-by-artifact-id": {"artifact/package": "c" * 64},
+        }
+        graph["target-instance-snapshots"]["npm/npmjs"] = {
+            "capabilities": {
+                "publish-topology": "external-oidc-caller-workflow"
+            },
+            "destination": {"host": "registry.npmjs.org"},
+            "family": "npm",
+            "instance-id": "npmjs",
+        }
+        graph["target-instance-snapshots"]["npm/github-packages"] = {
+            "capabilities": {"publish-topology": "github-token"},
+            "destination": {"host": "npm.pkg.github.com", "owner": "hcoona"},
+            "family": "npm",
+            "instance-id": "github-packages",
+        }
+        graph["publish-nodes"]["publish-node/npmjs"] = {
+            "artifact-ids": ["artifact/package"],
+            "project-id": "example",
+            "publish-disposition": "publish",
+            "publish-node-id": "publish-node/npmjs",
+            "resolved-publish-identity": {
+                "package-name": "example",
+                "version": "1.2.3",
+            },
+            "target-instance-snapshot-id": "npm/npmjs",
+        }
+        graph["publish-nodes"]["publish-node/gpr"] = {
+            "artifact-ids": ["artifact/package"],
+            "project-id": "example",
+            "publish-disposition": "publish",
+            "publish-node-id": "publish-node/gpr",
+            "resolved-publish-identity": {
+                "package-name": "@hcoona/example",
+                "version": "1.2.3",
+            },
+            "target-instance-snapshot-id": "npm/github-packages",
+        }
+        execution_sets["active-publish-node-ids"] = [
+            "publish-node/gh",
+            "publish-node/npmjs",
+            "publish-node/gpr",
+        ]
+        execution_sets["active-publish-selectors"]["github-token"] = [
+            "publish-node/gh",
+            "publish-node/gpr",
+        ]
+        execution_sets["active-publish-selectors"][
+            "external-oidc-caller-workflow"
+        ] = ["publish-node/npmjs"]
+        output_path = scratch / "github-output.txt"
+        plan_path = scratch / "release-plan.json"
+        sets_path = scratch / "execution-sets.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+
+        result = control._cmd_matrix_outputs(
+            control.argparse.Namespace(
+                plan=str(plan_path),
+                execution_sets=str(sets_path),
+                run_id=123,
+                attempt=4,
+                github_output=str(output_path),
+            )
+        )
+
+        assert result == 0
+        outputs = dict(
+            line.split("=", maxsplit=1)
+            for line in output_path.read_text(encoding="utf-8").splitlines()
+            if "=" in line
+        )
+        assert outputs["has_active_node_gpr"] == "true"
+        assert outputs["has_active_node_npmjs"] == "true"
+        assert outputs["has_active_github_release"] == "true"
+        assert outputs["expected_node_gpr_package_name"] == "@hcoona/example"
+        assert outputs["expected_node_npmjs_package_name"] == "example"
+        assert (
+            outputs["expected_node_github_release_asset_name"]
+            == "release-asset-1.2.3.tgz"
+        )
+        assert (
+            outputs["expected_node_github_release_package_name"]
+            == "@hcoona/release-asset"
+        )
+        assert outputs["expected_node_github_release_asset_sha256"] == ""
+        assert outputs["active_github_release_asset_names_json"] == (
+            '["release-asset-1.2.3.tgz"]'
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ensure_tags_rejects_plan_binding_mismatches_before_ref_mutation() -> (
+    None
+):
+    """Ensure-tag refuses artifacts whose project/tag/commit differ from resolve."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+
+    with pytest.raises(
+        RuntimeError, match="commit-sha does not match resolved target"
     ):
-        block = _step_block(workflow, step_name)
-        assert "        shell: bash\n" in block
-        shell_index = block.index("        shell: bash\n")
-        run_index = block.index("        run: |")
-        assert shell_index < run_index
+        control._validate_ensure_tag_bindings(
+            plan,
+            execution_sets,
+            expected_project_id=cast(
+                "str", plan["envelope"]["selected-project-ids"][0]
+            ),
+            expected_commit_sha=SHA_C,
+            expected_release_tag=None,
+        )
+
+    with pytest.raises(RuntimeError, match="selected-project-ids do not match"):
+        control._validate_ensure_tag_bindings(
+            plan,
+            execution_sets,
+            expected_project_id="different-project",
+            expected_commit_sha=cast("str", plan["envelope"]["commit-sha"]),
+            expected_release_tag=None,
+        )
+
+    with pytest.raises(
+        RuntimeError, match="release-tag does not match resolved tag"
+    ):
+        control._validate_ensure_tag_bindings(
+            plan,
+            execution_sets,
+            expected_project_id=cast(
+                "str", plan["envelope"]["selected-project-ids"][0]
+            ),
+            expected_commit_sha=cast("str", plan["envelope"]["commit-sha"]),
+            expected_release_tag="release/different/v1.2.3",
+        )
 
 
-def test_build_variant_restores_tools_and_uploads_failure_diagnostics() -> None:
-    """Build variants retain diagnostics and restore local tools."""
-    workflow = _workflow("release-build-variant.yml")
+def test_reusable_build_variant_runner_pins_match_ecosystem() -> None:
+    """Reusable release builds pin the runner required by each ecosystem."""
+    expected_runners = {
+        "release-build-node-pack.yml": "ubuntu-latest",
+        "release-build-python.yml": "ubuntu-latest",
+        "release-build-ruby-gem.yml": "ubuntu-latest",
+        "release-build-wxt.yml": "ubuntu-latest",
+    }
+    for workflow_name, expected_runner in expected_runners.items():
+        workflow = _workflow_yaml(workflow_name)
+        for job_id, job in cast("dict[str, object]", workflow["jobs"]).items():
+            runs_on = cast("dict[str, object]", job)["runs-on"]
+            assert runs_on == expected_runner, (workflow_name, job_id)
 
-    restore_block = _step_block(workflow, "Restore local .NET tools")
-    assert "dotnet tool restore" in restore_block
-    assert "[ -f .config/dotnet-tools.json ]" in restore_block
+    dotnet_workflow = _workflow_yaml("release-build-dotnet.yml")
+    dotnet_jobs = cast("dict[str, dict[str, object]]", dotnet_workflow["jobs"])
+    assert dotnet_jobs["plan-runners"]["runs-on"] == "ubuntu-latest"
+    assert dotnet_jobs["build"]["runs-on"] == "${{ matrix.runs_on }}"
+    assert dotnet_jobs["merge"]["runs-on"] == "ubuntu-latest"
+    build_strategy = cast("dict[str, object]", dotnet_jobs["build"]["strategy"])
+    assert (
+        build_strategy["matrix"]
+        == "${{ fromJSON(needs.plan-runners.outputs.matrix) }}"
+    )
 
-    diagnostics_block = _step_block(workflow, "Upload build diagnostics")
-    assert "        if: failure()\n" in diagnostics_block
-    assert "actions/upload-artifact@v7" in diagnostics_block
-    assert "build-diagnostics.json" in diagnostics_block
-    assert "if-no-files-found: ignore" in diagnostics_block
+
+def test_reusable_release_builds_upload_dist() -> None:
+    """Reusable builds fail on missing dist artifacts."""
+    for workflow_name in (
+        "release-build-ruby-gem.yml",
+        "release-build-wxt.yml",
+        "release-build-dotnet.yml",
+    ):
+        workflow = _workflow(workflow_name)
+        assert "dotnet tool restore" in workflow, workflow_name
+
+    for workflow_name in (
+        "release-build-node-pack.yml",
+        "release-build-python.yml",
+    ):
+        workflow = _workflow(workflow_name)
+        assert "dotnet tool restore" not in workflow, workflow_name
+
+    for workflow_name in (
+        "release-build-node-pack.yml",
+        "release-build-python.yml",
+        "release-build-ruby-gem.yml",
+        "release-build-wxt.yml",
+        "release-build-dotnet.yml",
+    ):
+        workflow = _workflow_yaml(workflow_name)
+        jobs = cast("dict[str, object]", workflow["jobs"])
+        if workflow_name == "release-build-dotnet.yml":
+            job = cast("dict[str, object]", jobs["merge"])
+        elif workflow_name == "release-build-python.yml":
+            job = cast("dict[str, object]", jobs["verify"])
+        else:
+            job = cast("dict[str, object]", next(iter(jobs.values())))
+        upload_steps = [
+            step
+            for step in cast("list[dict[str, object]]", job["steps"])
+            if step.get("uses") == "actions/upload-artifact@v7"
+        ]
+        assert upload_steps, workflow_name
+        for step in upload_steps:
+            with_inputs = cast("dict[str, object]", step["with"])
+            assert with_inputs["if-no-files-found"] == "error", workflow_name
+
+    for workflow_name in (
+        "release-build-node-pack.yml",
+        "release-build-python.yml",
+        "release-build-ruby-gem.yml",
+        "release-build-wxt.yml",
+    ):
+        workflow = _workflow_yaml(workflow_name)
+        jobs = cast("dict[str, object]", workflow["jobs"])
+        job = cast("dict[str, object]", next(iter(jobs.values())))
+        checkout_step = next(
+            step
+            for step in cast("list[dict[str, object]]", job["steps"])
+            if step.get("uses") == "actions/checkout@v6"
+        )
+        checkout_with = cast("dict[str, object]", checkout_step["with"])
+        assert checkout_with["fetch-depth"] == 0, workflow_name
+        assert checkout_with["ref"] == "${{ inputs.target }}", workflow_name
+        assert checkout_with["persist-credentials"] is False, workflow_name
 
 
-def test_build_variant_sets_up_node_24_for_npm_smoke_builds() -> None:
-    """Reusable validation builds must not rely on runner-default Node.js."""
-    workflow = yaml.safe_load(_workflow("release-build-variant.yml"))
-    steps = workflow["jobs"]["build"]["steps"]
+def test_reusable_node_pack_validates_plan_authorized_identities() -> None:
+    """Node pack validates tarball names and metadata against plan inputs."""
+    workflow = _workflow_yaml("release-build-node-pack.yml")
+    call_inputs = workflow.get(True, workflow.get("on"))["workflow_call"][
+        "inputs"
+    ]
+    for input_name in (
+        "expected_gpr_package_name",
+        "expected_gpr_package_version",
+        "expected_npmjs_package_name",
+        "expected_npmjs_package_version",
+        "expected_github_release_package_name",
+    ):
+        assert input_name in call_inputs
+    for removed_input in (
+        "expected_gpr_tarball_sha256",
+        "expected_gpr_tarball_sha512",
+        "expected_npmjs_tarball_sha256",
+        "expected_npmjs_tarball_sha512",
+        "expected_github_release_asset_sha256",
+    ):
+        assert removed_input not in call_inputs
+
+    job = workflow["jobs"]["pack"]
+    assert "npm_package_name" not in job.get("outputs", {})
+    assert "gpr_package_name" not in job.get("outputs", {})
+    steps = cast("list[dict[str, object]]", job["steps"])
+    validate_step = next(
+        step for step in steps if step.get("name") == "Validate pack mode"
+    )
+    validate_run = cast("str", validate_step["run"])
+    assert "npmjs-only" in validate_run
+    assert "expected npmjs package name and version" in validate_run
+
+    gpr_pack_run = cast(
+        "str",
+        next(
+            step
+            for step in steps
+            if step.get("name") == "Pack tarball for GitHub Packages"
+        )["run"],
+    )
+    npmjs_pack_run = cast(
+        "str",
+        next(
+            step
+            for step in steps
+            if step.get("name") == "Pack tarball for npmjs"
+        )["run"],
+    )
+    for run in (gpr_pack_run, npmjs_pack_run):
+        assert "package/package.json" in run
+        assert "EXPECTED_PACKAGE_NAME" in run
+        assert "EXPECTED_PACKAGE_VERSION" in run
+        assert "tarball basename mismatch" in run
+        assert "EXPECTED_TARBALL_SHA" not in run
+        assert "Refusing to overwrite final artifact" in run
+        assert '--pack-destination "${GITHUB_WORKSPACE}/out"' not in run
+    assert 'staging="${RUNNER_TEMP}/node-pack-gpr"' in gpr_pack_run
+    assert 'staging="${RUNNER_TEMP}/node-pack-npmjs"' in npmjs_pack_run
+    assert 'cmp -s "${src}" "${destination}"' in npmjs_pack_run
+    assert "Reusing existing identical planner-frozen tarball" in npmjs_pack_run
+
+    prepare_gpr = next(
+        step
+        for step in steps
+        if step.get("name") == "Prepare package name for GitHub Packages pack"
+    )
+    prepare_npmjs = next(
+        step
+        for step in steps
+        if step.get("name") == "Prepare package name for npmjs pack"
+    )
+    assert "authorized preparation" in cast("str", prepare_gpr["run"])
+    assert '--package-name "${EXPECTED_PACKAGE_NAME}"' in cast(
+        "str", prepare_gpr["run"]
+    )
+    assert '--package-name "${EXPECTED_PACKAGE_NAME}"' in cast(
+        "str", prepare_npmjs["run"]
+    )
+
+
+def test_prepare_npm_publish_restore_preserves_original_package_json_bytes(
+    tmp_path: Path,
+) -> None:
+    """Restoring after package-name stamping must be byte-exact."""
+    package_dir = tmp_path / "package"
+    package_dir.mkdir()
+    package_json = package_dir / "package.json"
+    original = (
+        b"{\n"
+        b' "version" : "1.2.3",\n'
+        b' "name" : "demo-package" ,\n'
+        b' "description":"keeps formatting"\n'
+        b"}\n"
+    )
+    package_json.write_bytes(original)
+    state_file = tmp_path / "state.json"
+    script = REPO_ROOT / "eng/scripts/prepare_npm_publish.py"
+
+    prepare_result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--package-dir",
+            str(package_dir),
+            "--package-name",
+            "@hcoona/demo-package",
+            "--state-file",
+            str(state_file),
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert prepare_result.returncode == 0, prepare_result.stderr
+    assert package_json.read_bytes() != original
+    assert json.loads(package_json.read_text(encoding="utf-8"))["name"] == (
+        "@hcoona/demo-package"
+    )
+
+    restore_result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--package-dir",
+            str(package_dir),
+            "--state-file",
+            str(state_file),
+            "--restore",
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert restore_result.returncode == 0, restore_result.stderr
+    assert package_json.read_bytes() == original
+
+
+def test_reusable_ruby_build_restores_dotnet_and_uses_ruby_api_identity() -> (
+    None
+):
+    """Ruby gem builds restore NBGV tools and verify gem identity via Ruby APIs."""
+    workflow = _workflow_yaml("release-build-ruby-gem.yml")
+    on_block = workflow.get("on", workflow.get(True))
+    inputs = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", on_block)["workflow_call"]["inputs"],
+    )
+    jobs = cast("dict[str, object]", workflow["jobs"])
+    job = cast("dict[str, object]", next(iter(jobs.values())))
+    steps = cast("list[dict[str, object]]", job["steps"])
+    step_names = [cast("str", step["name"]) for step in steps]
+
+    setup_dotnet_step = next(
+        step for step in steps if step.get("name") == "Setup .NET SDK"
+    )
+    restore_step = next(
+        step for step in steps if step.get("name") == "Restore .NET tools"
+    )
+    identity_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Verify gem identity matches inputs"
+    )
+
+    assert step_names.index("Setup .NET SDK") < step_names.index(
+        "Restore .NET tools"
+    )
+    assert step_names.index("Restore .NET tools") < step_names.index(
+        "Build gem"
+    )
+    assert setup_dotnet_step["uses"] == "actions/setup-dotnet@v5"
+    assert setup_dotnet_step["with"]["global-json-file"] == "global.json"
+    assert "dotnet tool restore" in cast("str", restore_step["run"])
+    assert inputs["package_name"]["required"] is False
+    assert inputs["package_version"]["required"] is False
+    assert inputs["expected_gem_filename"]["required"] is False
+    assert "expected_gem_sha256" not in inputs
+    identity_run = cast("str", identity_step["run"])
+    assert "Gem::Package.new" in identity_run
+    assert "spec.version.to_s" in identity_run
+    assert "expected_package_name" in identity_run
+    assert "expected_package_version" in identity_run
+    assert "EXPECTED_GEM_SHA256" not in identity_run
+    assert "head -n1" not in identity_run
+
+
+def test_prepare_release_plan_uses_trusted_nbgv_outside_target_tree() -> None:
+    """Planning metadata must not run target-controlled .NET tool manifests."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    prepare_job = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", orchestrate["jobs"])["prepare-release-plan"],
+    )
+    steps = cast("list[dict[str, object]]", prepare_job["steps"])
+    setup_dotnet_step = next(
+        step for step in steps if step.get("name") == "Setup .NET SDK"
+    )
+    install_nbgv_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Install trusted NBGV CLI for metadata"
+    )
+    collect_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Collect .NET planner metadata"
+    )
+
+    assert setup_dotnet_step["uses"] == "actions/setup-dotnet@v5"
+    assert setup_dotnet_step["with"]["global-json-file"] == (
+        ".three-workflow-release/target/global.json"
+    )
+    assert "working-directory" not in install_nbgv_step
+    install_run = cast("str", install_nbgv_step["run"])
+    assert "if" not in install_nbgv_step
+    assert "dotnet tool install nbgv" in install_run
+    assert '--tool-path "${trusted_tools}"' in install_run
+    assert '--configfile "${trusted_config}"' in install_run
+    assert ".three-workflow-release/target" not in install_run
+    assert "THREE_WORKFLOW_RELEASE_NBGV_PATH" in install_run
+    assert "NBGV_PYTHON_COMMAND=${trusted_tools}/nbgv" in install_run
+    collect_run = cast("str", collect_step["run"])
+    assert "three-workflow-release-metadata dotnet" in collect_run
+    prepare_workflow = _workflow("release-orchestrate.yml")
+    assert "dotnet tool restore" not in prepare_workflow
+    assert "dotnet tool run nbgv" not in prepare_workflow
+
+
+def test_python_build_uses_trusted_nbgv_for_uv_build() -> None:
+    """Python builds must pin NBGV and verification to trusted inputs."""
+    workflow = _workflow_yaml("release-build-python.yml")
+    jobs = cast("dict[str, object]", workflow["jobs"])
+    build_job = cast("dict[str, object]", jobs["build"])
+    verify_job = cast("dict[str, object]", jobs["verify"])
+    build_steps = cast("list[dict[str, object]]", build_job["steps"])
+    verify_steps = cast("list[dict[str, object]]", verify_job["steps"])
+    build_checkout_steps = [
+        step
+        for step in build_steps
+        if step.get("uses") == "actions/checkout@v6"
+    ]
+    verify_checkout_steps = [
+        step
+        for step in verify_steps
+        if step.get("uses") == "actions/checkout@v6"
+    ]
+    setup_dotnet_step = next(
+        step for step in build_steps if step.get("name") == "Setup .NET SDK"
+    )
+    install_uv_step = next(
+        step for step in build_steps if step.get("name") == "Install uv"
+    )
+    install_step = next(
+        step
+        for step in build_steps
+        if step.get("name") == "Install trusted NBGV CLI for Python versioning"
+    )
+    build_step = next(
+        step for step in build_steps if step.get("name") == "Build package"
+    )
+    candidate_upload_step = next(
+        step
+        for step in build_steps
+        if step.get("name") == "Upload untrusted candidate dist artifact"
+    )
+    candidate_download_step = next(
+        step
+        for step in verify_steps
+        if step.get("name") == "Download untrusted candidate dist artifact"
+    )
+    exactness_step = next(
+        step
+        for step in verify_steps
+        if step.get("name")
+        == "Verify distribution filenames match release plan"
+    )
+    version_step = next(
+        step
+        for step in verify_steps
+        if step.get("name") == "Verify built version matches tag"
+    )
+    stage_step = next(
+        step
+        for step in verify_steps
+        if step.get("name") == "Stage verified dist artifact"
+    )
+    final_upload_step = next(
+        step
+        for step in verify_steps
+        if step.get("name") == "Upload dist artifact"
+    )
+    workflow_text = _workflow("release-build-python.yml")
+    install_run = cast("str", install_step["run"])
+    build_run = cast("str", build_step["run"])
+    exactness_run = cast("str", exactness_step["run"])
+    version_run = cast("str", version_step["run"])
+    stage_run = cast("str", stage_step["run"])
+    orchestrate_text = _workflow("release-orchestrate.yml")
+    inputs = cast(
+        "dict[str, object]",
+        workflow.get(True, workflow.get("on"))["workflow_call"]["inputs"],
+    )
+
+    assert "expected_distribution_filenames_json" in inputs
+    assert "expected_distribution_sha256_by_filename_json" not in inputs
+    assert "EXPECTED_DISTRIBUTIONS_JSON" in build_step["env"]
+    assert verify_job["needs"] == "build"
+    assert len(build_checkout_steps) == 1
+    assert build_checkout_steps[0]["name"] == "Checkout release target"
+    assert cast("dict[str, object]", build_checkout_steps[0]["with"])[
+        "ref"
+    ] == ("${{ inputs.target }}")
+    assert cast("dict[str, object]", build_checkout_steps[0]["with"])[
+        "path"
+    ] == (".three-workflow-release/target")
+    assert len(verify_checkout_steps) == 1
+    assert verify_checkout_steps[0]["name"] == "Checkout trusted control-plane"
+    assert cast("dict[str, object]", verify_checkout_steps[0]["with"])[
+        "ref"
+    ] == ("${{ github.workflow_sha }}")
+    assert cast("dict[str, object]", verify_checkout_steps[0]["with"])[
+        "path"
+    ] == (".three-workflow-release/control-plane")
+    assert not any(
+        step.get("name") == "Checkout trusted control-plane"
+        for step in build_steps
+    )
+    assert not any(
+        step.get("name") == "Checkout release target" for step in verify_steps
+    )
+    assert setup_dotnet_step["with"]["global-json-file"] == (
+        ".three-workflow-release/target/global.json"
+    )
+    assert install_uv_step["with"]["cache-dependency-glob"] == (
+        ".three-workflow-release/target/uv.lock"
+    )
+    assert "dotnet tool install nbgv" in install_run
+    assert '--tool-path "${trusted_tools}"' in install_run
+    assert '--configfile "${trusted_config}"' in install_run
+    assert ".three-workflow-release/target" not in install_run
+    assert "NBGV_PYTHON_COMMAND=${trusted_tools}/nbgv" in install_run
+    assert (
+        ': "${NBGV_PYTHON_COMMAND:?trusted NBGV command is required}"'
+        in build_run
+    )
+    assert "export NBGV_PYTHON_COMMAND" in build_run
+    assert "uv build" in build_run
+    assert "jq -er" in build_run
+    assert ".[]" in build_run
+    assert "distribution_build_args+=(--wheel)" in build_run
+    assert "distribution_build_args+=(--sdist)" in build_run
+    assert (
+        'uv build "${distribution_build_args[@]}" --out-dir "${candidate_dist}"'
+        in build_run
+    )
+    assert build_step["working-directory"] == ".three-workflow-release/target"
+    assert "${GITHUB_WORKSPACE}/out" not in build_run
+    candidate_upload_with = cast(
+        "dict[str, object]", candidate_upload_step["with"]
+    )
+    assert (
+        candidate_upload_with["name"] == "${{ inputs.artifact_name }}-candidate"
+    )
+    assert candidate_upload_with["path"] == (
+        "${{ runner.temp }}/python-candidate-dist/*"
+    )
+    candidate_download_with = cast(
+        "dict[str, object]", candidate_download_step["with"]
+    )
+    assert candidate_download_with["name"] == (
+        "${{ inputs.artifact_name }}-candidate"
+    )
+    assert candidate_download_with["path"] == (
+        "${{ github.workspace }}/candidate-dist"
+    )
+    assert (
+        version_step["working-directory"]
+        == ".three-workflow-release/control-plane"
+    )
+    assert "verify_python_artifact_version.py" in version_run
+    assert "${GITHUB_WORKSPACE}/candidate-dist" in version_run
+    assert 'find "${GITHUB_WORKSPACE}/candidate-dist"' in exactness_run
+    assert "${GITHUB_WORKSPACE}/candidate-dist" in exactness_run
+    assert "EXPECTED_DISTRIBUTIONS_JSON" in exactness_step["env"]
+    assert "${GITHUB_WORKSPACE}/verified-dist" in stage_run
+    final_upload_with = cast("dict[str, object]", final_upload_step["with"])
+    assert final_upload_with["name"] == "${{ inputs.artifact_name }}"
+    assert final_upload_with["path"] == (
+        "${{ github.workspace }}/verified-dist/*"
+    )
+    assert "candidate" not in orchestrate_text
+    assert "dotnet tool restore" not in workflow_text
+    assert "dotnet tool run nbgv" not in workflow_text
+
+
+def test_node_pack_dist_tag_uses_planner_version_without_target_nbgv() -> None:
+    """Node publish metadata must not come from target-restored NBGV tools."""
+    workflow = _workflow_yaml("release-build-node-pack.yml")
+    workflow_text = _workflow("release-build-node-pack.yml")
+    job = cast("dict[str, object]", workflow["jobs"]["pack"])
+    steps = cast("list[dict[str, object]]", job["steps"])
+    step_names = [cast("str", step["name"]) for step in steps]
+    dist_tag_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Determine npm dist-tag from planner version"
+    )
+    dist_tag_run = cast("str", dist_tag_step["run"])
+
+    assert "Setup .NET SDK" not in step_names
+    assert "Verify Node version matches tag" not in step_names
+    assert "dotnet tool restore" not in workflow_text
+    assert "dotnet tool run nbgv" not in workflow_text
+    assert "PrereleaseVersionNoLeadingHyphen" not in workflow_text
+    assert cast("dict[str, object]", dist_tag_step["env"])["VERSION"] == (
+        "${{ inputs.version }}"
+    )
+    assert 'version_core="${VERSION%%+*}"' in dist_tag_run
+    assert 'prerelease="${version_core#*-}"' in dist_tag_run
+    assert 'channel="${prerelease%%.*}"' in dist_tag_run
+    assert 'tag="latest"' in dist_tag_run
+    assert "planner version" in dist_tag_run
+
+
+def test_ruby_gemspecs_prefer_prepare_plan_nbgv_path() -> None:
+    """Ruby gemspec NBGV helpers must use the planner-provisioned CLI path."""
+    gemspec_paths = sorted((REPO_ROOT / "src/public/lib").glob("*/*.gemspec"))
+    assert gemspec_paths
+
+    for gemspec_path in gemspec_paths:
+        text = gemspec_path.read_text(encoding="utf-8")
+        if "get-version" not in text:
+            continue
+        assert 'ENV.fetch("THREE_WORKFLOW_RELEASE_NBGV_PATH", "")' in text
+        assert 'nbgv_path.empty? ? ["dotnet", "tool", "run", "nbgv"]' in text
+        assert "*nbgv_command" in text
+
+
+def test_prepare_release_plan_provisions_metadata_toolchains_before_planning() -> (
+    None
+):
+    """Planner metadata probes must use the same pinned language toolchains."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    prepare_job = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", orchestrate["jobs"])["prepare-release-plan"],
+    )
+    steps = cast("list[dict[str, object]]", prepare_job["steps"])
+    step_names = [cast("str", step["name"]) for step in steps]
+    bootstrap_index = step_names.index("Bootstrap release plan")
+    finalize_index = step_names.index("Finalize release plan")
+
+    for required_step in (
+        "Setup .NET SDK",
+        "Setup Python",
+        "Install uv",
+        "Setup pnpm",
+        "Setup Node.js",
+        "Setup Ruby (Bundler)",
+        "Setup Ruby",
+        "Install trusted NBGV CLI for metadata",
+    ):
+        assert step_names.index(required_step) < bootstrap_index
+        assert step_names.index(required_step) < finalize_index
+
+    setup_python = next(
+        step for step in steps if step.get("name") == "Setup Python"
+    )
+    setup_pnpm = next(
+        step for step in steps if step.get("name") == "Setup pnpm"
+    )
+    setup_node = next(
+        step for step in steps if step.get("name") == "Setup Node.js"
+    )
+    setup_ruby_bundler = next(
+        step for step in steps if step.get("name") == "Setup Ruby (Bundler)"
+    )
+    setup_ruby = next(
+        step for step in steps if step.get("name") == "Setup Ruby"
+    )
+    node_build = _workflow_yaml("release-build-node-pack.yml")
+    node_pack_steps = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", node_build["jobs"])["pack"]["steps"],
+    )
+    ruby_build = _workflow_yaml("release-build-ruby-gem.yml")
+    ruby_build_steps = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", ruby_build["jobs"])["build"]["steps"],
+    )
+
+    assert setup_python["uses"] == "actions/setup-python@v6"
+    assert setup_python["with"]["python-version"] == "${{ env.PYTHON_VERSION }}"
+    assert setup_pnpm["uses"] == next(
+        step["uses"]
+        for step in node_pack_steps
+        if step.get("name") == "Setup pnpm"
+    )
+    assert setup_pnpm["with"]["version"] == "${{ env.PNPM_VERSION }}"
+    assert setup_node["uses"] == next(
+        step["uses"]
+        for step in node_pack_steps
+        if step.get("name") == "Setup Node.js"
+    )
+    assert setup_node["with"]["node-version"] == "${{ env.NODE_VERSION }}"
+    assert setup_node["with"]["cache-dependency-path"] == (
+        ".three-workflow-release/target/pnpm-lock.yaml"
+    )
+    assert setup_ruby_bundler["uses"] == next(
+        step["uses"]
+        for step in ruby_build_steps
+        if step.get("name") == "Setup Ruby (Bundler)"
+    )
+    assert setup_ruby_bundler["with"]["ruby-version"] == (
+        "${{ needs.resolve.outputs.ruby_version }}"
+    )
+    assert setup_ruby_bundler["with"]["working-directory"] == (
+        ".three-workflow-release/target/${{ needs.resolve.outputs.package_dir }}"
+    )
+    assert setup_ruby["with"]["ruby-version"] == (
+        "${{ needs.resolve.outputs.ruby_version }}"
+    )
+
+
+def test_prepare_release_plan_materializes_official_frozen_versions() -> None:
+    """Live planning passes trusted official release-state evidence to planner."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    prepare_job = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", orchestrate["jobs"])["prepare-release-plan"],
+    )
+    steps = cast("list[dict[str, object]]", prepare_job["steps"])
+    step_names = [cast("str", step["name"]) for step in steps]
+    write_request_index = step_names.index("Write planner request")
+    materialize_index = step_names.index("Materialize official frozen versions")
+    bootstrap_index = step_names.index("Bootstrap release plan")
+    finalize_index = step_names.index("Finalize release plan")
+    materialize_step = steps[materialize_index]
+    materialize_env = cast("dict[str, object]", materialize_step["env"])
+    materialize_run = cast("str", materialize_step["run"])
+    bootstrap_run = cast("str", steps[bootstrap_index]["run"])
+    finalize_run = cast("str", steps[finalize_index]["run"])
+
+    assert write_request_index < materialize_index < bootstrap_index
+    assert materialize_index < finalize_index
+    assert materialize_env["GH_TOKEN"] == "${{ github.token }}"
+    assert materialize_env["PROJECT"] == "${{ needs.resolve.outputs.project }}"
+    assert materialize_env["REPOSITORY"] == "${{ github.repository }}"
+    assert (
+        "workflow_release_control.py official-frozen-versions"
+        in materialize_run
+    )
+    assert '--project "$PROJECT"' in materialize_run
+    assert (
+        "--out .three-workflow-release/plan/official-frozen-versions.json"
+        in materialize_run
+    )
+    expected_arg = (
+        "--official-frozen-versions "
+        ".three-workflow-release/plan/official-frozen-versions.json"
+    )
+    assert expected_arg in bootstrap_run
+    assert expected_arg in finalize_run
+    assert "--deactivate-buddy-github-release" in bootstrap_run
+    assert "--deactivate-buddy-github-release" in finalize_run
+
+
+def test_buddy_github_release_deactivation_blocks_publish_handoff() -> None:
+    """Mixed buddy GitHub Release descriptors fail before registry publish."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    jobs = cast("dict[str, object]", orchestrate["jobs"])
+    prepare_job = cast("dict[str, object]", jobs["prepare-release-plan"])
+    steps = cast("list[dict[str, object]]", prepare_job["steps"])
+    bootstrap_run = cast(
+        "str",
+        next(
+            step
+            for step in steps
+            if step.get("name") == "Bootstrap release plan"
+        )["run"],
+    )
+    finalize_run = cast(
+        "str",
+        next(
+            step
+            for step in steps
+            if step.get("name") == "Finalize release plan"
+        )["run"],
+    )
+    buddy_guard = next(
+        step
+        for step in steps
+        if step.get("name")
+        == "Fail unsupported buddy GitHub Release proof mode"
+    )
+    handoff_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == "Prepare entry publish handoff"
+    )
+    guard_index = steps.index(buddy_guard)
+
+    for run in (bootstrap_run, finalize_run):
+        assert (
+            'if [[ "${CHANNEL}" == "buddy" && "${ENABLE_ATTESTATION}" != "true" ]]'
+            in run
+        )
+        assert (
+            "buddy_github_release_args=(--deactivate-buddy-github-release)"
+            in run
+        )
+
+    assert buddy_guard["if"] == (
+        "${{ inputs.channel == 'buddy' && !inputs.enable_attestation && "
+        "steps.outputs.outputs.has_active_github_release == 'true' }}"
+    )
+    assert guard_index < handoff_index
+    guard_run = cast("str", buddy_guard["run"])
+    assert "Refusing before release mutation." in guard_run
+    for job_name in (
+        "publish-node-gpr-enabled",
+        "publish-node-npmjs",
+        "publish-ruby-gpr-enabled",
+        "publish-ruby-rubygems",
+    ):
+        job = cast("dict[str, object]", jobs[job_name])
+        assert "prepare-release-plan" in cast("list[str]", job["needs"])
+
+
+def test_ruby_gpr_existing_version_fetches_are_authenticated() -> None:
+    """Ruby GitHub Packages idempotency checks must authenticate gem fetch."""
+    script = (
+        REPO_ROOT / "eng/scripts/publish_ruby_gpr_idempotent.sh"
+    ).read_text(encoding="utf-8")
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    publish_job = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", orchestrate["jobs"])[
+            "publish-ruby-gpr-enabled"
+        ],
+    )
+    steps = cast("list[dict[str, object]]", publish_job["steps"])
+    publish_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Publish to GitHub Packages (idempotent)"
+    )
+    publish_env = cast("dict[str, object]", publish_step["env"])
+    fetch_lines = [
+        line
+        for line in script.splitlines()
+        if 'gem fetch "${PACKAGE_NAME}"' in line
+    ]
+
+    assert publish_env["RUBY_GPR_USER"] == "${{ github.actor }}"
+    assert ': "${RUBY_GPR_USER:?RUBY_GPR_USER is required}"' in script
+    assert ': "${PACKAGE_NAME:?PACKAGE_NAME is required}"' in script
+    assert ': "${PACKAGE_VERSION:?PACKAGE_VERSION is required}"' in script
+    assert 'URI.encode_www_form_component(ENV.fetch("RUBY_GPR_USER"))' in script
+    assert (
+        'URI.encode_www_form_component(ENV.fetch("RUBY_GPR_TOKEN"))' in script
+    )
+    assert "authenticated_source" in script
+    assert len(fetch_lines) == 2
+    for line in fetch_lines:
+        assert '--source "${authenticated_source}"' in line
+        assert 'rubygems.pkg.github.com/${OWNER}/"' not in line
+    assert 'redact_gpr_token <"${fetch_err}"' in script
+    assert 'cat "${fetch_err}"' not in script
+
+
+def test_find_project_path_node_matches_release_descriptor_identity() -> None:
+    """Scoped Node packages resolve by unscoped release descriptor ids."""
+    root = SCRATCH / "node-descriptor"
+    package_dir = root / "src/public/lib/hcoona-release-smoke-npm"
+    shutil.rmtree(root, ignore_errors=True)
+    try:
+        package_dir.mkdir(parents=True)
+        package_json = package_dir / "package.json"
+        descriptor = package_dir / "three.release.yml"
+        package_json.write_text(
+            json.dumps({"name": "@hcoona/hcoona-release-smoke-npm"}),
+            encoding="utf-8",
+        )
+        descriptor.write_text(
+            "\n".join(
+                (
+                    "api-version: three.release/v1alpha1",
+                    "kind: project",
+                    "project:",
+                    "  id: hcoona-release-smoke-npm",
+                    "  display-name: Hcoona Release Smoke npm",
+                    "  ecosystem: node",
+                )
+            ),
+            encoding="utf-8",
+        )
+
+        matches = find_project_path._node_matches(
+            "hcoona-release-smoke-npm",
+            [package_json],
+            [descriptor],
+        )
+
+        assert len(matches) == 1
+        assert matches[0].kind == "node"
+        assert matches[0].package_dir == package_dir
+        assert matches[0].evidence == descriptor
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_find_project_path_node_descriptor_requires_package_json() -> None:
+    """A matching Node descriptor without package.json fails closed."""
+    root = SCRATCH / "node-descriptor-missing-package"
+    package_dir = root / "src/public/lib/hcoona-release-smoke-npm"
+    shutil.rmtree(root, ignore_errors=True)
+    try:
+        package_dir.mkdir(parents=True)
+        descriptor = package_dir / "three.release.yml"
+        descriptor.write_text(
+            "\n".join(
+                (
+                    "api-version: three.release/v1alpha1",
+                    "kind: project",
+                    "project:",
+                    "  id: hcoona-release-smoke-npm",
+                    "  ecosystem: node",
+                )
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(RuntimeError, match="package.json"):
+            find_project_path._node_matches(
+                "hcoona-release-smoke-npm",
+                [],
+                [descriptor],
+            )
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_ruby_release_version_selection_is_package_specific() -> None:
+    """Ruby release orchestration should derive versions from package metadata."""
+    _require_ci_release_pipeline_architecture()
+
+    resolve_workflow = _workflow_yaml("release-resolve.yml")
+    resolve_jobs = cast("dict[str, object]", resolve_workflow["jobs"])
+    resolve_job = cast("dict[str, object]", resolve_jobs["resolve"])
+    resolve_steps = cast("list[dict[str, object]]", resolve_job["steps"])
+    resolve_run = cast(
+        "str",
+        next(
+            step
+            for step in resolve_steps
+            if step.get("name") == "Resolve release inputs"
+        )["run"],
+    )
+    resolve_call = cast(
+        "dict[str, object]",
+        resolve_workflow.get("on", resolve_workflow.get(True, {})),
+    )
+    resolve_outputs = cast(
+        "dict[str, object]", resolve_call["workflow_call"]["outputs"]
+    )
+    job_outputs = cast("dict[str, object]", resolve_job["outputs"])
+
+    assert "ruby_version" in resolve_outputs
+    assert "ruby_version" in job_outputs
+    assert "Gemfile.lock" in resolve_run
+    assert "ruby_version" in resolve_run
+
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    jobs = cast("dict[str, object]", orchestrate["jobs"])
+
+    build_ruby = cast("dict[str, object]", jobs["build-ruby"])
+    assert build_ruby["with"]["ruby_version"] == (
+        "${{ needs.resolve.outputs.ruby_version }}"
+    )
+
+    publish_ruby_gpr = cast(
+        "dict[str, object]", jobs["publish-ruby-gpr-enabled"]
+    )
+    publish_ruby_gpr_steps = cast(
+        "list[dict[str, object]]", publish_ruby_gpr["steps"]
+    )
+    publish_ruby_gpr_setup = next(
+        step
+        for step in publish_ruby_gpr_steps
+        if step.get("name") == "Setup Ruby"
+    )
+    assert publish_ruby_gpr_setup["with"]["ruby-version"] == (
+        "${{ needs.resolve.outputs.ruby_version }}"
+    )
+
+    publish_ruby_rubygems = cast(
+        "dict[str, object]", jobs["publish-ruby-rubygems"]
+    )
+    publish_ruby_rubygems_steps = cast(
+        "list[dict[str, object]]", publish_ruby_rubygems["steps"]
+    )
+    publish_ruby_rubygems_setup = next(
+        step
+        for step in publish_ruby_rubygems_steps
+        if step.get("name") == "Setup Ruby"
+    )
+    assert publish_ruby_rubygems_setup["with"]["ruby-version"] == (
+        "${{ needs.resolve.outputs.ruby_version }}"
+    )
+
+
+def test_release_resolve_workflow_canonicalizes_project_alias_before_detection() -> (
+    None
+):
+    """Release resolution canonicalizes aliases before path detection."""
+    _require_ci_release_pipeline_architecture()
+
+    resolve_workflow = _workflow_yaml("release-resolve.yml")
+    resolve_jobs = cast("dict[str, object]", resolve_workflow["jobs"])
+    resolve_job = cast("dict[str, object]", resolve_jobs["resolve"])
+    resolve_steps = cast("list[dict[str, object]]", resolve_job["steps"])
+    resolve_run = cast(
+        "str",
+        next(
+            step
+            for step in resolve_steps
+            if step.get("name") == "Resolve release inputs"
+        )["run"],
+    )
+    resolve_env = cast(
+        "dict[str, object]",
+        next(
+            step
+            for step in resolve_steps
+            if step.get("name") == "Resolve release inputs"
+        )["env"],
+    )
+
+    assert "resolve-project" in resolve_run
+    assert "project_resolution" in resolve_run
+    assert "jq -r '.project_id'" in resolve_run
+    assert "find_project_path.py" in resolve_run
+    checkout_index = resolve_run.index('git checkout --detach "${target}"')
+    assert resolve_run.index("resolve-project") < checkout_index
+    copy_detector_index = resolve_run.index("find_project_path.py")
+    assert copy_detector_index < checkout_index
+    assert 'uv run --script "${control_plane_find_project_path}"' in resolve_run
+    assert "uv run --script eng/scripts/find_project_path.py" not in resolve_run
+    for helper, variable in (
+        (
+            "validate_pep440_version.py",
+            "control_plane_validate_pep440_version",
+        ),
+        (
+            "validate_semver2_version.py",
+            "control_plane_validate_semver2_version",
+        ),
+        (
+            "validate_rubygems_version.py",
+            "control_plane_validate_rubygems_version",
+        ),
+    ):
+        assert helper in resolve_run
+        assert resolve_run.index(helper) < checkout_index
+        assert f'uv run --script "${{{variable}}}"' in resolve_run
+        assert f"uv run --script eng/scripts/{helper}" not in resolve_run
+    assert '--root "${GITHUB_WORKSPACE}"' in resolve_run
+    assert "release/[A-Za-z0-9._-]+/v.+$" not in resolve_run
+    assert "where <project> matches ^[A-Za-z0-9._-]+$" not in resolve_run
+    assert 'tag_name="release/${project}/v${version}"' in resolve_run
+    assert resolve_env["INPUT_RUN_URL"] == "${{ inputs.run_url }}"
+
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    resolve_job = cast("dict[str, object]", orchestrate["jobs"]["resolve"])
+    assert resolve_job["with"]["target"] == "${{ inputs.target }}"
+
+
+def test_release_resolve_supports_dotnet_descriptor_discovery(
+    tmp_path: Path,
+) -> None:
+    """Project discovery resolves active .NET descriptors by canonical id."""
+    module_path = REPO_ROOT / "eng/scripts/find_project_path.py"
+    spec = importlib.util.spec_from_file_location(
+        "find_project_path", module_path
+    )
+    assert spec is not None and spec.loader is not None
+    find_project_path = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = find_project_path
+    spec.loader.exec_module(find_project_path)
+
+    project_dir = tmp_path / "src/public/lib/Demo.Dotnet"
+    project_dir.mkdir(parents=True)
+    descriptor = project_dir / "three.release.yml"
+    descriptor.write_text(
+        "\n".join(
+            [
+                "api-version: three.release/v1alpha1",
+                "kind: project",
+                "project:",
+                "  id: demo-dotnet",
+                "  display-name: Demo.Dotnet",
+                "  ecosystem: dotnet",
+                "  release-kind: lib",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    matches = find_project_path._dotnet_matches("demo-dotnet", [descriptor])
+    assert len(matches) == 1
+    assert matches[0].kind == "dotnet"
+    assert matches[0].package_dir == project_dir
+
+
+def test_release_resolve_workflow_uses_safe_git_target_validation() -> None:
+    """Release resolution validates and resolves git targets safely."""
+    _require_ci_release_pipeline_architecture()
+
+    resolve_workflow = _workflow_yaml("release-resolve.yml")
+    resolve_job = cast("dict[str, object]", resolve_workflow["jobs"]["resolve"])
+    resolve_steps = cast("list[dict[str, object]]", resolve_job["steps"])
+    resolve_run = cast(
+        "str",
+        next(
+            step
+            for step in resolve_steps
+            if step.get("name") == "Resolve release inputs"
+        )["run"],
+    )
+
+    assert "git rev-parse --verify --end-of-options" in resolve_run
+    assert "commit_suffix='^{commit}'" in resolve_run
+    assert 'target_input="${MANUAL_TARGET}"' in resolve_run
+    assert 'target_input="${REF}"' not in resolve_run
+    assert "source=tag requires inputs.target." in resolve_run
+    assert (
+        "source=tag requires a pinned 40-character commit SHA in inputs.target: ${target_input}"
+        in resolve_run
+    )
+    assert (
+        'git rev-parse --verify --end-of-options "${REF}${commit_suffix}"'
+        in resolve_run
+    )
+    assert "live_tag_target" in resolve_run
+    assert (
+        'if [[ "${live_tag_target}" != "${resolved_target}" ]]' in resolve_run
+    )
+    assert '[[ "${target_input}" =~ ^[0-9a-fA-F]{40}$ ]]' in resolve_run
+    assert "git fetch --no-tags --unshallow origin" in resolve_run
+    assert "git fetch --no-tags --prune --tags origin" in resolve_run
+    assert "FETCH_HEAD" not in resolve_run
+    assert 'if [[ "${target_input}" == -* ]]' in resolve_run
+    assert (
+        "Release target must not start with '-': ${target_input}" in resolve_run
+    )
+    assert "git rev-list -n1" not in resolve_run
+
+
+def test_release_workflows_disable_checkout_persist_credentials() -> None:
+    """Active release workflow checkouts must not persist credentials."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    for job_name, expected_fetch_depth in (
+        ("policy", 1),
+        ("policy-publish-targets", 1),
+        ("guard-non-clobber", 1),
+        ("lint-version-consistency", 1),
+        ("skip-results", 1),
+        ("release-completed", 1),
+    ):
+        steps = cast(
+            "list[dict[str, object]]", orchestrate["jobs"][job_name]["steps"]
+        )
+        checkout_step = next(
+            step for step in steps if step.get("uses") == "actions/checkout@v6"
+        )
+        checkout_with = cast("dict[str, object]", checkout_step.get("with", {}))
+        assert checkout_with.get("fetch-depth", 1) == expected_fetch_depth, (
+            job_name
+        )
+        assert checkout_with["persist-credentials"] is False, job_name
+
+    resolve_steps = cast(
+        "list[dict[str, object]]",
+        _workflow_yaml("release-resolve.yml")["jobs"]["resolve"]["steps"],
+    )
+    resolve_checkout = next(
+        step
+        for step in resolve_steps
+        if step.get("uses") == "actions/checkout@v6"
+    )
+    assert resolve_checkout["with"]["fetch-depth"] == 0
+    assert resolve_checkout["with"]["persist-credentials"] is False
+
+    notes_steps = cast(
+        "list[dict[str, object]]",
+        _workflow_yaml("release-prepare-release-notes.yml")["jobs"]["prepare"][
+            "steps"
+        ],
+    )
+    notes_checkout = next(
+        step
+        for step in notes_steps
+        if step.get("uses") == "actions/checkout@v6"
+    )
+    assert notes_checkout["with"]["fetch-depth"] == 0
+    assert notes_checkout["with"]["ref"] == "${{ inputs.target }}"
+    assert notes_checkout["with"]["persist-credentials"] is False
+
+
+def test_publish_jobs_run_helpers_from_trusted_workflow_checkout() -> None:
+    """Credentialed publish jobs must not execute target-controlled helpers."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    jobs = cast("dict[str, dict[str, object]]", orchestrate["jobs"])
+    helper_steps = {
+        "publish-python": {
+            "Validate PyPI remote digests (idempotency)": (
+                "eng/scripts/validate_pypi_remote_digests.sh"
+            )
+        },
+        "publish-node-gpr-enabled": {
+            "Publish to GitHub Packages from tarball": (
+                "eng/scripts/publish_node_gpr_idempotent.sh"
+            )
+        },
+        "publish-node-npmjs": {
+            "Publish to npm registry (idempotent)": (
+                "eng/scripts/publish_node_npmjs_idempotent.sh"
+            )
+        },
+        "publish-ruby-gpr-enabled": {
+            "Publish to GitHub Packages (idempotent)": (
+                "eng/scripts/publish_ruby_gpr_idempotent.sh"
+            )
+        },
+        "publish-ruby-rubygems": {
+            "Publish to RubyGems.org (idempotent)": (
+                "eng/scripts/publish_rubygems_org_idempotent.sh"
+            )
+        },
+    }
+
+    for job_name, expected_helpers in helper_steps.items():
+        job = jobs[job_name]
+        permissions = cast("dict[str, object]", job["permissions"])
+        assert (
+            permissions.get("id-token") == "write"
+            or permissions.get("packages") == "write"
+        ), job_name
+        steps = cast("list[dict[str, object]]", job["steps"])
+        checkout_step = next(
+            step for step in steps if step.get("uses") == "actions/checkout@v6"
+        )
+        checkout_with = cast("dict[str, object]", checkout_step["with"])
+        assert checkout_step["name"] == "Checkout (trusted workflow scripts)"
+        assert checkout_with["fetch-depth"] == 1, job_name
+        assert checkout_with["persist-credentials"] is False, job_name
+        assert "ref" not in checkout_with, job_name
+
+        download_step = next(
+            step
+            for step in steps
+            if step.get("uses") == "actions/download-artifact@v8"
+            and step.get("name") == "Download dist artifact"
+        )
+        assert download_step["with"]["path"] == "${{ github.workspace }}/out"
+
+        for step_name, helper_path in expected_helpers.items():
+            helper_step = next(
+                step for step in steps if step.get("name") == step_name
+            )
+            helper_run = cast("str", helper_step["run"])
+            assert f'bash "${{GITHUB_WORKSPACE}}/{helper_path}"' in helper_run
+
+
+def test_release_orchestrate_ensures_tags_before_publish_fanout() -> None:
+    """Publish and release fan-out jobs wait for the control-plane ensure-tag gate."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    jobs = cast("dict[str, object]", orchestrate["jobs"])
+
+    assert "ensure-tag" in jobs
+    ensure_tag = cast("dict[str, object]", jobs["ensure-tag"])
+    assert ensure_tag["environment"] == "github-release"
+    assert ensure_tag["concurrency"] == {
+        "group": "github-release/${{ github.repository }}/${{ needs.resolve.outputs.tag_name }}",
+        "cancel-in-progress": False,
+    }
+    assert ensure_tag["permissions"]["contents"] == "write"
+    assert "always()" in cast("str", ensure_tag["if"])
+
+    build_jobs = ("build-python", "build-wxt", "pack-node", "build-ruby")
+    ensure_tag_needs = cast("list[object]", ensure_tag["needs"])
+    for job_name in build_jobs:
+        assert job_name in ensure_tag_needs, job_name
+
+    ensure_tag_if = cast("str", ensure_tag["if"])
+    assert "needs.resolve.result == 'success'" in ensure_tag_if
+    assert "needs.prepare-release-plan.result == 'success'" in ensure_tag_if
+    assert (
+        "needs.prepare-release-plan.outputs.has_active_github_release == 'true'"
+        in ensure_tag_if
+    )
+    assert (
+        "needs.prepare-release-plan.outputs.has_selected_github_release == 'true'"
+        not in ensure_tag_if
+    )
+    assert "needs.guard-prerelease-only.result == 'success'" in ensure_tag_if
+    assert "needs.guard-non-clobber.result == 'success'" in ensure_tag_if
+    assert "needs.build-python.result == 'success'" in ensure_tag_if
+    assert "needs.build-wxt.result == 'success'" in ensure_tag_if
+    assert "needs.pack-node.result == 'success'" in ensure_tag_if
+    assert "needs.build-ruby.result == 'success'" in ensure_tag_if
+    ensure_tag_steps = cast("list[dict[str, object]]", ensure_tag["steps"])
+    ensure_tag_step = next(
+        step
+        for step in ensure_tag_steps
+        if step.get("name") == "Ensure release tags"
+    )
+    ensure_tag_run = cast(
+        "str",
+        ensure_tag_step["run"],
+    )
+    ensure_tag_env = cast("dict[str, object]", ensure_tag_step["env"])
+    assert ensure_tag_env["TAG_RETARGET_FORCE"] == (
+        "${{ inputs.channel == 'official' && needs.resolve.outputs.force_update_tag == 'true' }}"
+    )
+    assert "--expected-project-id" in ensure_tag_run
+    assert "--expected-commit-sha" in ensure_tag_run
+    assert "--expected-release-tag" in ensure_tag_run
+    assert '--force-update-tag "${TAG_RETARGET_FORCE}"' in ensure_tag_run
+
+    release_jobs = {
+        job_name: cast("dict[str, object]", job)
+        for job_name, job in jobs.items()
+        if (
+            isinstance(job, dict)
+            and job.get("uses")
+            == "./.github/workflows/release-create-github-release.yml"
+        )
+    }
+    assert release_jobs
+    for job_name, job in release_jobs.items():
+        needs = job.get("needs", [])
+        assert "ensure-tag" in needs, job_name
+        assert "resolve-hub-context" in needs, job_name
+        assert cast("dict[str, object]", job["with"])["force_update_tag"] == (
+            "${{ inputs.channel == 'official' && needs.resolve.outputs.force_update_tag == 'true' }}"
+        ), job_name
+        assert cast("dict[str, object]", job["with"])["planner_profile"] == (
+            "${{ needs.resolve-hub-context.outputs.planner_profile }}"
+        ), job_name
+        assert cast("dict[str, object]", job["with"])[
+            "attestation_source_sha"
+        ] == ("${{ github.sha }}"), job_name
+        assert cast("dict[str, object]", job["with"])["publish_mode"] == (
+            "${{ needs.prepare-release-plan.outputs.active_github_release_publish_mode }}"
+        ), job_name
+        assert cast("dict[str, object]", job["with"])["asset_labels_json"] == (
+            "${{ needs.prepare-release-plan.outputs.active_github_release_asset_labels_json }}"
+        ), job_name
+        assert cast("dict[str, object]", job["with"])["asset_names_json"] == (
+            "${{ needs.prepare-release-plan.outputs.active_github_release_asset_names_json }}"
+        ), job_name
+        assert cast("dict[str, object]", job["with"])["plan_artifact_name"] == (
+            "${{ needs.prepare-release-plan.outputs.plan_artifact_name }}"
+        ), job_name
+        assert cast("dict[str, object]", job["with"])[
+            "active_github_release_node_ids_json"
+        ] == (
+            "${{ needs.prepare-release-plan.outputs.active_github_release_node_ids }}"
+        ), job_name
+
+    publish_jobs = (
+        "publish-python",
+        "publish-node-gpr-enabled",
+        "publish-node-npmjs",
+        "publish-ruby-gpr-enabled",
+        "publish-ruby-rubygems",
+    )
+    for job_name in publish_jobs:
+        needs = cast("list[object]", jobs[job_name]["needs"])
+        assert "ensure-tag" in needs, job_name
+
+
+def test_publish_python_allows_skipped_ensure_tag_when_no_active_github_release() -> (
+    None
+):
+    """Active PyPI publish must not be dependency-skipped by registry-only plans."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    jobs = cast("dict[str, dict[str, object]]", orchestrate["jobs"])
+    publish_python = jobs["publish-python"]
+    needs = cast("list[object]", publish_python["needs"])
+    condition = cast("str", publish_python["if"])
+
+    assert "ensure-tag" in needs
+    assert "build-python" in needs
+    assert "attest-python" in needs
+    assert "always()" in condition
+    assert "needs.resolve.outputs.project_kind == 'python'" in condition
+    assert "inputs.publish_python_pypi" in condition
+    assert (
+        "needs.prepare-release-plan.outputs.has_active_python_pypi == 'true'"
+        in condition
+    )
+    assert "needs.build-python.result == 'success'" in condition
+    assert "needs.attest-python.result == 'success'" in condition
+    assert (
+        "needs.prepare-release-plan.outputs.has_active_github_release != 'true' "
+        "|| needs.ensure-tag.result == 'success'"
+    ) in condition
+
+
+def test_release_create_force_update_tag_is_official_only() -> None:
+    """Buddy force must not be forwarded to GitHub Release tag retargeting."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    jobs = cast("dict[str, object]", orchestrate["jobs"])
+    release_jobs = {
+        job_name: cast("dict[str, object]", job)
+        for job_name, job in jobs.items()
+        if (
+            isinstance(job, dict)
+            and job.get("uses")
+            == "./.github/workflows/release-create-github-release.yml"
+        )
+    }
+    assert release_jobs
+    for job_name, job in release_jobs.items():
+        expected_force = (
+            "${{ inputs.channel == 'official' && "
+            "needs.resolve.outputs.force_update_tag == 'true' }}"
+        )
+        assert cast("dict[str, object]", job["with"])["force_update_tag"] == (
+            expected_force
+        ), job_name
+
+    create_workflow = _workflow_yaml("release-create-github-release.yml")
+    create_steps = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", create_workflow["jobs"]["create-release"])[
+            "steps"
+        ],
+    )
+    create_step = next(
+        step
+        for step in create_steps
+        if step.get("name") == "Create or update tag + release + assets"
+    )
+    assert cast("dict[str, object]", create_step["env"])["CHANNEL"] == (
+        "${{ inputs.channel }}"
+    )
+    create_run = cast("str", create_step["run"])
+    assert (
+        'if [[ "${FORCE_UPDATE_TAG}" == "true" && "${CHANNEL}" != "official" ]]'
+        in create_run
+    )
+    assert "verify_tag_at_expected_target" in create_run
+    assert (
+        "ensure-tags must converge tags before GitHub Release publish"
+        in create_run
+    )
+    assert "--method PATCH" not in create_run
+    assert "--method POST" not in create_run
+    assert "/git/refs" not in create_run
+    assert (
+        'gh release create "${TAG_NAME}" "${prerelease_args[@]}" --verify-tag'
+        in create_run
+    )
+    assert '--target "${target_sha}"' not in create_run
+
+
+def test_release_create_threads_planner_publish_mode() -> None:
+    """GitHub Release publish mode must be planner-owned and fail closed."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    jobs = cast("dict[str, object]", orchestrate["jobs"])
+    release_jobs = {
+        job_name: cast("dict[str, object]", job)
+        for job_name, job in jobs.items()
+        if (
+            isinstance(job, dict)
+            and job.get("uses")
+            == "./.github/workflows/release-create-github-release.yml"
+        )
+    }
+    assert release_jobs
+    for job_name, job in release_jobs.items():
+        expected_mode = (
+            "${{ needs.prepare-release-plan.outputs."
+            "active_github_release_publish_mode }}"
+        )
+        expected_labels = (
+            "${{ needs.prepare-release-plan.outputs."
+            "active_github_release_asset_labels_json }}"
+        )
+        expected_names = (
+            "${{ needs.prepare-release-plan.outputs."
+            "active_github_release_asset_names_json }}"
+        )
+        expected_plan = (
+            "${{ needs.prepare-release-plan.outputs.plan_artifact_name }}"
+        )
+        expected_node_ids = (
+            "${{ needs.prepare-release-plan.outputs."
+            "active_github_release_node_ids }}"
+        )
+        assert cast("dict[str, object]", job["with"])["publish_mode"] == (
+            expected_mode
+        ), job_name
+        assert cast("dict[str, object]", job["with"])["asset_labels_json"] == (
+            expected_labels
+        ), job_name
+        assert cast("dict[str, object]", job["with"])["asset_names_json"] == (
+            expected_names
+        ), job_name
+        assert cast("dict[str, object]", job["with"])["plan_artifact_name"] == (
+            expected_plan
+        ), job_name
+        assert (
+            cast("dict[str, object]", job["with"])[
+                "active_github_release_node_ids_json"
+            ]
+            == expected_node_ids
+        ), job_name
+        assert cast("dict[str, object]", job["with"])["planner_profile"] == (
+            "${{ needs.resolve-hub-context.outputs.planner_profile }}"
+        ), job_name
+        assert cast("dict[str, object]", job["with"])[
+            "attestation_source_sha"
+        ] == ("${{ github.sha }}"), job_name
+        assert cast("dict[str, object]", job["permissions"]) == {
+            "contents": "write",
+            "actions": "read",
+            "attestations": "read",
+        }, job_name
+
+    create_workflow = _workflow_yaml("release-create-github-release.yml")
+    workflow_inputs = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", create_workflow[True])["workflow_call"][
+            "inputs"
+        ],
+    )
+    assert workflow_inputs["publish_mode"]["default"] == "create-only"
+    assert workflow_inputs["planner_profile"]["required"] is True
+    assert workflow_inputs["attestation_source_sha"]["required"] is True
+    assert workflow_inputs["asset_labels_json"]["default"] == "{}"
+    assert workflow_inputs["asset_names_json"]["default"] == "[]"
+    assert workflow_inputs["plan_artifact_name"]["default"] == ""
+    assert workflow_inputs["active_github_release_node_ids_json"][
+        "default"
+    ] == ("[]")
+    create_steps = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", create_workflow["jobs"]["create-release"])[
+            "steps"
+        ],
+    )
+    create_step = next(
+        step
+        for step in create_steps
+        if step.get("name") == "Create or update tag + release + assets"
+    )
+    create_run = cast("str", create_step["run"])
+    assert (
+        "publish_mode=overwrite-mutable is valid only for the buddy planner profile"
+        in (create_run)
+    )
+    assert (
+        "publish_mode=replace-authoritative is valid only for the "
+        "official planner profile" in (create_run)
+    )
+    assert (
+        "publish_mode=create-only proof-only recovery refuses metadata mutation"
+        in create_run
+    )
+    assert (
+        "payload exactly matches the planner handoff; continuing with "
+        "proof-only recovery" in create_run
+    )
+    assert (
+        "publish_mode=create-only forbids existing-release mutation"
+        not in create_run
+    )
+    assert "requires an existing release" in create_run
+    assert (
+        "planner-authorized buddy FORCE mutable-prerelease evidence"
+        in create_run
+    )
+    assert "direct or unset calls fail closed" in create_run
+    assert "overwrite-mutable-authorization" in create_run
+    assert "Deleting changed mutable GitHub Release asset" in create_run
+    assert "Deleting changed authoritative GitHub Release asset" in create_run
+    assert (
+        "asset_labels_json must be a JSON object whose values are strings"
+        in (create_run)
+    )
+    assert "asset names, labels, sizes, and SHA-256 digests" in create_run
+    assert create_run.count("verify_tag_at_expected_target") >= 4
+    assert (
+        "ensure-tags must create it before GitHub Release publish" in create_run
+    )
+    assert (
+        "ensure-tags must converge tags before GitHub Release publish"
+        in create_run
+    )
+    assert "--method PATCH" not in create_run
+    assert "--method POST" not in create_run
+    assert "/git/refs" not in create_run
+    assert '--target "${target_sha}"' not in create_run
+    assert "--verify-tag" in create_run
+    assert 'upload_files+=("$(upload_arg_for_file "${f}")")' in create_run
+    assert (
+        'create_upload_files+=("$(upload_arg_for_file "${f}")")' in create_run
+    )
+    assert "require_overwrite_mutable_prerelease" in create_run
+    assert "is no longer a mutable prerelease" in create_run
+    assert "require_replace_authoritative_prerelease" in create_run
+    assert (
+        "can mutate only an existing prerelease before official promotion"
+        in create_run
+    )
+    assert '(.label // "") | @base64' in create_run
+    assert "gh release upload" in create_run
+
+
+def test_release_create_overwrite_mutable_converges_asset_label_mismatch() -> (
+    None
+):
+    """overwrite-mutable compares labels for same-name byte matches."""
+    create_workflow = _workflow_yaml("release-create-github-release.yml")
+    create_steps = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", create_workflow["jobs"]["create-release"])[
+            "steps"
+        ],
+    )
+    create_step = next(
+        step
+        for step in create_steps
+        if step.get("name") == "Create or update tag + release + assets"
+    )
+    create_run = cast("str", create_step["run"])
+
+    assert 'label=$(jq -r --arg name "${name}"' in create_run
+    assert "label_b64=$(printf '%s' \"${label}\" | base64 -w0)" in create_run
+    assert '((.label // "") | @base64)' in create_run
+    assert "printf '%s\\t%s\\t%s\\t%s\\n'" in create_run
+    assert (
+        'if [[ -n "${planned_line}" && '
+        '"${planned_line}" != "${existing_line}" ]]' in create_run
+    )
+    assert 'if [[ -z "${planned_line}" ||' not in create_run
+    assert 'upload_files+=("$(upload_arg_for_file "${f}")")' in create_run
+
+
+def test_release_completed_accepts_finalized_all_skip_execution_sets() -> None:
+    """The sentinel accepts all-skip reruns with bound skip receipts."""
+    scratch = SCRATCH / "release-completed-all-skip"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        summary = scratch / "summary.md"
+        artifacts_root = scratch / "artifacts"
+        plan, execution_sets = _all_skip_plan_and_sets()
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        _write_skip_result_artifacts(
+            artifacts_root,
+            plan,
+            cast(
+                "Sequence[str]",
+                execution_sets["skip-satisfied-publish-node-ids"],
+            ),
+        )
+        needs = {
+            "prepare-release-plan": {
+                "result": "success",
+                "outputs": {
+                    "has_skip_results": "true",
+                    "has_live_side_effects": "false",
+                    "has_active_github_release": "false",
+                    **_report_prepare_artifact_args(prepare_names),
+                },
+            },
+            "release-node-with-npmjs": {"result": "skipped"},
+            "release-node-no-npmjs": {"result": "skipped"},
+        }
+        result = subprocess.run(
+            [
+                "bash",
+                "eng/scripts/release_orchestrate_release_completed_check.sh",
+            ],
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "NEEDS_JSON": json.dumps(needs),
+                "GITHUB_STEP_SUMMARY": str(summary),
+                "ARTIFACTS_ROOT": str(artifacts_root),
+                "RUN_ID": "123",
+                "RUN_ATTEMPT": "4",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0
+        assert "release completion satisfied: completion receipts" in (
+            result.stdout
+        )
+        assert "skip-satisfied publish nodes" in result.stdout
+        assert "already satisfied" in summary.read_text(encoding="utf-8")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_release_completed_rejects_finalized_all_skip_without_skip_receipts() -> (
+    None
+):
+    """All-skip reruns must provide skip-result artifacts."""
+    scratch = SCRATCH / "release-completed-all-skip-missing-receipts"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        summary = scratch / "summary.md"
+        artifacts_root = scratch / "artifacts"
+        plan, execution_sets = _all_skip_plan_and_sets()
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        needs = {
+            "prepare-release-plan": {
+                "result": "success",
+                "outputs": {
+                    "has_skip_results": "true",
+                    "has_live_side_effects": "false",
+                    "has_active_github_release": "false",
+                    **_report_prepare_artifact_args(prepare_names),
+                },
+            },
+            "release-node-with-npmjs": {"result": "skipped"},
+            "release-node-no-npmjs": {"result": "skipped"},
+        }
+        result = subprocess.run(
+            [
+                "bash",
+                "eng/scripts/release_orchestrate_release_completed_check.sh",
+            ],
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "NEEDS_JSON": json.dumps(needs),
+                "GITHUB_STEP_SUMMARY": str(summary),
+                "ARTIFACTS_ROOT": str(artifacts_root),
+                "RUN_ID": "123",
+                "RUN_ATTEMPT": "4",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 1
+        assert "missing valid completion receipts" in result.stderr
+        assert "skip-satisfied publish node" not in result.stdout
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize("case", ["stale", "misbound"])
+def test_release_completed_rejects_finalized_all_skip_stale_or_misbound_skip_receipts(
+    case: str,
+) -> None:
+    """All-skip reruns must provide current skip receipts bound to the plan."""
+    scratch = SCRATCH / f"release-completed-all-skip-{case}-receipts"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        summary = scratch / "summary.md"
+        artifacts_root = scratch / "artifacts"
+        plan, execution_sets = _all_skip_plan_and_sets()
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        skip_node_ids = cast(
+            "Sequence[str]",
+            execution_sets["skip-satisfied-publish-node-ids"],
+        )
+        if case == "stale":
+            _write_skip_result_artifacts(
+                artifacts_root,
+                plan,
+                skip_node_ids,
+                run_id=122,
+            )
+        else:
+            skip_names = _write_skip_result_artifacts(
+                artifacts_root,
+                plan,
+                skip_node_ids,
+            )
+            receipt_path = artifacts_root / skip_names[0] / "skip-result.json"
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            receipt["plan-id"] = "plan/stale"
+            receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        needs = {
+            "prepare-release-plan": {
+                "result": "success",
+                "outputs": {
+                    "has_skip_results": "true",
+                    "has_live_side_effects": "false",
+                    "has_active_github_release": "false",
+                    **_report_prepare_artifact_args(prepare_names),
+                },
+            },
+            "release-node-with-npmjs": {"result": "skipped"},
+            "release-node-no-npmjs": {"result": "skipped"},
+        }
+        result = subprocess.run(
+            [
+                "bash",
+                "eng/scripts/release_orchestrate_release_completed_check.sh",
+            ],
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "NEEDS_JSON": json.dumps(needs),
+                "GITHUB_STEP_SUMMARY": str(summary),
+                "ARTIFACTS_ROOT": str(artifacts_root),
+                "RUN_ID": "123",
+                "RUN_ATTEMPT": "4",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 1
+        assert "missing valid completion receipts" in result.stderr
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_release_completed_accepts_zero_target_no_side_effect_plan() -> None:
+    """A successful finalized zero-target plan is terminal without skip receipts."""
+    scratch = SCRATCH / "release-completed-zero-target"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        summary = scratch / "summary.md"
+        needs = {
+            "prepare-release-plan": {
+                "result": "success",
+                "outputs": {
+                    "has_skip_results": "false",
+                    "has_live_side_effects": "false",
+                },
+            },
+            "release-node-with-npmjs": {"result": "skipped"},
+            "release-node-no-npmjs": {"result": "skipped"},
+        }
+        result = subprocess.run(
+            [
+                "bash",
+                "eng/scripts/release_orchestrate_release_completed_check.sh",
+            ],
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "NEEDS_JSON": json.dumps(needs),
+                "GITHUB_STEP_SUMMARY": str(summary),
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0
+        assert "no live publish side effects" in result.stdout
+        assert "selected no active publish nodes" in summary.read_text(
+            encoding="utf-8"
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_release_completed_rejects_cascade_skips_without_all_skip_plan() -> (
+    None
+):
+    """The sentinel still fails when release jobs are skipped by upstream failures."""
+    scratch = SCRATCH / "release-completed-cascade-skip"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        summary = scratch / "summary.md"
+        needs = {
+            "prepare-release-plan": {
+                "result": "success",
+                "outputs": {
+                    "has_skip_results": "false",
+                    "has_live_side_effects": "true",
+                },
+            },
+            "publish-node-npmjs": {"result": "skipped"},
+            "release-node-with-npmjs": {"result": "skipped"},
+            "release-node-no-npmjs": {"result": "skipped"},
+        }
+        result = subprocess.run(
+            [
+                "bash",
+                "eng/scripts/release_orchestrate_release_completed_check.sh",
+            ],
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "NEEDS_JSON": json.dumps(needs),
+                "GITHUB_STEP_SUMMARY": str(summary),
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 1
+        assert "No release job succeeded" in result.stderr
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_release_completed_accepts_registry_delivery_with_gh_skip() -> None:
+    """Accept active registry publish when its receipt matches the plan."""
+    scratch = SCRATCH / "release-completed-gh-skip-active-registry"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        summary = scratch / "summary.md"
+        artifacts_root = scratch / "artifacts"
+        plan, execution_sets = _external_oidc_plan_and_sets()
+        plan_id = str(plan["envelope"]["plan-id"])
+        plan_name = artifact_name(
+            "plan",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        execution_sets_name = artifact_name(
+            "execution-sets",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        handoff_name = artifact_name(
+            "entry-publish-handoff",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        publish_name = artifact_name(
+            "publish-result",
+            ArtifactNameInputs(
+                123,
+                4,
+                plan_id=plan_id,
+                publish_node_id="publish-node/nuget",
+            ),
+        )
+        for artifact_name_value, payload_name, payload in (
+            (plan_name, "release-plan.json", plan),
+            (execution_sets_name, "execution-sets.json", execution_sets),
+            (
+                handoff_name,
+                "entry-publish-handoff.json",
+                control._entry_publish_handoff(plan, execution_sets, 123, 4),
+            ),
+        ):
+            artifact_dir = artifacts_root / artifact_name_value
+            artifact_dir.mkdir(parents=True)
+            (artifact_dir / payload_name).write_text(
+                json.dumps(payload),
+                encoding="utf-8",
+            )
+        publish_result = _load("publish-result.json")
+        publish_result["plan-id"] = plan_id
+        publish_result["project-id"] = "example"
+        publish_result["publish-node-id"] = "publish-node/nuget"
+        publish_result["target-instance-snapshot-id"] = "pypi/pypi"
+        publish_result["resolved-publish-identity"] = {
+            "package-name": "Example",
+            "version": "1.2.3",
+        }
+        (artifacts_root / publish_name).mkdir(parents=True)
+        (artifacts_root / publish_name / "publish-result.json").write_text(
+            json.dumps(publish_result),
+            encoding="utf-8",
+        )
+        needs = {
+            "prepare-release-plan": {
+                "result": "success",
+                "outputs": {
+                    "has_skip_results": "true",
+                    "has_live_side_effects": "true",
+                    "has_active_github_release": "false",
+                    "has_active_python_pypi": "true",
+                    "plan_artifact_name": plan_name,
+                    "execution_sets_artifact_name": execution_sets_name,
+                    "entry_publish_handoff_artifact_name": handoff_name,
+                },
+            },
+            "publish-python": {"result": "success"},
+            "release-node-with-npmjs": {"result": "skipped"},
+            "release-node-no-npmjs": {"result": "skipped"},
+        }
+        result = subprocess.run(
+            [
+                "bash",
+                "eng/scripts/release_orchestrate_release_completed_check.sh",
+            ],
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "NEEDS_JSON": json.dumps(needs),
+                "GITHUB_STEP_SUMMARY": str(summary),
+                "ARTIFACTS_ROOT": str(artifacts_root),
+                "RUN_ID": "123",
+                "RUN_ATTEMPT": "4",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0
+        assert "active publish satisfied: Python PyPI" in result.stdout
+        assert "release completion satisfied: completion receipts" in (
+            result.stdout
+        )
+        assert (
+            "All release or active registry publish jobs completed successfully"
+            in result.stdout
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_release_completed_rejects_active_registry_without_valid_receipt() -> (
+    None
+):
+    """Active registry nodes require valid publish-result receipts."""
+    scratch = SCRATCH / "release-completed-active-registry-missing-receipt"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        summary = scratch / "summary.md"
+        artifacts_root = scratch / "artifacts"
+        plan, execution_sets = _external_oidc_plan_and_sets()
+        plan_id = str(plan["envelope"]["plan-id"])
+        plan_name = artifact_name(
+            "plan",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        execution_sets_name = artifact_name(
+            "execution-sets",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        handoff_name = artifact_name(
+            "entry-publish-handoff",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        for artifact_name_value, payload_name, payload in (
+            (plan_name, "release-plan.json", plan),
+            (execution_sets_name, "execution-sets.json", execution_sets),
+            (
+                handoff_name,
+                "entry-publish-handoff.json",
+                control._entry_publish_handoff(plan, execution_sets, 123, 4),
+            ),
+        ):
+            artifact_dir = artifacts_root / artifact_name_value
+            artifact_dir.mkdir(parents=True)
+            (artifact_dir / payload_name).write_text(
+                json.dumps(payload),
+                encoding="utf-8",
+            )
+        needs = {
+            "prepare-release-plan": {
+                "result": "success",
+                "outputs": {
+                    "has_skip_results": "false",
+                    "has_live_side_effects": "true",
+                    "has_active_github_release": "false",
+                    "has_active_python_pypi": "true",
+                    "plan_artifact_name": plan_name,
+                    "execution_sets_artifact_name": execution_sets_name,
+                    "entry_publish_handoff_artifact_name": handoff_name,
+                },
+            },
+            "publish-python": {"result": "success"},
+            "release-python-with-pypi": {"result": "skipped"},
+            "release-python-no-pypi": {"result": "skipped"},
+        }
+        result = subprocess.run(
+            [
+                "bash",
+                "eng/scripts/release_orchestrate_release_completed_check.sh",
+            ],
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "NEEDS_JSON": json.dumps(needs),
+                "GITHUB_STEP_SUMMARY": str(summary),
+                "ARTIFACTS_ROOT": str(artifacts_root),
+                "RUN_ID": "123",
+                "RUN_ATTEMPT": "4",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 1
+        assert "valid completion receipts" in result.stderr
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_release_completed_rejects_active_github_release_without_valid_receipt() -> (
+    None
+):
+    """Active GitHub Release nodes require valid github-release-result receipts."""
+    scratch = SCRATCH / "release-completed-active-gh-with-registry-only"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        summary = scratch / "summary.md"
+        artifacts_root = scratch / "artifacts"
+        plan = _load("release-plan.json")
+        execution_sets = _load("execution-sets.json")
+        plan_name = artifact_name(
+            "plan",
+            ArtifactNameInputs(123, 4, plan_id="plan/abc123"),
+        )
+        execution_sets_name = artifact_name(
+            "execution-sets",
+            ArtifactNameInputs(123, 4, plan_id="plan/abc123"),
+        )
+        handoff_name = artifact_name(
+            "entry-publish-handoff",
+            ArtifactNameInputs(123, 4, plan_id="plan/abc123"),
+        )
+        (artifacts_root / plan_name).mkdir(parents=True)
+        (artifacts_root / execution_sets_name).mkdir(parents=True)
+        (artifacts_root / handoff_name).mkdir(parents=True)
+        (artifacts_root / plan_name / "release-plan.json").write_text(
+            json.dumps(plan),
+            encoding="utf-8",
+        )
+        (
+            artifacts_root / execution_sets_name / "execution-sets.json"
+        ).write_text(json.dumps(execution_sets), encoding="utf-8")
+        (
+            artifacts_root / handoff_name / "entry-publish-handoff.json"
+        ).write_text(
+            json.dumps(
+                control._entry_publish_handoff(plan, execution_sets, 123, 4)
+            ),
+            encoding="utf-8",
+        )
+        _write_skip_result_artifacts(
+            artifacts_root,
+            plan,
+            cast(
+                "Sequence[str]",
+                execution_sets["skip-satisfied-publish-node-ids"],
+            ),
+        )
+        needs = {
+            "prepare-release-plan": {
+                "result": "success",
+                "outputs": {
+                    "has_skip_results": "true",
+                    "has_live_side_effects": "true",
+                    "has_active_github_release": "true",
+                    "has_active_node_gpr": "false",
+                    "has_active_node_npmjs": "true",
+                    "plan_artifact_name": plan_name,
+                    "execution_sets_artifact_name": execution_sets_name,
+                    "entry_publish_handoff_artifact_name": handoff_name,
+                },
+            },
+            "publish-node-npmjs": {"result": "success"},
+            "release-node-with-npmjs": {"result": "success"},
+            "release-node-no-npmjs": {"result": "skipped"},
+        }
+        result = subprocess.run(
+            [
+                "bash",
+                "eng/scripts/release_orchestrate_release_completed_check.sh",
+            ],
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "NEEDS_JSON": json.dumps(needs),
+                "GITHUB_STEP_SUMMARY": str(summary),
+                "ARTIFACTS_ROOT": str(artifacts_root),
+                "RUN_ID": "123",
+                "RUN_ATTEMPT": "4",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 1
+        assert "valid completion receipts" in result.stderr
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_release_completed_accepts_active_github_release_valid_receipt() -> (
+    None
+):
+    """The sentinel accepts active GitHub Release completion from valid receipts."""
+    scratch = SCRATCH / "release-completed-active-gh-valid-receipt"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        summary = scratch / "summary.md"
+        artifacts_root = scratch / "artifacts"
+        plan = _load("release-plan.json")
+        execution_sets = _load("execution-sets.json")
+        plan_name = artifact_name(
+            "plan",
+            ArtifactNameInputs(123, 4, plan_id="plan/abc123"),
+        )
+        execution_sets_name = artifact_name(
+            "execution-sets",
+            ArtifactNameInputs(123, 4, plan_id="plan/abc123"),
+        )
+        handoff_name = artifact_name(
+            "entry-publish-handoff",
+            ArtifactNameInputs(123, 4, plan_id="plan/abc123"),
+        )
+        github_release_result_name = artifact_name(
+            "github-release-result",
+            ArtifactNameInputs(
+                123,
+                4,
+                binding_json=(
+                    '{"tagName":"release/example/v1.2.3",'
+                    '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+                ),
+            ),
+        )
+        for name in (
+            plan_name,
+            execution_sets_name,
+            handoff_name,
+            github_release_result_name,
+        ):
+            (artifacts_root / name).mkdir(parents=True)
+        _write_github_release_completion_evidence(
+            artifacts_root,
+            include_build_result=False,
+        )
+        _write_skip_result_artifacts(
+            artifacts_root,
+            plan,
+            cast(
+                "Sequence[str]",
+                execution_sets["skip-satisfied-publish-node-ids"],
+            ),
+        )
+        assert not list(artifacts_root.glob("release-build-result-v1-*"))
+        (artifacts_root / plan_name / "release-plan.json").write_text(
+            json.dumps(plan),
+            encoding="utf-8",
+        )
+        (
+            artifacts_root / execution_sets_name / "execution-sets.json"
+        ).write_text(json.dumps(execution_sets), encoding="utf-8")
+        (
+            artifacts_root / handoff_name / "entry-publish-handoff.json"
+        ).write_text(
+            json.dumps(
+                control._entry_publish_handoff(plan, execution_sets, 123, 4)
+            ),
+            encoding="utf-8",
+        )
+        (
+            artifacts_root
+            / github_release_result_name
+            / "github-release-result.json"
+        ).write_text(
+            json.dumps(_load("github-release-result.json")),
+            encoding="utf-8",
+        )
+        needs = {
+            "prepare-release-plan": {
+                "result": "success",
+                "outputs": {
+                    "has_skip_results": "true",
+                    "has_live_side_effects": "true",
+                    "has_active_github_release": "true",
+                    "has_active_node_gpr": "false",
+                    "has_active_node_npmjs": "false",
+                    "plan_artifact_name": plan_name,
+                    "execution_sets_artifact_name": execution_sets_name,
+                    "entry_publish_handoff_artifact_name": handoff_name,
+                },
+            },
+            "release-node-with-npmjs": {"result": "skipped"},
+            "release-node-no-npmjs": {"result": "skipped"},
+        }
+        result = subprocess.run(
+            [
+                "bash",
+                "eng/scripts/release_orchestrate_release_completed_check.sh",
+            ],
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "NEEDS_JSON": json.dumps(needs),
+                "GITHUB_STEP_SUMMARY": str(summary),
+                "ARTIFACTS_ROOT": str(artifacts_root),
+                "RUN_ID": "123",
+                "RUN_ATTEMPT": "4",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0
+        assert "completion receipts" in result.stdout
+        assert "All release or active registry publish jobs" in result.stdout
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_release_completed_binds_plan_artifacts_to_prepare_outputs() -> None:
+    """Competing same-run plan artifacts must not be selected by prefix scan."""
+    scratch = SCRATCH / "release-completed-exact-plan-artifact-binding"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        summary = scratch / "summary.md"
+        artifacts_root = scratch / "artifacts"
+        plan = _load("release-plan.json")
+        execution_sets = _load("execution-sets.json")
+        plan_name = artifact_name(
+            "plan",
+            ArtifactNameInputs(123, 4, plan_id="plan/abc123"),
+        )
+        execution_sets_name = artifact_name(
+            "execution-sets",
+            ArtifactNameInputs(123, 4, plan_id="plan/abc123"),
+        )
+        handoff_name = artifact_name(
+            "entry-publish-handoff",
+            ArtifactNameInputs(123, 4, plan_id="plan/abc123"),
+        )
+        competing_plan_id = ""
+        competing_plan_name = ""
+        competing_execution_sets_name = ""
+        competing_handoff_name = ""
+        for suffix in range(4096):
+            candidate_plan_id = f"plan/competing-{suffix}"
+            candidate_plan_name = artifact_name(
+                "plan",
+                ArtifactNameInputs(
+                    123,
+                    4,
+                    plan_id=candidate_plan_id,
+                ),
+            )
+            candidate_execution_sets_name = artifact_name(
+                "execution-sets",
+                ArtifactNameInputs(
+                    123,
+                    4,
+                    plan_id=candidate_plan_id,
+                ),
+            )
+            candidate_handoff_name = artifact_name(
+                "entry-publish-handoff",
+                ArtifactNameInputs(
+                    123,
+                    4,
+                    plan_id=candidate_plan_id,
+                ),
+            )
+            if (
+                candidate_plan_name > plan_name
+                and candidate_execution_sets_name > execution_sets_name
+                and candidate_handoff_name > handoff_name
+            ):
+                competing_plan_id = candidate_plan_id
+                competing_plan_name = candidate_plan_name
+                competing_execution_sets_name = candidate_execution_sets_name
+                competing_handoff_name = candidate_handoff_name
+                break
+        assert competing_plan_id
+        github_release_result_name = artifact_name(
+            "github-release-result",
+            ArtifactNameInputs(
+                123,
+                4,
+                binding_json=(
+                    '{"tagName":"release/example/v1.2.3",'
+                    '"targetSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+                ),
+            ),
+        )
+        for name in (
+            plan_name,
+            execution_sets_name,
+            handoff_name,
+            competing_plan_name,
+            competing_execution_sets_name,
+            competing_handoff_name,
+            github_release_result_name,
+        ):
+            (artifacts_root / name).mkdir(parents=True)
+        _write_github_release_completion_evidence(
+            artifacts_root,
+            include_build_result=False,
+        )
+        _write_skip_result_artifacts(
+            artifacts_root,
+            plan,
+            cast(
+                "Sequence[str]",
+                execution_sets["skip-satisfied-publish-node-ids"],
+            ),
+        )
+        (artifacts_root / plan_name / "release-plan.json").write_text(
+            json.dumps(plan),
+            encoding="utf-8",
+        )
+        (
+            artifacts_root / execution_sets_name / "execution-sets.json"
+        ).write_text(json.dumps(execution_sets), encoding="utf-8")
+        (
+            artifacts_root / handoff_name / "entry-publish-handoff.json"
+        ).write_text(
+            json.dumps(
+                control._entry_publish_handoff(plan, execution_sets, 123, 4)
+            ),
+            encoding="utf-8",
+        )
+        (artifacts_root / competing_plan_name / "release-plan.json").write_text(
+            "{}", encoding="utf-8"
+        )
+        (
+            artifacts_root
+            / competing_execution_sets_name
+            / "execution-sets.json"
+        ).write_text("{}", encoding="utf-8")
+        (
+            artifacts_root
+            / competing_handoff_name
+            / "entry-publish-handoff.json"
+        ).write_text("{}", encoding="utf-8")
+        (
+            artifacts_root
+            / github_release_result_name
+            / "github-release-result.json"
+        ).write_text(
+            json.dumps(_load("github-release-result.json")),
+            encoding="utf-8",
+        )
+        needs = {
+            "prepare-release-plan": {
+                "result": "success",
+                "outputs": {
+                    "has_skip_results": "true",
+                    "has_live_side_effects": "true",
+                    "has_active_github_release": "true",
+                    "has_active_node_gpr": "false",
+                    "has_active_node_npmjs": "false",
+                    "plan_artifact_name": plan_name,
+                    "execution_sets_artifact_name": execution_sets_name,
+                    "entry_publish_handoff_artifact_name": handoff_name,
+                },
+            },
+            "release-node-with-npmjs": {"result": "skipped"},
+            "release-node-no-npmjs": {"result": "skipped"},
+        }
+        result = subprocess.run(
+            [
+                "bash",
+                "eng/scripts/release_orchestrate_release_completed_check.sh",
+            ],
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "NEEDS_JSON": json.dumps(needs),
+                "GITHUB_STEP_SUMMARY": str(summary),
+                "ARTIFACTS_ROOT": str(artifacts_root),
+                "RUN_ID": "123",
+                "RUN_ATTEMPT": "4",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0
+        assert "completion receipts" in result.stdout
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("proof_section", "proof_key", "bad_value"),
+    [
+        ("attestation", "subject-digest", f"sha256:{'d' * 64}"),
+        ("attestation", "source-repository", "other/repo"),
+        ("attestation", "source-digest", "d" * 40),
+        (
+            "attestation",
+            "signer-workflow",
+            "other/repo/.github/workflows/release-orchestrate.yml",
+        ),
+        ("run", "repository", "other/repo"),
+    ],
+)
+def test_release_completed_rejects_active_github_release_misbound_proof(
+    proof_section: str,
+    proof_key: str,
+    bad_value: str,
+) -> None:
+    """GitHub Release completion proof must bind attestation to the asset."""
+    scratch = SCRATCH / (
+        "release-completed-active-gh-misbound-proof-"
+        f"{proof_section}-{proof_key}"
+    )
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+
+    def misbind_package_proof(proof: dict[str, object]) -> None:
+        binding = cast("Mapping[str, object]", proof["binding"])
+        if binding.get("artifact-id") != "artifact/package":
+            return
+        section = cast("dict[str, object]", proof[proof_section])
+        section[proof_key] = bad_value
+
+    try:
+        result = _run_release_completed_active_github_release_check(
+            scratch,
+            proof_mutator=misbind_package_proof,
+        )
+
+        assert result.returncode == 1
+        assert "valid completion receipts" in result.stderr
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_release_completed_ignores_disabled_publish_gate() -> None:
+    """Disabled/no-op publish gates must not mask missing live side effects."""
+    scratch = SCRATCH / "release-completed-disabled-gate"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        summary = scratch / "summary.md"
+        needs = {
+            "prepare-release-plan": {
+                "result": "success",
+                "outputs": {
+                    "has_skip_results": "false",
+                    "has_live_side_effects": "true",
+                    "has_active_node_gpr": "false",
+                    "has_active_node_npmjs": "false",
+                },
+            },
+            "publish-node-gpr": {"result": "success"},
+            "release-node-with-npmjs": {"result": "skipped"},
+            "release-node-no-npmjs": {"result": "skipped"},
+        }
+        result = subprocess.run(
+            [
+                "bash",
+                "eng/scripts/release_orchestrate_release_completed_check.sh",
+            ],
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "NEEDS_JSON": json.dumps(needs),
+                "GITHUB_STEP_SUMMARY": str(summary),
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 1
+        assert "No release job succeeded" in result.stderr
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_release_completed_accepts_disabled_selected_registry_with_github_release() -> (
+    None
+):
+    """Disabled selected registry nodes leave GitHub Release as terminal output."""
+    scratch = SCRATCH / "release-completed-disabled-selected-registry-gh"
+    shutil.rmtree(scratch, ignore_errors=True)
+
+    def mark_registry_selected_but_disabled(needs: dict[str, object]) -> None:
+        prepare = cast("dict[str, object]", needs["prepare-release-plan"])
+        outputs = cast("dict[str, object]", prepare["outputs"])
+        outputs["has_active_node_npmjs"] = "true"
+        needs["publish-node-npmjs"] = {"result": "skipped"}
+        needs["release-node-no-npmjs"] = {"result": "success"}
+
+    try:
+        result = _run_release_completed_active_github_release_check(
+            scratch,
+            needs_mutator=mark_registry_selected_but_disabled,
+            env_extra={"PUBLISH_NODE_NPMJS": "false"},
+        )
+
+        assert result.returncode == 0
+        assert (
+            "active registry publish jobs did not complete" not in result.stderr
+        )
+        assert "completion receipts" in result.stdout
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("case", "output_updates", "job_updates", "env_extra"),
+    [
+        (
+            "node",
+            {
+                "has_active_node_gpr": "true",
+                "has_active_node_npmjs": "true",
+            },
+            {
+                "publish-node-gpr": {"result": "skipped"},
+                "publish-node-npmjs": {"result": "skipped"},
+                "release-node-no-npmjs": {"result": "success"},
+            },
+            {
+                "PUBLISH_NODE_GPR": "false",
+                "PUBLISH_NODE_NPMJS": "false",
+            },
+        ),
+        (
+            "ruby",
+            {
+                "has_active_ruby_gpr": "true",
+                "has_active_ruby_rubygems": "true",
+            },
+            {
+                "publish-ruby-gpr": {"result": "skipped"},
+                "publish-ruby-rubygems": {"result": "skipped"},
+                "release-ruby-no-rubygems": {"result": "success"},
+            },
+            {
+                "PUBLISH_RUBY_GPR": "false",
+                "PUBLISH_RUBY_RUBYGEMS": "false",
+            },
+        ),
+    ],
+)
+def test_release_completed_accepts_all_registry_disabled_github_release_only(
+    case: str,
+    output_updates: Mapping[str, str],
+    job_updates: Mapping[str, dict[str, str]],
+    env_extra: Mapping[str, str],
+) -> None:
+    """Disabled Node/Ruby registries do not block GitHub Release-only completion."""
+    scratch = SCRATCH / f"release-completed-{case}-registries-disabled-gh"
+    shutil.rmtree(scratch, ignore_errors=True)
+
+    def mark_registries_selected_but_disabled(needs: dict[str, object]) -> None:
+        prepare = cast("dict[str, object]", needs["prepare-release-plan"])
+        outputs = cast("dict[str, object]", prepare["outputs"])
+        outputs.update(output_updates)
+        needs.update(job_updates)
+
+    try:
+        result = _run_release_completed_active_github_release_check(
+            scratch,
+            needs_mutator=mark_registries_selected_but_disabled,
+            env_extra=env_extra,
+        )
+
+        assert result.returncode == 0
+        assert (
+            "active registry publish jobs did not complete" not in result.stderr
+        )
+        assert "completion receipts" in result.stdout
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_release_orchestrate_prepares_plan_artifacts_before_ensure_tag() -> (
+    None
+):
+    """Release plan and execution-set artifacts must be produced before tag checks."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    jobs = cast("dict[str, object]", orchestrate["jobs"])
+
+    assert "prepare-release-plan" in jobs
+    plan_job = cast("dict[str, object]", jobs["prepare-release-plan"])
+    assert plan_job["needs"] == ["resolve", "resolve-hub-context"]
+    assert plan_job["permissions"] == {
+        "contents": "read",
+        "packages": "read",
+        "attestations": "read",
+    }
+
+    steps = cast("list[dict[str, object]]", plan_job["steps"])
+    step_names = [step["name"] for step in steps]
+    assert step_names[:2] == [
+        "Checkout (trusted planner scripts)",
+        "Checkout release target data",
+    ]
+    assert "Bootstrap release plan" in step_names
+    assert "Materialize .NET planner metadata input" in step_names
+    assert "Collect .NET planner metadata" in step_names
+    assert "Compute enabled external OIDC target tokens" not in step_names
+    assert "Observe remote publications" in step_names
+    assert "Finalize release plan" in step_names
+    assert "Validate external OIDC plan gate" in step_names
+    assert "Upload planner diagnostics" in step_names
+    assert "Compute release plan outputs" in step_names
+    assert "Validate plan-derived workflow gates" in step_names
+    assert "Prepare entry publish handoff" in step_names
+    assert step_names[-3:] == [
+        "Upload release plan",
+        "Upload execution sets",
+        "Upload entry publish handoff",
+    ]
+
+    trusted_checkout = next(
+        step
+        for step in steps
+        if step.get("name") == "Checkout (trusted planner scripts)"
+    )
+    trusted_checkout_with = cast("dict[str, object]", trusted_checkout["with"])
+    assert trusted_checkout_with["fetch-depth"] == 1
+    assert trusted_checkout_with["persist-credentials"] is False
+    assert "ref" not in trusted_checkout_with
+
+    target_checkout = next(
+        step
+        for step in steps
+        if step.get("name") == "Checkout release target data"
+    )
+    target_checkout_with = cast("dict[str, object]", target_checkout["with"])
+    assert target_checkout_with["ref"] == "${{ needs.resolve.outputs.target }}"
+    assert target_checkout_with["path"] == ".three-workflow-release/target"
+    assert target_checkout_with["persist-credentials"] is False
+
+    outputs_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Compute release plan outputs"
+    )
+    outputs_run = cast("str", outputs_step["run"])
+    assert "workflow_release_control.py matrix-outputs" in outputs_run
+    observe_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Observe remote publications"
+    )
+    metadata_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Collect .NET planner metadata"
+    )
+    metadata_run = cast("str", metadata_step["run"])
+    assert (
+        "--diagnostics-out .three-workflow-release/plan/planner-diagnostics.json"
+        in metadata_run
+    )
+    assert "dotnet-planner-metadata-diagnostics.json" not in metadata_run
+    observe_env = cast("dict[str, object]", observe_step["env"])
+    assert observe_env["ENABLED_EXTERNAL_OIDC_TARGETS"] == (
+        "${{ vars.THREE_RELEASE_ENABLED_EXTERNAL_OIDC_TARGETS }}"
+    )
+    observe_run = cast("str", observe_step["run"])
+    assert (
+        "--diagnostics-out .three-workflow-release/plan/planner-diagnostics.json"
+        in observe_run
+    )
+    assert (
+        '--disabled-package-target-keys "$disabled_package_target_keys_csv"'
+        in observe_run
+    )
+    assert 'disabled_package_target_keys+=("python-pypi")' in observe_run
+    assert "remote-observations-diagnostics.json" not in observe_run
+    outputs_env = cast("dict[str, object]", outputs_step["env"])
+    outputs_run = cast("str", outputs_step["run"])
+    assert (
+        '--disabled-package-target-keys "$disabled_package_target_keys_csv"'
+        in outputs_run
+    )
+    assert 'disabled_package_target_keys+=("node-gpr")' in outputs_run
+    for flag_name in (
+        "PUBLISH_PYTHON_PYPI",
+        "PUBLISH_NODE_GPR",
+        "PUBLISH_NODE_NPMJS",
+        "PUBLISH_RUBY_GPR",
+        "PUBLISH_RUBY_RUBYGEMS",
+    ):
+        assert flag_name in observe_env
+        assert flag_name in outputs_env
+    plan_gate_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Validate external OIDC plan gate"
+    )
+    plan_gate_run = cast("str", plan_gate_step["run"])
+    assert step_names.index("Finalize release plan") + 1 == step_names.index(
+        "Validate external OIDC plan gate"
+    )
+    assert step_names.index(
+        "Validate external OIDC plan gate"
+    ) < step_names.index("Compute release plan outputs")
+    assert "workflow_release_control.py plan-gate" in plan_gate_run
+    assert (
+        "--plan .three-workflow-release/plan/release-plan.json" in plan_gate_run
+    )
+    assert (
+        "--execution-sets .three-workflow-release/plan/execution-sets.json"
+        in plan_gate_run
+    )
+    assert (
+        "--remote-observations .three-workflow-release/plan/remote-observations.json"
+        in plan_gate_run
+    )
+    assert (
+        '--enabled-external-oidc-targets "$ENABLED_EXTERNAL_OIDC_TARGETS"'
+        in plan_gate_run
+    )
+    assert (
+        '--disabled-package-target-keys "$disabled_package_target_keys_csv"'
+        in plan_gate_run
+    )
+    assert 'disabled_package_target_keys+=("python-pypi")' in plan_gate_run
+    plan_gate_env = cast("dict[str, object]", plan_gate_step["env"])
+    assert plan_gate_env["ENABLED_EXTERNAL_OIDC_TARGETS"] == (
+        "${{ vars.THREE_RELEASE_ENABLED_EXTERNAL_OIDC_TARGETS }}"
+    )
+    for flag_name in (
+        "PUBLISH_PYTHON_PYPI",
+        "PUBLISH_NODE_GPR",
+        "PUBLISH_NODE_NPMJS",
+        "PUBLISH_RUBY_GPR",
+        "PUBLISH_RUBY_RUBYGEMS",
+    ):
+        assert flag_name in plan_gate_env
+    assert "--repo-root .three-workflow-release/target" in cast(
+        "str",
+        next(
+            step
+            for step in steps
+            if step.get("name") == "Bootstrap release plan"
+        )["run"],
+    )
+
+    gate_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Validate plan-derived workflow gates"
+    )
+    gate_run = cast("str", gate_step["run"])
+    assert "Python PyPI target selection is descriptor-controlled" in gate_run
+    assert "node:true)" in gate_run
+    assert "dotnet:*)" in gate_run
+    assert 'require_selected_target "${PUBLISH_PYTHON_PYPI}"' not in gate_run
+    assert 'require_selected_target "${PUBLISH_NODE_GPR}"' not in gate_run
+    assert 'require_selected_target "${PUBLISH_NODE_NPMJS}"' not in gate_run
+    assert 'require_selected_target "${PUBLISH_RUBY_GPR}"' not in gate_run
+    assert 'require_selected_target "${PUBLISH_RUBY_RUBYGEMS}"' not in gate_run
+
+    handoff_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Prepare entry publish handoff"
+    )
+    assert "workflow_release_control.py entry-publish-handoff" in cast(
+        "str", handoff_step["run"]
+    )
+
+    upload_plan_step = next(
+        step for step in steps if step.get("name") == "Upload release plan"
+    )
+    upload_execution_step = next(
+        step for step in steps if step.get("name") == "Upload execution sets"
+    )
+    upload_handoff_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Upload entry publish handoff"
+    )
+    upload_diagnostics_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Upload planner diagnostics"
+    )
+    assert upload_diagnostics_step["if"] == (
+        "failure() && "
+        "hashFiles('.three-workflow-release/plan/planner-diagnostics.json') != ''"
+    )
+    assert upload_diagnostics_step["uses"] == "actions/upload-artifact@v7"
+    assert upload_diagnostics_step["with"]["name"] == (
+        "release-planner-diagnostics-v1-${{ github.run_id }}-${{ github.run_attempt }}"
+    )
+    assert upload_diagnostics_step["with"]["path"] == (
+        ".three-workflow-release/plan/planner-diagnostics.json"
+    )
+    assert upload_diagnostics_step["with"]["include-hidden-files"] is True
+    assert upload_diagnostics_step["with"]["if-no-files-found"] == "warn"
+    assert "if" not in upload_plan_step
+    assert "if" not in upload_execution_step
+    assert upload_plan_step["uses"] == "actions/upload-artifact@v7"
+    assert upload_plan_step["with"]["path"] == (
+        ".three-workflow-release/plan/release-plan.json"
+    )
+    assert upload_plan_step["with"]["name"] == (
+        "${{ steps.outputs.outputs.plan_artifact_name }}"
+    )
+    assert upload_execution_step["uses"] == "actions/upload-artifact@v7"
+    assert upload_execution_step["with"]["path"] == (
+        ".three-workflow-release/plan/execution-sets.json"
+    )
+    assert upload_execution_step["with"]["name"] == (
+        "${{ steps.outputs.outputs.execution_sets_artifact_name }}"
+    )
+    assert upload_handoff_step["uses"] == "actions/upload-artifact@v7"
+    assert upload_handoff_step["with"]["path"] == (
+        ".three-workflow-release/plan/entry-publish-handoff.json"
+    )
+    assert upload_handoff_step["with"]["name"] == (
+        "${{ steps.outputs.outputs.entry_publish_handoff_artifact_name }}"
+    )
+    low_level = LOW_LEVEL_DESIGN.read_text(encoding="utf-8")
+    assert (
+        "Active orchestration emits `entry-publish-handoff.json`" in low_level
+    )
+    assert (
+        "`artifacts.entry-publish-handoff-artifact-name`         | `null` whenever no plan succeeded"
+        in low_level
+    )
+
+    ensure_tag = cast("dict[str, object]", jobs["ensure-tag"])
+    assert "prepare-release-plan" in cast("list[object]", ensure_tag["needs"])
+
+    tag_guard = (
+        "needs.prepare-release-plan.outputs.has_active_github_release != "
+        "'true' || needs.ensure-tag.result == 'success'"
+    )
+    for job_name in (
+        "publish-node-gpr-enabled",
+        "publish-node-npmjs",
+        "publish-ruby-gpr-enabled",
+        "publish-ruby-rubygems",
+    ):
+        if_expression = cast("str", jobs[job_name]["if"])
+        assert "always()" in if_expression, job_name
+        assert tag_guard in if_expression, job_name
+    gpr_if = cast("str", jobs["publish-node-gpr-enabled"]["if"])
+    assert (
+        "!inputs.publish_node_npmjs || "
+        "needs.prepare-release-plan.outputs.has_active_node_npmjs != 'true' || "
+        "needs.gate-node-publish-npmjs.result == 'success'"
+    ) in gpr_if
+
+    release_completed_needs = cast(
+        "list[object]", jobs["release-completed"]["needs"]
+    )
+    assert "ensure-tag" in release_completed_needs
+    assert "prepare-release-plan" in release_completed_needs
+    assert "skip-results" in release_completed_needs
+    release_completed_steps = cast(
+        "list[dict[str, object]]", jobs["release-completed"]["steps"]
+    )
+    release_completed_check_env = next(
+        step
+        for step in release_completed_steps
+        if step.get("name") == "Check release outcomes"
+    )["env"]
+    for flag_name in (
+        "PUBLISH_PYTHON_PYPI",
+        "PUBLISH_NODE_GPR",
+        "PUBLISH_NODE_NPMJS",
+        "PUBLISH_RUBY_GPR",
+        "PUBLISH_RUBY_RUBYGEMS",
+    ):
+        assert flag_name in cast(
+            "Mapping[str, object]", release_completed_check_env
+        )
+    release_completed_script = (
+        REPO_ROOT / "eng/scripts/release_orchestrate_release_completed_check.sh"
+    ).read_text(encoding="utf-8")
+    assert "--disabled-package-target-keys" in release_completed_script
+
+
+def test_release_orchestrate_gates_publish_and_release_from_plan_outputs() -> (
+    None
+):
+    """Downstream publish/release jobs must follow finalized execution sets."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    jobs = cast("dict[str, dict[str, object]]", orchestrate["jobs"])
+    plan_job = jobs["prepare-release-plan"]
+    plan_outputs = cast("dict[str, object]", plan_job["outputs"])
+    for output_name in (
+        "has_active_variants",
+        "skip_publish_node_ids",
+        "has_skip_results",
+        "has_live_side_effects",
+        "has_selected_github_release",
+        "has_active_github_release",
+        "active_github_release_node_ids",
+        "active_github_release_publish_mode",
+        "active_github_release_asset_labels_json",
+        "active_github_release_asset_names_json",
+        "active_github_release_overwrite_mutable_authorized",
+        "has_selected_python_pypi",
+        "has_active_python_pypi",
+        "expected_python_distribution_filenames_json",
+        "expected_python_distribution_sha256_by_filename_json",
+        "has_selected_node_gpr",
+        "has_active_node_gpr",
+        "has_selected_node_npmjs",
+        "has_active_node_npmjs",
+        "expected_node_gpr_package_name",
+        "expected_node_gpr_package_version",
+        "expected_node_npmjs_package_name",
+        "expected_node_npmjs_package_version",
+        "expected_node_github_release_asset_name",
+        "expected_node_github_release_package_name",
+        "has_selected_ruby_gpr",
+        "has_active_ruby_gpr",
+        "has_selected_ruby_rubygems",
+        "has_active_ruby_rubygems",
+        "expected_ruby_package_name",
+        "expected_ruby_package_version",
+        "expected_ruby_gem_filename",
+        "expected_ruby_gem_sha256",
+    ):
+        assert output_name in plan_outputs
+
+    for job_name in (
+        "build-python",
+        "build-wxt",
+        "pack-node",
+        "build-dotnet",
+        "build-ruby",
+    ):
+        job = jobs[job_name]
+        assert "prepare-release-plan" in cast("list[object]", job["needs"])
+        assert (
+            "needs.prepare-release-plan.outputs.has_active_variants == 'true'"
+            in cast("str", job["if"])
+        )
+
+    build_python_with = cast("dict[str, object]", jobs["build-python"]["with"])
+    assert build_python_with["expected_distribution_filenames_json"] == (
+        "${{ needs.prepare-release-plan.outputs."
+        "expected_python_distribution_filenames_json }}"
+    )
+
+    expected_active_outputs = {
+        "publish-python": "has_active_python_pypi",
+        "publish-node-gpr-enabled": "has_active_node_gpr",
+        "publish-node-npmjs": "has_active_node_npmjs",
+        "publish-ruby-gpr-enabled": "has_active_ruby_gpr",
+        "publish-ruby-rubygems": "has_active_ruby_rubygems",
+    }
+    for job_name, output_name in expected_active_outputs.items():
+        job = jobs[job_name]
+        assert "prepare-release-plan" in cast("list[object]", job["needs"])
+        assert (
+            f"needs.prepare-release-plan.outputs.{output_name} == 'true'"
+            in cast("str", job["if"])
+        )
+
+    pack_node_with = cast("dict[str, object]", jobs["pack-node"]["with"])
+    assert pack_node_with["pack_mode"] == (
+        "${{ needs.prepare-release-plan.outputs.has_selected_node_npmjs == 'true' "
+        "&& needs.prepare-release-plan.outputs.has_selected_node_gpr == 'true' && "
+        "'both' || needs.prepare-release-plan.outputs.has_selected_node_npmjs == "
+        "'true' && 'npmjs-only' || needs.prepare-release-plan.outputs."
+        "has_selected_node_gpr == 'true' && 'gpr-only' || 'github-release-only' }}"
+    )
+    assert pack_node_with["expected_gpr_package_name"] == (
+        "${{ needs.prepare-release-plan.outputs.expected_node_gpr_package_name }}"
+    )
+    assert "expected_gpr_tarball_sha256" not in pack_node_with
+    assert "expected_gpr_tarball_sha512" not in pack_node_with
+    assert pack_node_with["expected_npmjs_package_name"] == (
+        "${{ needs.prepare-release-plan.outputs.expected_node_npmjs_package_name }}"
+    )
+    assert "expected_npmjs_tarball_sha256" not in pack_node_with
+    assert "expected_npmjs_tarball_sha512" not in pack_node_with
+    assert pack_node_with["expected_github_release_asset_name"] == (
+        "${{ needs.prepare-release-plan.outputs."
+        "expected_node_github_release_asset_name }}"
+    )
+    assert pack_node_with["expected_github_release_package_name"] == (
+        "${{ needs.prepare-release-plan.outputs."
+        "expected_node_github_release_package_name }}"
+    )
+    assert "expected_github_release_asset_sha256" not in pack_node_with
+    build_ruby_with = cast("dict[str, object]", jobs["build-ruby"]["with"])
+    assert build_ruby_with["package_name"] == (
+        "${{ needs.prepare-release-plan.outputs.expected_ruby_package_name }}"
+    )
+    assert build_ruby_with["package_version"] == (
+        "${{ needs.prepare-release-plan.outputs.expected_ruby_package_version }}"
+    )
+    assert build_ruby_with["expected_gem_filename"] == (
+        "${{ needs.prepare-release-plan.outputs.expected_ruby_gem_filename }}"
+    )
+    assert "expected_gem_sha256" not in build_ruby_with
+
+    gpr_publish_env = next(
+        step
+        for step in cast(
+            "list[dict[str, object]]", jobs["publish-node-gpr-enabled"]["steps"]
+        )
+        if step.get("name") == "Publish to GitHub Packages from tarball"
+    )["env"]
+    npmjs_publish = jobs["publish-node-npmjs"]
+    npmjs_publish_env = next(
+        step
+        for step in cast("list[dict[str, object]]", npmjs_publish["steps"])
+        if step.get("name") == "Publish to npm registry (idempotent)"
+    )["env"]
+    assert gpr_publish_env["EXPECTED_PACKAGE_NAME"] == (
+        "${{ needs.prepare-release-plan.outputs.expected_node_gpr_package_name }}"
+    )
+    assert npmjs_publish_env["EXPECTED_PACKAGE_NAME"] == (
+        "${{ needs.prepare-release-plan.outputs.expected_node_npmjs_package_name }}"
+    )
+    assert (
+        "!inputs.enable_attestation || needs.attest-node.result == 'success'"
+        in cast("str", npmjs_publish["if"])
+    )
+    ruby_gpr_publish_env = next(
+        step
+        for step in cast(
+            "list[dict[str, object]]", jobs["publish-ruby-gpr-enabled"]["steps"]
+        )
+        if step.get("name") == "Publish to GitHub Packages (idempotent)"
+    )["env"]
+    ruby_gems_publish_env = next(
+        step
+        for step in cast(
+            "list[dict[str, object]]", jobs["publish-ruby-rubygems"]["steps"]
+        )
+        if step.get("name") == "Publish to RubyGems.org (idempotent)"
+    )["env"]
+    assert ruby_gpr_publish_env["EXPECTED_GEM_FILENAME"] == (
+        "${{ needs.prepare-release-plan.outputs.expected_ruby_gem_filename }}"
+    )
+    assert ruby_gpr_publish_env["PACKAGE_NAME"] == (
+        "${{ needs.prepare-release-plan.outputs.expected_ruby_package_name }}"
+    )
+    assert ruby_gpr_publish_env["PACKAGE_VERSION"] == (
+        "${{ needs.prepare-release-plan.outputs.expected_ruby_package_version }}"
+    )
+    assert "EXPECTED_GEM_SHA256" not in ruby_gpr_publish_env
+    assert ruby_gems_publish_env["EXPECTED_GEM_FILENAME"] == (
+        "${{ needs.prepare-release-plan.outputs.expected_ruby_gem_filename }}"
+    )
+    assert ruby_gems_publish_env["PACKAGE_NAME"] == (
+        "${{ needs.prepare-release-plan.outputs.expected_ruby_package_name }}"
+    )
+    assert ruby_gems_publish_env["PACKAGE_VERSION"] == (
+        "${{ needs.prepare-release-plan.outputs.expected_ruby_package_version }}"
+    )
+    assert "EXPECTED_GEM_SHA256" not in ruby_gems_publish_env
+
+    release_expectations = {
+        "release-python-with-pypi": "inputs.publish_python_pypi",
+        "release-python-no-pypi": "!inputs.publish_python_pypi",
+        "release-node-with-npmjs": "inputs.publish_node_npmjs",
+        "release-node-no-npmjs": "!inputs.publish_node_npmjs",
+        "release-dotnet": "project_kind == 'dotnet'",
+        "release-ruby-with-rubygems": "inputs.publish_ruby_rubygems",
+        "release-ruby-no-rubygems": "!inputs.publish_ruby_rubygems",
+        "release-wxt": "has_active_github_release == 'true'",
+    }
+    for job_name, expected_condition in release_expectations.items():
+        job = jobs[job_name]
+        assert "prepare-release-plan" in cast("list[object]", job["needs"])
+        if_expression = cast("str", job["if"])
+        assert (
+            "needs.prepare-release-plan.outputs."
+            "has_active_github_release == 'true'" in if_expression
+        )
+        assert expected_condition in if_expression
+
+    release_python_with_pypi_if = cast(
+        "str", jobs["release-python-with-pypi"]["if"]
+    )
+    assert "has_active_python_pypi == 'true'" in release_python_with_pypi_if
+    release_python_no_pypi_if = cast(
+        "str", jobs["release-python-no-pypi"]["if"]
+    )
+    assert (
+        "(!inputs.publish_python_pypi || "
+        "needs.prepare-release-plan.outputs.has_active_python_pypi != 'true')"
+    ) in release_python_no_pypi_if
+    release_node_with_npmjs_if = cast(
+        "str", jobs["release-node-with-npmjs"]["if"]
+    )
+    assert "has_active_node_npmjs == 'true'" in release_node_with_npmjs_if
+    release_node_no_npmjs_if = cast("str", jobs["release-node-no-npmjs"]["if"])
+    assert "has_active_node_npmjs != 'true'" in release_node_no_npmjs_if
+    assert "!inputs.publish_node_npmjs" in release_node_no_npmjs_if
+    release_ruby_with_rubygems_if = cast(
+        "str", jobs["release-ruby-with-rubygems"]["if"]
+    )
+    assert "has_active_ruby_rubygems == 'true'" in release_ruby_with_rubygems_if
+    release_ruby_no_rubygems_if = cast(
+        "str", jobs["release-ruby-no-rubygems"]["if"]
+    )
+    assert "has_active_ruby_rubygems != 'true'" in release_ruby_no_rubygems_if
+    assert "!inputs.publish_ruby_rubygems" in release_ruby_no_rubygems_if
+
+
+def test_inline_registry_publish_jobs_upload_publish_result_receipts() -> None:
+    """Every inline registry publish path uploads a durable publish-result."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    jobs = cast("dict[str, dict[str, object]]", orchestrate["jobs"])
+    expectations = {
+        "publish-python": "python-pypi",
+        "publish-node-gpr-enabled": "node-gpr",
+        "publish-node-npmjs": "node-npmjs",
+        "publish-ruby-gpr-enabled": "ruby-gpr",
+        "publish-ruby-rubygems": "ruby-rubygems",
+    }
+    for job_name, target_key in expectations.items():
+        steps = cast("list[dict[str, object]]", jobs[job_name]["steps"])
+        run_blocks = [
+            cast("str", step.get("run", ""))
+            for step in steps
+            if isinstance(step.get("run"), str)
+        ]
+        assert any(
+            "workflow_release_control.py package-publish-result" in run
+            and f"--target-key {target_key}" in run
+            and (
+                "--execution-sets .three-workflow-release/execution-sets/"
+                "execution-sets.json"
+            )
+            in run
+            for run in run_blocks
+        ), job_name
+        assert any(
+            "workflow_release_control.py artifact-name" in run
+            and "--kind publish-result" in run
+            for run in run_blocks
+        ), job_name
+        uploads = [
+            step
+            for step in steps
+            if step.get("uses") == "actions/upload-artifact@v7"
+        ]
+        assert any(
+            cast("dict[str, object]", upload["with"])["name"]
+            == "${{ steps.publish_result_artifact.outputs.artifact_name }}"
+            and str(cast("dict[str, object]", upload["with"])["path"])
+            == "${{ steps.publish_result.outputs.publish_result_path }}"
+            for upload in uploads
+        ), job_name
+
+
+def test_dotnet_github_release_route_is_active() -> None:
+    """Active .NET GitHub Release descriptors have resolve/build/release routing."""
+    _require_ci_release_pipeline_architecture()
+    resolve_workflow = _workflow_yaml("release-resolve.yml")
+    resolve_step = next(
+        step
+        for step in cast(
+            "list[dict[str, object]]",
+            resolve_workflow["jobs"]["resolve"]["steps"],
+        )
+        if step.get("name") == "Resolve release inputs"
+    )
+    resolve_run = cast("str", resolve_step["run"])
+    assert 'elif [[ "${project_kind}" == "dotnet" ]]' in resolve_run
+    assert "validate_semver2_version.py" in resolve_run
+
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    jobs = cast("dict[str, dict[str, object]]", orchestrate["jobs"])
+    build_dotnet = jobs["build-dotnet"]
+    assert (
+        build_dotnet["uses"] == "./.github/workflows/release-build-dotnet.yml"
+    )
+    assert build_dotnet["with"]["plan_artifact_name"] == (
+        "${{ needs.prepare-release-plan.outputs.plan_artifact_name }}"
+    )
+    assert build_dotnet["with"]["execution_sets_artifact_name"] == (
+        "${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}"
+    )
+    assert "project_kind == 'dotnet'" in cast("str", build_dotnet["if"])
+
+    release_dotnet = jobs["release-dotnet"]
+    assert (
+        release_dotnet["uses"]
+        == "./.github/workflows/release-create-github-release.yml"
+    )
+    assert "build-dotnet" in cast("list[object]", release_dotnet["needs"])
+    assert "attest-dotnet" in cast("list[object]", release_dotnet["needs"])
+    assert "project_kind == 'dotnet'" in cast("str", release_dotnet["if"])
+    assert release_dotnet["with"]["dist_artifact_name"] == (
+        "${{ inputs.artifact_prefix }}-${{ needs.resolve.outputs.project }}-dist"
+    )
+
+    build_workflow = _workflow_yaml("release-build-dotnet.yml")
+    build_jobs = cast("dict[str, dict[str, object]]", build_workflow["jobs"])
+    plan_runners_job = build_jobs["plan-runners"]
+    build_job = build_jobs["build"]
+    merge_job = build_jobs["merge"]
+    assert plan_runners_job["runs-on"] == "ubuntu-latest"
+    assert build_job["runs-on"] == "${{ matrix.runs_on }}"
+    assert merge_job["runs-on"] == "ubuntu-latest"
+    assert build_job["needs"] == "plan-runners"
+    assert merge_job["needs"] == "build"
+    plan_steps = cast("list[dict[str, object]]", plan_runners_job["steps"])
+    plan_checkout = next(
+        step
+        for step in plan_steps
+        if step["name"] == "Checkout trusted control-plane"
+    )
+    assert cast("dict[str, object]", plan_checkout["with"])["path"] == (
+        ".three-workflow-release/control-plane"
+    )
+    assert cast("dict[str, object]", plan_checkout["with"])["ref"] == (
+        "${{ github.workflow_sha }}"
+    )
+    for step in plan_steps:
+        step_with = cast("dict[str, object]", step.get("with", {}))
+        assert step_with.get("ref") != "${{ inputs.target }}"
+    step_names = [
+        step["name"]
+        for step in cast("list[dict[str, object]]", build_job["steps"])
+    ]
+    assert "Checkout trusted control-plane" in step_names
+    assert "Checkout release target" in step_names
+    assert "Download execution sets" in step_names
+    assert "Build active .NET variants" in step_names
+    build_steps = cast("list[dict[str, object]]", build_job["steps"])
+    build_control_checkout = next(
+        step
+        for step in build_steps
+        if step["name"] == "Checkout trusted control-plane"
+    )
+    assert cast("dict[str, object]", build_control_checkout["with"])[
+        "path"
+    ] == (".three-workflow-release/control-plane")
+    assert cast("dict[str, object]", build_control_checkout["with"])["ref"] == (
+        "${{ github.workflow_sha }}"
+    )
+    build_target_checkout = next(
+        step
+        for step in build_steps
+        if step["name"] == "Checkout release target"
+    )
+    assert cast("dict[str, object]", build_target_checkout["with"])["path"] == (
+        ".three-workflow-release/target"
+    )
+    assert cast("dict[str, object]", build_target_checkout["with"])["ref"] == (
+        "${{ inputs.target }}"
+    )
+    assert build_job["steps"][2]["with"]["global-json-file"] == (
+        ".three-workflow-release/target/global.json"
+    )
+    plan_run_step = next(
+        step
+        for step in cast("list[dict[str, object]]", plan_runners_job["steps"])
+        if step["name"] == "Compute active .NET runner matrix"
+    )
+    assert (
+        plan_run_step["working-directory"]
+        == ".three-workflow-release/control-plane"
+    )
+    plan_run = plan_run_step["run"]
+    assert "active-dotnet-runner-matrix" in plan_run
+    assert (
+        '"${GITHUB_WORKSPACE}/.three-workflow-release/plan/release-plan.json"'
+        in plan_run
+    )
+    assert "--allowed-runner-label ubuntu-latest" in plan_run
+    assert "--allowed-runner-label macos-latest" in plan_run
+    assert "--allowed-runner-label windows-latest" in plan_run
+    build_run = next(
+        step
+        for step in cast("list[dict[str, object]]", build_job["steps"])
+        if step["name"] == "Build active .NET variants"
+    )
+    assert (
+        build_run["working-directory"]
+        == ".three-workflow-release/control-plane"
+    )
+    build_run_script = cast("str", build_run["run"])
+    assert "active-dotnet-variant-ids" in build_run_script
+    assert '--runner-family "${RUNNER_FAMILY}"' in build_run_script
+    assert "execution-sets.json" in build_run_script
+    assert "copy-dist-flat" in build_run_script
+    assert (
+        '--repo-root "${GITHUB_WORKSPACE}/.three-workflow-release/target"'
+        in build_run_script
+    )
+    assert (
+        "--plan .three-workflow-release/plan/release-plan.json"
+        not in build_run_script
+    )
+    assert "--repo-root ." not in build_run_script
+    merge_steps = cast("list[dict[str, object]]", merge_job["steps"])
+    merge_control_checkout = next(
+        step
+        for step in merge_steps
+        if step["name"] == "Checkout trusted control-plane"
+    )
+    assert cast("dict[str, object]", merge_control_checkout["with"])[
+        "path"
+    ] == (".three-workflow-release/control-plane")
+    assert cast("dict[str, object]", merge_control_checkout["with"])["ref"] == (
+        "${{ github.workflow_sha }}"
+    )
+    assert "Download release plan" in [
+        step["name"] for step in merge_steps if "name" in step
+    ]
+    assert "Download execution sets" in [
+        step["name"] for step in merge_steps if "name" in step
+    ]
+    merge_run = next(
+        step
+        for step in merge_steps
+        if step["name"] == "Merge runner dist artifacts"
+    )
+    assert (
+        merge_run["working-directory"]
+        == ".three-workflow-release/control-plane"
+    )
+    merge_run_script = cast("str", merge_run["run"])
+    assert "copy-dist-flat" in merge_run_script
+    assert "validate-dotnet-dist" in merge_run_script
+    assert '--dist "${GITHUB_WORKSPACE}/out"' in merge_run_script
+    assert "Duplicate .NET release asset basename" not in merge_run_script
+    design = (REPO_ROOT / ".github/workflows/docs/DESIGN.v2.md").read_text(
+        encoding="utf-8"
+    )
+    low_level = LOW_LEVEL_DESIGN.read_text(encoding="utf-8")
+    rollout = (
+        REPO_ROOT / "docs/wiki/analyses/workflow-release-operator-rollout.md"
+    ).read_text(encoding="utf-8")
+    for docs in (design, low_level, rollout):
+        assert "release-build-dotnet.yml" in docs
+    assert "future dotnet/NuGet build workflow" not in design
+    assert "dotnet/NuGet workflow path are restored" not in rollout
+    assert "floating `*-latest` labels are not allowed" not in design
+    assert "`ubuntu-latest`, `macos-latest`, or `windows-latest`" in design
+
+
+def test_release_build_dotnet_workflow_is_tracked() -> None:
+    """The orchestrator-referenced .NET build workflow must be checked in."""
+    if GIT is None:
+        pytest.skip("git is unavailable")
+    result = subprocess.run(
+        [
+            GIT,
+            "ls-files",
+            "--error-unmatch",
+            ".github/workflows/release-build-dotnet.yml",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_active_dotnet_variant_ids_follow_finalized_execution_sets() -> None:
+    """The .NET build workflow builds only active finalized .NET variants."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    plan["envelope"]["projects"]["python"] = {
+        **plan["envelope"]["projects"]["example"],
+        "ecosystem": "python",
+    }
+    plan["graph"]["variants"]["variant/python"] = {
+        **plan["graph"]["variants"]["variant/v1"],
+        "project-id": "python",
+    }
+    execution_sets["active-variant-ids"] = ["variant/v1"]
+
+    assert control._active_dotnet_variant_ids(plan, execution_sets) == [
+        "variant/v1"
+    ]
+
+    plan["graph"]["variants"]["variant/linux"] = {
+        **plan["graph"]["variants"]["variant/v1"],
+        "dimensions": {"os": "linux", "rid": "linux-x64"},
+    }
+    plan["graph"]["variants"]["variant/macos"] = {
+        **plan["graph"]["variants"]["variant/v1"],
+        "dimensions": {"os": "macos", "rid": "osx-arm64"},
+    }
+    plan["graph"]["variants"]["variant/windows"] = {
+        **plan["graph"]["variants"]["variant/v1"],
+        "dimensions": {"os": "windows", "rid": "win-x64"},
+    }
+    execution_sets["active-variant-ids"] = [
+        "variant/linux",
+        "variant/macos",
+        "variant/windows",
+    ]
+    assert control._active_dotnet_variant_ids(
+        plan,
+        execution_sets,
+        runner_family="ubuntu",
+    ) == ["variant/linux"]
+    assert control._active_dotnet_variant_ids(
+        plan,
+        execution_sets,
+        runner_family="macos",
+    ) == ["variant/macos"]
+    assert control._active_dotnet_variant_ids(
+        plan,
+        execution_sets,
+        runner_family="windows",
+    ) == ["variant/windows"]
+    assert control._active_dotnet_runner_matrix(plan, execution_sets) == {
+        "include": [
+            {
+                "runner_family": "macos",
+                "runs_on": "macos-latest",
+                "artifact_suffix": "macos",
+            },
+            {
+                "runner_family": "ubuntu",
+                "runs_on": "ubuntu-latest",
+                "artifact_suffix": "ubuntu",
+            },
+            {
+                "runner_family": "windows",
+                "runs_on": "windows-latest",
+                "artifact_suffix": "windows",
+            },
+        ]
+    }
+    with pytest.raises(RuntimeError, match="outside the trusted allowlist"):
+        control._active_dotnet_runner_matrix(
+            plan,
+            execution_sets,
+            allowed_runner_labels={"ubuntu-latest", "windows-latest"},
+        )
+
+    execution_sets["active-variant-ids"] = ["variant/linux"]
+    assert (
+        control._active_dotnet_variant_ids(
+            plan,
+            execution_sets,
+            runner_family="windows",
+        )
+        == []
+    )
+    assert control._active_dotnet_runner_matrix(plan, execution_sets) == {
+        "include": [
+            {
+                "runner_family": "ubuntu",
+                "runs_on": "ubuntu-latest",
+                "artifact_suffix": "ubuntu",
+            }
+        ]
+    }
+
+    execution_sets["active-variant-ids"] = ["variant/python"]
+    with pytest.raises(RuntimeError, match="is not a .NET variant"):
+        control._active_dotnet_variant_ids(plan, execution_sets)
+
+
+def test_copy_dist_flat_rejects_duplicate_basenames() -> None:
+    """Flattening variant dist files fails closed before clobbering assets."""
+    first = SCRATCH / "first"
+    second = SCRATCH / "second"
+    out = SCRATCH / "out"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    try:
+        first.mkdir(parents=True)
+        second.mkdir(parents=True)
+        (first / "Example.1.2.3.nupkg").write_text("first", encoding="utf-8")
+        (second / "Example.1.2.3.nupkg").write_text("second", encoding="utf-8")
+
+        control._copy_dist_flat(first, out)
+        with pytest.raises(
+            RuntimeError, match="Duplicate .NET release asset basename"
+        ):
+            control._copy_dist_flat(second, out)
+        assert (out / "Example.1.2.3.nupkg").read_text(
+            encoding="utf-8"
+        ) == "first"
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_validate_dotnet_dist_matches_finalized_github_release_plan() -> None:
+    """Merged .NET dist files must match the finalized GitHub Release assets."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    dist = SCRATCH / "dist"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    try:
+        dist.mkdir(parents=True)
+        (dist / "Example.1.2.3.nupkg").write_text("package", encoding="utf-8")
+        (dist / "Example.1.2.3.snupkg").write_text("symbols", encoding="utf-8")
+
+        control._validate_dotnet_dist(plan, execution_sets, dist)
+
+        (dist / "unexpected.zip").write_text("extra", encoding="utf-8")
+        with pytest.raises(RuntimeError, match=r"unexpected\.zip"):
+            control._validate_dotnet_dist(plan, execution_sets, dist)
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_validate_dotnet_dist_ignores_skip_satisfied_inactive_variant_sibling() -> (
+    None
+):
+    """Current .NET dist validation is scoped to actual active publish nodes."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    package_node_id, symbols_node_id = _split_fixture_github_release_nodes(plan)
+    graph = cast("dict[str, Any]", plan["graph"])
+    variants = cast("dict[str, Any]", graph["variants"])
+    variants["variant/inactive"] = {
+        **cast("dict[str, Any]", variants["variant/v1"]),
+        "dimensions": {"os": "linux", "rid": "linux-x64"},
+    }
+    artifacts = cast("dict[str, Any]", graph["artifacts"])
+    cast("dict[str, Any]", artifacts["artifact/package"])["variant-id"] = (
+        "variant/inactive"
+    )
+    nodes = cast("dict[str, Any]", graph["publish-nodes"])
+    package_node = cast("dict[str, Any]", nodes[package_node_id])
+    symbols_node = cast("dict[str, Any]", nodes[symbols_node_id])
+    package_node["publish-disposition"] = "skip-satisfied"
+    package_node.pop("publish-mode", None)
+    symbols_node["publish-disposition"] = "publish"
+    symbols_node["publish-mode"] = "create-only"
+    execution_sets["active-variant-ids"] = ["variant/v1"]
+    execution_sets["active-publish-node-ids"] = [symbols_node_id]
+    execution_sets["active-github-release-publish-node-ids"] = [symbols_node_id]
+    execution_sets["publish-intent-node-ids"] = [symbols_node_id]
+    execution_sets["skip-satisfied-publish-node-ids"] = [
+        package_node_id,
+        "publish-node/nuget",
+    ]
+    execution_sets["selected-github-release-publish-node-ids"] = [
+        package_node_id,
+        symbols_node_id,
+    ]
+    execution_sets["active-publish-selectors"]["github-token"] = [
+        symbols_node_id
+    ]
+    dist = SCRATCH / "dist"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    try:
+        dist.mkdir(parents=True)
+        (dist / "Example.1.2.3.snupkg").write_text(
+            "symbols",
+            encoding="utf-8",
+        )
+
+        assert control._expected_dotnet_dist_asset_names(
+            plan,
+            execution_sets,
+        ) == ["Example.1.2.3.snupkg"]
+        control._validate_dotnet_dist(plan, execution_sets, dist)
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_validate_dotnet_dist_rejects_missing_planned_asset() -> None:
+    """Merged .NET dist validation fails when a planned asset is absent."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    dist = SCRATCH / "dist"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    try:
+        dist.mkdir(parents=True)
+        (dist / "Example.1.2.3.nupkg").write_text("package", encoding="utf-8")
+
+        with pytest.raises(RuntimeError, match=r"Example\.1\.2\.3\.snupkg"):
+            control._validate_dotnet_dist(plan, execution_sets, dist)
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_optional_gpr_gates_do_not_block_public_only_routes() -> None:
+    """Unselected GPR gates should no-op for public registry/release routes."""
+    _require_ci_release_pipeline_architecture()
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    jobs = cast("dict[str, dict[str, object]]", orchestrate["jobs"])
+
+    node_gpr_gate = jobs["publish-node-gpr"]
+    node_gpr_if = cast("str", node_gpr_gate["if"])
+    assert "always()" in node_gpr_if
+    assert "has_selected_node_gpr == 'true'" in node_gpr_if
+    assert "has_active_node_npmjs == 'true'" in node_gpr_if
+    assert "has_active_github_release == 'true'" in node_gpr_if
+    node_gpr_steps = cast("list[dict[str, object]]", node_gpr_gate["steps"])
+    node_disabled = next(
+        step
+        for step in node_gpr_steps
+        if step.get("name") == "Node GPR publishing disabled"
+    )
+    assert node_disabled["if"] == (
+        "${{ needs.prepare-release-plan.outputs."
+        "has_active_node_gpr != 'true' }}"
+    )
+
+    npmjs = jobs["publish-node-npmjs"]
+    assert "publish-node-gpr" in cast("list[object]", npmjs["needs"])
+    assert "needs.publish-node-gpr.result == 'success'" in cast(
+        "str",
+        npmjs["if"],
+    )
+
+    for release_job_name in (
+        "release-node-with-npmjs",
+        "release-node-no-npmjs",
+    ):
+        release_job = jobs[release_job_name]
+        assert "publish-node-gpr" in cast("list[object]", release_job["needs"])
+
+    ruby_gpr_gate = jobs["publish-ruby-gpr"]
+    ruby_gpr_if = cast("str", ruby_gpr_gate["if"])
+    assert "always()" in ruby_gpr_if
+    assert "has_selected_ruby_gpr == 'true'" in ruby_gpr_if
+    assert "has_active_github_release == 'true'" in ruby_gpr_if
+    ruby_gpr_steps = cast("list[dict[str, object]]", ruby_gpr_gate["steps"])
+    ruby_disabled = next(
+        step
+        for step in ruby_gpr_steps
+        if step.get("name") == "Ruby GPR publishing disabled"
+    )
+    assert ruby_disabled["if"] == (
+        "${{ needs.prepare-release-plan.outputs."
+        "has_active_ruby_gpr != 'true' }}"
+    )
+
+    for release_job_name in (
+        "release-ruby-with-rubygems",
+        "release-ruby-no-rubygems",
+    ):
+        release_job = jobs[release_job_name]
+        assert "publish-ruby-gpr" in cast("list[object]", release_job["needs"])
+        assert "needs.publish-ruby-gpr.result == 'success'" not in cast(
+            "str",
+            release_job["if"],
+        )
+
+
+def test_python_pypi_plan_gate_is_descriptor_controlled() -> None:
+    """Python descriptors without PyPI must not fail the plan-derived gate."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    jobs = cast("dict[str, dict[str, object]]", orchestrate["jobs"])
+    prepare = jobs["prepare-release-plan"]
+    gate_step = next(
+        step
+        for step in cast("list[dict[str, object]]", prepare["steps"])
+        if step.get("name") == "Validate plan-derived workflow gates"
+    )
+    run = cast("str", gate_step["run"])
+
+    assert "Python PyPI target selection is descriptor-controlled" in run
+    assert (
+        'require_selected_target "${PUBLISH_PYTHON_PYPI}" '
+        '"${HAS_SELECTED_PYTHON_PYPI}" "publish_python_pypi"'
+    ) not in run
+    publish_python = jobs["publish-python"]
+    publish_if = cast("str", publish_python["if"])
+    assert "inputs.publish_python_pypi" in publish_if
+    assert "has_active_python_pypi == 'true'" in publish_if
+    release_with_pypi_if = cast("str", jobs["release-python-with-pypi"]["if"])
+    release_no_pypi_if = cast("str", jobs["release-python-no-pypi"]["if"])
+    assert "inputs.publish_python_pypi" in release_with_pypi_if
+    assert "has_active_python_pypi == 'true'" in release_with_pypi_if
+    assert release_no_pypi_if == (
+        "needs.resolve.outputs.project_kind == 'python' && "
+        "needs.prepare-release-plan.outputs.has_active_github_release == 'true' && "
+        "(!inputs.publish_python_pypi || "
+        "needs.prepare-release-plan.outputs.has_active_python_pypi != 'true')"
+    )
+
+
+def test_node_pack_workflow_supports_github_release_only_mode() -> None:
+    """GitHub Release Node assets can be packed without registry identity."""
+    workflow = _workflow_yaml("release-build-node-pack.yml")
+    pack_job = workflow["jobs"]["pack"]
+    steps = cast("list[dict[str, object]]", pack_job["steps"])
+    checkout_steps = [
+        step for step in steps if step.get("uses") == "actions/checkout@v6"
+    ]
+    assert checkout_steps[0]["name"] == "Checkout release target"
+    assert cast("dict[str, object]", checkout_steps[0]["with"])["path"] == (
+        ".three-workflow-release/target"
+    )
+    assert checkout_steps[1]["name"] == "Checkout trusted control-plane"
+    assert cast("dict[str, object]", checkout_steps[1]["with"])["ref"] == (
+        "${{ github.workflow_sha }}"
+    )
+    assert cast("dict[str, object]", checkout_steps[1]["with"])["path"] == (
+        ".three-workflow-release/control-plane"
+    )
+    validate_step = next(
+        step for step in steps if step.get("name") == "Validate pack mode"
+    )
+    validate_run = cast("str", validate_step["run"])
+    assert "github-release-only" in validate_run
+    assert "EXPECTED_GITHUB_RELEASE_ASSET_NAME" in validate_run
+    trigger = cast("dict[str, object]", workflow.get("on", workflow.get(True)))
+    workflow_call = cast("dict[str, object]", trigger["workflow_call"])
+    inputs = cast("dict[str, dict[str, object]]", workflow_call["inputs"])
+    assert inputs["expected_github_release_asset_name"]["required"] is False
+    assert inputs["expected_github_release_package_name"]["required"] is False
+    assert "expected_github_release_asset_sha256" not in inputs
+    prepare_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Prepare package name for GitHub Release pack"
+    )
+    assert prepare_step["if"] == (
+        "${{ inputs.expected_github_release_asset_name != '' && "
+        "inputs.expected_github_release_package_name != '' }}"
+    )
+    assert '--package-name "${EXPECTED_PACKAGE_NAME}"' in cast(
+        "str", prepare_step["run"]
+    )
+    assert "TRUSTED_PREPARE_NPM_PUBLISH" in cast(
+        "dict[str, object]", prepare_step["env"]
+    )
+    assert 'uv run --script "${TRUSTED_PREPARE_NPM_PUBLISH}"' in cast(
+        "str", prepare_step["run"]
+    )
+    pack_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Pack tarball for GitHub Release"
+    )
+    assert (
+        pack_step["if"]
+        == "${{ inputs.expected_github_release_asset_name != '' }}"
+    )
+    pack_run = cast("str", pack_step["run"])
+    assert "npm pack --ignore-scripts" in pack_run
+    assert "GitHub Release package asset basename mismatch" in pack_run
+    assert "GitHub Release package asset package.json name mismatch" in pack_run
+    assert "GitHub Release package asset SHA-256:" in pack_run
+    assert "existing file bytes differ from the newly packed asset" in pack_run
+    assert (
+        'destination="${GITHUB_WORKSPACE}/out/${EXPECTED_ASSET_NAME}"'
+        in pack_run
+    )
+    assert "Refusing to overwrite final GitHub Release asset" in pack_run
+    assert "sha512sum" in pack_run
+    assert "expected_gpr_package_name" not in pack_run
+    assert "expected_npmjs_package_name" not in pack_run
+
+
+def test_wxt_docs_capture_exact_artifact_routing_contract() -> None:
+    """WXT docs track the exact artifact whitelist and manifest-version rule."""
+    docs = (REPO_ROOT / ".github/workflows/docs/DESIGN.v2.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert (
+        "Browser zip basenames are allowed only for descriptor/profile-declared "
+        "`browser-zip` artifact IDs" in docs
+    )
+    assert (
+        "`${project}-${version}-sources.zip` is allowed only when the "
+        "descriptor profile artifact list declares `firefox-sources`." in docs
+    )
+    assert (
+        "Each browser zip payload must also carry a root `manifest.json` "
+        "whose `version` matches the resolved browser-manifest version "
+        "derived from the canonical `package.json.version`." in docs
+    )
+
+
+def test_release_docs_do_not_require_superseded_dispatch_or_dry_run_scope() -> (
+    None
+):
+    """Active docs must not contradict single-project no-dry-run release scope."""
+    design = (REPO_ROOT / ".github/workflows/docs/DESIGN.v2.md").read_text(
+        encoding="utf-8"
+    )
+    baseline = (
+        REPO_ROOT
+        / "docs/wiki/analyses/workflow-release-requirements-baseline.md"
+    ).read_text(encoding="utf-8")
+
+    assert "implementation has not started" not in design
+    assert "Release workflows are already active" in design
+    assert (
+        "Each active workflow-dispatch run targets exactly one project"
+        in baseline
+    )
+    assert "Multi-project dispatch proof is historical/deferred" in baseline
+    assert (
+        "Operator-selected dry-run or validation-only proof is historical/deferred"
+        in baseline
+    )
+    assert (
+        "Acceptance must explicitly prove multi-project `workflow_dispatch`"
+        not in baseline
+    )
+    assert (
+        "Acceptance must explicitly prove dry-run or validation-only behavior"
+        not in baseline
+    )
+
+
+def test_requirements_baseline_documents_explicit_force_tag_retarget() -> None:
+    """Baseline tag rules distinguish default fail-closed and force paths."""
+    baseline = (
+        REPO_ROOT
+        / "docs/wiki/analyses/workflow-release-requirements-baseline.md"
+    ).read_text(encoding="utf-8")
+    baseline_words = " ".join(baseline.split())
+
+    assert "force_update_tag` is omitted or `false`" in baseline_words
+    assert (
+        "points elsewhere without explicit `force_update_tag=true`"
+        in baseline_words
+    )
+    assert "the only active retarget path is the explicit" in baseline_words
+    assert (
+        "operator-approved `force_update_tag=true` workflow input"
+        in baseline_words
+    )
+    assert (
+        "Retargeting or moving an existing required project-scoped release tag "
+        "is out of" not in baseline
+    )
+
+
+def test_oidc_topology_docs_scope_npmjs_to_caller_identity() -> None:
+    """OIDC topology docs should align npmjs setup with caller-workflow validation."""
+    docs = (
+        REPO_ROOT
+        / "docs/wiki/analyses/workflow-release-oidc-publish-topology.md"
+    ).read_text(encoding="utf-8")
+    doc_words = " ".join(docs.split())
+
+    assert "npmjs uses `external-oidc-caller-workflow`" in doc_words
+    assert (
+        "npm validates the caller workflow name when `publish-node-npmjs` "
+        "is reached through `workflow_call`" in doc_words
+    )
+    assert (
+        "register `.github/workflows/official.yml` with environment `npmjs`"
+        in doc_words
+    )
+    assert "Buddy does not live-publish npmjs" in doc_words
+
+
+def test_design_docs_scope_npmjs_trusted_publisher_to_official_caller() -> None:
+    """Design docs should bind npmjs Trusted Publisher to the caller."""
+    docs = (REPO_ROOT / ".github/workflows/docs/DESIGN.v2.md").read_text(
+        encoding="utf-8"
+    )
+    docs_words = " ".join(docs.split())
+
+    assert "workflow filename `official.yml`" in docs_words
+    assert "npm validates the direct caller workflow name" in docs_words
+    assert (
+        "Both the `official.yml` orchestrate caller job and the "
+        "`release-orchestrate.yml` npmjs publish job must receive "
+        "`id-token: write`." in docs_words
+    )
+    assert (
+        "workflow filename `release-orchestrate.yml`, provider environment "
+        "`npmjs`" not in docs_words
+    )
+    assert (
+        "Only the `release-orchestrate.yml` npmjs publish job may receive "
+        "`id-token: write`." not in docs_words
+    )
+
+
+def test_design_docs_allow_reusable_oidc_caller_upper_bound() -> None:
+    """OIDC docs must allow caller upper bounds while scoping token minting."""
+    docs = (REPO_ROOT / ".github/workflows/docs/DESIGN.v2.md").read_text(
+        encoding="utf-8"
+    )
+    low_level = LOW_LEVEL_DESIGN.read_text(encoding="utf-8")
+    docs_words = " ".join(docs.split())
+    low_level_words = " ".join(low_level.split())
+
+    assert (
+        "reusable-workflow caller jobs may grant `id-token: write` only as the "
+        "upper-bound permission for called OIDC publish/provenance jobs"
+        in docs_words
+    )
+    assert (
+        "`id-token: write` appears anywhere other than the exact "
+        "publish/provenance job" in docs_words
+    )
+    assert (
+        "or a reusable-workflow caller job granting `id-token: write` only as "
+        "the upper-bound permission" in docs_words
+    )
+    assert (
+        "actual token minting remains restricted to the environment-scoped "
+        "`release-orchestrate.yml` PyPI publish/provenance job" in docs_words
+    )
+    assert (
+        "actual token minting remains restricted to the environment-scoped "
+        "`release-orchestrate.yml` RubyGems publish/provenance job"
+        in docs_words
+    )
+    assert (
+        "GitHub artifact-attestation/provenance jobs may grant "
+        "`id-token: write` and `attestations: write` without an external "
+        "registry environment" in docs_words
+    )
+    assert (
+        "the entry workflow caller job may grant `id-token: write` only as the "
+        "reusable-call upper bound" in low_level_words
+    )
+    assert (
+        "Actual registry-token minting remains restricted to the active "
+        "reusable-orchestrator publish job" in low_level_words
+    )
+    assert (
+        "Only the `release-orchestrate.yml` PyPI publish job may receive "
+        "`id-token: write`" not in docs_words
+    )
+    assert (
+        "Only the `release-orchestrate.yml` RubyGems publish job may receive "
+        "`id-token: write`" not in docs_words
+    )
+    assert (
+        "only the RubyGems publish job carries `id-token: write`"
+        not in low_level_words
+    )
+
+
+def test_executor_boundary_docs_distinguish_entry_and_reusable_targets() -> (
+    None
+):
+    """Boundary docs should distinguish active entries from direct callers."""
+    docs = (
+        REPO_ROOT
+        / "docs/wiki/analyses/workflow-release-workflow-executor-boundaries.md"
+    ).read_text(encoding="utf-8")
+    docs_words = " ".join(docs.split())
+
+    assert (
+        "normalized inputs plus the pinned `release_target_sha`" in docs_words
+    )
+    assert (
+        "Direct reusable `source=manual` callers may still leave `target` empty "
+        "or provide a branch, tag, ref, or 40-hex commit SHA" in docs_words
+    )
+    assert "selected profile and the raw dispatch envelope" not in docs_words
+
+
+def test_registry_exactness_docs_use_producer_bound_digest_evidence() -> None:
+    """Docs must not describe planner-frozen projection digests as current authority."""
+    plan_shape = (
+        REPO_ROOT / "docs/wiki/analyses/workflow-release-plan-shape.md"
+    ).read_text(encoding="utf-8")
+    executor_boundaries = (
+        REPO_ROOT
+        / "docs/wiki/analyses/workflow-release-workflow-executor-boundaries.md"
+    ).read_text(encoding="utf-8")
+    plan_words = " ".join(plan_shape.split())
+    executor_words = " ".join(executor_boundaries.split())
+
+    assert "planner-frozen projection digest evidence" not in plan_words
+    assert "planner-built gem SHA-256 digests" not in executor_words
+    assert (
+        "current digest authority comes from build-result/publish handoff and "
+        "proof evidence" in plan_words
+    )
+    assert (
+        "Current exactness and mutation gates must use producer-bound "
+        "build-result, publish handoff, and `github-release-asset-proof` "
+        "evidence" in plan_words
+    )
+    assert (
+        "PyPI exact-satisfied replay classification requires planned filename "
+        "slots plus producer-bound build-result/publish proof digests"
+        in executor_words
+    )
+    assert (
+        "RubyGems exact-satisfied replay requires the producer-bound SHA-256 "
+        "for the matching planned filename" in executor_words
+    )
+
+
+def test_architecture_model_docs_cover_registry_final_filenames() -> None:
+    """Architecture docs should cover all active registry filename projections."""
+    docs = (
+        REPO_ROOT / "docs/wiki/analyses/workflow-release-architecture-model.md"
+    ).read_text(encoding="utf-8")
+    docs_words = " ".join(docs.split())
+
+    assert "active current-scope npm, PyPI, and RubyGems" in docs_words
+    assert (
+        "For active current-scope npm, PyPI, and RubyGems package-registry "
+        "publish nodes" in docs_words
+    )
+    assert "NuGet registry publication is deferred" in docs_words
+    assert "for npm, the filename is the package tarball name" in docs_words
+    assert (
+        "for RubyGems, the filename is `<gem-name>-<version>.gem`" in docs_words
+    )
+    assert "For current-scope NuGet/PyPI nodes" not in docs_words
+    assert "For current-scope NuGet and PyPI publish nodes" not in docs_words
+
+
+def test_operator_rollout_distinguishes_npmjs_trusted_publisher_and_host() -> (
+    None
+):
+    """Rollout docs distinguish npm's caller identity from publish job hosting."""
+    docs = (
+        REPO_ROOT / "docs/wiki/analyses/workflow-release-operator-rollout.md"
+    ).read_text(encoding="utf-8")
+    docs_words = " ".join(docs.split())
+
+    assert (
+        "configure a trusted publisher for owner `hcoona`, repository `three`, "
+        "workflow filename `official.yml`, and environment `npmjs`"
+        in docs_words
+    )
+    assert (
+        "For npmjs, the Trusted Publisher entry must name the direct caller "
+        "workflow `.github/workflows/official.yml` with environment `npmjs`"
+        in docs_words
+    )
+    assert (
+        "the token is still requested and the publish command still runs in "
+        "`.github/workflows/release-orchestrate.yml` under the `npmjs` environment"
+        in docs_words
+    )
+    assert (
+        "publisher identity is `.github/workflows/release-orchestrate.yml` "
+        "with the registry environment `pypi` for PyPI, `npmjs` for npmjs"
+        not in docs_words
+    )
+
+
+def test_requirements_baseline_defers_nuget_registry_publication() -> None:
+    """Requirements baseline should defer NuGet registry publish."""
+    baseline = (
+        REPO_ROOT
+        / "docs/wiki/analyses/workflow-release-requirements-baseline.md"
+    ).read_text(encoding="utf-8")
+    baseline_words = " ".join(baseline.split())
+
+    assert (
+        "active first delivery does not publish to NuGet registries"
+        in baseline_words
+    )
+    assert "NuGet registry publication is deferred" in baseline_words
+    assert "`families.nuget.instances: []`" in baseline_words
+    assert (
+        "first delivery scope includes GitHub Release plus the NuGet"
+        not in baseline
+    )
+    assert "Current-scope NuGet/PyPI immutable handling" not in baseline
+
+
+def test_reusable_node_builds_set_up_node_24_from_orchestrator() -> None:
+    """Reusable Node builds must not rely on runner-default Node.js."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    jobs = cast("dict[str, object]", orchestrate["jobs"])
+    assert (
+        cast(
+            "dict[str, object]",
+            cast("dict[str, object]", jobs["pack-node"])["with"],
+        )["node_version"]
+        == "24"
+    )
+    assert (
+        cast(
+            "dict[str, object]",
+            cast("dict[str, object]", jobs["build-wxt"])["with"],
+        )["node_version"]
+        == "24"
+    )
+    assert (
+        cast(
+            "dict[str, object]",
+            cast("dict[str, object]", jobs["build-wxt"])["with"],
+        )["profile"]
+        == "${{ needs.resolve-hub-context.outputs.planner_profile }}"
+    )
+    workflow = _workflow_yaml("release-build-node-pack.yml")
+    steps = cast("list[dict[str, object]]", workflow["jobs"]["pack"]["steps"])
 
     setup_index, setup_step = next(
         (index, step)
         for index, step in enumerate(steps)
-        if step.get("name") == "Install Node.js for npm builds"
+        if step.get("name") == "Setup Node.js"
     )
-    build_index = next(
+    install_index = next(
         index
         for index, step in enumerate(steps)
-        if step.get("name") == "Execute build unit"
+        if step.get("name") == "Install Node dependencies"
     )
 
-    assert setup_index < build_index
+    assert setup_index < install_index
     assert setup_step["uses"] == "actions/setup-node@v6"
-    assert setup_step["with"]["node-version"] == "24"
+    assert setup_step["with"]["node-version"] == "${{ inputs.node_version }}"
+
+    wxt_workflow = _workflow_yaml("release-build-wxt.yml")
+    wxt_steps = cast(
+        "list[dict[str, object]]", wxt_workflow["jobs"]["build"]["steps"]
+    )
+
+    wxt_setup_index, wxt_setup_step = next(
+        (index, step)
+        for index, step in enumerate(wxt_steps)
+        if step.get("name") == "Setup Node.js"
+    )
+    wxt_install_index = next(
+        index
+        for index, step in enumerate(wxt_steps)
+        if step.get("name") == "Install Node dependencies"
+    )
+
+    assert wxt_setup_index < wxt_install_index
+    assert wxt_setup_step["uses"] == "actions/setup-node@v6"
+    assert (
+        wxt_setup_step["with"]["node-version"] == "${{ inputs.node_version }}"
+    )
 
 
-def test_official_entry_publish_sets_up_npm_trusted_runtime() -> None:
-    """Official entry-hosted npm publishing gets an OIDC-capable npm runtime."""
-    workflow = yaml.safe_load(_workflow("official.yml"))
-    job = workflow["jobs"]["publish-entry"]
+def test_reusable_node_pack_uses_plan_authorized_package_names() -> None:
+    """Node pack workflow does not expose target-derived package names."""
+    workflow = _workflow_yaml("release-build-node-pack.yml")
+    workflow_call = cast(
+        "dict[str, object]", workflow.get("on", workflow.get(True, {}))
+    )["workflow_call"]
+    call_inputs = cast("dict[str, object]", workflow_call["inputs"])
+    call_outputs = cast("dict[str, object]", workflow_call["outputs"])
+    job_outputs = cast("dict[str, object]", workflow["jobs"]["pack"]["outputs"])
+    steps = cast("list[dict[str, object]]", workflow["jobs"]["pack"]["steps"])
+    prepare_step = next(
+        step for step in steps if step.get("id") == "prepare_gpr"
+    )
+    prepare_npmjs_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Prepare package name for npmjs pack"
+    )
+
+    assert "expected_gpr_package_name" in call_inputs
+    assert "expected_npmjs_package_name" in call_inputs
+    assert "expected_github_release_package_name" in call_inputs
+    assert "npm_package_name" not in call_outputs
+    assert "gpr_package_name" not in call_outputs
+    assert "npm_package_name" not in job_outputs
+    assert "gpr_package_name" not in job_outputs
+    assert '--output "${GITHUB_OUTPUT}"' in cast("str", prepare_step["run"])
+    assert "authorized preparation" in cast("str", prepare_step["run"])
+    assert "--scope" not in cast("str", prepare_step["run"])
+    assert '--package-name "${EXPECTED_PACKAGE_NAME}"' in cast(
+        "str", prepare_step["run"]
+    )
+    assert '--package-name "${EXPECTED_PACKAGE_NAME}"' in cast(
+        "str", prepare_npmjs_step["run"]
+    )
+
+
+def test_custom_channels_use_supported_planner_profile() -> None:
+    """Custom routing channels must not pass custom as a planner profile."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    jobs = cast("dict[str, dict[str, object]]", orchestrate["jobs"])
+    hub = jobs["resolve-hub-context"]
+    hub_outputs = cast("dict[str, object]", hub["outputs"])
+    hub_steps = cast("list[dict[str, object]]", hub["steps"])
+    hub_run = cast("str", hub_steps[0]["run"])
+    prepare_steps = cast(
+        "list[dict[str, object]]", jobs["prepare-release-plan"]["steps"]
+    )
+    write_request = next(
+        step
+        for step in prepare_steps
+        if step.get("name") == "Write planner request"
+    )
+
+    assert (
+        hub_outputs["planner_profile"]
+        == "${{ steps.context.outputs.planner_profile }}"
+    )
+    assert 'planner_profile="${channel_profile}"' in hub_run
+    assert 'planner_profile="official"' in hub_run
+    assert 'echo "planner_profile=${planner_profile}"' in hub_run
+    assert cast("dict[str, object]", write_request["env"])["PROFILE"] == (
+        "${{ needs.resolve-hub-context.outputs.planner_profile }}"
+    )
+    assert '--profile "$PROFILE"' in cast("str", write_request["run"])
+    assert (
+        cast("dict[str, object]", jobs["build-wxt"]["with"])["profile"]
+        == "${{ needs.resolve-hub-context.outputs.planner_profile }}"
+    )
+    release_jobs = [
+        job
+        for job in jobs.values()
+        if job.get("uses")
+        == "./.github/workflows/release-create-github-release.yml"
+    ]
+    assert release_jobs
+    for job in release_jobs:
+        call_with = cast("dict[str, object]", job["with"])
+        assert call_with["channel"] == "${{ inputs.channel }}"
+        assert (
+            call_with["planner_profile"]
+            == "${{ needs.resolve-hub-context.outputs.planner_profile }}"
+        )
+
+
+def _wxt_build_step() -> dict[str, object]:
+    """Return the reusable WXT build step."""
+    workflow = _workflow_yaml("release-build-wxt.yml")
+    steps = cast("list[dict[str, object]]", workflow["jobs"]["build"]["steps"])
+    return next(
+        step for step in steps if step.get("name") == "Build package (Node/WXT)"
+    )
+
+
+def _wxt_validate_step() -> dict[str, object]:
+    """Return the reusable WXT payload validation step."""
+    workflow = _workflow_yaml("release-build-wxt.yml")
+    steps = cast("list[dict[str, object]]", workflow["jobs"]["build"]["steps"])
+    return next(
+        step
+        for step in steps
+        if step.get("name") == "Validate WXT zip payloads"
+    )
+
+
+def _wxt_validation_run() -> str:
+    """Return the embedded WXT payload validation shell script."""
+    return cast("str", _wxt_validate_step()["run"])
+
+
+def _write_zip(path: Path, entries: dict[str, bytes]) -> None:
+    """Write a small zip archive with the given entries."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, payload in entries.items():
+            archive.writestr(name, payload)
+
+
+def _write_wxt_descriptor(
+    package_dir: Path,
+    *,
+    include_sources: bool,
+    artifact_form: str = "hash",
+    browser_ids: Sequence[str] = ("chrome", "firefox", "edge"),
+) -> None:
+    """Write a compact WXT release descriptor for workflow validation tests."""
+    artifact_ids = list(browser_ids)
+    if include_sources:
+        artifact_ids.append("firefox-sources")
+    if artifact_form == "hash":
+        buddy_artifacts: list[object] = [
+            {"id": artifact_id} for artifact_id in artifact_ids
+        ]
+    elif artifact_form == "string":
+        buddy_artifacts = list(artifact_ids)
+    else:
+        raise AssertionError(f"unknown artifact_form {artifact_form!r}")
+    official_artifacts = [
+        dict(artifact) if isinstance(artifact, dict) else artifact
+        for artifact in buddy_artifacts
+    ]
+
+    descriptor = {
+        "api-version": "three.release/v1alpha1",
+        "kind": "project",
+        "project": {
+            "id": "demo-wxt",
+            "display-name": "demo-wxt",
+            "ecosystem": "node",
+            "release-kind": "extension",
+        },
+        "source": {
+            "primary-manifest": "package.json",
+            "auxiliary-inputs": ["wxt.config.ts"],
+        },
+        "variants": [
+            {
+                "id": "chrome",
+                "dimensions": {"browser": "chrome"},
+                "artifacts": [
+                    {
+                        "id": "chrome",
+                        "role": "primary-package",
+                        "kind-family": "package",
+                        "concrete-kind": "browser-zip",
+                    }
+                ],
+            },
+            {
+                "id": "firefox",
+                "dimensions": {"browser": "firefox"},
+                "artifacts": [
+                    {
+                        "id": "firefox",
+                        "role": "primary-package",
+                        "kind-family": "package",
+                        "concrete-kind": "browser-zip",
+                    },
+                    {
+                        "id": "firefox-sources",
+                        "role": "sources",
+                        "kind-family": "archive",
+                        "concrete-kind": "sources-zip",
+                        "produced-from": ["firefox"],
+                    },
+                ],
+            },
+            {
+                "id": "edge",
+                "dimensions": {"browser": "edge"},
+                "artifacts": [
+                    {
+                        "id": "edge",
+                        "role": "primary-package",
+                        "kind-family": "package",
+                        "concrete-kind": "browser-zip",
+                    }
+                ],
+            },
+        ],
+        "profiles": {
+            "buddy": {
+                "targets": [
+                    {
+                        "uses": "github-release/public",
+                        "artifacts": buddy_artifacts,
+                    }
+                ]
+            },
+            "official": {
+                "targets": [
+                    {
+                        "uses": "github-release/public",
+                        "artifacts": official_artifacts,
+                    }
+                ]
+            },
+        },
+    }
+    package_dir.mkdir(parents=True, exist_ok=True)
+    (package_dir / "three.release.yml").write_text(
+        yaml.safe_dump(descriptor, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
+def _run_wxt_validation(
+    package_dir: Path,
+    *,
+    expected_version: str = "1.2.3",
+    project: str = "demo-wxt",
+) -> subprocess.CompletedProcess[str]:
+    """Run the embedded WXT payload validation script against a package tree."""
+    env = os.environ.copy()
+    env.update(
+        {
+            "PACKAGE_DIR": str(package_dir),
+            "PROJECT": project,
+            "EXPECTED": expected_version,
+            "RELEASE_PROFILE": "buddy",
+        }
+    )
+    return subprocess.run(
+        ["bash", "-c", _wxt_validation_run()],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_reusable_wxt_build_validates_zip_payloads_before_upload() -> None:
+    """Reusable WXT builds must validate zip payloads before upload."""
+    workflow = _workflow_yaml("release-build-wxt.yml")
+    steps = cast("list[dict[str, object]]", workflow["jobs"]["build"]["steps"])
+
+    build_step = _wxt_build_step()
+    assert build_step["shell"] == "bash"
+    build_env = cast("dict[str, object]", build_step["env"])
+    assert build_env["EXPECTED"] == "${{ inputs.version }}"
+    assert build_env["PROJECT"] == "${{ inputs.project }}"
+    assert build_env["RELEASE_PROFILE"] == "${{ inputs.profile }}"
+    build_run = cast("str", build_step["run"])
+    assert "WXT descriptor project id mismatch" in build_run
+    assert "requires_sources" in build_run
+    assert "browser-zip" in build_run
+    assert "Build only the browser zip artifacts declared" in build_run
+    assert "${PROJECT}-${EXPECTED}-${browser}.zip" in build_run
+    assert "${PROJECT}-${EXPECTED}-sources.zip" in build_run
+    assert "Unexpected WXT artifact output basename" in build_run
+    assert (
+        "WXT descriptor/profile does not declare firefox-sources" in build_run
+    )
+
+    validate_index, validate_step = next(
+        (index, step)
+        for index, step in enumerate(steps)
+        if step.get("name") == "Validate WXT zip payloads"
+    )
+    verify_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == "Verify Node version matches tag"
+    )
+    upload_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("uses") == "actions/upload-artifact@v7"
+    )
+
+    assert verify_index < validate_index < upload_index
+    assert validate_step["shell"] == "bash"
+    validate_env = cast("dict[str, object]", validate_step["env"])
+    assert validate_env["EXPECTED"] == "${{ inputs.version }}"
+    assert validate_env["PROJECT"] == "${{ inputs.project }}"
+    assert validate_env["PACKAGE_DIR"] == "${{ inputs.package_dir }}"
+    assert validate_env["RELEASE_PROFILE"] == "${{ inputs.profile }}"
+
+    validate_run = cast("str", validate_step["run"])
+    assert "manifest.json" in validate_run
+    assert (
+        "browser zip manifest version does not match resolved" in validate_run
+    )
+    assert "WXT descriptor is required and must be readable" in validate_run
+    assert "ruby -rjson -e" in validate_run
+    assert "YAML.safe_load" in validate_run
+    assert "WXT descriptor project id mismatch" in validate_run
+    assert "browser-zip" in validate_run
+    assert "firefox-sources" in validate_run
+    assert "expected exactly one sources zip output for active" in validate_run
+    assert "WXT releases, found" in validate_run
+    assert "Unexpected WXT artifact output basename(s):" in validate_run
+    assert "Missing expected WXT artifact output basename(s):" in validate_run
+    assert (
+        "WXT descriptor/profile does not declare firefox-sources"
+        in validate_run
+    )
+    assert (
+        "sources zip browser extension artifacts are only valid for"
+        in validate_run
+    )
+
+
+def test_reusable_wxt_build_accepts_exact_declared_wxt_outputs() -> None:
+    """Exact WXT output names declared by the descriptor should validate."""
+    package_dir = SCRATCH / "wxt-exact-allow"
+    shutil.rmtree(package_dir, ignore_errors=True)
+    _write_wxt_descriptor(package_dir, include_sources=True)
+
+    expected_version = "1.2.3"
+    browser_manifest_version = expected_version
+    for browser in ("chrome", "firefox", "edge"):
+        _write_zip(
+            package_dir
+            / ".output"
+            / f"demo-wxt-{expected_version}-{browser}.zip",
+            {
+                "manifest.json": json.dumps(
+                    {"version": browser_manifest_version},
+                    sort_keys=True,
+                ).encode("utf-8"),
+            },
+        )
+    _write_zip(
+        package_dir / ".output" / f"demo-wxt-{expected_version}-sources.zip",
+        {},
+    )
+
+    completed = _run_wxt_validation(
+        package_dir, expected_version=expected_version
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "Unexpected WXT artifact output basename" not in completed.stderr
+    assert (
+        "WXT descriptor/profile does not declare firefox-sources"
+        not in completed.stderr
+    )
+
+
+def test_reusable_wxt_build_accepts_string_declared_wxt_outputs() -> None:
+    """String-valued WXT artifacts should be normalized like hash objects."""
+    package_dir = SCRATCH / "wxt-string-allow"
+    shutil.rmtree(package_dir, ignore_errors=True)
+    _write_wxt_descriptor(
+        package_dir,
+        include_sources=True,
+        artifact_form="string",
+    )
+
+    expected_version = "1.2.3"
+    browser_manifest_version = expected_version
+    for browser in ("chrome", "firefox", "edge"):
+        _write_zip(
+            package_dir
+            / ".output"
+            / f"demo-wxt-{expected_version}-{browser}.zip",
+            {
+                "manifest.json": json.dumps(
+                    {"version": browser_manifest_version},
+                    sort_keys=True,
+                ).encode("utf-8"),
+            },
+        )
+    _write_zip(
+        package_dir / ".output" / f"demo-wxt-{expected_version}-sources.zip",
+        {},
+    )
+
+    completed = _run_wxt_validation(
+        package_dir, expected_version=expected_version
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert (
+        "WXT descriptor/profile does not declare firefox-sources"
+        not in completed.stderr
+    )
+
+
+def test_reusable_wxt_build_rejects_undeclared_wxt_sources_output() -> None:
+    """Sources zip outputs are rejected when the descriptor omits them."""
+    package_dir = SCRATCH / "wxt-undeclared-sources"
+    shutil.rmtree(package_dir, ignore_errors=True)
+    _write_wxt_descriptor(package_dir, include_sources=False)
+
+    expected_version = "1.2.3"
+    browser_manifest_version = expected_version
+    for browser in ("chrome", "firefox", "edge"):
+        _write_zip(
+            package_dir
+            / ".output"
+            / f"demo-wxt-{expected_version}-{browser}.zip",
+            {
+                "manifest.json": json.dumps(
+                    {"version": browser_manifest_version},
+                    sort_keys=True,
+                ).encode("utf-8"),
+            },
+        )
+    _write_zip(
+        package_dir / ".output" / f"demo-wxt-{expected_version}-sources.zip",
+        {},
+    )
+
+    completed = _run_wxt_validation(
+        package_dir, expected_version=expected_version
+    )
+    assert completed.returncode != 0
+    assert (
+        "WXT descriptor/profile does not declare firefox-sources"
+        in completed.stderr
+    )
+
+
+def test_reusable_wxt_build_rejects_undeclared_browser_zip_output() -> None:
+    """Browser zips are rejected unless the active descriptor profile declares them."""
+    package_dir = SCRATCH / "wxt-undeclared-browser"
+    shutil.rmtree(package_dir, ignore_errors=True)
+    _write_wxt_descriptor(
+        package_dir,
+        include_sources=False,
+        browser_ids=("chrome", "firefox"),
+    )
+
+    expected_version = "1.2.3"
+    browser_manifest_version = expected_version
+    for browser in ("chrome", "firefox", "edge"):
+        _write_zip(
+            package_dir
+            / ".output"
+            / f"demo-wxt-{expected_version}-{browser}.zip",
+            {
+                "manifest.json": json.dumps(
+                    {"version": browser_manifest_version},
+                    sort_keys=True,
+                ).encode("utf-8"),
+            },
+        )
+
+    completed = _run_wxt_validation(
+        package_dir, expected_version=expected_version
+    )
+    assert completed.returncode != 0
+    assert "Unrecognized WXT zip artifact name:" in completed.stderr
+    assert f"demo-wxt-{expected_version}-edge.zip" in completed.stderr
+
+
+def test_reusable_wxt_build_rejects_unexpected_wxt_basename() -> None:
+    """Unexpected WXT basenames fail closed even when browser payloads are valid."""
+    package_dir = SCRATCH / "wxt-unexpected-basenames"
+    shutil.rmtree(package_dir, ignore_errors=True)
+    _write_wxt_descriptor(package_dir, include_sources=True)
+
+    expected_version = "1.2.3"
+    browser_manifest_version = expected_version
+    for browser in ("chrome", "firefox", "edge"):
+        _write_zip(
+            package_dir
+            / ".output"
+            / f"demo-wxt-{expected_version}-{browser}.zip",
+            {
+                "manifest.json": json.dumps(
+                    {"version": browser_manifest_version},
+                    sort_keys=True,
+                ).encode("utf-8"),
+            },
+        )
+    _write_zip(
+        package_dir
+        / ".output"
+        / f"demo-wxt-{expected_version}-custom-firefox.zip",
+        {
+            "manifest.json": json.dumps(
+                {"version": browser_manifest_version},
+                sort_keys=True,
+            ).encode("utf-8"),
+        },
+    )
+    _write_zip(
+        package_dir / ".output" / f"demo-wxt-{expected_version}-sources.zip",
+        {},
+    )
+
+    completed = _run_wxt_validation(
+        package_dir, expected_version=expected_version
+    )
+    assert completed.returncode != 0
+    assert "Unexpected WXT artifact output basename(s):" in completed.stderr
+    assert "demo-wxt-1.2.3-custom-firefox.zip" in completed.stderr
+
+
+def test_orchestrator_npmjs_publish_uses_trusted_publisher_runtime() -> None:
+    """Npmjs publishing mints OIDC tokens in the orchestrator job for caller trust."""
+    _require_ci_release_pipeline_architecture()
+    workflow = yaml.safe_load(_workflow("release-orchestrate.yml"))
+    job = workflow["jobs"]["publish-node-npmjs"]
     steps = job["steps"]
+    official = yaml.safe_load(_workflow("official.yml"))
+    buddy = yaml.safe_load(_workflow("buddy.yml"))
 
     setup_index, setup_step = next(
         (index, step)
         for index, step in enumerate(steps)
-        if step.get("name") == "Install Node.js for npm trusted publishing"
+        if step.get("name") == "Setup Node.js (npmjs)"
     )
-    support_index, support_step = next(
+    note_index, note_step = next(
         (index, step)
         for index, step in enumerate(steps)
-        if step.get("name") == "Ensure npm trusted publishing support"
+        if step.get("name") == "Note about npm Trusted Publishers (OIDC)"
     )
-    execute_index = next(
+    publish_index = next(
         index
         for index, step in enumerate(steps)
-        if step.get("name") == "Execute entry-hosted publish node"
+        if step.get("name") == "Publish to npm registry (idempotent)"
     )
 
-    assert job["permissions"]["id-token"] == "write"
-    assert setup_index < support_index < execute_index
+    assert job["environment"] == "npmjs"
+    assert job["permissions"] == {
+        "contents": "read",
+        "actions": "read",
+        "id-token": "write",
+    }
+    assert setup_index < note_index < publish_index
     assert setup_step["uses"] == "actions/setup-node@v6"
-    assert setup_step["with"]["node-version"] == "24"
-    support_run = support_step["run"]
-    assert "npm install --global npm@^11.5.1" in support_run
-    assert 'npm_version="$(npm --version)"' in support_run
-    assert "const required = [11, 5, 1];" in support_run
-    assert "process.exit(1);" in support_run
+    assert setup_step["with"]["node-version"] == "${{ env.NODE_VERSION }}"
+    assert setup_step["with"]["registry-url"] == "https://registry.npmjs.org"
+    note_run = note_step["run"]
+    assert "Workflow: .github/workflows/official.yml" in note_run
+    assert (
+        "validates the direct caller workflow name for workflow_call"
+        in note_run
+    )
+    assert "release-orchestrate.yml" in note_run
+    assert "Environment (if configured on npm): npmjs" in note_run
+    assert "official caller grants id-token: write" in note_run
+    assert "buddy.yml" in note_run
+    assert (
+        cast("dict[str, object]", official["jobs"]["orchestrate"])[
+            "permissions"
+        ]["id-token"]
+        == "write"
+    )
+    buddy_permissions = cast(
+        "dict[str, object]",
+        cast("dict[str, object]", buddy["jobs"]["orchestrate"])["permissions"],
+    )
+    assert buddy_permissions["id-token"] == "write"
+    assert buddy_permissions["attestations"] == "write"
 
 
-def test_entry_publish_sets_up_nuget_trusted_publishing() -> None:
-    """Entry-hosted NuGet.org publishing uses pinned trusted login."""
-    for workflow_name in ("official.yml", "buddy.yml"):
-        workflow = yaml.safe_load(_workflow(workflow_name))
-        job = workflow["jobs"]["publish-entry"]
-        steps = job["steps"]
-        detect_index, detect_step = next(
-            (index, step)
-            for index, step in enumerate(steps)
-            if step.get("name") == "Detect NuGet.org trusted publishing"
+def test_npmjs_target_catalog_uses_caller_workflow_oidc_topology() -> None:
+    """Npmjs target topology follows npm workflow_call caller validation."""
+    catalog = yaml.safe_load(
+        (REPO_ROOT / "eng/release/target-instances.yml").read_text(
+            encoding="utf-8"
         )
-        login_index, login_step = next(
-            (index, step)
-            for index, step in enumerate(steps)
-            if step.get("name") == "NuGet.org trusted publishing login"
-        )
-        execute_index, execute_step = next(
-            (index, step)
-            for index, step in enumerate(steps)
-            if step.get("name") == "Execute entry-hosted publish node"
-        )
+    )
+    npm_instances = catalog["families"]["npm"]["instances"]
+    npmjs = next(
+        instance for instance in npm_instances if instance["id"] == "npmjs"
+    )
 
-        assert job["permissions"]["id-token"] == "write", workflow_name
-        assert detect_index < login_index < execute_index, workflow_name
-        assert detect_step["id"] == "nuget_trusted_publishing", workflow_name
-        assert 'host="$(jq -r ' in detect_step["run"], workflow_name
-        assert 'if [ "$host" = "nuget.org" ]; then' in detect_step["run"]
-        assert 'echo "required=true" >> "$GITHUB_OUTPUT"' in detect_step["run"]
-        assert login_step["if"] == (
-            "${{ steps.nuget_trusted_publishing.outputs.required == 'true' }}"
+    assert npmjs["capabilities"]["credential-posture"] == "oidc"
+    assert (
+        npmjs["capabilities"]["publish-topology"]
+        == "external-oidc-caller-workflow"
+    )
+
+
+def _run_pypi_remote_digest_script(
+    tmp_path: Path,
+    response: Mapping[str, object],
+    local_files: Mapping[str, bytes],
+    *,
+    status: str = "200",
+) -> subprocess.CompletedProcess[str]:
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    for filename, content in local_files.items():
+        (out_dir / filename).write_bytes(content)
+
+    response_path = tmp_path / "pypi-response.json"
+    response_path.write_text(json.dumps(response), encoding="utf-8")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -Eeuo pipefail\n"
+        'out=""\n'
+        "while [[ $# -gt 0 ]]; do\n"
+        '  case "$1" in\n'
+        "    -o)\n"
+        '      out="$2"\n'
+        "      shift 2\n"
+        "      ;;\n"
+        "    -w)\n"
+        "      shift 2\n"
+        "      ;;\n"
+        "    -sS|-L)\n"
+        "      shift\n"
+        "      ;;\n"
+        "    *)\n"
+        "      shift\n"
+        "      ;;\n"
+        "  esac\n"
+        "done\n"
+        'if [[ -z "${out}" ]]; then\n'
+        "  exit 64\n"
+        "fi\n"
+        f'cp {shlex.quote(str(response_path))} "${{out}}"\n'
+        f"printf '%s' {shlex.quote(status)}\n",
+        encoding="utf-8",
+    )
+    fake_curl.chmod(0o755)
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "OUT_DIR": str(out_dir),
+            "PATH": f"{fake_bin}:{env['PATH']}",
+            "PROJECT": "demo-project",
+            "RUNNER_TEMP": str(tmp_path),
+            "VERSION": "1.2.3",
+        }
+    )
+    return subprocess.run(
+        ["bash", str(PYPI_DIGEST_SCRIPT)],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_pypi_remote_digest_gate_accepts_absent_version(
+    tmp_path: Path,
+) -> None:
+    """A version with no remote files is the only publish-needed PyPI case."""
+    result = _run_pypi_remote_digest_script(
+        tmp_path,
+        {"releases": {}},
+        {"demo-1.2.3.tar.gz": b"sdist"},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Treating as not yet published" in result.stdout
+
+
+def test_pypi_remote_digest_gate_accepts_exact_remote_set(
+    tmp_path: Path,
+) -> None:
+    """Remote PyPI files must exactly match local planned artifact digests."""
+    content = b"sdist"
+    filename = "demo-1.2.3.tar.gz"
+    remote_sha = hashlib.sha256(content).hexdigest()
+    result = _run_pypi_remote_digest_script(
+        tmp_path,
+        {
+            "releases": {
+                "1.2.3": [
+                    {"filename": filename, "digests": {"sha256": remote_sha}},
+                ],
+            },
+        },
+        {filename: content},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "sha256 match" in result.stdout
+
+
+def test_pypi_remote_digest_gate_rejects_jq_error_after_partial_output(
+    tmp_path: Path,
+) -> None:
+    """A malformed release entry after a valid row must not be accepted."""
+    content = b"sdist"
+    filename = "demo-1.2.3.tar.gz"
+    remote_sha = hashlib.sha256(content).hexdigest()
+    result = _run_pypi_remote_digest_script(
+        tmp_path,
+        {
+            "releases": {
+                "1.2.3": [
+                    {"filename": filename, "digests": {"sha256": remote_sha}},
+                    "malformed-release-file",
+                ],
+            },
+        },
+        {filename: content},
+    )
+
+    assert result.returncode == 1
+    assert "malformed release files" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "remote_file",
+    [
+        {
+            "filename": True,
+            "digests": {"sha256": hashlib.sha256(b"sdist").hexdigest()},
+        },
+        {"filename": "demo-1.2.3.tar.gz", "digests": True},
+        {"filename": "demo-1.2.3.tar.gz", "digests": {"sha256": True}},
+        {
+            "filename": "demo-1.2.3.tar.gz",
+            "digests": {"sha256": hashlib.sha256(b"sdist").hexdigest().upper()},
+        },
+    ],
+)
+def test_pypi_remote_digest_gate_rejects_malformed_file_scalars(
+    tmp_path: Path,
+    remote_file: dict[str, object],
+) -> None:
+    """PyPI remote digest rows require string fields and lowercase SHA-256."""
+    result = _run_pypi_remote_digest_script(
+        tmp_path,
+        {"releases": {"1.2.3": [remote_file]}},
+        {
+            "true": b"sdist",
+            "demo-1.2.3.tar.gz": b"sdist",
+        },
+    )
+
+    assert result.returncode == 1
+    assert "malformed release files" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("remote_files", "local_files", "expected_error"),
+    [
+        (
+            [
+                {
+                    "filename": "demo-1.2.3.tar.gz",
+                    "digests": {"sha256": "0" * 64},
+                },
+                {
+                    "filename": "demo-1.2.3.tar.gz",
+                    "digests": {"sha256": "0" * 64},
+                },
+            ],
+            {"demo-1.2.3.tar.gz": b"sdist"},
+            "duplicate file 'demo-1.2.3.tar.gz'",
+        ),
+        (
+            [
+                {
+                    "filename": "demo-1.2.3.tar.gz",
+                    "digests": {"sha256": hashlib.sha256(b"sdist").hexdigest()},
+                },
+                {
+                    "filename": "demo-1.2.3-extra.whl",
+                    "digests": {"sha256": "0" * 64},
+                },
+            ],
+            {"demo-1.2.3.tar.gz": b"sdist"},
+            "unexpected file 'demo-1.2.3-extra.whl'",
+        ),
+        (
+            [
+                {
+                    "filename": "demo-1.2.3.tar.gz",
+                    "digests": {"sha256": hashlib.sha256(b"sdist").hexdigest()},
+                },
+            ],
+            {
+                "demo-1.2.3.tar.gz": b"sdist",
+                "demo-1.2.3-py3-none-any.whl": b"wheel",
+            },
+            "missing planned file 'demo-1.2.3-py3-none-any.whl'",
+        ),
+        (
+            [
+                {
+                    "filename": "demo-1.2.3.tar.gz",
+                    "digests": {"sha256": "f" * 64},
+                },
+            ],
+            {"demo-1.2.3.tar.gz": b"sdist"},
+            "sha256 differs",
+        ),
+    ],
+)
+def test_pypi_remote_digest_gate_rejects_non_exact_remote_sets(
+    tmp_path: Path,
+    remote_files: list[dict[str, object]],
+    local_files: dict[str, bytes],
+    expected_error: str,
+) -> None:
+    """Existing PyPI versions must match local planned files exactly."""
+    result = _run_pypi_remote_digest_script(
+        tmp_path,
+        {"releases": {"1.2.3": remote_files}},
+        local_files,
+    )
+
+    assert result.returncode == 1
+    assert expected_error in result.stderr
+
+
+def test_npmjs_idempotent_publish_uses_tarball_package_name(
+    tmp_path: Path,
+) -> None:
+    """The npmjs idempotent publisher validates the frozen package name."""
+    tarball = tmp_path / "npmjs.tgz"
+    _write_npm_tarball(
+        tarball,
+        {
+            "package/package.json": (
+                b'{"name":"@scope/demo-pkg","version":"1.2.3"}'
+            ),
+        },
+    )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    log_path = tmp_path / "npm.log"
+    fake_npm = fake_bin / "npm"
+    fake_npm.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -Eeuo pipefail\n"
+        f'printf "%s\\n" "$*" >> {shlex.quote(str(log_path))}\n'
+        'case "$1" in\n'
+        "  view)\n"
+        "    printf '%s\\n' 'npm ERR! code E404' >&2\n"
+        "    exit 1\n"
+        "    ;;\n"
+        "  publish)\n"
+        "    exit 0\n"
+        "    ;;\n"
+        "  *)\n"
+        "    exit 1\n"
+        "    ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_npm.chmod(0o755)
+    env = os.environ.copy()
+    env.update(
+        {
+            "EXPECTED_PACKAGE_NAME": "@scope/demo-pkg",
+            "DIST_TAG": "latest",
+            "PROJECT": "demo-project",
+            "VERSION": "1.2.3",
+            "TARBALL": str(tarball),
+            "RUNNER_TEMP": str(tmp_path),
+            "PATH": f"{fake_bin}:{env['PATH']}",
+        }
+    )
+    result = subprocess.run(
+        [
+            "bash",
+            str(REPO_ROOT / "eng/scripts/publish_node_npmjs_idempotent.sh"),
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    log_lines = log_path.read_text(encoding="utf-8").splitlines()
+    assert log_lines[0] == (
+        "view @scope/demo-pkg@1.2.3 dist.integrity --registry "
+        "https://registry.npmjs.org"
+    )
+    assert log_lines[1].startswith("publish ")
+    assert "demo-project@1.2.3" not in "\n".join(log_lines)
+
+
+def test_npmjs_idempotent_publish_rejects_tarball_name_mismatch(
+    tmp_path: Path,
+) -> None:
+    """The npmjs idempotent publisher fails closed on tarball name drift."""
+    tarball = tmp_path / "npmjs.tgz"
+    _write_npm_tarball(
+        tarball,
+        {
+            "package/package.json": (
+                b'{"name":"@scope/swapped-pkg","version":"1.2.3"}'
+            ),
+        },
+    )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    log_path = tmp_path / "npm.log"
+    fake_npm = fake_bin / "npm"
+    fake_npm.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -Eeuo pipefail\n"
+        f'printf "%s\\n" "$*" >> {shlex.quote(str(log_path))}\n'
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    fake_npm.chmod(0o755)
+    env = os.environ.copy()
+    env.update(
+        {
+            "EXPECTED_PACKAGE_NAME": "@scope/demo-pkg",
+            "DIST_TAG": "latest",
+            "PROJECT": "demo-project",
+            "VERSION": "1.2.3",
+            "TARBALL": str(tarball),
+            "RUNNER_TEMP": str(tmp_path),
+            "PATH": f"{fake_bin}:{env['PATH']}",
+        }
+    )
+    result = subprocess.run(
+        [
+            "bash",
+            str(REPO_ROOT / "eng/scripts/publish_node_npmjs_idempotent.sh"),
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1, result.stderr
+    assert "tarball package.json name mismatch" in result.stderr
+    assert not log_path.exists()
+
+
+def test_npmjs_idempotent_publish_rejects_tarball_version_mismatch(
+    tmp_path: Path,
+) -> None:
+    """The npmjs idempotent publisher fails closed on tarball version drift."""
+    tarball = tmp_path / "npmjs.tgz"
+    _write_npm_tarball(
+        tarball,
+        {
+            "package/package.json": (
+                b'{"name":"@scope/demo-pkg","version":"1.2.3"}'
+            ),
+        },
+    )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    log_path = tmp_path / "npm.log"
+    fake_npm = fake_bin / "npm"
+    fake_npm.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -Eeuo pipefail\n"
+        f'printf "%s\\n" "$*" >> {shlex.quote(str(log_path))}\n'
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    fake_npm.chmod(0o755)
+    env = os.environ.copy()
+    env.update(
+        {
+            "EXPECTED_PACKAGE_NAME": "@scope/demo-pkg",
+            "DIST_TAG": "latest",
+            "PROJECT": "demo-project",
+            "VERSION": "9.9.9",
+            "TARBALL": str(tarball),
+            "RUNNER_TEMP": str(tmp_path),
+            "PATH": f"{fake_bin}:{env['PATH']}",
+        }
+    )
+    result = subprocess.run(
+        [
+            "bash",
+            str(REPO_ROOT / "eng/scripts/publish_node_npmjs_idempotent.sh"),
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1, result.stderr
+    assert "tarball package.json version mismatch" in result.stderr
+    assert not log_path.exists()
+
+
+def test_gpr_idempotent_publish_rejects_tarball_version_mismatch(
+    tmp_path: Path,
+) -> None:
+    """The GitHub Packages publisher fails closed on tarball version drift."""
+    tarball = tmp_path / "gpr.tgz"
+    _write_npm_tarball(
+        tarball,
+        {
+            "package/package.json": (
+                b'{"name":"@hcoona/demo-project","version":"1.2.3"}'
+            ),
+        },
+    )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    log_path = tmp_path / "npm.log"
+    fake_npm = fake_bin / "npm"
+    fake_npm.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -Eeuo pipefail\n"
+        f'printf "%s\\n" "$*" >> {shlex.quote(str(log_path))}\n'
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    fake_npm.chmod(0o755)
+    env = os.environ.copy()
+    env.update(
+        {
+            "EXPECTED_PACKAGE_NAME": "@hcoona/demo-project",
+            "DIST_TAG": "latest",
+            "VERSION": "9.9.9",
+            "TARBALL": str(tarball),
+            "RUNNER_TEMP": str(tmp_path),
+            "PATH": f"{fake_bin}:{env['PATH']}",
+        }
+    )
+    result = subprocess.run(
+        ["bash", str(REPO_ROOT / "eng/scripts/publish_node_gpr_idempotent.sh")],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1, result.stderr
+    assert "tarball package.json version mismatch" in result.stderr
+    assert not log_path.exists()
+
+
+def test_gpr_idempotent_publish_rejects_tarball_name_mismatch(
+    tmp_path: Path,
+) -> None:
+    """The GitHub Packages publisher fails closed on tarball name drift."""
+    tarball = tmp_path / "gpr.tgz"
+    _write_npm_tarball(
+        tarball,
+        {
+            "package/package.json": (
+                b'{"name":"@hcoona/swapped-project","version":"1.2.3"}'
+            ),
+        },
+    )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    log_path = tmp_path / "npm.log"
+    fake_npm = fake_bin / "npm"
+    fake_npm.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -Eeuo pipefail\n"
+        f'printf "%s\\n" "$*" >> {shlex.quote(str(log_path))}\n'
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    fake_npm.chmod(0o755)
+    env = os.environ.copy()
+    env.update(
+        {
+            "EXPECTED_PACKAGE_NAME": "@hcoona/demo-project",
+            "DIST_TAG": "latest",
+            "VERSION": "1.2.3",
+            "TARBALL": str(tarball),
+            "RUNNER_TEMP": str(tmp_path),
+            "PATH": f"{fake_bin}:{env['PATH']}",
+        }
+    )
+    result = subprocess.run(
+        ["bash", str(REPO_ROOT / "eng/scripts/publish_node_gpr_idempotent.sh")],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1, result.stderr
+    assert "tarball package.json name mismatch" in result.stderr
+    assert not log_path.exists()
+
+
+def test_gpr_idempotent_publish_defaults_to_frozen_tarball_name(
+    tmp_path: Path,
+) -> None:
+    """GitHub Packages publisher defaults to planner-named tarballs."""
+    out_dir = tmp_path / "out"
+    tarball = out_dir / "hcoona-demo-project-1.2.3.tgz"
+    _write_npm_tarball(
+        tarball,
+        {
+            "package/package.json": (
+                b'{"name":"@hcoona/demo-project","version":"1.2.3"}'
+            ),
+        },
+    )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    log_path = tmp_path / "npm.log"
+    fake_npm = fake_bin / "npm"
+    fake_npm.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -Eeuo pipefail\n"
+        f'printf "%s\\n" "$*" >> {shlex.quote(str(log_path))}\n'
+        'case "$1" in\n'
+        "  view)\n"
+        "    printf '%s\\n' 'npm ERR! code E404' >&2\n"
+        "    exit 1\n"
+        "    ;;\n"
+        "  publish)\n"
+        "    exit 0\n"
+        "    ;;\n"
+        "  *)\n"
+        "    exit 1\n"
+        "    ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_npm.chmod(0o755)
+    env = os.environ.copy()
+    env.pop("TARBALL", None)
+    env.update(
+        {
+            "DIST_TAG": "latest",
+            "EXPECTED_PACKAGE_NAME": "@hcoona/demo-project",
+            "GITHUB_WORKSPACE": str(tmp_path),
+            "RUNNER_TEMP": str(tmp_path),
+            "VERSION": "1.2.3",
+            "PATH": f"{fake_bin}:{env['PATH']}",
+        }
+    )
+    result = subprocess.run(
+        ["bash", str(REPO_ROOT / "eng/scripts/publish_node_gpr_idempotent.sh")],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    log_lines = log_path.read_text(encoding="utf-8").splitlines()
+    assert log_lines[1].startswith(f"publish {tarball} ")
+
+
+def test_npmjs_idempotent_publish_defaults_to_frozen_tarball_name(
+    tmp_path: Path,
+) -> None:
+    """Npmjs publisher defaults to planner-named tarballs."""
+    out_dir = tmp_path / "out"
+    tarball = out_dir / "demo-project-1.2.3.tgz"
+    _write_npm_tarball(
+        tarball,
+        {
+            "package/package.json": (
+                b'{"name":"demo-project","version":"1.2.3"}'
+            ),
+        },
+    )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    log_path = tmp_path / "npm.log"
+    fake_npm = fake_bin / "npm"
+    fake_npm.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -Eeuo pipefail\n"
+        f'printf "%s\\n" "$*" >> {shlex.quote(str(log_path))}\n'
+        'case "$1" in\n'
+        "  view)\n"
+        "    printf '%s\\n' 'npm ERR! code E404' >&2\n"
+        "    exit 1\n"
+        "    ;;\n"
+        "  publish)\n"
+        "    exit 0\n"
+        "    ;;\n"
+        "  *)\n"
+        "    exit 1\n"
+        "    ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_npm.chmod(0o755)
+    env = os.environ.copy()
+    env.pop("TARBALL", None)
+    env.update(
+        {
+            "DIST_TAG": "latest",
+            "EXPECTED_PACKAGE_NAME": "demo-project",
+            "GITHUB_WORKSPACE": str(tmp_path),
+            "RUNNER_TEMP": str(tmp_path),
+            "VERSION": "1.2.3",
+            "PATH": f"{fake_bin}:{env['PATH']}",
+        }
+    )
+    result = subprocess.run(
+        [
+            "bash",
+            str(REPO_ROOT / "eng/scripts/publish_node_npmjs_idempotent.sh"),
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    log_lines = log_path.read_text(encoding="utf-8").splitlines()
+    assert log_lines[1].startswith(f"publish {tarball} ")
+
+
+def test_reusable_publish_jobs_use_topology_scoped_permissions() -> None:
+    """Reusable publish jobs keep each publish topology permission-scoped."""
+    workflow = yaml.safe_load(_workflow("release-orchestrate.yml"))
+    jobs = workflow["jobs"]
+
+    expected_permissions = {
+        "publish-python": {
+            "contents": "read",
+            "actions": "read",
+            "id-token": "write",
+        },
+        "publish-node-gpr-enabled": {
+            "contents": "read",
+            "actions": "read",
+            "packages": "write",
+        },
+        "publish-node-gpr": {
+            "contents": "read",
+            "actions": "read",
+        },
+        "publish-node-npmjs": {
+            "contents": "read",
+            "actions": "read",
+            "id-token": "write",
+        },
+        "publish-ruby-gpr-enabled": {
+            "contents": "read",
+            "actions": "read",
+            "packages": "write",
+        },
+        "publish-ruby-gpr": {
+            "contents": "read",
+            "actions": "read",
+        },
+        "publish-ruby-rubygems": {
+            "contents": "read",
+            "actions": "read",
+            "id-token": "write",
+        },
+    }
+
+    for job_name, expected in expected_permissions.items():
+        assert (
+            cast("dict[str, object]", jobs[job_name])["permissions"] == expected
+        ), job_name
+
+
+def test_node_publish_jobs_receive_frozen_package_names() -> None:
+    """Node publish jobs forward plan-authorized names to helper scripts."""
+    workflow = yaml.safe_load(_workflow("release-orchestrate.yml"))
+    jobs = cast("dict[str, object]", workflow["jobs"])
+    gpr_steps = cast(
+        "list[dict[str, object]]", jobs["publish-node-gpr-enabled"]["steps"]
+    )
+    npm_steps = cast(
+        "list[dict[str, object]]", jobs["publish-node-npmjs"]["steps"]
+    )
+    gpr_publish = next(
+        step
+        for step in gpr_steps
+        if step.get("name") == "Publish to GitHub Packages from tarball"
+    )
+    npm_publish = next(
+        step
+        for step in npm_steps
+        if step.get("name") == "Publish to npm registry (idempotent)"
+    )
+
+    assert (
+        cast("dict[str, object]", gpr_publish["env"])["EXPECTED_PACKAGE_NAME"]
+        == "${{ needs.prepare-release-plan.outputs.expected_node_gpr_package_name }}"
+    )
+    assert (
+        cast("dict[str, object]", npm_publish["env"])["EXPECTED_PACKAGE_NAME"]
+        == "${{ needs.prepare-release-plan.outputs.expected_node_npmjs_package_name }}"
+    )
+
+
+def test_node_pack_workflow_stages_planner_named_release_assets() -> None:
+    """Node pack output uses planner-frozen names, not aliases."""
+    workflow = yaml.safe_load(_workflow("release-build-node-pack.yml"))
+    steps = cast("list[dict[str, object]]", workflow["jobs"]["pack"]["steps"])
+    gpr_run = cast(
+        "str",
+        next(
+            step
+            for step in steps
+            if step.get("name") == "Pack tarball for GitHub Packages"
+        )["run"],
+    )
+    npm_run = cast(
+        "str",
+        next(
+            step
+            for step in steps
+            if step.get("name") == "Pack tarball for npmjs"
+        )["run"],
+    )
+    prepare_runs = [
+        cast("str", step["run"])
+        for step in steps
+        if str(step.get("name", "")).startswith("Prepare package name for ")
+    ]
+
+    for run in (gpr_run, npm_run):
+        assert (
+            'destination="${GITHUB_WORKSPACE}/out/${expected_tgz_name}"' in run
         )
-        assert login_step["id"] == "nuget_login", workflow_name
-        assert login_step["uses"] == (
-            "NuGet/login@8d196754b4036150537f80ac539e15c2f1028841"
+        assert 'if [[ -e "${destination}" ]]; then' in run
+        assert "Refusing to overwrite final artifact" in run
+        assert 'mv "${src}" "${destination}"' in run
+        assert 'mv "${src}" "${GITHUB_WORKSPACE}/out/gpr.tgz"' not in run
+        assert 'mv "${src}" "${GITHUB_WORKSPACE}/out/npmjs.tgz"' not in run
+    assert 'cmp -s "${src}" "${destination}"' in npm_run
+    assert "Reusing existing identical planner-frozen tarball" in npm_run
+    assert prepare_runs
+    for run in prepare_runs:
+        assert '--package-name "${EXPECTED_PACKAGE_NAME}"' in run
+
+
+def test_node_pack_uses_selected_registry_identity_for_release_assets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Skip-satisfied registry nodes still provide the tarball identity."""
+    plan = _load("release-plan.json")
+    execution_sets = _load("execution-sets.json")
+    plan["envelope"]["plan-id"] = "plan-for-node-release"
+    node_id = "publish-node/npmjs-skip"
+    plan["graph"]["target-instance-snapshots"]["target/npmjs"] = {
+        "family": "npm",
+        "instance-id": "npmjs",
+        "destination": {"host": "registry.npmjs.org"},
+    }
+    plan["graph"]["publish-nodes"][node_id] = {
+        "target-instance-snapshot-id": "target/npmjs",
+        "resolved-publish-identity": {
+            "package-name": "demo-package",
+            "version": "1.2.3",
+        },
+    }
+    execution_sets["selected-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    execution_sets["active-github-release-publish-node-ids"] = [
+        "publish-node/gh"
+    ]
+    execution_sets["active-publish-node-ids"] = []
+    captured_outputs: dict[str, str] = {}
+
+    def fake_read_json(path: Path) -> object:
+        if path.name == "release-plan.json":
+            return plan
+        if path.name == "execution-sets.json":
+            return execution_sets
+        raise AssertionError(path)
+
+    def fake_write_outputs(path: object, outputs: Mapping[str, str]) -> None:
+        captured_outputs.update(outputs)
+
+    monkeypatch.setattr(control, "_read_json", fake_read_json)
+    monkeypatch.setattr(control, "_write_outputs", fake_write_outputs)
+
+    control._cmd_matrix_outputs(
+        argparse.Namespace(
+            plan=Path("release-plan.json"),
+            execution_sets=Path("execution-sets.json"),
+            run_id=123,
+            attempt=4,
+            github_output=None,
         )
-        assert login_step["with"]["user"] == "${{ secrets.NUGET_USER }}"
-        assert execute_step["env"]["NUGET_API_KEY"] == (
-            "${{ steps.nuget_login.outputs.NUGET_API_KEY }}"
+    )
+
+    assert captured_outputs["has_selected_node_npmjs"] == "true"
+    assert captured_outputs["has_active_node_npmjs"] == "false"
+    assert (
+        captured_outputs["expected_node_npmjs_package_name"] == "demo-package"
+    )
+    assert captured_outputs["expected_node_npmjs_package_version"] == "1.2.3"
+
+
+def _assert_active_split_topology_does_not_model_nuget_registry_targets() -> (
+    None
+):
+    """Assert NuGet registry targets are absent from active topology."""
+    catalog = yaml.safe_load(
+        (REPO_ROOT / "eng/release/target-instances.yml").read_text(
+            encoding="utf-8"
         )
+    )
+
+    assert catalog["families"]["nuget"]["instances"] == []
+    for descriptor in _confirmed_scope_descriptor_paths():
+        document = yaml.safe_load(
+            (REPO_ROOT / descriptor).read_text(encoding="utf-8")
+        )
+        for profile_name, profile in document["profiles"].items():
+            for target in profile["targets"]:
+                assert not target["uses"].startswith("nuget/"), (
+                    descriptor,
+                    profile_name,
+                    target["uses"],
+                )
+
+    for workflow_name in (
+        "official.yml",
+        "buddy.yml",
+        "release-orchestrate.yml",
+    ):
+        workflow_text = _workflow(workflow_name)
+        assert "NuGet/login" not in workflow_text, workflow_name
+        assert "publish_nuget" not in workflow_text, workflow_name
+
+
+def test_active_split_topology_does_not_model_nuget_registry_targets() -> None:
+    """NuGet registry targets stay unavailable until an active path exists."""
+    _require_ci_release_pipeline_architecture()
+    _assert_active_split_topology_does_not_model_nuget_registry_targets()
+
+
+def test_nuget_registry_targets_are_absent_from_active_authoring() -> None:
+    """Acceptance tracks deferred NuGet registry target availability."""
+    _assert_active_split_topology_does_not_model_nuget_registry_targets()
 
 
 def test_workflow_helper_invocations_use_uv_workspace_python() -> None:
@@ -5310,6 +20433,167 @@ def test_workflow_helper_invocations_use_uv_workspace_python() -> None:
         for line in workflow.splitlines():
             if "workflow_release_control.py" in line:
                 assert line.strip().startswith(uv_helper)
+
+
+def test_ci_validation_workflow_uses_event_scoped_concurrency() -> None:
+    """CI runs must not collide across forks or push refs."""
+    workflow = yaml.safe_load(_workflow("ci.yml"))
+    concurrency = workflow["concurrency"]
+
+    assert concurrency["cancel-in-progress"] is True
+    assert concurrency["group"] == (
+        "${{ github.event_name == 'pull_request' && "
+        "format('ci/pr/{0}', github.event.pull_request.number) || "
+        "github.event_name == 'push' && format('ci/push/{0}', github.ref) "
+        "|| format('ci/{0}/{1}', github.event_name, github.run_id) }}"
+    )
+    assert "github.head_ref" not in concurrency["group"]
+    assert "ci/${{" not in concurrency["group"]
+
+
+def test_bootstrap_codeowners_covers_release_governance_surface() -> None:
+    """CODEOWNERS must cover the active bootstrap-governance surface."""
+    codeowners_path = REPO_ROOT / ".github/CODEOWNERS"
+    ci_validate_step = _step_block(
+        _workflow("ci.yml"),
+        "Validate bootstrap CODEOWNERS coverage",
+    )
+
+    assert codeowners_path.is_file()
+    codeowners_text = codeowners_path.read_text(encoding="utf-8")
+    assert "@hcoona" in codeowners_text
+    assert "/.github/actionlint.yaml @hcoona" in codeowners_path.read_text(
+        encoding="utf-8"
+    )
+    assert "/.github/workflows/** @hcoona" in codeowners_text
+    assert "/eng/release/buddy-target-refs.yml @hcoona" in codeowners_text
+    assert ".github/actionlint.yaml" in control._bootstrap_governance_paths(
+        REPO_ROOT
+    )
+    assert ".github/workflows/release-orchestrate.yml" in (
+        control._bootstrap_governance_paths(REPO_ROOT)
+    )
+    assert "eng/release/buddy-target-refs.yml" in (
+        control._bootstrap_governance_paths(REPO_ROOT)
+    )
+    assert "validate-bootstrap-codeowners" in ci_validate_step
+    assert "--repo-root ." in ci_validate_step
+    control._validate_bootstrap_codeowners(REPO_ROOT)
+
+
+def test_bootstrap_codeowners_validation_covers_new_workflow_callers(
+    tmp_path: Path,
+) -> None:
+    """Workflow wildcard governance must cover newly added reusable callers."""
+    workflow_path = tmp_path / ".github/workflows/random-release-caller.yml"
+    workflow_path.parent.mkdir(parents=True)
+    workflow_path.write_text("name: random\n", encoding="utf-8")
+    codeowners_path = tmp_path / ".github/CODEOWNERS"
+    codeowners_path.write_text(
+        "/.github/CODEOWNERS @hcoona\n"
+        "/.github/actionlint.yaml @hcoona\n"
+        "/.github/workflows/** @hcoona\n"
+        "/eng/release/buddy-target-refs.yml @hcoona\n",
+        encoding="utf-8",
+    )
+    monkeypatch_exact_paths = (
+        ".github/CODEOWNERS",
+        ".github/actionlint.yaml",
+        "eng/release/buddy-target-refs.yml",
+    )
+    original_exact_paths = control._BOOTSTRAP_GOVERNANCE_EXACT_PATHS
+    original_recursive_roots = control._BOOTSTRAP_GOVERNANCE_RECURSIVE_ROOTS
+    try:
+        control._BOOTSTRAP_GOVERNANCE_EXACT_PATHS = monkeypatch_exact_paths
+        control._BOOTSTRAP_GOVERNANCE_RECURSIVE_ROOTS = (".github/workflows",)
+        assert "random-release-caller.yml" in " ".join(
+            control._bootstrap_governance_paths(tmp_path)
+        )
+        control._validate_bootstrap_codeowners(tmp_path)
+    finally:
+        control._BOOTSTRAP_GOVERNANCE_EXACT_PATHS = original_exact_paths
+        control._BOOTSTRAP_GOVERNANCE_RECURSIVE_ROOTS = original_recursive_roots
+
+
+def test_bootstrap_codeowners_validation_fails_closed_without_coverage(
+    tmp_path: Path,
+) -> None:
+    """Missing bootstrap-governance CODEOWNERS coverage must fail closed."""
+    codeowners_path = tmp_path / ".github/CODEOWNERS"
+    codeowners_path.parent.mkdir(parents=True)
+    codeowners_path.write_text(
+        "/.github/workflows/ci.yml @hcoona\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="bootstrap CODEOWNERS coverage missing release-governance owner",
+    ):
+        control._validate_bootstrap_codeowners(tmp_path)
+
+
+def test_bootstrap_codeowners_validation_fails_closed_for_actionlint_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing actionlint config CODEOWNERS coverage fails closed."""
+    codeowners_path = tmp_path / ".github/CODEOWNERS"
+    codeowners_path.parent.mkdir(parents=True)
+    codeowners_path.write_text(
+        "/.github/CODEOWNERS @hcoona\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        control,
+        "_BOOTSTRAP_GOVERNANCE_EXACT_PATHS",
+        (".github/actionlint.yaml",),
+    )
+    monkeypatch.setattr(control, "_BOOTSTRAP_GOVERNANCE_RECURSIVE_ROOTS", ())
+
+    with pytest.raises(
+        ValueError,
+        match=r"\.github/actionlint\.yaml",
+    ):
+        control._validate_bootstrap_codeowners(tmp_path)
+
+
+def test_buddy_target_ref_policy_authorizes_default_branch() -> None:
+    """Buddy explicit targets must be reachable from checked-in authorized refs."""
+    assert control._buddy_authorized_refs(
+        REPO_ROOT,
+        project_id="hcoona-release-smoke-npm",
+        channel="buddy",
+    ) == ("refs/heads/main",)
+
+
+def test_buddy_target_ref_policy_rejects_unsafe_refs(
+    tmp_path: Path,
+) -> None:
+    """Buddy target policy must reject raw SHAs, tags, and unsafe branches."""
+    policy_path = tmp_path / "eng/release/buddy-target-refs.yml"
+    policy_path.parent.mkdir(parents=True)
+    policy_path.write_text(
+        "api-version: three.release.buddy-target-refs/v1alpha1\n"
+        "kind: buddy-target-ref-policy\n"
+        "channels:\n"
+        "  buddy:\n"
+        "    default:\n"
+        "      refs:\n"
+        "        - refs/tags/release/demo/v1.2.3\n"
+        "    projects: {}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"must be an exact refs/heads/\* ref",
+    ):
+        control._buddy_authorized_refs(
+            tmp_path,
+            project_id="hcoona-release-smoke-npm",
+            channel="buddy",
+        )
 
 
 def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
@@ -5475,9 +20759,7 @@ def test_ci_validation_workflow_downloads_only_explicit_artifacts() -> None:
     assert "name: three-ci-validation-*" not in workflow_text
 
 
-def test_ci_validation_workflow_wires_final_aggregate_boundaries() -> (  # noqa: PLR0915
-    None
-):
+def test_ci_validation_workflow_wires_final_aggregate_boundaries() -> None:
     """Final aggregate artifacts are redownloaded and boundary-verified."""
     workflow = yaml.safe_load(_workflow("ci.yml"))
     aggregate = workflow["jobs"]["aggregate-evidence"]
@@ -6473,7 +21755,7 @@ def test_ci_dependency_admission_trusts_cross_family_source() -> None:
     )
 
 
-def test_ci_runner_family_orchestrator_rejects_same_family_state_without_source():  # noqa: E501
+def test_ci_runner_family_orchestrator_rejects_same_family_state_without_source():
     """Same-family recorded upload state must be artifact-id-state admitted."""
     dependency = {
         "batch-id": "upstream",
@@ -7986,7 +23268,7 @@ def test_orchestrator_waits_for_missing_cross_family_artifact() -> None:
 
 def test_ci_validation_batch_observation_cli_is_not_public() -> None:
     """Caller-writable producer observation sidecars are not exposed."""
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(
         [
             sys.executable,
             str(SCRIPT),
@@ -8005,7 +23287,7 @@ def test_ci_validation_batch_observation_cli_is_not_public() -> None:
 def test_ci_validation_retries_uv_setup_failures() -> None:
     """Matrix rows retry setup-uv after transient action failures."""
     workflow = yaml.safe_load(_workflow("ci.yml"))
-    setup_action = "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b"
+    setup_action = "astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39"
     setup_count = 0
 
     for job in workflow["jobs"].values():
@@ -8185,7 +23467,7 @@ def test_legacy_bool_parser_remains_lenient_for_unrelated_flags(
         argparse.Namespace(
             profile="buddy",
             commit_sha="a" * 40,
-            requested_project_ids_json="[]",
+            requested_project_ids_json='["nbgv-python"]',
             force="not-bool",
             out=str(request_path),
         )
@@ -10616,9 +25898,15 @@ def test_ci_aggregate_control_boundary_excludes_current_final_refs(
 
 def test_release_workflow_uv_setup_precedes_uv_run() -> None:
     """Every release job installs pinned uv before invoking uv commands."""
-    setup_action = (
-        "uses: astral-sh/setup-uv@"
-        "08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0"
+    setup_actions = (
+        (
+            "uses: astral-sh/setup-uv@"
+            "fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0"
+        ),
+        (
+            "uses: astral-sh/setup-uv@"
+            "08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0"
+        ),
     )
 
     for workflow_path in _release_workflow_paths():
@@ -10634,9 +25922,16 @@ def test_release_workflow_uv_setup_precedes_uv_run() -> None:
             block = "".join(lines[start:end])
             if "uv run" not in block:
                 continue
-            assert setup_action in block, workflow_path.name
+            setup_index = next(
+                (
+                    block.index(setup_action)
+                    for setup_action in setup_actions
+                    if setup_action in block
+                ),
+                None,
+            )
+            assert setup_index is not None, workflow_path.name
             assert "          version: '0.10.9'\n" in block, workflow_path.name
-            setup_index = block.index(setup_action)
             uv_index = block.index("uv run")
             assert setup_index < uv_index, workflow_path.name
 
@@ -10645,29 +25940,410 @@ def test_entry_workflows_pass_dispatch_pinned_sha() -> None:
     """Manual entry helpers receive github.sha for immutable run pinning."""
     for workflow_name in ("official.yml", "buddy.yml"):
         workflow = _workflow(workflow_name)
-        normalize_block = _step_block(
-            workflow, "Authorize and pin dispatch ref"
-        )
+        normalize_block = _step_block(workflow, "Authorize and pin release ref")
         assert "RELEASE_PINNED_SHA: ${{ github.sha }}" in normalize_block
         assert '--pinned-sha "$RELEASE_PINNED_SHA" \\' in normalize_block
 
 
-def test_release_entry_workflows_are_manual_dispatch_only() -> None:
-    """Release entries are manual/planner-driven, not tag-push driven."""
-    for workflow_name in ("official.yml", "buddy.yml"):
-        workflow = yaml.safe_load(_workflow(workflow_name))
+def test_buddy_reusable_orchestrate_call_grants_publish_upper_bound() -> None:
+    """buddy.yml must grant the upper-bound permissions release-orchestrate may need."""
+    workflow = _workflow_yaml("buddy.yml")
+    orchestrate = cast("dict[str, object]", workflow["jobs"]["orchestrate"])
+    assert orchestrate["permissions"] == {
+        "contents": "write",
+        "actions": "read",
+        "packages": "write",
+        "id-token": "write",
+        "attestations": "write",
+    }
 
-        assert set(workflow[True]) == {"workflow_dispatch"}
-        assert "push" not in workflow[True]
+
+def test_release_orchestrate_guards_reusable_caller_identity() -> None:
+    """Reusable orchestrator must authenticate official/buddy caller workflow identity."""
+    workflow = _workflow_yaml("release-orchestrate.yml")
+    jobs = cast("dict[str, object]", workflow["jobs"])
+    guard = cast("dict[str, object]", jobs["guard-caller-identity"])
+    policy = cast("dict[str, object]", jobs["policy"])
+
+    assert guard["needs"] == "reject-buddy-reruns"
+    assert guard["permissions"] == {"id-token": "write"}
+    step = cast("list[dict[str, object]]", guard["steps"])[0]
+    assert step["name"] == "Validate reusable caller identity"
+    assert step["env"] == {
+        "CHANNEL": "${{ inputs.channel }}",
+        "CHANNEL_ALLOWLIST": "${{ inputs.channel_allowlist }}",
+        "EXPECTED_REF": "${{ github.ref }}",
+        "EXPECTED_REPOSITORY": "${{ github.repository }}",
+    }
+    run_script = cast("str", step["run"])
+    assert "ACTIONS_ID_TOKEN_REQUEST_URL" in run_script
+    assert "three-release-orchestrate-caller" in run_script
+    assert '"official": ".github/workflows/official.yml"' in run_script
+    assert '"buddy": ".github/workflows/buddy.yml"' in run_script
+    assert "job_workflow_ref" in run_script
+    assert "workflow_ref" in run_script
+    assert "channel_allowlist" in run_script
+    assert "Channel {channel!r} must be called only by" in run_script
+    assert policy["needs"] == [
+        "reject-buddy-reruns",
+        "guard-caller-identity",
+    ]
+
+
+def test_entry_workflows_bare_branch_targets_use_origin_tracking_refs() -> None:
+    """Manual dispatch branch targets should resolve via fetched origin refs."""
+    for workflow_name in ("official.yml", "buddy.yml"):
+        workflow = _workflow(workflow_name)
+        identity_block = _step_block(
+            workflow, "Resolve canonical release identity"
+        )
+        identity_run = identity_block.split("        run: |\n", 1)[1]
+
+        assert 'fetch_ref="${target_input}"' in identity_run, workflow_name
+        assert 'resolved_ref="origin/${target_input}"' in identity_run, (
+            workflow_name
+        )
+        assert "git fetch --no-tags --depth=1 origin" in identity_run, (
+            workflow_name
+        )
+        assert (
+            "+refs/heads/${fetch_ref}:refs/remotes/origin/${fetch_ref}"
+            in identity_run
+        ), workflow_name
+        assert (
+            'git rev-parse --verify --end-of-options "${resolved_ref}${commit_suffix}"'
+            in identity_run
+        ), workflow_name
+
+
+def test_buddy_entry_authorizes_resolved_targets_by_reachability() -> None:
+    """Buddy targets, including empty/default dispatch targets, need reachability."""
+    workflow = _workflow("buddy.yml")
+    workflow_doc = yaml.safe_load(workflow)
+    target_description = workflow_doc[True]["workflow_dispatch"]["inputs"][
+        "target"
+    ]["description"]
+    identity_block = _step_block(workflow, "Resolve canonical release identity")
+    identity_run = identity_block.split("        run: |\n", 1)[1]
+
+    assert "checked-in buddy-authorized ref" in target_description
+    assert "buddy-authorized-refs" in identity_run
+    assert "--channel buddy" in identity_run
+    assert "mapfile -t buddy_authorized_refs" in identity_run
+    assert "fetch_buddy_authorized_refs" in identity_run
+    assert "git merge-base --is-ancestor" in identity_run
+    assert 'if [[ -z "${release_target_input}" ]]' in identity_run
+    assert 'release_target_input="${RELEASE_PINNED_SHA}"' in identity_run
+    assert (
+        'assert_buddy_target_authorized "${release_target_input}" "${release_target}"'
+        in identity_run
+    )
+    assert 'if [[ -z "${target_label}" ]]' not in identity_run
+    assert "No buddy authorized refs are configured" in identity_run
+    assert "which is not reachable from an authorized buddy ref" in identity_run
+
+
+def test_entry_workflows_tag_targets_fetch_local_tags_and_pin_commits() -> None:
+    """Manual dispatch tag targets should fetch local tag refs before pinning."""
+    for workflow_name in ("official.yml", "buddy.yml"):
+        workflow = _workflow(workflow_name)
+        identity_block = _step_block(
+            workflow, "Resolve canonical release identity"
+        )
+        identity_run = identity_block.split("        run: |\n", 1)[1]
+
+        assert '[[ "${target_input}" =~ ^[0-9a-fA-F]{40}$ ]]' in identity_run, (
+            workflow_name
+        )
+        assert "git fetch --no-tags --unshallow origin" in identity_run, (
+            workflow_name
+        )
+        assert "git fetch --no-tags --prune --tags origin" in identity_run, (
+            workflow_name
+        )
+        assert 'tag_ref="${target_input}"' in identity_run, workflow_name
+        assert (
+            'if [[ "${target_input}" == refs/tags/* ]]; then' in identity_run
+        ), workflow_name
+        assert 'tag_ref="${target_input#refs/tags/}"' in identity_run, (
+            workflow_name
+        )
+        assert "+refs/tags/${tag_ref}:refs/tags/${tag_ref}" in identity_run, (
+            workflow_name
+        )
+        assert (
+            'git rev-parse --verify --end-of-options "refs/tags/${tag_ref}${commit_suffix}"'
+            in identity_run
+        ), workflow_name
+        assert (
+            'git fetch --no-tags --depth=1 origin "${target_input}"'
+            not in identity_run
+        ), workflow_name
+        assert "FETCH_HEAD" not in identity_run, workflow_name
+
+
+def test_entry_workflows_authorize_before_write_capable_orchestration() -> None:
+    """Entry authorization must gate the release orchestrator call."""
+    for workflow_name, profile, required in (
+        ("official.yml", "official", "maintain"),
+        ("buddy.yml", "buddy", "write"),
+    ):
+        workflow = yaml.safe_load(_workflow(workflow_name))
+        jobs = workflow["jobs"]
+        authorize = jobs["authorize-entry"]
+        orchestrate = jobs["orchestrate"]
+        normalize_block = _step_block(
+            _workflow(workflow_name), "Authorize and pin release ref"
+        )
+
+        assert authorize["permissions"] == {"contents": "read"}, workflow_name
+        assert orchestrate["needs"] == "authorize-entry", workflow_name
+        assert orchestrate["permissions"]["contents"] == "write", workflow_name
+        assert f"--profile {profile} \\" in normalize_block, workflow_name
+        assert required in {"maintain", "write"}
+        assert "workflow_release_control.py normalize-entry" in normalize_block
+        assert (
+            "RELEASE_ACTOR: ${{ github.triggering_actor }}" in normalize_block
+        )
+
+        if workflow_name == "official.yml":
+            assert "reject-reruns" not in jobs
+            assert "if" not in authorize, workflow_name
+            assert "if" not in orchestrate, workflow_name
+            assert "github.run_attempt == 1" not in yaml.safe_dump(
+                {"authorize-entry": authorize, "orchestrate": orchestrate},
+                sort_keys=True,
+            )
+            report = jobs["report"]
+            assert report["needs"] == "authorize-entry", workflow_name
+            assert report["if"] == (
+                "${{ always() && needs.authorize-entry.result != 'success' }}"
+            ), workflow_name
+        else:
+            assert "if" not in authorize, workflow_name
+            assert "if" not in orchestrate, workflow_name
+
+
+def test_buddy_workflow_rejects_rerun_attempts_before_authorization() -> None:
+    """Buddy reruns must fail in rerunnable entry and orchestrator paths."""
+    workflow = _workflow_yaml("buddy.yml")
+    jobs = cast("dict[str, object]", workflow["jobs"])
+    guard_job = cast("dict[str, object]", jobs["reject-reruns"])
+    authorize_job = cast("dict[str, object]", jobs["authorize-entry"])
+    orchestrate_job = cast("dict[str, object]", jobs["orchestrate"])
+    steps = cast("list[dict[str, object]]", guard_job["steps"])
+
+    assert guard_job["runs-on"] == "ubuntu-latest"
+    assert guard_job["permissions"] == {}
+    assert [step["name"] for step in steps] == ["Fail rerun attempts"]
+    assert steps[0]["env"]["RUN_ATTEMPT"] == "${{ github.run_attempt }}"
+    run_script = cast("str", steps[0]["run"])
+    assert 'if [[ "${RUN_ATTEMPT}" != "1" ]]' in run_script
+    assert "single-attempt only" in run_script
+    assert "if" not in authorize_job
+    assert "if" not in orchestrate_job
+    assert authorize_job["needs"] == "reject-reruns"
+    authorize_steps = cast("list[dict[str, object]]", authorize_job["steps"])
+    authorize_guard = authorize_steps[0]
+    assert authorize_guard["name"] == "Fail rerun attempts"
+    assert authorize_guard["env"]["RUN_ATTEMPT"] == "${{ github.run_attempt }}"
+    assert 'if [[ "${RUN_ATTEMPT}" != "1" ]]' in cast(
+        "str", authorize_guard["run"]
+    )
+
+    orchestrate_workflow = _workflow_yaml("release-orchestrate.yml")
+    orchestrate_jobs = cast("dict[str, object]", orchestrate_workflow["jobs"])
+    reusable_guard = cast(
+        "dict[str, object]", orchestrate_jobs["reject-buddy-reruns"]
+    )
+    reusable_steps = cast("list[dict[str, object]]", reusable_guard["steps"])
+    reusable_step = reusable_steps[0]
+    assert reusable_guard["permissions"] == {}
+    assert reusable_step["env"]["CHANNEL"] == "${{ inputs.channel }}"
+    assert reusable_step["env"]["RUN_ATTEMPT"] == "${{ github.run_attempt }}"
+    assert (
+        'if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]'
+        in cast("str", reusable_step["run"])
+    )
+    assert cast("dict[str, object]", orchestrate_jobs["policy"])["needs"] == [
+        "reject-buddy-reruns",
+        "guard-caller-identity",
+    ]
+    ensure_tag = cast("dict[str, object]", orchestrate_jobs["ensure-tag"])
+    ensure_needs = cast("list[str]", ensure_tag["needs"])
+    assert "reject-buddy-reruns" in ensure_needs
+    ensure_if = cast("str", ensure_tag["if"])
+    assert (
+        "!(inputs.channel == 'buddy' && github.run_attempt != 1)" in ensure_if
+    )
+    assert "needs.reject-buddy-reruns.result == 'success'" in ensure_if
+    ensure_verifier = cast(
+        "dict[str, object]",
+        orchestrate_jobs["verify-ensure-tag-buddy-rerun-rejection"],
+    )
+    assert "environment" not in ensure_verifier
+    assert ensure_verifier["permissions"] == {}
+    assert ensure_verifier["needs"] == [
+        "reject-buddy-reruns",
+        "ensure-tag",
+    ]
+    assert ensure_verifier["if"] == (
+        "${{ always() && inputs.channel == 'buddy' && github.run_attempt != 1 }}"
+    )
+    ensure_verifier_steps = cast(
+        "list[dict[str, object]]", ensure_verifier["steps"]
+    )
+    assert ensure_verifier_steps[0]["name"] == "Fail buddy rerun attempts"
+    assert "protected environments" in cast(
+        "str", ensure_verifier_steps[0]["run"]
+    )
+
+    guarded_inline_jobs = (
+        "ensure-tag",
+        "attest-dotnet-enabled",
+        "publish-python",
+        "attest-python-enabled",
+        "attest-wxt-enabled",
+        "gate-node-publish-npmjs",
+        "publish-node-gpr-enabled",
+        "publish-node-npmjs",
+        "attest-node-enabled",
+        "publish-ruby-gpr-enabled",
+        "publish-ruby-rubygems",
+        "attest-ruby-enabled",
+    )
+    for job_name in guarded_inline_jobs:
+        job = cast("dict[str, object]", orchestrate_jobs[job_name])
+        first_step = cast("list[dict[str, object]]", job["steps"])[0]
+        assert first_step["name"] == "Fail buddy rerun attempts", job_name
+        assert first_step["env"]["CHANNEL"] == "${{ inputs.channel }}", job_name
+        assert (
+            first_step["env"]["RUN_ATTEMPT"] == "${{ github.run_attempt }}"
+        ), job_name
+        assert (
+            'if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]'
+            in cast("str", first_step["run"])
+        ), job_name
+
+    release_jobs = {
+        job_name: cast("dict[str, object]", job)
+        for job_name, job in orchestrate_jobs.items()
+        if (
+            isinstance(job, dict)
+            and job.get("uses")
+            == "./.github/workflows/release-create-github-release.yml"
+        )
+    }
+    assert release_jobs
+    for job_name, job in release_jobs.items():
+        create_with = cast("dict[str, object]", job["with"])
+        assert create_with["channel"] == ("${{ inputs.channel }}"), job_name
+        assert create_with["planner_profile"] == (
+            "${{ needs.resolve-hub-context.outputs.planner_profile }}"
+        ), job_name
+        assert create_with["attestation_source_sha"] == "${{ github.sha }}", (
+            job_name
+        )
+
+    create_workflow = _workflow_yaml("release-create-github-release.yml")
+    create_inputs = cast(
+        "dict[str, object]",
+        cast(
+            "dict[str, object]",
+            create_workflow.get("on", create_workflow.get(True, {})),
+        )["workflow_call"],
+    )["inputs"]
+    assert cast("dict[str, object]", create_inputs)["channel"] == {
+        "description": "Release channel label used for buddy rerun fail-closed guard",
+        "required": True,
+        "type": "string",
+    }
+    assert cast("dict[str, object]", create_inputs)["planner_profile"] == {
+        "description": "Planner profile used for release-plan authorization (official or buddy)",
+        "required": True,
+        "type": "string",
+    }
+    assert cast("dict[str, object]", create_inputs)[
+        "attestation_source_sha"
+    ] == {
+        "description": "Workflow/source commit SHA expected in GitHub Artifact Attestation source-digest values",
+        "required": True,
+        "type": "string",
+    }
+    create_guard_job = cast(
+        "dict[str, object]", create_workflow["jobs"]["reject-buddy-reruns"]
+    )
+    assert "environment" not in create_guard_job
+    assert create_guard_job["permissions"] == {}
+    create_guard_steps = cast(
+        "list[dict[str, object]]", create_guard_job["steps"]
+    )
+    create_guard_step = create_guard_steps[0]
+    assert create_guard_step["env"]["CHANNEL"] == "${{ inputs.channel }}"
+    assert (
+        create_guard_step["env"]["RUN_ATTEMPT"] == "${{ github.run_attempt }}"
+    )
+    assert (
+        'if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]'
+        in cast("str", create_guard_step["run"])
+    )
+    create_job = cast(
+        "dict[str, object]", create_workflow["jobs"]["create-release"]
+    )
+    assert create_job["needs"] == "reject-buddy-reruns"
+    assert create_job["if"] == (
+        "${{ !(inputs.channel == 'buddy' && github.run_attempt != 1) }}"
+    )
+    create_steps = cast(
+        "list[dict[str, object]]",
+        create_job["steps"],
+    )
+    create_guard = create_steps[0]
+    assert create_guard["name"] == "Fail buddy rerun attempts"
+    assert create_guard["env"]["CHANNEL"] == "${{ inputs.channel }}"
+    assert create_guard["env"]["RUN_ATTEMPT"] == "${{ github.run_attempt }}"
+    assert (
+        'if [[ "${CHANNEL}" == "buddy" && "${RUN_ATTEMPT}" != "1" ]]'
+        in cast("str", create_guard["run"])
+    )
+    create_step = next(
+        step
+        for step in create_steps
+        if step.get("name") == "Create or update tag + release + assets"
+    )
+    create_step_env = cast("dict[str, object]", create_step["env"])
+    create_step_run = cast("str", create_step["run"])
+    assert create_step_env["CHANNEL"] == "${{ inputs.channel }}"
+    assert create_step_env["PLANNER_PROFILE"] == "${{ inputs.planner_profile }}"
+    assert (
+        create_step_env["ATTESTATION_SOURCE_SHA"]
+        == "${{ inputs.attestation_source_sha }}"
+    )
+    assert (
+        'if [[ "${FORCE_UPDATE_TAG}" == "true" && "${CHANNEL}" != "official" ]]'
+        in create_step_run
+    )
+    assert "valid only for the official channel" in create_step_run
+    create_verifier = cast(
+        "dict[str, object]",
+        create_workflow["jobs"]["verify-buddy-rerun-rejection"],
+    )
+    assert "environment" not in create_verifier
+    assert create_verifier["permissions"] == {}
+    assert create_verifier["needs"] == [
+        "reject-buddy-reruns",
+        "create-release",
+    ]
+    assert create_verifier["if"] == (
+        "${{ always() && inputs.channel == 'buddy' && github.run_attempt != 1 }}"
+    )
 
 
 def test_entry_authorization_uses_env_for_context_and_dispatch_values() -> None:
     """Pre-authorization shell scripts must not interpolate expressions."""
     for workflow_name in ("official.yml", "buddy.yml"):
         workflow = _workflow(workflow_name)
-        normalize_block = _step_block(
-            workflow, "Authorize and pin dispatch ref"
-        )
+        normalize_block = _step_block(workflow, "Authorize and pin release ref")
         run_script = normalize_block.split("        run: |\n", 1)[1]
 
         assert "${{ inputs." not in run_script
@@ -10680,32 +26356,42 @@ def test_entry_authorization_uses_env_for_context_and_dispatch_values() -> None:
             "RELEASE_REF_NAME: ${{ github.ref_name }}",
             "RELEASE_REF_TYPE: ${{ github.ref_type }}",
             "RELEASE_REPOSITORY: ${{ github.repository }}",
-            (
-                "RELEASE_REQUESTED_PROJECT_IDS: "
-                "${{ inputs.requested-project-ids }}"
-            ),
             "RELEASE_VALIDATION_BUILD: ${{ inputs.validation-build }}",
         ):
-            assert env_line in normalize_block
+            if env_line in (
+                "RELEASE_DRY_RUN: ${{ inputs.dry-run }}",
+                "RELEASE_VALIDATION_BUILD: ${{ inputs.validation-build }}",
+            ):
+                assert env_line not in normalize_block
+            else:
+                assert env_line in normalize_block
         if workflow_name == "buddy.yml":
-            assert "RELEASE_FORCE: ${{ inputs.force }}" in normalize_block
+            assert (
+                "RELEASE_FORCE: ${{ inputs.force_update_tag }}"
+                in normalize_block
+            )
+            assert (
+                "RELEASE_REQUESTED_PROJECT_IDS: ${{ inputs.project }}"
+                in normalize_block
+            )
             assert '--force "$RELEASE_FORCE" \\' in run_script
             assert (
                 "RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF" not in normalize_block
             )
         else:
             assert (
-                "RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF: "
-                "${{ inputs.canary-override-non-public-ref }}"
-            ) in normalize_block
+                "RELEASE_FORCE: ${{ inputs.force_update_tag || false }}"
+                in normalize_block
+            )
             assert (
-                "--canary-override-non-public-ref "
-                '"$RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF" \\'
-            ) in run_script
-        assert (
-            '--requested-project-ids "$RELEASE_REQUESTED_PROJECT_IDS" \\'
-            in run_script
-        )
+                "RELEASE_INPUT_PROJECT: ${{ inputs.project || '' }}"
+                in normalize_block
+            )
+            assert (
+                'requested_project_ids="${RELEASE_INPUT_PROJECT}"' in run_script
+            )
+            assert 'tag_remainder="${RELEASE_REF_NAME#release/}"' in run_script
+        assert "--requested-project-ids " in run_script
         assert '--dry-run "$RELEASE_DRY_RUN" \\' in run_script
         assert '--validation-build "$RELEASE_VALIDATION_BUILD" \\' in run_script
         assert '--repository "$RELEASE_REPOSITORY" \\' in run_script
@@ -10713,32 +26399,26 @@ def test_entry_authorization_uses_env_for_context_and_dispatch_values() -> None:
         assert '--ref "$RELEASE_REF" \\' in run_script
 
 
-def test_official_canary_override_is_visible_and_environment_gated() -> None:
-    """Official canary override is explicit and does not bypass release env."""
-    workflow = yaml.safe_load(_workflow("official.yml"))
-    raw = _workflow("official.yml")
-    report_block = _step_block(raw, "Render report")
+def test_entry_workflows_upload_hidden_planner_diagnostics_artifact() -> None:
+    """Entry workflows upload hidden diagnostics artifacts from the release dir."""
+    for workflow_name in ("official.yml", "buddy.yml"):
+        workflow = yaml.safe_load(_workflow(workflow_name))
+        upload_step = next(
+            step
+            for step in workflow["jobs"]["authorize-entry"]["steps"]
+            if step.get("name") == "Upload authorization diagnostics"
+        )
 
-    dispatch = workflow[True]["workflow_dispatch"]["inputs"]
-    override = dispatch["canary-override-non-public-ref"]
-    assert override["default"] is False
-    assert "hcoona-release-smoke-*" in override["description"]
-    assert "RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF" in report_block
-    assert (
-        "--canary-override-non-public-ref "
-        '"$RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF" \\'
-    ) in report_block
-    assert workflow["jobs"]["publish-entry"]["environment"] == "release"
-    assert (
-        workflow["jobs"]["orchestrate"]["with"]["release-environment"]
-        == "${{ inputs.dry-run == false && 'release' || '' }}"
-    )
-    assert workflow["jobs"]["orchestrate"]["with"][
-        "canary-override-non-public-ref"
-    ] == (
-        "${{ needs.authorize-entry.outputs."
-        "canary-override-non-public-ref == 'true' }}"
-    )
+        assert upload_step["uses"] == "actions/upload-artifact@v7", (
+            workflow_name
+        )
+        assert upload_step["with"]["path"] == (
+            ".three-workflow-release/entry/planner-diagnostics.json"
+        ), workflow_name
+        assert upload_step["with"]["include-hidden-files"] is True, (
+            workflow_name
+        )
+        assert upload_step["with"]["if-no-files-found"] == "warn", workflow_name
 
 
 def test_release_shell_steps_use_env_for_workflow_inputs_and_vars() -> None:
@@ -10764,57 +26444,2085 @@ def test_release_shell_steps_use_env_for_workflow_inputs_and_vars() -> None:
                 )
 
 
-def test_orchestrator_passes_user_controlled_inputs_through_env() -> None:
-    """Planner request and OIDC gate inputs avoid shell interpolation."""
-    workflow = _workflow("release-orchestrate.yml")
+def test_entry_workflows_concurrency_on_canonical_release_identity() -> None:
+    """Entry workflow concurrency keys should serialize one release identity."""
+    for workflow_name in ("official.yml", "buddy.yml"):
+        workflow = _workflow_yaml(workflow_name)
+        assert "concurrency" not in workflow, workflow_name
 
-    write_block = _step_block(workflow, "Write planner request")
-    assert (
-        "REQUESTED_PROJECT_IDS_JSON: ${{ inputs.requested-project-ids-json }}"
-    ) in write_block
-    assert "RELEASE_PROFILE: ${{ inputs.profile }}" in write_block
-    assert "RELEASE_COMMIT_SHA: ${{ inputs.commit-sha }}" in write_block
-    assert "RELEASE_FORCE: ${{ inputs.force }}" in write_block
-    assert (
-        '--requested-project-ids-json "$REQUESTED_PROJECT_IDS_JSON" \\'
-        in write_block
+        authorize_entry = cast(
+            "dict[str, object]", workflow["jobs"]["authorize-entry"]
+        )
+        authorize_outputs = cast(
+            "dict[str, object]", authorize_entry["outputs"]
+        )
+        assert authorize_outputs["project_id"] == (
+            "${{ steps.identity.outputs.project_id }}"
+        ), workflow_name
+        assert authorize_outputs["release_group"] == (
+            "${{ steps.identity.outputs.release_group }}"
+        ), workflow_name
+        assert authorize_outputs["release_target_sha"] == (
+            "${{ steps.identity.outputs.release_target_sha }}"
+        ), workflow_name
+
+        identity_step = next(
+            step
+            for step in cast(
+                "list[dict[str, object]]", authorize_entry["steps"]
+            )
+            if step.get("name") == "Resolve canonical release identity"
+        )
+        identity_run = cast("str", identity_step["run"])
+        assert "resolve-project" in identity_run, workflow_name
+        assert "git fetch --no-tags --depth=1 origin" in identity_run, (
+            workflow_name
+        )
+        assert (
+            "+refs/heads/${fetch_ref}:refs/remotes/origin/${fetch_ref}"
+            in identity_run
+        ), workflow_name
+        assert "commit_suffix='^{commit}'" in identity_run, workflow_name
+        assert (
+            'git rev-parse --verify --end-of-options "${target_input}${commit_suffix}"'
+            in identity_run
+        ), workflow_name
+        assert '[[ "${target_input}" =~ ^[0-9a-fA-F]{40}$ ]]' in identity_run, (
+            workflow_name
+        )
+        assert "git fetch --no-tags --unshallow origin" in identity_run, (
+            workflow_name
+        )
+        assert "git fetch --no-tags --prune --tags origin" in identity_run, (
+            workflow_name
+        )
+        assert "+refs/tags/${tag_ref}:refs/tags/${tag_ref}" in identity_run, (
+            workflow_name
+        )
+        assert "FETCH_HEAD" not in identity_run, workflow_name
+        assert 'if [[ "${target_input}" == -* ]]' in identity_run, workflow_name
+        assert (
+            "Release target must not start with '-': ${target_input}"
+            in identity_run
+        ), workflow_name
+        assert "git rev-list -n1" not in identity_run, workflow_name
+        assert (
+            'release_group="release/${project_id}/v${release_version}"'
+            in identity_run
+        ), workflow_name
+        assert (
+            'release_group="release/${project_id}/v${release_version}/${release_target}"'
+            not in identity_run
+        ), workflow_name
+        assert 'echo "release_target_sha=${release_target}"' in identity_run, (
+            workflow_name
+        )
+        assert "^[A-Za-z0-9._-]+$" not in identity_run, workflow_name
+
+        orchestrate = cast("dict[str, object]", workflow["jobs"]["orchestrate"])
+        assert orchestrate["concurrency"] == {
+            "group": "${{ needs.authorize-entry.outputs.release_group }}",
+            "cancel-in-progress": False,
+        }, workflow_name
+        with_inputs = cast("dict[str, object]", orchestrate["with"])
+        assert with_inputs["target"] == (
+            "${{ needs.authorize-entry.outputs.release_target_sha }}"
+        ), workflow_name
+        assert with_inputs["run_url"] == (
+            "${{ format('{0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}"
+        ), workflow_name
+
+
+def test_github_release_workflow_serializes_by_release_tag() -> None:
+    """Reusable GitHub Release mutations and ensure-tag share the tag lock."""
+    workflow = _workflow_yaml("release-create-github-release.yml")
+    create_job = cast("dict[str, object]", workflow["jobs"]["create-release"])
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    ensure_tag = cast("dict[str, object]", orchestrate["jobs"]["ensure-tag"])
+
+    expected = {
+        "group": "github-release/${{ github.repository }}/${{ inputs.tag_name }}",
+        "cancel-in-progress": False,
+    }
+    assert create_job["concurrency"] == expected
+    assert ensure_tag["concurrency"] == {
+        "group": (
+            "github-release/${{ github.repository }}/"
+            "${{ needs.resolve.outputs.tag_name }}"
+        ),
+        "cancel-in-progress": False,
+    }
+    steps = cast("list[dict[str, object]]", create_job["steps"])
+    create_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Create or update tag + release + assets"
     )
-    assert '--profile "$RELEASE_PROFILE" \\' in write_block
-    assert '--commit-sha "$RELEASE_COMMIT_SHA" \\' in write_block
-    assert '--force "$RELEASE_FORCE" \\' in write_block
+    create_run = cast("str", create_step["run"])
+    assert create_run.count("verify_tag_at_expected_target") >= 7
+    assert "require_overwrite_mutable_prerelease" in create_run
+    assert "require_replace_authoritative_prerelease" in create_run
 
-    planner_block = _step_block(workflow, "Run planner")
-    assert "RELEASE_DRY_RUN: ${{ inputs.dry-run }}" in planner_block
-    assert (
-        "RELEASE_VALIDATION_BUILD: ${{ inputs.validation-build }}"
-        in planner_block
+
+def test_release_workflows_generate_final_release_reports() -> None:
+    """Final release report jobs should invoke and upload release-report.json."""
+    for workflow_name in ("official.yml", "buddy.yml"):
+        workflow = _workflow_yaml(workflow_name)
+        report_job = workflow["jobs"]["report"]
+        steps = cast("list[dict[str, object]]", report_job["steps"])
+        step_names = [step["name"] for step in steps]
+
+        assert report_job["needs"] == "authorize-entry", workflow_name
+        assert report_job["permissions"] == {
+            "contents": "read",
+            "actions": "read",
+        }, workflow_name
+        assert (
+            report_job["if"]
+            == "${{ always() && needs.authorize-entry.result != 'success' }}"
+        ), workflow_name
+        assert step_names == [
+            "Checkout",
+            "Install uv",
+            "Download authorization diagnostics",
+            "Generate release report",
+            "Upload release report",
+        ], workflow_name
+
+        generate_step = next(
+            step
+            for step in steps
+            if step.get("name") == "Generate release report"
+        )
+        upload_step = next(
+            step
+            for step in steps
+            if step.get("name") == "Upload release report"
+        )
+        assert generate_step["env"]["WORKFLOW"] == workflow_name
+        assert generate_step["env"]["DIAGNOSTICS_PATH"] == (
+            ".three-workflow-release/entry/planner-diagnostics.json"
+        )
+        run_script = cast("str", generate_step["run"])
+        assert "workflow_release_control.py report" in run_script
+        assert '--head-sha "$HEAD_SHA"' in run_script
+        assert upload_step["uses"] == "actions/upload-artifact@v7"
+        assert upload_step["with"]["path"] == (
+            ".three-workflow-release/release-report.json"
+        )
+        assert upload_step["with"]["include-hidden-files"] is True, (
+            workflow_name
+        )
+        assert upload_step["with"]["name"] == (
+            "release-report-v1-${{ github.run_id }}-${{ github.run_attempt }}"
+        )
+
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    report_job = orchestrate["jobs"]["release-completed"]
+    steps = cast("list[dict[str, object]]", report_job["steps"])
+    step_names = [step["name"] for step in steps]
+
+    assert report_job["permissions"] == {
+        "contents": "read",
+        "actions": "read",
+    }
+    assert report_job["needs"] == [
+        "build-python",
+        "build-wxt",
+        "pack-node",
+        "build-dotnet",
+        "build-ruby",
+        "resolve",
+        "prepare-release-plan",
+        "ensure-tag",
+        "skip-results",
+        "publish-python",
+        "publish-node-gpr",
+        "publish-node-npmjs",
+        "publish-ruby-gpr",
+        "publish-ruby-rubygems",
+        "release-python-with-pypi",
+        "release-python-no-pypi",
+        "release-wxt",
+        "release-node-with-npmjs",
+        "release-node-no-npmjs",
+        "release-dotnet",
+        "release-ruby-with-rubygems",
+        "release-ruby-no-rubygems",
+        "attest-python",
+        "attest-wxt",
+        "attest-node",
+        "attest-dotnet",
+        "attest-ruby",
+        "resolve-hub-context",
+    ]
+    assert step_names == [
+        "Checkout (release sentinel scripts)",
+        "Install jq",
+        "Install uv",
+        "Download release artifacts",
+        "Check release outcomes",
+        "Generate release report",
+        "Upload release report",
+        "Surface release-completed failures",
+    ]
+
+    check_step = next(
+        step for step in steps if step.get("name") == "Check release outcomes"
     )
-    assert "if [ \"$RELEASE_DRY_RUN\" = 'true' ]; then" in planner_block
+    generate_step = next(
+        step for step in steps if step.get("name") == "Generate release report"
+    )
+    upload_step = next(
+        step for step in steps if step.get("name") == "Upload release report"
+    )
+    assert check_step["continue-on-error"] is True
+    download_release_artifacts_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Download release artifacts"
+    )
+    assert download_release_artifacts_step["with"]["pattern"] == "release-*"
+    assert generate_step["env"]["PROFILE"] == (
+        "${{ needs.resolve-hub-context.outputs.channel_profile || (inputs.channel == 'official' && 'official' || inputs.channel == 'buddy' && 'buddy' || 'custom') }}"
+    )
+    assert generate_step["env"]["RELEASE_COMPLETED_CHECK_CONCLUSION"] == (
+        "${{ steps.release_completed_check.outcome }}"
+    )
+    assert generate_step["env"]["WORKFLOW"] == "release-orchestrate.yml"
+    assert generate_step["env"]["VALIDATE_CONCLUSION"] == "skipped"
+    assert generate_step["env"]["METADATA_CONCLUSION"] == "skipped"
+    assert generate_step["env"]["PLAN_CONCLUSION"] == (
+        "${{ needs.prepare-release-plan.result }}"
+    )
     assert (
-        "if [ \"$RELEASE_VALIDATION_BUILD\" = 'true' ]; then" in planner_block
+        generate_step["env"]["TAG_CONCLUSION"]
+        == "${{ needs.ensure-tag.result }}"
+    )
+    assert generate_step["env"]["HEAD_SHA"] == (
+        "${{ needs.resolve.outputs.target || github.sha }}"
+    )
+    assert generate_step["env"]["PUBLISH_PYTHON_PYPI"] == (
+        "${{ inputs.publish_python_pypi }}"
+    )
+    assert generate_step["env"]["PUBLISH_NODE_GPR"] == (
+        "${{ inputs.publish_node_gpr }}"
+    )
+    assert generate_step["env"]["PUBLISH_NODE_NPMJS"] == (
+        "${{ inputs.publish_node_npmjs }}"
+    )
+    assert generate_step["env"]["PUBLISH_RUBY_GPR"] == (
+        "${{ inputs.publish_ruby_gpr }}"
+    )
+    assert generate_step["env"]["PUBLISH_RUBY_RUBYGEMS"] == (
+        "${{ inputs.publish_ruby_rubygems }}"
+    )
+    assert generate_step["env"]["PLAN_ARTIFACT_NAME"] == (
+        "${{ needs.prepare-release-plan.outputs.plan_artifact_name }}"
+    )
+    assert generate_step["env"]["EXECUTION_SETS_ARTIFACT_NAME"] == (
+        "${{ needs.prepare-release-plan.outputs.execution_sets_artifact_name }}"
+    )
+    assert generate_step["env"]["ENTRY_PUBLISH_HANDOFF_ARTIFACT_NAME"] == (
+        "${{ needs.prepare-release-plan.outputs.entry_publish_handoff_artifact_name }}"
+    )
+    run_script = cast("str", generate_step["run"])
+    assert "release-plan-v1-${RUN_ID}-${RUN_ATTEMPT}-*" not in run_script
+    assert (
+        "release-execution-sets-v1-${RUN_ID}-${RUN_ATTEMPT}-*" not in run_script
+    )
+    assert "resolve_artifact_dir" not in run_script
+    assert 'find "${ARTIFACTS_ROOT}"' not in run_script
+    assert (
+        'resolve_named_artifact_dir "$PLAN_ARTIFACT_NAME" "release-plan"'
+        in run_script
+    )
+    assert (
+        'resolve_named_artifact_dir "$EXECUTION_SETS_ARTIFACT_NAME" '
+        '"execution-sets"'
+    ) in run_script
+    assert (
+        'resolve_named_artifact_dir "$ENTRY_PUBLISH_HANDOFF_ARTIFACT_NAME" '
+        '"entry-publish-handoff"'
+    ) in run_script
+    assert (
+        "exact entry-publish-handoff artifact payload is missing" in run_script
+    )
+    digestless_plan_path = (
+        "release-plan-v1-${RUN_ID}-${RUN_ATTEMPT}" + "/release-plan.json"
+    )
+    digestless_execution_sets_path = (
+        "release-execution-sets-v1-${RUN_ID}-${RUN_ATTEMPT}/execution-sets.json"
+    )
+    digestless_handoff_path = (
+        "release-entry-publish-handoff-v1-${RUN_ID}-${RUN_ATTEMPT}"
+        "/entry-publish-handoff.json"
+    )
+    assert digestless_plan_path not in run_script
+    assert digestless_execution_sets_path not in run_script
+    assert digestless_handoff_path not in run_script
+    assert "workflow_release_control.py report" in run_script
+    assert 'disabled_package_target_keys+=("python-pypi")' in run_script
+    assert 'disabled_package_target_keys+=("node-gpr")' in run_script
+    assert 'disabled_package_target_keys+=("node-npmjs")' in run_script
+    assert 'disabled_package_target_keys+=("ruby-gpr")' in run_script
+    assert 'disabled_package_target_keys+=("ruby-rubygems")' in run_script
+    assert '--head-sha "$HEAD_SHA"' in run_script
+    assert (
+        '--disabled-package-target-keys "$disabled_package_target_keys_csv"'
+        in run_script
+    )
+    assert '--plan-artifact-name "$PLAN_ARTIFACT_NAME"' in run_script
+    assert (
+        '--execution-sets-artifact-name "$EXECUTION_SETS_ARTIFACT_NAME"'
+        in run_script
+    )
+    assert (
+        '--entry-publish-handoff-artifact-name "$ENTRY_PUBLISH_HANDOFF_ARTIFACT_NAME"'
+        in run_script
+    )
+    assert upload_step["uses"] == "actions/upload-artifact@v7"
+    assert upload_step["with"]["path"] == (
+        ".three-workflow-release/release-report.json"
+    )
+    assert upload_step["with"]["include-hidden-files"] is True
+
+    resolve_job = cast("dict[str, object]", orchestrate["jobs"]["resolve"])
+    assert resolve_job["with"]["run_url"] == "${{ inputs.run_url }}"
+    prepare_release_notes = cast(
+        "dict[str, object]", orchestrate["jobs"]["prepare-release-notes"]
+    )
+    notes_step = next(
+        step
+        for step in cast(
+            "list[dict[str, object]]", prepare_release_notes["steps"]
+        )
+        if step.get("name") == "Write release notes"
+    )
+    assert (
+        notes_step["env"]["RUN_URL"] == "${{ needs.resolve.outputs.run_url }}"
     )
 
-    gate_block = _step_block(workflow, "Apply live external OIDC gate")
+
+def test_release_completed_report_step_binds_prepare_artifacts_exactly() -> (
+    None
+):
+    """Competing same-run prepare artifacts must not affect final reports."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    report_job = cast(
+        "dict[str, object]",
+        orchestrate["jobs"]["release-completed"],
+    )
+    steps = cast("list[dict[str, object]]", report_job["steps"])
+    generate_step = next(
+        step for step in steps if step.get("name") == "Generate release report"
+    )
+    scratch = SCRATCH / "release-completed-report-exact-artifact-binding"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        artifacts_root = scratch / "artifacts"
+        report_path = scratch / "release-report.json"
+        plan = _load("release-plan.json")
+        execution_sets = _load("execution-sets.json")
+        plan_id = cast("str", plan["envelope"]["plan-id"])
+        plan_name = artifact_name(
+            "plan",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        execution_sets_name = artifact_name(
+            "execution-sets",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        handoff_name = artifact_name(
+            "entry-publish-handoff",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        competing_plan_name = artifact_name(
+            "plan",
+            ArtifactNameInputs(123, 4, plan_id="plan/competing-report"),
+        )
+        competing_execution_sets_name = artifact_name(
+            "execution-sets",
+            ArtifactNameInputs(123, 4, plan_id="plan/competing-report"),
+        )
+        competing_handoff_name = artifact_name(
+            "entry-publish-handoff",
+            ArtifactNameInputs(123, 4, plan_id="plan/competing-report"),
+        )
+        for name, payload_name, payload in (
+            (plan_name, "release-plan.json", plan),
+            (execution_sets_name, "execution-sets.json", execution_sets),
+            (
+                handoff_name,
+                "entry-publish-handoff.json",
+                control._entry_publish_handoff(plan, execution_sets, 123, 4),
+            ),
+            (competing_plan_name, "release-plan.json", {}),
+            (competing_execution_sets_name, "execution-sets.json", {}),
+            (
+                competing_handoff_name,
+                "entry-publish-handoff.json",
+                {
+                    "api-version": (
+                        "three.release.entry-publish-handoff/v1alpha1"
+                    ),
+                    "kind": "entry-publish-handoff",
+                    "plan-id": "plan/competing-report",
+                },
+            ),
+        ):
+            artifact_dir = artifacts_root / name
+            artifact_dir.mkdir(parents=True)
+            (artifact_dir / payload_name).write_text(
+                json.dumps(payload),
+                encoding="utf-8",
+            )
+        result = subprocess.run(
+            ["bash", "-c", cast("str", generate_step["run"])],
+            cwd=REPO_ROOT,
+            env={
+                **os.environ,
+                "ARTIFACTS_ROOT": str(artifacts_root),
+                "AUTHORIZE_CONCLUSION": "skipped",
+                "VALIDATE_CONCLUSION": "skipped",
+                "METADATA_CONCLUSION": "skipped",
+                "PLAN_CONCLUSION": "success",
+                "BUILD_PYTHON_RESULT": "skipped",
+                "BUILD_WXT_RESULT": "skipped",
+                "PACK_NODE_RESULT": "skipped",
+                "BUILD_DOTNET_RESULT": "skipped",
+                "BUILD_RUBY_RESULT": "skipped",
+                "TAG_CONCLUSION": "success",
+                "PUBLISH_PYTHON_RESULT": "skipped",
+                "PUBLISH_NODE_GPR_RESULT": "skipped",
+                "PUBLISH_NODE_NPMJS_RESULT": "skipped",
+                "PUBLISH_RUBY_GPR_RESULT": "skipped",
+                "PUBLISH_RUBY_RUBYGEMS_RESULT": "skipped",
+                "RELEASE_PYTHON_WITH_PYPI_RESULT": "skipped",
+                "RELEASE_PYTHON_NO_PYPI_RESULT": "skipped",
+                "RELEASE_WXT_RESULT": "skipped",
+                "RELEASE_NODE_WITH_NPMJS_RESULT": "skipped",
+                "RELEASE_NODE_NO_NPMJS_RESULT": "skipped",
+                "RELEASE_DOTNET_RESULT": "skipped",
+                "RELEASE_RUBY_WITH_RUBYGEMS_RESULT": "skipped",
+                "RELEASE_RUBY_NO_RUBYGEMS_RESULT": "skipped",
+                "REPORT_PATH": str(report_path),
+                "REPOSITORY": "hcoona/three",
+                "WORKFLOW": "release-orchestrate.yml",
+                "RUN_ID": "123",
+                "RUN_ATTEMPT": "4",
+                "HEAD_SHA": SHA_A,
+                "PUBLISH_PYTHON_PYPI": "true",
+                "PUBLISH_NODE_GPR": "true",
+                "PUBLISH_NODE_NPMJS": "true",
+                "PUBLISH_RUBY_GPR": "true",
+                "PUBLISH_RUBY_RUBYGEMS": "true",
+                "PLAN_ARTIFACT_NAME": plan_name,
+                "EXECUTION_SETS_ARTIFACT_NAME": execution_sets_name,
+                "ENTRY_PUBLISH_HANDOFF_ARTIFACT_NAME": handoff_name,
+                "PROFILE": "buddy",
+                "DRY_RUN": "false",
+                "VALIDATION_BUILD": "false",
+                "CANARY_OVERRIDE_NON_PUBLIC_REF": "false",
+                "RELEASE_COMPLETED_CHECK_CONCLUSION": "success",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        validate_contract(report)
+        assert report["plan"]["plan-id"] == plan_id
+        assert report["artifacts"]["plan-artifact-name"] == plan_name
+        assert report["artifacts"]["execution-sets-artifact-name"] == (
+            execution_sets_name
+        )
+        assert report["artifacts"]["entry-publish-handoff-artifact-name"] == (
+            handoff_name
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("artifact_key", "payload_name"),
+    [
+        ("plan_artifact_name", "release-plan.json"),
+        ("execution_sets_artifact_name", "execution-sets.json"),
+        (
+            "entry_publish_handoff_artifact_name",
+            "entry-publish-handoff.json",
+        ),
+    ],
+)
+def test_report_fails_when_successful_prepare_payload_is_missing(
+    artifact_key: str,
+    payload_name: str,
+) -> None:
+    """Successful prepare-release-plan requires all exact prepare payloads."""
+    scratch = SCRATCH / f"missing-successful-prepare-{artifact_key}"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        artifacts_root = scratch / "artifacts"
+        report_path = scratch / "release-report.json"
+        plan = _load("release-plan.json")
+        execution_sets = _load("execution-sets.json")
+        plan_path = scratch / "release-plan.json"
+        execution_sets_path = scratch / "execution-sets.json"
+        plan_path.parent.mkdir(parents=True)
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        execution_sets_path.write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        (artifacts_root / prepare_names[artifact_key] / payload_name).unlink()
+
+        result = control._cmd_report(
+            control.argparse.Namespace(
+                repository="hcoona/three",
+                workflow="release-orchestrate.yml",
+                run_id=123,
+                attempt=4,
+                head_sha=SHA_A,
+                profile="official",
+                dry_run="false",
+                validation_build="false",
+                canary_override_non_public_ref="false",
+                out=str(report_path),
+                plan=str(plan_path),
+                execution_sets=str(execution_sets_path),
+                **_report_prepare_artifact_args(prepare_names),
+                diagnostics="",
+                artifacts_root=str(artifacts_root),
+                authorize_conclusion="success",
+                validate_conclusion="success",
+                metadata_conclusion="success",
+                plan_conclusion="success",
+                build_conclusion="skipped",
+                tag_conclusion="skipped",
+                release_completed_check_conclusion="success",
+                publish_conclusion="skipped",
+            ),
+        )
+
+        assert result == 1
+        assert not report_path.exists()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_release_completed_rejects_misbound_execution_sets_plan_id(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Release completion validates the prepare artifact tuple contents."""
+    scratch = SCRATCH / "release-completed-misbound-execution-sets"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        artifacts_root = scratch / "artifacts"
+        plan = _load("release-plan.json")
+        execution_sets = _load("execution-sets.json")
+        execution_sets["plan-id"] = "plan/misbound-execution-sets"
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+
+        result = control._cmd_release_completed_receipts(
+            control.argparse.Namespace(
+                artifacts_root=str(artifacts_root),
+                run_id=123,
+                attempt=4,
+                **_report_prepare_artifact_args(prepare_names),
+            )
+        )
+
+        captured = capsys.readouterr()
+        assert result == 1
+        assert "execution-sets plan-id does not match" in captured.err
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize("case", ["malformed", "misbound"])
+def test_report_rejects_malformed_or_misbound_handoff(case: str) -> None:
+    """Report generation reads and validates the handoff payload contents."""
+    scratch = SCRATCH / f"report-{case}-entry-publish-handoff"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        artifacts_root = scratch / "artifacts"
+        report_path = scratch / "release-report.json"
+        plan = _load("release-plan.json")
+        execution_sets = _load("execution-sets.json")
+        plan_path = scratch / "release-plan.json"
+        execution_sets_path = scratch / "execution-sets.json"
+        plan_path.parent.mkdir(parents=True)
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        execution_sets_path.write_text(
+            json.dumps(execution_sets),
+            encoding="utf-8",
+        )
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        handoff_path = (
+            artifacts_root
+            / prepare_names["entry_publish_handoff_artifact_name"]
+            / "entry-publish-handoff.json"
+        )
+        handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+        if case == "malformed":
+            handoff.pop("publish-inputs-by-node-id")
+        else:
+            handoff["plan-artifact-name"] = artifact_name(
+                "plan",
+                ArtifactNameInputs(
+                    123,
+                    4,
+                    plan_id="plan/misbound-handoff",
+                ),
+            )
+        handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
+
+        result = control._cmd_report(
+            control.argparse.Namespace(
+                repository="hcoona/three",
+                workflow="release-orchestrate.yml",
+                run_id=123,
+                attempt=4,
+                head_sha=SHA_A,
+                profile="official",
+                dry_run="false",
+                validation_build="false",
+                canary_override_non_public_ref="false",
+                out=str(report_path),
+                plan=str(plan_path),
+                execution_sets=str(execution_sets_path),
+                **_report_prepare_artifact_args(prepare_names),
+                diagnostics="",
+                artifacts_root=str(artifacts_root),
+                authorize_conclusion="success",
+                validate_conclusion="success",
+                metadata_conclusion="success",
+                plan_conclusion="success",
+                build_conclusion="skipped",
+                tag_conclusion="skipped",
+                release_completed_check_conclusion="success",
+                publish_conclusion="skipped",
+            ),
+        )
+
+        assert result == 1
+        assert not report_path.exists()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_release_create_workflow_scopes_result_artifact_to_run_attempt() -> (
+    None
+):
+    """GitHub Release result uploads must not use a stale fixed artifact name."""
+    workflow = _workflow_yaml("release-create-github-release.yml")
+    job = workflow["jobs"]["create-release"]
+    steps = cast("list[dict[str, object]]", job["steps"])
+    upload_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Upload GitHub Release result"
+    )
+
+    assert upload_step["uses"] == "actions/upload-artifact@v6"
+    assert upload_step["with"]["name"] == "${{ env.RESULT_ARTIFACT_NAME }}"
+    assert upload_step["with"]["path"] == "${{ env.RESULT_JSON }}"
+    assert upload_step["with"]["overwrite"] is False
+    create_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Create or update tag + release + assets"
+    )
+    run = cast("str", create_step["run"])
+    assert "release-github-release-result-v1-${RUN_ID}-${RUN_ATTEMPT}-" in run
+    assert "RESULT_ARTIFACT_NAME" in run
+    assert "RELEASE_EXISTED" in run
+    assert '--rawfile assetsTsv "${planned_manifest}"' not in run
+    assert '--rawfile assetsTsv "${observed_manifest}"' in run
+    assert 'diff -u "${coverage_manifest}" "${observed_manifest}"' in run
+    assert 'gh release download "${TAG_NAME}" --dir "${observed_dir}"' in run
+    finalize_step = next(
+        step
+        for step in steps
+        if step.get("name")
+        == "Verify live GitHub Release assets and finalize result"
+    )
+    finalize_env = cast("dict[str, object]", finalize_step["env"])
+    assert finalize_env["RELEASE_EXISTED"] == "${{ env.RELEASE_EXISTED }}"
+
+
+def test_release_create_workflow_generates_github_release_asset_proofs() -> (
+    None
+):
+    """GitHub Release publishes must upload post-publish proof wrappers."""
+    workflow = _workflow_yaml("release-create-github-release.yml")
+    job = workflow["jobs"]["create-release"]
+    assert job["permissions"]["attestations"] == "read"
+    steps = cast("list[dict[str, object]]", job["steps"])
+    step_names = [cast("str", step["name"]) for step in steps]
+    mutation_index = step_names.index("Create or update tag + release + assets")
+    result_index = step_names.index("Upload GitHub Release result")
+    preflight_index = step_names.index(
+        "Verify GitHub Release asset attestations before mutation"
+    )
+    generate_index = step_names.index("Generate GitHub Release asset proofs")
+    upload_index = step_names.index("Upload GitHub Release asset proofs")
+    persist_index = step_names.index(
+        "Persist GitHub Release asset proofs on release"
+    )
+    finalize_index = step_names.index(
+        "Verify live GitHub Release assets and finalize result"
+    )
+    promote_index = step_names.index("Promote official GitHub Release")
+
+    assert preflight_index < mutation_index < generate_index
+    assert generate_index < upload_index < persist_index < finalize_index
+    assert finalize_index < result_index < promote_index
+    assert steps[promote_index]["if"] == "${{ inputs.prerelease == false }}"
+    preflight_run = cast("str", steps[preflight_index]["run"])
+    preflight_env = cast("dict[str, object]", steps[preflight_index]["env"])
     assert (
-        "ENABLED_EXTERNAL_OIDC_TARGETS: "
-        "${{ inputs.enabled-external-oidc-targets }}"
-    ) in gate_block
+        preflight_env["ATTESTATION_SOURCE_SHA"]
+        == "${{ inputs.attestation_source_sha }}"
+    )
+    assert "before GitHub Release mutation" in preflight_run
+    assert "workflow_release_control.py publish-request" in preflight_run
+    assert "workflow_release_control.py github-release-asset-attestations" in (
+        preflight_run
+    )
     assert (
-        '--enabled-external-oidc-targets "$ENABLED_EXTERNAL_OIDC_TARGETS" \\'
-        in gate_block
+        "actual-github-release-publish-node-ids-preflight.json" in preflight_run
+    )
+    assert '["publish-disposition"] == "publish"' in preflight_run
+    assert "done < <(jq -r '.[]' \"${publish_node_ids_file}\")" in preflight_run
+    assert '--attestation-source-sha "${ATTESTATION_SOURCE_SHA}"' in (
+        preflight_run
+    )
+    generate_run = cast("str", steps[generate_index]["run"])
+    generate_env = cast("dict[str, object]", steps[generate_index]["env"])
+    assert generate_env["GH_TOKEN"] == "${{ github.token }}"
+    assert generate_env["HEAD_SHA"] == "${{ inputs.attestation_source_sha }}"
+    assert generate_env["RELEASE_TARGET_SHA"] == "${{ inputs.target }}"
+    assert "workflow_release_control.py publish-request" in generate_run
+    assert "--github-release-asset-receipts" in generate_run
+    assert "--github-release-assets-dir" in generate_run
+    assert '--attestation-source-sha "${HEAD_SHA}"' in generate_run
+    assert "actual-github-release-publish-node-ids-proofs.json" in generate_run
+    assert '["publish-disposition"] == "publish"' in generate_run
+    assert "done < <(jq -r '.[]' \"${publish_node_ids_file}\")" in generate_run
+    assert "release-build-result-v1-" not in generate_run
+    assert (
+        "workflow_release_control.py github-release-asset-attestations"
+        in generate_run
+    )
+    assert "workflow_release_control.py generate-proofs" in generate_run
+    assert '"attestationSourceSha":$sourceSha' in generate_run
+    assert (
+        "GitHub Release publish completed without generated asset proof wrappers"
+        in generate_run
+    )
+    create_run = cast("str", steps[mutation_index]["run"])
+    assert (
+        "actual-github-release-publish-node-ids-observed-assets.json"
+        in create_run
+    )
+    assert '--slurpfile nodeIds "${observed_publish_node_ids_file}"' in (
+        create_run
+    )
+    assert (
+        "Actual GitHub Release publish node proof sidecar coverage includes assets outside the planned payload."
+        in (create_run)
+    )
+    finalize_run = cast("str", steps[finalize_index]["run"])
+    assert (
+        "actual-github-release-publish-node-ids-final-observed-assets.json"
+        in finalize_run
+    )
+    assert (
+        '--active-github-release-node-ids "${observed_publish_node_ids_file}"'
+        in (finalize_run)
+    )
+    assert (
+        "Actual GitHub Release publish node proof sidecar coverage includes assets outside the planned payload."
+        in (finalize_run)
+    )
+    upload_step = steps[upload_index]
+    assert upload_step["uses"] == "actions/upload-artifact@v7"
+    assert upload_step["with"]["name"] == "${{ env.PROOF_ARTIFACT_NAME }}"
+    assert upload_step["with"]["path"] == "${{ env.PROOF_DIR }}/*.json"
+    persist_run = cast("str", steps[persist_index]["run"])
+    assert (
+        'proof_files=("${PROOF_DIR}"/release-github-release-asset-proof-v1-*.json)'
+        in persist_run
+    )
+    assert (
+        'gh release upload "${TAG_NAME}" "${proof_files[@]}" --clobber'
+        in persist_run
+    )
+    finalize_run = cast("str", steps[finalize_index]["run"])
+    assert 'gh release download "${TAG_NAME}" --dir "${observed_dir}"' in (
+        finalize_run
+    )
+    assert "valid_observed_proof_sidecar()" in finalize_run
+    assert "current_observed_proof_sidecar()" in finalize_run
+    assert '--expected-plan-id "${current_plan_id}"' in finalize_run
+    assert '--expected-run-id "${RUN_ID}"' in finalize_run
+    assert '--expected-run-attempt "${RUN_ATTEMPT}"' in finalize_run
+    assert '--asset-manifest "${planned_manifest}"' in finalize_run
+    assert (
+        "GitHub Release observation did not find any valid persisted asset proof sidecars"
+        in (finalize_run)
+    )
+    assert "observed_valid_proof_sidecars" not in finalize_run
+    assert "record_valid_observed_proof_sidecar_coverage" in finalize_run
+    assert (
+        'diff -u "${expected_proof_sidecar_coverage}" '
+        '"${observed_valid_proof_sidecar_coverage}"' in finalize_run
+    )
+    assert (
+        "proof sidecar coverage does not exactly match active planned assets; "
+        "refusing result upload or promotion" in finalize_run
+    )
+    assert finalize_run.index(
+        'require_observed_proof_sidecar_coverage "Final"',
+    ) < finalize_run.index('> "${RESULT_JSON}"')
+    assert 'diff -u "${coverage_manifest}" "${observed_manifest}"' in (
+        finalize_run
+    )
+    assert '--rawfile assetsTsv "${observed_manifest}"' in finalize_run
+    assert '> "${RESULT_JSON}"' in finalize_run
+    promote_run = cast("str", steps[promote_index]["run"])
+    assert "verify_tag_at_expected_target" in promote_run
+    assert (
+        'gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" '
+        "-F prerelease=false" in promote_run
+    )
+    assert promote_run.index("verify_tag_at_expected_target") < (
+        promote_run.index("-F prerelease=false")
     )
 
 
-def test_orchestrator_always_uploads_entry_handoff() -> None:
-    """Report inputs include handoff artifact even for empty entry selectors."""
-    workflow = _workflow("release-orchestrate.yml")
-    write_block = _step_block(workflow, "Write entry publish handoff")
-    upload_block = _step_block(workflow, "Upload entry publish handoff")
+def test_release_create_finalization_requires_complete_sidecar_coverage() -> (
+    None
+):
+    """A partial multi-asset sidecar set must fail before result promotion."""
+    workflow = _workflow_yaml("release-create-github-release.yml")
+    steps = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", workflow["jobs"]["create-release"])["steps"],
+    )
+    step_names = [cast("str", step["name"]) for step in steps]
+    finalize_index = step_names.index(
+        "Verify live GitHub Release assets and finalize result",
+    )
+    result_index = step_names.index("Upload GitHub Release result")
+    promote_index = step_names.index("Promote official GitHub Release")
+    finalize_run = cast("str", steps[finalize_index]["run"])
 
-    assert "if:" not in write_block
-    assert "if:" not in upload_block
-    assert "entry-publish-handoff.json" in write_block
-    assert "entry-publish-handoff.json" in upload_block
+    assert finalize_index < result_index < promote_index
+    assert '($node["artifact-ids"] // []) as $artifactIds' in finalize_run
+    assert '($node.projection["asset-names-by-artifact-id"] // {})' in (
+        finalize_run
+    )
+    assert "| [$nodeId, $artifactId, $assetName]" in finalize_run
+    assert (
+        "publish_node_id=$(jq -r '.binding[\"publish-node-id\"]' "
+        '"${proof_path}")' in finalize_run
+    )
+    assert (
+        "Validated GitHub Release asset proof sidecar is missing binding "
+        "coverage." in finalize_run
+    )
+    assert (
+        "printf '%s\\t%s\\t%s\\n' \"${publish_node_id}\" "
+        '"${artifact_id}" "${asset_name}" '
+        '>> "${observed_valid_proof_sidecar_coverage}"' in finalize_run
+    )
+    assert (
+        'if current_observed_proof_sidecar "${name}" "${asset_path}"; then'
+        in finalize_run
+    )
+    assert "does not count toward current proof coverage" in finalize_run
+    assert (
+        'cut -f1 "${planned_manifest}" | sort -u '
+        '> "${planned_proof_sidecar_asset_names}"' in finalize_run
+    )
+    assert (
+        'cut -f3 "${expected_proof_sidecar_coverage}" | sort -u '
+        '> "${expected_proof_sidecar_asset_names}"' in finalize_run
+    )
+    assert (
+        'comm -13 "${planned_proof_sidecar_asset_names}" '
+        '"${expected_proof_sidecar_asset_names}"' in finalize_run
+    )
+    assert (
+        'diff -u "${expected_proof_sidecar_coverage}" '
+        '"${observed_valid_proof_sidecar_coverage}"' in finalize_run
+    )
+    assert finalize_run.index(
+        'diff -u "${expected_proof_sidecar_coverage}"',
+    ) < finalize_run.index('> "${RESULT_JSON}"')
+
+
+def test_release_create_finalization_requires_live_coverage_only_sidecars() -> (
+    None
+):
+    """Coverage-only skip-satisfied sidecars must be rechecked at finalization."""
+    workflow = _workflow_yaml("release-create-github-release.yml")
+    steps = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", workflow["jobs"]["create-release"])["steps"],
+    )
+    step_names = [cast("str", step["name"]) for step in steps]
+    finalize_index = step_names.index(
+        "Verify live GitHub Release assets and finalize result",
+    )
+    result_index = step_names.index("Upload GitHub Release result")
+    promote_index = step_names.index("Promote official GitHub Release")
+    finalize_run = cast("str", steps[finalize_index]["run"])
+
+    assert finalize_index < result_index < promote_index
+    assert (
+        'coverage_only_asset_names="${RUNNER_TEMP_DIR}/'
+        'final-coverage-only-asset-names.txt"' in finalize_run
+    )
+    assert (
+        'comm -23 "${coverage_manifest_names}" "${planned_asset_names_txt}" '
+        '> "${coverage_only_asset_names}"' in finalize_run
+    )
+    assert "require_coverage_only_proof_sidecars()" in finalize_run
+    assert (
+        'select($node != null and $node["publish-disposition"] == '
+        '"skip-satisfied")' in finalize_run
+    )
+    assert '--active-github-release-node-ids "${node_ids_file}"' in finalize_run
+    assert '--asset-manifest "${payload_manifest}"' in finalize_run
+    assert (
+        'if grep -Fxq "${asset_name}" "${coverage_only_asset_names}"; then'
+        in finalize_run
+    )
+    assert (
+        "coverage-only proof sidecars do not validate the skip-satisfied "
+        "planned assets; refusing result upload or promotion" in finalize_run
+    )
+    coverage_only_call_index = finalize_run.index(
+        'require_coverage_only_proof_sidecars "Final"',
+    )
+    current_proof_call_index = finalize_run.index(
+        'require_observed_proof_sidecar_coverage "Final"',
+    )
+    assert (
+        coverage_only_call_index
+        < current_proof_call_index
+        < finalize_run.index('> "${RESULT_JSON}"')
+    )
+
+
+def test_buddy_github_release_without_attestations_fails_before_mutation() -> (
+    None
+):
+    """Buddy GitHub Release paths fail before mutation while proofs need attestations."""
+    orchestrate = _workflow_yaml("release-orchestrate.yml")
+    prepare_steps = cast(
+        "list[dict[str, object]]",
+        orchestrate["jobs"]["prepare-release-plan"]["steps"],
+    )
+    prepare_names = [cast("str", step["name"]) for step in prepare_steps]
+    compute_index = prepare_names.index("Compute release plan outputs")
+    guard_index = prepare_names.index(
+        "Fail unsupported buddy GitHub Release proof mode"
+    )
+    handoff_index = prepare_names.index("Prepare entry publish handoff")
+    guard_step = prepare_steps[guard_index]
+
+    assert compute_index < guard_index < handoff_index
+    assert guard_step["if"] == (
+        "${{ inputs.channel == 'buddy' && !inputs.enable_attestation && "
+        "steps.outputs.outputs.has_active_github_release == 'true' }}"
+    )
+    guard_run = cast("str", guard_step["run"])
+    assert (
+        "GitHub Release asset proof generation requires verified GitHub attestations"
+        in guard_run
+    )
+    assert "Refusing before release mutation" in guard_run
+
+    release_callers = [
+        job
+        for job in cast("dict[str, object]", orchestrate["jobs"]).values()
+        if isinstance(job, dict)
+        and job.get("uses")
+        == "./.github/workflows/release-create-github-release.yml"
+    ]
+    assert release_callers
+    for release_caller in release_callers:
+        caller_with = cast("dict[str, object]", release_caller["with"])
+        assert caller_with["enable_attestation"] == (
+            "${{ inputs.enable_attestation }}"
+        )
+
+    create_workflow = _workflow_yaml("release-create-github-release.yml")
+    create_steps = cast(
+        "list[dict[str, object]]",
+        create_workflow["jobs"]["create-release"]["steps"],
+    )
+    create_names = [cast("str", step["name"]) for step in create_steps]
+    create_guard_index = create_names.index(
+        "Fail unsupported buddy GitHub Release proof mode"
+    )
+    mutation_index = create_names.index(
+        "Create or update tag + release + assets"
+    )
+    create_guard = create_steps[create_guard_index]
+
+    assert create_guard_index < mutation_index
+    create_on = cast(
+        "dict[str, object]",
+        create_workflow.get("on", create_workflow.get(True, {})),
+    )
+    create_inputs = cast(
+        "dict[str, dict[str, object]]",
+        cast("dict[str, object]", create_on["workflow_call"])["inputs"],
+    )
+    assert create_inputs["enable_attestation"]["type"] == "boolean"
+    assert create_guard["if"] == (
+        "${{ inputs.channel == 'buddy' && !inputs.enable_attestation }}"
+    )
+    create_guard_run = cast("str", create_guard["run"])
+    assert (
+        "GitHub Release asset proof generation requires verified GitHub attestations"
+        in create_guard_run
+    )
+    assert "Refusing before release mutation" in create_guard_run
+
+
+def test_release_create_workflow_runs_control_from_trusted_checkout() -> None:
+    """Control-plane helpers must execute from the workflow source checkout."""
+    workflow = _workflow_yaml("release-create-github-release.yml")
+    job = workflow["jobs"]["create-release"]
+    steps = cast("list[dict[str, object]]", job["steps"])
+
+    control_checkout = next(
+        step
+        for step in steps
+        if step.get("name") == "Checkout trusted control-plane"
+    )
+    target_checkout = next(
+        step
+        for step in steps
+        if step.get("name") == "Checkout release target data"
+    )
+    assert cast("dict[str, object]", control_checkout["with"]) == {
+        "fetch-depth": 0,
+        "persist-credentials": False,
+        "ref": "${{ inputs.attestation_source_sha }}",
+    }
+    assert cast("dict[str, object]", target_checkout["with"]) == {
+        "fetch-depth": 0,
+        "persist-credentials": False,
+        "ref": "${{ inputs.target }}",
+        "path": ".three-workflow-release/target",
+    }
+    for step in steps:
+        if "workflow_release_control.py" not in cast(
+            "str", step.get("run", "")
+        ):
+            continue
+        assert step.get("working-directory") != ".three-workflow-release/target"
+        assert "uv run python eng/scripts/workflow_release_control.py" in cast(
+            "str",
+            step["run"],
+        )
+
+    create_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Create or update tag + release + assets"
+    )
+    promote_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Promote official GitHub Release"
+    )
+    for step in (create_step, promote_step):
+        env = cast("dict[str, object]", step["env"])
+        run = cast("str", step["run"])
+        assert env["TARGET_CHECKOUT"] == (
+            "${{ github.workspace }}/.three-workflow-release/target"
+        )
+        assert (
+            "git -C \"${TARGET_CHECKOUT}\" rev-parse --verify 'HEAD^{commit}'"
+            in run
+        )
+        assert 'git rev-parse --verify "${TARGET}^{commit}"' not in run
+
+
+def test_release_create_workflow_stages_downloaded_assets_outside_target() -> (
+    None
+):
+    """Target checkout contents must not pre-seed GitHub Release assets."""
+    workflow = _workflow_yaml("release-create-github-release.yml")
+    job = workflow["jobs"]["create-release"]
+    steps = cast("list[dict[str, object]]", job["steps"])
+    normalize_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Normalize release payload"
+    )
+    create_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Create or update tag + release + assets"
+    )
+    normalize_run = cast("str", normalize_step["run"])
+    create_run = cast("str", create_step["run"])
+    normalize_env = cast("dict[str, object]", normalize_step["env"])
+
+    assert 'asset_dir="${RUNNER_TEMP_DIR}/release-assets"' in normalize_run
+    assert 'rm -rf "${asset_dir}"' in normalize_run
+    assert normalize_env["ASSET_NAMES_JSON"] == "${{ inputs.asset_names_json }}"
+    assert (
+        "asset_names_json must be a JSON array of non-empty asset basenames"
+        in (normalize_run)
+    )
+    assert "actual-publish-release-asset-names.json" in normalize_run
+    assert '["publish-disposition"] == "publish"' in normalize_run
+    assert "Actual GitHub Release publish asset" in normalize_run
+    assert 'cp -a "${src}/${name}" "${asset_dir}/"' in normalize_run
+    assert 'cp -a "${candidate}" "${asset_dir}/"' not in normalize_run
+    assert (
+        'receipt_file="${RUNNER_TEMP_DIR}/release-asset-receipts/'
+        'release-asset-receipts.json"' in normalize_run
+    )
+    assert "${src}/release-asset-receipts.json" not in normalize_run
+    assert "dist-embedded receipts are not authoritative" in normalize_run
+    assert (
+        "producer release asset receipts must be a non-empty array"
+        in normalize_run
+    )
+    assert (
+        'receipt_all_normalized="${RUNNER_TEMP_DIR}/producer-release-assets.json"'
+        in normalize_run
+    )
+    assert (
+        "Every staged GitHub Release asset must have a matching producer release asset receipt."
+        in normalize_run
+    )
+    assert (
+        "map(select(.name as $name | ($names[0] | index($name)) != null))"
+        in normalize_run
+    )
+    assert (
+        'echo "EXPECTED_COVERAGE_ASSET_RECEIPTS=${receipt_coverage_normalized}"'
+        in normalize_run
+    )
+    assert 'echo "ASSET_DIR=${asset_dir}"' in normalize_run
+    assert 'for f in "${ASSET_DIR}"/*; do' in create_run
+    assert 'for f in "${GITHUB_WORKSPACE}/out"/*; do' not in create_run
+
+
+def test_release_create_workflow_uses_actual_publish_assets_for_mutation() -> (
+    None
+):
+    """Skip-satisfied same-release assets are coverage-only, not mutation targets."""
+    workflow = _workflow_yaml("release-create-github-release.yml")
+    steps = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", workflow["jobs"]["create-release"])["steps"],
+    )
+    normalize_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Normalize release payload"
+    )
+    create_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Create or update tag + release + assets"
+    )
+    finalize_step = next(
+        step
+        for step in steps
+        if step.get("name")
+        == "Verify live GitHub Release assets and finalize result"
+    )
+    normalize_run = cast("str", normalize_step["run"])
+    create_run = cast("str", create_step["run"])
+    finalize_run = cast("str", finalize_step["run"])
+
+    assert "actual-publish-release-asset-names.json" in normalize_run
+    assert "expected-release-coverage-assets.json" in normalize_run
+    assert "Actual GitHub Release publish assets must be a subset" in (
+        normalize_run
+    )
+    assert (
+        "Actual GitHub Release publish asset '${name}' is missing from producer"
+        in normalize_run
+    )
+    assert (
+        "Every GitHub Release coverage asset must have a matching producer"
+        not in normalize_run
+    )
+    assert "Same-release skip-satisfied siblings" in normalize_run
+    assert "coverage-only and must not be mutated" in normalize_run
+
+    create_env = cast("dict[str, object]", create_step["env"])
+    assert (
+        create_env["EXPECTED_COVERAGE_ASSET_RECEIPTS"]
+        == "${{ env.EXPECTED_COVERAGE_ASSET_RECEIPTS }}"
+    )
+    assert (
+        'coverage_manifest="${RUNNER_TEMP_DIR}/planned-coverage-assets.tsv"'
+        in (create_run)
+    )
+    assert 'diff -u "${coverage_manifest}" "${existing_manifest}"' in (
+        create_run
+    )
+    assert 'diff -u "${coverage_manifest}" "${observed_manifest}"' in (
+        create_run
+    )
+    assert 'if [[ -z "${planned_line}" ||' not in create_run
+    assert "coverage_line=$(awk -F '\\t' -v n=\"${name}\"" in create_run
+    assert 'if [[ -z "${coverage_line}" ]]; then' in create_run
+    assert "Deleting changed mutable GitHub Release asset" in create_run
+    assert "Deleting extra authoritative GitHub Release asset" in create_run
+    assert "Deleting changed authoritative GitHub Release asset" in create_run
+    assert "Deleting stale or changed" not in create_run
+    assert 'gh release upload "${TAG_NAME}" "${create_upload_files[@]}"' in (
+        create_run
+    )
+    assert 'for f in "${FILES[@]}"; do' in create_run
+
+    assert (
+        'coverage_manifest="${RUNNER_TEMP_DIR}/planned-coverage-assets.tsv"'
+        in (finalize_run)
+    )
+    assert 'diff -u "${coverage_manifest}" "${observed_manifest}"' in (
+        finalize_run
+    )
+    assert '--asset-manifest "${planned_manifest}"' in finalize_run
+
+
+def test_release_create_normalize_allows_skip_satisfied_coverage_without_current_receipt(
+    tmp_path: Path,
+) -> None:
+    """Coverage-only skip-satisfied assets are not current producer inputs."""
+    workflow = _workflow_yaml("release-create-github-release.yml")
+    steps = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", workflow["jobs"]["create-release"])["steps"],
+    )
+    normalize_run = cast(
+        "str",
+        next(
+            step
+            for step in steps
+            if step.get("name") == "Normalize release payload"
+        )["run"],
+    )
+    plan = deepcopy(_load("release-plan.json"))
+    package_node_id, symbols_node_id = _split_fixture_github_release_nodes(plan)
+    nodes = cast(
+        "dict[str, Any]",
+        cast("dict[str, Any]", plan["graph"])["publish-nodes"],
+    )
+    package_node = cast("dict[str, Any]", nodes[package_node_id])
+    symbols_node = cast("dict[str, Any]", nodes[symbols_node_id])
+    package_node["publish-disposition"] = "publish"
+    package_node["publish-mode"] = "create-only"
+    symbols_node["publish-disposition"] = "skip-satisfied"
+    symbols_node.pop("publish-mode", None)
+
+    runner_temp = tmp_path / "runner"
+    notes_dir = runner_temp / "release-notes"
+    dist_dir = runner_temp / "release-dist" / "out"
+    receipts_dir = runner_temp / "release-asset-receipts"
+    plan_dir = runner_temp / "release-plan"
+    execution_sets_dir = runner_temp / "release-execution-sets"
+    for directory in (
+        notes_dir,
+        dist_dir,
+        receipts_dir,
+        plan_dir,
+        execution_sets_dir,
+    ):
+        directory.mkdir(parents=True)
+    (notes_dir / "release-notes.md").write_text(
+        "Release notes\n", encoding="utf-8"
+    )
+    actual_asset_name = "Example.1.2.3.nupkg"
+    coverage_only_asset_name = "Example.1.2.3.snupkg"
+    actual_payload = b"current package payload"
+    (dist_dir / actual_asset_name).write_bytes(actual_payload)
+    (receipts_dir / "release-asset-receipts.json").write_text(
+        json.dumps(
+            [
+                {
+                    "name": actual_asset_name,
+                    "size": len(actual_payload),
+                    "sha256": hashlib.sha256(actual_payload).hexdigest(),
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (plan_dir / "release-plan.json").write_text(
+        json.dumps(plan),
+        encoding="utf-8",
+    )
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    execution_sets["active-github-release-publish-node-ids"] = [
+        package_node_id,
+    ]
+    execution_sets["active-publish-node-ids"] = [package_node_id]
+    execution_sets["active-publish-selectors"] = {
+        "external-oidc-caller-workflow": [],
+        "external-oidc-entry-workflow": [],
+        "external-oidc-reusable-workflow": [],
+        "github-token": [package_node_id],
+    }
+    execution_sets["publish-intent-node-ids"] = [package_node_id]
+    execution_sets["selected-github-release-publish-node-ids"] = [
+        package_node_id,
+        symbols_node_id,
+    ]
+    execution_sets["skip-satisfied-publish-node-ids"] = [symbols_node_id]
+    (execution_sets_dir / "execution-sets.json").write_text(
+        json.dumps(execution_sets),
+        encoding="utf-8",
+    )
+    github_env = runner_temp / "github-env"
+
+    result = subprocess.run(
+        ["bash", "-c", normalize_run],
+        cwd=REPO_ROOT,
+        env={
+            **os.environ,
+            "ACTIVE_GITHUB_RELEASE_NODE_IDS_JSON": json.dumps(
+                [package_node_id, symbols_node_id]
+            ),
+            "ASSET_NAMES_JSON": json.dumps(
+                [actual_asset_name, coverage_only_asset_name]
+            ),
+            "DIST_ARTIFACT_NAME": "release-dist",
+            "EXECUTION_SETS_ARTIFACT_NAME": "release-execution-sets",
+            "GITHUB_ENV": str(github_env),
+            "NOTES_ARTIFACT_NAME": "release-notes",
+            "PLAN_ARTIFACT_NAME": "release-plan",
+            "RUNNER_TEMP_DIR": str(runner_temp),
+            "TAG_NAME": "release/example/v1.2.3",
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        runner_temp / "release-assets" / actual_asset_name
+    ).read_bytes() == (actual_payload)
+    assert not (
+        runner_temp / "release-assets" / coverage_only_asset_name
+    ).exists()
+    env_paths = dict(
+        line.split("=", 1)
+        for line in github_env.read_text(encoding="utf-8").splitlines()
+        if "=" in line
+    )
+    assert [
+        receipt["name"]
+        for receipt in json.loads(
+            Path(env_paths["EXPECTED_ASSET_RECEIPTS"]).read_text(
+                encoding="utf-8"
+            )
+        )
+    ] == [actual_asset_name]
+    assert [
+        receipt["name"]
+        for receipt in json.loads(
+            Path(env_paths["EXPECTED_COVERAGE_ASSET_RECEIPTS"]).read_text(
+                encoding="utf-8"
+            )
+        )
+    ] == [actual_asset_name]
+    assert json.loads(
+        (runner_temp / "planned-release-asset-names.json").read_text(
+            encoding="utf-8"
+        )
+    ) == [actual_asset_name, coverage_only_asset_name]
+
+
+def test_release_create_coverage_preflight_rejects_missing_skip_satisfied_sibling(
+    tmp_path: Path,
+) -> None:
+    """GitHub Release coverage preflight rejects incomplete same-release inputs."""
+    plan = deepcopy(_load("release-plan.json"))
+    execution_sets = deepcopy(_load("execution-sets.json"))
+    package_node_id, symbols_node_id = _split_fixture_github_release_nodes(plan)
+    nodes = cast(
+        "dict[str, Any]",
+        cast("dict[str, Any]", plan["graph"])["publish-nodes"],
+    )
+    package_node = cast("dict[str, Any]", nodes[package_node_id])
+    symbols_node = cast("dict[str, Any]", nodes[symbols_node_id])
+    package_node["publish-disposition"] = "publish"
+    package_node["publish-mode"] = "create-only"
+    symbols_node["publish-disposition"] = "skip-satisfied"
+    symbols_node.pop("publish-mode", None)
+    execution_sets["active-github-release-publish-node-ids"] = [
+        package_node_id,
+    ]
+    execution_sets["active-publish-node-ids"] = [package_node_id]
+    execution_sets["active-publish-selectors"] = {
+        "external-oidc-caller-workflow": [],
+        "external-oidc-entry-workflow": [],
+        "external-oidc-reusable-workflow": [],
+        "github-token": [package_node_id],
+    }
+    execution_sets["publish-intent-node-ids"] = [package_node_id]
+    execution_sets["selected-github-release-publish-node-ids"] = [
+        package_node_id,
+        symbols_node_id,
+    ]
+    execution_sets["skip-satisfied-publish-node-ids"] = [symbols_node_id]
+
+    plan_path = tmp_path / "release-plan.json"
+    execution_sets_path = tmp_path / "execution-sets.json"
+    node_ids_path = tmp_path / "active-node-ids.json"
+    asset_names_path = tmp_path / "asset-names.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    execution_sets_path.write_text(json.dumps(execution_sets), encoding="utf-8")
+    node_ids_path.write_text(json.dumps([package_node_id]), encoding="utf-8")
+    asset_names_path.write_text(
+        json.dumps(["Example.1.2.3.nupkg"]),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "validate-github-release-coverage",
+            "--plan",
+            str(plan_path),
+            "--execution-sets",
+            str(execution_sets_path),
+            "--tag",
+            "release/example/v1.2.3",
+            "--active-github-release-node-ids",
+            str(node_ids_path),
+            "--asset-names",
+            str(asset_names_path),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert (
+        "must exactly match complete same-release GitHub Release coverage"
+        in (result.stderr)
+    )
+    assert symbols_node_id in result.stderr
+
+    node_ids_path.write_text(
+        json.dumps([package_node_id, symbols_node_id]),
+        encoding="utf-8",
+    )
+    asset_names_path.write_text(
+        json.dumps(["Example.1.2.3.nupkg"]),
+        encoding="utf-8",
+    )
+    missing_asset_result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "validate-github-release-coverage",
+            "--plan",
+            str(plan_path),
+            "--execution-sets",
+            str(execution_sets_path),
+            "--tag",
+            "release/example/v1.2.3",
+            "--active-github-release-node-ids",
+            str(node_ids_path),
+            "--asset-names",
+            str(asset_names_path),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert missing_asset_result.returncode != 0
+    assert "missing coverage assets: Example.1.2.3.snupkg" in (
+        missing_asset_result.stderr
+    )
+
+    asset_names_path.write_text(
+        json.dumps(["Example.1.2.3.nupkg", "Example.1.2.3.snupkg"]),
+        encoding="utf-8",
+    )
+    complete_result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "validate-github-release-coverage",
+            "--plan",
+            str(plan_path),
+            "--execution-sets",
+            str(execution_sets_path),
+            "--tag",
+            "release/example/v1.2.3",
+            "--active-github-release-node-ids",
+            str(node_ids_path),
+            "--asset-names",
+            str(asset_names_path),
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert complete_result.returncode == 0, complete_result.stderr
+
+
+def test_release_create_workflow_runs_coverage_preflight_before_mutation() -> (
+    None
+):
+    """Release-create validates complete coverage before any GitHub mutation."""
+    workflow = _workflow_yaml("release-create-github-release.yml")
+    on_block = workflow.get("on", workflow.get(True))
+    inputs = cast("dict[str, object]", on_block)["workflow_call"]["inputs"]
+    job = workflow["jobs"]["create-release"]
+    steps = cast("list[dict[str, object]]", job["steps"])
+    step_names = [cast("str", step["name"]) for step in steps]
+    execution_sets_download_index = step_names.index(
+        "Download execution sets artifact for coverage authorization"
+    )
+    normalize_index = step_names.index("Normalize release payload")
+    create_index = step_names.index("Create or update tag + release + assets")
+    normalize_run = cast("str", steps[normalize_index]["run"])
+
+    assert "execution_sets_artifact_name" in inputs
+    assert execution_sets_download_index < normalize_index < create_index
+    assert steps[execution_sets_download_index]["with"]["name"] == (
+        "${{ inputs.execution_sets_artifact_name }}"
+    )
+    assert "downloaded planner execution-sets handoff evidence" in normalize_run
+    preflight_index = normalize_run.index("validate-github-release-coverage")
+    actual_assets_index = normalize_run.index(
+        "actual-publish-release-asset-names"
+    )
+    assert preflight_index < actual_assets_index
+    assert '--execution-sets "${execution_sets_path}"' in normalize_run
+    assert (
+        '--active-github-release-node-ids "${node_ids_file}"' in normalize_run
+    )
+    assert '--asset-names "${asset_names_file}"' in normalize_run
+
+
+def test_release_create_workflow_requires_independent_receipts_before_mutation() -> (
+    None
+):
+    """GitHub Release mutation must be authorized by independent producer receipts."""
+    workflow = _workflow_yaml("release-create-github-release.yml")
+    job = workflow["jobs"]["create-release"]
+    steps = cast("list[dict[str, object]]", job["steps"])
+    step_names = [cast("str", step["name"]) for step in steps]
+    receipt_download_index = step_names.index(
+        "Download producer release asset receipts"
+    )
+    dist_download_index = step_names.index("Download dist artifact")
+    plan_download_index = step_names.index(
+        "Download release plan artifact for mutation authorization"
+    )
+    normalize_index = step_names.index("Normalize release payload")
+    create_index = step_names.index("Create or update tag + release + assets")
+    receipt_download = steps[receipt_download_index]
+    normalize_run = cast("str", steps[normalize_index]["run"])
+    create_run = cast("str", steps[create_index]["run"])
+
+    assert (
+        dist_download_index
+        < receipt_download_index
+        < normalize_index
+        < create_index
+    )
+    assert plan_download_index < normalize_index
+    assert receipt_download["uses"] == "actions/download-artifact@v8"
+    assert receipt_download["with"]["name"] == (
+        "${{ inputs.dist_artifact_name }}-asset-receipts"
+    )
+    assert receipt_download["with"]["path"] == (
+        "${{ runner.temp }}/release-asset-receipts"
+    )
+    assert (
+        "Independent release asset receipt artifact "
+        "'${DIST_ARTIFACT_NAME}-asset-receipts' is required" in normalize_run
+    )
+    assert "downloaded planner release-plan handoff evidence" in normalize_run
+    assert (
+        "active_github_release_node_ids_json must be a non-empty JSON array"
+        in (normalize_run)
+    )
+    assert (
+        "Staged GitHub Release assets do not match build receipt names, sizes, "
+        "and SHA-256 digests" in create_run
+    )
+    receipt_diff_index = create_run.index('diff -u "${expected_manifest}"')
+    for mutation in (
+        'gh release upload "${TAG_NAME}"',
+        "gh api --method DELETE",
+        'gh release edit "${TAG_NAME}"',
+    ):
+        assert receipt_diff_index < create_run.index(mutation)
+
+
+def test_release_create_workflow_authorizes_create_only_before_mutation() -> (
+    None
+):
+    """Create-only GitHub Release mutation is also planner-bound."""
+    workflow = _workflow_yaml("release-create-github-release.yml")
+    steps = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", workflow["jobs"]["create-release"])["steps"],
+    )
+    create_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Create or update tag + release + assets"
+    )
+    run = cast("str", create_step["run"])
+
+    authorization_prefix = run.split(
+        "require_planner_authorized_publish() {",
+        1,
+    )[1].split('if [[ "${PUBLISH_MODE}" == "overwrite-mutable" ]]', 1)[0]
+    assert "return 0" not in authorization_prefix
+    assert "require_planner_authorized_publish" in run
+    assert (
+        "publish_mode=create-only requires planner-authorized active GitHub Release evidence"
+        in run
+    )
+    assert "def expected_profile:" in run
+    assert "$plannerProfile;" in run
+    assert 'if $prerelease == "true" then "prerelease"' in run
+    assert "and .envelope.profile == expected_profile" in run
+    assert 'and .envelope["commit-sha"] == $targetSha' in run
+    assert 'and $node["publish-mode"] == $publishMode' in run
+    assert (
+        "and (active_node_asset_names == ($expectedNames[0] | unique | sort))"
+        in run
+    )
+    assert (
+        "and (node_asset_names($node) == ($expectedNames[0] | sort))" not in run
+    )
+    assert run.index("require_planner_authorized_publish") < run.index(
+        'gh release create "${TAG_NAME}"'
+    )
+    assert (
+        "publish_mode=create-only proof-only recovery refuses metadata mutation"
+        in run
+    )
+    assert "proof_only_recovery=true" in run
+    assert (
+        "payload exactly matches the planner handoff; continuing with proof-only recovery"
+        in run
+    )
+    assert (
+        "publish_mode=create-only forbids existing-release mutation" not in run
+    )
+
+
+def test_release_create_authorization_allows_skip_satisfied_same_release_coverage() -> (
+    None
+):
+    """Skipped same-release siblings count for coverage but not mutation auth."""
+    workflow = _workflow_yaml("release-create-github-release.yml")
+    steps = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", workflow["jobs"]["create-release"])["steps"],
+    )
+    create_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Create or update tag + release + assets"
+    )
+    run = cast("str", create_step["run"])
+
+    assert "def active_publish_node_ok($node):" in run
+    assert "def coverage_node_ok($node):" in run
+    assert (
+        'and ($node["publish-disposition"] == "publish" or '
+        '$node["publish-disposition"] == "skip-satisfied")'
+    ) in run
+    assert (
+        'if $node["publish-disposition"] == "publish" then '
+        "active_publish_node_ok($node) else true end"
+    ) in run
+    assert run.index("def active_publish_node_ok") < run.index(
+        "def coverage_node_ok"
+    )
+    active_nodeids_index = run.index("and any($nodeIds[0][]; . as $nodeId |")
+    all_nodeids_index = run.index("and all($nodeIds[0][]; . as $nodeId |")
+    assert active_nodeids_index < all_nodeids_index
+    assert (
+        run.find("active_publish_node_ok($node)", active_nodeids_index)
+        > active_nodeids_index
+    )
+    assert '($plan.graph["publish-nodes"][$nodeId] // null) as $node |' in run
+    assert (
+        run.find("coverage_node_ok($node)", all_nodeids_index)
+        > all_nodeids_index
+    )
+
+
+def test_release_create_authorization_accepts_mixed_publish_and_skip_satisfied_nodes() -> (
+    None
+):
+    """Mixed publish and skip-satisfied same-release coverage authorizes mutation."""
+    plan = deepcopy(_load("release-plan.json"))
+    package_node_id, symbols_node_id = _split_fixture_github_release_nodes(plan)
+    nodes = cast(
+        "dict[str, Any]",
+        cast("dict[str, Any]", plan["graph"])["publish-nodes"],
+    )
+    package_node = cast("dict[str, Any]", nodes[package_node_id])
+    symbols_node = cast("dict[str, Any]", nodes[symbols_node_id])
+    package_node["publish-disposition"] = "skip-satisfied"
+    package_node.pop("publish-mode", None)
+    symbols_node["publish-disposition"] = "publish"
+    symbols_node["publish-mode"] = "create-only"
+    scratch = SCRATCH / "release-create-authz-mixed"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        result = _run_release_create_authorization_jq(
+            plan=plan,
+            node_ids=[package_node_id, symbols_node_id],
+            scratch=scratch,
+        )
+
+        assert result.returncode == 0, result.stderr
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_release_create_authorization_accepts_non_empty_asset_labels() -> None:
+    """GitHub Release authorization binds planned non-empty asset labels."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = cast(
+        "dict[str, Any]",
+        cast("dict[str, Any]", plan["graph"])["publish-nodes"][
+            "publish-node/gh"
+        ],
+    )
+    projection = cast("dict[str, Any]", node["projection"])
+    projection["asset-labels-by-artifact-id"] = {
+        "artifact/package": "Package",
+        "artifact/symbols": "Symbols",
+    }
+    scratch = SCRATCH / "release-create-authz-labels"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        result = _run_release_create_authorization_jq(
+            plan=plan,
+            node_ids=["publish-node/gh"],
+            scratch=scratch,
+        )
+
+        assert result.returncode == 0, result.stderr
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_release_create_authorization_rejects_mismatched_asset_labels() -> None:
+    """GitHub Release authorization rejects labels that differ from the plan."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = cast(
+        "dict[str, Any]",
+        cast("dict[str, Any]", plan["graph"])["publish-nodes"][
+            "publish-node/gh"
+        ],
+    )
+    projection = cast("dict[str, Any]", node["projection"])
+    projection["asset-labels-by-artifact-id"] = {
+        "artifact/package": "Package",
+        "artifact/symbols": "Symbols",
+    }
+    scratch = SCRATCH / "release-create-authz-label-mismatch"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        result = _run_release_create_authorization_jq(
+            plan=plan,
+            node_ids=["publish-node/gh"],
+            scratch=scratch,
+            expected_asset_labels={
+                "Example.1.2.3.nupkg": "Package",
+                "Example.1.2.3.snupkg": "Wrong symbols label",
+            },
+        )
+
+        assert result.returncode != 0
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_release_create_authorization_rejects_skip_only_node_ids() -> None:
+    """Skip-satisfied coverage alone cannot authorize GitHub Release mutation."""
+    plan = deepcopy(_load("release-plan.json"))
+    node = cast(
+        "dict[str, Any]",
+        cast("dict[str, Any]", plan["graph"])["publish-nodes"][
+            "publish-node/gh"
+        ],
+    )
+    node["publish-disposition"] = "skip-satisfied"
+    node.pop("publish-mode", None)
+    scratch = SCRATCH / "release-create-authz-skip-only"
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        result = _run_release_create_authorization_jq(
+            plan=plan,
+            node_ids=["publish-node/gh"],
+            scratch=scratch,
+        )
+
+        assert result.returncode != 0
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_release_create_workflow_create_only_recovery_skips_payload_mutation() -> (
+    None
+):
+    """Create-only recovery continues only after exact payload diff succeeds."""
+    workflow = _workflow_yaml("release-create-github-release.yml")
+    steps = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", workflow["jobs"]["create-release"])["steps"],
+    )
+    create_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Create or update tag + release + assets"
+    )
+    run = cast("str", create_step["run"])
+
+    assert "proof_only_recovery=false" in run
+    exact_diff_index = run.index('diff -u "${coverage_manifest}"')
+    recovery_index = run.index("proof_only_recovery=true")
+    assert exact_diff_index < recovery_index
+    assert "--jq '.[] | select((.name | test(" not in run
+    assert (
+        "--jq '.[] | [.name, .id, ((.label // \"\") | @base64)] | @tsv'" in run
+    )
+    assert "valid_existing_proof_sidecar()" in run
+    assert "validate-github-release-asset-proof-sidecar" in run
+    assert '--name "${name}"' in run
+    assert '--proof "${proof_path}"' in run
+    assert '--plan "${release_plan_path}"' in run
+    assert '--release-target-sha "${target_sha}"' in run
+    assert '--active-github-release-node-ids "${existing_node_ids_file}"' in run
+    assert '--repository "${GITHUB_REPOSITORY}"' in run
+    assert '--tag "${TAG_NAME}"' in run
+    assert '--slurpfile receipts "${EXPECTED_ASSET_RECEIPTS}"' not in run
+    assert "Ignoring validated GitHub Release asset proof sidecar" in run
+    assert (
+        'if is_github_release_asset_proof_sidecar_name "${name}" '
+        '&& valid_existing_proof_sidecar "${name}" "${asset_path}"; then' in run
+    )
+    assert run.index(
+        'if [[ "${proof_only_recovery}" == "true" ]]; then'
+    ) < run.index('gh release edit "${TAG_NAME}"')
+    assert (
+        "Skipping existing GitHub Release metadata mutation during create-only "
+        "proof-only recovery." in run
+    )
+    assert "prerelease pending GitHub Release proof sidecar finalization" in run
+    assert "-F prerelease=" not in run
+
+
+def test_report_accepts_custom_profile_and_completion_check_failure() -> None:
+    """Report generation accepts custom channels and surfaces sentinel failure."""
+    plan = _load("release-plan.json")
+    execution_sets = _load("execution-sets.json")
+    plan_id = plan["envelope"]["plan-id"]
+    report_path = SCRATCH / "custom-release-report.json"
+    artifacts_root = SCRATCH / "custom-release-artifacts"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    try:
+        SCRATCH.mkdir()
+        plan_path = SCRATCH / "release-plan.json"
+        execution_sets_path = SCRATCH / "execution-sets.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        execution_sets_path.write_text(
+            json.dumps(execution_sets), encoding="utf-8"
+        )
+
+        plan_name = artifact_name(
+            "plan",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        execution_sets_name = artifact_name(
+            "execution-sets",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        handoff_name = artifact_name(
+            "entry-publish-handoff",
+            ArtifactNameInputs(123, 4, plan_id=plan_id),
+        )
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        assert prepare_names == {
+            "plan_artifact_name": plan_name,
+            "execution_sets_artifact_name": execution_sets_name,
+            "entry_publish_handoff_artifact_name": handoff_name,
+        }
+
+        result = control._cmd_report(
+            control.argparse.Namespace(
+                repository="hcoona/three",
+                workflow="release-orchestrate.yml",
+                run_id=123,
+                attempt=4,
+                head_sha=SHA_B,
+                profile="custom",
+                dry_run="false",
+                validation_build="false",
+                canary_override_non_public_ref="false",
+                out=str(report_path),
+                plan=str(plan_path),
+                execution_sets=str(execution_sets_path),
+                **_report_prepare_artifact_args(prepare_names),
+                diagnostics="",
+                artifacts_root=str(artifacts_root),
+                authorize_conclusion="success",
+                validate_conclusion="success",
+                metadata_conclusion="success",
+                plan_conclusion="success",
+                build_conclusion="success",
+                tag_conclusion="success",
+                release_completed_check_conclusion="failure",
+                publish_conclusion="success",
+            )
+        )
+
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        validate_contract(report)
+        assert result == 0
+        assert report["run"]["profile"] == "custom"
+        assert report["run"]["conclusion"] == "failure"
+        assert report["jobs"]["release-completed-check"]["conclusion"] == (
+            "failure"
+        )
+        assert report["artifacts"]["plan-artifact-name"] == plan_name
+        assert report["artifacts"]["execution-sets-artifact-name"] == (
+            execution_sets_name
+        )
+        assert report["artifacts"]["entry-publish-handoff-artifact-name"] == (
+            handoff_name
+        )
+        assert report["artifacts"]["github-release-result-artifact-names"] == []
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+@pytest.mark.parametrize("publish_conclusion", ["cancelled", "skipped"])
+def test_report_completion_check_failure_lists_missing_github_release_receipts(
+    publish_conclusion: str,
+) -> None:
+    """Missing GitHub Release receipts stay visible when publish is not run."""
+    plan = _load("release-plan.json")
+    execution_sets = _load("execution-sets.json")
+    plan_id = plan["envelope"]["plan-id"]
+    report_path = SCRATCH / f"missing-gh-release-{publish_conclusion}.json"
+    artifacts_root = SCRATCH / f"missing-gh-release-{publish_conclusion}"
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    try:
+        SCRATCH.mkdir()
+        plan_path = SCRATCH / "release-plan.json"
+        execution_sets_path = SCRATCH / "execution-sets.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        execution_sets_path.write_text(
+            json.dumps(execution_sets), encoding="utf-8"
+        )
+
+        prepare_names = _write_prepare_artifacts(
+            artifacts_root,
+            plan,
+            execution_sets,
+        )
+        _write_skip_result_artifacts(
+            artifacts_root,
+            plan,
+            cast(
+                "Sequence[str]",
+                execution_sets["skip-satisfied-publish-node-ids"],
+            ),
+        )
+
+        result = control._cmd_report(
+            control.argparse.Namespace(
+                repository="hcoona/three",
+                workflow="release-orchestrate.yml",
+                run_id=123,
+                attempt=4,
+                head_sha=SHA_B,
+                profile="official",
+                dry_run="false",
+                validation_build="false",
+                canary_override_non_public_ref="false",
+                out=str(report_path),
+                plan=str(plan_path),
+                execution_sets=str(execution_sets_path),
+                **_report_prepare_artifact_args(prepare_names),
+                diagnostics="",
+                artifacts_root=str(artifacts_root),
+                authorize_conclusion="success",
+                validate_conclusion="success",
+                metadata_conclusion="success",
+                plan_conclusion="success",
+                build_conclusion="success",
+                tag_conclusion="success",
+                release_completed_check_conclusion="failure",
+                publish_conclusion=publish_conclusion,
+            )
+        )
+
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        validate_contract(report)
+        assert result == 0
+        assert report["run"]["conclusion"] == "failure"
+        assert report["jobs"]["publish"]["conclusion"] == publish_conclusion
+        assert report["jobs"]["publish"]["failed-publish-node-ids"] == [
+            "publish-node/gh"
+        ]
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
 
 
 def _ci_validation_push_request(
@@ -11100,6 +28808,16 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
             "planned-capabilities": ["lint", "type-check"],
         },
     }
+    metadata_tooling_group = {
+        "work-group-id": "wg-metadata-tooling",
+        "kind": "workflow-release-tooling",
+        "coverage-target": {
+            "type": "tooling-surface",
+            "id": "fact-provider",
+        },
+        "runner-family": "ubuntu",
+        "depends-on": [],
+    }
 
     dotnet_commands = control._ci_validation_commands(plan, dotnet_group)
     fallback_commands = control._ci_validation_commands({}, dotnet_group)
@@ -11107,6 +28825,10 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
     release_commands = control._ci_validation_commands(plan, release_group)
     ruby_commands = control._ci_validation_commands(plan, ruby_group)
     python_commands = control._ci_validation_commands(plan, python_group)
+    metadata_tooling_commands = control._ci_validation_commands(
+        plan,
+        metadata_tooling_group,
+    )
 
     assert ["dotnet", "build", "src/public/lib/CircularList"] in [
         command["argv"] for command in dotnet_commands
@@ -11200,6 +28922,32 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
         "--summary=none",
         "--output-format=min-text",
     ] in [command["argv"] for command in python_commands]
+    metadata_path = "src/public/lib/three-workflow-release-metadata"
+    assert [
+        "uv",
+        "run",
+        "pytest",
+        metadata_path,
+    ] in [command["argv"] for command in metadata_tooling_commands]
+    assert [
+        "uv",
+        "run",
+        "ruff",
+        "check",
+        "--force-exclude",
+        metadata_path,
+    ] in [command["argv"] for command in metadata_tooling_commands]
+    assert any(
+        command["capability"] == "type-check"
+        and command["argv"][3] == metadata_path
+        and command["argv"][10] == metadata_path
+        for command in metadata_tooling_commands
+    )
+    assert all(
+        "three-workflow-release-planner" not in str(argument)
+        for command in metadata_tooling_commands
+        for argument in command["argv"]
+    )
     assert any(
         command["capability"] == "build"
         and command["argv"] == ["dotnet", "tool", "restore"]
@@ -13025,447 +30773,6 @@ def test_download_ci_validation_records_enumeration_failure(
     assert observation["namespace-enumeration"] == "unavailable"
 
 
-def test_skip_only_tag_verification_is_read_only_without_environment() -> None:
-    """Skip-only tag verification must not request write scope."""
-    workflow = _workflow("release-orchestrate.yml")
-    verify_block_start = workflow.index("  verify-tag-without-environment:\n")
-    next_job = workflow.index("\n  skip-results:\n", verify_block_start)
-    verify_block = workflow[verify_block_start:next_job]
-    active_block_start = workflow.index("  ensure-tag-without-environment:\n")
-    active_block = workflow[active_block_start:verify_block_start]
-
-    assert "has-active-github-release != 'true'" in verify_block
-    assert "inputs.dry-run == false" in verify_block
-    assert "      contents: read\n" in verify_block
-    assert "      contents: write\n" not in verify_block
-    assert "has-active-github-release == 'true'" in active_block
-    assert "inputs.dry-run == false" in active_block
-    assert "      contents: write\n" in active_block
-
-
-def test_live_planner_observes_remote_publications_before_final_plan() -> None:
-    """Live planning observes remotes before final plan."""
-    workflow = _workflow("release-orchestrate.yml")
-    run_block = _step_block(workflow, "Run planner")
-    gate_block = _step_block(workflow, "Apply live external OIDC gate")
-
-    bootstrap = run_block.index("bootstrap-release-plan.json")
-    observe = run_block.index("observe-remote-publications")
-    final = run_block.rindex("--remote-observations")
-    assert bootstrap < observe < final
-    assert "GH_TOKEN: ${{ github.token }}" in run_block
-    assert (
-        "ENABLED_EXTERNAL_OIDC_TARGETS: "
-        "${{ inputs.enabled-external-oidc-targets }}" in run_block
-    )
-    assert (
-        "RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF: "
-        "${{ inputs.canary-override-non-public-ref }}" in run_block
-    )
-    assert "RELEASE_ENVIRONMENT: ${{ inputs.release-environment }}" in run_block
-    plan_job_start = workflow.index("  plan:\n")
-    plan_steps_start = workflow.index("    steps:\n", plan_job_start)
-    plan_header = workflow[plan_job_start:plan_steps_start]
-    assert "      packages: read\n" in plan_header
-    assert "if [ \"$RELEASE_DRY_RUN\" != 'true' ]; then" in run_block
-    assert "--dry-run" in run_block[:observe]
-    assert (
-        "--execution-sets "
-        ".three-workflow-release/plan/bootstrap-execution-sets.json"
-        in run_block
-    )
-    assert (
-        '--enabled-external-oidc-targets "$ENABLED_EXTERNAL_OIDC_TARGETS"'
-        in run_block
-    )
-    assert (
-        "--canary-override-non-public-ref "
-        '"$RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF"' in run_block
-    )
-    assert '--release-environment "$RELEASE_ENVIRONMENT"' in run_block
-    assert ".three-workflow-release/plan/remote-observations.json" in run_block
-    assert (
-        "--remote-observations "
-        ".three-workflow-release/plan/remote-observations.json" in gate_block
-    )
-
-
-def test_reusable_publish_jobs_use_topology_scoped_permissions() -> None:
-    """Reusable publish permissions stay scoped.
-
-    Reusable workflow callers grant the required superset for GitHub validation.
-    """
-    publish = yaml.safe_load(_workflow("release-publish-node.yml"))
-    orchestrate = yaml.safe_load(_workflow("release-orchestrate.yml"))
-
-    github_release_permissions = {
-        "contents": "write",
-        "actions": "read",
-        "id-token": "write",
-        "attestations": "write",
-    }
-    github_packages_permissions = {
-        "contents": "read",
-        "packages": "write",
-        "actions": "read",
-    }
-    external_oidc_permissions = {
-        "contents": "read",
-        "actions": "read",
-        "id-token": "write",
-    }
-    expected_publish_permissions = {
-        "publish-github-release-with-environment": github_release_permissions,
-        "publish-github-release-without-environment": (
-            github_release_permissions
-        ),
-        "publish-github-packages-with-environment": github_packages_permissions,
-        "publish-github-packages-without-environment": (
-            github_packages_permissions
-        ),
-        "publish-external-oidc-with-environment": external_oidc_permissions,
-        "publish-external-oidc-without-environment": external_oidc_permissions,
-    }
-
-    for job_id, permissions in expected_publish_permissions.items():
-        assert publish["jobs"][job_id]["permissions"] == permissions
-        granted = set(permissions)
-        if "github-packages" in job_id:
-            assert "id-token" not in granted
-            assert "attestations" not in granted
-            assert all(
-                step.get("uses") != "actions/attest@v4"
-                for step in publish["jobs"][job_id]["steps"]
-            )
-        if "github-release" in job_id:
-            assert "packages" not in granted
-            assert any(
-                step.get("uses") == "actions/attest@v4"
-                for step in publish["jobs"][job_id]["steps"]
-            )
-        if "external-oidc" in job_id:
-            assert "packages" not in granted
-            assert "attestations" not in granted
-            assert all(
-                step.get("uses") != "actions/attest@v4"
-                for step in publish["jobs"][job_id]["steps"]
-            )
-
-    reusable_caller_permissions = {
-        "contents": "write",
-        "packages": "write",
-        "actions": "read",
-        "id-token": "write",
-        "attestations": "write",
-    }
-    expected_orchestrator_permissions = {
-        "publish-reusable-github-release": reusable_caller_permissions,
-        "publish-reusable-github-packages": reusable_caller_permissions,
-        "publish-reusable-external-oidc": reusable_caller_permissions,
-    }
-    for job_id, permissions in expected_orchestrator_permissions.items():
-        job = orchestrate["jobs"][job_id]
-        assert job["permissions"] == permissions
-        assert job["with"]["permission-class"] in {
-            "github-release",
-            "github-packages",
-            "external-oidc",
-        }
-
-
-def test_write_scoped_checkout_steps_do_not_persist_credentials() -> None:
-    """Jobs with write-capable tokens must not leave checkout credentials."""
-    publish = yaml.safe_load(_workflow("release-publish-node.yml"))
-    orchestrate = yaml.safe_load(_workflow("release-orchestrate.yml"))
-
-    expected_jobs = {
-        "release-publish-node.yml": (
-            publish,
-            (
-                "publish-github-release-with-environment",
-                "publish-github-release-without-environment",
-                "publish-github-packages-with-environment",
-                "publish-github-packages-without-environment",
-            ),
-        ),
-        "release-orchestrate.yml": (
-            orchestrate,
-            (
-                "ensure-tag-with-environment",
-                "ensure-tag-without-environment",
-            ),
-        ),
-    }
-
-    for workflow_name, (workflow, job_ids) in expected_jobs.items():
-        for job_id in job_ids:
-            checkout_steps = [
-                step
-                for step in workflow["jobs"][job_id]["steps"]
-                if step.get("uses") == "actions/checkout@v6"
-            ]
-            assert len(checkout_steps) == 1, (workflow_name, job_id)
-            assert checkout_steps[0]["with"]["persist-credentials"] is False, (
-                workflow_name,
-                job_id,
-            )
-
-
-def test_hidden_release_artifact_uploads_are_included() -> None:
-    """upload-artifact must include dot-prefixed release work directories."""
-    for workflow_path in _release_workflow_paths():
-        workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
-        for job_id, job in workflow["jobs"].items():
-            for step_index, step in enumerate(job.get("steps", ())):
-                if step.get("uses") != "actions/upload-artifact@v7":
-                    continue
-                with_inputs = step.get("with", {})
-                path = str(with_inputs.get("path", ""))
-                if path.startswith(".three-workflow-release/"):
-                    assert with_inputs.get("include-hidden-files") is True, (
-                        workflow_path.name,
-                        job_id,
-                        step_index,
-                        step.get("name"),
-                    )
-
-
-def test_buddy_entry_external_oidc_publish_permissions_are_minimal() -> None:
-    """Entry-hosted OIDC publish should not grant unrelated writes."""
-    for workflow_name in ("official.yml", "buddy.yml"):
-        workflow = yaml.safe_load(_workflow(workflow_name))
-
-        assert workflow["jobs"]["publish-entry"]["permissions"] == {
-            "contents": "read",
-            "actions": "read",
-            "id-token": "write",
-        }
-
-
-def test_entry_publish_gate_ignores_reusable_publish_result() -> None:
-    """Entry-hosted publish can proceed after reusable publish fails."""
-    for workflow_name in ("official.yml", "buddy.yml"):
-        workflow = yaml.safe_load(_workflow(workflow_name))
-        gate = workflow["jobs"]["publish-entry"]["if"]
-
-        assert "needs.orchestrate.result == 'success'" not in gate
-        assert "needs.orchestrate.outputs.entry-publish-node-ids != ''" in gate
-        assert (
-            "needs.orchestrate.outputs.entry-publish-node-ids != '[]'" in gate
-        )
-        assert "needs.orchestrate.outputs.plan-artifact-name != ''" in gate
-        assert (
-            "needs.orchestrate.outputs."
-            "entry-publish-handoff-artifact-name != ''" in gate
-        )
-        assert (
-            "needs.orchestrate.outputs.validate-conclusion == 'success'" in gate
-        )
-        assert "needs.orchestrate.outputs.plan-conclusion == 'success'" in gate
-        assert "needs.orchestrate.outputs.build-conclusion == 'success'" in gate
-        assert "needs.orchestrate.outputs.build-conclusion == 'skipped'" in gate
-        assert "needs.orchestrate.outputs.tag-conclusion == 'success'" in gate
-        assert "needs.orchestrate.outputs.tag-conclusion == 'skipped'" in gate
-
-
-def test_buddy_entry_publish_is_dry_run_gated() -> None:
-    """Buddy entry-hosted publish must never run during dry-run."""
-    workflow = yaml.safe_load(_workflow("buddy.yml"))
-    gate = workflow["jobs"]["publish-entry"]["if"]
-
-    assert "inputs.dry-run == false" in gate
-    assert gate.startswith("${{ inputs.dry-run == false && always() && ")
-
-
-def test_reusable_publish_jobs_are_dry_run_gated() -> None:
-    """Reusable publish jobs must never run during dry-run."""
-    workflow = yaml.safe_load(_workflow("release-orchestrate.yml"))
-
-    for job_id in (
-        "publish-reusable-github-release",
-        "publish-reusable-github-packages",
-        "publish-reusable-external-oidc",
-    ):
-        gate = workflow["jobs"][job_id]["if"]
-        assert "inputs.dry-run == false" in gate, job_id
-        assert gate.startswith("${{ inputs.dry-run == false && always() && "), (
-            job_id
-        )
-
-
-def test_reusable_build_caller_grants_artifact_download_permission() -> None:
-    """Build reusable workflow needs caller-granted artifact read permission."""
-    workflow = yaml.safe_load(_workflow("release-orchestrate.yml"))
-
-    assert workflow["jobs"]["build"]["permissions"] == {
-        "contents": "read",
-        "actions": "read",
-    }
-
-
-def test_orchestrator_exposes_reusable_publish_conclusion() -> None:
-    """Reusable publish result is summarized for entry workflow reports."""
-    workflow_text = _workflow("release-orchestrate.yml")
-    workflow = yaml.safe_load(workflow_text)
-    job = workflow["jobs"]["publish-reusable-conclusion"]
-
-    assert (
-        "publish-conclusion:\n"
-        "        value: ${{ "
-        "jobs.publish-reusable-conclusion.outputs.publish-conclusion }}"
-        in workflow_text
-    )
-    assert job["needs"] == [
-        "publish-reusable-github-release",
-        "publish-reusable-github-packages",
-        "publish-reusable-external-oidc",
-    ]
-    assert job["permissions"] == {}
-    combine_step = job["steps"][0]
-    assert combine_step["env"]["GITHUB_RELEASE_RESULT"] == (
-        "${{ needs.publish-reusable-github-release.result }}"
-    )
-    assert combine_step["env"]["GITHUB_PACKAGES_RESULT"] == (
-        "${{ needs.publish-reusable-github-packages.result }}"
-    )
-    assert combine_step["env"]["EXTERNAL_OIDC_RESULT"] == (
-        "${{ needs.publish-reusable-external-oidc.result }}"
-    )
-    assert "publish_conclusion=success" in combine_step["run"]
-    assert "publish_conclusion=failure" in combine_step["run"]
-    assert "publish_conclusion=cancelled" in combine_step["run"]
-
-
-def test_orchestrator_exposes_internal_stage_conclusions() -> None:
-    """Entry reports need actual internal orchestration stage outcomes."""
-    workflow_text = _workflow("release-orchestrate.yml")
-    workflow = yaml.safe_load(workflow_text)
-    job = workflow["jobs"]["stage-conclusions"]
-
-    for output_name in (
-        "validate-conclusion",
-        "metadata-conclusion",
-        "plan-conclusion",
-        "build-conclusion",
-        "tag-conclusion",
-    ):
-        assert f"      {output_name}:\n" in workflow_text
-        assert f"jobs.stage-conclusions.outputs.{output_name}" in workflow_text
-
-    assert job["needs"] == [
-        "validate-authoring",
-        "dotnet-metadata",
-        "plan",
-        "build",
-        "ensure-tag-with-environment",
-        "ensure-tag-without-environment",
-        "verify-tag-without-environment",
-    ]
-    assert job["permissions"] == {}
-    step = job["steps"][0]
-    assert step["env"]["VALIDATE_RESULT"] == (
-        "${{ needs.validate-authoring.result }}"
-    )
-    assert step["env"]["METADATA_RESULT"] == (
-        "${{ needs.dotnet-metadata.result }}"
-    )
-    assert step["env"]["BUILD_RESULT"] == "${{ needs.build.result }}"
-    assert "result=skipped" in step["run"]
-    assert "result=failure" in step["run"]
-    assert "result=cancelled" in step["run"]
-    assert "result=success" in step["run"]
-
-
-def test_entry_reports_use_orchestrator_stage_conclusion_outputs() -> None:
-    """Final reports must not collapse all internal stages to call result."""
-    for workflow_name in ("official.yml", "buddy.yml"):
-        workflow = _workflow(workflow_name)
-        render_block = _step_block(workflow, "Render report")
-
-        for stage in ("validate", "metadata", "plan", "build", "tag"):
-            env_name = f"RELEASE_{stage.upper()}_CONCLUSION"
-            assert (
-                f"{env_name}: "
-                f"${{{{ needs.orchestrate.outputs.{stage}-conclusion }}}}"
-                in render_block
-            )
-            assert f'{stage}_conclusion="${{{env_name}:-skipped}}"' in (
-                render_block
-            )
-            assert f'--{stage}-conclusion "${stage}_conclusion" \\' in (
-                render_block
-            )
-        assert (
-            "--validate-conclusion '${{ needs.orchestrate.result }}'"
-            not in render_block
-        )
-
-
-def test_entry_reports_combine_reusable_and_entry_publish_conclusions() -> None:
-    """Final reports aggregate reusable-hosted and entry-hosted publishes."""
-    for workflow_name in ("official.yml", "buddy.yml"):
-        workflow = _workflow(workflow_name)
-        render_block = _step_block(workflow, "Render report")
-
-        assert (
-            "RELEASE_REUSABLE_PUBLISH_CONCLUSION: "
-            "${{ needs.orchestrate.outputs.publish-conclusion }}"
-            in render_block
-        )
-        assert (
-            "RELEASE_ENTRY_PUBLISH_CONCLUSION: "
-            "${{ needs.publish-entry.result }}" in render_block
-        )
-        assert (
-            'reusable_publish_conclusion="${'
-            'RELEASE_REUSABLE_PUBLISH_CONCLUSION:-skipped}"' in render_block
-        )
-        assert (
-            'entry_publish_conclusion="${'
-            'RELEASE_ENTRY_PUBLISH_CONCLUSION:-skipped}"' in render_block
-        )
-        assert (
-            'for conclusion in "$reusable_publish_conclusion" '
-            '"$entry_publish_conclusion"; do' in render_block
-        )
-        assert '--publish-conclusion "$publish_conclusion" \\' in render_block
-        assert (
-            "--publish-conclusion '${{ needs.publish-entry.result }}'"
-            not in render_block
-        )
-
-
-def test_entry_workflows_stage_and_upload_deterministic_proofs() -> None:
-    """Entry-hosted publish mirrors reusable proof staging and final uploads."""
-    for workflow_name in ("official.yml", "buddy.yml"):
-        workflow = _workflow(workflow_name)
-        assert "name: Generate proof artifacts" in workflow
-        assert "workflow_release_control.py generate-proofs" in workflow
-        assert (
-            "name: proof-staging-${{ "
-            "steps.publish_name.outputs.publish_result_artifact_name }}"
-            in workflow
-        )
-        assert "upload-entry-proofs:" in workflow
-        assert (
-            "needs.orchestrate.outputs.has-entry-proofs == 'true'" in workflow
-        )
-        assert (
-            "proof: ${{ "
-            "fromJson(needs.orchestrate.outputs.entry-proof-matrix) }}"
-            in workflow
-        )
-        assert (
-            "needs.publish-entry.result == 'success' || "
-            "needs.publish-entry.result == 'failure'" in workflow
-        )
-        assert "continue-on-error: true" in workflow
-        assert "PROOF_FILE: ${{ matrix.proof.file }}" in workflow
-        assert "steps.staged.outputs.present == 'true'" in workflow
-        assert "name: ${{ matrix.proof.staging-artifact-name }}" in workflow
-        assert "name: ${{ matrix.proof.name }}" in workflow
-
-
 def _ci_batch_bundle_scratch(test_name: str) -> Path:
     scratch = SCRATCH / test_name
     shutil.rmtree(scratch, ignore_errors=True)
@@ -13556,7 +30863,7 @@ def _ci_same_batch_manifest_fixture() -> tuple[
     return plan, manifest, batch, selectors[1]
 
 
-def _write_ci_batch_bundle_inputs(  # noqa: PLR0913
+def _write_ci_batch_bundle_inputs(
     scratch: Path,
     plan: dict[str, object],
     manifest: dict[str, object],
@@ -13605,7 +30912,7 @@ def _write_ci_batch_bundle_inputs(  # noqa: PLR0913
     )
 
 
-def _write_ci_batch_bundle(  # noqa: PLR0913
+def _write_ci_batch_bundle(
     scratch: Path,
     plan: dict[str, object],
     manifest: dict[str, object],
@@ -13981,7 +31288,7 @@ def _ci_staged_downloader_admissions(
 _OMIT_AGGREGATE_MANIFEST_PRODUCER_VERIFIED = object()
 
 
-def _aggregate_ci_batch_evidence(  # noqa: C901, PLR0912, PLR0913, PLR0915
+def _aggregate_ci_batch_evidence(  # noqa: C901, PLR0912
     scratch: Path,
     plan: dict[str, object],
     manifest: dict[str, object],
@@ -15087,7 +32394,7 @@ def test_ci_batch_summary_ignores_invalid_started_at_for_envelopes() -> None:
         ("missing", None, "aggregate-summary-without-manifest", None, None),
     ],
 )
-def test_ci_batch_summary_fails_closed_for_invalid_preserved_manifest(  # noqa: PLR0912, PLR0915
+def test_ci_batch_summary_fails_closed_for_invalid_preserved_manifest(  # noqa: PLR0912
     case: str,
     rewrite: str | None,
     expected_detail: str,
@@ -15512,7 +32819,7 @@ def test_ci_batch_summary_preserves_unverified_for_unbound_manifest(
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_ci_batch_missing_execution_summary_falls_back_for_malformed_manifest() -> (  # noqa: E501
+def test_ci_batch_missing_execution_summary_falls_back_for_malformed_manifest() -> (
     None
 ):
     """Missing-execution summary ignores canonical malformed final manifests."""
@@ -15697,7 +33004,7 @@ def test_ci_batch_aggregation_missing_plan_writes_invalid_g5_artifacts() -> (
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_ci_batch_invalid_plan_closes_authority() -> None:  # noqa: PLR0915
+def test_ci_batch_invalid_plan_closes_authority() -> None:
     """Digest-valid structural plan failures cannot admit batch evidence."""
     scratch = _ci_batch_bundle_scratch(
         "batch-aggregation-structurally-invalid-plan"
@@ -17333,7 +34640,7 @@ def test_ci_batch_aggregation_cli_rejects_missing_required_inputs(
         if missing_input != "request":
             command.extend(["--request", str(request_path)])
 
-        completed = subprocess.run(  # noqa: S603
+        completed = subprocess.run(
             command,
             cwd=REPO_ROOT,
             text=True,
@@ -17381,7 +34688,7 @@ def test_ci_batch_aggregation_cli_requires_explicit_batch_mode() -> None:
             encoding="utf-8",
         )
 
-        completed = subprocess.run(  # noqa: S603
+        completed = subprocess.run(
             [
                 sys.executable,
                 "eng/scripts/workflow_release_control.py",
@@ -17428,7 +34735,7 @@ def test_ci_batch_aggregation_cli_requires_observed_artifacts_dir() -> None:
     """Batch aggregation requires the downloader-created observed directory."""
     scratch = _ci_batch_bundle_scratch("batch-aggregation-cli-no-observed-dir")
     try:
-        completed = subprocess.run(  # noqa: S603
+        completed = subprocess.run(
             [
                 sys.executable,
                 "eng/scripts/workflow_release_control.py",
@@ -17492,7 +34799,7 @@ def test_ci_batch_aggregation_cli_rejects_invalid_manifest() -> None:
             encoding="utf-8",
         )
 
-        completed = subprocess.run(  # noqa: S603
+        completed = subprocess.run(
             [
                 sys.executable,
                 "eng/scripts/workflow_release_control.py",
@@ -19440,7 +36747,7 @@ def test_ci_batch_writer_cli_writes_bundle_and_outputs() -> None:
             str(output_path),
         ]
 
-        completed = subprocess.run(  # noqa: S603
+        completed = subprocess.run(
             command,
             cwd=REPO_ROOT,
             text=True,
@@ -19459,7 +36766,7 @@ def test_ci_batch_writer_cli_writes_bundle_and_outputs() -> None:
         assert outputs["execution_batch_manifest_payload_digest"] == (
             ci_validation_execution_batch_manifest_payload_digest(manifest)
         )
-        rejected = subprocess.run(  # noqa: S603
+        rejected = subprocess.run(
             [*command, "--dependency-artifact-admission", "{}"],
             cwd=REPO_ROOT,
             text=True,
@@ -19500,7 +36807,7 @@ def test_ci_execution_batch_manifest_cli_materializes_manifest_and_outputs():
             encoding="utf-8",
         )
 
-        completed = subprocess.run(  # noqa: S603
+        completed = subprocess.run(
             [
                 sys.executable,
                 "eng/scripts/workflow_release_control.py",
@@ -19589,7 +36896,7 @@ def test_ci_batch_writer_cli_rejects_stale_run_attempt() -> None:
             scratch, plan, manifest, row, [result]
         )
 
-        completed = subprocess.run(  # noqa: S603
+        completed = subprocess.run(
             [
                 sys.executable,
                 "eng/scripts/workflow_release_control.py",
@@ -20376,7 +37683,7 @@ def test_ci_batch_writer_rejects_supplied_same_batch_dependency_result() -> (
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_ci_batch_writer_public_rejects_supplied_same_batch_dependency_result() -> (  # noqa: E501
+def test_ci_batch_writer_public_rejects_supplied_same_batch_dependency_result() -> (
     None
 ):
     """Public writer rejects supplied same-batch dependency rows."""
@@ -21443,7 +38750,7 @@ def test_run_ci_validation_batch_commands_skips_blocked_dependencies() -> None:
             "--result-out-dir",
             str(result_dir),
         ]
-        completed = subprocess.run(  # noqa: S603
+        completed = subprocess.run(
             command,
             cwd=REPO_ROOT,
             text=True,
@@ -21459,7 +38766,7 @@ def test_run_ci_validation_batch_commands_skips_blocked_dependencies() -> None:
         assert completed.returncode == 0, completed.stderr
         assert validation_result["outcome"] == "skipped"
         assert validation_result["commands"][0]["error"] == "dependency-blocked"
-        rejected = subprocess.run(  # noqa: S603
+        rejected = subprocess.run(
             [*command, "--dependency-artifact-admission", "{}"],
             cwd=REPO_ROOT,
             text=True,
@@ -22176,18 +39483,42 @@ def test_hk_runs_focused_workflow_release_validation() -> None:
     pre_commit_config = (REPO_ROOT / ".pre-commit-config.yaml").read_text(
         encoding="utf-8"
     )
+    pre_commit = yaml.safe_load(pre_commit_config)
+    hooks = pre_commit["repos"][0]["hooks"]
+    workflow_release_hook = next(
+        hook
+        for hook in hooks
+        if hook.get("id") == "workflow-release-control-tests"
+    )
+    workflow_release_files = re.compile(
+        cast("str", workflow_release_hook["files"])
+    )
 
     assert "workflow-release-control-tests" in hk_config
-    assert ".github/workflows/ci.yml" in hk_config
-    assert ".github/workflows/buddy.yml" in hk_config
-    assert ".github/workflows/official.yml" in hk_config
-    assert ".github/workflows/release-*.yml" in hk_config
+    assert ".github/CODEOWNERS" in hk_config
+    assert ".github/actionlint.yaml" in hk_config
+    assert ".github/workflows/*.yml" in hk_config
+    assert ".github/workflows/*.yaml" in hk_config
+    assert ".github/workflows/REFACTOR_PLAN.md" in hk_config
+    assert ".github/workflows/docs/DESIGN.v2.md" in hk_config
+    assert "docs/wiki/analyses/workflow-release-*.md" in hk_config
     assert "eng/release/**" in hk_config
+    assert "eng/scripts/find_project_path.py" in hk_config
+    assert "eng/scripts/prepare_npm_publish.py" in hk_config
+    assert "eng/scripts/validate_pep440_version.py" in hk_config
+    assert "eng/scripts/validate_semver2_version.py" in hk_config
+    assert "eng/scripts/validate_rubygems_version.py" in hk_config
+    assert "eng/scripts/release_orchestrate_*.sh" in hk_config
+    assert "eng/scripts/publish_*_idempotent.sh" in hk_config
+    assert "eng/scripts/validate_pypi_remote_digests.sh" in hk_config
+    assert "eng/scripts/verify_python_distribution_exactness.py" in hk_config
+    assert "eng/scripts/verify_python_artifact_version.py" in hk_config
     assert "eng/scripts/workflow_release_control.py" in hk_config
     assert "eng/scripts/workflow_release_acceptance_gate.py" in hk_config
     assert "src/**/three.release.yml" in hk_config
     assert "src/public/lib/three-workflow-release-*/**" in hk_config
     assert "tests/test_workflow_release_control.py" in hk_config
+    assert "tests/test_verify_python_distribution_exactness.py" in hk_config
     assert "tests/fixtures/workflow-release-acceptance-matrix.json" in hk_config
     assert (
         "tests/fixtures/workflow-release-ci-validation-acceptance-matrix.json"
@@ -22199,7 +39530,56 @@ def test_hk_runs_focused_workflow_release_validation() -> None:
     )
     assert "actionlint" in hk_config
     assert "id: workflow-release-control-tests" in pre_commit_config
-    assert r"\.github/workflows/ci\.yml$" in pre_commit_config
+    assert r"\.github/CODEOWNERS$" in pre_commit_config
+    assert r"\.github/actionlint\.yaml$" in pre_commit_config
+    assert r"\.github/workflows/[^/]*\.yml$" in pre_commit_config
+    assert r"\.github/workflows/[^/]*\.yaml$" in pre_commit_config
+    assert r"\.github/workflows/REFACTOR_PLAN\.md$" in pre_commit_config
+    assert r"\.github/workflows/docs/DESIGN\.v2\.md$" in pre_commit_config
+    assert (
+        "docs/wiki/analyses/"
+        r"workflow-release-[^/]*\.md$" in pre_commit_config
+    )
+    assert r"eng/scripts/find_project_path\.py$" in pre_commit_config
+    assert r"eng/scripts/prepare_npm_publish\.py$" in pre_commit_config
+    assert r"eng/scripts/validate_pep440_version\.py$" in pre_commit_config
+    assert r"eng/scripts/validate_semver2_version\.py$" in pre_commit_config
+    assert r"eng/scripts/validate_rubygems_version\.py$" in pre_commit_config
+    assert r"eng/scripts/release_orchestrate_[^/]*\.sh$" in pre_commit_config
+    assert r"eng/scripts/publish_[^/]*_idempotent\.sh$" in pre_commit_config
+    assert r"eng/scripts/validate_pypi_remote_digests\.sh$" in pre_commit_config
+    assert (
+        r"eng/scripts/verify_python_distribution_exactness\.py$"
+        in pre_commit_config
+    )
+    assert (
+        r"eng/scripts/verify_python_artifact_version\.py$" in pre_commit_config
+    )
+    assert (
+        r"tests/test_verify_python_distribution_exactness\.py$"
+        in pre_commit_config
+    )
+    for helper_path in (
+        ".github/workflows/codeql.yml",
+        ".github/workflows/generated-test.yaml",
+        ".github/workflows/REFACTOR_PLAN.md",
+        "docs/wiki/analyses/workflow-release-descriptor-schema.md",
+        "docs/wiki/analyses/workflow-release-low-level-design.md",
+        "eng/scripts/find_project_path.py",
+        "eng/scripts/prepare_npm_publish.py",
+        "eng/scripts/validate_pep440_version.py",
+        "eng/scripts/validate_semver2_version.py",
+        "eng/scripts/validate_rubygems_version.py",
+        "eng/scripts/release_orchestrate_policy_publish_targets.sh",
+        "eng/scripts/validate_pypi_remote_digests.sh",
+        "eng/scripts/verify_python_distribution_exactness.py",
+        "eng/scripts/verify_python_artifact_version.py",
+        "eng/scripts/publish_node_gpr_idempotent.sh",
+        "eng/scripts/publish_node_npmjs_idempotent.sh",
+        "eng/scripts/release_orchestrate_release_completed_check.sh",
+        "tests/test_verify_python_distribution_exactness.py",
+    ):
+        assert workflow_release_files.fullmatch(helper_path)
 
 
 def test_ci_validate_workflow_passes_actionlint_gate() -> None:
@@ -22207,7 +39587,7 @@ def test_ci_validate_workflow_passes_actionlint_gate() -> None:
     if shutil.which("actionlint") is None:
         pytest.skip("actionlint is not installed")
 
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(
         [
             sys.executable,
             "eng/scripts/hk_actionlint.py",

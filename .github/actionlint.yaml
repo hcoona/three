@@ -1,0 +1,10 @@
+paths:
+  .github/workflows/official.yml:
+    ignore:
+      - '"secrets" section should not be empty.*'
+  .github/workflows/buddy.yml:
+    ignore:
+      - '"secrets" section should not be empty.*'
+  .github/workflows/release-orchestrate.yml:
+    ignore:
+      - '"secrets" section should not be empty.*'

@@ -1,33 +1,29 @@
-name: Release Official
-run-name: Release official by @${{ github.triggering_actor }}
+name: Official Release
 
 on:
+  push:
+    tags:
+      - "release/*/v*"
   workflow_dispatch:
     inputs:
-      requested-project-ids:
-        description: Optional comma or newline separated project IDs. Empty means all releasable projects.
+      project:
+        description: "Workspace release project id (unscoped; Python: pyproject.toml project.name; Node/.NET: three.release.yml project.id; exact display-name aliases are canonicalized to that project id; fuzzy matching remains forbidden)"
+        required: true
+        type: string
+      version:
+        description: "Python: canonical PEP 440 form only (no leading v; aliases like '01.0' are rejected; epochs like '1!1.0' are intentionally not supported). Node/.NET: SemVer 2.0.0 (no leading v). Ruby: MAJOR.MINOR.PATCH[.suffix...] (no '-' or '+'; suffix segments are dot-separated [0-9A-Za-z]+ and must include at least one letter)."
+        required: true
+        type: string
+      target:
+        description: "Release target ref when manually triggered: leave empty to use the dispatch-selected ref/commit; otherwise pass a branch, tag, ref, or 40-hex commit SHA. The workflow resolves it once and pins the commit."
         required: false
         type: string
-        default: ''
-      dry-run:
-        description: Run planning and validation without tag or publish side effects.
-        required: true
-        type: boolean
-        default: true
-      validation-build:
-        description: In dry-run mode, also run validation-only builds.
-        required: true
+        default: ""
+      force_update_tag:
+        description: "Allow force-updating the release tag if it already exists and points to a different commit. If false, existing tags will not be moved."
+        required: false
         type: boolean
         default: false
-      canary-override-non-public-ref:
-        description: Break-glass canary override for dedicated hcoona-release-smoke-* official live validation from a non-public ref.
-        required: true
-        type: boolean
-        default: false
-
-concurrency:
-  group: three-release:official
-  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -39,36 +35,47 @@ jobs:
     permissions:
       contents: read
     outputs:
-      commit-sha: ${{ steps.authorize.outputs.commit_sha }}
-      requested-project-ids-json: ${{ steps.authorize.outputs.requested_project_ids_json }}
-      dry-run: ${{ steps.authorize.outputs.dry_run }}
-      validation-build: ${{ steps.authorize.outputs.validation_build }}
-      force: ${{ steps.authorize.outputs.force }}
-      canary-override-non-public-ref: ${{ steps.authorize.outputs.canary_override_non_public_ref }}
+      project_id: ${{ steps.identity.outputs.project_id }}
+      release_group: ${{ steps.identity.outputs.release_group }}
+      release_target_sha: ${{ steps.identity.outputs.release_target_sha }}
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
-      - name: Authorize and pin dispatch ref
+
+      - name: Authorize and pin release ref
         id: authorize
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_ACTOR: ${{ github.triggering_actor }}
-          RELEASE_DRY_RUN: ${{ inputs.dry-run }}
+          RELEASE_DRY_RUN: "false"
+          RELEASE_FORCE: ${{ inputs.force_update_tag || false }}
+          RELEASE_INPUT_PROJECT: ${{ inputs.project || '' }}
+          RELEASE_TARGET: ${{ inputs.target || '' }}
+          RELEASE_VERSION: ${{ inputs.version || '' }}
           RELEASE_PINNED_SHA: ${{ github.sha }}
           RELEASE_REF: ${{ github.ref }}
           RELEASE_REF_NAME: ${{ github.ref_name }}
           RELEASE_REF_TYPE: ${{ github.ref_type }}
           RELEASE_REPOSITORY: ${{ github.repository }}
-          RELEASE_REQUESTED_PROJECT_IDS: ${{ inputs.requested-project-ids }}
-          RELEASE_VALIDATION_BUILD: ${{ inputs.validation-build }}
-          RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF: ${{ inputs.canary-override-non-public-ref }}
+          RELEASE_VALIDATION_BUILD: "false"
         run: |
+          set -Eeuo pipefail
+
           mkdir -p .three-workflow-release/entry
+
+          requested_project_ids="${RELEASE_INPUT_PROJECT}"
+          if [[ -z "${requested_project_ids}" && "${RELEASE_REF_TYPE}" == "tag" && "${RELEASE_REF_NAME}" == release/*/v* ]]; then
+            tag_remainder="${RELEASE_REF_NAME#release/}"
+            requested_project_ids="${tag_remainder%%/v*}"
+          fi
+
           uv run python eng/scripts/workflow_release_control.py normalize-entry \
             --profile official \
             --repository "$RELEASE_REPOSITORY" \
@@ -77,14 +84,157 @@ jobs:
             --ref-name "$RELEASE_REF_NAME" \
             --ref-type "$RELEASE_REF_TYPE" \
             --pinned-sha "$RELEASE_PINNED_SHA" \
-            --requested-project-ids "$RELEASE_REQUESTED_PROJECT_IDS" \
+            --requested-project-ids "$requested_project_ids" \
             --dry-run "$RELEASE_DRY_RUN" \
             --validation-build "$RELEASE_VALIDATION_BUILD" \
-            --canary-override-non-public-ref "$RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF" \
-            --force false \
+            --force "$RELEASE_FORCE" \
             --metadata-out .three-workflow-release/entry/entry-metadata.json \
             --diagnostics-out .three-workflow-release/entry/planner-diagnostics.json \
             --github-output "$GITHUB_OUTPUT"
+
+      - name: Resolve canonical release identity
+        id: identity
+        shell: bash
+        env:
+          RELEASE_INPUT_PROJECT: ${{ inputs.project || '' }}
+          RELEASE_REF_NAME: ${{ github.ref_name }}
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
+          RELEASE_TARGET: ${{ inputs.target || '' }}
+          RELEASE_VERSION: ${{ inputs.version || '' }}
+          RELEASE_PINNED_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+
+          requested_project="${RELEASE_INPUT_PROJECT}"
+          if [[ -z "${requested_project}" && "${RELEASE_REF_TYPE}" == "tag" && "${RELEASE_REF_NAME}" == release/*/v* ]]; then
+            tag_remainder="${RELEASE_REF_NAME#release/}"
+            requested_project="${tag_remainder%%/v*}"
+          fi
+
+          if [[ -z "${requested_project}" ]]; then
+            echo "Unable to derive a release project for concurrency." >&2
+            exit 1
+          fi
+
+          resolve_release_target() {
+            local target_input="${1}"
+            local commit_suffix='^{commit}'
+            local is_shallow
+            local fetch_ref
+            local resolved_ref
+            local tag_ref
+
+            if [[ -z "${target_input}" ]]; then
+              git rev-parse HEAD
+              return 0
+            fi
+
+            if [[ "${target_input}" == -* ]]; then
+              echo "Release target must not start with '-': ${target_input}" >&2
+              return 1
+            fi
+
+            if git rev-parse --verify --end-of-options "${target_input}${commit_suffix}" >/dev/null 2>&1; then
+              git rev-parse --verify --end-of-options "${target_input}${commit_suffix}"
+              return 0
+            fi
+
+            is_shallow="$(git rev-parse --is-shallow-repository)"
+            if [[ "${target_input}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+              if [[ "${is_shallow}" == "true" ]]; then
+                git fetch --no-tags --unshallow origin
+              fi
+              git fetch --no-tags --prune --tags origin \
+                '+refs/heads/*:refs/remotes/origin/*' \
+                '+refs/tags/*:refs/tags/*'
+            else
+              fetch_ref="${target_input}"
+              resolved_ref="origin/${target_input}"
+              if [[ "${target_input}" == origin/* ]]; then
+                fetch_ref="${target_input#origin/}"
+                resolved_ref="${target_input}"
+              elif [[ "${target_input}" == refs/heads/* ]]; then
+                fetch_ref="${target_input#refs/heads/}"
+                resolved_ref="origin/${fetch_ref}"
+              fi
+
+              if git fetch --no-tags --depth=1 origin \
+                "+refs/heads/${fetch_ref}:refs/remotes/origin/${fetch_ref}"; then
+                if git rev-parse --verify --end-of-options "${resolved_ref}${commit_suffix}" >/dev/null 2>&1; then
+                  git rev-parse --verify --end-of-options "${resolved_ref}${commit_suffix}"
+                  return 0
+                fi
+              fi
+
+              tag_ref="${target_input}"
+              if [[ "${target_input}" == refs/tags/* ]]; then
+                tag_ref="${target_input#refs/tags/}"
+              fi
+
+              if git fetch --no-tags --depth=1 origin \
+                "+refs/tags/${tag_ref}:refs/tags/${tag_ref}"; then
+                if git rev-parse --verify --end-of-options "refs/tags/${tag_ref}${commit_suffix}" >/dev/null 2>&1; then
+                  git rev-parse --verify --end-of-options "refs/tags/${tag_ref}${commit_suffix}"
+                  return 0
+                fi
+              fi
+
+              if [[ "${is_shallow}" == "true" ]]; then
+                git fetch --no-tags --unshallow origin
+              fi
+              git fetch --no-tags --prune --tags origin \
+                '+refs/heads/*:refs/remotes/origin/*' \
+                '+refs/tags/*:refs/tags/*'
+            fi
+
+            if git rev-parse --verify --end-of-options "${target_input}${commit_suffix}" >/dev/null 2>&1; then
+              git rev-parse --verify --end-of-options "${target_input}${commit_suffix}"
+              return 0
+            fi
+
+            echo "Failed to resolve release target '${target_input}' to a commit." >&2
+            return 1
+          }
+
+          if ! project_resolution="$(
+            uv run python eng/scripts/workflow_release_control.py resolve-project \
+              --project "${requested_project}"
+          )"; then
+            echo "Failed to resolve canonical project id for '${requested_project}'." >&2
+            exit 1
+          fi
+          project_id=$(printf '%s' "${project_resolution}" | jq -r '.project_id')
+          if [[ -z "${project_id}" || "${project_id}" == "null" ]]; then
+            echo "Canonical project id resolution returned an empty project id." >&2
+            exit 1
+          fi
+
+          if [[ "${RELEASE_REF_TYPE}" == "tag" ]]; then
+            release_version="${RELEASE_REF_NAME##*/v}"
+          else
+            release_version="${RELEASE_VERSION}"
+          fi
+          if [[ -z "${release_version}" ]]; then
+            echo "Unable to derive a release version for concurrency." >&2
+            exit 1
+          fi
+
+          release_target_input="${RELEASE_TARGET}"
+          if [[ -z "${release_target_input}" ]]; then
+            release_target_input="${RELEASE_PINNED_SHA}"
+          fi
+
+          if ! release_target="$(resolve_release_target "${release_target_input}")"; then
+            exit 1
+          fi
+
+          release_group="release/${project_id}/v${release_version}"
+          {
+            echo "project_id=${project_id}"
+            echo "release_group=${release_group}"
+            echo "release_target_sha=${release_target}"
+          } >> "${GITHUB_OUTPUT}"
+
       - name: Upload authorization diagnostics
         if: ${{ failure() }}
         uses: actions/upload-artifact@v7
@@ -98,309 +248,124 @@ jobs:
   orchestrate:
     name: Orchestrate official release
     needs: authorize-entry
+    concurrency:
+      group: ${{ needs.authorize-entry.outputs.release_group }}
+      cancel-in-progress: false
     uses: ./.github/workflows/release-orchestrate.yml
+    secrets: {}
     permissions:
       contents: write
-      packages: write
       actions: read
+      packages: write
       id-token: write
       attestations: write
     with:
-      profile: official
-      commit-sha: ${{ needs.authorize-entry.outputs.commit-sha }}
-      requested-project-ids-json: ${{ needs.authorize-entry.outputs.requested-project-ids-json }}
-      dry-run: ${{ needs.authorize-entry.outputs.dry-run == 'true' }}
-      validation-build: ${{ needs.authorize-entry.outputs.validation-build == 'true' }}
-      force: false
-      release-environment: ${{ inputs.dry-run == false && 'release' || '' }}
-      canary-override-non-public-ref: ${{ needs.authorize-entry.outputs.canary-override-non-public-ref == 'true' }}
-      enabled-external-oidc-targets: ${{ vars.THREE_RELEASE_ENABLED_EXTERNAL_OIDC_TARGETS }}
+      source: ${{ github.event_name == 'push' && 'tag' || 'manual' }}
+      # source=tag
+      ref_name: ${{ github.ref_name }}
+      ref: ${{ github.ref }}
+      # NOTE: For source=manual (workflow_dispatch), ref_name and ref above are passed
+      # as the branch name / refs/heads/<branch> but are ignored by the orchestrator
+      # (resolve only reads them when source=tag). They are passed unconditionally to
+      # keep the with: block simple and avoid event-conditional expressions.
 
-  publish-entry:
-    name: Publish entry-hosted node
-    needs:
-      - authorize-entry
-      - orchestrate
-    if: ${{ inputs.dry-run == false && always() && needs.orchestrate.outputs.entry-publish-node-ids != '' && needs.orchestrate.outputs.entry-publish-node-ids != '[]' && needs.orchestrate.outputs.plan-artifact-name != '' && needs.orchestrate.outputs.entry-publish-handoff-artifact-name != '' && needs.orchestrate.outputs.validate-conclusion == 'success' && (needs.orchestrate.outputs.metadata-conclusion == 'success' || needs.orchestrate.outputs.metadata-conclusion == 'skipped') && needs.orchestrate.outputs.plan-conclusion == 'success' && (needs.orchestrate.outputs.build-conclusion == 'success' || needs.orchestrate.outputs.build-conclusion == 'skipped') && (needs.orchestrate.outputs.tag-conclusion == 'success' || needs.orchestrate.outputs.tag-conclusion == 'skipped') }}
-    runs-on: ubuntu-latest
-    environment: release
-    permissions:
-      contents: read
-      actions: read
-      id-token: write
-    strategy:
-      fail-fast: false
-      matrix:
-        publish-node-id: ${{ fromJson(needs.orchestrate.outputs.entry-publish-node-ids) }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.authorize-entry.outputs.commit-sha }}
-          fetch-depth: 0
-          fetch-tags: true
-      - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          version: '0.10.9'
-      - name: Install Node.js for npm trusted publishing
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-      - name: Ensure npm trusted publishing support
-        run: |
-          npm install --global npm@^11.5.1
-          node --version
-          npm_version="$(npm --version)"
-          echo "npm $npm_version"
-          NPM_VERSION="$npm_version" node -e '
-            const actual = process.env.NPM_VERSION.split(".").map(Number);
-            const required = [11, 5, 1];
-            if (
-              actual.length < required.length ||
-              actual.some(Number.isNaN) ||
-              actual[0] < required[0] ||
-              (actual[0] === required[0] && actual[1] < required[1]) ||
-              (
-                actual[0] === required[0] &&
-                actual[1] === required[1] &&
-                actual[2] < required[2]
-              )
-            ) {
-              console.error("npm " + process.env.NPM_VERSION + " is older than 11.5.1");
-              process.exit(1);
-            }
-          '
-      - uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.orchestrate.outputs.plan-artifact-name }}
-          path: .three-workflow-release/plan
-      - uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.orchestrate.outputs.entry-publish-handoff-artifact-name }}
-          path: .three-workflow-release/handoff
-      - name: Download handoff-declared build inputs
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          uv run python eng/scripts/workflow_release_control.py download-publish-inputs \
-            --plan .three-workflow-release/plan/release-plan.json \
-            --handoff .three-workflow-release/handoff/entry-publish-handoff.json \
-            --publish-node-id '${{ matrix.publish-node-id }}' \
-            --run-id '${{ github.run_id }}' \
-            --attempt '${{ github.run_attempt }}' \
-            --repository '${{ github.repository }}' \
-            --build-results-dir .three-workflow-release/build-results \
-            --bundles-dir .three-workflow-release/bundles
-      - name: Materialize entry-hosted publish request
-        run: |
-          uv run python eng/scripts/workflow_release_control.py publish-request \
-            --plan .three-workflow-release/plan/release-plan.json \
-            --publish-node-id '${{ matrix.publish-node-id }}' \
-            --run-id '${{ github.run_id }}' \
-            --attempt '${{ github.run_attempt }}' \
-            --build-results-dir .three-workflow-release/build-results \
-            --bundles-dir .three-workflow-release/bundles \
-            --handoff .three-workflow-release/handoff/entry-publish-handoff.json \
-            --out .three-workflow-release/publish-request.json
-      - name: Detect NuGet.org trusted publishing
-        id: nuget_trusted_publishing
-        run: |
-          host="$(jq -r '."target-instance-snapshot".destination.host // ""' .three-workflow-release/publish-request.json)"
-          if [ "$host" = "nuget.org" ]; then
-            echo "required=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "required=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: NuGet.org trusted publishing login
-        if: ${{ steps.nuget_trusted_publishing.outputs.required == 'true' }}
-        id: nuget_login
-        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
-        with:
-          user: ${{ secrets.NUGET_USER }}
-      - name: Execute entry-hosted publish node
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GH_TOKEN: ${{ github.token }}
-          NUGET_API_KEY: ${{ steps.nuget_login.outputs.NUGET_API_KEY }}
-        run: |
-          uv run three-workflow-release-publish publish \
-            --repo-root . \
-            --request .three-workflow-release/publish-request.json \
-            --result-out .three-workflow-release/publish-result.json \
-            --work-dir .three-workflow-release/publish-work
-      - name: Compute publish result artifact name
-        id: publish_name
-        run: |
-          uv run python eng/scripts/workflow_release_control.py artifact-name \
-            --kind publish-result \
-            --run-id '${{ github.run_id }}' \
-            --attempt '${{ github.run_attempt }}' \
-            --plan-id "$(jq -r '.plan-id' .three-workflow-release/publish-result.json)" \
-            --publish-node-id '${{ matrix.publish-node-id }}' \
-            --output-name publish_result_artifact_name \
-            --github-output "$GITHUB_OUTPUT"
-      - name: Generate proof artifacts
-        id: proofs
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          uv run python eng/scripts/workflow_release_control.py generate-proofs \
-            --plan .three-workflow-release/plan/release-plan.json \
-            --publish-request .three-workflow-release/publish-request.json \
-            --publish-result .three-workflow-release/publish-result.json \
-            --publish-node-id '${{ matrix.publish-node-id }}' \
-            --run-id '${{ github.run_id }}' \
-            --attempt '${{ github.run_attempt }}' \
-            --repository '${{ github.repository }}' \
-            --workflow '${{ github.workflow }}' \
-            --head-sha '${{ needs.authorize-entry.outputs.commit-sha }}' \
-            --build-results-dir .three-workflow-release/build-results \
-            --out-dir .three-workflow-release/proofs \
-            --manifest-out .three-workflow-release/proof-manifest.json \
-            --github-output "$GITHUB_OUTPUT"
-      - name: Upload proof staging
-        if: ${{ steps.proofs.outputs.has_proofs == 'true' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: proof-staging-${{ steps.publish_name.outputs.publish_result_artifact_name }}
-          path: .three-workflow-release/proofs
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 30
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ${{ steps.publish_name.outputs.publish_result_artifact_name }}
-          path: .three-workflow-release/publish-result.json
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 30
+      # source=manual
+      project: ${{ inputs.project || '' }}
+      version: ${{ inputs.version || '' }}
+      target: ${{ needs.authorize-entry.outputs.release_target_sha }}
+      force_update_tag: ${{ inputs.force_update_tag || false }}
+      run_url: ${{ format('{0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
 
-  upload-entry-proofs:
-    name: Upload entry proof artifact
-    needs:
-      - orchestrate
-      - publish-entry
-    if: ${{ always() && needs.orchestrate.outputs.has-entry-proofs == 'true' && (needs.publish-entry.result == 'success' || needs.publish-entry.result == 'failure') }}
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-    strategy:
-      fail-fast: false
-      matrix:
-        proof: ${{ fromJson(needs.orchestrate.outputs.entry-proof-matrix) }}
-    steps:
-      - uses: actions/download-artifact@v8
-        id: download
-        continue-on-error: true
-        with:
-          name: ${{ matrix.proof.staging-artifact-name }}
-          path: .three-workflow-release/proofs
-      - name: Check staged proof
-        id: staged
-        env:
-          PROOF_FILE: ${{ matrix.proof.file }}
-        run: |
-          if [ -f ".three-workflow-release/proofs/$PROOF_FILE" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
-      - uses: actions/upload-artifact@v7
-        if: ${{ steps.staged.outputs.present == 'true' }}
-        with:
-          name: ${{ matrix.proof.name }}
-          path: .three-workflow-release/proofs/${{ matrix.proof.file }}
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 30
+      channel: official
+      artifact_prefix: official
+      github_release_prerelease: false
+
+      enforce_prerelease_only: false
+      enforce_non_clobber: false
+
+      publish_python_pypi: true
+      publish_node_gpr: true
+      publish_node_npmjs: true
+      publish_ruby_gpr: true
+      publish_ruby_rubygems: true
+
+      enable_attestation: true
 
   report:
-    name: Report official release
-    needs:
-      - authorize-entry
-      - orchestrate
-      - publish-entry
-      - upload-entry-proofs
-    if: ${{ always() }}
+    name: Report pre-orchestration failure
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: authorize-entry
+    if: ${{ always() && needs.authorize-entry.result != 'success' }}
     permissions:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          fetch-depth: 1
           persist-credentials: false
+
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: '0.10.9'
-      - name: Download release artifacts
+
+      - name: Download authorization diagnostics
         uses: actions/download-artifact@v8
+        continue-on-error: true
         with:
-          pattern: release-*
-          path: .three-workflow-release/artifacts
-      - name: Render report
+          name: release-planner-diagnostics-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .three-workflow-release/entry
+
+      - name: Generate release report
+        shell: bash
         env:
-          RELEASE_DRY_RUN: ${{ inputs.dry-run }}
-          RELEASE_VALIDATION_BUILD: ${{ inputs.validation-build }}
-          RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF: ${{ inputs.canary-override-non-public-ref }}
-          RELEASE_VALIDATE_CONCLUSION: ${{ needs.orchestrate.outputs.validate-conclusion }}
-          RELEASE_METADATA_CONCLUSION: ${{ needs.orchestrate.outputs.metadata-conclusion }}
-          RELEASE_PLAN_CONCLUSION: ${{ needs.orchestrate.outputs.plan-conclusion }}
-          RELEASE_BUILD_CONCLUSION: ${{ needs.orchestrate.outputs.build-conclusion }}
-          RELEASE_TAG_CONCLUSION: ${{ needs.orchestrate.outputs.tag-conclusion }}
-          RELEASE_REUSABLE_PUBLISH_CONCLUSION: ${{ needs.orchestrate.outputs.publish-conclusion }}
-          RELEASE_ENTRY_PUBLISH_CONCLUSION: ${{ needs.publish-entry.result }}
+          REPORT_PATH: .three-workflow-release/release-report.json
+          REPOSITORY: ${{ github.repository }}
+          WORKFLOW: official.yml
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          HEAD_SHA: ${{ github.sha }}
+          PROFILE: official
+          DRY_RUN: "false"
+          VALIDATION_BUILD: "false"
+          CANARY_OVERRIDE_NON_PUBLIC_REF: "false"
+          AUTHORIZE_CONCLUSION: ${{ needs.authorize-entry.result }}
+          VALIDATE_CONCLUSION: skipped
+          METADATA_CONCLUSION: skipped
+          PLAN_CONCLUSION: skipped
+          BUILD_CONCLUSION: skipped
+          TAG_CONCLUSION: skipped
+          PUBLISH_CONCLUSION: skipped
+          DIAGNOSTICS_PATH: .three-workflow-release/entry/planner-diagnostics.json
         run: |
-          plan_path="$(find .three-workflow-release/artifacts -path '*/release-plan.json' -print -quit || true)"
-          sets_path="$(find .three-workflow-release/artifacts -path '*/execution-sets.json' -print -quit || true)"
-          diag_path="$(find .three-workflow-release/artifacts -path '*/planner-diagnostics.json' -print -quit || true)"
-          head_sha='${{ needs.authorize-entry.outputs.commit-sha }}'
-          if [ -z "$head_sha" ]; then head_sha='${{ github.sha }}'; fi
-          validate_conclusion="${RELEASE_VALIDATE_CONCLUSION:-skipped}"
-          metadata_conclusion="${RELEASE_METADATA_CONCLUSION:-skipped}"
-          plan_conclusion="${RELEASE_PLAN_CONCLUSION:-skipped}"
-          build_conclusion="${RELEASE_BUILD_CONCLUSION:-skipped}"
-          tag_conclusion="${RELEASE_TAG_CONCLUSION:-skipped}"
-          reusable_publish_conclusion="${RELEASE_REUSABLE_PUBLISH_CONCLUSION:-skipped}"
-          entry_publish_conclusion="${RELEASE_ENTRY_PUBLISH_CONCLUSION:-skipped}"
-          publish_conclusion=skipped
-          for conclusion in "$reusable_publish_conclusion" "$entry_publish_conclusion"; do
-            if [ "$conclusion" = "failure" ]; then
-              publish_conclusion=failure
-              break
-            fi
-            if [ "$conclusion" = "cancelled" ] && [ "$publish_conclusion" != "failure" ]; then
-              publish_conclusion=cancelled
-            fi
-            if [ "$conclusion" = "success" ] && [ "$publish_conclusion" = "skipped" ]; then
-              publish_conclusion=success
-            fi
-          done
+          set -Eeuo pipefail
           uv run python eng/scripts/workflow_release_control.py report \
-            --repository '${{ github.repository }}' \
-            --workflow '${{ github.workflow }}' \
-            --run-id '${{ github.run_id }}' \
-            --attempt '${{ github.run_attempt }}' \
-            --head-sha "$head_sha" \
-            --profile official \
-            --dry-run "$RELEASE_DRY_RUN" \
-            --validation-build "$RELEASE_VALIDATION_BUILD" \
-            --canary-override-non-public-ref "$RELEASE_CANARY_OVERRIDE_NON_PUBLIC_REF" \
-            --plan "$plan_path" \
-            --execution-sets "$sets_path" \
-            --diagnostics "$diag_path" \
-            --artifacts-root .three-workflow-release/artifacts \
-            --authorize-conclusion '${{ needs.authorize-entry.result }}' \
-            --validate-conclusion "$validate_conclusion" \
-            --metadata-conclusion "$metadata_conclusion" \
-            --plan-conclusion "$plan_conclusion" \
-            --build-conclusion "$build_conclusion" \
-            --tag-conclusion "$tag_conclusion" \
-            --publish-conclusion "$publish_conclusion" \
-            --out .three-workflow-release/release-report.json
-      - uses: actions/upload-artifact@v7
+            --repository "$REPOSITORY" \
+            --workflow "$WORKFLOW" \
+            --run-id "$RUN_ID" \
+            --attempt "$RUN_ATTEMPT" \
+            --head-sha "$HEAD_SHA" \
+            --profile "$PROFILE" \
+            --dry-run "$DRY_RUN" \
+            --validation-build "$VALIDATION_BUILD" \
+            --canary-override-non-public-ref "$CANARY_OVERRIDE_NON_PUBLIC_REF" \
+            --out "$REPORT_PATH" \
+            --plan "" \
+            --execution-sets "" \
+            --diagnostics "$DIAGNOSTICS_PATH" \
+            --authorize-conclusion "$AUTHORIZE_CONCLUSION" \
+            --validate-conclusion "$VALIDATE_CONCLUSION" \
+            --metadata-conclusion "$METADATA_CONCLUSION" \
+            --plan-conclusion "$PLAN_CONCLUSION" \
+            --build-conclusion "$BUILD_CONCLUSION" \
+            --tag-conclusion "$TAG_CONCLUSION" \
+            --publish-conclusion "$PUBLISH_CONCLUSION"
+
+      - name: Upload release report
+        uses: actions/upload-artifact@v7
         with:
           name: release-report-v1-${{ github.run_id }}-${{ github.run_attempt }}
           path: .three-workflow-release/release-report.json

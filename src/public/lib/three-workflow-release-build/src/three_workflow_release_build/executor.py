@@ -1295,7 +1295,10 @@ def _archive_executable_artifacts(
         slot = slots[artifact_id]
         companions = _declared_companion_files(output, primary, slot)
         if not slot.companions:
-            archived[artifact_id] = primary
+            archived[artifact_id] = _copy_raw_executable_output(
+                primary,
+                output / _raw_executable_filename(request),
+            )
             continue
         archive_path = output / _executable_archive_filename(request)
         members = [
@@ -1338,6 +1341,47 @@ def _executable_archive_filename(request: Mapping[str, object]) -> str:
         f"{project['resolved-version']}-"
         f"{_variant_token(dimensions)}.zip"
     )
+
+
+def _raw_executable_filename(request: Mapping[str, object]) -> str:
+    """Return the planner-frozen GitHub asset name for raw executables."""
+    project = _mapping(request["project"], "project")
+    variant = _mapping(request["variant"], "variant")
+    dimensions = _mapping(variant["dimensions"], "variant.dimensions")
+    token = _variant_token(dimensions)
+    suffix = ".exe" if "windows" in token else ""
+    return (
+        f"{variant['project-id']}-{project['resolved-version']}-{token}{suffix}"
+    )
+
+
+def _copy_raw_executable_output(source: Path, destination: Path) -> Path:
+    """Copy a no-companion executable into the build output."""
+    if source.resolve() == destination.resolve():
+        return source
+    if destination.exists():
+        msg = f"raw executable destination already exists: {destination}"
+        raise BuildExecutorError(
+            msg,
+            code="BUILD_OUTPUT_INVALID",
+            phase="receipt",
+            details={"destination": destination.as_posix()},
+        )
+    try:
+        shutil.copy2(source, destination)
+    except OSError as exc:
+        msg = f"raw executable output could not be copied: {exc}"
+        raise BuildExecutorError(
+            msg,
+            code="BUILD_OUTPUT_INVALID",
+            phase="receipt",
+            details={
+                "source": source.as_posix(),
+                "destination": destination.as_posix(),
+                "error": str(exc),
+            },
+        ) from exc
+    return destination
 
 
 def _variant_token(dimensions: Mapping[str, object]) -> str:

@@ -19,6 +19,7 @@ ArtifactKind = Literal[
     "tag-result",
     "publish-result",
     "skip-result",
+    "github-release-result",
     "immutable-proof",
     "github-release-asset-proof",
     "release-report",
@@ -140,6 +141,9 @@ def artifact_name(  # noqa: C901,PLR0911,PLR0912
             f"{_require(inputs.publish_node_id, 'publish_node_id')}"
         )
         return f"release-skip-result-v1-{run}-{attempt}-{safe_id(key)}"
+    if kind == "github-release-result":
+        digest = safe_id(_require(inputs.binding_json, "binding_json"))
+        return f"release-github-release-result-v1-{run}-{attempt}-{digest}"
     if kind == "immutable-proof":
         digest = safe_id(_require(inputs.binding_json, "binding_json"))
         return f"release-immutable-proof-v1-{digest}-{run}-{attempt}"

@@ -5,8 +5,11 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import errno
 import fnmatch
+import functools
 import hashlib
 import http.client
 import io
@@ -18,6 +21,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -37,6 +41,7 @@ from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
 import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+_GITHUB_ATTESTATION_PREDICATE = "https://slsa.dev/provenance/v1"
 for _WORKSPACE_SRC in (
     _REPO_ROOT / "src/public/lib/three-workflow-release-contracts/src",
     _REPO_ROOT / "src/public/lib/three-workflow-release-planner/src",
@@ -185,6 +190,10 @@ _TOPOLOGIES = (
     "external-oidc-caller-workflow",
     "external-oidc-reusable-workflow",
 )
+_GITHUB_RELEASE_ASSET_PROOF_SIDECAR_RE = re.compile(
+    r"^release-github-release-asset-proof-v1-[0-9a-f]{24}-"
+    r"(?P<run_id>[1-9][0-9]*)-(?P<attempt>[1-9][0-9]*)\.json$"
+)
 _CI_VALIDATION_PRE_FINAL_NAMESPACE_ARTIFACT_CAP = 18
 _CI_VALIDATION_TOTAL_NAMESPACE_ARTIFACT_CAP = 20
 _CI_VALIDATION_LIVE_NAMESPACE_ARTIFACT_CAP = (
@@ -213,6 +222,14 @@ _OFFICIAL_NON_PUBLIC_REF_CANARY_PROJECTS = frozenset(
         "hcoona-release-smoke-wxt",
     }
 )
+_OFFICIAL_RELEASE_TAG_REF_RE = re.compile(
+    r"^refs/tags/release/(?P<project>[A-Za-z0-9._-]+)/v(?P<version>.+)$"
+)
+_DOTNET_RELEASE_RUNNER_LABEL_BY_FAMILY = {
+    "ubuntu": "ubuntu-latest",
+    "macos": "macos-latest",
+    "windows": "windows-latest",
+}
 _CI_CONTROL_ARTIFACT_PRODUCERS = {
     "ci-validation/requests": ("normalize-input", "normalize-input"),
     "ci-validation/planning": ("plan", "plan"),
@@ -222,6 +239,33 @@ _CI_CONTROL_ARTIFACT_PRODUCERS = {
     ),
     "ci-validation/aggregate": ("aggregate-evidence", "aggregate-evidence"),
 }
+_RELEASE_GOVERNANCE_CODEOWNERS = ("@hcoona",)
+_BOOTSTRAP_GOVERNANCE_EXACT_PATHS = (
+    ".github/CODEOWNERS",
+    ".github/actionlint.yaml",
+    ".github/workflows/ci.yml",
+    ".github/workflows/buddy.yml",
+    ".github/workflows/release-orchestrate.yml",
+    ".github/workflows/release-resolve.yml",
+    ".github/workflows/release-build-python.yml",
+    ".github/workflows/release-build-node-pack.yml",
+    ".github/workflows/release-build-dotnet.yml",
+    ".github/workflows/release-build-ruby-gem.yml",
+    ".github/workflows/release-build-wxt.yml",
+    ".github/workflows/release-create-github-release.yml",
+    ".github/workflows/release-prepare-release-notes.yml",
+    ".github/workflows/official.yml",
+    ".github/workflows/docs/DESIGN.v2.md",
+    "eng/release/target-instances.yml",
+    "eng/release/buddy-target-refs.yml",
+)
+_BOOTSTRAP_GOVERNANCE_RECURSIVE_ROOTS = (
+    ".github/workflows",
+    ".github/actions",
+    "eng/scripts",
+)
+_BUDDY_TARGET_REF_POLICY_PATH = Path("eng/release/buddy-target-refs.yml")
+_BUDDY_TARGET_REF_RE = re.compile(r"^refs/heads/[A-Za-z0-9][A-Za-z0-9._/-]*$")
 _CI_DOWNLOADER_OBSERVATION_FILE = "downloader-observation.json"
 _CI_DOWNLOADER_ADMITTED_BATCH_ARTIFACTS_KEY = "admitted-batch-artifacts"
 _CI_ORCHESTRATOR_STATE_ADMISSION_SOURCE = "orchestrator-artifact-id-state"
@@ -265,6 +309,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     _add_normalize_entry(subparsers)
+    _add_resolve_project(subparsers)
     _add_artifact_name(subparsers)
     _add_write_request(subparsers)
     _add_write_ci_validation_request(subparsers)
@@ -272,6 +317,8 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_verify_ci_validation_artifact_boundaries(subparsers)
     _add_materialize_ci_validation_execution_batches(subparsers)
     _add_validate_ci_validation_descriptors(subparsers)
+    _add_validate_bootstrap_codeowners(subparsers)
+    _add_buddy_authorized_refs(subparsers)
     _add_run_ci_validation_batch_commands(subparsers)
     _add_write_ci_validation_batch_evidence_bundle(subparsers)
     _add_run_ci_validation_runner_family_orchestrator_step(subparsers)
@@ -281,15 +328,25 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_plan_gate(subparsers)
     _add_matrix_outputs(subparsers)
     _add_entry_publish_handoff(subparsers)
+    _add_dotnet_metadata_input(subparsers)
+    _add_active_dotnet_variant_ids(subparsers)
+    _add_active_dotnet_runner_matrix(subparsers)
     _add_build_request(subparsers)
+    _add_copy_dist_flat(subparsers)
+    _add_validate_dotnet_dist(subparsers)
     _add_download_publish_inputs(subparsers)
     _add_publish_request(subparsers)
     _add_prepare_attestation(subparsers)
-    _add_attach_attestation(subparsers)
     _add_generate_proofs(subparsers)
+    _add_github_release_asset_attestations(subparsers)
+    _add_validate_github_release_coverage(subparsers)
+    _add_validate_github_release_asset_proof_sidecar(subparsers)
+    _add_package_publish_result(subparsers)
     _add_skip_results(subparsers)
+    _add_official_frozen_versions(subparsers)
     _add_observe_remote_publications(subparsers)
     _add_ensure_tags(subparsers)
+    _add_release_completed_receipts(subparsers)
     _add_report(subparsers)
     return parser
 
@@ -316,6 +373,15 @@ def _add_normalize_entry(
     parser.add_argument("--diagnostics-out", required=True)
     parser.add_argument("--github-output")
     parser.set_defaults(func=_cmd_normalize_entry)
+
+
+def _add_resolve_project(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("resolve-project")
+    parser.add_argument("--project", required=True)
+    parser.add_argument("--github-output")
+    parser.set_defaults(func=_cmd_resolve_project)
 
 
 def _add_artifact_name(
@@ -678,6 +744,36 @@ def _add_validate_ci_validation_descriptors(
     parser.set_defaults(func=_cmd_validate_ci_validation_descriptors)
 
 
+def _add_validate_bootstrap_codeowners(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser(
+        "validate-bootstrap-codeowners",
+        description=(
+            "Validate CODEOWNERS coverage for the release bootstrap "
+            "governance surface."
+        ),
+    )
+    parser.add_argument("--repo-root", default=".")
+    parser.set_defaults(func=_cmd_validate_bootstrap_codeowners)
+
+
+def _add_buddy_authorized_refs(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser(
+        "buddy-authorized-refs",
+        description=(
+            "Print checked-in refs from which an explicit buddy release target "
+            "commit is authorized to be reachable."
+        ),
+    )
+    parser.add_argument("--project", required=True)
+    parser.add_argument("--channel", default="buddy")
+    parser.add_argument("--repo-root", default=".")
+    parser.set_defaults(func=_cmd_buddy_authorized_refs)
+
+
 def _add_plan_gate(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
@@ -686,6 +782,7 @@ def _add_plan_gate(
     parser.add_argument("--execution-sets", required=True)
     parser.add_argument("--remote-observations")
     parser.add_argument("--enabled-external-oidc-targets", default="")
+    parser.add_argument("--disabled-package-target-keys", default="")
     parser.add_argument("--diagnostics-out", required=True)
     parser.set_defaults(func=_cmd_plan_gate)
 
@@ -696,6 +793,7 @@ def _add_matrix_outputs(
     parser = subparsers.add_parser("matrix-outputs")
     parser.add_argument("--plan", required=True)
     parser.add_argument("--execution-sets", required=True)
+    parser.add_argument("--disabled-package-target-keys", default="")
     parser.add_argument("--run-id", required=True, type=int)
     parser.add_argument("--attempt", required=True, type=int)
     parser.add_argument("--github-output", required=True)
@@ -714,6 +812,40 @@ def _add_entry_publish_handoff(
     parser.set_defaults(func=_cmd_entry_publish_handoff)
 
 
+def _add_dotnet_metadata_input(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("dotnet-metadata-input")
+    parser.add_argument("--repo-root", default=".")
+    parser.add_argument("--commit-sha", required=True)
+    parser.add_argument("--out", required=True)
+    parser.set_defaults(func=_cmd_dotnet_metadata_input)
+
+
+def _add_active_dotnet_variant_ids(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("active-dotnet-variant-ids")
+    parser.add_argument("--plan", required=True)
+    parser.add_argument("--execution-sets", required=True)
+    parser.add_argument(
+        "--runner-family",
+        choices=sorted(_DOTNET_RELEASE_RUNNER_LABEL_BY_FAMILY),
+        default=None,
+    )
+    parser.set_defaults(func=_cmd_active_dotnet_variant_ids)
+
+
+def _add_active_dotnet_runner_matrix(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("active-dotnet-runner-matrix")
+    parser.add_argument("--plan", required=True)
+    parser.add_argument("--execution-sets", required=True)
+    parser.add_argument("--allowed-runner-label", action="append", default=[])
+    parser.set_defaults(func=_cmd_active_dotnet_runner_matrix)
+
+
 def _add_build_request(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
@@ -722,6 +854,25 @@ def _add_build_request(
     parser.add_argument("--variant-id", required=True)
     parser.add_argument("--out", required=True)
     parser.set_defaults(func=_cmd_build_request)
+
+
+def _add_copy_dist_flat(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("copy-dist-flat")
+    parser.add_argument("--src", required=True)
+    parser.add_argument("--out", required=True)
+    parser.set_defaults(func=_cmd_copy_dist_flat)
+
+
+def _add_validate_dotnet_dist(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("validate-dotnet-dist")
+    parser.add_argument("--plan", required=True)
+    parser.add_argument("--execution-sets", required=True)
+    parser.add_argument("--dist", required=True)
+    parser.set_defaults(func=_cmd_validate_dotnet_dist)
 
 
 def _add_download_publish_inputs(
@@ -747,8 +898,11 @@ def _add_publish_request(
     parser.add_argument("--publish-node-id", required=True)
     parser.add_argument("--run-id", required=True, type=int)
     parser.add_argument("--attempt", required=True, type=int)
-    parser.add_argument("--build-results-dir", required=True)
-    parser.add_argument("--bundles-dir", required=True)
+    parser.add_argument("--build-results-dir", default="")
+    parser.add_argument("--bundles-dir", default="")
+    parser.add_argument("--github-release-asset-receipts", default="")
+    parser.add_argument("--github-release-assets-dir", default="")
+    parser.add_argument("--attestation-source-sha", default="")
     parser.add_argument("--handoff", default="")
     parser.add_argument("--out", required=True)
     parser.set_defaults(func=_cmd_publish_request)
@@ -765,27 +919,15 @@ def _add_prepare_attestation(
     parser.set_defaults(func=_cmd_prepare_attestation)
 
 
-def _add_attach_attestation(
-    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
-) -> None:
-    parser = subparsers.add_parser("attach-attestation")
-    parser.add_argument("--publish-request", required=True)
-    parser.add_argument("--artifact-ids", required=True)
-    parser.add_argument("--attestation-id", required=True)
-    parser.add_argument("--attestation-url", required=True)
-    parser.add_argument("--bundle-path", required=True)
-    parser.add_argument("--storage-record-ids", default="")
-    parser.add_argument("--out", required=True)
-    parser.set_defaults(func=_cmd_attach_attestation)
-
-
 def _add_generate_proofs(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
     parser = subparsers.add_parser("generate-proofs")
     parser.add_argument("--plan", required=True)
     parser.add_argument("--publish-request", required=True)
-    parser.add_argument("--publish-result", required=True)
+    parser.add_argument("--publish-result", default="")
+    parser.add_argument("--github-release-result", default="")
+    parser.add_argument("--asset-attestations", default="")
     parser.add_argument("--publish-node-id", required=True)
     parser.add_argument("--run-id", required=True, type=int)
     parser.add_argument("--attempt", required=True, type=int)
@@ -800,6 +942,70 @@ def _add_generate_proofs(
     parser.set_defaults(func=_cmd_generate_proofs)
 
 
+def _add_github_release_asset_attestations(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("github-release-asset-attestations")
+    parser.add_argument("--publish-request", required=True)
+    parser.add_argument("--github-release-result", default="")
+    parser.add_argument("--attestation-source-sha", required=True)
+    parser.add_argument("--repository", required=True)
+    parser.add_argument("--assets-dir", required=True)
+    parser.add_argument("--out", required=True)
+    parser.set_defaults(func=_cmd_github_release_asset_attestations)
+
+
+def _add_validate_github_release_coverage(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("validate-github-release-coverage")
+    parser.add_argument("--plan", required=True)
+    parser.add_argument("--execution-sets", required=True)
+    parser.add_argument("--tag", required=True)
+    parser.add_argument("--active-github-release-node-ids", required=True)
+    parser.add_argument("--asset-names", required=True)
+    parser.set_defaults(func=_cmd_validate_github_release_coverage)
+
+
+def _add_validate_github_release_asset_proof_sidecar(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser(
+        "validate-github-release-asset-proof-sidecar"
+    )
+    parser.add_argument("--name", required=True)
+    parser.add_argument("--proof", required=True)
+    parser.add_argument("--plan", required=True)
+    parser.add_argument("--release-target-sha", required=True)
+    parser.add_argument("--active-github-release-node-ids", required=True)
+    parser.add_argument("--repository", required=True)
+    parser.add_argument("--tag", required=True)
+    parser.add_argument("--expected-plan-id")
+    parser.add_argument("--expected-run-id", type=int)
+    parser.add_argument("--expected-run-attempt", type=int)
+    parser.add_argument("--asset-manifest")
+    parser.set_defaults(func=_cmd_validate_github_release_asset_proof_sidecar)
+
+
+def _add_package_publish_result(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("package-publish-result")
+    parser.add_argument("--plan", required=True)
+    parser.add_argument("--execution-sets", required=True)
+    parser.add_argument("--target-key", required=True)
+    parser.add_argument("--run-id", required=True, type=int)
+    parser.add_argument("--attempt", required=True, type=int)
+    parser.add_argument("--repository", required=True)
+    parser.add_argument("--workflow", required=True)
+    parser.add_argument("--head-sha", required=True)
+    parser.add_argument("--environment", required=True)
+    parser.add_argument("--publish-script", required=True)
+    parser.add_argument("--out-dir", required=True)
+    parser.add_argument("--github-output", required=True)
+    parser.set_defaults(func=_cmd_package_publish_result)
+
+
 def _add_skip_results(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
@@ -810,6 +1016,8 @@ def _add_skip_results(
     parser.add_argument("--attempt", required=True, type=int)
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--manifest-out", required=True)
+    parser.add_argument("--publish-node-id", default="")
+    parser.add_argument("--github-output", default="")
     parser.set_defaults(func=_cmd_skip_results)
 
 
@@ -820,6 +1028,10 @@ def _add_ensure_tags(
     parser.add_argument("--plan", required=True)
     parser.add_argument("--execution-sets", required=True)
     parser.add_argument("--repository", required=True)
+    parser.add_argument("--force-update-tag", default="false")
+    parser.add_argument("--expected-project-id")
+    parser.add_argument("--expected-commit-sha")
+    parser.add_argument("--expected-release-tag")
     parser.add_argument("--out", required=True)
     parser.set_defaults(func=_cmd_ensure_tags)
 
@@ -831,12 +1043,24 @@ def _add_observe_remote_publications(
     parser.add_argument("--plan", required=True)
     parser.add_argument("--execution-sets")
     parser.add_argument("--enabled-external-oidc-targets", default="")
+    parser.add_argument("--disabled-package-target-keys", default="")
     parser.add_argument("--canary-override-non-public-ref", default="false")
     parser.add_argument("--release-environment", default="")
     parser.add_argument("--repository", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--diagnostics-out", required=True)
     parser.set_defaults(func=_cmd_observe_remote_publications)
+
+
+def _add_official_frozen_versions(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("official-frozen-versions")
+    parser.add_argument("--repository", required=True)
+    parser.add_argument("--project", required=True)
+    parser.add_argument("--out", required=True)
+    parser.add_argument("--diagnostics-out", required=True)
+    parser.set_defaults(func=_cmd_official_frozen_versions)
 
 
 def _add_report(
@@ -849,7 +1073,7 @@ def _add_report(
     parser.add_argument("--attempt", required=True, type=int)
     parser.add_argument("--head-sha", required=True)
     parser.add_argument(
-        "--profile", required=True, choices=("buddy", "official")
+        "--profile", required=True, choices=("buddy", "official", "custom")
     )
     parser.add_argument("--dry-run", required=True)
     parser.add_argument("--validation-build", required=True)
@@ -857,6 +1081,9 @@ def _add_report(
     parser.add_argument("--out", required=True)
     parser.add_argument("--plan", default="")
     parser.add_argument("--execution-sets", default="")
+    parser.add_argument("--plan-artifact-name", default="")
+    parser.add_argument("--execution-sets-artifact-name", default="")
+    parser.add_argument("--entry-publish-handoff-artifact-name", default="")
     parser.add_argument("--diagnostics", default="")
     parser.add_argument("--artifacts-root", default="")
     parser.add_argument("--authorize-conclusion", default="skipped")
@@ -866,7 +1093,25 @@ def _add_report(
     parser.add_argument("--build-conclusion", default="skipped")
     parser.add_argument("--tag-conclusion", default="skipped")
     parser.add_argument("--publish-conclusion", default="skipped")
+    parser.add_argument("--disabled-package-target-keys", default="")
+    parser.add_argument(
+        "--release-completed-check-conclusion", default="skipped"
+    )
     parser.set_defaults(func=_cmd_report)
+
+
+def _add_release_completed_receipts(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser("release-completed-receipts")
+    parser.add_argument("--artifacts-root", required=True)
+    parser.add_argument("--run-id", required=True, type=int)
+    parser.add_argument("--attempt", required=True, type=int)
+    parser.add_argument("--plan-artifact-name", required=True)
+    parser.add_argument("--execution-sets-artifact-name", required=True)
+    parser.add_argument("--entry-publish-handoff-artifact-name", required=True)
+    parser.add_argument("--disabled-package-target-keys", default="")
+    parser.set_defaults(func=_cmd_release_completed_receipts)
 
 
 def _cmd_normalize_entry(args: argparse.Namespace) -> int:
@@ -885,17 +1130,25 @@ def _cmd_normalize_entry(args: argparse.Namespace) -> int:
                 {"input": "validation-build"},
             )
         )
-    if args.profile == "official" and force:
+    requested = _normalize_project_ids(args.requested_project_ids)
+    if len(requested) != 1:
         diagnostics.append(
             _diagnostic(
-                "REQ_FORCE_FOR_OFFICIAL",
+                "REQ_INVALID_INPUT",
                 "validation",
                 "request",
-                "force is not valid for official releases",
-                {},
+                "requested-project-ids must contain exactly one project id",
+                {
+                    "input": "requested-project-ids",
+                    "requested-project-ids": requested,
+                    "count": len(requested),
+                },
             )
         )
-    requested = _normalize_project_ids(args.requested_project_ids)
+        document = _diagnostics_document(diagnostics)
+        _write_json(Path(args.diagnostics_out), document)
+        _write_outputs(args.github_output, {"authorized": "false"})
+        return 1
     if args.profile == "official":
         diagnostics.extend(
             _official_public_ref_diagnostics(
@@ -2534,6 +2787,9 @@ def _ci_work_group_by_id(
     plan: Mapping[str, object] | None,
     work_group_id: str,
 ) -> Mapping[str, Any]:
+    if plan is None:
+        msg = f"unknown CI validation work group {work_group_id!r}"
+        raise RuntimeError(msg)
     for group in _ci_executable_work_groups(plan):
         if group.get("work-group-id") == work_group_id:
             return group
@@ -2559,6 +2815,30 @@ def _cmd_validate_ci_validation_descriptors(args: argparse.Namespace) -> int:
     ) as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    return 0
+
+
+def _cmd_validate_bootstrap_codeowners(args: argparse.Namespace) -> int:
+    try:
+        _validate_bootstrap_codeowners(Path(args.repo_root))
+    except (OSError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    return 0
+
+
+def _cmd_buddy_authorized_refs(args: argparse.Namespace) -> int:
+    try:
+        refs = _buddy_authorized_refs(
+            Path(args.repo_root),
+            project_id=args.project,
+            channel=args.channel,
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    for ref in refs:
+        print(ref)
     return 0
 
 
@@ -3292,14 +3572,21 @@ def _ci_orchestrator_dependency_readiness(
                 blocked = True
                 waitable = True
                 continue
-            if admission_checkpoint is not None:
+            if (
+                admission_checkpoint is not None
+                and dependency_admissions is not None
+            ):
                 _ci_orchestrator_rollback_dependency_admissions(
                     observed_root,
                     dependency_admissions=dependency_admissions,
                     checkpoint_names=admission_checkpoint,
                 )
             return False, False, dependency_blocker_detail
-        if blocked and admission_checkpoint is not None:
+        if (
+            blocked
+            and admission_checkpoint is not None
+            and dependency_admissions is not None
+        ):
             _ci_orchestrator_rollback_dependency_admissions(
                 observed_root,
                 dependency_admissions=dependency_admissions,
@@ -5193,6 +5480,228 @@ def _validate_scoped_descriptor_obligations(
 def _read_yaml(path: Path) -> object:
     with path.open("r", encoding="utf-8") as stream:
         return yaml.safe_load(stream)
+
+
+def _validate_bootstrap_codeowners(repo_root: Path) -> None:
+    codeowners_path = repo_root / ".github/CODEOWNERS"
+    if not codeowners_path.is_file():
+        msg = ".github/CODEOWNERS is required for bootstrap governance"
+        raise ValueError(msg)
+    entries = _parse_codeowners_entries(
+        codeowners_path.read_text(encoding="utf-8")
+    )
+    missing = []
+    required_owners = set(_RELEASE_GOVERNANCE_CODEOWNERS)
+    for path in _bootstrap_governance_paths(repo_root):
+        owners = _codeowners_owners_for_path(entries, path)
+        if not required_owners <= set(owners):
+            missing.append(path)
+    if missing:
+        sample = ", ".join(missing[:20])
+        remainder = len(missing) - 20
+        if remainder > 0:
+            sample = f"{sample}, ... (+{remainder} more)"
+        msg = (
+            "bootstrap CODEOWNERS coverage missing release-governance "
+            f"owner {sorted(required_owners)} for: {sample}"
+        )
+        raise ValueError(msg)
+
+
+def _bootstrap_governance_paths(repo_root: Path) -> list[str]:
+    paths = set(_BOOTSTRAP_GOVERNANCE_EXACT_PATHS)
+    src_root = repo_root / "src"
+    if src_root.is_dir():
+        for descriptor in src_root.rglob("three.release.yml"):
+            if descriptor.is_file():
+                paths.add(descriptor.relative_to(repo_root).as_posix())
+    for root_name in _BOOTSTRAP_GOVERNANCE_RECURSIVE_ROOTS:
+        root = repo_root / root_name
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            if path.is_file():
+                paths.add(path.relative_to(repo_root).as_posix())
+    return sorted(paths)
+
+
+def _buddy_authorized_refs(
+    repo_root: Path,
+    *,
+    project_id: str,
+    channel: str,
+) -> tuple[str, ...]:
+    document = _read_buddy_target_ref_policy(repo_root)
+    channel_policy = _buddy_policy_channel(document, channel)
+    default_refs = _buddy_policy_refs(
+        channel_policy.get("default", {}), f"channels.{channel}.default"
+    )
+    projects = channel_policy.get("projects", {})
+    if not isinstance(projects, Mapping):
+        msg = f"buddy target ref policy channels.{channel}.projects must be a mapping"
+        raise TypeError(msg)
+    project_policy = projects.get(project_id, {})
+    if not isinstance(project_policy, Mapping):
+        msg = (
+            "buddy target ref policy project override must be a mapping for "
+            f"{project_id!r}"
+        )
+        raise TypeError(msg)
+    refs = {
+        *default_refs,
+        *_buddy_policy_refs(
+            project_policy, f"channels.{channel}.projects.{project_id}"
+        ),
+    }
+    if not refs:
+        msg = f"buddy target ref policy has no authorized refs for project {project_id!r}"
+        raise ValueError(msg)
+    return tuple(sorted(refs))
+
+
+def _read_buddy_target_ref_policy(repo_root: Path) -> Mapping[str, object]:
+    policy_path = repo_root / _BUDDY_TARGET_REF_POLICY_PATH
+    if not policy_path.is_file():
+        msg = f"{_BUDDY_TARGET_REF_POLICY_PATH.as_posix()} is required"
+        raise ValueError(msg)
+    document = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+    if not isinstance(document, Mapping):
+        msg = "buddy target ref policy must be a YAML mapping"
+        raise TypeError(msg)
+    expected_root_keys = {"api-version", "kind", "channels"}
+    extra_root_keys = set(document) - expected_root_keys
+    if extra_root_keys:
+        msg = (
+            "buddy target ref policy contains unsupported root keys: "
+            f"{sorted(extra_root_keys)}"
+        )
+        raise ValueError(msg)
+    if document.get("api-version") != (
+        "three.release.buddy-target-refs/v1alpha1"
+    ):
+        msg = "buddy target ref policy has unsupported api-version"
+        raise ValueError(msg)
+    if document.get("kind") != "buddy-target-ref-policy":
+        msg = "buddy target ref policy has unsupported kind"
+        raise ValueError(msg)
+    return document
+
+
+def _buddy_policy_channel(
+    document: Mapping[str, object], channel: str
+) -> Mapping[str, object]:
+    channels = document.get("channels")
+    if not isinstance(channels, Mapping):
+        msg = "buddy target ref policy channels must be a mapping"
+        raise TypeError(msg)
+    channel_policy = channels.get(channel)
+    if not isinstance(channel_policy, Mapping):
+        msg = f"buddy target ref policy has no channel {channel!r}"
+        raise TypeError(msg)
+    channel_keys = {"default", "projects"}
+    extra_channel_keys = set(channel_policy) - channel_keys
+    if extra_channel_keys:
+        msg = (
+            f"buddy target ref policy channel {channel!r} contains unsupported "
+            f"keys: {sorted(extra_channel_keys)}"
+        )
+        raise ValueError(msg)
+    return channel_policy
+
+
+def _buddy_policy_refs(value: object, path: str) -> tuple[str, ...]:
+    if not isinstance(value, Mapping):
+        msg = f"buddy target ref policy {path} must be a mapping"
+        raise TypeError(msg)
+    extra_keys = set(value) - {"refs"}
+    if extra_keys:
+        msg = (
+            f"buddy target ref policy {path} contains unsupported keys: "
+            f"{sorted(extra_keys)}"
+        )
+        raise ValueError(msg)
+    refs = value.get("refs", ())
+    if not isinstance(refs, Sequence) or isinstance(refs, (str, bytes)):
+        msg = f"buddy target ref policy {path}.refs must be a list"
+        raise TypeError(msg)
+    normalized: list[str] = []
+    for index, ref in enumerate(refs):
+        ref_path = f"{path}.refs[{index}]"
+        if not isinstance(ref, str) or not ref:
+            msg = (
+                f"buddy target ref policy {ref_path} must be a non-empty string"
+            )
+            raise ValueError(msg)
+        if not _BUDDY_TARGET_REF_RE.fullmatch(ref):
+            msg = (
+                f"buddy target ref policy {ref_path} must be an exact refs/heads/* "
+                "ref using only safe refname characters"
+            )
+            raise ValueError(msg)
+        ref_suffix = ref.removeprefix("refs/heads/")
+        if (
+            "//" in ref_suffix
+            or ".." in ref_suffix
+            or "@{" in ref_suffix
+            or ref_suffix.endswith(("/", ".lock"))
+            or any(
+                part in {"", ".", ".."} or part.endswith(".lock")
+                for part in ref_suffix.split("/")
+            )
+        ):
+            msg = f"buddy target ref policy {ref_path} is not a safe branch ref"
+            raise ValueError(msg)
+        normalized.append(ref)
+    return tuple(normalized)
+
+
+def _parse_codeowners_entries(
+    text: str,
+) -> list[tuple[str, tuple[str, ...], int]]:
+    entries = []
+    for line_number, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        fields = line.split()
+        pattern, owners = fields[0], tuple(fields[1:])
+        if not owners:
+            msg = f"CODEOWNERS line {line_number} must declare an owner"
+            raise ValueError(msg)
+        if pattern.startswith("!"):
+            msg = f"CODEOWNERS line {line_number} uses unsupported negation"
+            raise ValueError(msg)
+        entries.append((pattern, owners, line_number))
+    return entries
+
+
+def _codeowners_owners_for_path(
+    entries: Sequence[tuple[str, tuple[str, ...], int]],
+    path: str,
+) -> tuple[str, ...]:
+    owners: tuple[str, ...] = ()
+    for pattern, candidate_owners, _line_number in entries:
+        if _codeowners_pattern_matches(pattern, path):
+            owners = candidate_owners
+    return owners
+
+
+def _codeowners_pattern_matches(pattern: str, path: str) -> bool:
+    candidate = pattern[1:] if pattern.startswith("/") else pattern
+    candidate = candidate.rstrip()
+    if candidate.endswith("/"):
+        candidate = f"{candidate}**"
+    if candidate.endswith("/**"):
+        prefix = candidate[:-3]
+        if path == prefix.rstrip("/"):
+            return True
+        if path.startswith(f"{prefix}/"):
+            return True
+    if fnmatch.fnmatchcase(path, candidate):
+        return True
+    if "/" not in candidate:
+        return fnmatch.fnmatchcase(PurePosixPath(path).name, candidate)
+    return False
 
 
 def _scoped_authoring_tracked_files(
@@ -9682,7 +10191,7 @@ def _ci_missing_execution_batch_manifest_payloads(  # noqa: PLR0915
     completed_at: str | None = None,
     summary_created_at: str | None = None,
     plan: Mapping[str, object],
-    request: Mapping[str, object],
+    request: Mapping[str, object] | None,
     changed_files_snapshot: Mapping[str, object] | None,
     fact_snapshot: Mapping[str, object] | None,
     boundary_diagnostics: Sequence[Mapping[str, object]] = (),
@@ -10360,7 +10869,7 @@ def _ci_aggregate_manifest_request_authority_state(
 def _ci_invalid_plan_request_summary(
     input_artifacts: Mapping[str, object],
     *,
-    plan: Mapping[str, object],
+    plan: Mapping[str, object] | None,
     boundary_diagnostics: Sequence[Mapping[str, object]],
 ) -> Mapping[str, object]:
     detail = _ci_missing_plan_invalid_plan_detail(boundary_diagnostics)
@@ -13751,6 +14260,9 @@ def _cmd_plan_gate(args: argparse.Namespace) -> int:
             execution_sets,
             args.enabled_external_oidc_targets,
             remote_observations,
+            disabled_package_target_keys=_comma_separated_items(
+                getattr(args, "disabled_package_target_keys", ""),
+            ),
         )
     except RuntimeError as exc:
         diagnostics_document = _diagnostics_from_error(exc)
@@ -13771,11 +14283,76 @@ def _cmd_matrix_outputs(args: argparse.Namespace) -> int:
     plan = _read_json(Path(args.plan))
     execution_sets = _read_json(Path(args.execution_sets))
     plan_id = str(plan["envelope"]["plan-id"])
+    disabled_package_target_keys = _comma_separated_items(
+        getattr(args, "disabled_package_target_keys", ""),
+    )
+    selected_node_ids = _enabled_publish_node_ids(
+        plan,
+        plan["graph"]["publish-nodes"].keys(),
+        disabled_package_target_keys,
+    )
+    active_publish_node_ids = _enabled_publish_node_ids(
+        plan,
+        execution_sets["active-publish-node-ids"],
+        disabled_package_target_keys,
+    )
+    active_variant_ids = _enabled_active_variant_ids(
+        plan,
+        execution_sets,
+        disabled_package_target_keys,
+    )
+    skip_publish_node_ids = _enabled_publish_node_ids(
+        plan,
+        execution_sets["skip-satisfied-publish-node-ids"],
+        disabled_package_target_keys,
+    )
+    selected_target_keys = _planned_target_keys(plan, selected_node_ids)
+    active_target_keys = _planned_target_keys(plan, active_publish_node_ids)
+    selected_gh = execution_sets["selected-github-release-publish-node-ids"]
+    active_gh_publish_node_ids = _enabled_publish_node_ids(
+        plan,
+        execution_sets["active-github-release-publish-node-ids"],
+        disabled_package_target_keys,
+    )
+    active_gh = _expanded_active_github_release_publish_node_ids(
+        plan,
+        execution_sets,
+    )
+    node_gpr_identity = _planned_package_identity(
+        plan, selected_node_ids, "node-gpr"
+    )
+    node_npmjs_identity = _planned_package_identity(
+        plan, selected_node_ids, "node-npmjs"
+    )
+    node_github_release_asset_name = (
+        _planned_node_github_release_package_asset_name(plan, active_gh)
+    )
+    node_github_release_package_name = (
+        _planned_node_github_release_package_name(plan, active_gh)
+    )
+    node_github_release_asset_sha256 = (
+        _planned_node_github_release_package_asset_sha256(plan, active_gh)
+    )
+    python_distribution_filenames = _planned_python_distribution_filenames(
+        plan, active_publish_node_ids
+    )
+    (
+        ruby_package_name,
+        ruby_package_version,
+        ruby_gem_filename,
+        _ruby_gem_sha256,
+    ) = _planned_ruby_gem_identity_and_distribution(
+        plan, active_publish_node_ids
+    )
     variant_matrix = [
         {"variant-id": variant_id, "runner": _variant_runner(plan, variant_id)}
-        for variant_id in sorted(execution_sets["active-variant-ids"])
+        for variant_id in sorted(active_variant_ids)
     ]
-    selectors = execution_sets["active-publish-selectors"]
+    selectors = _publish_selectors_without_disabled_target_keys(
+        plan,
+        execution_sets["active-publish-selectors"],
+        disabled_package_target_keys,
+    )
     reusable_classes = _reusable_publish_classes(plan, selectors)
     reusable = sorted(
         node_id
@@ -13786,8 +14363,31 @@ def _cmd_matrix_outputs(args: argparse.Namespace) -> int:
     entry_proof_matrix = _entry_proof_upload_matrix(
         plan, entry, args.run_id, args.attempt
     )
-    selected_gh = execution_sets["selected-github-release-publish-node-ids"]
-    active_gh = execution_sets["active-github-release-publish-node-ids"]
+    active_gh_publish_modes = sorted(
+        {
+            str(mode)
+            for node_id in active_gh_publish_node_ids
+            if isinstance(
+                mode := plan["graph"]["publish-nodes"][node_id].get(
+                    "publish-mode",
+                ),
+                str,
+            )
+        }
+    )
+    active_gh_publish_mode = (
+        active_gh_publish_modes[0] if len(active_gh_publish_modes) == 1 else ""
+    )
+    active_gh_asset_labels = _planned_github_release_asset_labels_by_name(
+        plan, active_gh
+    )
+    active_gh_asset_names = _planned_github_release_asset_names(plan, active_gh)
+    active_gh_overwrite_mutable_authorized = (
+        _active_github_release_overwrite_mutable_authorized(
+            plan,
+            active_gh_publish_node_ids,
+        )
+    )
     outputs = {
         "plan_id": plan_id,
         "plan_artifact_name": artifact_name(
@@ -13806,9 +14406,7 @@ def _cmd_matrix_outputs(args: argparse.Namespace) -> int:
             "tag-result",
             ArtifactNameInputs(args.run_id, args.attempt, plan_id=plan_id),
         ),
-        "variant_ids": json.dumps(
-            execution_sets["active-variant-ids"], separators=(",", ":")
-        ),
+        "variant_ids": json.dumps(active_variant_ids, separators=(",", ":")),
         "variant_matrix": json.dumps(variant_matrix, separators=(",", ":")),
         "reusable_publish_node_ids": json.dumps(
             reusable, separators=(",", ":")
@@ -13827,7 +14425,7 @@ def _cmd_matrix_outputs(args: argparse.Namespace) -> int:
             entry_proof_matrix, separators=(",", ":")
         ),
         "skip_publish_node_ids": json.dumps(
-            execution_sets["skip-satisfied-publish-node-ids"],
+            skip_publish_node_ids,
             separators=(",", ":"),
         ),
         "selected_github_release_node_ids": json.dumps(
@@ -13836,7 +14434,17 @@ def _cmd_matrix_outputs(args: argparse.Namespace) -> int:
         "active_github_release_node_ids": json.dumps(
             active_gh, separators=(",", ":")
         ),
-        "has_variants": _bool_str(bool(execution_sets["active-variant-ids"])),
+        "active_github_release_publish_mode": active_gh_publish_mode,
+        "active_github_release_asset_labels_json": json.dumps(
+            active_gh_asset_labels, sort_keys=True, separators=(",", ":")
+        ),
+        "active_github_release_asset_names_json": json.dumps(
+            active_gh_asset_names, sort_keys=True, separators=(",", ":")
+        ),
+        "active_github_release_overwrite_mutable_authorized": _bool_str(
+            active_gh_overwrite_mutable_authorized
+        ),
+        "has_variants": _bool_str(bool(active_variant_ids)),
         "has_reusable_publish": _bool_str(bool(reusable)),
         "has_reusable_github_release_publish": _bool_str(
             bool(reusable_classes["github-release"])
@@ -13851,12 +14459,51 @@ def _cmd_matrix_outputs(args: argparse.Namespace) -> int:
         "has_entry_proofs": _bool_str(bool(entry_proof_matrix)),
         "has_selected_github_release": _bool_str(bool(selected_gh)),
         "has_active_github_release": _bool_str(bool(active_gh)),
-        "has_skip_results": _bool_str(
-            bool(execution_sets["skip-satisfied-publish-node-ids"])
+        "has_skip_results": _bool_str(bool(skip_publish_node_ids)),
+        "has_live_side_effects": _bool_str(bool(active_publish_node_ids)),
+        "has_selected_python_pypi": _bool_str(
+            "python-pypi" in selected_target_keys
         ),
-        "has_live_side_effects": _bool_str(
-            bool(execution_sets["active-publish-node-ids"])
+        "has_active_python_pypi": _bool_str(
+            "python-pypi" in active_target_keys
         ),
+        "expected_python_distribution_filenames_json": json.dumps(
+            python_distribution_filenames,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        "expected_python_distribution_sha256_by_filename_json": "{}",
+        "has_selected_node_gpr": _bool_str("node-gpr" in selected_target_keys),
+        "has_active_node_gpr": _bool_str("node-gpr" in active_target_keys),
+        "has_selected_node_npmjs": _bool_str(
+            "node-npmjs" in selected_target_keys
+        ),
+        "has_active_node_npmjs": _bool_str("node-npmjs" in active_target_keys),
+        "expected_node_gpr_package_name": node_gpr_identity[0],
+        "expected_node_gpr_package_version": node_gpr_identity[1],
+        "expected_node_gpr_tarball_sha256": "",
+        "expected_node_gpr_tarball_sha512": "",
+        "expected_node_npmjs_package_name": node_npmjs_identity[0],
+        "expected_node_npmjs_package_version": node_npmjs_identity[1],
+        "expected_node_npmjs_tarball_sha256": "",
+        "expected_node_npmjs_tarball_sha512": "",
+        "expected_node_github_release_asset_name": node_github_release_asset_name,
+        "expected_node_github_release_package_name": node_github_release_package_name,
+        "expected_node_github_release_asset_sha256": (
+            node_github_release_asset_sha256
+        ),
+        "has_selected_ruby_gpr": _bool_str("ruby-gpr" in selected_target_keys),
+        "has_active_ruby_gpr": _bool_str("ruby-gpr" in active_target_keys),
+        "has_selected_ruby_rubygems": _bool_str(
+            "ruby-rubygems" in selected_target_keys
+        ),
+        "has_active_ruby_rubygems": _bool_str(
+            "ruby-rubygems" in active_target_keys
+        ),
+        "expected_ruby_package_name": ruby_package_name,
+        "expected_ruby_package_version": ruby_package_version,
+        "expected_ruby_gem_filename": ruby_gem_filename,
+        "expected_ruby_gem_sha256": "",
     }
     _write_outputs(args.github_output, outputs)
     return 0
@@ -13871,6 +14518,141 @@ def _cmd_entry_publish_handoff(args: argparse.Namespace) -> int:
     validate_contract(handoff)
     _write_json(Path(args.out), handoff)
     return 0
+
+
+def _cmd_dotnet_metadata_input(args: argparse.Namespace) -> int:
+    snapshot = validate_authoring(Path(args.repo_root))
+    document = snapshot.dotnet_metadata_input(args.commit_sha)
+    validate_contract(document)
+    _write_json(Path(args.out), document)
+    return 0
+
+
+def _cmd_active_dotnet_variant_ids(args: argparse.Namespace) -> int:
+    plan = _read_json(Path(args.plan))
+    execution_sets = _read_json(Path(args.execution_sets))
+    for variant_id in _active_dotnet_variant_ids(
+        plan,
+        execution_sets,
+        runner_family=args.runner_family,
+    ):
+        print(variant_id)
+    return 0
+
+
+def _cmd_active_dotnet_runner_matrix(args: argparse.Namespace) -> int:
+    plan = _read_json(Path(args.plan))
+    execution_sets = _read_json(Path(args.execution_sets))
+    matrix = _active_dotnet_runner_matrix(
+        plan,
+        execution_sets,
+        allowed_runner_labels=args.allowed_runner_label,
+    )
+    print(json.dumps(matrix, separators=(",", ":")))
+    return 0
+
+
+def _active_dotnet_variant_ids(
+    plan: Mapping[str, Any],
+    execution_sets: Mapping[str, Any],
+    *,
+    runner_family: str | None = None,
+) -> list[str]:
+    variants = _mapping(plan["graph"]["variants"], "graph.variants")
+    projects = _mapping(plan["envelope"]["projects"], "envelope.projects")
+    active_ids: list[str] = []
+    for raw_variant_id in execution_sets["active-variant-ids"]:
+        variant_id = str(raw_variant_id)
+        if variant_id not in variants:
+            msg = (
+                f"active variant {variant_id!r} from execution-sets.json is "
+                "missing from the release plan"
+            )
+            raise RuntimeError(msg)
+        variant = _mapping(variants[variant_id], f"graph.variants.{variant_id}")
+        project_id = str(variant["project-id"])
+        project = _mapping(
+            projects[project_id], f"envelope.projects.{project_id}"
+        )
+        if project.get("ecosystem") != "dotnet":
+            msg = (
+                f"active variant {variant_id!r} is not a .NET variant "
+                f"(ecosystem: {project.get('ecosystem')!r})"
+            )
+            raise RuntimeError(msg)
+        if (
+            runner_family is not None
+            and _dotnet_variant_runner_family(variant) != runner_family
+        ):
+            continue
+        active_ids.append(variant_id)
+    if not active_ids and runner_family is None:
+        msg = "No active .NET variants were present in execution-sets.json."
+        raise RuntimeError(msg)
+    return sorted(active_ids)
+
+
+def _active_dotnet_runner_matrix(
+    plan: Mapping[str, Any],
+    execution_sets: Mapping[str, Any],
+    *,
+    allowed_runner_labels: Collection[str] | None = None,
+) -> dict[str, list[dict[str, str]]]:
+    variants = _mapping(plan["graph"]["variants"], "graph.variants")
+    runner_families = {
+        _dotnet_variant_runner_family(
+            _mapping(variants[variant_id], f"graph.variants.{variant_id}")
+        )
+        for variant_id in _active_dotnet_variant_ids(plan, execution_sets)
+    }
+    matrix = {
+        "include": [
+            {
+                "runner_family": runner_family,
+                "runs_on": _DOTNET_RELEASE_RUNNER_LABEL_BY_FAMILY[
+                    runner_family
+                ],
+                "artifact_suffix": runner_family,
+            }
+            for runner_family in sorted(runner_families)
+        ]
+    }
+    if allowed_runner_labels is not None:
+        allowed = set(allowed_runner_labels)
+        unexpected = sorted(
+            {
+                include["runs_on"]
+                for include in matrix["include"]
+                if include["runs_on"] not in allowed
+            }
+        )
+        if unexpected:
+            msg = (
+                "Active .NET runner matrix contains labels outside the trusted "
+                f"allowlist: {', '.join(unexpected)}"
+            )
+            raise RuntimeError(msg)
+    return matrix
+
+
+def _dotnet_variant_runner_family(variant: Mapping[str, Any]) -> str:
+    dimensions = variant.get("dimensions", {})
+    if isinstance(dimensions, Mapping):
+        os_dimension = dimensions.get("os")
+        rid = dimensions.get("rid")
+        if os_dimension == "windows" or (
+            isinstance(rid, str) and rid.startswith("win-")
+        ):
+            return "windows"
+        if os_dimension == "linux" or (
+            isinstance(rid, str) and rid.startswith("linux-")
+        ):
+            return "ubuntu"
+        if os_dimension == "macos" or (
+            isinstance(rid, str) and rid.startswith("osx-")
+        ):
+            return "macos"
+    return "windows"
 
 
 def _cmd_build_request(args: argparse.Namespace) -> int:
@@ -13892,6 +14674,165 @@ def _cmd_build_request(args: argparse.Namespace) -> int:
     validate_contract(request)
     _write_json(Path(args.out), request)
     return 0
+
+
+def _cmd_copy_dist_flat(args: argparse.Namespace) -> int:
+    _copy_dist_flat(Path(args.src), Path(args.out))
+    return 0
+
+
+def _cmd_validate_dotnet_dist(args: argparse.Namespace) -> int:
+    plan = _read_json(Path(args.plan))
+    execution_sets = _read_json(Path(args.execution_sets))
+    validate_contract(plan)
+    validate_contract(execution_sets)
+    _validate_dotnet_dist(plan, execution_sets, Path(args.dist))
+    return 0
+
+
+def _copy_dist_flat(src: Path, out: Path) -> None:
+    if not src.is_dir():
+        msg = f"Build dist directory does not exist: {src}"
+        raise RuntimeError(msg)
+    out.mkdir(parents=True, exist_ok=True)
+    copied = False
+    for path in sorted(item for item in src.iterdir() if item.is_file()):
+        destination = out / path.name
+        if destination.exists():
+            msg = (
+                "Duplicate .NET release asset basename while flattening "
+                f"variant outputs: {path.name}"
+            )
+            raise RuntimeError(msg)
+        shutil.copy2(path, destination)
+        copied = True
+    if not copied:
+        msg = f"Build dist directory contains no release asset files: {src}"
+        raise RuntimeError(msg)
+
+
+def _validate_dotnet_dist(
+    plan: Mapping[str, Any], execution_sets: Mapping[str, Any], dist: Path
+) -> None:
+    """Validate merged .NET dist basenames against actual active publish nodes."""
+    expected = _expected_dotnet_dist_asset_names(plan, execution_sets)
+    if not expected:
+        msg = "Finalized release plan contains no active .NET GitHub Release assets."
+        raise RuntimeError(msg)
+    if not dist.is_dir():
+        msg = f"Merged .NET dist directory does not exist: {dist}"
+        raise RuntimeError(msg)
+    actual = sorted(item.name for item in dist.iterdir() if item.is_file())
+    if not actual:
+        msg = f"Merged .NET dist directory contains no release asset files: {dist}"
+        raise RuntimeError(msg)
+    expected_set = set(expected)
+    actual_set = set(actual)
+    if actual_set != expected_set:
+        missing = sorted(expected_set - actual_set)
+        unexpected = sorted(actual_set - expected_set)
+        details: list[str] = []
+        if missing:
+            details.append(f"missing: {', '.join(missing)}")
+        if unexpected:
+            details.append(f"unexpected: {', '.join(unexpected)}")
+        msg = (
+            "Merged .NET release asset files do not match the finalized release "
+            f"plan ({'; '.join(details)})."
+        )
+        raise RuntimeError(msg)
+
+
+def _expected_dotnet_dist_asset_names(
+    plan: Mapping[str, Any], execution_sets: Mapping[str, Any]
+) -> list[str]:
+    graph = _mapping(plan["graph"], "graph")
+    projects = _mapping(plan["envelope"]["projects"], "envelope.projects")
+    variants = _mapping(graph["variants"], "graph.variants")
+    artifacts = _mapping(graph["artifacts"], "graph.artifacts")
+    publish_nodes = _mapping(graph["publish-nodes"], "graph.publish-nodes")
+    target_snapshots = _mapping(
+        graph["target-instance-snapshots"],
+        "graph.target-instance-snapshots",
+    )
+    active_variant_ids = {
+        str(variant_id) for variant_id in execution_sets["active-variant-ids"]
+    }
+    names_by_artifact_id: dict[str, str] = {}
+    artifacts_by_name: dict[str, str] = {}
+    for raw_node_id in execution_sets["active-github-release-publish-node-ids"]:
+        node_id = str(raw_node_id)
+        node = _mapping(
+            publish_nodes[node_id], f"graph.publish-nodes.{node_id}"
+        )
+        snapshot_id = str(node["target-instance-snapshot-id"])
+        snapshot = _mapping(
+            target_snapshots[snapshot_id],
+            f"graph.target-instance-snapshots.{snapshot_id}",
+        )
+        if snapshot.get("family") != "github-release":
+            msg = (
+                f"active GitHub Release publish node {node_id!r} uses "
+                f"non-GitHub-Release target {snapshot_id!r}"
+            )
+            raise RuntimeError(msg)
+        projection = _mapping(
+            node.get("projection", {}),
+            f"graph.publish-nodes.{node_id}.projection",
+        )
+        asset_names = _mapping(
+            projection.get("asset-names-by-artifact-id", {}),
+            f"graph.publish-nodes.{node_id}.projection.asset-names-by-artifact-id",
+        )
+        for raw_artifact_id in node.get("artifact-ids", []):
+            artifact_id = str(raw_artifact_id)
+            artifact = _mapping(
+                artifacts[artifact_id], f"graph.artifacts.{artifact_id}"
+            )
+            variant_id = str(artifact["variant-id"])
+            if variant_id not in active_variant_ids:
+                msg = (
+                    f"active GitHub Release publish node {node_id!r} references "
+                    f"artifact {artifact_id!r} from inactive variant {variant_id!r}"
+                )
+                raise RuntimeError(msg)
+            variant = _mapping(
+                variants[variant_id], f"graph.variants.{variant_id}"
+            )
+            project_id = str(variant["project-id"])
+            project = _mapping(
+                projects[project_id], f"envelope.projects.{project_id}"
+            )
+            if project.get("ecosystem") != "dotnet":
+                continue
+            asset_name = asset_names.get(artifact_id)
+            if not isinstance(asset_name, str) or not asset_name:
+                msg = (
+                    f"active .NET GitHub Release artifact {artifact_id!r} for "
+                    f"publish node {node_id!r} is missing a planned asset name"
+                )
+                raise RuntimeError(msg)
+            existing = names_by_artifact_id.get(artifact_id)
+            if existing is not None and existing != asset_name:
+                msg = (
+                    f"conflicting .NET GitHub Release asset names for artifact "
+                    f"{artifact_id!r}: {existing!r} and {asset_name!r}"
+                )
+                raise RuntimeError(msg)
+            other_artifact_id = artifacts_by_name.get(asset_name)
+            if (
+                other_artifact_id is not None
+                and other_artifact_id != artifact_id
+            ):
+                msg = (
+                    "duplicate planned .NET GitHub Release asset basename "
+                    f"{asset_name!r} for artifacts {other_artifact_id!r} and "
+                    f"{artifact_id!r}"
+                )
+                raise RuntimeError(msg)
+            names_by_artifact_id[artifact_id] = asset_name
+            artifacts_by_name[asset_name] = artifact_id
+    return sorted(names_by_artifact_id.values())
 
 
 def _build_request_artifacts(
@@ -14019,14 +14960,43 @@ def _cmd_publish_request(args: argparse.Namespace) -> int:
                 plan, args.publish_node_id, args.run_id, args.attempt
             ),
         )
-    request = _publish_request(
-        plan,
-        args.publish_node_id,
-        args.run_id,
-        args.attempt,
-        Path(args.build_results_dir),
-        Path(args.bundles_dir),
-    )
+    if args.github_release_asset_receipts:
+        if not args.github_release_assets_dir:
+            msg = (
+                "--github-release-assets-dir is required with "
+                "--github-release-asset-receipts"
+            )
+            raise ValueError(msg)
+        request = _github_release_publish_request_from_asset_receipts(
+            plan,
+            args.publish_node_id,
+            Path(args.github_release_asset_receipts),
+            Path(args.github_release_assets_dir),
+        )
+    else:
+        if not args.build_results_dir or not args.bundles_dir:
+            msg = (
+                "--build-results-dir and --bundles-dir are required unless "
+                "--github-release-asset-receipts is provided"
+            )
+            raise ValueError(msg)
+        request = _publish_request(
+            plan,
+            args.publish_node_id,
+            args.run_id,
+            args.attempt,
+            Path(args.build_results_dir),
+            Path(args.bundles_dir),
+        )
+    if args.attestation_source_sha:
+        attestation_source_sha = _string(
+            args.attestation_source_sha,
+            "attestation-source-sha",
+        )
+        if not _ci_sha(attestation_source_sha):
+            msg = "attestation-source-sha must be a 40-character lowercase hex SHA"
+            raise ValueError(msg)
+        request["attestation-source-sha"] = attestation_source_sha
     validate_contract(request)
     _write_json(Path(args.out), request)
     return 0
@@ -14060,42 +15030,40 @@ def _cmd_prepare_attestation(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_attach_attestation(args: argparse.Namespace) -> int:
-    request = _read_json(Path(args.publish_request))
-    artifact_ids = json.loads(
-        Path(args.artifact_ids).read_text(encoding="utf-8")
-    )
-    if artifact_ids:
-        payload = {
-            artifact_id: {
-                "attestation-id": args.attestation_id,
-                "attestation-url": args.attestation_url,
-                "bundle-path": args.bundle_path,
-            }
-            for artifact_id in artifact_ids
-        }
-        if args.storage_record_ids:
-            for value in payload.values():
-                value["storage-record-ids"] = args.storage_record_ids
-        request["github-release-asset-attestations"] = payload
-    validate_contract(request)
-    _write_json(Path(args.out), request)
-    return 0
-
-
 def _cmd_generate_proofs(args: argparse.Namespace) -> int:
     plan = _read_json(Path(args.plan))
     publish_request = _read_json(Path(args.publish_request))
-    publish_result = _read_json(Path(args.publish_result))
     validate_contract(plan)
     validate_contract(publish_request)
-    validate_contract(publish_result)
     if publish_request["publish-node-id"] != args.publish_node_id:
         msg = "publish request node does not match requested proof node"
         raise ValueError(msg)
-    if publish_result["publish-node-id"] != args.publish_node_id:
-        msg = "publish result node does not match requested proof node"
-        raise ValueError(msg)
+    snapshot = _mapping(
+        publish_request.get("target-instance-snapshot"),
+        "publish-request.target-instance-snapshot",
+    )
+    is_github_release = snapshot.get("family") == "github-release"
+    if is_github_release:
+        if not args.github_release_result:
+            msg = (
+                "--github-release-result is required for GitHub Release proofs"
+            )
+            raise ValueError(msg)
+        if not args.asset_attestations:
+            msg = "--asset-attestations is required for GitHub Release proofs"
+            raise ValueError(msg)
+        publish_result = _read_json(Path(args.github_release_result))
+        asset_attestations = _read_json(Path(args.asset_attestations))
+    else:
+        if not args.publish_result:
+            msg = "--publish-result is required for package registry proofs"
+            raise ValueError(msg)
+        publish_result = _read_json(Path(args.publish_result))
+        asset_attestations = None
+        if publish_result["publish-node-id"] != args.publish_node_id:
+            msg = "publish result node does not match requested proof node"
+            raise ValueError(msg)
+    validate_contract(publish_result)
 
     artifact_ids = (
         _read_json(Path(args.artifact_ids_json))
@@ -14122,6 +15090,7 @@ def _cmd_generate_proofs(args: argparse.Namespace) -> int:
         Path(args.build_results_dir),
         args.run_id,
         args.attempt,
+        asset_attestations,
     )
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -14146,6 +15115,226 @@ def _cmd_generate_proofs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_github_release_asset_attestations(args: argparse.Namespace) -> int:
+    publish_request = _read_json(Path(args.publish_request))
+    validate_contract(publish_request)
+    github_release_result = (
+        _read_json(Path(args.github_release_result))
+        if args.github_release_result
+        else None
+    )
+    if github_release_result is not None:
+        validate_contract(github_release_result)
+    attestation_source_sha = _string(
+        args.attestation_source_sha,
+        "attestation-source-sha",
+    )
+    if not _ci_sha(attestation_source_sha):
+        msg = "attestation-source-sha must be a 40-character lowercase hex SHA"
+        raise ValueError(msg)
+    node = _mapping(publish_request["publish-node"], "publish-node")
+    projection = _mapping(node.get("projection"), "publish-node.projection")
+    asset_names = _mapping(
+        projection.get("asset-names-by-artifact-id"),
+        "publish-node.projection.asset-names-by-artifact-id",
+    )
+    artifacts = _mapping(
+        publish_request.get("artifacts"), "publish-request.artifacts"
+    )
+    node_attestation = _mapping(
+        node.get("attestation"), "publish-node.attestation"
+    )
+    signer_workflow = _string(
+        node_attestation.get("signer-workflow"),
+        "publish-node.attestation.signer-workflow",
+    )
+    result_assets = (
+        _github_release_result_assets_by_name(github_release_result)
+        if github_release_result is not None
+        else {}
+    )
+    attestations: Json = {}
+    assets_dir = Path(args.assets_dir)
+    for artifact_id in _string_list(
+        node.get("artifact-ids"), "publish-node.artifact-ids"
+    ):
+        asset_name = _string(asset_names.get(artifact_id), "asset-name")
+        artifact = _mapping(
+            artifacts.get(artifact_id), f"artifacts[{artifact_id}]"
+        )
+        expected_size = _int(artifact.get("byte-size"), "artifact.byte-size")
+        expected_sha256 = _string(artifact.get("sha256"), "artifact.sha256")
+        if github_release_result is not None:
+            result_asset = _mapping(
+                result_assets.get(asset_name),
+                f"github-release-result.assets[{asset_name}]",
+            )
+            if (
+                result_asset.get("size") != expected_size
+                or result_asset.get("sha256") != expected_sha256
+            ):
+                msg = (
+                    f"GitHub Release result asset {asset_name!r} does not match "
+                    "the publish request artifact receipt"
+                )
+                raise RuntimeError(msg)
+        asset_path = assets_dir / asset_name
+        if not asset_path.is_file():
+            msg = f"staged GitHub Release asset {asset_name!r} is missing"
+            raise RuntimeError(msg)
+        if asset_path.stat().st_size != expected_size:
+            msg = f"staged GitHub Release asset {asset_name!r} size mismatch"
+            raise RuntimeError(msg)
+        if _file_sha256_bytes(asset_path) != expected_sha256:
+            msg = f"staged GitHub Release asset {asset_name!r} SHA-256 mismatch"
+            raise RuntimeError(msg)
+        evidence = _gh_attestation_verify_asset_evidence(
+            repository=args.repository,
+            asset_path=asset_path,
+            asset_name=asset_name,
+            expected_sha256=expected_sha256,
+            signer_workflow=signer_workflow,
+            commit_sha=attestation_source_sha,
+        )
+        if evidence is None:
+            msg = f"GitHub Release asset {asset_name!r} lacks verified attestation evidence"
+            raise RuntimeError(msg)
+        attestations[artifact_id] = evidence
+    _write_json(Path(args.out), attestations)
+    return 0
+
+
+def _cmd_validate_github_release_coverage(args: argparse.Namespace) -> int:
+    plan = _read_json(Path(args.plan))
+    execution_sets = _read_json(Path(args.execution_sets))
+    validate_contract(plan)
+    validate_contract(execution_sets)
+    _validate_github_release_coverage_inputs(
+        plan=plan,
+        execution_sets=execution_sets,
+        tag=args.tag,
+        active_node_ids=_read_string_array_file(
+            Path(args.active_github_release_node_ids),
+            "active_github_release_node_ids_json",
+        ),
+        asset_names=_read_string_array_file(
+            Path(args.asset_names),
+            "asset_names_json",
+        ),
+    )
+    return 0
+
+
+def _cmd_validate_github_release_asset_proof_sidecar(
+    args: argparse.Namespace,
+) -> int:
+    proof = _read_receipt(Path(args.proof))
+    if not _is_valid_github_release_asset_proof_sidecar_file(
+        args.name,
+        proof,
+    ):
+        return 1
+    plan = _read_json(Path(args.plan))
+    validate_contract(plan)
+    node_ids = json.loads(
+        Path(args.active_github_release_node_ids).read_text(encoding="utf-8"),
+        object_pairs_hook=_ci_validation_reject_duplicate_json_keys,
+    )
+    if not isinstance(node_ids, list) or not all(
+        isinstance(node_id, str) and node_id for node_id in node_ids
+    ):
+        return 1
+    expected_assets_by_name = None
+    asset_manifest = getattr(args, "asset_manifest", None)
+    if asset_manifest:
+        try:
+            expected_assets_by_name = _read_github_release_payload_manifest(
+                Path(asset_manifest),
+            )
+        except (OSError, ValueError):
+            return 1
+    nodes = _mapping(plan["graph"].get("publish-nodes"), "graph.publish-nodes")
+    for node_id in node_ids:
+        node = nodes.get(node_id)
+        signer_workflow = (
+            _planned_github_release_signer_workflow(node)
+            if isinstance(node, Mapping)
+            else None
+        )
+        if (
+            isinstance(
+                node,
+                Mapping,
+            )
+            and _github_release_asset_proof_is_release_bound_sidecar(
+                proof,
+                node_id,
+                node,
+                args.tag,
+                repository=args.repository,
+                release_target_sha=getattr(args, "release_target_sha", None),
+                signer_workflow=signer_workflow,
+                artifact_variant_ids_by_id=(
+                    _planned_artifact_variant_ids_for_node(plan, node)
+                ),
+            )
+            and _github_release_asset_proof_matches_current_sidecar_coverage(
+                proof,
+                expected_plan_id=getattr(args, "expected_plan_id", None),
+                expected_run_id=getattr(args, "expected_run_id", None),
+                expected_run_attempt=getattr(
+                    args, "expected_run_attempt", None
+                ),
+                expected_assets_by_name=expected_assets_by_name,
+            )
+        ):
+            return 0
+    return 1
+
+
+def _cmd_package_publish_result(args: argparse.Namespace) -> int:
+    plan = _read_json(Path(args.plan))
+    execution_sets = _read_json(Path(args.execution_sets))
+    validate_contract(plan)
+    validate_contract(execution_sets)
+    publish_node_id = _active_package_publish_node_id_for_target(
+        plan,
+        execution_sets,
+        args.target_key,
+    )
+    node = plan["graph"]["publish-nodes"][publish_node_id]
+    snapshot_id = node["target-instance-snapshot-id"]
+    result = {
+        "api-version": "three.release.publish-result/v1alpha1",
+        "kind": "publish-result",
+        "plan-id": plan["envelope"]["plan-id"],
+        "project-id": node["project-id"],
+        "publish-node-id": publish_node_id,
+        "target-instance-snapshot-id": snapshot_id,
+        "resolved-publish-identity": node["resolved-publish-identity"],
+        "outcome": "published",
+        "evidence": _package_publish_result_evidence(
+            plan,
+            publish_node_id,
+            args,
+        ),
+    }
+    validate_contract(result)
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "publish-result.json"
+    _write_json(out_path, result)
+    _write_outputs(
+        args.github_output,
+        {
+            "plan_id": str(plan["envelope"]["plan-id"]),
+            "publish_node_id": publish_node_id,
+            "publish_result_path": out_path.as_posix(),
+        },
+    )
+    return 0
+
+
 def _cmd_skip_results(args: argparse.Namespace) -> int:
     plan = _read_json(Path(args.plan))
     execution_sets = _read_json(Path(args.execution_sets))
@@ -14153,7 +15342,17 @@ def _cmd_skip_results(args: argparse.Namespace) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     plan_id = str(plan["envelope"]["plan-id"])
     names: list[str] = []
-    for node_id in execution_sets["skip-satisfied-publish-node-ids"]:
+    requested_node_id = getattr(args, "publish_node_id", "")
+    skip_node_ids = list(execution_sets["skip-satisfied-publish-node-ids"])
+    if requested_node_id:
+        if requested_node_id not in skip_node_ids:
+            msg = (
+                f"publish node {requested_node_id!r} is not skip-satisfied "
+                "in the finalized execution sets"
+            )
+            raise RuntimeError(msg)
+        skip_node_ids = [requested_node_id]
+    for node_id in skip_node_ids:
         node = plan["graph"]["publish-nodes"][node_id]
         snapshot_id = node["target-instance-snapshot-id"]
         result = {
@@ -14183,7 +15382,68 @@ def _cmd_skip_results(args: argparse.Namespace) -> int:
         _write_json(item_dir / "skip-result.json", result)
         names.append(name)
     _write_json(Path(args.manifest_out), {"skip-result-artifact-names": names})
+    if getattr(args, "github_output", ""):
+        _write_outputs(
+            args.github_output,
+            {"skip_result_artifact_name": names[0] if len(names) == 1 else ""},
+        )
     return 0
+
+
+def _cmd_official_frozen_versions(args: argparse.Namespace) -> int:
+    try:
+        document = _official_frozen_versions(
+            repository=args.repository,
+            project=args.project,
+        )
+    except (RuntimeError, TypeError, ValueError) as exc:
+        diagnostic = _diagnostic(
+            "OFFICIAL_FROZEN_VERSION",
+            "classification",
+            "project",
+            "official-frozen version evidence lookup failed",
+            {"error": str(exc)},
+            project_id=args.project,
+        )
+        diagnostics_document = _diagnostics_document([diagnostic])
+        _write_json(Path(args.diagnostics_out), diagnostics_document)
+        sys.stderr.write(json.dumps(diagnostics_document) + "\n")
+        return 1
+    _write_json(Path(args.out), document)
+    return 0
+
+
+def _official_frozen_versions(
+    *,
+    repository: str,
+    project: str,
+) -> dict[str, list[str]]:
+    if not project:
+        msg = "selected project id is required for official-frozen evidence"
+        raise ValueError(msg)
+    releases = _gh_api_paginated(
+        repository, f"repos/{repository}/releases?per_page=100"
+    )
+    tag_prefix = f"release/{project}/v"
+    versions: set[str] = set()
+    for release in releases:
+        if not isinstance(release, Mapping):
+            msg = "GitHub Releases API returned a non-object release item"
+            raise TypeError(msg)
+        if release.get("draft") is True:
+            continue
+        if release.get("prerelease") is not False:
+            continue
+        tag_name = release.get("tag_name")
+        if not isinstance(tag_name, str):
+            msg = "GitHub Releases API returned a release without tag_name"
+            raise TypeError(msg)
+        if not tag_name.startswith(tag_prefix):
+            continue
+        version = tag_name.removeprefix(tag_prefix)
+        if version:
+            versions.add(version)
+    return {project: sorted(versions)}
 
 
 def _cmd_observe_remote_publications(args: argparse.Namespace) -> int:
@@ -14193,6 +15453,7 @@ def _cmd_observe_remote_publications(args: argparse.Namespace) -> int:
         if getattr(args, "execution_sets", None)
         else None
     )
+    allow_official_tag_retarget = _plan_allows_official_tag_retarget(plan)
     try:
         enabled = _normalize_enablement(
             getattr(args, "enabled_external_oidc_targets", ""), plan
@@ -14206,7 +15467,30 @@ def _cmd_observe_remote_publications(args: argparse.Namespace) -> int:
         return 1
     diagnostics: list[Json] = []
     observations: dict[str, str] = {}
+    disabled_package_target_keys = _comma_separated_items(
+        getattr(args, "disabled_package_target_keys", ""),
+    )
+    github_release_group_nodes = _github_release_observation_group_nodes(
+        plan,
+        execution_sets,
+    )
+    github_release_group_variant_ids = {
+        node_id: {
+            group_node_id: _planned_artifact_variant_ids_for_node(
+                plan,
+                group_node,
+            )
+            for group_node_id, group_node in group_nodes.items()
+        }
+        for node_id, group_nodes in github_release_group_nodes.items()
+    }
     for node_id, node in sorted(plan["graph"]["publish-nodes"].items()):
+        if disabled_package_target_keys and _publish_node_has_target_key(
+            plan,
+            node_id,
+            disabled_package_target_keys,
+        ):
+            continue
         snapshot_id = node["target-instance-snapshot-id"]
         snapshot = plan["graph"]["target-instance-snapshots"][snapshot_id]
         try:
@@ -14219,6 +15503,17 @@ def _cmd_observe_remote_publications(args: argparse.Namespace) -> int:
                 snapshot,
                 execution_sets,
                 enabled,
+                allow_official_tag_retarget,
+                plan_id=str(plan["envelope"]["plan-id"]),
+                artifact_variant_ids_by_id=(
+                    _planned_artifact_variant_ids_for_node(plan, node)
+                ),
+                github_release_group_nodes=github_release_group_nodes.get(
+                    node_id,
+                ),
+                github_release_group_variant_ids=(
+                    github_release_group_variant_ids.get(node_id)
+                ),
             )
         except (RuntimeError, TypeError, ValueError) as exc:
             diagnostics.append(
@@ -14243,18 +15538,174 @@ def _cmd_observe_remote_publications(args: argparse.Namespace) -> int:
     return 0
 
 
+def _github_release_observation_group_nodes(
+    plan: Json,
+    execution_sets: Mapping[str, Any] | None,
+) -> dict[str, dict[str, Json]]:
+    """Return active same-release GitHub Release nodes keyed by each member."""
+    graph = plan.get("graph")
+    if not isinstance(graph, Mapping):
+        return {}
+    publish_nodes = graph.get("publish-nodes")
+    snapshots = graph.get("target-instance-snapshots")
+    if not isinstance(publish_nodes, Mapping) or not isinstance(
+        snapshots, Mapping
+    ):
+        return {}
+    groups: dict[tuple[str, str], dict[str, Json]] = {}
+    for node_id in _github_release_observation_candidate_ids(
+        publish_nodes,
+        execution_sets,
+    ):
+        group = _github_release_observation_group_member(
+            publish_nodes,
+            snapshots,
+            node_id,
+        )
+        if group is None:
+            continue
+        group_key, node = group
+        groups.setdefault(group_key, {})[node_id] = node
+    result: dict[str, dict[str, Json]] = {}
+    for group_nodes in groups.values():
+        if len(group_nodes) < 2:
+            continue
+        for node_id in group_nodes:
+            result[node_id] = group_nodes
+    return result
+
+
+def _github_release_observation_candidate_ids(
+    publish_nodes: Mapping[str, object],
+    execution_sets: Mapping[str, Any] | None,
+) -> tuple[str, ...]:
+    if execution_sets is None:
+        return tuple(publish_nodes)
+    active_ids = execution_sets.get(
+        "active-github-release-publish-node-ids", []
+    )
+    active = _string_sequence(active_ids)
+    if active:
+        return active
+    candidates: list[str] = []
+    for key in (
+        "selected-github-release-publish-node-ids",
+        "publish-intent-node-ids",
+    ):
+        for node_id in _string_sequence(execution_sets.get(key, [])):
+            if node_id not in candidates:
+                candidates.append(node_id)
+    return tuple(candidates)
+
+
+def _expanded_active_github_release_publish_node_ids(
+    plan: Mapping[str, Any],
+    execution_sets: Mapping[str, Any],
+) -> list[str]:
+    """Return active GitHub Release nodes plus active same-release siblings."""
+    active = set(
+        _string_sequence(
+            execution_sets.get("active-github-release-publish-node-ids", []),
+        ),
+    )
+    if not active:
+        return []
+    graph = plan.get("graph")
+    if not isinstance(graph, Mapping):
+        return sorted(active)
+    publish_nodes = graph.get("publish-nodes")
+    snapshots = graph.get("target-instance-snapshots")
+    if not isinstance(publish_nodes, Mapping) or not isinstance(
+        snapshots, Mapping
+    ):
+        return sorted(active)
+    candidate_ids = list(active)
+    for node_id in _string_sequence(
+        execution_sets.get("selected-github-release-publish-node-ids", []),
+    ):
+        if node_id not in candidate_ids:
+            candidate_ids.append(node_id)
+    groups: dict[tuple[str, str], set[str]] = {}
+    for node_id in candidate_ids:
+        group = _github_release_observation_group_member(
+            publish_nodes,
+            snapshots,
+            node_id,
+        )
+        if group is None:
+            continue
+        group_key, _node = group
+        groups.setdefault(group_key, set()).add(node_id)
+    expanded = set(active)
+    for group_nodes in groups.values():
+        if expanded & group_nodes:
+            expanded.update(group_nodes)
+    return sorted(expanded)
+
+
+def _string_sequence(value: object) -> tuple[str, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        return ()
+    return tuple(item for item in value if isinstance(item, str))
+
+
+def _github_release_observation_group_member(
+    publish_nodes: Mapping[str, object],
+    snapshots: Mapping[str, object],
+    node_id: str,
+) -> tuple[tuple[str, str], Json] | None:
+    raw_node = publish_nodes.get(node_id)
+    if not isinstance(raw_node, Mapping):
+        return None
+    node = cast("Json", raw_node)
+    snapshot_id = node.get("target-instance-snapshot-id")
+    if not isinstance(snapshot_id, str):
+        return None
+    snapshot = snapshots.get(snapshot_id)
+    if (
+        not isinstance(snapshot, Mapping)
+        or snapshot.get("family") != "github-release"
+    ):
+        return None
+    identity = node.get("resolved-publish-identity")
+    release_tag = (
+        identity.get("release-tag") if isinstance(identity, Mapping) else None
+    )
+    if not isinstance(release_tag, str) or not release_tag:
+        return None
+    return (snapshot_id, release_tag), node
+
+
 def _maybe_observe_remote_publication(
     repository: str,
     commit_sha: str,
     node_id: str,
-    node: Json,
+    node: Mapping[str, Any],
     snapshot_id: str,
     snapshot: Mapping[str, Any],
     execution_sets: Mapping[str, Any] | None,
     enabled: set[str],
+    allow_official_tag_retarget: bool,
+    plan_id: str | None = None,
+    artifact_variant_ids_by_id: Mapping[str, object] | None = None,
+    github_release_group_nodes: Mapping[str, Json] | None = None,
+    github_release_group_variant_ids: (
+        Mapping[str, Mapping[str, object]] | None
+    ) = None,
 ) -> str | None:
+    node_json: Json = dict(node)
     if snapshot["family"] == "github-release":
-        return _observe_github_release_publication(repository, commit_sha, node)
+        return _observe_github_release_publication(
+            repository,
+            commit_sha,
+            node_id,
+            node_json,
+            plan_id=plan_id,
+            artifact_variant_ids_by_id=artifact_variant_ids_by_id,
+            release_group_nodes=github_release_group_nodes,
+            release_group_variant_ids=github_release_group_variant_ids,
+            allow_official_tag_retarget=allow_official_tag_retarget,
+        )
     if _supports_github_packages_remote_observation(
         snapshot
     ) and _requires_live_github_token_remote_observation(
@@ -14262,7 +15713,7 @@ def _maybe_observe_remote_publication(
     ):
         return _observe_github_packages_publication(
             repository,
-            node,
+            node_json,
             snapshot,
         )
     if _supports_public_registry_remote_observation(
@@ -14270,8 +15721,19 @@ def _maybe_observe_remote_publication(
     ) and _requires_live_external_remote_observation(
         node_id, node, snapshot_id, snapshot, execution_sets, enabled
     ):
-        return _observe_public_registry_publication(node, snapshot)
+        return _observe_public_registry_publication(node_json, snapshot)
     return None
+
+
+def _plan_allows_official_tag_retarget(plan: Mapping[str, Any]) -> bool:
+    envelope = plan.get("envelope")
+    if (
+        not isinstance(envelope, Mapping)
+        or envelope.get("profile") != "official"
+    ):
+        return False
+    flags = envelope.get("request-flags")
+    return isinstance(flags, Mapping) and flags.get("force") is True
 
 
 def _cmd_ensure_tags(args: argparse.Namespace) -> int:
@@ -14279,6 +15741,16 @@ def _cmd_ensure_tags(args: argparse.Namespace) -> int:
     execution_sets = _read_json(Path(args.execution_sets))
     plan_id = str(plan["envelope"]["plan-id"])
     commit_sha = str(plan["envelope"]["commit-sha"])
+    profile = str(plan["envelope"]["profile"])
+    force_update_tag = _parse_bool(getattr(args, "force_update_tag", "false"))
+    allow_tag_retarget = force_update_tag and profile == "official"
+    _validate_ensure_tag_bindings(
+        plan,
+        execution_sets,
+        expected_project_id=getattr(args, "expected_project_id", None),
+        expected_commit_sha=getattr(args, "expected_commit_sha", None),
+        expected_release_tag=getattr(args, "expected_release_tag", None),
+    )
     selected = set(execution_sets["selected-github-release-publish-node-ids"])
     active = set(execution_sets["active-github-release-publish-node-ids"])
     tags: dict[str, dict[str, bool]] = {}
@@ -14297,6 +15769,7 @@ def _cmd_ensure_tags(args: argparse.Namespace) -> int:
         )
     tag_results = []
     missing: list[str] = []
+    force_updates: list[str] = []
     for tag, requirement in sorted(tags.items()):
         peeled = _remote_tag_commit(args.repository, tag)
         if peeled is None:
@@ -14310,6 +15783,9 @@ def _cmd_ensure_tags(args: argparse.Namespace) -> int:
                 missing.append(tag)
             continue
         if peeled != commit_sha:
+            if requirement["can-create"] and allow_tag_retarget:
+                force_updates.append(tag)
+                continue
             msg = f"required tag {tag!r} points to {peeled}, expected {commit_sha}"
             raise RuntimeError(msg)
         tag_results.append(
@@ -14318,6 +15794,22 @@ def _cmd_ensure_tags(args: argparse.Namespace) -> int:
                 "outcome": "verified",
                 "expected-commit-sha": commit_sha,
                 "peeled-commit-sha": peeled,
+            }
+        )
+    for tag in force_updates:
+        encoded_tag = urllib.parse.quote(tag, safe="")
+        _gh_api(
+            args.repository,
+            f"repos/{args.repository}/git/refs/tags/{encoded_tag}",
+            method="PATCH",
+            fields={"sha": commit_sha, "force": True},
+        )
+        tag_results.append(
+            {
+                "release-tag": tag,
+                "outcome": "created",
+                "expected-commit-sha": commit_sha,
+                "peeled-commit-sha": commit_sha,
             }
         )
     for tag in missing:
@@ -14347,17 +15839,152 @@ def _cmd_ensure_tags(args: argparse.Namespace) -> int:
     return 0
 
 
+def _validate_ensure_tag_bindings(
+    plan: Mapping[str, Any],
+    execution_sets: Mapping[str, Any],
+    *,
+    expected_project_id: str | None,
+    expected_commit_sha: str | None,
+    expected_release_tag: str | None,
+) -> None:
+    """Fail before ref mutation when downloaded plan data is not the resolved run."""
+    envelope = _mapping(plan["envelope"], "envelope")
+    plan_id = str(envelope["plan-id"])
+    if str(execution_sets.get("plan-id")) != plan_id:
+        msg = "execution sets plan-id does not match release plan"
+        raise RuntimeError(msg)
+    if (
+        expected_commit_sha
+        and envelope.get("commit-sha") != expected_commit_sha
+    ):
+        msg = (
+            "release plan commit-sha does not match resolved target: "
+            f"{envelope.get('commit-sha')!r} != {expected_commit_sha!r}"
+        )
+        raise RuntimeError(msg)
+    if expected_project_id:
+        selected_projects = envelope.get("selected-project-ids")
+        if selected_projects != [expected_project_id]:
+            msg = (
+                "release plan selected-project-ids do not match resolved "
+                f"project: {selected_projects!r} != {[expected_project_id]!r}"
+            )
+            raise RuntimeError(msg)
+    selected = execution_sets.get("selected-github-release-publish-node-ids")
+    if not isinstance(selected, Sequence) or isinstance(selected, str | bytes):
+        msg = "selected GitHub Release publish node ids must be an array"
+        raise TypeError(msg)
+    publish_nodes = _mapping(
+        plan["graph"]["publish-nodes"], "graph.publish-nodes"
+    )
+    for raw_node_id in selected:
+        node_id = str(raw_node_id)
+        if node_id not in publish_nodes:
+            msg = f"selected GitHub Release publish node {node_id!r} is missing from the plan"
+            raise RuntimeError(msg)
+        node = _mapping(
+            publish_nodes[node_id], f"graph.publish-nodes.{node_id}"
+        )
+        if (
+            expected_project_id
+            and node.get("project-id") != expected_project_id
+        ):
+            msg = (
+                f"selected GitHub Release publish node {node_id!r} project-id "
+                "does not match resolved project"
+            )
+            raise RuntimeError(msg)
+        identity = _mapping(
+            node["resolved-publish-identity"],
+            f"graph.publish-nodes.{node_id}.resolved-publish-identity",
+        )
+        release_tag = identity.get("release-tag")
+        if expected_release_tag and release_tag != expected_release_tag:
+            msg = (
+                f"selected GitHub Release publish node {node_id!r} release-tag "
+                f"does not match resolved tag: {release_tag!r} != "
+                f"{expected_release_tag!r}"
+            )
+            raise RuntimeError(msg)
+
+
 def _cmd_report(args: argparse.Namespace) -> int:
-    plan = _read_optional_json(args.plan)
-    execution_sets = _read_optional_json(args.execution_sets)
+    artifact_names = _collect_artifact_names(
+        Path(args.artifacts_root) if args.artifacts_root else None,
+        run_id=args.run_id,
+        attempt=args.attempt,
+    )
+    artifacts_root = Path(args.artifacts_root) if args.artifacts_root else None
+    plan_artifact_name = getattr(args, "plan_artifact_name", "") or ""
+    execution_sets_artifact_name = (
+        getattr(args, "execution_sets_artifact_name", "") or ""
+    )
+    entry_publish_handoff_artifact_name = (
+        getattr(args, "entry_publish_handoff_artifact_name", "") or ""
+    )
+    if plan_artifact_name:
+        artifact_names["plan-artifact-name"] = plan_artifact_name
+    if execution_sets_artifact_name:
+        artifact_names["execution-sets-artifact-name"] = (
+            execution_sets_artifact_name
+        )
+    if entry_publish_handoff_artifact_name:
+        artifact_names["entry-publish-handoff-artifact-name"] = (
+            entry_publish_handoff_artifact_name
+        )
+    prepare_payloads = (
+        _report_prepare_artifact_payloads(
+            artifacts_root,
+            plan_artifact_name=plan_artifact_name,
+            execution_sets_artifact_name=execution_sets_artifact_name,
+            entry_publish_handoff_artifact_name=(
+                entry_publish_handoff_artifact_name
+            ),
+            run_id=args.run_id,
+            attempt=args.attempt,
+        )
+        if args.plan_conclusion == "success"
+        else None
+    )
+    if args.plan_conclusion == "success" and prepare_payloads is None:
+        return 1
+    if prepare_payloads:
+        prepare_documents = _read_validated_prepare_artifact_tuple(
+            prepare_payloads,
+            plan_artifact_name=plan_artifact_name,
+            execution_sets_artifact_name=execution_sets_artifact_name,
+            entry_publish_handoff_artifact_name=(
+                entry_publish_handoff_artifact_name
+            ),
+            run_id=args.run_id,
+            attempt=args.attempt,
+            context="Release report generation",
+            validate_plan_execution_contracts=False,
+        )
+        if prepare_documents is None:
+            return 1
+        plan = prepare_documents["plan"]
+        execution_sets = prepare_documents["execution_sets"]
+    else:
+        plan = _read_optional_json(args.plan)
+        execution_sets = _read_optional_json(args.execution_sets)
     plan_id = plan["envelope"]["plan-id"] if plan else None
     selected_projects = (
         plan["envelope"]["selected-project-ids"] if plan else None
     )
-    artifact_names = _collect_artifact_names(
-        Path(args.artifacts_root) if args.artifacts_root else None
+    disabled_package_target_keys = _comma_separated_items(
+        getattr(args, "disabled_package_target_keys", ""),
     )
-    artifacts_root = Path(args.artifacts_root) if args.artifacts_root else None
+    release_completed_check_conclusion = (
+        _effective_release_completed_check_conclusion(
+            args,
+            plan,
+            execution_sets,
+            artifacts_root,
+            artifact_names,
+            disabled_package_target_keys=disabled_package_target_keys,
+        )
+    )
     report = {
         "api-version": "three.release.report/v1alpha1",
         "kind": "release-report",
@@ -14373,7 +16000,10 @@ def _cmd_report(args: argparse.Namespace) -> int:
             "canary-override-non-public-ref": _parse_bool(
                 args.canary_override_non_public_ref
             ),
-            "conclusion": _overall_conclusion(args),
+            "conclusion": _overall_conclusion(
+                args,
+                release_completed_check_conclusion,
+            ),
         },
         "plan": {"plan-id": plan_id, "selected-project-ids": selected_projects},
         "artifacts": artifact_names,
@@ -14393,6 +16023,9 @@ def _cmd_report(args: argparse.Namespace) -> int:
                 ),
             },
             "ensure-tag": {"conclusion": args.tag_conclusion},
+            "release-completed-check": {
+                "conclusion": release_completed_check_conclusion
+            },
             "publish": {
                 "conclusion": args.publish_conclusion,
                 "failed-publish-node-ids": _failed_publish_node_ids(
@@ -14401,10 +16034,22 @@ def _cmd_report(args: argparse.Namespace) -> int:
                     execution_sets,
                     artifacts_root,
                     artifact_names,
+                    release_completed_check_conclusion,
+                    run_id=args.run_id,
+                    attempt=args.attempt,
+                    disabled_package_target_keys=disabled_package_target_keys,
                 ),
             },
         },
-        "counts": _report_counts(plan, execution_sets, artifact_names),
+        "counts": _report_counts(
+            plan,
+            execution_sets,
+            artifact_names,
+            artifacts_root,
+            run_id=args.run_id,
+            attempt=args.attempt,
+            disabled_package_target_keys=disabled_package_target_keys,
+        ),
     }
     validate_contract(report)
     _write_json(Path(args.out), report)
@@ -14412,28 +16057,411 @@ def _cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _report_prepare_artifact_payloads(
+    root: Path | None,
+    *,
+    plan_artifact_name: str,
+    execution_sets_artifact_name: str,
+    entry_publish_handoff_artifact_name: str,
+    run_id: int,
+    attempt: int,
+) -> dict[str, Path] | None:
+    if root is None or not root.exists():
+        print(
+            "Release report generation requires downloaded prepare-release-plan "
+            "artifacts when prepare-release-plan succeeded.",
+            file=sys.stderr,
+        )
+        return None
+    payloads: dict[str, Path] = {}
+    for key, name, prefix, payload_name, label in (
+        (
+            "plan",
+            plan_artifact_name,
+            "release-plan-v1-",
+            "release-plan.json",
+            "release-plan",
+        ),
+        (
+            "execution_sets",
+            execution_sets_artifact_name,
+            "release-execution-sets-v1-",
+            "execution-sets.json",
+            "execution-sets",
+        ),
+        (
+            "entry_publish_handoff",
+            entry_publish_handoff_artifact_name,
+            "release-entry-publish-handoff-v1-",
+            "entry-publish-handoff.json",
+            "entry-publish-handoff",
+        ),
+    ):
+        payload_path = _report_prepare_artifact_payload(
+            root,
+            name=name,
+            payload_name=payload_name,
+            prefix=prefix,
+            label=label,
+            run_id=run_id,
+            attempt=attempt,
+        )
+        if payload_path is None:
+            return None
+        payloads[key] = payload_path
+    return payloads
+
+
+def _report_prepare_artifact_payload(
+    root: Path,
+    *,
+    name: str,
+    payload_name: str,
+    prefix: str,
+    label: str,
+    run_id: int,
+    attempt: int,
+) -> Path | None:
+    if not name or PurePosixPath(name).name != name or name in {".", ".."}:
+        print(
+            "Release report generation requires an exact "
+            f"{label} artifact name from prepare-release-plan outputs.",
+            file=sys.stderr,
+        )
+        return None
+    if not name.startswith(prefix) or not _artifact_name_matches_run_attempt(
+        name,
+        prefix,
+        run_id,
+        attempt,
+    ):
+        print(
+            "Release report generation requires the exact current-run "
+            f"{label} artifact name from prepare-release-plan outputs.",
+            file=sys.stderr,
+        )
+        return None
+    payload_path = root / name / payload_name
+    if not payload_path.is_file():
+        print(
+            "Release report generation requires the bound "
+            f"{label} artifact payload at {name}/{payload_name}.",
+            file=sys.stderr,
+        )
+        return None
+    return payload_path
+
+
+def _read_validated_prepare_artifact_tuple(
+    paths: Mapping[str, Path],
+    *,
+    plan_artifact_name: str,
+    execution_sets_artifact_name: str,
+    entry_publish_handoff_artifact_name: str,
+    run_id: int,
+    attempt: int,
+    context: str,
+    validate_plan_execution_contracts: bool = True,
+) -> dict[str, Json] | None:
+    documents: dict[str, Json] = {}
+    labels = {
+        "plan": "release-plan",
+        "execution_sets": "execution-sets",
+        "entry_publish_handoff": "entry-publish-handoff",
+    }
+    for key, label in labels.items():
+        try:
+            documents[key] = _read_json(paths[key])
+        except (KeyError, OSError, TypeError, ValueError) as exc:
+            print(
+                f"{context} requires a readable {label} artifact payload: {exc}",
+                file=sys.stderr,
+            )
+            return None
+        if key == "entry_publish_handoff" or validate_plan_execution_contracts:
+            try:
+                validate_contract(documents[key])
+            except ContractValidationError as exc:
+                print(
+                    f"{context} requires a contract-valid {label} artifact "
+                    f"payload: {exc}",
+                    file=sys.stderr,
+                )
+                return None
+    try:
+        _validate_prepare_artifact_tuple(
+            documents["plan"],
+            documents["execution_sets"],
+            documents["entry_publish_handoff"],
+            plan_artifact_name=plan_artifact_name,
+            execution_sets_artifact_name=execution_sets_artifact_name,
+            entry_publish_handoff_artifact_name=(
+                entry_publish_handoff_artifact_name
+            ),
+            run_id=run_id,
+            attempt=attempt,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        print(
+            f"{context} requires an internally consistent "
+            f"prepare-release-plan artifact tuple: {exc}",
+            file=sys.stderr,
+        )
+        return None
+    return documents
+
+
+def _validate_prepare_artifact_tuple(
+    plan: Json,
+    execution_sets: Json,
+    entry_publish_handoff: Json,
+    *,
+    plan_artifact_name: str,
+    execution_sets_artifact_name: str,
+    entry_publish_handoff_artifact_name: str,
+    run_id: int,
+    attempt: int,
+) -> None:
+    envelope = _mapping(plan["envelope"], "$.envelope")
+    plan_id = _string(envelope.get("plan-id"), "$.envelope.plan-id")
+    commit_sha = _string(envelope.get("commit-sha"), "$.envelope.commit-sha")
+    if execution_sets.get("plan-id") != plan_id:
+        msg = (
+            "execution-sets plan-id does not match release-plan envelope "
+            f"plan-id: {execution_sets.get('plan-id')!r} != {plan_id!r}"
+        )
+        raise ValueError(msg)
+
+    expected_names = {
+        "plan-artifact-name": artifact_name(
+            "plan",
+            ArtifactNameInputs(run_id, attempt, plan_id=plan_id),
+        ),
+        "execution-sets-artifact-name": artifact_name(
+            "execution-sets",
+            ArtifactNameInputs(run_id, attempt, plan_id=plan_id),
+        ),
+        "entry-publish-handoff-artifact-name": artifact_name(
+            "entry-publish-handoff",
+            ArtifactNameInputs(run_id, attempt, plan_id=plan_id),
+        ),
+    }
+    actual_names = {
+        "plan-artifact-name": plan_artifact_name,
+        "execution-sets-artifact-name": execution_sets_artifact_name,
+        "entry-publish-handoff-artifact-name": (
+            entry_publish_handoff_artifact_name
+        ),
+    }
+    for field, expected in expected_names.items():
+        actual = actual_names[field]
+        if actual != expected:
+            msg = (
+                f"{field} is not bound to the release-plan tuple: "
+                f"{actual!r} != {expected!r}"
+            )
+            raise ValueError(msg)
+
+    expected_handoff = _entry_publish_handoff(
+        plan,
+        execution_sets,
+        run_id,
+        attempt,
+    )
+    for field, expected in (
+        ("plan-id", plan_id),
+        ("commit-sha", commit_sha),
+        ("plan-artifact-name", plan_artifact_name),
+        ("execution-sets-artifact-name", execution_sets_artifact_name),
+    ):
+        actual = entry_publish_handoff.get(field)
+        if actual != expected:
+            msg = (
+                f"entry-publish-handoff {field} does not match the bound "
+                f"prepare tuple: {actual!r} != {expected!r}"
+            )
+            raise ValueError(msg)
+    if entry_publish_handoff != expected_handoff:
+        msg = "entry-publish-handoff payload does not match the bound plan and execution sets"
+        raise ValueError(msg)
+
+
+def _effective_release_completed_check_conclusion(
+    args: argparse.Namespace,
+    plan: Json | None,
+    execution_sets: Json | None,
+    artifacts_root: Path | None,
+    artifacts: Json,
+    *,
+    disabled_package_target_keys: Iterable[str] = (),
+) -> str:
+    conclusion = getattr(args, "release_completed_check_conclusion", "skipped")
+    if (
+        conclusion == "success"
+        and args.publish_conclusion == "success"
+        and plan is not None
+        and execution_sets is not None
+        and _unsatisfied_active_publish_node_ids(
+            plan,
+            execution_sets,
+            artifacts_root,
+            artifacts,
+            run_id=args.run_id,
+            attempt=args.attempt,
+            disabled_package_target_keys=disabled_package_target_keys,
+        )
+    ):
+        return "failure"
+    return conclusion
+
+
+def _cmd_release_completed_receipts(args: argparse.Namespace) -> int:
+    root = Path(args.artifacts_root)
+    artifacts = _collect_artifact_names(
+        root,
+        run_id=args.run_id,
+        attempt=args.attempt,
+    )
+    plan_path = _bound_release_completed_artifact_payload(
+        root,
+        name=args.plan_artifact_name,
+        payload_name="release-plan.json",
+        prefix="release-plan-v1-",
+        label="release-plan",
+        run_id=args.run_id,
+        attempt=args.attempt,
+    )
+    if plan_path is None:
+        return 1
+    execution_sets_path = _bound_release_completed_artifact_payload(
+        root,
+        name=args.execution_sets_artifact_name,
+        payload_name="execution-sets.json",
+        prefix="release-execution-sets-v1-",
+        label="execution-sets",
+        run_id=args.run_id,
+        attempt=args.attempt,
+    )
+    if execution_sets_path is None:
+        return 1
+    entry_publish_handoff_path = _bound_release_completed_artifact_payload(
+        root,
+        name=args.entry_publish_handoff_artifact_name,
+        payload_name="entry-publish-handoff.json",
+        prefix="release-entry-publish-handoff-v1-",
+        label="entry-publish-handoff",
+        run_id=args.run_id,
+        attempt=args.attempt,
+    )
+    if entry_publish_handoff_path is None:
+        return 1
+    prepare_documents = _read_validated_prepare_artifact_tuple(
+        {
+            "plan": plan_path,
+            "execution_sets": execution_sets_path,
+            "entry_publish_handoff": entry_publish_handoff_path,
+        },
+        plan_artifact_name=args.plan_artifact_name,
+        execution_sets_artifact_name=args.execution_sets_artifact_name,
+        entry_publish_handoff_artifact_name=(
+            args.entry_publish_handoff_artifact_name
+        ),
+        run_id=args.run_id,
+        attempt=args.attempt,
+        context="Release completion receipt validation",
+    )
+    if prepare_documents is None:
+        return 1
+    plan = prepare_documents["plan"]
+    execution_sets = prepare_documents["execution_sets"]
+    missing = _unsatisfied_active_publish_node_ids(
+        plan,
+        execution_sets,
+        root,
+        artifacts,
+        run_id=args.run_id,
+        attempt=args.attempt,
+        disabled_package_target_keys=_comma_separated_items(
+            getattr(args, "disabled_package_target_keys", ""),
+        ),
+    )
+    if missing:
+        print(
+            "Publish nodes missing valid completion receipts: "
+            f"{', '.join(missing)}",
+            file=sys.stderr,
+        )
+        return 1
+    print(
+        "All active and skip-satisfied publish nodes are satisfied by valid "
+        "completion receipts."
+    )
+    return 0
+
+
+def _bound_release_completed_artifact_payload(
+    root: Path,
+    *,
+    name: str,
+    payload_name: str,
+    prefix: str,
+    label: str,
+    run_id: int,
+    attempt: int,
+) -> Path | None:
+    if not name or PurePosixPath(name).name != name or name in {".", ".."}:
+        print(
+            "Release completion receipt validation requires an exact "
+            f"{label} artifact name from prepare-release-plan outputs.",
+            file=sys.stderr,
+        )
+        return None
+    if not name.startswith(prefix) or not _artifact_name_matches_run_attempt(
+        name,
+        prefix,
+        run_id,
+        attempt,
+    ):
+        print(
+            "Release completion receipt validation requires the exact "
+            "current-run "
+            f"{label} artifact name from prepare-release-plan outputs.",
+            file=sys.stderr,
+        )
+        return None
+    payload_path = root / name / payload_name
+    if not payload_path.is_file():
+        print(
+            "Release completion receipt validation requires the bound "
+            f"{label} artifact payload at {name}/{payload_name}.",
+            file=sys.stderr,
+        )
+        return None
+    return payload_path
+
+
 def _external_oidc_diagnostics(
     plan: Json,
     execution_sets: Json,
     enablement: str,
     remote_observations: Mapping[str, Any] | None = None,
+    *,
+    disabled_package_target_keys: Iterable[str] = (),
 ) -> list[Json]:
     if plan["envelope"]["profile"] != "official":
         return []
-    if (
-        execution_sets["dry-run"]
-        or not execution_sets["active-publish-node-ids"]
-    ):
+    if execution_sets["dry-run"]:
+        return []
+    active_oidc_nodes = _active_external_oidc_publish_nodes(
+        plan,
+        execution_sets,
+        disabled_package_target_keys,
+    )
+    if not active_oidc_nodes:
         return []
     enabled = _normalize_enablement(enablement, plan)
     diagnostics: list[Json] = []
-    for node_id in execution_sets["active-publish-node-ids"]:
-        node = plan["graph"]["publish-nodes"][node_id]
-        snapshot_id = node["target-instance-snapshot-id"]
-        snapshot = plan["graph"]["target-instance-snapshots"][snapshot_id]
-        capabilities = snapshot["capabilities"]
-        if capabilities["credential-posture"] != "oidc":
-            continue
+    for node_id, node, snapshot_id, snapshot, capabilities in active_oidc_nodes:
         topology = capabilities["publish-topology"]
         if topology not in _TOPOLOGIES:
             diagnostics.append(
@@ -14509,6 +16537,31 @@ def _external_oidc_diagnostics(
             )
         )
     return diagnostics
+
+
+def _active_external_oidc_publish_nodes(
+    plan: Json,
+    execution_sets: Json,
+    disabled_package_target_keys: Iterable[str],
+) -> list[tuple[str, Json, str, Json, Json]]:
+    disabled_keys = {key for key in disabled_package_target_keys if key}
+    nodes: list[tuple[str, Json, str, Json, Json]] = []
+    for raw_node_id in execution_sets["active-publish-node-ids"]:
+        node_id = str(raw_node_id)
+        if disabled_keys and _publish_node_has_target_key(
+            plan, node_id, disabled_keys
+        ):
+            continue
+        node = plan["graph"]["publish-nodes"][node_id]
+        snapshot_id = node["target-instance-snapshot-id"]
+        snapshot = plan["graph"]["target-instance-snapshots"][snapshot_id]
+        capabilities = snapshot["capabilities"]
+        if capabilities["credential-posture"] != "oidc":
+            continue
+        nodes.append(
+            (node_id, node, snapshot_id, snapshot, capabilities),
+        )
+    return nodes
 
 
 def _variant_runner(plan: Json, variant_id: str) -> str:
@@ -14599,6 +16652,833 @@ def _reusable_publish_classes(
             publish_node_id
         )
     return classes
+
+
+def _planned_target_keys(
+    plan: Mapping[str, Any], publish_node_ids: Iterable[object]
+) -> set[str]:
+    """Return coarse workflow target keys represented by publish nodes."""
+    keys: set[str] = set()
+    for raw_node_id in publish_node_ids:
+        node_id = str(raw_node_id)
+        node = _mapping(
+            plan["graph"]["publish-nodes"][node_id],
+            f"graph.publish-nodes.{node_id}",
+        )
+        snapshot_id = str(node["target-instance-snapshot-id"])
+        snapshot = _mapping(
+            plan["graph"]["target-instance-snapshots"][snapshot_id],
+            f"graph.target-instance-snapshots.{snapshot_id}",
+        )
+        key = _planned_target_key(snapshot)
+        if key is not None:
+            keys.add(key)
+    return keys
+
+
+def _active_package_publish_node_id_for_target(
+    plan: Mapping[str, Any],
+    execution_sets: Mapping[str, Any],
+    target_key: str,
+) -> str:
+    """Return the unique publish node id for an active package target key."""
+    active_node_ids = execution_sets.get("active-publish-node-ids")
+    if not isinstance(active_node_ids, Sequence) or isinstance(
+        active_node_ids,
+        (str, bytes),
+    ):
+        msg = "active-publish-node-ids must be an array"
+        raise TypeError(msg)
+    matches: list[str] = []
+    for raw_node_id in active_node_ids:
+        node_id = str(raw_node_id)
+        node = _mapping(
+            plan["graph"]["publish-nodes"][node_id],
+            f"graph.publish-nodes.{node_id}",
+        )
+        snapshot_id = str(node["target-instance-snapshot-id"])
+        snapshot = _mapping(
+            plan["graph"]["target-instance-snapshots"][snapshot_id],
+            f"graph.target-instance-snapshots.{snapshot_id}",
+        )
+        if _planned_target_key(snapshot) == target_key:
+            matches.append(node_id)
+    if len(matches) != 1:
+        msg = (
+            f"expected exactly one active publish node for {target_key!r}, "
+            f"found {len(matches)}"
+        )
+        raise RuntimeError(msg)
+    return matches[0]
+
+
+def _package_publish_result_evidence(
+    plan: Mapping[str, Any],
+    publish_node_id: str,
+    args: argparse.Namespace,
+) -> Json:
+    node = _mapping(
+        plan["graph"]["publish-nodes"][publish_node_id],
+        f"graph.publish-nodes.{publish_node_id}",
+    )
+    snapshot_id = str(node["target-instance-snapshot-id"])
+    snapshot = _mapping(
+        plan["graph"]["target-instance-snapshots"][snapshot_id],
+        f"graph.target-instance-snapshots.{snapshot_id}",
+    )
+    projection = _mapping(
+        node.get("projection", {}),
+        f"graph.publish-nodes.{publish_node_id}.projection",
+    )
+    evidence: Json = {
+        "source": "release-orchestrate-inline-package-registry-publish",
+        "repository": args.repository,
+        "workflow": args.workflow,
+        "run-id": args.run_id,
+        "run-attempt": args.attempt,
+        "head-sha": args.head_sha,
+        "environment": args.environment,
+        "target-key": args.target_key,
+        "target-family": snapshot.get("family"),
+        "target-instance-id": snapshot.get("instance-id"),
+        "publish-script": args.publish_script,
+        "result-source": "successful-idempotent-publish-step",
+    }
+    for key in ("final-distribution-filenames-by-artifact-id",):
+        value = projection.get(key)
+        if isinstance(value, Mapping) and value:
+            evidence[key] = dict(value)
+    return evidence
+
+
+def _planned_package_identity(
+    plan: Mapping[str, Any],
+    publish_node_ids: Iterable[object],
+    target_key: str,
+) -> tuple[str, str]:
+    """Return the unique package name/version planned for one target key."""
+    identity: tuple[str, str] | None = None
+    for raw_node_id in publish_node_ids:
+        node_id = str(raw_node_id)
+        node = _mapping(
+            plan["graph"]["publish-nodes"][node_id],
+            f"graph.publish-nodes.{node_id}",
+        )
+        snapshot_id = str(node["target-instance-snapshot-id"])
+        snapshot = _mapping(
+            plan["graph"]["target-instance-snapshots"][snapshot_id],
+            f"graph.target-instance-snapshots.{snapshot_id}",
+        )
+        if _planned_target_key(snapshot) != target_key:
+            continue
+        publish_identity = _mapping(
+            node["resolved-publish-identity"],
+            f"graph.publish-nodes.{node_id}.resolved-publish-identity",
+        )
+        package_name = publish_identity.get("package-name")
+        package_version = publish_identity.get("version")
+        if not isinstance(package_name, str) or not package_name:
+            msg = (
+                f"{target_key} publish node {node_id!r} is missing package-name"
+            )
+            raise RuntimeError(msg)
+        if not isinstance(package_version, str) or not package_version:
+            msg = f"{target_key} publish node {node_id!r} is missing version"
+            raise RuntimeError(msg)
+        candidate = (package_name, package_version)
+        if identity is not None and identity != candidate:
+            msg = (
+                f"conflicting {target_key} publish identities in finalized "
+                f"plan: {identity!r} and {candidate!r}"
+            )
+            raise RuntimeError(msg)
+        identity = candidate
+    return identity if identity is not None else ("", "")
+
+
+def _planned_distribution_digests_for_target(
+    plan: Mapping[str, Any],
+    publish_node_ids: Iterable[object],
+    target_key: str,
+) -> dict[str, str]:
+    """Return legacy compatibility distribution digest metadata, when present."""
+    digests: dict[str, str] | None = None
+    for raw_node_id in publish_node_ids:
+        node_id = str(raw_node_id)
+        node = _mapping(
+            plan["graph"]["publish-nodes"][node_id],
+            f"graph.publish-nodes.{node_id}",
+        )
+        snapshot_id = str(node["target-instance-snapshot-id"])
+        snapshot = _mapping(
+            plan["graph"]["target-instance-snapshots"][snapshot_id],
+            f"graph.target-instance-snapshots.{snapshot_id}",
+        )
+        if _planned_target_key(snapshot) != target_key:
+            continue
+        projection = _mapping(
+            node.get("projection", {}),
+            f"graph.publish-nodes.{node_id}.projection",
+        )
+        raw_artifact_ids = node.get("artifact-ids", [])
+        if not isinstance(raw_artifact_ids, Sequence) or isinstance(
+            raw_artifact_ids, (str, bytes)
+        ):
+            msg = f"graph.publish-nodes.{node_id}.artifact-ids must be an array"
+            raise TypeError(msg)
+        artifact_ids = [str(value) for value in raw_artifact_ids]
+        raw_by_artifact_id = _mapping(
+            projection.get("final-distribution-digests-by-artifact-id", {}),
+            "final-distribution-digests-by-artifact-id",
+        )
+        if len(artifact_ids) != 1:
+            return {}
+        artifact_id = artifact_ids[0]
+        candidate = _normalize_digest_map(raw_by_artifact_id.get(artifact_id))
+        if not {"sha256", "sha512"} <= set(candidate):
+            return {}
+        if digests is not None and digests != candidate:
+            msg = (
+                f"conflicting {target_key} tarball digests in finalized plan: "
+                f"{digests!r} and {candidate!r}"
+            )
+            raise RuntimeError(msg)
+        digests = candidate
+    return digests or {}
+
+
+def _planned_python_distribution_filenames(
+    plan: Mapping[str, Any], publish_node_ids: Iterable[object]
+) -> list[str]:
+    """Return planned Python distribution filenames."""
+    graph = _mapping(plan["graph"], "graph")
+    artifacts = _mapping(graph["artifacts"], "graph.artifacts")
+    publish_nodes = _mapping(graph["publish-nodes"], "graph.publish-nodes")
+    target_snapshots = _mapping(
+        graph["target-instance-snapshots"], "graph.target-instance-snapshots"
+    )
+    expected: set[str] = set()
+    for raw_node_id in publish_node_ids:
+        node_id = str(raw_node_id)
+        node = _mapping(
+            publish_nodes[node_id], f"graph.publish-nodes.{node_id}"
+        )
+        snapshot_id = str(node["target-instance-snapshot-id"])
+        snapshot = _mapping(
+            target_snapshots[snapshot_id],
+            f"graph.target-instance-snapshots.{snapshot_id}",
+        )
+        family = snapshot.get("family")
+        projection = _mapping(
+            node.get("projection", {}),
+            f"graph.publish-nodes.{node_id}.projection",
+        )
+        if family == "pypi":
+            names_by_artifact_id = _mapping(
+                projection.get(
+                    "final-distribution-filenames-by-artifact-id", {}
+                ),
+                (
+                    f"graph.publish-nodes.{node_id}.projection."
+                    "final-distribution-filenames-by-artifact-id"
+                ),
+            )
+        elif family == "github-release":
+            names_by_artifact_id = _mapping(
+                projection.get("asset-names-by-artifact-id", {}),
+                (
+                    f"graph.publish-nodes.{node_id}.projection."
+                    "asset-names-by-artifact-id"
+                ),
+            )
+        else:
+            continue
+        for raw_artifact_id in node.get("artifact-ids", []):
+            artifact_id = str(raw_artifact_id)
+            artifact = _mapping(
+                artifacts[artifact_id], f"graph.artifacts.{artifact_id}"
+            )
+            if artifact.get("concrete-kind") not in {"wheel", "sdist"}:
+                continue
+            filename = names_by_artifact_id.get(artifact_id)
+            if not isinstance(filename, str) or not filename:
+                msg = (
+                    f"Python distribution artifact {artifact_id!r} for publish "
+                    f"node {node_id!r} has no planned filename"
+                )
+                raise RuntimeError(msg)
+            expected.add(filename)
+    return sorted(expected)
+
+
+def _planned_python_distribution_sha256_by_filename(
+    plan: Mapping[str, Any], publish_node_ids: Iterable[object]
+) -> dict[str, str]:
+    """Return no Python distribution SHA-256 evidence from the planner."""
+    _ = plan, tuple(publish_node_ids)
+    return {}
+
+
+def _planned_ruby_gem_identity_and_distribution(  # noqa: C901
+    plan: Mapping[str, Any], publish_node_ids: Iterable[object]
+) -> tuple[str, str, str, str]:
+    """Return the unique active Ruby gem package identity and distribution."""
+    graph = _mapping(plan["graph"], "graph")
+    artifacts = _mapping(graph["artifacts"], "graph.artifacts")
+    publish_nodes = _mapping(graph["publish-nodes"], "graph.publish-nodes")
+    target_snapshots = _mapping(
+        graph["target-instance-snapshots"], "graph.target-instance-snapshots"
+    )
+    expected_identity: tuple[str, str, str] | None = None
+    for raw_node_id in publish_node_ids:
+        node_id = str(raw_node_id)
+        node = _mapping(
+            publish_nodes[node_id], f"graph.publish-nodes.{node_id}"
+        )
+        snapshot_id = str(node["target-instance-snapshot-id"])
+        snapshot = _mapping(
+            target_snapshots[snapshot_id],
+            f"graph.target-instance-snapshots.{snapshot_id}",
+        )
+        family = snapshot.get("family")
+        if family not in {"rubygems", "github-release"}:
+            continue
+        projection = _mapping(
+            node.get("projection", {}),
+            f"graph.publish-nodes.{node_id}.projection",
+        )
+        if family == "rubygems":
+            names_by_artifact_id = _mapping(
+                projection.get(
+                    "final-distribution-filenames-by-artifact-id", {}
+                ),
+                (
+                    f"graph.publish-nodes.{node_id}.projection."
+                    "final-distribution-filenames-by-artifact-id"
+                ),
+            )
+            publish_identity = _mapping(
+                node["resolved-publish-identity"],
+                (f"graph.publish-nodes.{node_id}.resolved-publish-identity"),
+            )
+            package_name = publish_identity.get("package-name")
+            package_version = publish_identity.get("version")
+            if not isinstance(package_name, str) or not package_name:
+                msg = (
+                    f"Ruby gem publish node {node_id!r} is missing package-name"
+                )
+                raise RuntimeError(msg)
+            if not isinstance(package_version, str) or not package_version:
+                msg = f"Ruby gem publish node {node_id!r} is missing version"
+                raise RuntimeError(msg)
+        else:
+            names_by_artifact_id = _mapping(
+                projection.get("asset-names-by-artifact-id", {}),
+                (
+                    f"graph.publish-nodes.{node_id}.projection."
+                    "asset-names-by-artifact-id"
+                ),
+            )
+            package_name = ""
+            package_version = ""
+        for raw_artifact_id in node.get("artifact-ids", []):
+            artifact_id = str(raw_artifact_id)
+            artifact = _mapping(
+                artifacts[artifact_id], f"graph.artifacts.{artifact_id}"
+            )
+            if artifact.get("concrete-kind") != "rubygem":
+                continue
+            filename = names_by_artifact_id.get(artifact_id)
+            if not isinstance(filename, str) or not filename:
+                msg = (
+                    f"Ruby gem artifact {artifact_id!r} for publish node "
+                    f"{node_id!r} has no planned filename"
+                )
+                raise RuntimeError(msg)
+            if family == "github-release":
+                package_name, package_version = (
+                    _ruby_github_release_asset_identity(plan, node, filename)
+                )
+            candidate_identity = (package_name, package_version, filename)
+            if (
+                expected_identity is not None
+                and expected_identity != candidate_identity
+            ):
+                msg = (
+                    "conflicting active Ruby gem identities in finalized "
+                    f"plan: {expected_identity!r} and {candidate_identity!r}"
+                )
+                raise RuntimeError(msg)
+            expected_identity = candidate_identity
+    if expected_identity is None:
+        return ("", "", "", "")
+    return (*expected_identity, "")
+
+
+def _ruby_github_release_asset_identity(
+    plan: Mapping[str, Any],
+    node: Mapping[str, Any],
+    filename: str,
+) -> tuple[str, str]:
+    """Derive Ruby package identity from a planned GitHub Release gem asset."""
+    identity = _ruby_gem_filename_identity(filename)
+    if identity is None:
+        msg = (
+            f"Ruby GitHub Release asset {filename!r} is not a normalized "
+            "RubyGems asset filename"
+        )
+        raise RuntimeError(msg)
+    return identity
+
+
+def _ruby_gem_filename_identity(filename: str) -> tuple[str, str] | None:
+    """Return package name/version from a normalized RubyGems asset filename."""
+    match = re.fullmatch(
+        r"(.+)-([0-9][0-9A-Za-z]*(?:\.[0-9A-Za-z]+)*)\.gem", filename
+    )
+    if match is None:
+        return None
+    return match.group(1), match.group(2)
+
+
+def _planned_node_github_release_package_asset_name(
+    plan: Mapping[str, Any], publish_node_ids: Iterable[object]
+) -> str:
+    """Return the unique GitHub Release npm package asset name, if planned."""
+    graph = _mapping(plan["graph"], "graph")
+    artifacts = _mapping(graph["artifacts"], "graph.artifacts")
+    target_snapshots = _mapping(
+        graph["target-instance-snapshots"], "graph.target-instance-snapshots"
+    )
+    identity: str | None = None
+    for raw_node_id in publish_node_ids:
+        node_id = str(raw_node_id)
+        node = _mapping(
+            graph["publish-nodes"][node_id], f"graph.publish-nodes.{node_id}"
+        )
+        snapshot_id = str(node["target-instance-snapshot-id"])
+        snapshot = _mapping(
+            target_snapshots[snapshot_id],
+            f"graph.target-instance-snapshots.{snapshot_id}",
+        )
+        if snapshot.get("family") != "github-release":
+            continue
+        projection = _mapping(
+            node.get("projection", {}),
+            f"graph.publish-nodes.{node_id}.projection",
+        )
+        asset_names = _mapping(
+            projection.get("asset-names-by-artifact-id", {}),
+            f"graph.publish-nodes.{node_id}.projection.asset-names-by-artifact-id",
+        )
+        for raw_artifact_id in node.get("artifact-ids", []):
+            artifact_id = str(raw_artifact_id)
+            artifact = _mapping(
+                artifacts[artifact_id], f"graph.artifacts.{artifact_id}"
+            )
+            if artifact.get("concrete-kind") != "npm-package":
+                continue
+            candidate = asset_names.get(artifact_id)
+            if not isinstance(candidate, str) or not candidate:
+                msg = (
+                    f"GitHub Release npm package artifact {artifact_id!r} for "
+                    f"publish node {node_id!r} is missing an asset name"
+                )
+                raise RuntimeError(msg)
+            if identity is not None and identity != candidate:
+                msg = (
+                    "conflicting GitHub Release npm package asset names in "
+                    f"finalized plan: {identity!r} and {candidate!r}"
+                )
+                raise RuntimeError(msg)
+            identity = candidate
+    return identity or ""
+
+
+def _planned_node_github_release_package_asset_sha256(
+    plan: Mapping[str, Any], publish_node_ids: Iterable[object]
+) -> str:
+    """Return no GitHub Release npm asset SHA-256 evidence from the planner."""
+    _ = plan, tuple(publish_node_ids)
+    return ""
+
+
+def _planned_node_github_release_package_name(
+    plan: Mapping[str, Any], publish_node_ids: Iterable[object]
+) -> str:
+    """Return the unique projected GitHub Release npm package name, if planned."""
+    graph = _mapping(plan["graph"], "graph")
+    artifacts = {
+        str(artifact_id): dict(
+            _mapping(artifact, f"graph.artifacts.{artifact_id}")
+        )
+        for artifact_id, artifact in _mapping(
+            graph["artifacts"], "graph.artifacts"
+        ).items()
+    }
+    _materialize_npm_build_projections(graph, artifacts)
+    target_snapshots = _mapping(
+        graph["target-instance-snapshots"], "graph.target-instance-snapshots"
+    )
+    identity: str | None = None
+    for raw_node_id in publish_node_ids:
+        node_id = str(raw_node_id)
+        node = _mapping(
+            graph["publish-nodes"][node_id], f"graph.publish-nodes.{node_id}"
+        )
+        snapshot_id = str(node["target-instance-snapshot-id"])
+        snapshot = _mapping(
+            target_snapshots[snapshot_id],
+            f"graph.target-instance-snapshots.{snapshot_id}",
+        )
+        if snapshot.get("family") != "github-release":
+            continue
+        for raw_artifact_id in node.get("artifact-ids", []):
+            artifact_id = str(raw_artifact_id)
+            artifact = _mapping(
+                artifacts[artifact_id], f"graph.artifacts.{artifact_id}"
+            )
+            if artifact.get("concrete-kind") != "npm-package":
+                continue
+            projection = _mapping(
+                artifact.get("projection", {}),
+                f"graph.artifacts.{artifact_id}.projection",
+            )
+            candidate = projection.get("package-name")
+            if candidate is None:
+                continue
+            if not isinstance(candidate, str) or not candidate:
+                msg = (
+                    f"GitHub Release npm package artifact {artifact_id!r} has "
+                    "a malformed projected package name"
+                )
+                raise RuntimeError(msg)
+            if identity is not None and identity != candidate:
+                msg = (
+                    "conflicting GitHub Release npm package names in finalized "
+                    f"plan: {identity!r} and {candidate!r}"
+                )
+                raise RuntimeError(msg)
+            identity = candidate
+    return identity or ""
+
+
+def _planned_github_release_asset_labels_by_name(
+    plan: Mapping[str, Any], publish_node_ids: Iterable[object]
+) -> dict[str, str]:
+    """Return planned GitHub Release asset labels keyed by asset basename."""
+    graph = _mapping(plan["graph"], "graph")
+    target_snapshots = _mapping(
+        graph["target-instance-snapshots"], "graph.target-instance-snapshots"
+    )
+    labels_by_name: dict[str, str] = {}
+    for raw_node_id in publish_node_ids:
+        node_id = str(raw_node_id)
+        node = _mapping(
+            graph["publish-nodes"][node_id], f"graph.publish-nodes.{node_id}"
+        )
+        snapshot_id = str(node["target-instance-snapshot-id"])
+        snapshot = _mapping(
+            target_snapshots[snapshot_id],
+            f"graph.target-instance-snapshots.{snapshot_id}",
+        )
+        if snapshot.get("family") != "github-release":
+            continue
+        projection = _mapping(
+            node.get("projection", {}),
+            f"graph.publish-nodes.{node_id}.projection",
+        )
+        asset_names = _mapping(
+            projection.get("asset-names-by-artifact-id", {}),
+            f"graph.publish-nodes.{node_id}.projection.asset-names-by-artifact-id",
+        )
+        asset_labels = _mapping(
+            projection.get("asset-labels-by-artifact-id", {}),
+            f"graph.publish-nodes.{node_id}.projection.asset-labels-by-artifact-id",
+        )
+        for artifact_id, raw_label in asset_labels.items():
+            asset_name = asset_names.get(str(artifact_id))
+            if not isinstance(asset_name, str) or not asset_name:
+                msg = (
+                    f"GitHub Release asset label for artifact {artifact_id!r} "
+                    f"on publish node {node_id!r} has no planned asset name"
+                )
+                raise RuntimeError(msg)
+            if not isinstance(raw_label, str) or not raw_label:
+                msg = (
+                    f"GitHub Release asset label for artifact {artifact_id!r} "
+                    f"on publish node {node_id!r} is malformed"
+                )
+                raise RuntimeError(msg)
+            previous = labels_by_name.get(asset_name)
+            if previous is not None and previous != raw_label:
+                msg = (
+                    f"conflicting GitHub Release labels for asset {asset_name!r}: "
+                    f"{previous!r} and {raw_label!r}"
+                )
+                raise RuntimeError(msg)
+            labels_by_name[asset_name] = raw_label
+    return labels_by_name
+
+
+def _planned_github_release_asset_names(
+    plan: Mapping[str, Any], publish_node_ids: Iterable[object]
+) -> list[str]:
+    """Return planned GitHub Release asset basenames in deterministic order."""
+    graph = _mapping(plan["graph"], "graph")
+    target_snapshots = _mapping(
+        graph["target-instance-snapshots"], "graph.target-instance-snapshots"
+    )
+    names: set[str] = set()
+    for raw_node_id in publish_node_ids:
+        node_id = str(raw_node_id)
+        node = _mapping(
+            graph["publish-nodes"][node_id], f"graph.publish-nodes.{node_id}"
+        )
+        snapshot_id = str(node["target-instance-snapshot-id"])
+        snapshot = _mapping(
+            target_snapshots[snapshot_id],
+            f"graph.target-instance-snapshots.{snapshot_id}",
+        )
+        if snapshot.get("family") != "github-release":
+            continue
+        projection = _mapping(
+            node.get("projection", {}),
+            f"graph.publish-nodes.{node_id}.projection",
+        )
+        asset_names = _mapping(
+            projection.get("asset-names-by-artifact-id", {}),
+            f"graph.publish-nodes.{node_id}.projection.asset-names-by-artifact-id",
+        )
+        for raw_artifact_id in node.get("artifact-ids", []):
+            artifact_id = str(raw_artifact_id)
+            candidate = asset_names.get(artifact_id)
+            if not isinstance(candidate, str) or not candidate:
+                msg = (
+                    f"GitHub Release artifact {artifact_id!r} for publish node "
+                    f"{node_id!r} is missing an asset name"
+                )
+                raise RuntimeError(msg)
+            names.add(candidate)
+    return sorted(names)
+
+
+def _validate_github_release_coverage_inputs(
+    *,
+    plan: Mapping[str, Any],
+    execution_sets: Mapping[str, Any],
+    tag: str,
+    active_node_ids: Sequence[str],
+    asset_names: Sequence[str],
+) -> None:
+    """Fail closed unless caller GitHub Release coverage matches the plan."""
+    if not tag:
+        msg = "GitHub Release coverage validation requires a release tag"
+        raise ValueError(msg)
+    plan_id = _string(
+        _mapping(plan["envelope"], "envelope").get("plan-id"),
+        "envelope.plan-id",
+    )
+    if execution_sets.get("plan-id") != plan_id:
+        msg = "execution-sets plan-id does not match release-plan envelope plan-id"
+        raise ValueError(msg)
+    _reject_duplicate_strings(
+        active_node_ids,
+        "active_github_release_node_ids_json",
+    )
+    _reject_duplicate_strings(asset_names, "asset_names_json")
+    expected_node_ids = _expected_github_release_coverage_node_ids(
+        plan,
+        execution_sets,
+        tag,
+    )
+    if not expected_node_ids:
+        msg = (
+            f"no active GitHub Release publish nodes for tag {tag!r} were "
+            "present in the frozen execution sets"
+        )
+        raise ValueError(msg)
+    if sorted(active_node_ids) != expected_node_ids:
+        missing = sorted(set(expected_node_ids) - set(active_node_ids))
+        extra = sorted(set(active_node_ids) - set(expected_node_ids))
+        details = []
+        if missing:
+            details.append(f"missing coverage node ids: {', '.join(missing)}")
+        if extra:
+            details.append(f"unexpected coverage node ids: {', '.join(extra)}")
+        suffix = f" ({'; '.join(details)})" if details else ""
+        msg = (
+            "active_github_release_node_ids_json must exactly match complete "
+            f"same-release GitHub Release coverage for {tag!r}{suffix}"
+        )
+        raise ValueError(msg)
+    expected_asset_names = _planned_github_release_asset_names(
+        plan,
+        expected_node_ids,
+    )
+    if sorted(asset_names) != expected_asset_names:
+        missing = sorted(set(expected_asset_names) - set(asset_names))
+        extra = sorted(set(asset_names) - set(expected_asset_names))
+        details = []
+        if missing:
+            details.append(f"missing coverage assets: {', '.join(missing)}")
+        if extra:
+            details.append(f"unexpected coverage assets: {', '.join(extra)}")
+        suffix = f" ({'; '.join(details)})" if details else ""
+        msg = (
+            "asset_names_json must exactly match complete same-release GitHub "
+            f"Release coverage for {tag!r}{suffix}"
+        )
+        raise ValueError(msg)
+
+
+def _expected_github_release_coverage_node_ids(
+    plan: Mapping[str, Any],
+    execution_sets: Mapping[str, Any],
+    tag: str,
+) -> list[str]:
+    graph = _mapping(plan["graph"], "graph")
+    nodes = _mapping(graph["publish-nodes"], "graph.publish-nodes")
+    snapshots = _mapping(
+        graph["target-instance-snapshots"],
+        "graph.target-instance-snapshots",
+    )
+    active_ids = _string_list(
+        execution_sets.get("active-github-release-publish-node-ids", []),
+        "execution-sets.active-github-release-publish-node-ids",
+    )
+    active_for_tag = [
+        node_id
+        for node_id in active_ids
+        if _is_github_release_node_for_tag(nodes, snapshots, node_id, tag)
+    ]
+    if not active_for_tag:
+        return []
+    candidate_ids: list[str] = []
+    for execution_set_key in (
+        "active-github-release-publish-node-ids",
+        "selected-github-release-publish-node-ids",
+        "skip-satisfied-publish-node-ids",
+    ):
+        for node_id in _string_list(
+            execution_sets.get(execution_set_key, []),
+            f"execution-sets.{execution_set_key}",
+        ):
+            if node_id not in candidate_ids:
+                candidate_ids.append(node_id)
+    return sorted(
+        node_id
+        for node_id in candidate_ids
+        if _is_github_release_node_for_tag(nodes, snapshots, node_id, tag)
+    )
+
+
+def _is_github_release_node_for_tag(
+    nodes: Mapping[str, Any],
+    snapshots: Mapping[str, Any],
+    node_id: str,
+    tag: str,
+) -> bool:
+    node = nodes.get(node_id)
+    if not isinstance(node, Mapping):
+        return False
+    snapshot_id = node.get("target-instance-snapshot-id")
+    if not isinstance(snapshot_id, str):
+        return False
+    snapshot = snapshots.get(snapshot_id)
+    if (
+        not isinstance(snapshot, Mapping)
+        or snapshot.get("family") != "github-release"
+    ):
+        return False
+    identity = node.get("resolved-publish-identity")
+    release_tag = (
+        identity.get("release-tag") if isinstance(identity, Mapping) else None
+    )
+    if release_tag != tag:
+        return False
+    disposition = node.get("publish-disposition")
+    return disposition in {"publish", "skip-satisfied"}
+
+
+def _reject_duplicate_strings(values: Sequence[str], label: str) -> None:
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for value in values:
+        if value in seen and value not in duplicates:
+            duplicates.append(value)
+        seen.add(value)
+    if duplicates:
+        msg = f"{label} contains duplicate entries: {', '.join(duplicates)}"
+        raise ValueError(msg)
+
+
+def _active_github_release_overwrite_mutable_authorized(
+    plan: Mapping[str, Any], publish_node_ids: Iterable[object]
+) -> bool:
+    """Return whether active overwrite-mutable nodes carry planner authorization."""
+    graph = _mapping(plan["graph"], "graph")
+    target_snapshots = _mapping(
+        graph["target-instance-snapshots"], "graph.target-instance-snapshots"
+    )
+    saw_overwrite = False
+    for raw_node_id in publish_node_ids:
+        node_id = str(raw_node_id)
+        node = _mapping(
+            graph["publish-nodes"][node_id], f"graph.publish-nodes.{node_id}"
+        )
+        if node.get("publish-mode") != "overwrite-mutable":
+            continue
+        saw_overwrite = True
+        snapshot_id = str(node["target-instance-snapshot-id"])
+        snapshot = _mapping(
+            target_snapshots[snapshot_id],
+            f"graph.target-instance-snapshots.{snapshot_id}",
+        )
+        capabilities = _mapping(
+            snapshot.get("capabilities", {}),
+            f"graph.target-instance-snapshots.{snapshot_id}.capabilities",
+        )
+        authorization = _mapping(
+            node.get("overwrite-mutable-authorization", {}),
+            f"graph.publish-nodes.{node_id}.overwrite-mutable-authorization",
+        )
+        if not (
+            node.get("profile") == "buddy"
+            and snapshot.get("family") == "github-release"
+            and capabilities.get("mutability") == "mutable-prerelease"
+            and authorization.get("kind") == "planner-validated-buddy-force"
+            and authorization.get("profile") == "buddy"
+            and authorization.get("force") is True
+            and authorization.get("remote-observation") == "partial"
+            and authorization.get("mutability") == "mutable-prerelease"
+        ):
+            return False
+    return saw_overwrite
+
+
+def _planned_target_key(snapshot: Mapping[str, Any]) -> str | None:
+    """Map a target snapshot to an orchestrator coarse target key."""
+    family = snapshot.get("family")
+    instance_id = snapshot.get("instance-id")
+    destination = snapshot.get("destination")
+    host = destination.get("host") if isinstance(destination, Mapping) else None
+    if family == "pypi" and (instance_id == "pypi" or host == "pypi.org"):
+        return "python-pypi"
+    if family == "npm":
+        if instance_id == "github-packages" or host == "npm.pkg.github.com":
+            return "node-gpr"
+        if instance_id == "npmjs" or host == "registry.npmjs.org":
+            return "node-npmjs"
+    if family == "rubygems":
+        if (
+            instance_id == "github-packages"
+            or host == "rubygems.pkg.github.com"
+        ):
+            return "ruby-gpr"
+        if instance_id == "rubygems-org" or host == "rubygems.org":
+            return "ruby-rubygems"
+    return None
 
 
 def _entry_publish_handoff(
@@ -14852,6 +17732,7 @@ def _publish_request(
 ) -> Json:
     envelope = plan["envelope"]
     node = plan["graph"]["publish-nodes"][node_id]
+    _require_publish_request_disposition(node, node_id)
     project_id = node["project-id"]
     snapshot_id = node["target-instance-snapshot-id"]
     artifacts: Json = {}
@@ -14907,6 +17788,120 @@ def _publish_request(
     }
 
 
+def _github_release_publish_request_from_asset_receipts(
+    plan: Json,
+    node_id: str,
+    asset_receipts_path: Path,
+    assets_dir: Path,
+) -> Json:
+    """Build a GitHub Release publish request from staged asset receipts."""
+    envelope = plan["envelope"]
+    node = plan["graph"]["publish-nodes"][node_id]
+    _require_publish_request_disposition(node, node_id)
+    project_id = node["project-id"]
+    snapshot_id = node["target-instance-snapshot-id"]
+    snapshot = plan["graph"]["target-instance-snapshots"][snapshot_id]
+    if snapshot.get("family") != "github-release":
+        msg = "--github-release-asset-receipts is valid only for GitHub Release nodes"
+        raise ValueError(msg)
+    projection = _mapping(
+        node.get("projection"), f"publish-nodes.{node_id}.projection"
+    )
+    asset_names = _mapping(
+        projection.get("asset-names-by-artifact-id"),
+        f"publish-nodes.{node_id}.projection.asset-names-by-artifact-id",
+    )
+    receipts = _release_asset_receipts_by_name(asset_receipts_path)
+    planned_names = {
+        str(asset_names[str(artifact_id)])
+        for artifact_id in node["artifact-ids"]
+        if str(artifact_id) in asset_names
+    }
+    missing_names = planned_names - set(receipts)
+    if missing_names:
+        msg = (
+            "GitHub Release asset receipts do not match the planned asset set: "
+            f"missing {sorted(missing_names)!r} from {sorted(receipts)!r}"
+        )
+        raise ValueError(msg)
+    artifacts: Json = {}
+    for raw_artifact_id in node["artifact-ids"]:
+        artifact_id = str(raw_artifact_id)
+        asset_name = _string(asset_names.get(artifact_id), "asset-name")
+        receipt = receipts[asset_name]
+        asset_path = assets_dir / asset_name
+        if not asset_path.is_file():
+            msg = f"planned GitHub Release asset {asset_name!r} is missing"
+            raise RuntimeError(msg)
+        size = _int(receipt.get("size"), "asset-receipt.size")
+        sha256 = _string(receipt.get("sha256"), "asset-receipt.sha256")
+        if asset_path.stat().st_size != size:
+            msg = f"planned GitHub Release asset {asset_name!r} size mismatch"
+            raise RuntimeError(msg)
+        if _file_sha256_bytes(asset_path) != sha256:
+            msg = (
+                f"planned GitHub Release asset {asset_name!r} SHA-256 mismatch"
+            )
+            raise RuntimeError(msg)
+        artifacts[artifact_id] = {
+            "artifact": plan["graph"]["artifacts"][artifact_id],
+            "input-path": f"release-assets/{asset_name}",
+            "bundle-relative-path": f"dist/{asset_name}",
+            "sha256": sha256,
+            "byte-size": size,
+        }
+    return {
+        "api-version": "three.release.publish-request/v1alpha1",
+        "kind": "publish-request",
+        "plan-id": envelope["plan-id"],
+        "profile": envelope["profile"],
+        "commit-sha": envelope["commit-sha"],
+        "publish-node-id": node_id,
+        "project": envelope["projects"][project_id],
+        "publish-node": {**node, "publish-node-id": node_id},
+        "target-instance-snapshot": snapshot,
+        "artifacts": artifacts,
+    }
+
+
+def _require_publish_request_disposition(
+    node: Mapping[str, Any],
+    node_id: str,
+) -> None:
+    if node.get("publish-disposition") != "publish":
+        msg = (
+            "publish-request materialization requires publish-disposition "
+            f"'publish' for {node_id}"
+        )
+        raise ValueError(msg)
+
+
+def _release_asset_receipts_by_name(path: Path) -> dict[str, Mapping[str, Any]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, Sequence) or isinstance(payload, str | bytes):
+        msg = "release asset receipts must be an array"
+        raise TypeError(msg)
+    receipts: dict[str, Mapping[str, Any]] = {}
+    for item in payload:
+        if not isinstance(item, Mapping):
+            msg = "release asset receipt entries must be objects"
+            raise TypeError(msg)
+        name = _string(item.get("name"), "asset-receipt.name")
+        if PurePosixPath(name).name != name:
+            msg = f"release asset receipt name must be a basename: {name!r}"
+            raise ValueError(msg)
+        _int(item.get("size"), "asset-receipt.size")
+        sha256 = _string(item.get("sha256"), "asset-receipt.sha256")
+        if re.fullmatch(r"[0-9a-f]{64}", sha256) is None:
+            msg = f"release asset receipt {name!r} has invalid sha256"
+            raise ValueError(msg)
+        if name in receipts:
+            msg = f"duplicate release asset receipt for {name!r}"
+            raise ValueError(msg)
+        receipts[name] = item
+    return receipts
+
+
 def _proof_documents(
     plan: Json,
     publish_request: Json,
@@ -14917,6 +17912,7 @@ def _proof_documents(
     build_results_dir: Path,
     run_id: int,
     attempt: int,
+    asset_attestations: Json | None = None,
 ) -> list[tuple[str, Json]]:
     from three_workflow_release_proof import (  # noqa: PLC0415
         github_release_asset_proofs,
@@ -14980,10 +17976,14 @@ def _proof_documents(
                     ),
                 )
                 proofs.append((name, proof))
-    if family == "github-release":
+    elif family == "github-release":
+        if asset_attestations is None:
+            msg = "GitHub Release asset attestations are required for proof generation"
+            raise TypeError(msg)
         for proof in github_release_asset_proofs(
             publish_request=publish_request,
-            publish_result=publish_result,
+            github_release_result=publish_result,
+            asset_attestations=asset_attestations,
             run=run,
         ):
             binding = proof["binding"]
@@ -15016,16 +18016,37 @@ def _entry_proof_upload_matrix(
     plan_id = str(plan["envelope"]["plan-id"])
     matrix: list[Json] = []
     for publish_node_id in publish_node_ids:
-        publish_result_name = artifact_name(
-            "publish-result",
-            ArtifactNameInputs(
-                run_id,
-                attempt,
-                plan_id=plan_id,
-                publish_node_id=publish_node_id,
-            ),
-        )
-        staging_artifact_name = f"proof-staging-{publish_result_name}"
+        node = plan["graph"]["publish-nodes"][publish_node_id]
+        snapshot = plan["graph"]["target-instance-snapshots"][
+            node["target-instance-snapshot-id"]
+        ]
+        if snapshot["family"] == "github-release":
+            identity = node["resolved-publish-identity"]
+            result_name = artifact_name(
+                "github-release-result",
+                ArtifactNameInputs(
+                    run_id,
+                    attempt,
+                    binding_json=json.dumps(
+                        {
+                            "tagName": identity["release-tag"],
+                            "targetSha": plan["envelope"]["commit-sha"],
+                        },
+                        separators=(",", ":"),
+                    ),
+                ),
+            )
+        else:
+            result_name = artifact_name(
+                "publish-result",
+                ArtifactNameInputs(
+                    run_id,
+                    attempt,
+                    plan_id=plan_id,
+                    publish_node_id=publish_node_id,
+                ),
+            )
+        staging_artifact_name = f"proof-staging-{result_name}"
         for name in _planned_proof_artifact_names(
             plan, publish_node_id, run_id, attempt
         ):
@@ -15069,9 +18090,19 @@ def _planned_proof_artifact_names(
                     ),
                 )
             )
-    if family == "github-release":
+    elif family == "github-release":
         identity = node["resolved-publish-identity"]
-        asset_names = node["projection"]["asset-names-by-artifact-id"]
+        projection = _mapping(
+            node.get("projection", {}),
+            f"graph.publish-nodes.{publish_node_id}.projection",
+        )
+        asset_names = _mapping(
+            projection.get("asset-names-by-artifact-id", {}),
+            (
+                f"graph.publish-nodes.{publish_node_id}.projection."
+                "asset-names-by-artifact-id"
+            ),
+        )
         for artifact_id in node["artifact-ids"]:
             names.append(
                 artifact_name(
@@ -15083,7 +18114,7 @@ def _planned_proof_artifact_names(
                             publish_node_id=publish_node_id,
                             artifact_id=str(artifact_id),
                             release_tag=str(identity["release-tag"]),
-                            asset_name=str(asset_names[artifact_id]),
+                            asset_name=str(asset_names[str(artifact_id)]),
                         ),
                     ),
                 )
@@ -15101,7 +18132,12 @@ def _publish_node_variant_ids(plan: Json, publish_node_id: str) -> list[str]:
     )
 
 
-def _collect_artifact_names(root: Path | None) -> Json:
+def _collect_artifact_names(
+    root: Path | None,
+    *,
+    run_id: int | None = None,
+    attempt: int | None = None,
+) -> Json:
     result: Json = {
         "plan-artifact-name": None,
         "planner-diagnostics-artifact-name": None,
@@ -15111,6 +18147,7 @@ def _collect_artifact_names(root: Path | None) -> Json:
         "entry-publish-handoff-artifact-name": None,
         "tag-result-artifact-name": None,
         "build-result-artifact-names": [],
+        "github-release-result-artifact-names": [],
         "publish-result-artifact-names": [],
         "skip-result-artifact-names": [],
     }
@@ -15128,17 +18165,46 @@ def _collect_artifact_names(root: Path | None) -> Json:
     }
     arrays = {
         "release-build-result-v1-": "build-result-artifact-names",
+        "release-github-release-result-v1-": "github-release-result-artifact-names",
         "release-publish-result-v1-": "publish-result-artifact-names",
         "release-skip-result-v1-": "skip-result-artifact-names",
     }
     for name in names:
         for prefix, field in prefix_fields.items():
             if name.startswith(prefix):
+                if not _artifact_name_matches_run_attempt(
+                    name, prefix, run_id, attempt
+                ):
+                    continue
                 result[field] = name
         for prefix, field in arrays.items():
             if name.startswith(prefix):
+                if not _artifact_name_matches_run_attempt(
+                    name, prefix, run_id, attempt
+                ):
+                    continue
+                if (
+                    field == "github-release-result-artifact-names"
+                    and not (
+                        root / name / "github-release-result.json"
+                    ).is_file()
+                ):
+                    continue
                 result[field].append(name)
     return result
+
+
+def _artifact_name_matches_run_attempt(
+    name: str,
+    prefix: str,
+    run_id: int | None,
+    attempt: int | None,
+) -> bool:
+    if run_id is None or attempt is None:
+        return True
+    rest = name.removeprefix(prefix)
+    expected = f"{run_id}-{attempt}"
+    return rest == expected or rest.startswith(f"{expected}-")
 
 
 def _failed_variant_ids(
@@ -15175,13 +18241,309 @@ def _failed_publish_node_ids(
     execution_sets: Json | None,
     root: Path | None,
     artifacts: Json,
+    release_completed_check_conclusion: str | None = None,
+    *,
+    run_id: int | None = None,
+    attempt: int | None = None,
+    disabled_package_target_keys: Iterable[str] = (),
 ) -> list[str]:
-    if conclusion != "failure" or plan is None or execution_sets is None:
+    if plan is None or execution_sets is None:
+        return []
+    if release_completed_check_conclusion == "failure":
+        return _unsatisfied_active_publish_node_ids(
+            plan,
+            execution_sets,
+            root,
+            artifacts,
+            run_id=run_id,
+            attempt=attempt,
+            disabled_package_target_keys=disabled_package_target_keys,
+        )
+    if conclusion == "success":
+        return _unsatisfied_github_release_publish_node_ids(
+            plan,
+            execution_sets,
+            root,
+            artifacts,
+            run_id=run_id,
+            attempt=attempt,
+        )
+    if conclusion != "failure":
+        return []
+    active = _enabled_active_publish_node_ids(
+        plan,
+        execution_sets,
+        disabled_package_target_keys,
+    )
+    if root is None or not root.exists():
+        return sorted(active)
+    succeeded = _succeeded_publish_node_ids(
+        plan,
+        execution_sets,
+        root,
+        artifacts,
+        run_id=run_id,
+        attempt=attempt,
+    )
+    return sorted(active - succeeded)
+
+
+def _unsatisfied_active_publish_node_ids(
+    plan: Json,
+    execution_sets: Json,
+    root: Path | None,
+    artifacts: Json,
+    *,
+    run_id: int | None = None,
+    attempt: int | None = None,
+    disabled_package_target_keys: Iterable[str] = (),
+) -> list[str]:
+    active = _enabled_publish_satisfaction_node_ids(
+        plan,
+        execution_sets,
+        disabled_package_target_keys,
+    )
+    if not active:
         return []
     if root is None or not root.exists():
-        return sorted(execution_sets["active-publish-node-ids"])
+        return sorted(active)
+    succeeded = _succeeded_publish_node_ids(
+        plan,
+        execution_sets,
+        root,
+        artifacts,
+        run_id=run_id,
+        attempt=attempt,
+    )
+    skip_required = _enabled_skip_satisfied_publish_node_ids(
+        plan,
+        execution_sets,
+        disabled_package_target_keys,
+    )
+    if skip_required:
+        succeeded.difference_update(skip_required)
+        succeeded.update(
+            _skip_satisfied_publish_node_ids(
+                plan,
+                execution_sets,
+                root,
+                artifacts,
+                disabled_package_target_keys=disabled_package_target_keys,
+            )
+        )
+    return sorted(active - succeeded)
+
+
+def _enabled_publish_satisfaction_node_ids(
+    plan: Mapping[str, Any],
+    execution_sets: Mapping[str, Any],
+    disabled_package_target_keys: Iterable[str],
+) -> set[str]:
+    """Return enabled publish nodes that require completion receipts."""
+    active = _enabled_active_publish_node_ids(
+        plan,
+        execution_sets,
+        disabled_package_target_keys,
+    )
+    active.update(
+        _expanded_active_github_release_publish_node_ids(plan, execution_sets),
+    )
+    active.update(
+        _enabled_skip_satisfied_publish_node_ids(
+            plan,
+            execution_sets,
+            disabled_package_target_keys,
+        ),
+    )
+    return active
+
+
+def _comma_separated_items(value: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
+def _enabled_active_publish_node_ids(
+    plan: Mapping[str, Any],
+    execution_sets: Mapping[str, Any],
+    disabled_package_target_keys: Iterable[str],
+) -> set[str]:
+    active = {
+        str(node_id) for node_id in execution_sets["active-publish-node-ids"]
+    }
+    disabled_keys = {key for key in disabled_package_target_keys if key}
+    if not disabled_keys:
+        return active
+    return {
+        node_id
+        for node_id in active
+        if not _publish_node_has_target_key(plan, node_id, disabled_keys)
+    }
+
+
+def _enabled_active_variant_ids(
+    plan: Mapping[str, Any],
+    execution_sets: Mapping[str, Any],
+    disabled_package_target_keys: Iterable[str],
+) -> list[str]:
+    """Return active variant ids still required after target disablement."""
+    raw_active = [
+        str(variant_id) for variant_id in execution_sets["active-variant-ids"]
+    ]
+    raw_active_set = set(raw_active)
+    disabled_keys = {key for key in disabled_package_target_keys if key}
+    if not disabled_keys:
+        return raw_active
+    active_nodes = _enabled_active_publish_node_ids(
+        plan,
+        execution_sets,
+        disabled_keys,
+    )
+    active_nodes.update(
+        _expanded_active_github_release_publish_node_ids(plan, execution_sets),
+    )
+    graph = plan.get("graph")
+    if not isinstance(graph, Mapping):
+        return []
+    publish_nodes = graph.get("publish-nodes")
+    artifacts = graph.get("artifacts")
+    if not isinstance(publish_nodes, Mapping) or not isinstance(
+        artifacts, Mapping
+    ):
+        return []
+    required: set[str] = set()
+    for node_id in active_nodes:
+        node = publish_nodes.get(node_id)
+        if not isinstance(node, Mapping):
+            continue
+        artifact_ids = node.get("artifact-ids", [])
+        if not isinstance(artifact_ids, Sequence) or isinstance(
+            artifact_ids,
+            str | bytes,
+        ):
+            continue
+        for raw_artifact_id in artifact_ids:
+            artifact = artifacts.get(str(raw_artifact_id))
+            if not isinstance(artifact, Mapping):
+                continue
+            variant_id = artifact.get("variant-id")
+            if isinstance(variant_id, str) and variant_id in raw_active_set:
+                required.add(variant_id)
+    return [variant_id for variant_id in raw_active if variant_id in required]
+
+
+def _enabled_publish_node_ids(
+    plan: Mapping[str, Any],
+    publish_node_ids: Iterable[object],
+    disabled_package_target_keys: Iterable[str],
+) -> list[str]:
+    """Return publish node ids after removing explicitly disabled targets."""
+    disabled_keys = {key for key in disabled_package_target_keys if key}
+    result: list[str] = []
+    for raw_node_id in publish_node_ids:
+        node_id = str(raw_node_id)
+        if disabled_keys and _publish_node_has_target_key(
+            plan, node_id, disabled_keys
+        ):
+            continue
+        result.append(node_id)
+    return result
+
+
+def _publish_selectors_without_disabled_target_keys(
+    plan: Mapping[str, Any],
+    selectors: Mapping[str, Any],
+    disabled_package_target_keys: Iterable[str],
+) -> dict[str, list[str]]:
+    """Return active publish selectors with disabled target nodes removed."""
+    disabled_keys = {key for key in disabled_package_target_keys if key}
+    filtered: dict[str, list[str]] = {}
+    for selector, node_ids in selectors.items():
+        if not isinstance(node_ids, Sequence) or isinstance(
+            node_ids, str | bytes
+        ):
+            filtered[str(selector)] = []
+            continue
+        filtered_node_ids: list[str] = []
+        for raw_node_id in node_ids:
+            node_id = str(raw_node_id)
+            if disabled_keys and _publish_node_has_target_key(
+                plan, node_id, disabled_keys
+            ):
+                continue
+            filtered_node_ids.append(node_id)
+        filtered[str(selector)] = filtered_node_ids
+    return filtered
+
+
+def _publish_node_has_target_key(
+    plan: Mapping[str, Any],
+    publish_node_id: str,
+    target_keys: Collection[str],
+) -> bool:
+    """Return whether a publish node maps to one of the target keys."""
+    graph = plan.get("graph")
+    if not isinstance(graph, Mapping):
+        return False
+    nodes = graph.get("publish-nodes")
+    snapshots = graph.get("target-instance-snapshots")
+    if not isinstance(nodes, Mapping) or not isinstance(snapshots, Mapping):
+        return False
+    node = nodes.get(publish_node_id)
+    if not isinstance(node, Mapping):
+        return False
+    snapshot_id = node.get("target-instance-snapshot-id")
+    snapshot = (
+        snapshots.get(snapshot_id) if isinstance(snapshot_id, str) else None
+    )
+    if not isinstance(snapshot, Mapping):
+        return False
+    key = _planned_target_key(snapshot)
+    return key in target_keys
+
+
+def _succeeded_publish_node_ids(
+    plan: Json,
+    execution_sets: Json,
+    root: Path,
+    artifacts: Json,
+    *,
+    run_id: int | None = None,
+    attempt: int | None = None,
+) -> set[str]:
+    succeeded = _package_registry_succeeded_publish_node_ids(
+        plan,
+        execution_sets,
+        root,
+        artifacts,
+    )
+    succeeded.update(
+        _github_release_succeeded_publish_node_ids(
+            plan,
+            execution_sets,
+            root,
+            artifacts,
+            run_id=run_id,
+            attempt=attempt,
+        ),
+    )
+    return succeeded
+
+
+def _package_registry_succeeded_publish_node_ids(
+    plan: Json,
+    execution_sets: Json,
+    root: Path,
+    artifacts: Json,
+) -> set[str]:
     plan_id = plan["envelope"]["plan-id"]
-    succeeded = set()
+    active_publish_nodes = set(execution_sets["active-publish-node-ids"])
+    active_github_release_nodes = set(
+        execution_sets.get("active-github-release-publish-node-ids", []),
+    )
+    active_package_registry_nodes = (
+        active_publish_nodes - active_github_release_nodes
+    )
+    succeeded: set[str] = set()
     for name in artifacts["publish-result-artifact-names"]:
         receipt = _read_receipt(root / name / "publish-result.json")
         if (
@@ -15192,9 +18554,535 @@ def _failed_publish_node_ids(
             and receipt.get("plan-id") == plan_id
         ):
             publish_node_id = receipt.get("publish-node-id")
-            if isinstance(publish_node_id, str):
-                succeeded.add(publish_node_id)
-    return sorted(set(execution_sets["active-publish-node-ids"]) - succeeded)
+            if (
+                isinstance(publish_node_id, str)
+                and publish_node_id in active_package_registry_nodes
+            ):
+                node = plan["graph"]["publish-nodes"].get(publish_node_id)
+                if isinstance(
+                    node, Mapping
+                ) and _publish_result_matches_planned_node(receipt, node):
+                    succeeded.add(publish_node_id)
+    return succeeded
+
+
+def _publish_result_matches_planned_node(
+    receipt: Json,
+    node: Mapping[str, Any],
+) -> bool:
+    identity = node.get("resolved-publish-identity")
+    return (
+        receipt.get("project-id") == node.get("project-id")
+        and receipt.get("target-instance-snapshot-id")
+        == node.get("target-instance-snapshot-id")
+        and isinstance(identity, Mapping)
+        and receipt.get("resolved-publish-identity") == identity
+    )
+
+
+def _skip_result_matches_planned_node(
+    receipt: Json,
+    node: Mapping[str, Any],
+) -> bool:
+    return (
+        receipt.get("outcome") == "skip-satisfied"
+        and receipt.get("reason-source") == "planner"
+        and _publish_result_matches_planned_node(receipt, node)
+    )
+
+
+def _skip_satisfied_publish_node_ids(
+    plan: Json,
+    execution_sets: Json,
+    root: Path,
+    artifacts: Json,
+    *,
+    disabled_package_target_keys: Iterable[str] = (),
+) -> set[str]:
+    plan_id = plan["envelope"]["plan-id"]
+    enabled_skip_nodes = _enabled_skip_satisfied_publish_node_ids(
+        plan,
+        execution_sets,
+        disabled_package_target_keys,
+    )
+    succeeded: set[str] = set()
+    for name in artifacts.get("skip-result-artifact-names", []):
+        receipt = _read_receipt(root / name / "skip-result.json")
+        if (
+            _is_valid_receipt(receipt)
+            and receipt.get("kind") == "skip-result"
+            and receipt.get("api-version")
+            == "three.release.skip-result/v1alpha1"
+            and receipt.get("plan-id") == plan_id
+        ):
+            publish_node_id = receipt.get("publish-node-id")
+            if (
+                isinstance(publish_node_id, str)
+                and publish_node_id in enabled_skip_nodes
+            ):
+                node = plan["graph"]["publish-nodes"].get(publish_node_id)
+                if isinstance(
+                    node,
+                    Mapping,
+                ) and _skip_result_matches_planned_node(receipt, node):
+                    succeeded.add(publish_node_id)
+    return succeeded
+
+
+def _enabled_skip_satisfied_publish_node_ids(
+    plan: Mapping[str, Any],
+    execution_sets: Mapping[str, Any],
+    disabled_package_target_keys: Iterable[str],
+) -> set[str]:
+    return set(
+        _enabled_publish_node_ids(
+            plan,
+            execution_sets["skip-satisfied-publish-node-ids"],
+            disabled_package_target_keys,
+        ),
+    )
+
+
+def _github_release_succeeded_publish_node_ids(
+    plan: Json,
+    execution_sets: Json,
+    root: Path,
+    artifacts: Json,
+    *,
+    run_id: int | None = None,
+    attempt: int | None = None,
+) -> set[str]:
+    commit_sha = plan["envelope"]["commit-sha"]
+    active_github_release_nodes = set(
+        _expanded_active_github_release_publish_node_ids(plan, execution_sets),
+    )
+    succeeded: set[str] = set()
+    for name in artifacts.get("github-release-result-artifact-names", []):
+        receipt = _read_receipt(root / name / "github-release-result.json")
+        if not _is_valid_receipt(receipt):
+            continue
+        if (
+            receipt.get("kind") != "github-release-result"
+            or receipt.get("api-version")
+            != "three.release.github-release-result/v1alpha1"
+            or receipt.get("targetSha") != commit_sha
+        ):
+            continue
+        candidate_nodes = _github_release_receipt_candidate_nodes(
+            plan,
+            active_github_release_nodes,
+            receipt,
+        )
+        if not _github_release_receipt_matches_planned_asset_union(
+            receipt,
+            candidate_nodes,
+        ):
+            continue
+        for node_id, node in candidate_nodes.items():
+            if _github_release_receipt_covers_planned_node_assets(
+                receipt,
+                node_id,
+                node,
+                plan,
+                root,
+                artifacts,
+                run_id=run_id,
+                attempt=attempt,
+            ):
+                succeeded.add(node_id)
+    return succeeded
+
+
+def _github_release_receipt_candidate_nodes(
+    plan: Json,
+    active_github_release_nodes: Iterable[str],
+    receipt: Mapping[str, Any],
+) -> dict[str, Mapping[str, Any]]:
+    candidate_nodes: dict[str, Mapping[str, Any]] = {}
+    for node_id in active_github_release_nodes:
+        node = plan["graph"]["publish-nodes"].get(node_id)
+        if not isinstance(node, Mapping):
+            continue
+        identity = node.get("resolved-publish-identity")
+        if not isinstance(identity, Mapping) or identity.get(
+            "release-tag"
+        ) != receipt.get("tagName"):
+            continue
+        if not _github_release_receipt_matches_publish_mode(receipt, node):
+            continue
+        candidate_nodes[str(node_id)] = node
+    return candidate_nodes
+
+
+def _github_release_receipt_matches_publish_mode(
+    receipt: Mapping[str, Any],
+    node: Mapping[str, Any],
+) -> bool:
+    publish_mode = node.get("publish-mode")
+    release_existed = receipt.get("releaseExisted")
+    if node.get("publish-disposition") == "skip-satisfied":
+        return "publish-mode" not in node and release_existed is True
+    if publish_mode == "create-only":
+        return release_existed is False or release_existed is True
+    if not isinstance(publish_mode, str):
+        return False
+    expected = {
+        "overwrite-mutable": True,
+        "replace-authoritative": True,
+    }.get(publish_mode)
+    return expected is not None and release_existed is expected
+
+
+def _github_release_result_assets_by_name(
+    receipt: Mapping[str, Any],
+) -> dict[str, Mapping[str, Any]]:
+    assets: dict[str, Mapping[str, Any]] = {}
+    raw_assets = receipt.get("assets")
+    if not isinstance(raw_assets, Sequence) or isinstance(
+        raw_assets, str | bytes
+    ):
+        return {}
+    for asset in raw_assets:
+        if not isinstance(asset, Mapping):
+            return {}
+        name = asset.get("name")
+        size = asset.get("size")
+        sha256 = asset.get("sha256")
+        if (
+            not isinstance(name, str)
+            or type(size) is not int
+            or not isinstance(sha256, str)
+        ):
+            return {}
+        if name in assets:
+            return {}
+        assets[name] = asset
+    return assets
+
+
+def _github_release_receipt_matches_planned_asset_union(
+    receipt: Json,
+    nodes: Mapping[str, Mapping[str, Any]],
+) -> bool:
+    receipt_assets = _github_release_result_assets_by_name(receipt)
+    if not nodes or not receipt_assets:
+        return False
+    planned_names: set[str] = set()
+    for node in nodes.values():
+        projection = node.get("projection")
+        if not isinstance(projection, Mapping):
+            return False
+        asset_names = projection.get("asset-names-by-artifact-id")
+        if not isinstance(asset_names, Mapping) or not asset_names:
+            return False
+        for raw_artifact_id in node.get("artifact-ids", []):
+            artifact_id = str(raw_artifact_id)
+            raw_name = asset_names.get(artifact_id)
+            if not isinstance(raw_name, str) or not raw_name:
+                return False
+            planned_names.add(raw_name)
+    return set(receipt_assets) == planned_names
+
+
+def _github_release_receipt_covers_planned_node_assets(  # noqa: PLR0911
+    receipt: Json,
+    node_id: str,
+    node: Mapping[str, Any],
+    plan: Json,
+    root: Path,
+    _artifacts: Json,
+    *,
+    run_id: int | None = None,
+    attempt: int | None = None,
+) -> bool:
+    receipt_assets = _github_release_result_assets_by_name(receipt)
+    planned_asset_names = _github_release_planned_node_asset_names(
+        node,
+        receipt_assets,
+    )
+    if planned_asset_names is None:
+        return False
+
+    disposition = node.get("publish-disposition")
+    if disposition == "skip-satisfied":
+        return True
+    if disposition != "publish":
+        return False
+
+    proof_receipts = _github_release_asset_proof_receipts_by_artifact_id(
+        plan,
+        root,
+        node_id,
+        run_id=run_id,
+        attempt=attempt,
+    )
+
+    planned: dict[str, tuple[str, int, str]] = {}
+    for artifact_id, raw_name in planned_asset_names.items():
+        proof_receipt = proof_receipts.get(artifact_id)
+        if proof_receipt is None:
+            return False
+        proof_size = proof_receipt.get("byte-size")
+        proof_sha256 = proof_receipt.get("sha256")
+        if type(proof_size) is not int or not isinstance(proof_sha256, str):
+            return False
+        planned[raw_name] = (artifact_id, proof_size, proof_sha256)
+
+    for asset_name, (
+        _artifact_id,
+        expected_size,
+        expected_sha256,
+    ) in planned.items():
+        result_asset = receipt_assets[asset_name]
+        if (
+            result_asset.get("size") != expected_size
+            or result_asset.get("sha256") != expected_sha256
+        ):
+            return False
+    return True
+
+
+def _github_release_planned_node_asset_names(
+    node: Mapping[str, Any],
+    receipt_assets: Mapping[str, Mapping[str, Any]],
+) -> dict[str, str] | None:
+    projection = node.get("projection")
+    if not isinstance(projection, Mapping):
+        return None
+    asset_names = projection.get("asset-names-by-artifact-id")
+    if not isinstance(asset_names, Mapping) or not asset_names:
+        return None
+
+    planned_asset_names: dict[str, str] = {}
+    for raw_artifact_id in node.get("artifact-ids", []):
+        artifact_id = str(raw_artifact_id)
+        raw_name = asset_names.get(artifact_id)
+        if not isinstance(raw_name, str) or not raw_name:
+            return None
+        if raw_name not in receipt_assets:
+            return None
+        planned_asset_names[artifact_id] = raw_name
+    return planned_asset_names
+
+
+def _github_release_asset_proof_receipts_by_artifact_id(  # noqa: C901, PLR0912
+    plan: Json,
+    root: Path,
+    node_id: str,
+    *,
+    run_id: int | None = None,
+    attempt: int | None = None,
+) -> dict[str, Mapping[str, Any]]:
+    proofs: dict[str, Mapping[str, Any]] = {}
+    conflicts: set[str] = set()
+    node = plan["graph"]["publish-nodes"].get(node_id)
+    if not isinstance(node, Mapping):
+        return {}
+    identity = node.get("resolved-publish-identity")
+    projection = node.get("projection")
+    if not isinstance(identity, Mapping) or not isinstance(projection, Mapping):
+        return {}
+    asset_names = projection.get("asset-names-by-artifact-id")
+    if not isinstance(asset_names, Mapping):
+        return {}
+    for artifact_dir in sorted(root.iterdir() if root.exists() else []):
+        if not artifact_dir.is_dir() or not artifact_dir.name.startswith(
+            "release-github-release-asset-proof"
+        ):
+            continue
+        if not _github_release_asset_proof_dir_matches_run_attempt(
+            artifact_dir.name,
+            run_id=run_id,
+            attempt=attempt,
+        ):
+            continue
+        for proof_path in sorted(artifact_dir.rglob("*.json")):
+            if not _github_release_asset_proof_file_matches_run_attempt(
+                proof_path.name,
+                run_id=run_id,
+                attempt=attempt,
+            ):
+                continue
+            proof = _read_receipt(proof_path)
+            if not _is_valid_receipt(proof):
+                continue
+            if (
+                _github_release_asset_proof_sidecar_filename(proof)
+                != proof_path.name
+            ):
+                continue
+            if not _github_release_asset_proof_matches_completion_node(
+                proof,
+                plan,
+                node_id,
+                node,
+                identity,
+                asset_names,
+                run_id=run_id,
+                attempt=attempt,
+            ):
+                continue
+            binding = cast("Mapping[str, Any]", proof["binding"])
+            artifact = cast("Mapping[str, Any]", proof["artifact"])
+            artifact_id = str(binding["artifact-id"])
+            if artifact_id in conflicts:
+                continue
+            existing = proofs.get(artifact_id)
+            if existing is not None and (
+                existing.get("byte-size") != artifact.get("byte-size")
+                or existing.get("sha256") != artifact.get("sha256")
+            ):
+                proofs.pop(artifact_id, None)
+                conflicts.add(artifact_id)
+                continue
+            proofs[artifact_id] = artifact
+    return proofs
+
+
+def _github_release_asset_proof_dir_matches_run_attempt(
+    name: str,
+    *,
+    run_id: int | None,
+    attempt: int | None,
+) -> bool:
+    if run_id is None or attempt is None:
+        return True
+    plural_prefix = (
+        f"release-github-release-asset-proofs-v1-{run_id}-{attempt}-"
+    )
+    if name.startswith(plural_prefix):
+        return True
+    singular_prefix = "release-github-release-asset-proof-v1-"
+    if not name.startswith(singular_prefix):
+        return False
+    return name.endswith(f"-{run_id}-{attempt}")
+
+
+def _github_release_asset_proof_file_matches_run_attempt(
+    name: str,
+    *,
+    run_id: int | None,
+    attempt: int | None,
+) -> bool:
+    if run_id is None or attempt is None:
+        return True
+    match = _GITHUB_RELEASE_ASSET_PROOF_SIDECAR_RE.fullmatch(name)
+    return (
+        match is not None
+        and match.group("run_id") == str(run_id)
+        and match.group("attempt") == str(attempt)
+    )
+
+
+def _github_release_asset_proof_matches_completion_node(  # noqa: PLR0911
+    proof: Json,
+    plan: Json,
+    node_id: str,
+    node: Mapping[str, Any],
+    identity: Mapping[str, Any],
+    asset_names: Mapping[str, Any],
+    *,
+    run_id: int | None = None,
+    attempt: int | None = None,
+) -> bool:
+    if (
+        proof.get("kind") != "github-release-asset-proof"
+        or proof.get("api-version")
+        != "three.release.github-release-asset-proof/v1alpha1"
+        or proof.get("plan-id") != plan["envelope"]["plan-id"]
+        or proof.get("project-id") != node.get("project-id")
+    ):
+        return False
+    binding = proof.get("binding")
+    artifact = proof.get("artifact")
+    attestation = proof.get("attestation")
+    run = proof.get("run")
+    if (
+        not isinstance(binding, Mapping)
+        or not isinstance(artifact, Mapping)
+        or not isinstance(attestation, Mapping)
+        or not isinstance(run, Mapping)
+    ):
+        return False
+    artifact_id = binding.get("artifact-id")
+    if not isinstance(artifact_id, str) or artifact_id not in node.get(
+        "artifact-ids",
+        [],
+    ):
+        return False
+    plan_artifact = plan["graph"]["artifacts"].get(artifact_id)
+    if not isinstance(plan_artifact, Mapping):
+        return False
+    asset_name = asset_names.get(artifact_id)
+    proof_size = artifact.get("byte-size")
+    proof_sha256 = artifact.get("sha256")
+    plan_id = plan["envelope"].get("plan-id")
+    commit_sha = plan["envelope"].get("commit-sha")
+    release_tag = identity.get("release-tag")
+    signer_workflow = _planned_github_release_signer_workflow(node)
+    repository = _planned_github_release_repository(plan, node)
+    if (
+        not isinstance(asset_name, str)
+        or type(proof_size) is not int
+        or not isinstance(proof_sha256, str)
+        or not isinstance(plan_id, str)
+        or not isinstance(commit_sha, str)
+        or not isinstance(release_tag, str)
+        or signer_workflow is None
+        or repository is None
+    ):
+        return False
+    if proof.get("variant-id") != plan_artifact.get("variant-id"):
+        return False
+    if run_id is not None and run.get("run-id") != run_id:
+        return False
+    if attempt is not None and run.get("run-attempt") != attempt:
+        return False
+    return _github_release_asset_wrapper_proof_matches(
+        proof=proof,
+        name=asset_name,
+        artifact_id=artifact_id,
+        expected_size=proof_size,
+        expected_sha256=proof_sha256,
+        node_id=node_id,
+        node=cast("Json", node),
+        repository=repository,
+        commit_sha=commit_sha,
+        tag=release_tag,
+        signer_workflow=signer_workflow,
+        plan_id=plan_id,
+    )
+
+
+def _unsatisfied_github_release_publish_node_ids(
+    plan: Json,
+    execution_sets: Json,
+    root: Path | None,
+    artifacts: Json,
+    *,
+    run_id: int | None = None,
+    attempt: int | None = None,
+) -> list[str]:
+    active = {
+        str(node_id)
+        for node_id in _expanded_active_github_release_publish_node_ids(
+            plan,
+            execution_sets,
+        )
+    }
+    if not active:
+        return []
+    if root is None or not root.exists():
+        return sorted(active)
+    succeeded = _github_release_succeeded_publish_node_ids(
+        plan,
+        execution_sets,
+        root,
+        artifacts,
+        run_id=run_id,
+        attempt=attempt,
+    )
+    return sorted(active - succeeded)
 
 
 def _is_valid_receipt(receipt: Json) -> bool:
@@ -15213,28 +19101,88 @@ def _read_receipt(path: Path) -> Json:
 
 
 def _report_counts(
-    plan: Json | None, execution_sets: Json | None, artifacts: Json
+    plan: Json | None,
+    execution_sets: Json | None,
+    artifacts: Json,
+    root: Path | None,
+    *,
+    run_id: int | None = None,
+    attempt: int | None = None,
+    disabled_package_target_keys: Iterable[str] = (),
 ) -> Json:
     if plan is None or execution_sets is None:
+        published_nodes = len(artifacts["publish-result-artifact-names"]) + len(
+            artifacts["github-release-result-artifact-names"]
+        )
         return {
             "selected-projects": 0,
             "active-variants": 0,
             "active-publish-nodes": 0,
-            "published-nodes": len(artifacts["publish-result-artifact-names"]),
+            "published-nodes": published_nodes,
             "skipped-publish-nodes": len(
                 artifacts["skip-result-artifact-names"]
             ),
         }
+    if root is not None and root.exists():
+        enabled_active_publish_nodes = _enabled_active_publish_node_ids(
+            plan,
+            execution_sets,
+            disabled_package_target_keys,
+        )
+        published_nodes = len(
+            _succeeded_publish_node_ids(
+                plan,
+                execution_sets,
+                root,
+                artifacts,
+                run_id=run_id,
+                attempt=attempt,
+            )
+            & enabled_active_publish_nodes,
+        )
+        skipped_publish_nodes = len(
+            _skip_satisfied_publish_node_ids(
+                plan,
+                execution_sets,
+                root,
+                artifacts,
+                disabled_package_target_keys=disabled_package_target_keys,
+            ),
+        )
+    else:
+        published_nodes = len(artifacts["publish-result-artifact-names"]) + len(
+            artifacts["github-release-result-artifact-names"]
+        )
+        skipped_publish_nodes = len(artifacts["skip-result-artifact-names"])
     return {
         "selected-projects": len(plan["envelope"]["selected-project-ids"]),
-        "active-variants": len(execution_sets["active-variant-ids"]),
-        "active-publish-nodes": len(execution_sets["active-publish-node-ids"]),
-        "published-nodes": len(artifacts["publish-result-artifact-names"]),
-        "skipped-publish-nodes": len(artifacts["skip-result-artifact-names"]),
+        "active-variants": len(
+            _enabled_active_variant_ids(
+                plan,
+                execution_sets,
+                disabled_package_target_keys,
+            ),
+        ),
+        "active-publish-nodes": len(
+            _enabled_active_publish_node_ids(
+                plan,
+                execution_sets,
+                disabled_package_target_keys,
+            ),
+        ),
+        "published-nodes": published_nodes,
+        "skipped-publish-nodes": skipped_publish_nodes,
     }
 
 
-def _overall_conclusion(args: argparse.Namespace) -> str:
+def _overall_conclusion(
+    args: argparse.Namespace,
+    release_completed_check_conclusion: str | None = None,
+) -> str:
+    if release_completed_check_conclusion is None:
+        release_completed_check_conclusion = getattr(
+            args, "release_completed_check_conclusion", "skipped"
+        )
     conclusions = [
         args.authorize_conclusion,
         args.validate_conclusion,
@@ -15242,6 +19190,7 @@ def _overall_conclusion(args: argparse.Namespace) -> str:
         args.plan_conclusion,
         args.build_conclusion,
         args.tag_conclusion,
+        release_completed_check_conclusion,
         args.publish_conclusion,
     ]
     if "failure" in conclusions:
@@ -15359,6 +19308,7 @@ def _official_public_ref_diagnostics(
     canary_override: bool,
 ) -> list[Json]:
     projects = _release_project_public_ref_specs()
+    release_tag_identity = _release_tag_identity(full_ref)
     selected_ids = (
         list(requested_project_ids)
         if requested_project_ids
@@ -15387,6 +19337,10 @@ def _official_public_ref_diagnostics(
         for project_id in selected_known
         if not _matches_public_release_ref_spec(full_ref, projects[project_id])
     ]
+    if release_tag_identity is not None and selected_known == [
+        release_tag_identity[0]
+    ]:
+        disallowed = []
     if not disallowed:
         if (
             canary_override
@@ -15400,17 +19354,27 @@ def _official_public_ref_diagnostics(
         diagnostics.append(_canary_override_scope_diagnostic(selected_ids))
         return diagnostics
     for project_id in disallowed:
+        diagnostic_details = {
+            "ref": full_ref,
+            "publicReleaseRefSpec": projects[project_id],
+            "canary-override-non-public-ref": False,
+        }
+        if release_tag_identity is not None:
+            diagnostic_details["release-tag-project"] = release_tag_identity[0]
+            diagnostic_details["release-tag-version"] = release_tag_identity[1]
         diagnostics.append(
             _diagnostic(
                 "REQ_UNTRUSTED_WORKFLOW_REF",
                 "validation",
                 "project",
-                "official release ref does not match the project's NBGV publicReleaseRefSpec",
-                {
-                    "ref": full_ref,
-                    "publicReleaseRefSpec": projects[project_id],
-                    "canary-override-non-public-ref": False,
-                },
+                (
+                    "official release tag does not match the selected project's "
+                    "release identity"
+                    if release_tag_identity is not None
+                    else "official release ref does not match the project's NBGV "
+                    "publicReleaseRefSpec"
+                ),
+                diagnostic_details,
                 project_id=project_id,
             )
         )
@@ -15433,6 +19397,57 @@ def _canary_override_scope_diagnostic(project_ids: Sequence[str]) -> Json:
     )
 
 
+@functools.lru_cache(maxsize=1)
+def _release_project_aliases() -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    for descriptor in sorted(_REPO_ROOT.glob("src/**/three.release.yml")):
+        document = yaml.safe_load(descriptor.read_text(encoding="utf-8"))
+        if not isinstance(document, Mapping):
+            continue
+        project = document.get("project")
+        if not isinstance(project, Mapping) or not isinstance(
+            project.get("id"), str
+        ):
+            continue
+        project_id = str(project["id"])
+        _register_release_project_alias(aliases, project_id, project_id)
+        display_name = project.get("display-name")
+        if isinstance(display_name, str) and display_name:
+            _register_release_project_alias(aliases, display_name, project_id)
+    return aliases
+
+
+def _register_release_project_alias(
+    aliases: dict[str, str], alias: str, project_id: str
+) -> None:
+    existing = aliases.get(alias)
+    if existing is None:
+        aliases[alias] = project_id
+        return
+    if existing != project_id:
+        msg = (
+            f"release project alias {alias!r} maps to multiple project ids: "
+            f"{existing!r}, {project_id!r}"
+        )
+        raise RuntimeError(msg)
+
+
+def _resolve_release_project_id(project: str) -> str | None:
+    return _release_project_aliases().get(project)
+
+
+def _cmd_resolve_project(args: argparse.Namespace) -> int:
+    project_id = _resolve_release_project_id(args.project)
+    if project_id is None:
+        print(f"Unknown release project: {args.project}", file=sys.stderr)
+        return 1
+    _write_outputs(args.github_output, {"project_id": project_id})
+    if not args.github_output:
+        print(json.dumps({"project_id": project_id}, separators=(",", ":")))
+    return 0
+
+
+@functools.lru_cache(maxsize=1)
 def _release_project_public_ref_specs() -> dict[str, list[str]]:
     projects: dict[str, list[str]] = {}
     for descriptor in sorted(_REPO_ROOT.glob("src/**/three.release.yml")):
@@ -15445,7 +19460,11 @@ def _release_project_public_ref_specs() -> dict[str, list[str]]:
         ):
             continue
         spec = _nearest_public_release_ref_spec(descriptor.parent)
-        projects[str(project["id"])] = spec
+        project_id = str(project["id"])
+        projects[project_id] = spec
+        display_name = project.get("display-name")
+        if isinstance(display_name, str) and display_name not in projects:
+            projects[display_name] = spec
     return projects
 
 
@@ -15476,6 +19495,13 @@ def _matches_public_release_ref_spec(
     full_ref: str, patterns: Sequence[str]
 ) -> bool:
     return any(re.fullmatch(pattern, full_ref) for pattern in patterns)
+
+
+def _release_tag_identity(full_ref: str) -> tuple[str, str] | None:
+    match = _OFFICIAL_RELEASE_TAG_REF_RE.fullmatch(full_ref)
+    if match is None:
+        return None
+    return match["project"], match["version"]
 
 
 def _tag_has_active_ruleset(repository: str, tag_name: str) -> bool:
@@ -15561,22 +19587,49 @@ def _remote_tag_commit(repository: str, tag: str) -> str | None:
 def _observe_github_release_publication(
     repository: str,
     commit_sha: str,
+    node_id: str,
     node: Json,
+    *,
+    plan_id: str | None = None,
+    artifact_variant_ids_by_id: Mapping[str, object] | None = None,
+    release_group_nodes: Mapping[str, Json] | None = None,
+    release_group_variant_ids: Mapping[str, Mapping[str, object]] | None = None,
+    allow_official_tag_retarget: bool = False,
 ) -> str:
     identity = node["resolved-publish-identity"]
     tag = str(identity["release-tag"])
     tag_commit = _remote_tag_commit(repository, tag)
-    if tag_commit is not None and tag_commit != commit_sha:
+    tag_mismatch = tag_commit is not None and tag_commit != commit_sha
+    if tag_mismatch and not allow_official_tag_retarget:
         return "conflicting"
     release = _github_release_by_tag(repository, tag)
     if release is None:
         return "absent"
     if tag_commit is None:
         return "conflicting"
-    return _classify_github_release_payload(release, node)
+    observation = _classify_github_release_payload(
+        release,
+        node_id,
+        node,
+        repository,
+        commit_sha,
+        tag,
+        plan_id=plan_id,
+        artifact_variant_ids_by_id=artifact_variant_ids_by_id,
+        release_group_nodes=release_group_nodes,
+        release_group_variant_ids=release_group_variant_ids,
+    )
+    if tag_mismatch and observation == "exact-satisfied":
+        desired = node.get("desired-publish-state", {})
+        if (
+            isinstance(desired, Mapping)
+            and desired.get("release-state") == "release"
+        ):
+            return "partial-authoritative"
+    return observation
 
 
-def _observe_pypi_publication(node: Json) -> str:
+def _observe_pypi_publication(node: Json) -> str:  # noqa: C901, PLR0911
     package_name, version = _package_publish_identity(node, "PyPI")
     payload = _pypi_project_json(package_name)
     if payload is None:
@@ -15594,7 +19647,141 @@ def _observe_pypi_publication(node: Json) -> str:
             "has malformed release files"
         )
         raise TypeError(msg)
+    expected_filenames_by_artifact_id = _planned_distribution_filenames(
+        node, "PyPI"
+    )
+    if len(set(expected_filenames_by_artifact_id.values())) != len(
+        expected_filenames_by_artifact_id
+    ):
+        return "conflicting"
+    expected_filenames = set(expected_filenames_by_artifact_id.values())
+    observed_files = _pypi_release_files_by_filename(
+        files, package_name, version
+    )
+    if observed_files is None:
+        return "conflicting"
+    observed_filenames = set(observed_files)
+    extra_filenames = observed_filenames - expected_filenames
+    if extra_filenames:
+        return "conflicting"
+    if expected_filenames - observed_filenames:
+        return "partial"
+    expected_sha256_by_filename = _planned_distribution_sha256_by_filename(
+        node, expected_filenames_by_artifact_id
+    )
+    if set(expected_sha256_by_filename) != expected_filenames:
+        return "partial"
+    for filename, expected_sha256 in expected_sha256_by_filename.items():
+        observed_sha256 = _pypi_release_file_sha256(observed_files[filename])
+        if observed_sha256 is None:
+            return "partial"
+        if observed_sha256 != expected_sha256:
+            return "conflicting"
     return "exact-satisfied"
+
+
+def _planned_distribution_filenames(
+    node: Json, registry_name: str
+) -> dict[str, str]:
+    projection = node.get("projection")
+    if not isinstance(projection, Mapping):
+        msg = f"{registry_name} publish node is missing projection"
+        raise TypeError(msg)
+    filenames = projection.get("final-distribution-filenames-by-artifact-id")
+    if not isinstance(filenames, Mapping):
+        msg = (
+            f"{registry_name} publish node projection is missing final "
+            "distribution filenames"
+        )
+        raise TypeError(msg)
+    result: dict[str, str] = {}
+    for artifact_id, filename in filenames.items():
+        if not isinstance(artifact_id, str) or not artifact_id:
+            msg = (
+                f"{registry_name} publish node projection has malformed "
+                "artifact id"
+            )
+            raise TypeError(msg)
+        if not isinstance(filename, str) or not filename:
+            msg = (
+                f"{registry_name} publish node projection has malformed "
+                "distribution filename"
+            )
+            raise TypeError(msg)
+        result[artifact_id] = filename
+    if not result:
+        msg = f"{registry_name} publish node projection has no distribution filenames"
+        raise TypeError(msg)
+    return result
+
+
+def _pypi_release_files_by_filename(
+    files: Sequence[object], package_name: str, version: str
+) -> dict[str, Mapping[str, Any]] | None:
+    observed: dict[str, Mapping[str, Any]] = {}
+    for item in files:
+        if not isinstance(item, Mapping):
+            msg = (
+                f"PyPI JSON API payload for {package_name!r} version {version!r} "
+                "contains a malformed release file"
+            )
+            raise TypeError(msg)
+        filename = item.get("filename")
+        if not isinstance(filename, str) or not filename:
+            msg = (
+                f"PyPI JSON API payload for {package_name!r} version {version!r} "
+                "contains a release file without filename"
+            )
+            raise TypeError(msg)
+        if filename in observed:
+            return None
+        observed[filename] = item
+    return observed
+
+
+def _planned_distribution_sha256_by_filename(
+    node: Json, filenames_by_artifact_id: Mapping[str, str]
+) -> dict[str, str]:
+    projection = node.get("projection")
+    if not isinstance(projection, Mapping):
+        return {}
+    expected: dict[str, str] = {}
+    raw_by_artifact_id = projection.get(
+        "final-distribution-sha256-by-artifact-id"
+    )
+    if not isinstance(raw_by_artifact_id, Mapping):
+        return expected
+    for artifact_id, raw_digest in raw_by_artifact_id.items():
+        if not isinstance(artifact_id, str):
+            continue
+        filename = filenames_by_artifact_id.get(artifact_id)
+        if filename is None:
+            continue
+        digest = _normalize_sha256_digest(raw_digest)
+        if digest is not None:
+            expected[filename] = digest
+    return expected
+
+
+def _pypi_release_file_sha256(file: Mapping[str, Any]) -> str | None:
+    digests = file.get("digests")
+    if not isinstance(digests, Mapping):
+        return None
+    value = digests.get("sha256")
+    if not isinstance(value, str):
+        return None
+    if re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        return None
+    return value
+
+
+def _normalize_sha256_digest(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    digest = value.removeprefix("sha256:")
+    if re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        return None
+    return digest
 
 
 def _observe_nuget_publication(node: Json) -> str:
@@ -15672,6 +19859,8 @@ def _observe_github_packages_publication(
             node,
             snapshot,
         )
+    if family in {"npm", "rubygems"}:
+        return "absent"
     package_name, version = _package_publish_identity(
         node, f"GitHub Packages {family}"
     )
@@ -15703,7 +19892,7 @@ def _observe_github_packages_publication(
             )
             raise TypeError(msg)
         if version_name == version:
-            return "exact-satisfied"
+            return "partial"
     return "absent"
 
 
@@ -15716,9 +19905,245 @@ def _observe_npm_publication(node: Json) -> str:
     if not isinstance(versions, Mapping):
         msg = f"npm registry payload for {package_name!r} is missing versions"
         raise TypeError(msg)
-    if version in versions:
-        return "exact-satisfied"
-    return "absent"
+    if version not in versions:
+        return "absent"
+    version_payload = versions[version]
+    if not isinstance(version_payload, Mapping):
+        msg = (
+            f"npm registry payload for {package_name!r} version {version!r} "
+            "is malformed"
+        )
+        raise TypeError(msg)
+    return _classify_npm_version_payload(node, version_payload)
+
+
+def _classify_npm_version_payload(
+    node: Json, version_payload: Mapping[str, Any]
+) -> str:
+    expected_filenames_by_artifact_id = _planned_distribution_filenames(
+        node, "npm"
+    )
+    if len(set(expected_filenames_by_artifact_id.values())) != len(
+        expected_filenames_by_artifact_id
+    ):
+        return "conflicting"
+    expected_filenames = set(expected_filenames_by_artifact_id.values())
+    observed_filename = _npm_version_tarball_filename(version_payload, node)
+    if observed_filename is None:
+        return "partial"
+    filename_classification = _classify_distribution_filename_sets(
+        expected_filenames, {observed_filename}
+    )
+    if filename_classification is not None:
+        return filename_classification
+    dist = version_payload.get("dist")
+    return _classify_npm_digest_evidence(
+        node, expected_filenames_by_artifact_id, dist
+    )
+
+
+def _classify_distribution_filename_sets(
+    expected_filenames: set[str], observed_filenames: set[str]
+) -> str | None:
+    if observed_filenames - expected_filenames:
+        return "conflicting"
+    if expected_filenames - observed_filenames:
+        return "partial"
+    return None
+
+
+def _classify_npm_digest_evidence(  # noqa: PLR0911
+    node: Json,
+    expected_filenames_by_artifact_id: Mapping[str, str],
+    dist: object,
+) -> str:
+    expected_digests_by_filename = _planned_distribution_digests_by_filename(
+        node, expected_filenames_by_artifact_id
+    )
+    if set(expected_digests_by_filename) != set(
+        expected_filenames_by_artifact_id.values()
+    ):
+        return "partial"
+    if not isinstance(dist, Mapping):
+        return "partial"
+    observed_digests = _npm_dist_digests(dist)
+    if not observed_digests:
+        return "partial"
+    if any(len(digests) > 1 for digests in observed_digests.values()):
+        return "conflicting"
+    observed_single_digests = _single_npm_dist_digests(observed_digests)
+    for expected_digests in expected_digests_by_filename.values():
+        shared_algorithms = set(expected_digests) & set(observed_single_digests)
+        if not shared_algorithms:
+            return "partial"
+        if any(
+            observed_single_digests[algorithm] != expected_digests[algorithm]
+            for algorithm in shared_algorithms
+        ):
+            return "conflicting"
+    return "exact-satisfied"
+
+
+def _npm_version_tarball_filename(
+    version_payload: Mapping[str, Any], node: Json
+) -> str | None:
+    dist = version_payload.get("dist")
+    if not isinstance(dist, Mapping):
+        return None
+    tarball = dist.get("tarball")
+    if not isinstance(tarball, str) or not tarball:
+        return None
+    path = urllib.parse.urlparse(tarball).path
+    filename = urllib.parse.unquote(PurePosixPath(path).name)
+    package_name, version = _package_publish_identity(node, "npm")
+    filename = _normalize_npm_registry_tarball_filename(
+        filename, package_name, version
+    )
+    return filename or None
+
+
+def _normalize_npm_registry_tarball_filename(
+    filename: str, package_name: str, version: str
+) -> str:
+    if not package_name.startswith("@"):
+        return filename
+    scope_and_name = package_name[1:]
+    scope, separator, unscoped_name = scope_and_name.partition("/")
+    if not separator or not scope or not unscoped_name:
+        return filename
+    if filename == f"{unscoped_name}-{version}.tgz":
+        return f"{scope}-{unscoped_name}-{version}.tgz"
+    return filename
+
+
+def _npm_dist_has_digest_evidence(dist: Mapping[str, Any]) -> bool:
+    if _npm_dist_digests(dist):
+        return True
+    shasum = dist.get("shasum")
+    return (
+        isinstance(shasum, str)
+        and re.fullmatch(r"[0-9a-f]{40}", shasum) is not None
+    )
+
+
+def _npm_integrity_has_digest_evidence(value: object) -> bool:
+    return bool(_digest_values_from_sri(value))
+
+
+def _npm_dist_sha256(dist: Mapping[str, Any]) -> str | None:
+    digests = _npm_dist_digests(dist).get("sha256")
+    if digests is None or len(digests) != 1:
+        return None
+    return next(iter(digests))
+
+
+def _planned_distribution_digests_by_filename(
+    node: Json, filenames_by_artifact_id: Mapping[str, str]
+) -> dict[str, dict[str, str]]:
+    expected: dict[str, dict[str, str]] = {}
+    projection = node.get("projection")
+    if not isinstance(projection, Mapping):
+        return expected
+    raw_by_artifact_id = projection.get(
+        "final-distribution-digests-by-artifact-id"
+    )
+    if not isinstance(raw_by_artifact_id, Mapping):
+        return expected
+    for artifact_id, raw_digests in raw_by_artifact_id.items():
+        if not isinstance(artifact_id, str):
+            continue
+        filename = filenames_by_artifact_id.get(artifact_id)
+        if filename is None:
+            continue
+        digests = _normalize_digest_map(raw_digests)
+        if digests:
+            expected.setdefault(filename, {}).update(digests)
+    return expected
+
+
+def _normalize_digest_map(value: object) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        return {}
+    result: dict[str, str] = {}
+    for algorithm, digest in value.items():
+        if not isinstance(algorithm, str):
+            continue
+        normalized = _normalize_algorithm_digest(algorithm, digest)
+        if normalized is not None:
+            result[algorithm] = normalized
+    return result
+
+
+def _normalize_algorithm_digest(algorithm: str, value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    lengths = {"sha256": 64, "sha384": 96, "sha512": 128}
+    length = lengths.get(algorithm)
+    if length is None:
+        return None
+    if re.fullmatch(rf"[0-9a-f]{{{length}}}", value) is None:
+        return None
+    return value
+
+
+def _npm_dist_digests(dist: Mapping[str, Any]) -> dict[str, set[str]]:
+    result: dict[str, set[str]] = {}
+    for key, algorithm in (
+        ("sha256", "sha256"),
+        ("sha256_digest", "sha256"),
+        ("sha384", "sha384"),
+        ("sha384_digest", "sha384"),
+        ("sha512", "sha512"),
+        ("sha512_digest", "sha512"),
+    ):
+        digest = _normalize_algorithm_digest(algorithm, dist.get(key))
+        if digest is not None:
+            result.setdefault(algorithm, set()).add(digest)
+    for algorithm, digests in _digest_values_from_sri(
+        dist.get("integrity")
+    ).items():
+        result.setdefault(algorithm, set()).update(digests)
+    return result
+
+
+def _single_npm_dist_digests(digests: Mapping[str, set[str]]) -> dict[str, str]:
+    return {
+        algorithm: next(iter(values))
+        for algorithm, values in digests.items()
+        if len(values) == 1
+    }
+
+
+def _npm_dist_has_conflicting_digest_evidence(dist: Mapping[str, Any]) -> bool:
+    return any(len(digests) > 1 for digests in _npm_dist_digests(dist).values())
+
+
+def _digests_from_sri(value: object) -> dict[str, str]:
+    return {
+        algorithm: next(iter(digests))
+        for algorithm, digests in _digest_values_from_sri(value).items()
+        if len(digests) == 1
+    }
+
+
+def _digest_values_from_sri(value: object) -> dict[str, set[str]]:
+    result: dict[str, set[str]] = {}
+    if not isinstance(value, str):
+        return result
+    lengths = {"sha256": 32, "sha384": 48, "sha512": 64}
+    for token in value.split():
+        algorithm, separator, encoded = token.partition("-")
+        expected_length = lengths.get(algorithm)
+        if expected_length is None or not separator or not encoded:
+            continue
+        encoded = encoded.partition("?")[0]
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError):
+            continue
+        if len(raw) == expected_length:
+            result.setdefault(algorithm, set()).add(raw.hex())
+    return result
 
 
 def _observe_rubygems_publication(node: Json) -> str:
@@ -15746,8 +20171,98 @@ def _observe_rubygems_publication(node: Json) -> str:
             )
             raise TypeError(msg)
         if number == version:
-            return "exact-satisfied"
+            return _classify_rubygems_version_payload(
+                node, payload, package_name, version
+            )
     return "absent"
+
+
+def _classify_rubygems_version_payload(
+    node: Json,
+    payload: Sequence[object],
+    package_name: str,
+    version: str,
+) -> str:
+    expected_filenames_by_artifact_id = _planned_distribution_filenames(
+        node, "RubyGems"
+    )
+    if len(set(expected_filenames_by_artifact_id.values())) != len(
+        expected_filenames_by_artifact_id
+    ):
+        return "conflicting"
+    expected_filenames = set(expected_filenames_by_artifact_id.values())
+    observed_files = _rubygems_version_files(payload, package_name, version)
+    if observed_files is None:
+        return "partial"
+    filename_classification = _classify_distribution_filename_sets(
+        expected_filenames, set(observed_files)
+    )
+    if filename_classification is not None:
+        return filename_classification
+    return _classify_rubygems_digest_evidence(
+        node,
+        expected_filenames_by_artifact_id,
+        expected_filenames,
+        observed_files,
+    )
+
+
+def _classify_rubygems_digest_evidence(
+    node: Json,
+    expected_filenames_by_artifact_id: Mapping[str, str],
+    expected_filenames: set[str],
+    observed_files: Mapping[str, str | None],
+) -> str:
+    expected_sha256_by_filename = _planned_distribution_sha256_by_filename(
+        node, expected_filenames_by_artifact_id
+    )
+    if set(expected_sha256_by_filename) != expected_filenames:
+        return "partial"
+    for filename, expected_sha256 in expected_sha256_by_filename.items():
+        observed_sha256 = observed_files[filename]
+        if observed_sha256 is None:
+            return "partial"
+        if observed_sha256 != expected_sha256:
+            return "conflicting"
+    if any(observed_files[filename] is None for filename in expected_filenames):
+        return "partial"
+    return "exact-satisfied"
+
+
+def _rubygems_version_files(
+    payload: Sequence[object],
+    package_name: str,
+    version: str,
+) -> dict[str, str | None] | None:
+    observed: dict[str, str | None] = {}
+    for item in payload:
+        if not isinstance(item, Mapping):
+            msg = (
+                f"RubyGems versions API payload for {package_name!r} "
+                "contains a malformed version item"
+            )
+            raise TypeError(msg)
+        number = item.get("number")
+        if number != version:
+            continue
+        platform = item.get("platform")
+        if not isinstance(platform, str) or not platform:
+            return None
+        filename = _rubygems_filename_for_platform(
+            package_name, version, platform
+        )
+        if filename in observed:
+            return None
+        observed[filename] = _normalize_sha256_digest(item.get("sha"))
+    return observed
+
+
+def _rubygems_filename_for_platform(
+    package_name: str, version: str, platform: str
+) -> str:
+    if platform == "ruby":
+        return f"{package_name}-{version}.gem"
+    return f"{package_name}-{version}-{platform}.gem"
 
 
 def _observe_public_registry_publication(
@@ -16195,11 +20710,29 @@ def _validate_nuget_identifiers(
     return parts
 
 
-def _classify_github_release_payload(release: Json, node: Json) -> str:
+def _classify_github_release_payload(  # noqa: C901, PLR0911, PLR0912
+    release: Json,
+    node_id: str,
+    node: Json,
+    repository: str,
+    commit_sha: str,
+    tag: str,
+    *,
+    plan_id: str | None = None,
+    artifact_variant_ids_by_id: Mapping[str, object] | None = None,
+    release_group_nodes: Mapping[str, Json] | None = None,
+    release_group_variant_ids: Mapping[str, Mapping[str, object]] | None = None,
+) -> str:
+    if release.get("draft") is True:
+        return "conflicting"
     desired = node.get("desired-publish-state", {})
     desired_prerelease = (
         isinstance(desired, Mapping)
         and desired.get("release-state") == "prerelease"
+    )
+    desired_release = (
+        isinstance(desired, Mapping)
+        and desired.get("release-state") == "release"
     )
     actual_prerelease = release.get("prerelease")
     if actual_prerelease is None:
@@ -16207,14 +20740,83 @@ def _classify_github_release_payload(release: Json, node: Json) -> str:
     if not isinstance(actual_prerelease, bool):
         return "conflicting"
     planned_assets = _planned_github_release_assets(node)
-    actual_assets = _observed_github_release_assets(release)
-    if planned_assets is None or actual_assets is None:
-        return "conflicting"
+    release_nodes = _github_release_observation_nodes_for_payload(
+        node_id,
+        node,
+        release_group_nodes,
+    )
+    release_planned_assets = _planned_github_release_asset_union(
+        release_nodes.values(),
+    )
+    valid_sidecar_assets = _valid_github_release_asset_proof_sidecar_names(
+        release,
+        node_id,
+        node,
+        tag,
+        repository=repository,
+        release_target_sha=commit_sha,
+        artifact_variant_ids_by_id=artifact_variant_ids_by_id,
+    )
+    valid_sidecar_assets.update(
+        _valid_github_release_group_asset_proof_sidecar_names(
+            release,
+            release_nodes,
+            tag,
+            repository=repository,
+            release_target_sha=commit_sha,
+            release_group_variant_ids=release_group_variant_ids,
+        ),
+    )
+    actual_assets = _observed_github_release_assets(
+        release,
+        valid_sidecar_assets,
+    )
     if (
-        actual_prerelease == desired_prerelease
-        and actual_assets == planned_assets
+        planned_assets is None
+        or release_planned_assets is None
+        or actual_assets is None
     ):
+        return "conflicting"
+    release_assets_match = actual_assets == release_planned_assets
+    release_assets_are_planned = actual_assets <= release_planned_assets
+    node_assets_present = planned_assets <= actual_assets
+    if actual_prerelease is False and (
+        not release_assets_match or actual_prerelease != desired_prerelease
+    ):
+        return "conflicting"
+    if not node_assets_present or not release_assets_are_planned:
+        if actual_prerelease is True and desired_release:
+            return "partial-authoritative"
+        return "partial"
+    if not _github_release_asset_labels_match(
+        node,
+        release,
+        valid_sidecar_assets,
+    ):
+        if actual_prerelease is False:
+            return "conflicting"
+        if desired_release:
+            return "partial-authoritative"
+        return "partial"
+    if not _github_release_asset_attestation_evidence_matches(
+        release=release,
+        node_id=node_id,
+        node=node,
+        repository=repository,
+        commit_sha=commit_sha,
+        tag=tag,
+        plan_id=plan_id,
+        valid_sidecar_assets=valid_sidecar_assets,
+    ):
+        if actual_prerelease is True and not desired_prerelease:
+            return "partial-authoritative"
+        if actual_prerelease is False:
+            return "conflicting"
+        return "partial"
+    if actual_prerelease == desired_prerelease:
         return "exact-satisfied"
+    if actual_prerelease is True and not desired_prerelease:
+        return "partial-authoritative"
     return "partial"
 
 
@@ -16228,7 +20830,63 @@ def _planned_github_release_assets(node: Json) -> set[str] | None:
     return {str(value) for value in planned_assets_by_id.values()}
 
 
-def _observed_github_release_assets(release: Json) -> set[str] | None:
+def _github_release_observation_nodes_for_payload(
+    node_id: str,
+    node: Json,
+    release_group_nodes: Mapping[str, Json] | None,
+) -> dict[str, Json]:
+    if release_group_nodes is None:
+        return {node_id: node}
+    result = dict(release_group_nodes)
+    result.setdefault(node_id, node)
+    return result
+
+
+def _planned_github_release_asset_union(
+    nodes: Iterable[Json],
+) -> set[str] | None:
+    release_assets: set[str] = set()
+    for node in nodes:
+        planned_assets = _planned_github_release_assets(node)
+        if planned_assets is None:
+            return None
+        release_assets.update(planned_assets)
+    return release_assets
+
+
+def _planned_artifact_variant_ids_for_node(
+    plan: Mapping[str, object],
+    node: Mapping[str, object],
+) -> dict[str, str]:
+    graph = plan.get("graph")
+    if not isinstance(graph, Mapping):
+        return {}
+    artifacts = graph.get("artifacts")
+    if not isinstance(artifacts, Mapping):
+        return {}
+    artifact_ids = node.get("artifact-ids")
+    if not isinstance(artifact_ids, Sequence) or isinstance(
+        artifact_ids,
+        str | bytes,
+    ):
+        return {}
+    variants: dict[str, str] = {}
+    for raw_artifact_id in artifact_ids:
+        if not isinstance(raw_artifact_id, str):
+            continue
+        artifact = artifacts.get(raw_artifact_id)
+        if not isinstance(artifact, Mapping):
+            continue
+        variant_id = artifact.get("variant-id")
+        if isinstance(variant_id, str):
+            variants[raw_artifact_id] = variant_id
+    return variants
+
+
+def _observed_github_release_assets(
+    release: Json,
+    valid_sidecar_assets: Collection[str],
+) -> set[str] | None:
     assets = release.get("assets")
     if not isinstance(assets, list):
         return None
@@ -16238,8 +20896,940 @@ def _observed_github_release_assets(release: Json) -> set[str] | None:
             asset.get("name"), str
         ):
             return None
-        actual_assets.add(str(asset["name"]))
+        name = str(asset["name"])
+        if name in valid_sidecar_assets:
+            continue
+        actual_assets.add(name)
     return actual_assets
+
+
+def _github_release_asset_labels_match(  # noqa: C901, PLR0911, PLR0912
+    node: Json,
+    release: Json,
+    valid_sidecar_assets: Collection[str],
+) -> bool:
+    projection = node.get("projection")
+    if not isinstance(projection, Mapping):
+        return False
+    planned_labels_by_id = projection.get("asset-labels-by-artifact-id")
+    names_by_id = projection.get("asset-names-by-artifact-id")
+    if not isinstance(names_by_id, Mapping):
+        return False
+    if not isinstance(planned_labels_by_id, Mapping):
+        return False
+    expected: dict[str, str | None] = {}
+    for artifact_id, raw_name in names_by_id.items():
+        if not isinstance(artifact_id, str) or not isinstance(raw_name, str):
+            return False
+        raw_label = planned_labels_by_id.get(artifact_id)
+        if raw_label is None:
+            expected[raw_name] = None
+        elif isinstance(raw_label, str):
+            expected[raw_name] = raw_label if raw_label else None
+        else:
+            return False
+    observed: dict[str, str | None] = {}
+    assets = release.get("assets")
+    if not isinstance(assets, list):
+        return False
+    expected_names = set(expected)
+    for asset in assets:
+        if not isinstance(asset, Mapping):
+            return False
+        name = asset.get("name")
+        if isinstance(name, str) and name in valid_sidecar_assets:
+            continue
+        if isinstance(name, str) and name in expected_names:
+            label = asset.get("label")
+            observed[name] = label if isinstance(label, str) and label else None
+    return observed == expected
+
+
+def _github_release_asset_attestation_evidence_matches(  # noqa: C901, PLR0911, PLR0912
+    *,
+    release: Json,
+    node_id: str,
+    node: Json,
+    repository: str,
+    commit_sha: str,
+    tag: str,
+    plan_id: str | None = None,
+    valid_sidecar_assets: Collection[str] = frozenset(),
+) -> bool:
+    signer_workflow = _planned_github_release_signer_workflow(node)
+    if signer_workflow is None:
+        return False
+    assets = release.get("assets")
+    if not isinstance(assets, list):
+        return False
+    planned_assets = _planned_github_release_assets(node)
+    if planned_assets is None:
+        return False
+    observed_assets: dict[str, Mapping[str, object]] = {}
+    for asset in assets:
+        if not isinstance(asset, Mapping):
+            return False
+        name = asset.get("name")
+        size = asset.get("size")
+        digest = asset.get("digest")
+        if not isinstance(name, str) or not isinstance(size, int):
+            return False
+        if name in valid_sidecar_assets:
+            continue
+        if name not in planned_assets:
+            continue
+        if not isinstance(digest, str) or not digest.startswith("sha256:"):
+            return False
+        sha256 = digest.removeprefix("sha256:")
+        if re.fullmatch(r"[0-9a-f]{64}", sha256) is None:
+            return False
+        observed_assets[name] = asset
+    if set(observed_assets) != planned_assets:
+        return False
+    wrapper_proofs = _github_release_asset_proofs_from_release(release)
+    for name, asset in observed_assets.items():
+        expected_size = cast("int", asset["size"])
+        expected_sha256 = cast("str", asset["digest"]).removeprefix("sha256:")
+        source_digest = _github_release_asset_wrapper_proofs_source_digest(
+            proofs=wrapper_proofs.get(name, []),
+            name=name,
+            expected_size=expected_size,
+            expected_sha256=expected_sha256,
+            node_id=node_id,
+            node=node,
+            repository=repository,
+            commit_sha=commit_sha,
+            tag=tag,
+            signer_workflow=signer_workflow,
+            plan_id=plan_id,
+        )
+        if source_digest is None:
+            return False
+        if not _download_and_verify_github_release_asset_attestation(
+            repository=repository,
+            tag=tag,
+            asset_name=name,
+            expected_size=expected_size,
+            expected_sha256=expected_sha256,
+            signer_workflow=signer_workflow,
+            commit_sha=source_digest,
+        ):
+            return False
+    return True
+
+
+def _planned_github_release_signer_workflow(
+    node: Mapping[str, Any],
+) -> str | None:
+    attestation = node.get("attestation")
+    if not isinstance(attestation, Mapping):
+        return None
+    signer_workflow = attestation.get("signer-workflow")
+    return (
+        signer_workflow
+        if isinstance(signer_workflow, str) and signer_workflow
+        else None
+    )
+
+
+def _planned_github_release_repository(
+    plan: Json,
+    node: Mapping[str, Any],
+) -> str | None:
+    snapshot_id = node.get("target-instance-snapshot-id")
+    graph = plan.get("graph")
+    snapshots = (
+        graph.get("target-instance-snapshots")
+        if isinstance(graph, Mapping)
+        else None
+    )
+    snapshot = (
+        snapshots.get(snapshot_id) if isinstance(snapshots, Mapping) else None
+    )
+    if not isinstance(snapshot, Mapping):
+        return None
+    if snapshot.get("family") != "github-release":
+        return None
+    destination = snapshot.get("destination")
+    if not isinstance(destination, Mapping):
+        return None
+    owner = destination.get("owner")
+    repo = destination.get("repo")
+    if not isinstance(owner, str) or not owner:
+        return None
+    if not isinstance(repo, str) or not repo:
+        return None
+    return f"{owner}/{repo}"
+
+
+def _download_and_verify_github_release_asset_attestation(
+    *,
+    repository: str,
+    tag: str,
+    asset_name: str,
+    expected_size: int,
+    expected_sha256: str,
+    signer_workflow: str,
+    commit_sha: str,
+) -> bool:
+    with tempfile.TemporaryDirectory(
+        prefix="three-gh-release-asset-"
+    ) as temp_dir:
+        destination = Path(temp_dir) / asset_name
+        if not _gh_release_download_asset(
+            repository=repository,
+            tag=tag,
+            asset_name=asset_name,
+            destination_dir=Path(temp_dir),
+        ):
+            return False
+        if not destination.is_file():
+            return False
+        if destination.stat().st_size != expected_size:
+            return False
+        if _file_sha256_bytes(destination) != expected_sha256:
+            return False
+        return _gh_attestation_verify_asset(
+            repository=repository,
+            asset_path=destination,
+            asset_name=asset_name,
+            expected_sha256=expected_sha256,
+            signer_workflow=signer_workflow,
+            commit_sha=commit_sha,
+        )
+
+
+def _file_sha256_bytes(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _gh_release_download_asset(
+    *,
+    repository: str,
+    tag: str,
+    asset_name: str,
+    destination_dir: Path,
+) -> bool:
+    env = os.environ.copy()
+    if "GH_TOKEN" not in env and "GITHUB_TOKEN" in env:
+        env["GH_TOKEN"] = env["GITHUB_TOKEN"]
+    result = subprocess.run(
+        [
+            "gh",
+            "release",
+            "download",
+            tag,
+            "--repo",
+            repository,
+            "--pattern",
+            asset_name,
+            "--dir",
+            str(destination_dir),
+            "--clobber",
+        ],
+        cwd=Path.cwd(),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def _gh_attestation_verify_asset(
+    *,
+    repository: str,
+    asset_path: Path,
+    asset_name: str,
+    expected_sha256: str,
+    signer_workflow: str,
+    commit_sha: str,
+) -> bool:
+    return (
+        _gh_attestation_verify_asset_evidence(
+            repository=repository,
+            asset_path=asset_path,
+            asset_name=asset_name,
+            expected_sha256=expected_sha256,
+            signer_workflow=signer_workflow,
+            commit_sha=commit_sha,
+        )
+        is not None
+    )
+
+
+def _gh_attestation_verify_asset_evidence(
+    *,
+    repository: str,
+    asset_path: Path,
+    asset_name: str,
+    expected_sha256: str,
+    signer_workflow: str,
+    commit_sha: str,
+) -> Json | None:
+    env = os.environ.copy()
+    if "GH_TOKEN" not in env and "GITHUB_TOKEN" in env:
+        env["GH_TOKEN"] = env["GITHUB_TOKEN"]
+    result = subprocess.run(
+        [
+            "gh",
+            "attestation",
+            "verify",
+            str(asset_path),
+            "--repo",
+            repository,
+            "--signer-workflow",
+            signer_workflow,
+            "--source-digest",
+            commit_sha,
+            "--predicate-type",
+            _GITHUB_ATTESTATION_PREDICATE,
+            "--format",
+            "json",
+        ],
+        cwd=Path.cwd(),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        payload = json.loads(result.stdout) if result.stdout.strip() else {}
+    except json.JSONDecodeError:
+        return None
+    if not _attestation_payload_has_subject(
+        payload,
+        asset_name=asset_name,
+        expected_sha256=expected_sha256,
+    ):
+        return None
+    return {
+        "predicate-type": _GITHUB_ATTESTATION_PREDICATE,
+        "subject-name": asset_name,
+        "subject-digest": f"sha256:{expected_sha256}",
+        "signer-workflow": signer_workflow,
+        "source-repository": repository,
+        "source-digest": commit_sha,
+        "attestation-id": _attestation_payload_id(payload)
+        or f"{repository}:{asset_name}:{expected_sha256}",
+        "attestation-url": _attestation_payload_url(payload)
+        or (
+            f"https://github.com/{repository}/attestations"
+            f"?subject-digest=sha256:{expected_sha256}"
+        ),
+        "sha256": expected_sha256,
+        "asset-name": asset_name,
+    }
+
+
+def _attestation_payload_id(payload: object) -> str | None:
+    value = _first_string_at_keys(
+        payload,
+        (
+            "attestationId",
+            "attestation-id",
+            "id",
+            "logIndex",
+        ),
+    )
+    return value if value else None
+
+
+def _attestation_payload_url(payload: object) -> str | None:
+    value = _first_string_at_keys(
+        payload,
+        (
+            "attestationUrl",
+            "attestation-url",
+            "url",
+        ),
+    )
+    return value if value else None
+
+
+def _first_string_at_keys(value: object, keys: Collection[str]) -> str | None:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if key in keys and isinstance(item, str) and item:
+                return item
+            nested = _first_string_at_keys(item, keys)
+            if nested is not None:
+                return nested
+    elif isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        for item in value:
+            nested = _first_string_at_keys(item, keys)
+            if nested is not None:
+                return nested
+    return None
+
+
+def _attestation_payload_has_subject(
+    payload: object, *, asset_name: str, expected_sha256: str
+) -> bool:
+    for statement in _attestation_statements(payload):
+        predicate_type = statement.get("predicateType") or statement.get(
+            "predicate-type"
+        )
+        if predicate_type != _GITHUB_ATTESTATION_PREDICATE:
+            continue
+        subjects = statement.get("subject")
+        if not isinstance(subjects, Sequence) or isinstance(
+            subjects, (str, bytes)
+        ):
+            continue
+        for subject in subjects:
+            if not isinstance(subject, Mapping):
+                continue
+            if subject.get("name") != asset_name:
+                continue
+            digest = subject.get("digest")
+            if not isinstance(digest, Mapping):
+                continue
+            if digest.get("sha256") == expected_sha256:
+                return True
+    return False
+
+
+def _attestation_statements(payload: object) -> Iterable[Mapping[str, object]]:
+    if isinstance(payload, Mapping):
+        yield from _attestation_entry_statements(payload)
+    elif isinstance(payload, list):
+        for item in payload:
+            if isinstance(item, Mapping):
+                yield from _attestation_entry_statements(item)
+
+
+def _attestation_entry_statements(
+    entry: Mapping[str, object],
+) -> Iterable[Mapping[str, object]]:
+    verification = entry.get("verificationResult")
+    if isinstance(verification, Mapping):
+        statement = verification.get("statement")
+        if isinstance(statement, Mapping):
+            yield statement
+
+
+def _github_release_asset_proofs_from_release(
+    release: Json,
+) -> dict[str, list[Mapping[str, object]]]:
+    raw = release.get("github-release-asset-proofs")
+    if raw is None:
+        raw = release.get("asset-proofs")
+    if not isinstance(raw, list):
+        return {}
+    proofs: dict[str, list[Mapping[str, object]]] = {}
+    for item in raw:
+        if not isinstance(item, Mapping):
+            return {}
+        binding = item.get("binding")
+        asset_name = (
+            binding.get("asset-name") if isinstance(binding, Mapping) else None
+        )
+        if isinstance(asset_name, str):
+            proofs.setdefault(asset_name, []).append(item)
+    return proofs
+
+
+def _valid_github_release_asset_proof_sidecar_names(
+    release: Json,
+    node_id: str,
+    node: Json,
+    tag: str,
+    *,
+    repository: str | None = None,
+    release_target_sha: str | None = None,
+    artifact_variant_ids_by_id: Mapping[str, object] | None = None,
+) -> set[str]:
+    sidecar_names = _github_release_asset_proof_sidecar_asset_names(release)
+    if not sidecar_names:
+        return set()
+    signer_workflow = _planned_github_release_signer_workflow(node)
+    valid_names: set[str] = set()
+    for entry in _github_release_asset_proof_sidecar_entries(release):
+        if entry.get("valid") is not True:
+            continue
+        name = entry.get("asset-name")
+        proof = entry.get("proof")
+        if not isinstance(name, str) or name not in sidecar_names:
+            continue
+        if not isinstance(proof, Mapping):
+            continue
+        if not _is_valid_github_release_asset_proof_sidecar_file(name, proof):
+            continue
+        if _github_release_asset_proof_is_release_bound_sidecar(
+            proof,
+            node_id,
+            node,
+            tag,
+            repository=repository,
+            release_target_sha=release_target_sha,
+            signer_workflow=signer_workflow,
+            artifact_variant_ids_by_id=artifact_variant_ids_by_id,
+        ):
+            valid_names.add(name)
+    return valid_names
+
+
+def _valid_github_release_group_asset_proof_sidecar_names(
+    release: Json,
+    release_nodes: Mapping[str, Json],
+    tag: str,
+    *,
+    repository: str | None = None,
+    release_target_sha: str | None = None,
+    release_group_variant_ids: Mapping[str, Mapping[str, object]] | None = None,
+) -> set[str]:
+    valid_names: set[str] = set()
+    for node_id, node in release_nodes.items():
+        variant_ids = (
+            release_group_variant_ids.get(node_id)
+            if release_group_variant_ids is not None
+            else None
+        )
+        valid_names.update(
+            _valid_github_release_asset_proof_sidecar_names(
+                release,
+                node_id,
+                node,
+                tag,
+                repository=repository,
+                release_target_sha=release_target_sha,
+                artifact_variant_ids_by_id=variant_ids,
+            ),
+        )
+    return valid_names
+
+
+def _github_release_asset_proof_sidecar_asset_names(release: Json) -> set[str]:
+    assets = release.get("assets")
+    if not isinstance(assets, list):
+        return set()
+    names: set[str] = set()
+    for asset in assets:
+        if not isinstance(asset, Mapping):
+            continue
+        name = asset.get("name")
+        if isinstance(
+            name, str
+        ) and _is_github_release_asset_proof_sidecar_name(
+            name,
+        ):
+            names.add(name)
+    return names
+
+
+def _github_release_asset_proof_sidecar_entries(
+    release: Json,
+) -> list[Mapping[str, object]]:
+    entries = release.get("_github-release-asset-proof-sidecars")
+    if not isinstance(entries, list):
+        return []
+    return [entry for entry in entries if isinstance(entry, Mapping)]
+
+
+def _is_valid_github_release_asset_proof_sidecar_file(
+    name: str,
+    proof: Mapping[str, object],
+) -> bool:
+    if not _is_github_release_asset_proof_sidecar_name(name):
+        return False
+    if not _is_valid_receipt(dict(proof)):
+        return False
+    try:
+        return _github_release_asset_proof_sidecar_filename(proof) == name
+    except (TypeError, ValueError):
+        return False
+
+
+def _github_release_asset_proof_sidecar_filename(
+    proof: Mapping[str, object],
+) -> str:
+    binding = _mapping(proof.get("binding"), "binding")
+    run = _mapping(proof.get("run"), "run")
+    binding_json = github_release_asset_binding_json(
+        publish_node_id=_string(
+            binding.get("publish-node-id"),
+            "binding.publish-node-id",
+        ),
+        artifact_id=_string(binding.get("artifact-id"), "binding.artifact-id"),
+        release_tag=_string(binding.get("release-tag"), "binding.release-tag"),
+        asset_name=_string(binding.get("asset-name"), "binding.asset-name"),
+    )
+    name = artifact_name(
+        "github-release-asset-proof",
+        ArtifactNameInputs(
+            _int(run.get("run-id"), "run.run-id"),
+            _int(run.get("run-attempt"), "run.run-attempt"),
+            binding_json=binding_json,
+        ),
+    )
+    return f"{name}.json"
+
+
+def _read_github_release_payload_manifest(
+    path: Path,
+) -> dict[str, tuple[int, str]]:
+    assets: dict[str, tuple[int, str]] = {}
+    for line_number, raw_line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(),
+        start=1,
+    ):
+        if not raw_line:
+            continue
+        columns = raw_line.split("\t")
+        if len(columns) < 3:
+            msg = f"invalid GitHub Release payload manifest row {line_number}"
+            raise ValueError(msg)
+        name, raw_size, sha256 = columns[:3]
+        if not name:
+            msg = (
+                f"GitHub Release payload manifest row {line_number} has no name"
+            )
+            raise ValueError(msg)
+        try:
+            size = int(raw_size)
+        except ValueError as exc:
+            msg = (
+                "GitHub Release payload manifest row "
+                f"{line_number} has invalid size"
+            )
+            raise ValueError(msg) from exc
+        if size < 0 or re.fullmatch(r"[0-9a-f]{64}", sha256) is None:
+            msg = (
+                "GitHub Release payload manifest row "
+                f"{line_number} has invalid digest"
+            )
+            raise ValueError(msg)
+        existing = assets.get(name)
+        current = (size, sha256)
+        if existing is not None and existing != current:
+            msg = (
+                "GitHub Release payload manifest contains conflicting rows "
+                f"for {name!r}"
+            )
+            raise ValueError(msg)
+        assets[name] = current
+    return assets
+
+
+def _github_release_asset_proof_matches_current_sidecar_coverage(  # noqa: PLR0911
+    proof: Mapping[str, object],
+    *,
+    expected_plan_id: str | None,
+    expected_run_id: int | None,
+    expected_run_attempt: int | None,
+    expected_assets_by_name: Mapping[str, tuple[int, str]] | None,
+) -> bool:
+    if (
+        expected_plan_id is not None
+        and proof.get("plan-id") != expected_plan_id
+    ):
+        return False
+    run = proof.get("run")
+    if expected_run_id is not None or expected_run_attempt is not None:
+        if not isinstance(run, Mapping):
+            return False
+        if expected_run_id is not None and run.get("run-id") != expected_run_id:
+            return False
+        if (
+            expected_run_attempt is not None
+            and run.get("run-attempt") != expected_run_attempt
+        ):
+            return False
+    if expected_assets_by_name is None:
+        return True
+    binding = proof.get("binding")
+    artifact = proof.get("artifact")
+    if not isinstance(binding, Mapping) or not isinstance(artifact, Mapping):
+        return False
+    asset_name = binding.get("asset-name")
+    if not isinstance(asset_name, str):
+        return False
+    expected = expected_assets_by_name.get(asset_name)
+    if expected is None:
+        return False
+    expected_size, expected_sha256 = expected
+    return (
+        artifact.get("byte-size") == expected_size
+        and artifact.get("sha256") == expected_sha256
+    )
+
+
+def _github_release_asset_proof_is_release_bound_sidecar(  # noqa: C901, PLR0911
+    proof: Mapping[str, object],
+    node_id: str,
+    node: Mapping[str, Any],
+    tag: str,
+    *,
+    repository: str | None = None,
+    release_target_sha: str | None = None,
+    signer_workflow: str | None,
+    artifact_variant_ids_by_id: Mapping[str, object] | None = None,
+) -> bool:
+    if (
+        proof.get("kind") != "github-release-asset-proof"
+        or proof.get("api-version")
+        != "three.release.github-release-asset-proof/v1alpha1"
+        or proof.get("project-id") != node.get("project-id")
+        or signer_workflow is None
+    ):
+        return False
+    binding = proof.get("binding")
+    artifact = proof.get("artifact")
+    attestation = proof.get("attestation")
+    run = proof.get("run")
+    if (
+        not isinstance(binding, Mapping)
+        or not isinstance(artifact, Mapping)
+        or not isinstance(attestation, Mapping)
+        or not isinstance(run, Mapping)
+    ):
+        return False
+    asset_name = binding.get("asset-name")
+    artifact_id = binding.get("artifact-id")
+    if not isinstance(asset_name, str) or not isinstance(artifact_id, str):
+        return False
+    if binding.get("publish-node-id") != node_id:
+        return False
+    artifact_ids = node.get("artifact-ids")
+    if not isinstance(artifact_ids, Sequence) or isinstance(
+        artifact_ids,
+        str | bytes,
+    ):
+        return False
+    active_artifact_ids = {
+        raw_artifact_id
+        for raw_artifact_id in artifact_ids
+        if isinstance(raw_artifact_id, str)
+    }
+    if artifact_id not in active_artifact_ids:
+        return False
+    if artifact_variant_ids_by_id is None:
+        return False
+    planned_variant_id = artifact_variant_ids_by_id.get(artifact_id)
+    if (
+        not isinstance(planned_variant_id, str)
+        or proof.get("variant-id") != planned_variant_id
+    ):
+        return False
+    projection = node.get("projection")
+    if not isinstance(projection, Mapping):
+        return False
+    asset_names_by_artifact_id = projection.get("asset-names-by-artifact-id")
+    if not isinstance(asset_names_by_artifact_id, Mapping):
+        return False
+    if asset_names_by_artifact_id.get(artifact_id) != asset_name:
+        return False
+    sha256 = artifact.get("sha256")
+    source_digest = attestation.get("source-digest")
+    proof_release_target_sha = proof.get(
+        "release-target-sha", run.get("head-sha")
+    )
+    matches = (
+        binding.get("release-tag") == tag
+        and run.get("live") is True
+        and run.get("dry-run") is False
+        and run.get("validation-only") is False
+        and isinstance(source_digest, str)
+        and run.get("head-sha") == source_digest
+        and (
+            release_target_sha is None
+            or proof_release_target_sha == release_target_sha
+        )
+        and attestation.get("subject-name") == asset_name
+        and isinstance(sha256, str)
+        and attestation.get("subject-digest") == f"sha256:{sha256}"
+        and attestation.get("signer-workflow") == signer_workflow
+    )
+    if not matches:
+        return False
+    return repository is None or (
+        run.get("repository") == repository
+        and attestation.get("source-repository") == repository
+    )
+
+
+def _is_github_release_asset_proof_sidecar_name(name: str) -> bool:
+    return _GITHUB_RELEASE_ASSET_PROOF_SIDECAR_RE.fullmatch(name) is not None
+
+
+def _github_release_asset_wrapper_proofs_source_digest(
+    *,
+    proofs: Sequence[Mapping[str, object]],
+    name: str,
+    expected_size: int,
+    expected_sha256: str,
+    node_id: str,
+    node: Json,
+    repository: str,
+    commit_sha: str,
+    tag: str,
+    signer_workflow: str,
+    plan_id: str | None = None,
+) -> str | None:
+    if not proofs:
+        return None
+    artifact_ids = _github_release_artifact_ids_by_asset_name(node)
+    artifact_id = artifact_ids.get(name)
+    if artifact_id is None:
+        return None
+    for proof in proofs:
+        source_digest = _github_release_asset_wrapper_proof_source_digest(
+            proof=proof,
+            name=name,
+            artifact_id=artifact_id,
+            expected_size=expected_size,
+            expected_sha256=expected_sha256,
+            node_id=node_id,
+            node=node,
+            repository=repository,
+            commit_sha=commit_sha,
+            tag=tag,
+            signer_workflow=signer_workflow,
+            plan_id=plan_id,
+        )
+        if source_digest is not None:
+            return source_digest
+    return None
+
+
+def _github_release_asset_wrapper_proof_matches(
+    *,
+    proof: Mapping[str, object],
+    name: str,
+    artifact_id: str,
+    expected_size: int,
+    expected_sha256: str,
+    node_id: str,
+    node: Json,
+    repository: str,
+    commit_sha: str,
+    tag: str,
+    signer_workflow: str,
+    plan_id: str | None = None,
+) -> bool:
+    return (
+        _github_release_asset_wrapper_proof_source_digest(
+            proof=proof,
+            name=name,
+            artifact_id=artifact_id,
+            expected_size=expected_size,
+            expected_sha256=expected_sha256,
+            node_id=node_id,
+            node=node,
+            repository=repository,
+            commit_sha=commit_sha,
+            tag=tag,
+            signer_workflow=signer_workflow,
+            plan_id=plan_id,
+        )
+        is not None
+    )
+
+
+def _github_release_asset_wrapper_proof_source_digest(  # noqa: C901, PLR0911, PLR0912
+    *,
+    proof: Mapping[str, object],
+    name: str,
+    artifact_id: str,
+    expected_size: int,
+    expected_sha256: str,
+    node_id: str,
+    node: Json,
+    repository: str,
+    commit_sha: str,
+    tag: str,
+    signer_workflow: str,
+    plan_id: str | None = None,
+) -> str | None:
+    if (
+        proof.get("kind") != "github-release-asset-proof"
+        or proof.get("api-version")
+        != "three.release.github-release-asset-proof/v1alpha1"
+        or proof.get("plan-id") != plan_id
+        or proof.get("project-id") != node.get("project-id")
+    ):
+        return None
+    binding = proof.get("binding")
+    artifact = proof.get("artifact")
+    attestation = proof.get("attestation")
+    run = proof.get("run")
+    if not isinstance(binding, Mapping):
+        return None
+    if not isinstance(artifact, Mapping) or not isinstance(
+        attestation,
+        Mapping,
+    ):
+        return None
+    if not isinstance(run, Mapping):
+        return None
+    source_digest = attestation.get("source-digest")
+    release_target_sha = proof.get("release-target-sha", run.get("head-sha"))
+    if not isinstance(source_digest, str):
+        return None
+    if (
+        release_target_sha != commit_sha
+        or run.get("head-sha") != source_digest
+        or run.get("repository") != repository
+        or run.get("live") is not True
+        or run.get("dry-run") is not False
+        or run.get("validation-only") is not False
+    ):
+        return None
+    if binding.get("publish-node-id") != node_id:
+        return None
+    if binding.get("artifact-id") != artifact_id:
+        return None
+    if binding.get("asset-name") != name or binding.get("release-tag") != tag:
+        return None
+    if artifact.get("byte-size") != expected_size:
+        return None
+    if artifact.get("sha256") != expected_sha256:
+        return None
+    if attestation.get("predicate-type") != _GITHUB_ATTESTATION_PREDICATE:
+        return None
+    if attestation.get("subject-name") != name:
+        return None
+    if attestation.get("subject-digest") != f"sha256:{expected_sha256}":
+        return None
+    if attestation.get("signer-workflow") != signer_workflow:
+        return None
+    if attestation.get("source-repository") != repository:
+        return None
+    return source_digest
+
+
+def _github_release_artifact_ids_by_asset_name(node: Json) -> dict[str, str]:
+    artifact_ids = node.get("artifact-ids")
+    if not isinstance(artifact_ids, Sequence) or isinstance(
+        artifact_ids,
+        str | bytes,
+    ):
+        return {}
+    active_artifact_ids = {
+        raw_artifact_id
+        for raw_artifact_id in artifact_ids
+        if isinstance(raw_artifact_id, str)
+    }
+    projection = node.get("projection")
+    if not isinstance(projection, Mapping):
+        return {}
+    names_by_id = projection.get("asset-names-by-artifact-id")
+    if not isinstance(names_by_id, Mapping):
+        return {}
+    return {
+        asset_name: artifact_id
+        for artifact_id, asset_name in names_by_id.items()
+        if isinstance(artifact_id, str)
+        and artifact_id in active_artifact_ids
+        and isinstance(asset_name, str)
+    }
 
 
 def _github_release_by_tag(repository: str, tag: str) -> Json | None:
@@ -16255,7 +21845,78 @@ def _github_release_by_tag(repository: str, tag: str) -> Json | None:
     if not isinstance(payload, dict):
         msg = f"release lookup for {tag!r} returned non-object payload"
         raise TypeError(msg)
+    release_id = payload.get("id")
+    if isinstance(release_id, int):
+        assets = _github_release_assets(repository, release_id)
+        sidecars = _download_github_release_asset_proof_sidecars(
+            repository=repository,
+            tag=tag,
+            assets=assets,
+        )
+        payload["assets"] = assets
+        payload["_github-release-asset-proof-sidecars"] = sidecars
+        payload["github-release-asset-proofs"] = [
+            sidecar["proof"]
+            for sidecar in sidecars
+            if sidecar.get("valid") is True
+            and isinstance(sidecar.get("proof"), Mapping)
+        ]
     return payload
+
+
+def _github_release_assets(repository: str, release_id: int) -> list[Json]:
+    payload = _gh_api_paginated(
+        repository,
+        f"repos/{repository}/releases/{release_id}/assets?per_page=100",
+    )
+    assets: list[Json] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            msg = f"release assets lookup for {release_id!r} returned non-object item"
+            raise TypeError(msg)
+        assets.append(item)
+    return assets
+
+
+def _download_github_release_asset_proof_sidecars(
+    *,
+    repository: str,
+    tag: str,
+    assets: Sequence[Mapping[str, object]],
+) -> list[Json]:
+    proof_asset_names = [
+        str(name)
+        for asset in assets
+        if isinstance(name := asset.get("name"), str)
+        and _is_github_release_asset_proof_sidecar_name(name)
+    ]
+    if not proof_asset_names:
+        return []
+    sidecars: list[Json] = []
+    with tempfile.TemporaryDirectory(
+        prefix="three-gh-release-proof-"
+    ) as temp_dir:
+        destination = Path(temp_dir)
+        for asset_name in sorted(proof_asset_names):
+            sidecar: Json = {"asset-name": asset_name, "valid": False}
+            if not _gh_release_download_asset(
+                repository=repository,
+                tag=tag,
+                asset_name=asset_name,
+                destination_dir=destination,
+            ):
+                sidecars.append(sidecar)
+                continue
+            proof_path = destination / asset_name
+            proof = _read_receipt(proof_path)
+            if _is_valid_github_release_asset_proof_sidecar_file(
+                asset_name,
+                proof,
+            ):
+                sidecar["valid"] = True
+                sidecar["proof"] = proof
+            sidecars.append(sidecar)
+    return sidecars
 
 
 def _is_github_not_found_error(exc: RuntimeError) -> bool:
@@ -16268,14 +21929,17 @@ def _gh_api(
     endpoint: str,
     *,
     method: str = "GET",
-    fields: Mapping[str, str] | None = None,
+    fields: Mapping[str, object] | None = None,
 ) -> Any:
     env = os.environ.copy()
     if "GH_TOKEN" not in env and "GITHUB_TOKEN" in env:
         env["GH_TOKEN"] = env["GITHUB_TOKEN"]
     command = ["gh", "api", endpoint, "--method", method]
     for key, value in (fields or {}).items():
-        command.extend(["-f", f"{key}={value}"])
+        if isinstance(value, bool):
+            command.extend(["-F", f"{key}={'true' if value else 'false'}"])
+        else:
+            command.extend(["-f", f"{key}={value}"])
     result = subprocess.run(
         command,
         cwd=Path.cwd(),
@@ -16955,10 +22619,14 @@ def _ci_workflow_release_tooling_validation_commands(
     surface = ""
     if isinstance(target, Mapping) and target.get("type") == "tooling-surface":
         surface = str(target.get("id") or "")
+    if surface == "fact-provider":
+        return _ci_python_validation_commands(
+            "src/public/lib/three-workflow-release-metadata",
+            ["lint", "type-check", "test"],
+        )
     path_by_surface = {
         "planner": "src/public/lib/three-workflow-release-planner",
         "classifier": "src/public/lib/three-workflow-release-planner",
-        "fact-provider": "src/public/lib/three-workflow-release-planner",
         "descriptor-contract": "src/public/lib/three-workflow-release-contracts",
         "workflow-release-contract": "src/public/lib/three-workflow-release-contracts",
         "authoring-validation": "src/public/lib/three-workflow-release-authoring",
@@ -18206,11 +23874,46 @@ def _read_json(path: Path) -> Json:
     return payload
 
 
+def _read_string_array_file(path: Path, label: str) -> list[str]:
+    payload = json.loads(
+        path.read_text(encoding="utf-8"),
+        object_pairs_hook=_ci_validation_reject_duplicate_json_keys,
+    )
+    return _string_list(payload, label)
+
+
 def _mapping(value: object, path: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         msg = f"{path} must be a JSON object"
         raise TypeError(msg)
     return value
+
+
+def _string(value: object, path: str) -> str:
+    if not isinstance(value, str) or not value:
+        msg = f"{path} must be a non-empty string"
+        raise TypeError(msg)
+    return value
+
+
+def _int(value: object, path: str) -> int:
+    if type(value) is not int:
+        msg = f"{path} must be an integer"
+        raise TypeError(msg)
+    return value
+
+
+def _string_list(value: object, path: str) -> list[str]:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        msg = f"{path} must be an array"
+        raise TypeError(msg)
+    result: list[str] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or not item:
+            msg = f"{path}[{index}] must be a non-empty string"
+            raise TypeError(msg)
+        result.append(item)
+    return result
 
 
 def _require_mapping(value: object, label: str) -> None:

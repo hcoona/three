@@ -1,0 +1,9 @@
+api-version: three.release.buddy-target-refs/v1alpha1
+kind: buddy-target-ref-policy
+
+channels:
+  buddy:
+    default:
+      refs:
+        - refs/heads/main
+    projects: {}

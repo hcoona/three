@@ -1,0 +1,65 @@
+{
+  "api-version": "three.release.report/v1alpha1",
+  "artifacts": {
+    "build-result-artifact-names": [],
+    "dotnet-planner-metadata-artifact-name": null,
+    "dotnet-planner-metadata-input-artifact-name": null,
+    "entry-publish-handoff-artifact-name": "release-entry-publish-handoff-v1-123-1-abc",
+    "execution-sets-artifact-name": "release-execution-sets-v1-123-1-abc",
+    "plan-artifact-name": "release-plan-v1-123-1-abc",
+    "planner-diagnostics-artifact-name": null,
+    "github-release-result-artifact-names": [],
+    "publish-result-artifact-names": [],
+    "skip-result-artifact-names": [],
+    "tag-result-artifact-name": null
+  },
+  "counts": {
+    "active-publish-nodes": 1,
+    "active-variants": 1,
+    "published-nodes": 0,
+    "selected-projects": 1,
+    "skipped-publish-nodes": 1
+  },
+  "jobs": {
+    "authorize-entry": {
+      "conclusion": "success"
+    },
+    "build": {
+      "conclusion": "skipped",
+      "failed-variant-ids": []
+    },
+    "dotnet-metadata": {
+      "conclusion": "skipped"
+    },
+    "ensure-tag": {
+      "conclusion": "skipped"
+    },
+    "plan": {
+      "conclusion": "success"
+    },
+    "publish": {
+      "conclusion": "skipped",
+      "failed-publish-node-ids": []
+    },
+    "validate-authoring": {
+      "conclusion": "success"
+    }
+  },
+  "kind": "release-report",
+  "plan": {
+    "plan-id": "plan/abc123",
+    "selected-project-ids": ["example", "other"]
+  },
+  "run": {
+    "conclusion": "success",
+    "canary-override-non-public-ref": false,
+    "dry-run": false,
+    "head-sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "profile": "buddy",
+    "repository": "hcoona/three",
+    "run-attempt": 1,
+    "run-id": 123,
+    "validation-build": false,
+    "workflow": "buddy.yml"
+  }
+}

@@ -2,8 +2,8 @@
 
 ## Purpose
 
-This page defines the exact authoritative planner output shape for the frozen
-planner-centric architecture. It builds directly on the Group 1 descriptor and
+This page defines the exact authoritative planner output shape for the
+planner/build/publish boundary architecture. It builds directly on the Group 1 descriptor and
 shared target-instance catalog schema.
 
 ## Design Summary
@@ -31,7 +31,7 @@ shared target-instance catalog schema.
 
 ## Authoritative Top-Level Shape
 
-All normalized collections are mappings keyed by plan IDs rather than arrays.
+Most normalized collections are mappings keyed by plan IDs rather than arrays; the request project lists are the single-entry array exception.
 
 ```yaml
 api-version: three.release.plan/v1alpha1
@@ -43,8 +43,8 @@ envelope:
     commit-sha: ...
     request-flags:
         force: false
-    requested-project-ids: [...]
-    selected-project-ids: [...]
+    requested-project-ids: [hjg-pngcs]
+    selected-project-ids: [hjg-pngcs]
     authoring-inputs:
         descriptor-api-version: three.release/v1alpha1
         catalog-path: eng/release/target-instances.yml
@@ -105,7 +105,7 @@ graph:
                     artifact/symbols: IO.Github.Hcoona.Pngcs.1.2.3.snupkg
                 asset-labels-by-artifact-id: {}
             attestation:
-                signer-workflow: hcoona/three/.github/workflows/release-publish-node.yml
+                signer-workflow: hcoona/three/.github/workflows/release-orchestrate.yml
     target-instance-snapshots:
         github-release/public:
             family: github-release
@@ -129,6 +129,12 @@ graph:
                     - role: primary-package
                       kind-family: package
                       concrete-kind: npm-package
+                    - role: primary-package
+                      kind-family: package
+                      concrete-kind: browser-zip
+                    - role: sources
+                      kind-family: archive
+                      concrete-kind: sources-zip
                     - role: primary-package
                       kind-family: package
                       concrete-kind: rubygem
@@ -170,6 +176,16 @@ graph:
                           max-count: null
                         - role: primary-package
                           kind-family: package
+                          concrete-kind: browser-zip
+                          min-count: 0
+                          max-count: null
+                        - role: sources
+                          kind-family: archive
+                          concrete-kind: sources-zip
+                          min-count: 0
+                          max-count: null
+                        - role: primary-package
+                          kind-family: package
                           concrete-kind: rubygem
                           min-count: 0
                           max-count: null
@@ -206,11 +222,11 @@ scope:
 
 - `plan-id` as the deterministic request/selection identity, plus
   `profile`, `commit-sha`, and normalized `request-flags`;
-- `requested-project-ids`, where omitted or empty input is serialized as `[]`
-  and means all in-scope releasable projects, while explicit non-empty input
-  must resolve completely or planning fails;
-- `selected-project-ids`, the resolved project set normalized to unique
-  lexicographic order;
+- `requested-project-ids` and `selected-project-ids`, the single-entry project
+  lists selected by the active `project` workflow input after
+  descriptor/catalog resolution. Their plural shape is the implementation
+  contract used by the planner and fixtures, not multi-project operator
+  dispatch;
 - `request-flags`, which in `v1alpha1` has the exact normalized shape
   `{ force: <bool> }`, so `false` is the canonical default when no `FORCE`
   behavior was requested;
@@ -218,15 +234,17 @@ scope:
   catalog path used for planning;
 - `projects`, keyed by descriptor-owned `project.id`.
 
-Dry-run or validation-only selection stays in the control-plane run envelope
-rather than in `request-flags`, so it does not change `envelope.plan-id` or the
-whole-release rerun identity.
+If dry-run or validation-only selection is ever reintroduced, it stays in the
+control-plane run envelope rather than in `request-flags`, so it does not
+change `envelope.plan-id` or the whole-release rerun identity.
 
-In current scope for manual `workflow_dispatch`, the selected commit comes from
-resolving the operator-selected branch/tag ref once at run start. The serialized
-`envelope.commit-sha` is that resolved immutable commit, and later control-plane
-and executor stages must remain pinned to it rather than following the source
-ref after dispatch.
+In current scope for manual `workflow_dispatch`, `envelope.commit-sha` is the
+pinned release commit. When `target` is empty, that commit is the GitHub UI
+dispatch ref/commit. When `target` is non-empty, the control plane resolves the
+supplied branch, tag, ref, or 40-hex SHA exactly once and records the resulting
+commit. Later control-plane and executor stages must remain pinned to that
+release commit rather than following any source ref after dispatch; workflow code
+itself continues to run from the trusted dispatch ref.
 
 Each `envelope.projects[project-id]` snapshot freezes the selected project
 fields that later control-plane and execution design will need without re-
@@ -303,10 +321,11 @@ Each publish node contains:
 
 Current-scope normalized `resolved-publish-identity` shapes are:
 
-| Resolved family                    | Plan `resolved-publish-identity` shape        |
-| ---------------------------------- | --------------------------------------------- |
-| `github-release`                   | `release-tag: <string>`                       |
-| `npm`, `nuget`, `pypi`, `rubygems` | `package-name: <string>`; `version: <string>` |
+| Resolved family                                 | Plan `resolved-publish-identity` shape        |
+| ----------------------------------------------- | --------------------------------------------- |
+| `github-release`                                | `release-tag: <string>`                       |
+| active `npm`, `pypi`, and `rubygems` registries | `package-name: <string>`; `version: <string>` |
+| deferred NuGet registry support                 | `package-name: <string>`; `version: <string>` |
 
 For package registries, the planner resolves the final `package-name` after any
 descriptor-side projection override or fallback to manifest-owned intrinsic
@@ -315,14 +334,21 @@ planner-frozen `resolved-version` for the selected run. In current scope, that
 resolved project version comes from build-system-integrated NBGV for every
 project except the single `nbgv-python` special-support path, which instead
 uses the selected commit's checked-in `pyproject.toml` `[project].version`.
-The current-scope package-name resolution and identity-equivalence contract is:
+The active current-scope package-name resolution and identity-equivalence
+contract is:
 
-| Family     | Planned `package-name` source and serialization                                                                                                                                                                                                                                                                             | Name equivalence for remote lookup and same-identity classification                                                                                             | Version equivalence for remote lookup and same-identity classification                                                                                                                         |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `nuget`    | Serialize the evaluated primary `.csproj` `PackageId` spelling. `nuget-publish` is invalid when `PackageId` is absent or empty; current scope does not rely on NuGet/MSBuild's `AssemblyName` or directory-name default.                                                                                                    | NuGet package IDs are case-insensitive; compare with ordinal case-insensitive semantics while preserving the serialized spelling for filenames and diagnostics. | Compare using NuGet normalized package-version identity, including removal of leading numeric zeroes, omission of a zero fourth version part, and ignoring SemVer build metadata for identity. |
-| `pypi`     | Serialize `[project].name` after PyPI / PEP 503 normalization: lowercase, then replace each maximal run of `.`, `-`, or `_` with one `-`.                                                                                                                                                                                   | Compare the PEP 503 normalized project name.                                                                                                                    | Compare using normalized Python package version identity under the Python packaging version-specifier rules.                                                                                   |
-| `npm`      | Serialize artifact-level `projection.package-name` when declared, otherwise target-level `projection.package-name` when declared as the single-artifact compatibility shorthand, otherwise serialize `package.json` `name`. The resolved value must be a valid publishable npm package name and lowercase in current scope. | Compare the serialized npm package name exactly after npm package-name validation; scoped names include the scope.                                              | Compare the canonical `node-semver` package version identity for the serialized frozen version and the observed package metadata version.                                                      |
-| `rubygems` | Serialize the evaluated `.gemspec` `Gem::Specification.name`; current-scope gem names must be lowercase.                                                                                                                                                                                                                    | Compare the serialized gem name exactly after RubyGems name validation.                                                                                         | Compare through RubyGems `Gem::Version` equality for the frozen version and the observed gem metadata version.                                                                                 |
+| Family     | Planned `package-name` source and serialization                                                                                                                                                                                                                                                                             | Name equivalence for remote lookup and same-identity classification                                                | Version equivalence for remote lookup and same-identity classification                                                                    |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `pypi`     | Serialize `[project].name` after PyPI / PEP 503 normalization: lowercase, then replace each maximal run of `.`, `-`, or `_` with one `-`.                                                                                                                                                                                   | Compare the PEP 503 normalized project name.                                                                       | Compare using normalized Python package version identity under the Python packaging version-specifier rules.                              |
+| `npm`      | Serialize artifact-level `projection.package-name` when declared, otherwise target-level `projection.package-name` when declared as the single-artifact compatibility shorthand, otherwise serialize `package.json` `name`. The resolved value must be a valid publishable npm package name and lowercase in current scope. | Compare the serialized npm package name exactly after npm package-name validation; scoped names include the scope. | Compare the canonical `node-semver` package version identity for the serialized frozen version and the observed package metadata version. |
+| `rubygems` | Serialize the evaluated `.gemspec` `Gem::Specification.name`; current-scope gem names must be lowercase.                                                                                                                                                                                                                    | Compare the serialized gem name exactly after RubyGems name validation.                                            | Compare through RubyGems `Gem::Version` equality for the frozen version and the observed gem metadata version.                            |
+
+NuGet registry publication is deferred in the active catalog/routing. If a
+reviewed NuGet registry path is added later, it must serialize the evaluated
+primary `.csproj` `PackageId`, reject absent or empty `PackageId`, avoid
+NuGet/MSBuild `AssemblyName` or directory-name fallbacks, compare package IDs
+case-insensitively while preserving the serialized spelling, and compare versions
+using NuGet normalized package-version identity.
 
 Family-specific canonicalization is part of planner-owned publish identity and
 remote-state classification. It must not be re-derived differently by executors
@@ -343,30 +369,32 @@ inputs.
 
 Current-scope normalized `desired-publish-state` shapes are:
 
-| Resolved family                    | Plan `desired-publish-state` shape     |
-| ---------------------------------- | -------------------------------------- |
-| `github-release`                   | `release-state: prerelease \| release` |
-| `npm`, `nuget`, `pypi`, `rubygems` | omitted                                |
+| Resolved family                                 | Plan `desired-publish-state` shape     |
+| ----------------------------------------------- | -------------------------------------- |
+| `github-release`                                | `release-state: prerelease \| release` |
+| active `npm`, `pypi`, and `rubygems` registries | omitted                                |
+| deferred NuGet registry support                 | omitted                                |
 
 GitHub Release `desired-publish-state.release-state` is planner-owned desired
 target-side state. It must not be copied into `projection`.
 
 Current-scope normalized `projection` shapes are:
 
-| Plan object       | Scope                      | Shape                                                                                                                 |
-| ----------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `graph.artifacts` | npm package artifacts only | `projection.package-name?: <string>`                                                                                  |
-| `publish-nodes`   | `github-release`           | `asset-names-by-artifact-id: { <artifact-id>: <string> }`; `asset-labels-by-artifact-id: { <artifact-id>: <string> }` |
-| `publish-nodes`   | `npm`                      | `package-name?: <string>`; `final-distribution-filenames-by-artifact-id: { <artifact-id>: <string> }`                 |
-| `publish-nodes`   | `nuget`, `pypi`            | `final-distribution-filenames-by-artifact-id: { <artifact-id>: <string> }`                                            |
-| `publish-nodes`   | `rubygems`                 | `{}`                                                                                                                  |
+| Plan object       | Scope                      | Shape                                                                                                                                                                                                                                                                                                                                            |
+| ----------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `graph.artifacts` | npm package artifacts only | `projection.package-name?: <string>`                                                                                                                                                                                                                                                                                                             |
+| `publish-nodes`   | `github-release`           | `asset-names-by-artifact-id: { <artifact-id>: <string> }`; `asset-labels-by-artifact-id: { <artifact-id>: <string> }`; compatibility-only `asset-sizes-by-artifact-id?` and `asset-sha256-by-artifact-id?` are not planner authority; current size/SHA authority comes from build-result/publish handoff and GitHub Release asset proof evidence |
+| `publish-nodes`   | `npm`                      | `package-name?: <string>`; `final-distribution-filenames-by-artifact-id: { <artifact-id>: <string> }`; compatibility-only `final-distribution-digests-by-artifact-id?` is not planner authority; current digest authority comes from build-result/publish handoff and proof evidence                                                             |
+| `publish-nodes`   | `pypi`                     | `final-distribution-filenames-by-artifact-id: { <artifact-id>: <string> }`; compatibility-only `final-distribution-sha256-by-artifact-id?` is not planner authority; current digest authority comes from build-result/publish handoff and proof evidence                                                                                         |
+| `publish-nodes`   | `rubygems`                 | `final-distribution-filenames-by-artifact-id: { <artifact-id>: <string> }`; compatibility-only `final-distribution-sha256-by-artifact-id?` is not planner authority; current digest authority comes from build-result/publish handoff and proof evidence                                                                                         |
 
 Current-scope normalized `attestation` shapes are:
 
-| Resolved family                    | Plan `attestation` shape           |
-| ---------------------------------- | ---------------------------------- |
-| `github-release`                   | `signer-workflow: <full-identity>` |
-| `npm`, `nuget`, `pypi`, `rubygems` | omitted                            |
+| Resolved family                                 | Plan `attestation` shape           |
+| ----------------------------------------------- | ---------------------------------- |
+| `github-release`                                | `signer-workflow: <full-identity>` |
+| active `npm`, `pypi`, and `rubygems` registries | omitted                            |
+| deferred NuGet registry support                 | omitted                            |
 
 For GitHub Release, descriptor-side `projection.asset-labels` keys are resolved
 from descriptor-local `artifact.id` handles into plan artifact IDs before the
@@ -377,13 +405,20 @@ Those names are planner-owned remote-member matching keys and live upload names;
 they are not bundle paths, executor output paths, or replacements for
 `artifact-id`. Release-state remains outside `projection` and belongs only in
 `desired-publish-state`.
+Compatibility plans may include paired GitHub Release asset size and SHA-256
+maps, but current planners do not derive authoritative release-asset bytes.
+Current exactness and mutation gates must use producer-bound build-result,
+publish handoff, and `github-release-asset-proof` evidence; size/SHA API
+evidence alone is not authoritative exact proof. Missing proof evidence is
+intentionally non-exact and must not degrade to name-only matching.
 
 Current-scope GitHub Release publish nodes must also serialize
 `attestation.signer-workflow`. The value is the full GitHub CLI signer workflow
 identity used by `gh attestation verify --signer-workflow`, not a bare filename.
-For the current `github-token` topology, the publish and `actions/attest` steps
-are reusable-hosted by `.github/workflows/release-publish-node.yml`, so the
-frozen value is `hcoona/three/.github/workflows/release-publish-node.yml`. If a
+For the current `github-token` topology, the GitHub Release upload path and the
+preceding `actions/attest-build-provenance` attestation jobs are hosted by
+`.github/workflows/release-orchestrate.yml`, so the frozen value is
+`hcoona/three/.github/workflows/release-orchestrate.yml`. If a
 successor topology moves GitHub Release attestation to another workflow, that
 topology must freeze its corresponding full signer workflow identity in the plan
 before any proof lookup can be considered admissible.
@@ -399,10 +434,10 @@ independent:
 
 - package artifacts use the ecosystem package basename that the planner can
   compute for the selected project and resolved version:
-    - `nuget` and `snupkg` use the same NuGet filename formulas as the NuGet
-      projection;
-    - `wheel` and `sdist` use the same planner-time PyPI filename computation
-      as the PyPI projection;
+    - `nuget` and `snupkg` use the same NuGet filename formulas as deferred
+      NuGet registry support;
+    - `wheel` and `sdist` use the same metadata-only PyPI filename projection as
+      the PyPI projection;
     - `npm-package` uses the npm pack tarball basename for the resolved npm
       package name and resolved version;
     - `rubygem` uses `<gem-name>-<version>.gem` after RubyGems name and version
@@ -439,43 +474,71 @@ each planned npm artifact, such as the dedicated
 `hcoona-release-smoke-npm-dual` smoke project that exercises an unscoped
 official/npmjs artifact and a scoped buddy/GitHub Packages artifact.
 
-For current-scope `npm`, `nuget`, and `pypi`, the planner must deterministically
-determine one final distribution filename per planned artifact before any
-remote-state classification:
+For active current-scope `npm`, `pypi`, and `rubygems`, the planner must
+deterministically determine one final distribution filename per planned artifact
+before any remote-state classification:
 
 - for `npm`, using `resolved-publish-identity.package-name` and
   `resolved-publish-identity.version` with npm pack's tarball basename rules for
   scoped and unscoped packages;
-- for `nuget`, using `resolved-publish-identity.package-name`,
-  `resolved-publish-identity.version`, and the artifact's `concrete-kind`, with
-  the exact formulas `<package-name>.<version>.nupkg` for `nuget` and
-  `<package-name>.<version>.snupkg` for `snupkg`;
-- for `pypi`, by invoking the selected project's checked-in current-scope build
-  backend tooling (`hatchling.build`, via the repo's expected tooling boundary
-  such as `mise`/`uv`) during planning to compute the exact final distribution
-  filename(s) for that node's planned artifact set, then freezing those
-  authoritative results into the plan rather than trusting executor-discovered
-  output names or reimplementing Hatchling rules in static prose. This filename
-  computation is separate from PyPI remote package identity canonicalization in
+- for `pypi`, by projecting the selected project's normalized package name and
+  PEP 440 version into the final wheel/sdist basename without invoking a build
+  backend or hashing generated outputs. This filename projection is separate
+  from PyPI remote package identity canonicalization in
   `resolved-publish-identity.package-name`. Current scope still limits each
   `pypi-publish` node to exactly one wheel and zero or one sdist, all from the
   same variant. Multi-wheel, cross-variant, and platform-specific wheel layouts
   are deferred.
+- for `rubygems`, using the evaluated gem name and resolved version with the
+  RubyGems filename formula `<gem-name>-<version>.gem`.
+
+Deferred NuGet registry nodes must use `resolved-publish-identity.package-name`,
+`resolved-publish-identity.version`, and the artifact's `concrete-kind`, with
+the exact formulas `<package-name>.<version>.nupkg` for `nuget` and
+`<package-name>.<version>.snupkg` for `snupkg`, if reviewed NuGet catalog/routing
+later makes those nodes active.
 
 For current-scope immutable package registries that classify one or more remote
 members under one resolved `{ package-name, version }` identity, the planner
 must serialize `projection.final-distribution-filenames-by-artifact-id` as the
 planner-frozen final distribution filename map. That map must contain exactly
 one entry for every `artifact-id` in the node's full `artifact-ids`
-membership, including singleton nodes. These filenames are family-specific
-remote-member matching keys only: they do not redefine `artifact-id`, which
-remains the planner-owned fulfillment slot rather than a filename, path, or
-command recipe. For each `artifact-id` a live publish node publishes, the
-actual target-side uploaded member filename must equal that planner-derived
-final filename; the executor must consume the frozen value rather than re-derive
-an alternate filename, and may satisfy the upload rule by using a bundle file
-that already has that basename or by staging/renaming to that exact filename
-before upload. Any mismatch must fail closed.
+membership, including singleton nodes, and the map values must be unique within
+that publish node. These filenames are family-specific remote-member matching
+keys only: they do not redefine `artifact-id`, which remains the planner-owned
+fulfillment slot rather than a filename, path, or command recipe. For each
+`artifact-id` a live publish node publishes, the actual target-side uploaded
+member filename must equal that planner-derived final filename; the executor
+must consume the frozen value rather than re-derive an alternate filename, and
+may satisfy the upload rule by using a bundle file that already has that basename
+or by staging/renaming to that exact filename before upload. Any mismatch must
+fail closed.
+
+For PyPI publish nodes, exact replay satisfaction compares the planned filename
+slots against destination evidence and producer-bound build-result/publish proof
+digests for the actual built distributions. Compatibility
+`projection.final-distribution-sha256-by-artifact-id` data is not current
+authority. Missing producer-bound digest evidence, missing observed digest
+evidence, or digest conflict is never an exact replay satisfaction.
+
+For npm publish nodes, exact replay satisfaction compares the planned filename
+slots against destination evidence and producer-bound build-result/publish proof
+digests for the actual built tarball. Compatibility
+`projection.final-distribution-digests-by-artifact-id` data is not current
+authority. Normal npm registry evidence is `dist.integrity` with SHA-512 SRI, so
+exact replay requires comparable producer-bound and remote algorithms to match.
+If no comparable producer-bound/remote algorithm is available, the existing
+version is non-exact.
+
+For RubyGems publish nodes, exact replay satisfaction compares the planned
+filename slot against destination evidence and producer-bound build-result/
+publish proof digests for the actual built gem. Compatibility
+`projection.final-distribution-sha256-by-artifact-id` data is not current
+authority. RubyGems exact replay with RubyGems `sha` evidence requires every
+matching planned filename to have matching producer-bound SHA-256 evidence;
+missing producer-bound SHA-256, missing remote `sha`, or a digest mismatch is
+non-exact or conflicting according to the immutable registry classification
+rules.
 
 For npm publish nodes, the build result bundle must contain the projected
 tarball for the referenced `artifact-id` under the planner-derived final
@@ -496,8 +559,10 @@ replace-authoritative` means the executor must converge a same-tag GitHub
 Release node to the planner-owned full official publish intent, including
 `desired-publish-state.release-state`, `artifact-ids`, and
 `projection.asset-names-by-artifact-id` plus
-`projection.asset-labels-by-artifact-id`, rather than treating promotion as a
-state-only flip or additive merge.
+`projection.asset-labels-by-artifact-id` and producer-bound build-result/proof
+size/SHA-256 evidence, rather than treating promotion as a state-only flip or
+additive merge. The asset set must be converged before the executor promotes the
+remote release state from prerelease to release.
 `publish-disposition: skip-satisfied` means planner-time validation already
 proved that the destination state satisfies that full publish intent for this
 run, so the plan records a no-op publish node rather than reserializing raw
@@ -514,17 +579,27 @@ before any row in the matrix below is applied:
 - **partial**: a remote publication exists for that same identity, is not
   `exact-satisfied`, and the planner can still normalize it into a structured
   same-identity subset case rather than an irreducible conflict;
+- **partial-authoritative**: a same-tag GitHub Release exists for the selected
+  official publish identity, the remote object is still `prerelease`, the node's
+  desired state is `release`, and the remote asset names, labels, or
+  attestation-backed asset content proof do not yet match the producer-bound
+  official intent. This is the only non-exact observation that can enter
+  `replace-authoritative`;
 - **conflicting**: a remote publication exists for that same identity, is not
   `exact-satisfied`, and current-scope target semantics allow no non-error
   replay outcome for that observed state regardless of request flags, so the
   planner must fail for human intervention.
 
 These classes are mutually exclusive: every remote observation reduces to
-exactly one of `absent`, `exact-satisfied`, `partial`, or `conflicting`, and
-the replay matrix below must consume that already-chosen class rather than
-reclassifying the observation per row. Request flags such as `FORCE` are
-evaluated only after this structural classification step and therefore do not
-change whether one same-identity observation is `partial` or `conflicting`.
+exactly one of `absent`, `exact-satisfied`, `partial`,
+`partial-authoritative`, or `conflicting`, and the replay matrix below must
+consume that already-chosen class rather than reclassifying the observation per
+row. Request flags such as `FORCE` are evaluated only after this structural
+classification step and therefore do not change whether one same-identity
+observation is `partial`, `partial-authoritative`, or `conflicting`, except that
+the reviewed `official` `force_update_tag` gate may prevent a release-tag
+commit mismatch alone from becoming a pre-classification conflict so `ensure-tags`
+can retarget the tag before executing the serialized publish mode.
 
 For package registries, that classification is publish-node-wide for one
 resolved `{ package-name, version }` identity and the planner-owned member set
@@ -536,9 +611,9 @@ Remote-query failure policy for that classification step is:
   normalization failures while deriving the remote observation for one selected
   publish node;
 - if retry is exhausted, or the planner still cannot normalize the destination
-  state into one of `absent`, `exact-satisfied`, `partial`, or `conflicting`,
-  the planner must fail closed rather than guessing or degrading into a replay
-  class;
+  state into one of `absent`, `exact-satisfied`, `partial`,
+  `partial-authoritative`, or `conflicting`, the planner must fail closed rather
+  than guessing or degrading into a replay class;
 - this includes persistent transport, authentication, authorization, rate-limit,
   malformed-response, or family-adapter interpretation failures that leave the
   remote state unclassifiable for the frozen publish intent;
@@ -569,7 +644,7 @@ same `resolved-publish-identity.release-tag`:
 - no extra remote assets remain on that release object.
 
 If GitHub Release remote asset download, attestation verification, digest
-evidence, or size evidence is unavailable, unparseable, or mismatched for any
+evidence, or size evidence is unavailable, unparsable, or mismatched for any
 planned asset, the same-tag state is not `exact-satisfied`. The planner must
 classify it as `partial` or `conflicting` under the same-tag rules below, or fail
 closed when it cannot safely reduce the observation to one class. A same-name
@@ -588,10 +663,10 @@ For current-scope same-tag GitHub Release observations that are not
       `release`, and the authoritative asset set, asset labels, or
       attestation-backed asset content proof is non-exact.
 
-That means `buddy FORCE`, same-tag `official` promotion, and non-`FORCE`
-mutable replay all consume one already-chosen `partial` GitHub Release
-observation in the replay matrix below rather than changing the classification
-term itself.
+That means `buddy FORCE` and non-`FORCE` mutable replay consume one
+already-chosen `partial` GitHub Release observation, while same-tag `official`
+prerelease-to-release promotion consumes the already-chosen
+`partial-authoritative` observation that feeds `replace-authoritative`.
 
 For immutable package registries, the planner must classify same-identity remote
 state with these current-scope rules:
@@ -602,32 +677,36 @@ state with these current-scope rules:
 - before evaluating immutable `exact-satisfied`, `partial`, or `conflicting`
   for a same-identity observation, the planner must first establish remote-
   member ↔ planned-artifact matching for the node's full planned member set; in
-  current scope for npm, NuGet, and PyPI, nodes match by the planner-frozen final
-  distribution filename
+  current scope for active npm, PyPI, RubyGems, and any future reviewed NuGet
+  registry nodes, nodes match by the
+  planner-frozen final distribution filename
   `projection.final-distribution-filenames-by-artifact-id[artifact-id]`,
-  including singleton nodes;
+  including singleton nodes and current-scope RubyGems nodes;
 - content-equivalence for an already-present member is planner-provable only
-  when the planner has a planner-available digest for the corresponding planned
-  member from the control-plane-owned prior build receipt lookup/index for the
-  same current planner-frozen immutable-proof member binding
-  (`publish-node-id`, `artifact-id`,
+  when the planner has an admissible exactness source for the corresponding
+  planned member. In current PyPI, npm, and RubyGems paths, the admissible
+  source is producer-bound build-result or publish/proof digest evidence matched
+  against destination-reported digest evidence for the same planned final filename. For remaining or future immutable registry paths without a
+  producer-bound build-result or publish handoff digest evidence, the admissible source is
+  a planner-available digest from the control-plane-owned prior build receipt
+  lookup/index for the same current planner-frozen immutable-proof member
+  binding (`publish-node-id`, `artifact-id`,
   `resolved-publish-identity.package-name`,
   `resolved-publish-identity.version`); matching `envelope.plan-id` alone is
   not sufficient. Including the immutable resolved `{ package-name, version }`
-  identity in that binding keeps proof lookup version-sensitive for all
-  immutable package-registry families, including current-scope single-member
-  RubyGems nodes. The planner-frozen
-  `projection.final-distribution-filenames-by-artifact-id` map, when present,
-  still serves only remote-member matching and classification; it is not the
-  proof-binding key. That seam must
-  yield `build-result` receipts together with authoritative control-plane
-  provenance proving that the producing live build unit successfully emitted
-  the receipt, whether the run was live versus dry-run or validation-only, and
-  the run identity/attempt; no other proof source is admissible, which keeps
-  the proof bound to the same planner-frozen versioned output slot; for any
-  given immutable-proof member binding, the admissible receipt set must
-  collapse to one digest, and if multiple admissible receipts exist with
-  differing digests then digest proof is unavailable; proof from dry-run
+  identity in that binding keeps receipt lookup version-sensitive for those
+  paths. The planner-frozen
+  `projection.final-distribution-filenames-by-artifact-id` map still serves only
+  remote-member matching and classification; it is not the proof-binding key.
+  The prior-receipt seam must yield `build-result` receipts together with
+  authoritative control-plane provenance proving that the producing live build
+  unit successfully emitted the receipt, whether the run was live versus any
+  future dry-run or validation-only mode, and the run identity/attempt; no other
+  prior-receipt proof source is admissible for that seam, which keeps receipt
+  proof bound to the same planner-frozen versioned output slot. For any given
+  immutable-proof member binding, the admissible receipt set must collapse to
+  one digest, and if multiple admissible receipts exist with differing digests
+  then receipt digest proof is unavailable; proof from any future dry-run
   receipts or other immutable-proof bindings is invalid for immutable
   `exact-satisfied` / `partial` classification;
 - if that digest proof is unavailable for any member needed to distinguish
@@ -650,17 +729,22 @@ state with these current-scope rules:
   unplanned members, or remote state that cannot be normalized and proved into
   a safe additive subset.
 
-Immutable same-identity handling remains conservative in current scope. The
-planner may emit a live publish only for `absent`; both immutable `partial` and
-immutable `conflicting` must fail closed for human intervention.
+Immutable same-identity handling remains conservative in current scope when the
+planner has strong registry evidence. The planner may emit a live publish only
+for `absent`; both immutable `partial` and immutable `conflicting` must fail
+closed for human intervention. GitHub Packages npm/RubyGems version presence is
+not strong enough planner evidence by itself: those nodes remain live and the
+idempotent publisher performs exact digest verification or hard-fails on a
+conflict.
 
-In current scope, npm and RubyGems are single-member families, so immutable
-`partial` is structurally unreachable there. NuGet can still observe `partial`
-because one publish node may own multiple remote members for the same resolved
-package identity. PyPI can also observe `partial`, but only for the narrowed
-current-scope member set of exactly one wheel and zero or one sdist under one
-resolved package identity. Those observations remain planner-error in current
-scope.
+In current scope, active public npm and RubyGems registries are single-member
+families, so immutable `partial` is structurally unreachable there. Deferred
+NuGet registry support can observe `partial` because one publish node may own
+multiple remote members for the same resolved package identity, but that behavior
+is conditional on adding reviewed NuGet catalog/routing. PyPI can also observe
+`partial`, but only for the narrowed current-scope member set of exactly one
+wheel and zero or one sdist under one resolved package identity. Those active
+strong-evidence observations remain planner-error in current scope.
 
 In current scope, `official-frozen` is a planner-time predicate over one
 selected project and its resolved version identity. It becomes true only when
@@ -688,10 +772,10 @@ it is a fail-closed planner error before any row evaluation.
 | An immutable target has a `conflicting` remote publication for the same immutable target identity.                                                                                                                                                                                        | Planner error. Do not emit a plan that asks executors to auto-complete, reconcile, or overwrite the immutable conflict.                                                                                                                                                                                                      |
 | A `github-release` target has a `conflicting` same-tag remote publication because the observed same-tag remote state is `release` while the node desires `prerelease`, or it is already `release` with a non-exact official asset set, labels, or attestation-backed asset content proof. | Planner error. Current scope does not allow same-tag release-to-prerelease demotion or reinterpretation of an already authoritative official release.                                                                                                                                                                        |
 | No existing publication is found for the node's `resolved-publish-identity`.                                                                                                                                                                                                              | Emit `publish-disposition: publish` with `publish-mode: create-only`.                                                                                                                                                                                                                                                        |
-| A `github-release` target already contains the same `resolved-publish-identity.release-tag`, the observation is `partial`, the node's desired `release-state` is `release`, and the observed same-tag remote state is still `prerelease`.                                                 | Emit `publish-disposition: publish` with `publish-mode: replace-authoritative`. This is the only current-scope same-tag official-promotion path. The planner must serialize this explicitly so execution converges the full official publish intent rather than treating promotion as a state-only change or additive merge. |
+| A `github-release` target already contains the same `resolved-publish-identity.release-tag` and the observation is `partial-authoritative`.                                                                                                                                               | Emit `publish-disposition: publish` with `publish-mode: replace-authoritative`. This is the only current-scope same-tag official-promotion path. The planner must serialize this explicitly so execution converges the full official publish intent rather than treating promotion as a state-only change or additive merge. |
 | A target whose capability `mutability` is `mutable-prerelease` already contains the same `resolved-publish-identity`, the observation is `partial`, and the node is in the planner-authorized buddy `FORCE` overwrite case.                                                               | Emit `publish-disposition: publish` with `publish-mode: overwrite-mutable`. The planner must serialize this explicitly rather than leaving mutable-target replay overwrite behavior for executors to infer from destination state.                                                                                           |
-| A target whose capability `mutability` is `mutable-prerelease` already contains the same `resolved-publish-identity`, the observation is `partial`, and neither the planner-authorized same-tag `official` promotion case nor the buddy `FORCE` overwrite case applies.                   | Planner error. Current scope does not allow non-`FORCE` mutable replay to proceed as `create-only`; the planner must fail before execution rather than leaving existing publication handling ambiguous.                                                                                                                      |
-| `profile: official` with `request-flags.force: true`.                                                                                                                                                                                                                                     | Planner error for the whole request. `FORCE` is not a valid official-profile planner input in current scope.                                                                                                                                                                                                                 |
+| A target whose capability `mutability` is `mutable-prerelease` already contains the same `resolved-publish-identity`, the observation is `partial`, and the planner-authorized buddy `FORCE` overwrite case does not apply.                                                               | Planner error. Current scope does not allow non-`FORCE` mutable replay to proceed as `create-only`; the planner must fail before execution rather than leaving existing publication handling ambiguous.                                                                                                                      |
+| `profile: official` with `request-flags.force: true`.                                                                                                                                                                                                                                     | Valid only for the active reviewed `force_update_tag` release-tag retarget path. It does not authorize package-registry overwrite, immutable-target completion, or bypass of publish identity checks.                                                                                                                        |
 | `profile: buddy` with `request-flags.force: true`, but any selected project resolves to an official-frozen project-scoped version identity.                                                                                                                                               | Planner error for the whole request. `buddy FORCE` is never valid for an official-frozen project or version identity.                                                                                                                                                                                                        |
 | `request-flags.force: true` for a target whose capability `mutability` is not `mutable-prerelease`.                                                                                                                                                                                       | `FORCE` does not authorize overwrite for that node. Immutable targets still follow the skip-versus-error rules above; only mutable buddy targets may proceed with `publish-mode: overwrite-mutable`.                                                                                                                         |
 
@@ -741,7 +825,7 @@ The plan uses four kinds of identifiers:
   emitted plan, not a hash of every serialized plan field. It is serialized as
   `plan/<hex-sha256>`, where the digest input is the canonical JSON object
   `{ profile, commit-sha, selected-project-ids, request-flags }` after
-  `selected-project-ids` has been normalized to unique lexicographic order and
+  `selected-project-ids` has resolved to the active single project list and
   `request-flags` has been normalized to the exact current-scope key set. In
   `v1alpha1`, `plan-id` is the authoritative whole-release rerun identity rather
   than being paired with a separate request-id. Changing `request-flags.force`
@@ -753,8 +837,8 @@ The plan uses four kinds of identifiers:
   resolved request/selection scope. `v1alpha1` defines no separate full-emitted-
   plan hash field.
 - `project-id`: the descriptor-owned `project.id` key used by
-  `envelope.projects`, `selected-project-ids`, and every project-scoped graph
-  object.
+  `envelope.projects`, `requested-project-ids`, `selected-project-ids`, and
+  every project-scoped graph object.
 - `variant-id`, `artifact-id`, and `publish-node-id`: planner-assigned opaque
   string IDs with deterministic lexical form. The planner must emit them as
   `variant/<hex-sha256>`, `artifact/<hex-sha256>`, and
@@ -787,11 +871,12 @@ Canonical ID generation rules:
   compatibility shorthand participates in the npm publish-node ID, while an
   artifact-level or manifest-derived npm package name participates through the
   planner-frozen final filename map. Current-scope GitHub Release nodes always
-  include the frozen asset-name map in `projection`, and current-scope npm,
-  NuGet, or PyPI nodes always include the frozen filename map in `projection`,
-  including singleton nodes; each map covers every `artifact-id` in the node's
-  full `artifact-ids` membership. Those version-sensitive current-scope
-  GitHub Release, npm, NuGet, and PyPI `publish-node-id` values still
+  include the frozen asset-name map in `projection`, and active current-scope
+  npm, PyPI, or RubyGems nodes always include the frozen filename map in
+  `projection`, including singleton nodes; each map covers every `artifact-id`
+  in the node's full `artifact-ids` membership. Those version-sensitive
+  current-scope GitHub Release, npm, PyPI, and RubyGems
+  `publish-node-id` values still
   participate in proof and rerun seams, but the immutable-package admissible
   binding remains the planner-frozen member tuple (`publish-node-id`,
   `artifact-id`, `resolved-publish-identity.package-name`,
@@ -804,10 +889,11 @@ Canonical ID generation rules:
   without changing the stable lexical IDs defined for the underlying
   request/selection scope or publish-node slot.
 - Within every mapping-valued serialized collection in the plan, entries must be
-  emitted in lexicographic key order. List-valued fields that are sets, such as
-  `requested-project-ids` and `selected-project-ids`, must be normalized to
-  unique lexicographic order; list-valued fields with declared semantic order,
-  such as `artifact-ids` on publish nodes, must preserve that semantic order.
+  emitted in lexicographic key order. The request project-list fields
+  (`requested-project-ids` and `selected-project-ids`) are the current
+  single-entry array exception and must preserve that one-project order;
+  list-valued fields with declared semantic order, such as `artifact-ids` on
+  publish nodes, must preserve that semantic order.
 
 Ownership and reference rules are:
 
@@ -846,29 +932,29 @@ snapshot data or raw observation payloads.
 
 ## Deterministic Mapping from Group 1 Inputs
 
-| Group 1 construct                                                          | Plan location                                                      | Deterministic mapping rule                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Descriptor file path and release root                                      | `envelope.projects[project-id].descriptor-path` and `release-root` | Derived from the discovered `src/**/three.release.yml` location.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `project.display-name`, `project.ecosystem`, `project.release-kind`        | `envelope.projects[project-id]`                                    | Copied verbatim from the selected descriptor.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `source.primary-manifest` and `source.auxiliary-inputs[]`                  | `envelope.projects[project-id].source.*`                           | Resolved from release-root-relative authoring paths to repo-root-relative execution paths.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `source.version-authority`                                                 | `envelope.projects[project-id].source.version-authority-kind`      | Copied from the descriptor when present; otherwise defaults to `build-system-nbgv`. The only current-scope non-default value is `nbgv-python-pyproject-version`, valid only for `nbgv-python`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `variants[]` entry                                                         | `graph.variants[variant-id]`                                       | One plan variant per descriptor variant. `variants[].id` becomes `descriptor-handle`; `dimensions` is copied verbatim.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `artifacts[]` entry                                                        | `graph.artifacts[artifact-id]`                                     | One plan artifact per descriptor artifact. `artifacts[].id` becomes `descriptor-handle`; semantic artifact data is copied verbatim. For npm package artifacts, artifact-level `projection.package-name` is normalized into the artifact projection when declared.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `artifacts[].produced-from[]`                                              | `graph.artifacts[artifact-id].produced-from-artifact-ids`          | Resolved from descriptor-local artifact handles to plan artifact IDs within the same variant.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Selected `profiles.<profile>.targets[n]` entry                             | `graph.publish-nodes[publish-node-id]`                             | Exactly one publish node per target usage entry in the selected profile. The zero-based target-list ordinal becomes `descriptor-target-index`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Planner request-affecting flags                                            | `envelope.request-flags`                                           | Current-scope normalized request flags are planner-facing inputs, not raw control-plane runtime state. `v1alpha1` currently freezes only `force: <bool>` there.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| Planner-time replay-satisfaction decision                                  | `graph.publish-nodes[publish-node-id].publish-disposition`         | Planner-time validation may consult remote state, but the plan serializes only the derived closed outcome: `publish` or `skip-satisfied`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Planner-time live publish behavior                                         | `graph.publish-nodes[publish-node-id].publish-mode`                | For live publish nodes, the planner serializes the executor-visible behavior: `create-only`, `overwrite-mutable`, or `replace-authoritative`. Executors do not infer overwrite or authoritative replacement from raw dispatch flags.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Planner-time resolved external publish identity                            | `graph.publish-nodes[publish-node-id].resolved-publish-identity`   | The planner serializes the target-family-specific identity used for publication and replay checks: current-scope `release-tag` for GitHub Release or `package-name` plus `version` for package registries.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Planner-time family-specific desired target-side state                     | `graph.publish-nodes[publish-node-id].desired-publish-state`       | For current-scope GitHub Release nodes, the planner serializes `release-state: prerelease \| release`. No other current-scope family defines `desired-publish-state`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `targets[n].artifacts[]`                                                   | `graph.publish-nodes[publish-node-id].artifact-ids`                | Resolved from descriptor-local artifact handles to plan artifact IDs, preserving target entry order.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `targets[n].uses`                                                          | `graph.publish-nodes[publish-node-id].target-instance-snapshot-id` | Resolved from `family/instance-id` to one shared target-instance snapshot in the same plan.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| Catalog target-instance `capabilities.publish-topology`                    | `graph.target-instance-snapshots[*].capabilities.publish-topology` | Copied from the catalog into the snapshot. The control plane partitions active publish nodes by this frozen value rather than by target family guesses or registry-specific rules after planning.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `targets[n].projection` plus planner-frozen immutable registry member keys | `graph.publish-nodes[publish-node-id].projection`                  | Copied into the family-specific plan shape, with any artifact-handle keys normalized to artifact IDs. For npm, target-level `projection.package-name` is accepted only as a single-artifact compatibility shorthand, resolves the selected node identity, and is serialized as publish-node `projection.package-name`; artifact-level package-name projection remains on `graph.artifacts`. For current-scope npm/NuGet/PyPI nodes, the planner determines one final distribution filename per artifact before replay classification and always serializes `projection.final-distribution-filenames-by-artifact-id`; for current-scope PyPI, that filename computation is performed by invoking Hatchling during planning and freezing the authoritative result. The map covers every `artifact-id` in the node's full `artifact-ids` membership, including singleton nodes, and remains remote-member matching data only. For every artifact the executor publishes for a live node, it must upload under exactly the planner-derived final filename. |
-| Catalog target instance                                                    | `graph.target-instance-snapshots[target-instance-snapshot-id]`     | One snapshot per referenced catalog entry. `contract`, `destination`, and `capabilities` are frozen inline.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Group 1 construct                                                          | Plan location                                                      | Deterministic mapping rule                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Descriptor file path and release root                                      | `envelope.projects[project-id].descriptor-path` and `release-root` | Derived from the discovered `src/**/three.release.yml` location.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `project.display-name`, `project.ecosystem`, `project.release-kind`        | `envelope.projects[project-id]`                                    | Copied verbatim from the selected descriptor.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `source.primary-manifest` and `source.auxiliary-inputs[]`                  | `envelope.projects[project-id].source.*`                           | Resolved from release-root-relative authoring paths to repo-root-relative execution paths.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `source.version-authority`                                                 | `envelope.projects[project-id].source.version-authority-kind`      | Copied from the descriptor when present; otherwise defaults to `build-system-nbgv`. The only current-scope non-default value is `nbgv-python-pyproject-version`, valid only for `nbgv-python`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `variants[]` entry                                                         | `graph.variants[variant-id]`                                       | One plan variant per descriptor variant. `variants[].id` becomes `descriptor-handle`; `dimensions` is copied verbatim.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `artifacts[]` entry                                                        | `graph.artifacts[artifact-id]`                                     | One plan artifact per descriptor artifact. `artifacts[].id` becomes `descriptor-handle`; semantic artifact data is copied verbatim. For npm package artifacts, artifact-level `projection.package-name` is normalized into the artifact projection when declared.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `artifacts[].produced-from[]`                                              | `graph.artifacts[artifact-id].produced-from-artifact-ids`          | Resolved from descriptor-local artifact handles to plan artifact IDs within the same variant.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Selected `profiles.<profile>.targets[n]` entry                             | `graph.publish-nodes[publish-node-id]`                             | Exactly one publish node per target usage entry in the selected profile. The zero-based target-list ordinal becomes `descriptor-target-index`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Planner request-affecting flags                                            | `envelope.request-flags`                                           | Current-scope normalized request flags are planner-facing inputs, not raw control-plane runtime state. `v1alpha1` currently freezes only `force: <bool>` there.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Planner-time replay-satisfaction decision                                  | `graph.publish-nodes[publish-node-id].publish-disposition`         | Planner-time validation may consult remote state, but the plan serializes only the derived closed outcome: `publish` or `skip-satisfied`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Planner-time live publish behavior                                         | `graph.publish-nodes[publish-node-id].publish-mode`                | For live publish nodes, the planner serializes the executor-visible behavior: `create-only`, `overwrite-mutable`, or `replace-authoritative`. Executors do not infer overwrite or authoritative replacement from raw dispatch flags.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Planner-time resolved external publish identity                            | `graph.publish-nodes[publish-node-id].resolved-publish-identity`   | The planner serializes the target-family-specific identity used for publication and replay checks: current-scope `release-tag` for GitHub Release or `package-name` plus `version` for package registries.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Planner-time family-specific desired target-side state                     | `graph.publish-nodes[publish-node-id].desired-publish-state`       | For current-scope GitHub Release nodes, the planner serializes `release-state: prerelease \| release`. No other current-scope family defines `desired-publish-state`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `targets[n].artifacts[]`                                                   | `graph.publish-nodes[publish-node-id].artifact-ids`                | Resolved from descriptor-local artifact handles to plan artifact IDs, preserving target entry order.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `targets[n].uses`                                                          | `graph.publish-nodes[publish-node-id].target-instance-snapshot-id` | Resolved from `family/instance-id` to one shared target-instance snapshot in the same plan.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Catalog target-instance `capabilities.publish-topology`                    | `graph.target-instance-snapshots[*].capabilities.publish-topology` | Copied from the catalog into the snapshot. The control plane partitions active publish nodes by this frozen value rather than by target family guesses or registry-specific rules after planning.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `targets[n].projection` plus planner-frozen immutable registry member keys | `graph.publish-nodes[publish-node-id].projection`                  | Copied into the family-specific plan shape, with any artifact-handle keys normalized to artifact IDs. For npm, target-level `projection.package-name` is accepted only as a single-artifact compatibility shorthand, resolves the selected node identity, and is serialized as publish-node `projection.package-name`; artifact-level package-name projection remains on `graph.artifacts`. For current-scope npm/PyPI/RubyGems nodes, the planner determines one final distribution filename per artifact before replay classification and always serializes `projection.final-distribution-filenames-by-artifact-id`; any future reviewed NuGet registry path must do the same for NuGet and snupkg artifacts. For current-scope PyPI, filename projection is metadata-only; build workflows invoke the backend and produce authoritative receipts from actual artifacts. The map covers every `artifact-id` in the node's full `artifact-ids` membership, including singleton nodes, and remains remote-member matching data only. For every artifact the executor publishes for a live node, it must upload under exactly the planner-derived final filename. |
+| Catalog target instance                                                    | `graph.target-instance-snapshots[target-instance-snapshot-id]`     | One snapshot per referenced catalog entry. `contract`, `destination`, and `capabilities` are frozen inline.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 Only the selected profile contributes publish nodes, and only the selected
-projects appear anywhere in the plan.
+project appears anywhere in the plan.
 
 ## What Stays Out of the Plan
 
@@ -876,7 +962,7 @@ The following explicitly stay outside `release-plan` in `v1alpha1`:
 
 - the raw control-plane run envelope, including actor, run id, attempt id,
   approval or environment-gate state, concurrency groups, raw workflow input
-  names, and control-plane-only flags such as dry-run;
+  names, and historical or future-only control-plane flags such as dry-run;
 - workflow or job layout, reusable-workflow boundaries, artifact transport, and
   executor invocation syntax;
 - the raw text of descriptors or the shared target catalog;

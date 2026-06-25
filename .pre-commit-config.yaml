@@ -10,13 +10,13 @@ repos:
     entry: python eng/scripts/hk_exec.py typos -c .typos.toml --force-exclude --
     language: system
     pass_filenames: true
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: editorconfig-check
     name: Editorconfig Check
     entry: python eng/scripts/hk_exec.py editorconfig-checker --disable-indent-size --
     language: system
     pass_filenames: true
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: actionlint
     name: Actionlint
     entry: python eng/scripts/hk_actionlint.py
@@ -29,14 +29,14 @@ repos:
     language: system
     pass_filenames: true
     files: '[^/]*\.md$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: markdown-prettier
     name: Markdown Prettier
     entry: python eng/scripts/hk_exec.py pnpm exec -- prettier --check --
     language: system
     pass_filenames: true
     files: '[^/]*\.md$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: pkl-eval
     name: Pkl Eval
     entry: python eng/scripts/hk_pkl_eval.py
@@ -55,14 +55,14 @@ repos:
     language: system
     pass_filenames: true
     files: '[^/]*\.json$|[^/]*\.jsonc$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: yaml-prettier
     name: Yaml Prettier
     entry: python eng/scripts/hk_exec.py pnpm exec -- prettier --check --
     language: system
     pass_filenames: true
     files: '[^/]*\.yml$|[^/]*\.yaml$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: toml-taplo-check
     name: Toml Taplo Check
     entry: python eng/scripts/hk_exec.py pnpm exec -- taplo check --
@@ -87,28 +87,28 @@ repos:
     language: system
     pass_filenames: true
     files: (?:.*/)*[^/]*\.sh$|(?:.*/)*[^/]*\.bash$
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: shfmt
     name: Shfmt
     entry: python eng/scripts/hk_exec.py shfmt -d --apply-ignore --
     language: system
     pass_filenames: true
     files: (?:.*/)*[^/]*\.sh$|(?:.*/)*[^/]*\.bash$|(?:.*/)*[^/]*\.mksh$|(?:.*/)*[^/]*\.bats$|(?:.*/)*[^/]*\.zsh$
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: pwsh-formatter
     name: Pwsh Formatter
     entry: python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-FormatterWrapper.ps1 -Mode Check -Path --
     language: system
     pass_filenames: true
     files: '[^/]*\.ps1$|[^/]*\.psm1$|[^/]*\.psd1$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: pwsh-script-analyzer
     name: Pwsh Script Analyzer
     entry: python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Check -Path --
     language: system
     pass_filenames: true
     files: '[^/]*\.ps1$|[^/]*\.psm1$|[^/]*\.psd1$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
   - id: biome
     name: Biome
     entry: python eng/scripts/hk_exec.py pnpm exec -- biome check --no-errors-on-unmatched --
@@ -138,7 +138,7 @@ repos:
     entry: python eng/scripts/hk_exec.py uv run python eng/scripts/workflow_release_acceptance_gate.py
     language: system
     pass_filenames: false
-    files: \.github/workflows/ci\.yml$|\.github/workflows/buddy\.yml$|\.github/workflows/official\.yml$|\.github/workflows/release-[^/]*\.yml$|eng/release/.*$|eng/scripts/workflow_release_control\.py$|eng/scripts/workflow_release_acceptance_gate\.py$|src/(?:.*/)*three\.release\.yml$|src/public/lib/three-workflow-release-[^/]*/.*$|tests/test_workflow_release_control\.py$|tests/fixtures/workflow-release-acceptance-matrix\.json$|tests/fixtures/workflow-release-ci-validation-acceptance-matrix\.json$
+    files: \.github/CODEOWNERS$|\.github/actionlint\.yaml$|\.github/workflows/[^/]*\.yml$|\.github/workflows/[^/]*\.yaml$|\.github/workflows/REFACTOR_PLAN\.md$|\.github/workflows/docs/DESIGN\.v2\.md$|docs/wiki/analyses/workflow-release-[^/]*\.md$|eng/release/.*$|eng/scripts/find_project_path\.py$|eng/scripts/prepare_npm_publish\.py$|eng/scripts/validate_pep440_version\.py$|eng/scripts/validate_semver2_version\.py$|eng/scripts/validate_rubygems_version\.py$|eng/scripts/release_orchestrate_[^/]*\.sh$|eng/scripts/publish_[^/]*_idempotent\.sh$|eng/scripts/validate_pypi_remote_digests\.sh$|eng/scripts/verify_python_distribution_exactness\.py$|eng/scripts/verify_python_artifact_version\.py$|eng/scripts/workflow_release_control\.py$|eng/scripts/workflow_release_acceptance_gate\.py$|src/(?:.*/)*three\.release\.yml$|src/public/lib/three-workflow-release-[^/]*/.*$|tests/test_workflow_release_control\.py$|tests/test_verify_python_distribution_exactness\.py$|tests/fixtures/workflow-release-acceptance-matrix\.json$|tests/fixtures/workflow-release-ci-validation-acceptance-matrix\.json$
   - id: dotenv-linter
     name: Dotenv Linter
     entry: python eng/scripts/hk_exec.py dotenv-linter check --

@@ -17,13 +17,18 @@ from three_workflow_release_planner import (
 )
 
 RemoteObservation = Literal[
-    "absent", "exact-satisfied", "partial", "conflicting"
+    "absent",
+    "exact-satisfied",
+    "partial",
+    "partial-authoritative",
+    "conflicting",
 ]
 
 _REMOTE_OBSERVATIONS: set[RemoteObservation] = {
     "absent",
     "exact-satisfied",
     "partial",
+    "partial-authoritative",
     "conflicting",
 }
 
@@ -51,6 +56,10 @@ def main() -> int:
     parser.add_argument("--diagnostics-out")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--validation-build", action="store_true")
+    parser.add_argument(
+        "--deactivate-buddy-github-release",
+        action="store_true",
+    )
     args = parser.parse_args()
 
     request = _load_json(Path(args.request))
@@ -81,6 +90,9 @@ def main() -> int:
                 dotnet_metadata=metadata,
                 remote_observations=remote_observations,
                 official_frozen_versions=official_frozen_versions,
+                deactivate_buddy_github_release=(
+                    args.deactivate_buddy_github_release
+                ),
             )
         )
     except PlannerError as exc:

@@ -19,7 +19,6 @@ _SIGNER_WORKFLOW_RE = re.compile(
 )
 _REGISTERED_CODES = {
     "REQ_INVALID_INPUT",
-    "REQ_FORCE_FOR_OFFICIAL",
     "REQ_PROJECT_NOT_FOUND",
     "DESC_SCHEMA_INVALID",
     "DESC_STATIC_INVALID",
@@ -55,6 +54,7 @@ REGISTERED_BUILD_DIAGNOSTIC_CODES = frozenset(_BUILD_DIAGNOSTIC_CODES)
 _PHASES = {"validation", "query", "normalization", "classification"}
 _SCOPE_KINDS = {"request", "project", "publish-node"}
 _PROFILES = {"buddy", "official"}
+_REPORT_PROFILES = {"buddy", "official", "custom"}
 _TOPOLOGIES = {
     "github-token",
     "external-oidc-entry-workflow",
@@ -68,6 +68,8 @@ _CONTRACT_IDS_BY_FAMILY = {
     "npm": "npm-publish",
     "rubygems": "rubygems-publish",
 }
+_PACKAGE_REGISTRY_RECEIPT_FAMILIES = {"nuget", "pypi", "npm", "rubygems"}
+_PACKAGE_REGISTRY_SNAPSHOT_ID_PART_COUNT = 2
 _EXPECTED_CONTRACTS = {
     "github-release-assets": {
         "allowed-artifact-tuples": [
@@ -498,6 +500,7 @@ def validate_contract(
         "skip-result": _skip_result,
         "immutable-proof": _immutable_proof,
         "github-release-asset-proof": _github_release_asset_proof,
+        "github-release-result": _github_release_result,
         "release-report": _release_report,
     }
     if not isinstance(kind, str) or kind not in dispatch:
@@ -506,6 +509,15 @@ def validate_contract(
         dispatch[kind](validator, document)
     if validator.issues:
         raise ContractValidationError(validator.issues)
+
+
+@dataclass(frozen=True, slots=True)
+class _PlanGraphContext:
+    """Shared release-plan graph validation context."""
+
+    target_families: Mapping[str, str]
+    target_mutabilities: Mapping[str, str]
+    envelope: JsonObject | None
 
 
 def _header(  # noqa: PLR0913
@@ -543,6 +555,12 @@ def _request_flags(validator: _Validator, value: object, path: str) -> None:
         validator.boolean(obj.get("force"), f"{path}.force")
 
 
+def _sha_field(validator: _Validator, value: object, path: str) -> None:
+    """Validate an immutable commit SHA field."""
+    if validator.string(value, path) and _SHA_RE.fullmatch(str(value)) is None:
+        validator.error(path, "must be a 40-char lowercase hex SHA")
+
+
 def _planner_request(validator: _Validator, document: JsonObject) -> None:
     """Validate `planner-request.json`."""
     obj = _header(
@@ -561,20 +579,11 @@ def _planner_request(validator: _Validator, document: JsonObject) -> None:
     if obj is None:
         return
     validator.enum(obj.get("profile"), "$.profile", _PROFILES)
-    validator.string(obj.get("commit-sha"), "$.commit-sha")
-    _unique_sorted_strings(
+    _sha_field(validator, obj.get("commit-sha"), "$.commit-sha")
+    _single_project_id_array(
         validator, obj.get("requested-project-ids"), "$.requested-project-ids"
     )
     _request_flags(validator, obj.get("request-flags"), "$.request-flags")
-    flags = obj.get("request-flags")
-    if (
-        isinstance(flags, Mapping)
-        and obj.get("profile") == "official"
-        and flags.get("force") is True
-    ):
-        validator.error(
-            "$.request-flags.force", "is invalid for official profile"
-        )
 
 
 def _planner_diagnostics(validator: _Validator, document: JsonObject) -> None:
@@ -839,7 +848,9 @@ def _release_plan(validator: _Validator, document: JsonObject) -> None:
     if obj is None:
         return
     _plan_envelope(validator, obj.get("envelope"), "$.envelope")
-    _plan_graph(validator, obj.get("graph"), "$.graph")
+    raw_envelope = obj.get("envelope")
+    envelope = raw_envelope if isinstance(raw_envelope, Mapping) else None
+    _plan_graph(validator, obj.get("graph"), "$.graph", envelope)
 
 
 def _plan_envelope(validator: _Validator, value: object, path: str) -> None:
@@ -862,14 +873,14 @@ def _plan_envelope(validator: _Validator, value: object, path: str) -> None:
         return
     validator.string(obj.get("plan-id"), f"{path}.plan-id")
     validator.enum(obj.get("profile"), f"{path}.profile", _PROFILES)
-    validator.string(obj.get("commit-sha"), f"{path}.commit-sha")
+    _sha_field(validator, obj.get("commit-sha"), f"{path}.commit-sha")
     _request_flags(validator, obj.get("request-flags"), f"{path}.request-flags")
-    _unique_sorted_strings(
+    _single_project_id_array(
         validator,
         obj.get("requested-project-ids"),
         f"{path}.requested-project-ids",
     )
-    _unique_sorted_strings(
+    _single_project_id_array(
         validator,
         obj.get("selected-project-ids"),
         f"{path}.selected-project-ids",
@@ -954,10 +965,11 @@ def _project_snapshot(validator: _Validator, value: object, path: str) -> None:
     )
 
 
-def _plan_graph(  # noqa: C901
+def _plan_graph(  # noqa: C901, PLR0912
     validator: _Validator,
     value: object,
     path: str,
+    envelope: JsonObject | None,
 ) -> None:
     """Validate the normalized graph."""
     obj = validator.mapping(
@@ -981,6 +993,7 @@ def _plan_graph(  # noqa: C901
         f"{path}.target-instance-snapshots",
     )
     families: dict[str, str] = {}
+    mutabilities: dict[str, str] = {}
     if snapshots is not None:
         for snapshot_id, snapshot in snapshots.items():
             family = _target_snapshot(
@@ -991,14 +1004,25 @@ def _plan_graph(  # noqa: C901
             )
             if family is not None:
                 families[snapshot_id] = family
+            if isinstance(snapshot, Mapping):
+                capabilities = snapshot.get("capabilities")
+                if isinstance(capabilities, Mapping):
+                    mutability = capabilities.get("mutability")
+                    if isinstance(mutability, str):
+                        mutabilities[snapshot_id] = mutability
     nodes = _map(validator, obj.get("publish-nodes"), f"{path}.publish-nodes")
+    context = _PlanGraphContext(
+        target_families=families,
+        target_mutabilities=mutabilities,
+        envelope=envelope,
+    )
     if nodes is not None:
         for node_id, node in nodes.items():
             _publish_node(
                 validator,
                 node,
                 f"{path}.publish-nodes.{node_id}",
-                families,
+                context,
                 expected_node_id=node_id,
             )
 
@@ -1313,11 +1337,12 @@ def _registry_capabilities(family: str, host: str) -> dict[str, str] | None:
         "rubygems": "rubygems.pkg.github.com",
     }
     if public_hosts.get(family) == host:
-        topology = (
-            "external-oidc-reusable-workflow"
-            if family == "rubygems"
-            else "external-oidc-entry-workflow"
-        )
+        if family == "nuget":
+            topology = "external-oidc-entry-workflow"
+        elif family == "npm":
+            topology = "external-oidc-caller-workflow"
+        else:
+            topology = "external-oidc-reusable-workflow"
         return _capability_tuple(
             "immutable",
             "package-name",
@@ -1487,7 +1512,7 @@ def _publish_node(
     validator: _Validator,
     value: object,
     path: str,
-    target_families: Mapping[str, str],
+    context: _PlanGraphContext,
     expected_node_id: str | None = None,
 ) -> None:
     """Validate a normalized publish node."""
@@ -1505,7 +1530,12 @@ def _publish_node(
             "resolved-publish-identity",
             "projection",
         },
-        {"publish-mode", "desired-publish-state", "attestation"},
+        {
+            "publish-mode",
+            "desired-publish-state",
+            "attestation",
+            "overwrite-mutable-authorization",
+        },
     )
     if obj is None:
         return
@@ -1555,7 +1585,14 @@ def _publish_node(
             f"{path}.publish-mode",
             "must be omitted when publish-disposition is skip-satisfied",
         )
-    family = target_families.get(str(snapshot_id), "")
+    family = context.target_families.get(str(snapshot_id), "")
+    _publish_mode_target_compatibility(
+        validator,
+        obj,
+        path,
+        context,
+        str(snapshot_id),
+    )
     _resolved_identity(
         validator,
         obj.get("resolved-publish-identity"),
@@ -1571,6 +1608,165 @@ def _publish_node(
         artifact_ids,
     )
     _attestation(validator, obj, path, family)
+    _overwrite_mutable_authorization(validator, obj, path, context.envelope)
+
+
+def _publish_mode_target_compatibility(
+    validator: _Validator,
+    obj: JsonObject,
+    path: str,
+    context: _PlanGraphContext,
+    snapshot_id: str,
+) -> None:
+    """Validate publish modes that depend on target-instance capabilities."""
+    publish_mode = obj.get("publish-mode")
+    family = context.target_families.get(snapshot_id, "")
+    mutability = context.target_mutabilities.get(snapshot_id, "")
+    if publish_mode == "replace-authoritative":
+        _replace_authoritative_compatibility(
+            validator,
+            obj,
+            path,
+            context,
+            snapshot_id,
+        )
+        return
+    if publish_mode != "overwrite-mutable":
+        return
+    if family == "github-release" and mutability == "mutable-prerelease":
+        return
+    validator.error(
+        f"{path}.publish-mode",
+        "overwrite-mutable is only valid for mutable-prerelease "
+        "GitHub Release targets",
+    )
+
+
+def _replace_authoritative_compatibility(
+    validator: _Validator,
+    obj: JsonObject,
+    path: str,
+    context: _PlanGraphContext,
+    snapshot_id: str,
+) -> None:
+    """Validate official final GitHub Release replacement mode."""
+    family = context.target_families.get(snapshot_id, "")
+    mutability = context.target_mutabilities.get(snapshot_id, "")
+    envelope = context.envelope
+    state = obj.get("desired-publish-state")
+    release_state = (
+        state.get("release-state") if isinstance(state, Mapping) else None
+    )
+    if (
+        family == "github-release"
+        and mutability == "mutable-prerelease"
+        and obj.get("profile") == "official"
+        and release_state == "release"
+        and (
+            envelope is None
+            or (
+                isinstance(envelope, Mapping)
+                and envelope.get("profile") == "official"
+            )
+        )
+    ):
+        return
+    validator.error(
+        f"{path}.publish-mode",
+        "replace-authoritative is only valid for official final GitHub "
+        "Release promotions",
+    )
+
+
+def _overwrite_mutable_authorization(
+    validator: _Validator,
+    obj: JsonObject,
+    path: str,
+    envelope: JsonObject | None,
+) -> None:
+    """Validate planner authorization for destructive buddy overwrite."""
+    publish_mode = obj.get("publish-mode")
+    authorization = obj.get("overwrite-mutable-authorization")
+    if authorization is None:
+        if publish_mode == "overwrite-mutable":
+            validator.error(
+                f"{path}.overwrite-mutable-authorization",
+                "is required when publish-mode is overwrite-mutable",
+            )
+        return
+    if publish_mode != "overwrite-mutable":
+        validator.error(
+            f"{path}.overwrite-mutable-authorization",
+            "must be omitted unless publish-mode is overwrite-mutable",
+        )
+    auth = validator.mapping(
+        authorization,
+        f"{path}.overwrite-mutable-authorization",
+        required={
+            "kind",
+            "profile",
+            "force",
+            "remote-observation",
+            "mutability",
+        },
+        optional=set(),
+    )
+    if auth is None:
+        return
+    validator.enum(
+        auth.get("kind"),
+        f"{path}.overwrite-mutable-authorization.kind",
+        {"planner-validated-buddy-force"},
+    )
+    validator.enum(
+        auth.get("profile"),
+        f"{path}.overwrite-mutable-authorization.profile",
+        {"buddy"},
+    )
+    validator.boolean(
+        auth.get("force"),
+        f"{path}.overwrite-mutable-authorization.force",
+    )
+    if auth.get("force") is not True:
+        validator.error(
+            f"{path}.overwrite-mutable-authorization.force",
+            "must be true",
+        )
+    validator.enum(
+        auth.get("remote-observation"),
+        f"{path}.overwrite-mutable-authorization.remote-observation",
+        {"partial"},
+    )
+    validator.enum(
+        auth.get("mutability"),
+        f"{path}.overwrite-mutable-authorization.mutability",
+        {"mutable-prerelease"},
+    )
+    if envelope is not None and not _envelope_authorizes_overwrite_mutable(
+        envelope, obj, auth
+    ):
+        validator.error(
+            f"{path}.overwrite-mutable-authorization",
+            "requires a buddy release plan with request-flags.force true",
+        )
+
+
+def _envelope_authorizes_overwrite_mutable(
+    envelope: JsonObject | None,
+    node: JsonObject,
+    authorization: JsonObject,
+) -> bool:
+    """Return whether the enclosing release request authorizes overwrites."""
+    if envelope is None:
+        return False
+    request_flags = envelope.get("request-flags")
+    return (
+        envelope.get("profile") == "buddy"
+        and node.get("profile") == "buddy"
+        and authorization.get("profile") == "buddy"
+        and isinstance(request_flags, Mapping)
+        and request_flags.get("force") is True
+    )
 
 
 def _resolved_identity(
@@ -1611,7 +1807,7 @@ def _desired_state(
         )
 
 
-def _projection(
+def _projection(  # noqa: C901, PLR0912, PLR0915
     validator: _Validator,
     value: object,
     path: str,
@@ -1624,6 +1820,10 @@ def _projection(
             value,
             path,
             {"asset-names-by-artifact-id", "asset-labels-by-artifact-id"},
+            {
+                "asset-sizes-by-artifact-id",
+                "asset-sha256-by-artifact-id",
+            },
         )
         if obj is None:
             return
@@ -1637,19 +1837,54 @@ def _projection(
             obj.get("asset-labels-by-artifact-id"),
             f"{path}.asset-labels-by-artifact-id",
         )
+        sizes = None
+        if "asset-sizes-by-artifact-id" in obj:
+            sizes = _integer_map(
+                validator,
+                obj.get("asset-sizes-by-artifact-id"),
+                f"{path}.asset-sizes-by-artifact-id",
+                minimum=0,
+            )
+        sha256 = None
+        if "asset-sha256-by-artifact-id" in obj:
+            sha256 = _sha256_map(
+                validator,
+                obj.get("asset-sha256-by-artifact-id"),
+                f"{path}.asset-sha256-by-artifact-id",
+            )
         _require_exact_keys(
             validator,
             names,
             set(artifact_ids),
             f"{path}.asset-names-by-artifact-id",
         )
-        if names is not None and len(set(names.values())) != len(names):
+        _require_unique_values(
+            validator,
+            names,
+            f"{path}.asset-names-by-artifact-id",
+            "asset names must be unique",
+        )
+        if sizes is not None:
+            _require_exact_keys(
+                validator,
+                sizes,
+                set(artifact_ids),
+                f"{path}.asset-sizes-by-artifact-id",
+            )
+        if sha256 is not None:
+            _require_exact_keys(
+                validator,
+                sha256,
+                set(artifact_ids),
+                f"{path}.asset-sha256-by-artifact-id",
+            )
+        if (sizes is None) != (sha256 is None):
             validator.error(
-                f"{path}.asset-names-by-artifact-id",
-                "asset names must be unique",
+                path,
+                "asset size and sha256 evidence must be provided together",
             )
         return
-    if family in {"nuget", "pypi", "rubygems"}:
+    if family == "nuget":
         obj = validator.mapping(
             value, path, {"final-distribution-filenames-by-artifact-id"}
         )
@@ -1665,13 +1900,19 @@ def _projection(
                 set(artifact_ids),
                 f"{path}.final-distribution-filenames-by-artifact-id",
             )
+            _require_unique_values(
+                validator,
+                filenames,
+                f"{path}.final-distribution-filenames-by-artifact-id",
+                "distribution filenames must be unique",
+            )
         return
-    if family == "npm":
+    if family == "rubygems":
         obj = validator.mapping(
             value,
             path,
             {"final-distribution-filenames-by-artifact-id"},
-            {"package-name"},
+            {"final-distribution-sha256-by-artifact-id"},
         )
         if obj is not None:
             filenames = _string_map(
@@ -1685,9 +1926,108 @@ def _projection(
                 set(artifact_ids),
                 f"{path}.final-distribution-filenames-by-artifact-id",
             )
+            _require_unique_values(
+                validator,
+                filenames,
+                f"{path}.final-distribution-filenames-by-artifact-id",
+                "distribution filenames must be unique",
+            )
+            if "final-distribution-sha256-by-artifact-id" in obj:
+                sha256 = _sha256_map(
+                    validator,
+                    obj.get("final-distribution-sha256-by-artifact-id"),
+                    f"{path}.final-distribution-sha256-by-artifact-id",
+                )
+                _require_exact_keys(
+                    validator,
+                    sha256,
+                    set(artifact_ids),
+                    f"{path}.final-distribution-sha256-by-artifact-id",
+                )
+        return
+    if family == "pypi":
+        obj = validator.mapping(
+            value,
+            path,
+            {
+                "final-distribution-filenames-by-artifact-id",
+            },
+            {"final-distribution-sha256-by-artifact-id"},
+        )
+        if obj is not None:
+            filenames = _string_map(
+                validator,
+                obj.get("final-distribution-filenames-by-artifact-id"),
+                f"{path}.final-distribution-filenames-by-artifact-id",
+            )
+            _require_exact_keys(
+                validator,
+                filenames,
+                set(artifact_ids),
+                f"{path}.final-distribution-filenames-by-artifact-id",
+            )
+            _require_unique_values(
+                validator,
+                filenames,
+                f"{path}.final-distribution-filenames-by-artifact-id",
+                "distribution filenames must be unique",
+            )
+            if "final-distribution-sha256-by-artifact-id" in obj:
+                sha256 = _sha256_map(
+                    validator,
+                    obj.get("final-distribution-sha256-by-artifact-id"),
+                    f"{path}.final-distribution-sha256-by-artifact-id",
+                )
+                _require_exact_keys(
+                    validator,
+                    sha256,
+                    set(artifact_ids),
+                    f"{path}.final-distribution-sha256-by-artifact-id",
+                )
+        return
+    if family == "npm":
+        obj = validator.mapping(
+            value,
+            path,
+            {"final-distribution-filenames-by-artifact-id"},
+            {
+                "final-distribution-digests-by-artifact-id",
+                "package-name",
+            },
+        )
+        if obj is not None:
+            filenames = _string_map(
+                validator,
+                obj.get("final-distribution-filenames-by-artifact-id"),
+                f"{path}.final-distribution-filenames-by-artifact-id",
+            )
+            _require_exact_keys(
+                validator,
+                filenames,
+                set(artifact_ids),
+                f"{path}.final-distribution-filenames-by-artifact-id",
+            )
+            _require_unique_values(
+                validator,
+                filenames,
+                f"{path}.final-distribution-filenames-by-artifact-id",
+                "distribution filenames must be unique",
+            )
             if "package-name" in obj:
                 validator.string(
                     obj.get("package-name"), f"{path}.package-name"
+                )
+            if "final-distribution-digests-by-artifact-id" in obj:
+                digests = _digest_evidence_map(
+                    validator,
+                    obj.get("final-distribution-digests-by-artifact-id"),
+                    f"{path}.final-distribution-digests-by-artifact-id",
+                )
+                _require_exact_keys(
+                    validator,
+                    digests,
+                    set(artifact_ids),
+                    f"{path}.final-distribution-digests-by-artifact-id",
                 )
         return
     validator.mapping(value, path, set())
@@ -2167,7 +2507,10 @@ def _tag_result(validator: _Validator, document: JsonObject) -> None:
                 )
 
 
-def _publish_request(validator: _Validator, document: JsonObject) -> None:
+def _publish_request(  # noqa: C901, PLR0912
+    validator: _Validator,
+    document: JsonObject,
+) -> None:
     """Validate `publish-request.json`."""
     obj = _header(
         validator,
@@ -2185,11 +2528,16 @@ def _publish_request(validator: _Validator, document: JsonObject) -> None:
             "target-instance-snapshot",
             "artifacts",
         },
-        optional={"github-release-asset-attestations"},
+        optional={"attestation-source-sha"},
     )
     if obj is None:
         return
     _common_plan_fields(validator, obj, "$", publish=True)
+    attestation_source_sha = obj.get("attestation-source-sha")
+    if attestation_source_sha is not None:
+        _sha_field(
+            validator, attestation_source_sha, "$.attestation-source-sha"
+        )
     validator.string(obj.get("publish-node-id"), "$.publish-node-id")
     _project_snapshot(validator, obj.get("project"), "$.project")
     project = obj.get("project")
@@ -2213,18 +2561,37 @@ def _publish_request(validator: _Validator, document: JsonObject) -> None:
         or ""
     )
     snapshot_id = _snapshot_id(snapshot)
+    mutability = ""
+    if isinstance(snapshot, Mapping):
+        capabilities = snapshot.get("capabilities")
+        if isinstance(capabilities, Mapping) and isinstance(
+            capabilities.get("mutability"), str
+        ):
+            mutability = str(capabilities["mutability"])
     node = obj.get("publish-node")
     _publish_node(
         validator,
         node,
         "$.publish-node",
-        {str(snapshot_id): family},
+        _PlanGraphContext(
+            target_families={str(snapshot_id): family},
+            target_mutabilities={str(snapshot_id): mutability},
+            envelope=None,
+        ),
         expected_node_id=(
             str(obj["publish-node-id"])
             if isinstance(obj.get("publish-node-id"), str)
             else None
         ),
     )
+    if (
+        isinstance(node, Mapping)
+        and node.get("publish-disposition") != "publish"
+    ):
+        validator.error(
+            "$.publish-node.publish-disposition",
+            "must be publish for publish-request",
+        )
     if (
         isinstance(node, Mapping)
         and isinstance(node.get("target-instance-snapshot-id"), str)
@@ -2266,13 +2633,6 @@ def _publish_request(validator: _Validator, document: JsonObject) -> None:
             set(node.get("artifact-ids", [])),
             "$.artifacts",
         )
-        _github_release_asset_attestations(
-            validator,
-            obj,
-            "$.github-release-asset-attestations",
-            family,
-            set(node.get("artifact-ids", [])),
-        )
 
 
 def _publish_result(validator: _Validator, document: JsonObject) -> None:
@@ -2286,44 +2646,38 @@ def _publish_result(validator: _Validator, document: JsonObject) -> None:
     )
     if obj is not None:
         validator.enum(obj.get("outcome"), "$.outcome", {"published"})
-
-
-def _github_release_asset_attestations(
-    validator: _Validator,
-    request: JsonObject,
-    path: str,
-    family: str,
-    artifact_ids: set[object],
-) -> None:
-    """Validate actions/attest outputs carried by a GitHub Release request."""
-    value = request.get("github-release-asset-attestations")
-    if family != "github-release":
-        if "github-release-asset-attestations" in request:
-            validator.error(path, "must be omitted outside github-release")
-        return
-    if "github-release-asset-attestations" not in request:
-        return
-    outputs = _map(validator, value, path)
-    if outputs is None:
-        return
-    _require_exact_keys(validator, outputs, artifact_ids, path)
-    for artifact_id, payload in outputs.items():
-        item_path = f"{path}.{artifact_id}"
-        item = validator.mapping(
-            payload,
-            item_path,
-            {"attestation-id", "attestation-url", "bundle-path"},
-            {"storage-record-ids"},
-        )
-        if item is None:
-            continue
-        for field in ("attestation-id", "attestation-url", "bundle-path"):
-            validator.string(item.get(field), f"{item_path}.{field}")
-        if "storage-record-ids" in item:
-            validator.string(
-                item.get("storage-record-ids"),
-                f"{item_path}.storage-record-ids",
+        snapshot_id = obj.get("target-instance-snapshot-id")
+        if isinstance(snapshot_id, str):
+            parts = snapshot_id.split("/")
+            if len(parts) != _PACKAGE_REGISTRY_SNAPSHOT_ID_PART_COUNT or any(
+                part == "" for part in parts
+            ):
+                validator.error(
+                    "$.target-instance-snapshot-id",
+                    "must use exact '<family>/<instance-id>' package registry "
+                    "target shape",
+                )
+                family = ""
+            else:
+                family = parts[0]
+            if family not in _PACKAGE_REGISTRY_RECEIPT_FAMILIES:
+                validator.error(
+                    "$.target-instance-snapshot-id",
+                    "must identify a package registry target in one of "
+                    f"{sorted(_PACKAGE_REGISTRY_RECEIPT_FAMILIES)}",
+                )
+        identity = obj.get("resolved-publish-identity")
+        if isinstance(identity, Mapping):
+            validator.mapping(
+                identity,
+                "$.resolved-publish-identity",
+                {"package-name", "version"},
             )
+            for field in ("package-name", "version"):
+                validator.string(
+                    identity.get(field),
+                    f"$.resolved-publish-identity.{field}",
+                )
 
 
 def _skip_result(validator: _Validator, document: JsonObject) -> None:
@@ -2440,12 +2794,16 @@ def _github_release_asset_proof(
             "artifact",
             "attestation",
         },
+        optional={"release-target-sha"},
     )
     if obj is None:
         return
     _github_asset_binding(validator, obj.get("binding"), "$.binding")
     for field in ("plan-id", "project-id", "variant-id"):
         validator.string(obj.get(field), f"$.{field}")
+    release_target_sha = obj.get("release-target-sha")
+    if release_target_sha is not None:
+        _sha_field(validator, release_target_sha, "$.release-target-sha")
     _proof_run(validator, obj.get("run"), "$.run")
     _artifact_receipt(validator, obj.get("artifact"), "$.artifact")
     attestation = validator.mapping(
@@ -2496,6 +2854,62 @@ def _github_release_asset_proof(
             )
 
 
+def _github_release_result(validator: _Validator, document: JsonObject) -> None:
+    """Validate `github-release-result.json`."""
+    obj = _header(
+        validator,
+        document,
+        "$",
+        api_version="three.release.github-release-result/v1alpha1",
+        kind="github-release-result",
+        required={
+            "tagName",
+            "targetSha",
+            "releaseId",
+            "releaseExisted",
+            "assets",
+        },
+    )
+    if obj is None:
+        return
+    validator.string(obj.get("tagName"), "$.tagName")
+    target_sha = obj.get("targetSha")
+    if validator.string(target_sha, "$.targetSha") and not _SHA_RE.match(
+        str(target_sha)
+    ):
+        validator.error("$.targetSha", "must be a 40-char lowercase hex SHA")
+    validator.integer(obj.get("releaseId"), "$.releaseId", minimum=0)
+    validator.boolean(obj.get("releaseExisted"), "$.releaseExisted")
+    assets = validator.array(obj.get("assets"), "$.assets")
+    if assets is None:
+        return
+    seen_names: set[str] = set()
+    for index, item in enumerate(assets):
+        asset = validator.mapping(
+            item,
+            f"$.assets[{index}]",
+            {"name", "size", "sha256"},
+        )
+        if asset is None:
+            continue
+        name = asset.get("name")
+        if validator.string(name, f"$.assets[{index}].name"):
+            if str(name) in seen_names:
+                validator.error(f"$.assets[{index}].name", "must be unique")
+            seen_names.add(str(name))
+        validator.integer(
+            asset.get("size"), f"$.assets[{index}].size", minimum=0
+        )
+        digest = asset.get("sha256")
+        if validator.string(
+            digest, f"$.assets[{index}].sha256"
+        ) and not _DIGEST_RE.match(str(digest)):
+            validator.error(
+                f"$.assets[{index}].sha256",
+                "must be a lowercase 64-hex digest",
+            )
+
+
 def _release_report(validator: _Validator, document: JsonObject) -> None:
     """Validate `release-report.json`."""
     obj = _header(
@@ -2508,26 +2922,43 @@ def _release_report(validator: _Validator, document: JsonObject) -> None:
     )
     if obj is None:
         return
-    _report_run(validator, obj.get("run"), "$.run")
-    _report_plan(validator, obj.get("plan"), "$.plan")
+    run = obj.get("run")
+    _report_run(validator, run, "$.run")
+    plan_summary = _report_plan(validator, obj.get("plan"), "$.plan")
     _report_artifacts(validator, obj.get("artifacts"), "$.artifacts")
     jobs = _report_jobs(validator, obj.get("jobs"), "$.jobs")
     _report_counts(validator, obj.get("counts"), "$.counts")
     artifacts = obj.get("artifacts")
     plan_job = jobs.get("plan") if jobs is not None else None
-    if (
+    run_succeeded = (
+        isinstance(run, Mapping) and run.get("conclusion") == "success"
+    )
+    plan_succeeded = (
         isinstance(plan_job, Mapping)
         and plan_job.get("conclusion") == "success"
-        and isinstance(artifacts, Mapping)
-    ):
-        for field in (
-            "execution-sets-artifact-name",
-            "entry-publish-handoff-artifact-name",
-        ):
-            if artifacts.get(field) is None:
+    )
+    if run_succeeded or plan_succeeded:
+        if isinstance(artifacts, Mapping):
+            for field in (
+                "plan-artifact-name",
+                "execution-sets-artifact-name",
+                "entry-publish-handoff-artifact-name",
+            ):
+                if artifacts.get(field) is None:
+                    validator.error(
+                        f"$.artifacts.{field}",
+                        "must be non-null after selector serialization",
+                    )
+        if isinstance(plan_summary, Mapping):
+            if plan_summary.get("plan-id") is None:
                 validator.error(
-                    f"$.artifacts.{field}",
-                    "must be non-null after selector serialization",
+                    "$.plan.plan-id",
+                    "must be non-null after successful run or planning",
+                )
+            if plan_summary.get("selected-project-ids") is None:
+                validator.error(
+                    "$.plan.selected-project-ids",
+                    "must be non-null after successful run or planning",
                 )
 
 
@@ -2553,7 +2984,7 @@ def _report_run(validator: _Validator, value: object, path: str) -> None:
         return
     for field in ("repository", "workflow", "head-sha", "conclusion"):
         validator.string(obj.get(field), f"{path}.{field}")
-    validator.enum(obj.get("profile"), f"{path}.profile", _PROFILES)
+    validator.enum(obj.get("profile"), f"{path}.profile", _REPORT_PROFILES)
     validator.integer(obj.get("run-id"), f"{path}.run-id", minimum=0)
     validator.integer(obj.get("run-attempt"), f"{path}.run-attempt", minimum=0)
     validator.boolean(obj.get("dry-run"), f"{path}.dry-run")
@@ -2564,16 +2995,21 @@ def _report_run(validator: _Validator, value: object, path: str) -> None:
     )
 
 
-def _report_plan(validator: _Validator, value: object, path: str) -> None:
+def _report_plan(
+    validator: _Validator, value: object, path: str
+) -> JsonObject | None:
     """Validate report plan summary."""
     obj = validator.mapping(value, path, {"plan-id", "selected-project-ids"})
     if obj is None:
-        return
+        return None
     _nullable_string(validator, obj.get("plan-id"), f"{path}.plan-id")
     if obj.get("selected-project-ids") is not None:
-        validator.string_array(
-            obj.get("selected-project-ids"), f"{path}.selected-project-ids"
+        _single_project_id_array(
+            validator,
+            obj.get("selected-project-ids"),
+            f"{path}.selected-project-ids",
         )
+    return obj
 
 
 def _report_artifacts(validator: _Validator, value: object, path: str) -> None:
@@ -2589,6 +3025,7 @@ def _report_artifacts(validator: _Validator, value: object, path: str) -> None:
     }
     arrays = {
         "build-result-artifact-names",
+        "github-release-result-artifact-names",
         "publish-result-artifact-names",
         "skip-result-artifact-names",
     }
@@ -2614,7 +3051,8 @@ def _report_jobs(
         "ensure-tag",
         "publish",
     }
-    obj = validator.mapping(value, path, required)
+    optional = {"release-completed-check"}
+    obj = validator.mapping(value, path, required, optional)
     if obj is None:
         return None
     for field in (
@@ -2625,6 +3063,12 @@ def _report_jobs(
         "ensure-tag",
     ):
         _conclusion_object(validator, obj.get(field), f"{path}.{field}")
+    if "release-completed-check" in obj:
+        _conclusion_object(
+            validator,
+            obj.get("release-completed-check"),
+            f"{path}.release-completed-check",
+        )
     build = validator.mapping(
         obj.get("build"), f"{path}.build", {"conclusion", "failed-variant-ids"}
     )
@@ -2676,13 +3120,7 @@ def _common_plan_fields(
 ) -> None:
     """Validate common request fields copied from the plan envelope."""
     validator.string(obj.get("plan-id"), f"{path}.plan-id")
-    commit_sha = obj.get("commit-sha")
-    if validator.string(commit_sha, f"{path}.commit-sha") and not _SHA_RE.match(
-        str(commit_sha)
-    ):
-        validator.error(
-            f"{path}.commit-sha", "must be a 40-char lowercase hex SHA"
-        )
+    _sha_field(validator, obj.get("commit-sha"), f"{path}.commit-sha")
     validator.enum(obj.get("profile"), f"{path}.profile", _PROFILES)
     if publish and obj.get("profile") not in _PROFILES:
         validator.error(f"{path}.profile", "is invalid")
@@ -2788,13 +3226,7 @@ def _proof_run(validator: _Validator, value: object, path: str) -> None:
         return
     for field in ("repository", "workflow"):
         validator.string(obj.get(field), f"{path}.{field}")
-    head = obj.get("head-sha")
-    if validator.string(head, f"{path}.head-sha") and not _SHA_RE.match(
-        str(head)
-    ):
-        validator.error(
-            f"{path}.head-sha", "must be a 40-char lowercase hex SHA"
-        )
+    _sha_field(validator, obj.get("head-sha"), f"{path}.head-sha")
     validator.integer(obj.get("run-id"), f"{path}.run-id", minimum=0)
     validator.integer(obj.get("run-attempt"), f"{path}.run-attempt", minimum=0)
     for field in ("live", "dry-run", "validation-only"):
@@ -2862,15 +3294,105 @@ def _string_map(
     return result
 
 
+def _integer_map(
+    validator: _Validator,
+    value: object,
+    path: str,
+    *,
+    minimum: int | None = None,
+) -> dict[str, int] | None:
+    """Validate a string-to-integer map."""
+    obj = _map(validator, value, path)
+    if obj is None:
+        return None
+    result: dict[str, int] = {}
+    for key, item in obj.items():
+        if validator.integer(item, f"{path}.{key}", minimum=minimum) and (
+            isinstance(item, int)
+        ):
+            result[str(key)] = int(item)
+    return result
+
+
+def _sha256_map(
+    validator: _Validator, value: object, path: str
+) -> dict[str, str] | None:
+    """Validate a string-to-SHA-256-digest map."""
+    obj = _map(validator, value, path)
+    if obj is None:
+        return None
+    result: dict[str, str] = {}
+    for key, item in obj.items():
+        if validator.string(item, f"{path}.{key}"):
+            digest = str(item)
+            if _DIGEST_RE.fullmatch(digest) is None:
+                validator.error(f"{path}.{key}", "must be a sha256 digest")
+            else:
+                result[str(key)] = digest
+    return result
+
+
+def _digest_evidence_map(
+    validator: _Validator, value: object, path: str
+) -> dict[str, dict[str, str]] | None:
+    """Validate a string-to-algorithm-digest map."""
+    obj = _map(validator, value, path)
+    if obj is None:
+        return None
+    result: dict[str, dict[str, str]] = {}
+    for key, item in obj.items():
+        digests = _map(validator, item, f"{path}.{key}")
+        if digests is None:
+            continue
+        entry: dict[str, str] = {}
+        for algorithm, digest_value in digests.items():
+            algorithm_name = str(algorithm)
+            validator.string(digest_value, f"{path}.{key}.{algorithm_name}")
+            digest = str(digest_value)
+            expected_length = {
+                "sha256": 64,
+                "sha384": 96,
+                "sha512": 128,
+            }.get(algorithm_name)
+            if expected_length is None:
+                validator.error(
+                    f"{path}.{key}.{algorithm_name}",
+                    "must use sha256, sha384, or sha512",
+                )
+            elif (
+                re.fullmatch(rf"[0-9a-f]{{{expected_length}}}", digest) is None
+            ):
+                validator.error(
+                    f"{path}.{key}.{algorithm_name}",
+                    f"must be a {algorithm_name} digest",
+                )
+            else:
+                entry[algorithm_name] = digest
+        if not entry:
+            validator.error(f"{path}.{key}", "must contain digest evidence")
+        result[str(key)] = entry
+    return result
+
+
 def _unique_sorted_strings(
     validator: _Validator, value: object, path: str
-) -> None:
+) -> list[str] | None:
     """Validate a unique lexicographically sorted string array."""
     items = validator.string_array(value, path)
     if items is None:
-        return
+        return None
     if items != sorted(set(items)):
         validator.error(path, "must be unique and lexicographically sorted")
+    return items
+
+
+def _single_project_id_array(
+    validator: _Validator, value: object, path: str
+) -> None:
+    """Validate the active release contract's single project-id array."""
+    items = _unique_sorted_strings(validator, value, path)
+    if items is not None and len(items) != 1:
+        validator.error(path, "must contain exactly one project id")
 
 
 def _unique_string_array(
@@ -2885,6 +3407,17 @@ def _unique_string_array(
     if len(items) != len(set(items)):
         validator.error(path, "must not contain duplicate values")
     return items
+
+
+def _require_unique_values(
+    validator: _Validator,
+    values: Mapping[str, str] | None,
+    path: str,
+    message: str,
+) -> None:
+    """Validate that a string map has no duplicate values."""
+    if values is not None and len(set(values.values())) != len(values):
+        validator.error(path, message)
 
 
 def _nullable_nonnegative_int(

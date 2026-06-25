@@ -156,10 +156,6 @@ _GITHUB_RELEASE_AND_RUBYGEMS_ORG_TARGETS = {
     "buddy": frozenset({"github-release/public", "rubygems/github-packages"}),
     "official": frozenset({"github-release/public", "rubygems/rubygems-org"}),
 }
-_GITHUB_RELEASE_AND_NUGET_ORG_TARGETS = {
-    "buddy": frozenset({"github-release/public", "nuget/github-packages"}),
-    "official": frozenset({"github-release/public", "nuget/nuget-org"}),
-}
 _ZERO_TARGETS = {
     "buddy": frozenset(),
     "official": frozenset(),
@@ -237,15 +233,9 @@ _RUBYGEMS_GITHUB_RELEASE_ARTIFACTS = {
     "buddy": {"github-release/public": _DEFAULT_RUBYGEMS_PACKAGE},
     "official": {"github-release/public": _DEFAULT_RUBYGEMS_PACKAGE},
 }
-_NUGET_ORG_ARTIFACTS = {
-    "buddy": {
-        "github-release/public": _DEFAULT_NUGET_PACKAGE,
-        "nuget/github-packages": _DEFAULT_NUGET_PACKAGE,
-    },
-    "official": {
-        "github-release/public": _DEFAULT_NUGET_PACKAGE,
-        "nuget/nuget-org": _DEFAULT_NUGET_PACKAGE,
-    },
+_NUGET_GITHUB_RELEASE_ARTIFACTS = {
+    "buddy": {"github-release/public": _DEFAULT_NUGET_PACKAGE},
+    "official": {"github-release/public": _DEFAULT_NUGET_PACKAGE},
 }
 _NPMJS_ARTIFACTS = {
     "buddy": {
@@ -265,16 +255,6 @@ _RUBYGEMS_ORG_ARTIFACTS = {
     "official": {
         "github-release/public": _DEFAULT_RUBYGEMS_PACKAGE,
         "rubygems/rubygems-org": _DEFAULT_RUBYGEMS_PACKAGE,
-    },
-}
-_GITHUB_PACKAGES_NUGET_ARTIFACTS = {
-    "buddy": {
-        "github-release/public": _DEFAULT_NUGET_PACKAGE,
-        "nuget/github-packages": _DEFAULT_NUGET_PACKAGE,
-    },
-    "official": {
-        "github-release/public": _DEFAULT_NUGET_PACKAGE,
-        "nuget/github-packages": _DEFAULT_NUGET_PACKAGE,
     },
 }
 _INSTALLER_ARTIFACTS = {
@@ -306,14 +286,9 @@ _TWO_EXECUTABLE_ARTIFACTS = {
 }
 _FROZEN_PROFILE_TARGETS_BY_PROJECT_ID = {
     "asciidoctor-latexmath": _GITHUB_RELEASE_AND_RUBYGEMS_ORG_TARGETS,
-    "circular-list": _GITHUB_RELEASE_AND_NUGET_ORG_TARGETS,
+    "circular-list": _GITHUB_RELEASE_ONLY_TARGETS,
     "hcoona-release-smoke": _ZERO_TARGETS,
-    "hcoona-release-smoke-github-packages": {
-        "buddy": frozenset({"github-release/public", "nuget/github-packages"}),
-        "official": frozenset(
-            {"github-release/public", "nuget/github-packages"}
-        ),
-    },
+    "hcoona-release-smoke-github-packages": _GITHUB_RELEASE_ONLY_TARGETS,
     "hcoona-release-smoke-dotnet-executable": _GITHUB_RELEASE_ONLY_TARGETS,
     "hcoona-release-smoke-inno": _GITHUB_RELEASE_ONLY_TARGETS,
     "hcoona-release-smoke-github-release": _GITHUB_RELEASE_ONLY_TARGETS,
@@ -325,10 +300,7 @@ _FROZEN_PROFILE_TARGETS_BY_PROJECT_ID = {
         "buddy": frozenset({"github-release/public", "npm/github-packages"}),
         "official": frozenset({"github-release/public", "npm/npmjs"}),
     },
-    "hcoona-release-smoke-nuget": {
-        "buddy": frozenset({"github-release/public", "nuget/github-packages"}),
-        "official": frozenset({"github-release/public", "nuget/nuget-org"}),
-    },
+    "hcoona-release-smoke-nuget": _GITHUB_RELEASE_ONLY_TARGETS,
     "hcoona-release-smoke-pypi": _GITHUB_RELEASE_AND_PYPI_TARGETS,
     "hcoona-release-smoke-rubygems": _GITHUB_RELEASE_AND_RUBYGEMS_ORG_TARGETS,
     "hcoona-release-smoke-wxt": _GITHUB_RELEASE_ONLY_TARGETS,
@@ -336,60 +308,56 @@ _FROZEN_PROFILE_TARGETS_BY_PROJECT_ID = {
         "buddy": frozenset({"github-release/public", "npm/github-packages"}),
         "official": frozenset({"github-release/public", "npm/npmjs"}),
     },
-    "hjg-pngcs": _GITHUB_RELEASE_AND_NUGET_ORG_TARGETS,
+    "hjg-pngcs": _GITHUB_RELEASE_ONLY_TARGETS,
     "image-occlusion-editor": _GITHUB_RELEASE_ONLY_TARGETS,
     "markdown-hybrid-search-mcp": _ZERO_TARGETS,
-    "memoization": _GITHUB_RELEASE_AND_NUGET_ORG_TARGETS,
+    "memoization": _GITHUB_RELEASE_ONLY_TARGETS,
     "memoization-generators": _ZERO_TARGETS,
-    "microsoft-extensions-logging-mstest": (
-        _GITHUB_RELEASE_AND_NUGET_ORG_TARGETS
-    ),
-    "microsoft-extensions-logging-xunit": (
-        _GITHUB_RELEASE_AND_NUGET_ORG_TARGETS
-    ),
+    "microsoft-extensions-logging-mstest": (_GITHUB_RELEASE_ONLY_TARGETS),
+    "microsoft-extensions-logging-xunit": (_GITHUB_RELEASE_ONLY_TARGETS),
     "microsoft-extensions-options-dedup-change-extensions": (
-        _GITHUB_RELEASE_AND_NUGET_ORG_TARGETS
+        _GITHUB_RELEASE_ONLY_TARGETS
     ),
     "nbgv-python": _GITHUB_RELEASE_ONLY_TARGETS,
-    "phi-failure-detector": _GITHUB_RELEASE_AND_NUGET_ORG_TARGETS,
+    "phi-failure-detector": _GITHUB_RELEASE_ONLY_TARGETS,
     "phi-failure-detector-console": _GITHUB_RELEASE_ONLY_TARGETS,
     "qidian-novel-downloader": _GITHUB_RELEASE_ONLY_TARGETS,
     "steam-account-history-to-csv": _GITHUB_RELEASE_ONLY_TARGETS,
     "vscode-copilot-telegram-hook": _GITHUB_RELEASE_ONLY_TARGETS,
-    "webhdfs-extensions-file-providers": _GITHUB_RELEASE_AND_NUGET_ORG_TARGETS,
+    "webhdfs-extensions-file-providers": _GITHUB_RELEASE_ONLY_TARGETS,
 }
 _FROZEN_TARGET_ARTIFACT_SEMANTICS_BY_PROJECT_ID = {
     "asciidoctor-latexmath": _RUBYGEMS_ORG_ARTIFACTS,
-    "circular-list": _NUGET_ORG_ARTIFACTS,
+    "circular-list": _NUGET_GITHUB_RELEASE_ARTIFACTS,
     "hcoona-release-smoke": _NO_ARTIFACTS,
     "hcoona-release-smoke-dotnet-executable": (_WIN_X64_EXECUTABLE_ARTIFACTS),
-    "hcoona-release-smoke-github-packages": _GITHUB_PACKAGES_NUGET_ARTIFACTS,
+    "hcoona-release-smoke-github-packages": _NUGET_GITHUB_RELEASE_ARTIFACTS,
     "hcoona-release-smoke-github-release": _GITHUB_RELEASE_ARTIFACTS,
     "hcoona-release-smoke-inno": _INSTALLER_ARTIFACTS,
     "hcoona-release-smoke-npm": _NPMJS_ARTIFACTS,
     "hcoona-release-smoke-npm-dual": _NPMJS_ARTIFACTS,
-    "hcoona-release-smoke-nuget": _NUGET_ORG_ARTIFACTS,
+    "hcoona-release-smoke-nuget": _NUGET_GITHUB_RELEASE_ARTIFACTS,
     "hcoona-release-smoke-pypi": _PYTHON_ARTIFACTS,
     "hcoona-release-smoke-rubygems": _RUBYGEMS_ORG_ARTIFACTS,
     "hcoona-release-smoke-wxt": _BROWSER_ZIP_WITH_SOURCE_ARTIFACTS,
     "hexo-renderer-asciidoc": _NPMJS_ARTIFACTS,
-    "hjg-pngcs": _NUGET_ORG_ARTIFACTS,
+    "hjg-pngcs": _NUGET_GITHUB_RELEASE_ARTIFACTS,
     "image-occlusion-editor": _INSTALLER_ARTIFACTS,
     "markdown-hybrid-search-mcp": _NO_ARTIFACTS,
-    "memoization": _NUGET_ORG_ARTIFACTS,
+    "memoization": _NUGET_GITHUB_RELEASE_ARTIFACTS,
     "memoization-generators": _NO_ARTIFACTS,
-    "microsoft-extensions-logging-mstest": _NUGET_ORG_ARTIFACTS,
-    "microsoft-extensions-logging-xunit": _NUGET_ORG_ARTIFACTS,
+    "microsoft-extensions-logging-mstest": _NUGET_GITHUB_RELEASE_ARTIFACTS,
+    "microsoft-extensions-logging-xunit": _NUGET_GITHUB_RELEASE_ARTIFACTS,
     "microsoft-extensions-options-dedup-change-extensions": (
-        _NUGET_ORG_ARTIFACTS
+        _NUGET_GITHUB_RELEASE_ARTIFACTS
     ),
     "nbgv-python": _PYTHON_GITHUB_RELEASE_ARTIFACTS,
-    "phi-failure-detector": _NUGET_ORG_ARTIFACTS,
+    "phi-failure-detector": _NUGET_GITHUB_RELEASE_ARTIFACTS,
     "phi-failure-detector-console": _THREE_EXECUTABLE_ARTIFACTS,
     "qidian-novel-downloader": _THREE_EXECUTABLE_ARTIFACTS,
     "steam-account-history-to-csv": _BROWSER_ZIP_WITH_SOURCE_ARTIFACTS,
     "vscode-copilot-telegram-hook": _TWO_EXECUTABLE_ARTIFACTS,
-    "webhdfs-extensions-file-providers": _NUGET_ORG_ARTIFACTS,
+    "webhdfs-extensions-file-providers": _NUGET_GITHUB_RELEASE_ARTIFACTS,
 }
 _PROJECT_ECOSYSTEMS = {"dotnet", "python", "node", "ruby"}
 _RELEASE_KINDS = {"lib", "app", "tool", "extension", "generator"}
@@ -458,7 +426,7 @@ _CAPABILITY_ASSIGNMENTS = {
         "version-uniqueness-rule": "package-name-plus-version",
         "profile-coexistence-rule": "requires-distinct-name",
         "credential-posture": "oidc",
-        "publish-topology": "external-oidc-entry-workflow",
+        "publish-topology": "external-oidc-reusable-workflow",
     },
     ("npm", "registry.npmjs.org"): {
         "mutability": "immutable",
@@ -466,7 +434,7 @@ _CAPABILITY_ASSIGNMENTS = {
         "version-uniqueness-rule": "package-name-plus-version",
         "profile-coexistence-rule": "requires-distinct-name",
         "credential-posture": "oidc",
-        "publish-topology": "external-oidc-entry-workflow",
+        "publish-topology": "external-oidc-caller-workflow",
     },
     ("npm", "npm.pkg.github.com"): {
         "mutability": "immutable",

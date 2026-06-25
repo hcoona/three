@@ -182,6 +182,14 @@
           },
           {
             "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_metadata_paths_are_fact_provider_tooling"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_active_release_helper_paths_are_tooling"
+          },
+          {
+            "type": "test",
             "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_build_execution_scope_covers_build_subjects"
           }
         ],
@@ -189,6 +197,14 @@
           {
             "type": "test",
             "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_workflow_release_project_paths_are_tooling"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_active_release_helper_paths_are_tooling"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
           }
         ],
         "aggregate-or-verdict": [
@@ -223,30 +239,66 @@
           {
             "type": "path",
             "value": "docs/wiki/analyses/workflow-release-ci-affected-validation-low-level-design.md"
+          },
+          {
+            "type": "path",
+            "value": ".github/workflows/docs/DESIGN.v2.md"
+          },
+          {
+            "type": "path",
+            "value": ".github/workflows/REFACTOR_PLAN.md"
           }
         ],
         "planning-evidence": [
           {
             "type": "test",
             "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_global_tooling_obligations_have_source_impacts"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_workflow_governance_markdown_as_tooling"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_bootstrap_codeowners_covers_release_governance_surface"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
             "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_global_tooling_obligations_have_source_impacts"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_workflow_governance_markdown_as_tooling"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_uses_event_scoped_concurrency"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
             "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_global_tooling_obligations_have_source_impacts"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-planner/tests/test_planner.py::test_ci_validation_plans_workflow_governance_markdown_as_tooling"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_bootstrap_codeowners_validation_fails_closed_without_coverage"
           }
         ],
         "no-publication-boundary": [
           {
             "type": "workflow",
             "value": ".github/workflows/ci.yml"
+          },
+          {
+            "type": "path",
+            "value": ".github/CODEOWNERS"
           },
           {
             "type": "test",
@@ -1583,10 +1635,6 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_ci_validation_descriptor_mapping_uses_scoped_planned_obligations"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_descriptor_mapping_uses_scoped_planned_obligations"
           }
         ],
         "execution-evidence": [
@@ -1872,11 +1920,11 @@
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_batch_evidence_writer_isolates_matrix_legs"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_release_shaped_batch_rejects_missing_obligation_results"
           },
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_batch_evidence_writer_isolates_matrix_legs"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_release_shaped_batch_rejects_obligation_detail_plan_mismatch"
           }
         ],
         "no-publication-boundary": [
@@ -1910,11 +1958,11 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_batch_evidence_writer_isolates_matrix_legs"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_freeze_rejects_non_null_ecosystem_for_non_ecosystem_work"
           },
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_batch_evidence_writer_isolates_matrix_legs"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_freeze_rejects_descriptor_ecosystem_mismatched_owner"
           }
         ],
         "execution-evidence": [
@@ -2014,23 +2062,23 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_batch_evidence_writer_isolates_matrix_legs"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_descriptor_validation_rejects_mismatched_obligation"
           },
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_batch_evidence_writer_isolates_matrix_legs"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_descriptor_validation_rejects_evidence_field_mismatch"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_batch_evidence_writer_isolates_matrix_legs"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_execution_batch_manifest_rejects_cross_group_evidence"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_batch_evidence_writer_isolates_matrix_legs"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_aggregate_summary_rejects_forged_work_group_failure_source"
           }
         ],
         "no-publication-boundary": [
@@ -2064,23 +2112,27 @@
         "planning-evidence": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_batch_evidence_writer_isolates_matrix_legs"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_validate_plan_rejects_missing_obligation_ids"
           },
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_batch_evidence_writer_isolates_matrix_legs"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_validate_plan_rejects_unresolved_artifact_validation_obligation_id"
           }
         ],
         "execution-evidence": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_batch_evidence_writer_isolates_matrix_legs"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_executable_plan_rejects_mismatched_binding_fields"
           }
         ],
         "aggregate-or-verdict": [
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_batch_evidence_writer_isolates_matrix_legs"
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_obligation_source_impacts_must_resolve_to_classification"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_plans.py::test_executable_obligations_are_verdict_relevant"
           }
         ],
         "no-publication-boundary": [
@@ -2987,10 +3039,6 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_ci_batch_aggregation_fails_closed_for_unexpected_artifact"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_batch_aggregation_fails_closed_for_unexpected_artifact"
           }
         ],
         "no-publication-boundary": [
@@ -3038,10 +3086,6 @@
           }
         ],
         "aggregate-or-verdict": [
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_batch_aggregation_fails_closed_for_unexpected_artifact"
-          },
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_ci_batch_aggregation_fails_closed_for_unexpected_artifact"
@@ -3221,10 +3265,6 @@
           {
             "type": "test",
             "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_public_validator_rejects_admitted_cross_batch_dependency_no_evidence"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_requires_transitive_dependency_bundles"
           }
         ],
         "no-publication-boundary": [
@@ -4077,10 +4117,6 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_exposes_control_plane_boundaries"
-          },
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_exposes_control_plane_boundaries"
           }
         ],
         "execution-evidence": [
@@ -4124,10 +4160,6 @@
           }
         ],
         "planning-evidence": [
-          {
-            "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_exposes_control_plane_boundaries"
-          },
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_ci_validation_workflow_exposes_control_plane_boundaries"

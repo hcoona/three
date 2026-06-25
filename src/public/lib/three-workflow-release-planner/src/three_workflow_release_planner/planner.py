@@ -36,7 +36,11 @@ from three_workflow_release_contracts.contracts import (
 
 Json = dict[str, object]
 RemoteObservation = Literal[
-    "absent", "exact-satisfied", "partial", "conflicting"
+    "absent",
+    "exact-satisfied",
+    "partial",
+    "partial-authoritative",
+    "conflicting",
 ]
 _TOPOLOGIES = (
     "external-oidc-caller-workflow",
@@ -44,7 +48,8 @@ _TOPOLOGIES = (
     "external-oidc-reusable-workflow",
     "github-token",
 )
-_SIGNER_WORKFLOW = "hcoona/three/.github/workflows/release-publish-node.yml"
+_MIN_GITHUB_RELEASE_GROUP_SIZE = 2
+_SIGNER_WORKFLOW = "hcoona/three/.github/workflows/release-orchestrate.yml"
 _PYPI_NAME_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
 _NPM_NAME_RE = re.compile(r"^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$")
 _GEM_NAME_RE = re.compile(r"^[a-z0-9._-]+$")
@@ -61,6 +66,7 @@ class PlannerInputs:
     dotnet_metadata: Mapping[str, object] | None = None
     remote_observations: Mapping[str, RemoteObservation] | None = None
     official_frozen_versions: Mapping[str, Sequence[str]] | None = None
+    deactivate_buddy_github_release: bool = False
 
 
 class PlannerError(ValueError):
@@ -114,18 +120,6 @@ def plan_release(
                 "request",
                 "planner request violates the closed contract",
                 details={"issues": [issue.message for issue in exc.issues]},
-            )
-        )
-    profile = str(inputs.request.get("profile", ""))
-    force = _request_force(inputs.request)
-    if profile == "official" and force:
-        diagnostics.append(
-            _diagnostic(
-                "REQ_FORCE_FOR_OFFICIAL",
-                "validation",
-                "request",
-                "force is not valid for official planning",
-                details={},
             )
         )
     selected_project_ids = _selected_project_ids(
@@ -190,9 +184,6 @@ class _PlanBuilder:
         self.project_snapshots: dict[str, Json] = {}
         self.artifact_ids_by_descriptor: dict[tuple[str, str], str] = {}
         self.variant_ids_by_descriptor: dict[tuple[str, str], str] = {}
-        self.pypi_filenames_by_project: dict[
-            tuple[str, str, tuple[str, ...]], Mapping[str, str]
-        ] = {}
         self.rubygems_metadata_by_project: dict[
             str, Mapping[str, str] | None
         ] = {}
@@ -218,6 +209,9 @@ class _PlanBuilder:
             raise PlannerError(self.diagnostics)
         for project_id in self.selected_project_ids:
             self._add_project(self.snapshot.projects[project_id])
+        if self.diagnostics:
+            raise PlannerError(self.diagnostics)
+        self._apply_github_release_group_publish_policy()
         if self.diagnostics:
             raise PlannerError(self.diagnostics)
         plan_id = _plan_id(
@@ -362,7 +356,7 @@ class _PlanBuilder:
                     )
         return conflicts
 
-    def _add_project(self, project: ProjectDescriptor) -> None:
+    def _add_project(self, project: ProjectDescriptor) -> None:  # noqa: C901
         version = self._resolved_version(project)
         if version is None:
             return
@@ -434,12 +428,28 @@ class _PlanBuilder:
                         for companion in artifact.companions
                     ]
             project_variant_ids.append(variant_id)
+        deactivated_buddy_github_release = False
         for index, target in enumerate(
             project.profiles[str(self.inputs.request["profile"])]
         ):
+            if self._is_deactivated_buddy_github_release(target):
+                deactivated_buddy_github_release = True
+                continue
             node_id = self._add_publish_node(project, target, index, version)
             if node_id is not None:
                 project_publish_node_ids.append(node_id)
+        if deactivated_buddy_github_release:
+            self.diagnostics.append(
+                _diagnostic(
+                    "IMMUTABLE_PROOF_UNAVAILABLE",
+                    "classification",
+                    "project",
+                    "buddy GitHub Release publishing is unsupported while "
+                    "attestations are disabled",
+                    project_id=project.project_id,
+                    details={"target": "github-release/public"},
+                )
+            )
         self.project_snapshots[project.project_id] = {
             "display-name": project.display_name,
             "ecosystem": project.ecosystem,
@@ -455,6 +465,18 @@ class _PlanBuilder:
             "variant-ids": sorted(project_variant_ids),
             "publish-node-ids": sorted(project_publish_node_ids),
         }
+
+    def _is_deactivated_buddy_github_release(
+        self,
+        target: TargetUsage,
+    ) -> bool:
+        """Return whether orchestration suppresses buddy GitHub Release."""
+        if not self.inputs.deactivate_buddy_github_release:
+            return False
+        if self.inputs.request["profile"] != "buddy":
+            return False
+        instance = self.snapshot.target_instances[target.uses]
+        return instance.family == "github-release"
 
     def _add_publish_node(
         self,
@@ -474,8 +496,17 @@ class _PlanBuilder:
         )
         if identity is None:
             return None
+        projection_version = version
+        identity_version = identity.get("version")
+        if isinstance(identity_version, str) and instance.family in {
+            "nuget",
+            "pypi",
+            "npm",
+            "rubygems",
+        }:
+            projection_version = identity_version
         projection = self._projection(
-            project, target, instance, version, artifact_ids
+            project, target, instance, projection_version, artifact_ids
         )
         if projection is None:
             return None
@@ -508,6 +539,14 @@ class _PlanBuilder:
         }
         if disposition[0] == "publish":
             node["publish-mode"] = disposition[1]
+            if disposition[1] == "overwrite-mutable":
+                node["overwrite-mutable-authorization"] = {
+                    "kind": "planner-validated-buddy-force",
+                    "profile": "buddy",
+                    "force": True,
+                    "remote-observation": "partial",
+                    "mutability": "mutable-prerelease",
+                }
         if instance.family == "github-release":
             node["desired-publish-state"] = {
                 "release-state": "release"
@@ -517,6 +556,81 @@ class _PlanBuilder:
             node["attestation"] = {"signer-workflow": _SIGNER_WORKFLOW}
         self.publish_nodes[node_id] = node
         return node_id
+
+    def _apply_github_release_group_publish_policy(self) -> None:
+        groups: dict[tuple[str, str], dict[str, Json]] = {}
+        for node_id, node in self.publish_nodes.items():
+            group_key = self._github_release_group_key(node)
+            if group_key is None:
+                continue
+            groups.setdefault(group_key, {})[node_id] = node
+        for group_nodes in groups.values():
+            if len(group_nodes) < _MIN_GITHUB_RELEASE_GROUP_SIZE:
+                continue
+            active_nodes = {
+                node_id: node
+                for node_id, node in group_nodes.items()
+                if node.get("publish-disposition") == "publish"
+            }
+            if not active_nodes:
+                continue
+            publish_modes = {
+                str(node["publish-mode"])
+                for node in active_nodes.values()
+                if isinstance(node.get("publish-mode"), str)
+            }
+            if len(publish_modes) != 1:
+                self._record_github_release_group_mode_conflict(group_nodes)
+
+    def _github_release_group_key(
+        self,
+        node: Mapping[str, object],
+    ) -> tuple[str, str] | None:
+        snapshot_id = node.get("target-instance-snapshot-id")
+        if not isinstance(snapshot_id, str):
+            return None
+        instance = self.snapshot.target_instances.get(snapshot_id)
+        if instance is None or instance.family != "github-release":
+            return None
+        identity = node.get("resolved-publish-identity")
+        release_tag = (
+            identity.get("release-tag")
+            if isinstance(identity, Mapping)
+            else None
+        )
+        if not isinstance(release_tag, str) or not release_tag:
+            return None
+        return snapshot_id, release_tag
+
+    def _record_github_release_group_mode_conflict(
+        self,
+        group_nodes: Mapping[str, Mapping[str, object]],
+    ) -> None:
+        for node_id, node in sorted(group_nodes.items()):
+            identity = node.get("resolved-publish-identity")
+            snapshot_id = node.get("target-instance-snapshot-id")
+            self.diagnostics.append(
+                _diagnostic(
+                    "REMOTE_CONFLICTING",
+                    "classification",
+                    "publish-node",
+                    "same-release GitHub Release siblings require one "
+                    "publish mode",
+                    project_id=str(node.get("project-id")),
+                    publish_node_id=node_id,
+                    target_instance_snapshot_id=(
+                        str(snapshot_id)
+                        if isinstance(snapshot_id, str)
+                        else None
+                    ),
+                    resolved_publish_identity=(
+                        dict(identity) if isinstance(identity, Mapping) else {}
+                    ),
+                    details={
+                        "same-release-publish-node-ids": sorted(group_nodes),
+                    },
+                )
+            )
 
     def _snapshot_target(self, instance: TargetInstance) -> None:
         if instance.catalog_ref in self.target_snapshots:
@@ -591,15 +705,15 @@ class _PlanBuilder:
         return None
 
     def _nbgv_version(self, project: ProjectDescriptor) -> str | None:
-        dotnet = shutil.which("dotnet") or "dotnet"
+        nbgv = os.environ.get("THREE_WORKFLOW_RELEASE_NBGV_PATH")
+        if nbgv is not None:
+            nbgv = nbgv.strip()
+        if not nbgv:
+            nbgv = shutil.which("nbgv") or "nbgv"
         try:
             result = subprocess.run(  # noqa: S603
                 [
-                    dotnet,
-                    "tool",
-                    "run",
-                    "nbgv",
-                    "--",
+                    nbgv,
                     "get-version",
                     str(self.inputs.request["commit-sha"]),
                     "-p",
@@ -737,7 +851,7 @@ class _PlanBuilder:
         target: TargetUsage,
         instance: TargetInstance,
         version: str,
-        artifact_ids: Sequence[str],
+        _artifact_ids: Sequence[str],
     ) -> Json | None:
         if instance.family == "github-release":
             return {"release-tag": f"release/{project.project_id}/v{version}"}
@@ -748,9 +862,7 @@ class _PlanBuilder:
             instance.family == "pypi"
             and project.version_authority_kind == "build-system-nbgv"
         ):
-            pypi_version = self._pypi_identity_version(
-                project, version, artifact_ids
-            )
+            pypi_version = self._pypi_identity_version(project, version)
             if pypi_version is None:
                 return None
             version = pypi_version
@@ -869,13 +981,14 @@ class _PlanBuilder:
                     ]
                     if isinstance(label, str):
                         labels[key] = label
-            return {
+            projection: dict[str, object] = {
                 "asset-names-by-artifact-id": dict(sorted(names.items())),
                 "asset-labels-by-artifact-id": dict(sorted(labels.items())),
             }
+            return projection
         if instance.family in {"nuget", "pypi", "npm", "rubygems"}:
             filenames = self._final_distribution_filenames(
-                project, version, artifact_ids, instance
+                project, target, version, artifact_ids, instance
             )
             if filenames is None:
                 return None
@@ -909,20 +1022,25 @@ class _PlanBuilder:
     def _final_distribution_filenames(
         self,
         project: ProjectDescriptor,
+        target: TargetUsage,
         version: str,
         artifact_ids: Sequence[str],
         instance: TargetInstance,
     ) -> Mapping[str, str] | None:
         if instance.family == "pypi":
-            pypi_names = self._pypi_filenames(project, version, artifact_ids)
-            if pypi_names is None:
-                return None
             return {
-                artifact_id: pypi_names[
-                    str(self.artifacts[artifact_id]["concrete-kind"])
-                ]
+                artifact_id: self._artifact_filename(
+                    project, artifact_id, version, artifact_ids
+                )
+                or ""
                 for artifact_id in artifact_ids
             }
+        if instance.family == "npm":
+            package_name = self._npm_target_package_name(project, target)
+            if not isinstance(package_name, str) or not package_name:
+                return dict.fromkeys(artifact_ids, "")
+            base = _npm_pack_filename_base(package_name)
+            return dict.fromkeys(artifact_ids, f"{base}-{version}.tgz")
         return {
             artifact_id: self._artifact_filename(
                 project, artifact_id, version, artifact_ids
@@ -931,68 +1049,20 @@ class _PlanBuilder:
             for artifact_id in artifact_ids
         }
 
-    def _pypi_filenames(
-        self,
-        project: ProjectDescriptor,
-        version: str,
-        artifact_ids: Sequence[str],
-    ) -> Mapping[str, str] | None:
-        expected = {
-            str(self.artifacts[artifact_id]["concrete-kind"])
-            for artifact_id in artifact_ids
-        }
-        cache_key = (project.project_id, version, tuple(sorted(expected)))
-        cached = self.pypi_filenames_by_project.get(cache_key)
-        if cached is None:
-            cached = self._compute_pypi_filenames(project, expected)
-            if cached is None:
-                return None
-            self.pypi_filenames_by_project[cache_key] = cached
-        if not expected <= set(cached):
-            self._record_pypi_filename_failure(
-                project,
-                "build output did not contain every expected distribution kind",
-                expected=sorted(expected),
-                actual=sorted(cached),
-            )
-            return None
-        return cached
-
     def _pypi_identity_version(
         self,
         project: ProjectDescriptor,
         version: str,
-        artifact_ids: Sequence[str],
     ) -> str | None:
-        filenames = self._pypi_filenames(project, version, artifact_ids)
-        if filenames is None:
-            return None
-        wheel = filenames.get("wheel")
-        sdist = filenames.get("sdist")
-        if wheel is None:
+        pep440_version = _pep440_from_semver2(version)
+        if pep440_version is None:
             self._record_pypi_filename_failure(
                 project,
-                "build output did not contain a wheel name",
-                actual=sorted(filenames),
+                "build-system NBGV version could not be projected to PEP 440",
+                version=version,
             )
             return None
-        wheel_version = self._pypi_wheel_version(project, wheel)
-        sdist_version = (
-            self._pypi_sdist_version(project, sdist)
-            if sdist is not None
-            else wheel_version
-        )
-        if wheel_version is None or wheel_version != sdist_version:
-            self._record_pypi_filename_failure(
-                project,
-                "build output did not contain a consistent PyPI version",
-                wheel=wheel,
-                sdist=sdist,
-                wheel_version=wheel_version,
-                sdist_version=sdist_version,
-            )
-            return None
-        return wheel_version
+        return pep440_version
 
     def _pypi_wheel_version(
         self, project: ProjectDescriptor, filename: str
@@ -1023,69 +1093,6 @@ class _PlanBuilder:
                 version = stem[len(marker) :]
                 return version or None
         return None
-
-    def _compute_pypi_filenames(
-        self, project: ProjectDescriptor, expected_kinds: set[str]
-    ) -> Mapping[str, str] | None:
-        if "wheel" not in expected_kinds:
-            self._record_pypi_filename_failure(
-                project,
-                "PyPI publish nodes must include a wheel artifact",
-                expected=sorted(expected_kinds),
-            )
-            return None
-        build_dir = (
-            self._runtime_dir()
-            / "pypi-filenames"
-            / _digest(
-                {
-                    "project-id": project.project_id,
-                    "manifest": project.primary_manifest_path,
-                }
-            )
-        ).resolve()
-        checkout_dir = self._materialize_pypi_build_checkout(project)
-        if checkout_dir is None:
-            return None
-        shutil.rmtree(build_dir, ignore_errors=True)
-        build_dir.mkdir(parents=True, exist_ok=True)
-        uv = shutil.which("uv") or "uv"
-        build_args = [
-            uv,
-            "build",
-            "--out-dir",
-            str(build_dir),
-            "--no-create-gitignore",
-            "--clear",
-            project.release_root,
-        ]
-        if "wheel" in expected_kinds:
-            build_args.insert(2, "--wheel")
-        if "sdist" in expected_kinds:
-            build_args.insert(3, "--sdist")
-        try:
-            try:
-                result = subprocess.run(  # noqa: S603
-                    build_args,
-                    cwd=checkout_dir,
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                )
-            except OSError as exc:
-                self._record_pypi_filename_failure(project, str(exc))
-                return None
-            if result.returncode != 0:
-                self._record_pypi_filename_failure(
-                    project, result.stderr.strip() or result.stdout.strip()
-                )
-                return None
-            return self._read_pypi_build_outputs(
-                project, build_dir, expected_kinds
-            )
-        finally:
-            shutil.rmtree(build_dir, ignore_errors=True)
-            self._remove_pypi_build_checkout(checkout_dir)
 
     def _materialize_pypi_build_checkout(
         self,
@@ -1160,39 +1167,6 @@ class _PlanBuilder:
                 text=True,
             )
 
-    def _read_pypi_build_outputs(
-        self,
-        project: ProjectDescriptor,
-        build_dir: Path,
-        expected_kinds: set[str],
-    ) -> Mapping[str, str] | None:
-        wheels = sorted(path.name for path in build_dir.glob("*.whl"))
-        sdists = sorted(path.name for path in build_dir.glob("*.tar.gz"))
-        if (
-            len(wheels) != 1
-            or ("sdist" in expected_kinds and len(sdists) != 1)
-            or ("sdist" not in expected_kinds and len(sdists) > 1)
-        ):
-            self._record_pypi_filename_failure(
-                project,
-                "build output did not contain expected PyPI distributions",
-                wheels=wheels,
-                sdists=sdists,
-                expected=sorted(expected_kinds),
-            )
-            return None
-        if self._pypi_wheel_version(project, wheels[0]) is None:
-            self._record_pypi_filename_failure(
-                project,
-                "build output wheel must be a py3-none-any distribution",
-                wheel=wheels[0],
-            )
-            return None
-        result = {"wheel": wheels[0]}
-        if "sdist" in expected_kinds:
-            result["sdist"] = sdists[0]
-        return result
-
     def _record_pypi_filename_failure(
         self,
         project: ProjectDescriptor,
@@ -1210,12 +1184,12 @@ class _PlanBuilder:
             )
         )
 
-    def _artifact_filename(  # noqa: C901, PLR0911
+    def _artifact_filename(  # noqa: C901, PLR0911, PLR0912
         self,
         project: ProjectDescriptor,
         artifact_id: str,
         version: str,
-        context_artifact_ids: Sequence[str] | None = None,
+        _context_artifact_ids: Sequence[str] | None = None,
     ) -> str | None:
         artifact = self.artifacts[artifact_id]
         concrete = str(artifact["concrete-kind"])
@@ -1225,15 +1199,14 @@ class _PlanBuilder:
         if concrete == "snupkg" and package_name:
             return f"{package_name}.{version}.snupkg"
         if concrete == "wheel" and package_name:
-            names = self._pypi_filenames(
-                project, version, context_artifact_ids or [artifact_id]
-            )
-            return names.get("wheel") if names is not None else None
+            if project.version_authority_kind == "build-system-nbgv":
+                version = _pep440_from_semver2(version) or version
+            distribution = _wheel_distribution_name(package_name)
+            return f"{distribution}-{version}-py3-none-any.whl"
         if concrete == "sdist" and package_name:
-            names = self._pypi_filenames(
-                project, version, context_artifact_ids or [artifact_id]
-            )
-            return names.get("sdist") if names is not None else None
+            if project.version_authority_kind == "build-system-nbgv":
+                version = _pep440_from_semver2(version) or version
+            return f"{_wheel_distribution_name(package_name)}-{version}.tar.gz"
         if concrete == "npm-package" and package_name:
             base = _npm_pack_filename_base(package_name)
             return f"{base}-{version}.tgz"
@@ -1377,25 +1350,11 @@ class _PlanBuilder:
         if observation == "absent":
             return ("publish", "create-only")
         if (
-            observation == "partial"
+            observation == "partial-authoritative"
             and instance.family == "github-release"
             and self.inputs.request["profile"] == "official"
         ):
-            self.diagnostics.append(
-                _diagnostic(
-                    "REMOTE_CONFLICTING",
-                    "classification",
-                    "publish-node",
-                    "GitHub Release partial publication requires manual "
-                    "reconciliation before official replay",
-                    project_id=project.project_id,
-                    publish_node_id=node_id,
-                    target_instance_snapshot_id=instance.catalog_ref,
-                    resolved_publish_identity=dict(identity),
-                    details={"remote-observation": observation},
-                )
-            )
-            return None
+            return ("publish", "replace-authoritative")
         if (
             observation == "partial"
             and self.inputs.request["profile"] == "buddy"
@@ -1750,8 +1709,20 @@ def _selected_project_ids(
     requested = request.get("requested-project-ids")
     if not isinstance(requested, list):
         return ()
-    if not requested:
-        return tuple(sorted(snapshot.projects))
+    if len(requested) != 1:
+        diagnostics.append(
+            _diagnostic(
+                "REQ_INVALID_INPUT",
+                "validation",
+                "request",
+                "requested-project-ids must contain exactly one project",
+                details={
+                    "requested-project-count": len(requested),
+                    "deferred-scope": "multi-project-selection",
+                },
+            )
+        )
+        return ()
     selected: list[str] = []
     for item in requested:
         if not isinstance(item, str) or item not in snapshot.projects:
@@ -1865,6 +1836,50 @@ def _sdist_distribution_name_prefixes(name: str) -> tuple[str, ...]:
             )
         )
     )
+
+
+def _pep440_from_semver2(version: str) -> str | None:  # noqa: C901
+    """Project a build-system NBGV SemVer2 string into a PEP 440 identity."""
+    public, _plus, local = version.partition("+")
+    release, separator, prerelease = public.partition("-")
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", release):
+        return None
+    pep440 = release
+    if separator:
+        parts = prerelease.split(".")
+        if not parts or any(not part for part in parts):
+            return None
+        head = parts[0].lower()
+        tail = parts[1:]
+        if head in {"alpha", "a"} and tail and tail[0].isdigit():
+            pep440 += f"a{tail[0]}"
+            tail = tail[1:]
+        elif head in {"beta", "b"} and tail and tail[0].isdigit():
+            pep440 += f"b{tail[0]}"
+            tail = tail[1:]
+        elif head in {"rc"} and tail and tail[0].isdigit():
+            pep440 += f"rc{tail[0]}"
+            tail = tail[1:]
+        elif head == "dev" and tail and tail[0].isdigit():
+            pep440 += f".dev{tail[0]}"
+            tail = tail[1:]
+        elif head == "post" and tail and tail[0].isdigit():
+            pep440 += f".post{tail[0]}"
+            tail = tail[1:]
+        else:
+            pep440 += "." + ".".join(["dev", *parts])
+            tail = []
+        if tail:
+            pep440 += "+" + ".".join(_pep440_local_part(part) for part in tail)
+    if local:
+        pep440 += ("+" if "+" not in pep440 else ".") + ".".join(
+            _pep440_local_part(part) for part in local.split(".") if part
+        )
+    return pep440
+
+
+def _pep440_local_part(part: str) -> str:
+    return re.sub(r"[^0-9A-Za-z]+", ".", part).strip(".").lower() or "0"
 
 
 def _version_component(version: str) -> str:

@@ -1176,7 +1176,10 @@ def test_dotnet_executable_requires_one_single_file_candidate() -> None:
         assert "-p:PublishTrimmed=false" not in calls[0]
         receipt = _result_artifacts(result)["artifact/exe"]
         assert isinstance(receipt, dict)
-        assert receipt["bundle-relative-path"] == "dist/example"
+        assert receipt["bundle-relative-path"] == "dist/example-1.2.3-linux-x64"
+        assert not (scratch / "bundle/dist/example").exists()
+        staged = scratch / "bundle/dist/example-1.2.3-linux-x64"
+        assert staged.read_bytes() == b"binary"
     finally:
         _remove_tree_scratch(scratch)
 
@@ -1221,7 +1224,54 @@ def test_dotnet_executable_accepts_extensionless_non_windows_candidate() -> (
         validate_contract(result)
         receipt = _result_artifacts(result)["artifact/exe"]
         assert isinstance(receipt, dict)
-        assert receipt["bundle-relative-path"] == "dist/example"
+        assert receipt["bundle-relative-path"] == "dist/example-1.2.3-linux-x64"
+        assert not (scratch / "bundle/dist/example").exists()
+        staged = scratch / "bundle/dist/example-1.2.3-linux-x64"
+        assert staged.read_bytes() == b"binary"
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_dotnet_executable_windows_raw_asset_uses_planner_name() -> None:
+    """Receipt Windows no-companion executables under frozen asset names."""
+    scratch = REPO_ROOT / ".build-executor-dotnet-windows-exe-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="dotnet",
+            dimensions={"os": "windows", "rid": "win-x64"},
+            artifacts={
+                "artifact/exe": ("primary-binary", "binary", "executable"),
+            },
+        )
+
+        def runner(
+            args: Sequence[str],
+            _cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            out_dir = Path(args[args.index("--output") + 1])
+            (out_dir / "RawExecutable.exe").write_bytes(b"MZbinary")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        result = execute_build(
+            request,
+            REPO_ROOT,
+            scratch / "bundle",
+            runner=runner,
+            check_commit=False,
+        )
+
+        validate_contract(result)
+        receipt = _result_artifacts(result)["artifact/exe"]
+        assert isinstance(receipt, dict)
+        assert receipt["bundle-relative-path"] == (
+            "dist/example-1.2.3-windows-win-x64.exe"
+        )
+        assert not (scratch / "bundle/dist/RawExecutable.exe").exists()
+        assert (
+            scratch / "bundle/dist/example-1.2.3-windows-win-x64.exe"
+        ).read_bytes() == b"MZbinary"
     finally:
         _remove_tree_scratch(scratch)
 

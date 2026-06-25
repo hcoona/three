@@ -478,7 +478,9 @@ def test_catalog_capabilities_must_match_family_and_host() -> None:
     document = _load_yaml(CATALOG)
     mutated = copy.deepcopy(document)
     npmjs = mutated["families"]["npm"]["instances"][0]
-    npmjs["capabilities"]["publish-topology"] = "external-oidc-caller-workflow"
+    npmjs["capabilities"]["publish-topology"] = (
+        "external-oidc-reusable-workflow"
+    )
     with pytest.raises(AuthoringValidationError) as error:
         validate_target_catalog_document(mutated)
     assert any(
@@ -1018,15 +1020,17 @@ def test_frozen_target_artifact_baseline_requires_symbol_package() -> None:
     )
 
 
-def test_frozen_target_artifact_baseline_requires_registry_symbols() -> None:
-    """Reject registry NuGet targets missing their snupkg member."""
+def test_frozen_target_artifact_baseline_rejects_nuget_registry_targets() -> (
+    None
+):
+    """Reject deferred NuGet registry targets in active authoring."""
     descriptors = _descriptor_documents()
     github_packages = descriptors[
         "src/public/lib/hcoona-release-smoke-github-packages/three.release.yml"
     ]
-    github_packages["profiles"]["official"]["targets"][1]["artifacts"] = [
-        "nuget"
-    ]
+    github_packages["profiles"]["official"]["targets"].append(
+        {"uses": "nuget/github-packages", "artifacts": ["nuget"]}
+    )
     with pytest.raises(AuthoringValidationError) as error:
         validate_authoring_documents(
             descriptors,
@@ -1035,8 +1039,8 @@ def test_frozen_target_artifact_baseline_requires_registry_symbols() -> None:
             repo_root=REPO_ROOT,
         )
     assert any(
-        issue.code == "DESC_STATIC_INVALID"
-        and "target artifact semantics" in issue.message
+        issue.code == "CATALOG_REF_NOT_FOUND"
+        and issue.path.endswith(".profiles.official.targets[1].uses")
         for issue in error.value.issues
     )
 

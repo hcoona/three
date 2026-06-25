@@ -429,8 +429,6 @@ Each instance requires:
 Current-scope catalog examples are expected to include:
 
 - `github-release/public`
-- `nuget/nuget-org`
-- `nuget/github-packages`
 - `pypi/pypi`
 - `npm/npmjs`
 - `npm/github-packages`
@@ -439,8 +437,12 @@ Current-scope catalog examples are expected to include:
 
 There is intentionally no `pypi/github-packages` instance because GitHub
 Packages does not expose a Python package registry. In the current repository
-scope, GitHub Packages target instances exist only inside the `nuget`, `npm`,
-and `rubygems` families.
+scope, GitHub Packages target instances exist only inside the active `npm` and
+`rubygems` families. The `nuget` family is present in the closed vocabulary, but
+the active catalog must keep `families.nuget.instances: []` until a reviewed
+dotnet/NuGet workflow path exists. `nuget/nuget-org` and
+`nuget/github-packages` are therefore deferred examples, not active current-scope
+publish targets.
 
 ### `contract`
 
@@ -463,9 +465,10 @@ Validation must reject all of the following:
   shared catalog.
 
 This makes current-scope family-to-contract compatibility deterministic at
-author time while preserving the architecture rule that GitHub Packages NuGet,
-npm, and RubyGems hosts remain target instances inside the `nuget`, `npm`, and
-`rubygems` families.
+author time while preserving the architecture rule that GitHub Packages npm and
+RubyGems hosts remain target instances inside the `npm` and `rubygems` families.
+NuGet uses the same family/instance model when re-enabled, but it has no active
+instances in the current catalog.
 
 ### `destination`
 
@@ -517,7 +520,12 @@ These values are catalog-owned. Project descriptors may not override them.
 `credential-posture` describes the credential family. `publish-topology`
 describes the trusted workflow identity the control plane must schedule for live
 publication, so OIDC targets do not require registry-specific guessing after
-planning.
+planning. The closed vocabulary still includes historical / future topology
+values, but the active current-scope assignments below use
+`external-oidc-reusable-workflow` for PyPI and RubyGems.org public registry
+publication, and `external-oidc-caller-workflow` for npmjs trusted publishing;
+`external-oidc-entry-workflow` is not assigned to any active target instance
+while NuGet registry targets are deferred.
 
 In current-scope `v1alpha1`, the capability tuple is also constrained by the
 resolved family plus destination host. Static validation must require exactly
@@ -526,10 +534,8 @@ the following assignments:
 | Family           | Destination discriminator                      | Required capabilities                                                                                                                                                                                              | Required publish topology                           |
 | ---------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
 | `github-release` | `host: github`, `owner: hcoona`, `repo: three` | `mutability: mutable-prerelease`; `name-uniqueness-scope: release-tag`; `version-uniqueness-rule: tag`; `profile-coexistence-rule: not-applicable`; `credential-posture: github-token`                             | `publish-topology: github-token`                    |
-| `nuget`          | `host: nuget.org`                              | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`               | `publish-topology: external-oidc-entry-workflow`    |
-| `nuget`          | `host: nuget.pkg.github.com`                   | `mutability: immutable`; `name-uniqueness-scope: package-name-with-owner`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: same-name-allowed`; `credential-posture: github-token` | `publish-topology: github-token`                    |
-| `pypi`           | `host: pypi.org`                               | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`               | `publish-topology: external-oidc-entry-workflow`    |
-| `npm`            | `host: registry.npmjs.org`                     | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`               | `publish-topology: external-oidc-entry-workflow`    |
+| `pypi`           | `host: pypi.org`                               | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`               | `publish-topology: external-oidc-reusable-workflow` |
+| `npm`            | `host: registry.npmjs.org`                     | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`               | `publish-topology: external-oidc-caller-workflow`   |
 | `npm`            | `host: npm.pkg.github.com`                     | `mutability: immutable`; `name-uniqueness-scope: package-name-with-owner`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: same-name-allowed`; `credential-posture: github-token` | `publish-topology: github-token`                    |
 | `rubygems`       | `host: rubygems.org`                           | `mutability: immutable`; `name-uniqueness-scope: package-name`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: requires-distinct-name`; `credential-posture: oidc`               | `publish-topology: external-oidc-reusable-workflow` |
 | `rubygems`       | `host: rubygems.pkg.github.com`                | `mutability: immutable`; `name-uniqueness-scope: package-name-with-owner`; `version-uniqueness-rule: package-name-plus-version`; `profile-coexistence-rule: same-name-allowed`; `credential-posture: github-token` | `publish-topology: github-token`                    |
@@ -544,21 +550,25 @@ by the frozen baseline:
 - every live publish target must expose the topology selector the control plane
   uses for scheduling: `github-token`, `external-oidc-entry-workflow`,
   `external-oidc-caller-workflow`, or `external-oidc-reusable-workflow`;
+- `external-oidc-entry-workflow` is a vocabulary value only in this current
+  catalog state; no active target instance is assigned to it while public
+  registry OIDC paths use reusable-workflow-bound PyPI/RubyGems.org topology or
+  caller-workflow-bound npmjs topology;
 - the topology assignments follow the registry research in
   [Workflow Release OIDC Publish Topology Research](./workflow-release-oidc-publish-topology.md).
 - public external package-registry hosts use
   `profile-coexistence-rule: requires-distinct-name`, so same-registry same-name
   `buddy` and `official` publication stays forbidden; author-time validation
-  enforces this when the published name is statically resolvable, while NuGet
-  checks that require evaluated `PackageId` run after the Windows
-  `dotnet-metadata` handoff;
+  enforces this when the published name is statically resolvable. NuGet checks
+  that require evaluated `PackageId` run after trusted .NET metadata collection
+  inside `prepare-release-plan` if NuGet registry targets are selected;
 - GitHub Packages target instances use
   `profile-coexistence-rule: same-name-allowed` deliberately for release-smoke
   targets that publish GitHub Packages from both profiles with the same package
   identity. In the current smoke matrix, that both-profile same-identity shape
-  belongs only to the dedicated GitHub Packages smoke target; ecosystem smoke
-  projects use GitHub Packages in `buddy` and their public registries in
-  `official`;
+  belongs only to active npm and RubyGems GitHub Packages smoke targets;
+  ecosystem smoke projects use GitHub Packages in `buddy` and their public
+  registries in `official` only for families with active catalog instances;
 - `replaceable` remains out of scope for all current-scope package-registry target
   instances.
 
@@ -572,10 +582,10 @@ when the resolved target instance capability is
 different catalog `instance-id` values. Author-time static validation performs
 this rejection only for target usages whose resolved capability requires
 distinct names and whose published names are available without deferred
-ecosystem evaluation. For NuGet, author-time validation derives the
-`requires-package-id` handoff and defers any `PackageId`-dependent coexistence
-rejection until `dotnet-metadata` has emitted the Windows-evaluated
-`package-id`.
+ecosystem evaluation. For NuGet-shaped publication, author-time validation
+derives the `requires-package-id` metadata input and defers any
+`PackageId`-dependent coexistence rejection until the trusted .NET metadata
+collection in `prepare-release-plan` emits the evaluated `package-id`.
 
 ## Ownership Boundaries
 
@@ -619,12 +629,12 @@ such as an npm scope rewrite for GitHub Packages.
 Current-scope package-registry identity is resolved from those manifests through
 this closed table before the planner emits `resolved-publish-identity`:
 
-| Target family | Authoritative package-name source                                                                                                                                                                       | Current-scope fallback and normalization rule                                                                                                                                                                                                                                                                                                                                                                      |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `nuget`       | The `PackageId` value emitted by the Windows `dotnet-metadata` handoff for the selected project.                                                                                                        | No descriptor override and no MSBuild `AssemblyName` or directory-name fallback are allowed for release planning. Author-time validation only derives whether NuGet-shaped publication requires `PackageId`; the Windows metadata job evaluates the selected `.csproj`. If required `PackageId` is absent, empty, or unnormalizable, the helper or planner emits `DOTNET_METADATA_FAILED` and no plan is produced. |
-| `pypi`        | `[project].name` in the selected project's `pyproject.toml`.                                                                                                                                            | No descriptor override is allowed. The planner serializes the PyPI / PEP 503 normalized name: lowercase, then replace each maximal run of `.`, `-`, or `_` with one `-`.                                                                                                                                                                                                                                           |
-| `npm`         | Artifact-level `projection.package-name` when declared, otherwise target-level `projection.package-name` when declared as the single-artifact compatibility shorthand, otherwise `package.json` `name`. | The resolved value must be a valid publishable npm package name. Current-scope selected package names must be lowercase; scoped GitHub Packages names must keep a scope matching the catalog destination owner. The planner preserves the resolved spelling.                                                                                                                                                       |
-| `rubygems`    | The selected `.gemspec`'s evaluated `Gem::Specification.name`.                                                                                                                                          | No descriptor override is allowed. Current-scope gem names must be lowercase and are serialized with their evaluated spelling.                                                                                                                                                                                                                                                                                     |
+| Target family | Authoritative package-name source                                                                                                                                                                       | Current-scope fallback and normalization rule                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `nuget`       | The `PackageId` value emitted by trusted .NET metadata collection in `prepare-release-plan` for the selected project.                                                                                   | No descriptor override and no MSBuild `AssemblyName` or directory-name fallback are allowed for release planning. Author-time validation only derives whether NuGet-shaped publication requires `PackageId`; `prepare-release-plan` runs on Ubuntu, uses the trusted NBGV CLI referenced by `THREE_WORKFLOW_RELEASE_NBGV_PATH` for resolved version metadata, and uses the .NET SDK/MSBuild property evaluation for `PackageId` only when `PackageId` is required. If required `PackageId` is absent, empty, or unnormalizable, the helper or planner emits `DOTNET_METADATA_FAILED` and no plan is produced. |
+| `pypi`        | `[project].name` in the selected project's `pyproject.toml`.                                                                                                                                            | No descriptor override is allowed. The planner serializes the PyPI / PEP 503 normalized name: lowercase, then replace each maximal run of `.`, `-`, or `_` with one `-`.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `npm`         | Artifact-level `projection.package-name` when declared, otherwise target-level `projection.package-name` when declared as the single-artifact compatibility shorthand, otherwise `package.json` `name`. | The resolved value must be a valid publishable npm package name. Current-scope selected package names must be lowercase; scoped GitHub Packages names must keep a scope matching the catalog destination owner. The planner preserves the resolved spelling.                                                                                                                                                                                                                                                                                                                                                  |
+| `rubygems`    | The selected `.gemspec`'s evaluated `Gem::Specification.name`.                                                                                                                                          | No descriptor override is allowed. Current-scope gem names must be lowercase and are serialized with their evaluated spelling.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 For all package-registry families, `resolved-publish-identity.version` comes from
 the planner-frozen project `resolved-version`, not from a target-specific
@@ -688,21 +698,13 @@ pure-Python `py3-none-any` requirement.
 For current .NET package projects, the repo-wide MSBuild configuration emits a
 portable `.snupkg` alongside `.nupkg` when a packable library is packed. Project
 descriptors for such package variants should therefore declare both the primary
-NuGet artifact and the symbol artifact. GitHub Release target usages may carry
-both package files as release assets. Current-scope release-smoke NuGet projects
-publish `nuget/github-packages` in `buddy` and `nuget/nuget-org` in `official`;
-only the dedicated GitHub Packages smoke target publishes GitHub Packages from
-both profiles with the same identity. GitHub Packages NuGet targets publish only
-the reliably observable `.nupkg` member while `.snupkg` remains modeled as
-GitHub Release evidence. NuGet.org target usages should likewise reference both
-artifacts when
-the release includes NuGet symbol publication, because `.snupkg` is the modern
-separate symbol-package format. That in turn requires the planner's NuGet.org
-adapter to implement and test symbol-package remote observation before first live
-NuGet.org publication for those descriptors. Until that adapter path is
-documented and tested, first-delivery descriptors that would publish a `.snupkg`
-to NuGet.org must omit the `nuget/nuget-org` target; adding that target is a
-later live-enablement change, not an implementation detail.
+NuGet artifact and the symbol artifact for GitHub Release evidence. Current-scope
+release-smoke NuGet projects do **not** publish NuGet registry targets:
+`families.nuget.instances` is empty, so `nuget/github-packages` and
+`nuget/nuget-org` are unavailable until a reviewed dotnet/NuGet workflow path,
+target catalog entries, and remote-observation adapters exist. Adding either
+NuGet registry target is a later live-enablement change, not an implementation
+detail.
 
 ## Validation Boundary
 
@@ -779,9 +781,9 @@ Examples:
 - every selected package-registry target can resolve or hand off package-name
   resolution through the closed current-scope table in
   [Existing manifest-owned data](#existing-manifest-owned-data), including
-  deriving the NuGet `requires-package-id` flag for the Windows metadata input
-  rather than evaluating or rejecting MSBuild `PackageId` during author-time
-  validation;
+  deriving the NuGet `requires-package-id` flag for trusted .NET metadata
+  collection rather than evaluating or rejecting MSBuild `PackageId` during
+  author-time validation;
 - cross-profile package-registry coexistence is evaluated from the resolved
   package-registry identity tuple (family, destination.host, destination.owner?,
   published-name) after combining descriptor data with statically available
@@ -793,12 +795,12 @@ Examples:
   package-registry identity tuple without deferred ecosystem evaluation. Target
   instances marked `profile-coexistence-rule: same-name-allowed`, including the
   current GitHub Packages instances, allow such pairs; this is what permits the
-  dedicated GitHub Packages smoke descriptor to publish
-  `nuget/github-packages` from both `buddy` and `official` with the same
-  package identity. NuGet pairs whose equality depends on evaluated `PackageId`
-  are rejected by the planner after the Windows metadata handoff when the
-  resolved target instance requires distinct names, not during author-time
-  validation.
+  active npm and RubyGems GitHub Packages smoke descriptors to publish from both
+  `buddy` and `official` with the same package identity when that shape is
+  explicitly selected. NuGet pairs whose equality depends on evaluated
+  `PackageId` must be rejected by the planner after trusted
+  `prepare-release-plan` metadata collection when the resolved target instance
+  requires distinct names, not during author-time validation.
 
 This is the right layer for CI linting of checked-in authoring files.
 
@@ -813,13 +815,14 @@ continuing.
 Planner-time validation handles request-dependent or external-state-dependent
 questions, such as:
 
-- whether omitted or empty `requested-project-ids` selects the whole
-  discovered in-scope releasable set, or an explicit non-empty set fully
-  resolves; otherwise planning fails;
+- whether the active `project` input resolves to exactly one discovered in-scope
+  releasable project; otherwise planning fails. Empty/all-project selection and
+  multi-project requests remain deferred scope;
 - whether the request selected `buddy` or `official`, because that request
   profile affects downstream publish decisions;
 - the authoritative normalized planner-facing request contract for current
-  scope: `profile`, `commit-sha`, normalized `requested-project-ids`, and
+  scope: `profile`, `commit-sha`, normalized `requested-project-ids` (a
+  single-entry array normalized from the active `project` input), and
   normalized `request-flags.force`;
 - project-scoped version identity for each selected project from its
   descriptor-declared authoritative version source: in current scope, that
@@ -903,18 +906,7 @@ families:
                   credential-posture: github-token
                   publish-topology: github-token
     nuget:
-        instances:
-            - id: nuget-org
-              contract: nuget-publish
-              destination:
-                  host: nuget.org
-              capabilities:
-                  mutability: immutable
-                  name-uniqueness-scope: package-name
-                  version-uniqueness-rule: package-name-plus-version
-                  profile-coexistence-rule: requires-distinct-name
-                  credential-posture: oidc
-                  publish-topology: external-oidc-entry-workflow
+        instances: []
 ```
 
 ### Public .NET library descriptor excerpt
@@ -959,42 +951,18 @@ profiles:
 This non-smoke project excerpt intentionally keeps first-delivery `hjg-pngcs`
 publishing GitHub Release-only in both profiles. Real package-registry
 publication for `hjg-pngcs`, including NuGet.org and GitHub Packages, is
-deferred until that package path is explicitly brought into scope. Current
-release-smoke coverage uses dedicated smoke projects for live package-registry
-publication; for ecosystems GitHub Packages supports, smoke descriptors publish
-GitHub Packages in `buddy` while the `official` target remains the ecosystem
-public registry:
+deferred until that package path is explicitly brought into scope. Current release-smoke coverage uses dedicated smoke projects for live
+package-registry publication only where the target catalog has active instances:
 
-- NuGet smoke: `buddy` publishes `nuget/github-packages`; `official` publishes
-  `nuget/nuget-org`.
 - npm smoke: `buddy` publishes `npm/github-packages`; `official` publishes
   `npm/npmjs`.
 - RubyGems smoke: `buddy` publishes `rubygems/github-packages`; `official`
   publishes `rubygems/rubygems-org`.
 
-The both-profile same-identity GitHub Packages case applies only to the
-dedicated GitHub Packages smoke descriptor:
-
-```yaml
-profiles:
-    buddy:
-        targets:
-            - uses: github-release/public
-              artifacts: [nuget]
-            - uses: nuget/github-packages
-              artifacts: [nuget]
-    official:
-        targets:
-            - uses: github-release/public
-              artifacts: [nuget]
-            - uses: nuget/github-packages
-              artifacts: [nuget]
-```
-
-The non-smoke excerpt keeps `.snupkg` modeled for GitHub Release evidence. Smoke
-NuGet descriptors that publish to NuGet.org must keep the public registry path in
-`official`, rather than treating all GitHub-Packages-supported ecosystems as
-both-profile GitHub Packages publications.
+NuGet smoke guidance is deferred. A NuGet smoke descriptor may keep `.nupkg` and
+`.snupkg` artifacts on `github-release/public`, but it must not claim live
+NuGet.org or GitHub Packages NuGet registry publication while
+`families.nuget.instances: []`.
 
 ### Public .NET app descriptor excerpt
 

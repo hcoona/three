@@ -1,3 +1,4 @@
+# ruff: noqa: ARG001, E501, EM101, EM102, PLR2004, SIM102, SLF001, TRY003
 """Tests for workflow-release planner core."""
 
 from __future__ import annotations
@@ -40,8 +41,69 @@ SHA = subprocess.run(  # noqa: S603
     text=True,
 ).stdout.strip()
 RemoteObservation = Literal[
-    "absent", "exact-satisfied", "partial", "conflicting"
+    "absent",
+    "exact-satisfied",
+    "partial",
+    "partial-authoritative",
+    "conflicting",
 ]
+_SPLIT_GITHUB_RELEASE_NODE_COUNT = 2
+
+
+@pytest.fixture(autouse=True)
+def _direct_nbgv_for_planner_tests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Provide direct fake NBGV responses and reject planner-side builds."""
+    real_run = subprocess.run
+
+    def fake_run(
+        args: Sequence[str],
+        *pargs: Any,
+        **kwargs: Any,
+    ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
+        if Path(str(args[0])).name == "nbgv" and "get-version" in args:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                json.dumps({"SemVer2": "1.2.3"}),
+                "",
+            )
+        return real_run(args, *pargs, **kwargs)
+
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_run,
+    )
+
+
+def _assert_no_planner_build_command(args: Sequence[str]) -> None:
+    """Fail tests when planner code attempts package/build execution."""
+    command = Path(str(args[0])).name if args else ""
+    tokens = [str(arg) for arg in args]
+    if command == "dotnet" and len(tokens) > 1 and tokens[1] == "pack":
+        raise AssertionError(f"planner must not run dotnet pack: {tokens}")
+    if command == "uv" and len(tokens) > 1 and tokens[1] == "build":
+        raise AssertionError(f"planner must not run uv build: {tokens}")
+    if command == "gem" and len(tokens) > 1 and tokens[1] == "build":
+        raise AssertionError(f"planner must not run gem build: {tokens}")
+    if command == "npm" and len(tokens) > 1:
+        if tokens[1] == "pack" or tokens[1:3] in (
+            ["run", "build"],
+            ["run", "prepack"],
+        ):
+            raise AssertionError(
+                f"planner must not run npm build/pack: {tokens}"
+            )
+    if command == "pnpm":
+        if "pack" in tokens or tokens[-2:] in (
+            ["run", "build"],
+            ["run", "prepack"],
+        ):
+            raise AssertionError(
+                f"planner must not run pnpm build/pack: {tokens}"
+            )
 
 
 def _request(
@@ -51,12 +113,15 @@ def _request(
     force: bool = False,
 ):
     """Return a closed planner request."""
+    requested_project_ids = (
+        ["nbgv-python"] if project_ids is None else sorted(project_ids)
+    )
     return {
         "api-version": "three.release.planner-request/v1alpha1",
         "kind": "planner-request",
         "profile": profile,
         "commit-sha": SHA,
-        "requested-project-ids": sorted(project_ids or []),
+        "requested-project-ids": requested_project_ids,
         "request-flags": {"force": force},
     }
 
@@ -154,6 +219,61 @@ def _github_release_node_id(plan: Mapping[str, object]) -> str:
     return _publish_node_id_for_family(plan, "github-release")
 
 
+def _snapshot_with_split_github_release_targets(
+    snapshot: AuthoringSnapshot,
+    project_id: str,
+    *,
+    profile: str = "buddy",
+) -> AuthoringSnapshot:
+    """Return a snapshot whose GitHub Release target is split per artifact."""
+    project = snapshot.projects[project_id]
+    github_release_usage = next(
+        usage
+        for usage in project.profiles[profile]
+        if usage.uses == "github-release/public"
+    )
+    split_usages = tuple(
+        replace(github_release_usage, artifacts=(artifact_id,))
+        for artifact_id in github_release_usage.artifacts
+    )
+    profiles = dict(project.profiles)
+    profiles[profile] = (
+        tuple(
+            usage
+            for usage in project.profiles[profile]
+            if usage.uses != "github-release/public"
+        )
+        + split_usages
+    )
+    projects = dict(snapshot.projects)
+    projects[project_id] = replace(project, profiles=profiles)
+    return replace(snapshot, projects=projects)
+
+
+def _publish_node_ids_for_family(
+    plan: Mapping[str, object],
+    family: str,
+) -> list[str]:
+    """Return publish node ids for a target family from a plan object."""
+    graph = cast("Mapping[str, object]", plan["graph"])
+    snapshots = cast(
+        "Mapping[str, Mapping[str, object]]",
+        graph["target-instance-snapshots"],
+    )
+    return [
+        node_id
+        for node_id, node in _publish_nodes(plan).items()
+        if snapshots[
+            str(
+                cast("Mapping[str, object]", node)[
+                    "target-instance-snapshot-id"
+                ]
+            )
+        ]["family"]
+        == family
+    ]
+
+
 def _publish_node_id_for_family(plan: Mapping[str, object], family: str) -> str:
     """Return the publish node id for a target family from a plan object."""
     graph = cast("Mapping[str, object]", plan["graph"])
@@ -190,7 +310,13 @@ def _fake_git_show_pyproject(
     version: str | None,
 ) -> subprocess.CompletedProcess[str] | None:
     """Handle requested-commit pyproject reads in subprocess fakes."""
-    if len(args) < _GIT_SHOW_ARG_COUNT or args[1] != "show":
+    if handled := _fake_git_show_epoch(args):
+        return handled
+    if (
+        len(args) < _GIT_SHOW_ARG_COUNT
+        or args[1] != "show"
+        or ":" not in args[2]
+    ):
         return None
     body = f'[project]\nname = "{name}"\n'
     if version is None:
@@ -207,11 +333,26 @@ def _fake_git_show_json(
     payload: Mapping[str, object],
 ) -> subprocess.CompletedProcess[str] | None:
     """Handle requested-commit JSON reads in subprocess fakes."""
-    if len(args) < _GIT_SHOW_ARG_COUNT or args[1] != "show":
+    if handled := _fake_git_show_epoch(args):
+        return handled
+    if (
+        len(args) < _GIT_SHOW_ARG_COUNT
+        or args[1] != "show"
+        or ":" not in args[2]
+    ):
         return None
     if args[2] != f"{SHA}:{path}":
         return None
     return subprocess.CompletedProcess(args, 0, json.dumps(payload), "")
+
+
+def _fake_git_show_epoch(
+    args: Sequence[str], timestamp: str = "1712345678"
+) -> subprocess.CompletedProcess[str] | None:
+    """Handle requested-commit SOURCE_DATE_EPOCH reads in subprocess fakes."""
+    if len(args) >= 5 and args[1:4] == ["show", "-s", "--format=%ct"]:
+        return subprocess.CompletedProcess(args, 0, timestamp, "")
+    return None
 
 
 def _fake_nbgv_get_version(
@@ -220,6 +361,8 @@ def _fake_nbgv_get_version(
     semver2: str,
 ) -> subprocess.CompletedProcess[str] | None:
     """Handle requested-commit NBGV version queries in subprocess fakes."""
+    if handled := _fake_git_show_epoch(args):
+        return handled
     if "get-version" not in args:
         return None
     return subprocess.CompletedProcess(
@@ -238,6 +381,53 @@ def _remove_flat_scratch(path: Path) -> None:
         if child.is_file():
             child.unlink()
     path.rmdir()
+
+
+def test_build_system_nbgv_uses_trusted_cli_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resolve build-system NBGV versions through the trusted CLI path."""
+    snapshot = validate_authoring(REPO_ROOT)
+    trusted_nbgv = "/trusted/tools/nbgv"
+    observed_args: list[Sequence[str]] = []
+
+    def fake_run(
+        args: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        observed_args.append(tuple(args))
+        if args[:2] == ["dotnet", "tool"]:
+            raise AssertionError("planner must not invoke dotnet tool run nbgv")
+        if args[0] != trusted_nbgv:
+            raise AssertionError(args)
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            json.dumps({"SemVer2": "4.5.6"}),
+            "",
+        )
+
+    monkeypatch.setenv("THREE_WORKFLOW_RELEASE_NBGV_PATH", trusted_nbgv)
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_run,
+    )
+
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["hcoona-release-smoke-wxt"]),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+
+    envelope = cast("Mapping[str, object]", result.plan["envelope"])
+    projects = cast("Mapping[str, object]", envelope["projects"])
+    project = cast("Mapping[str, object]", projects["hcoona-release-smoke-wxt"])
+    assert project["resolved-version"] == "4.5.6"
+    assert observed_args
+    assert all("dotnet" not in args[:1] for args in observed_args)
 
 
 def test_nbgv_python_uses_checked_in_pyproject_version() -> None:
@@ -272,7 +462,8 @@ def test_nbgv_python_pyproject_version_reads_requested_commit(
         args: list[str],
         **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
-        if args[1] == "show":
+        _assert_no_planner_build_command(args)
+        if args[1] == "show" and len(args) > 2 and ":" in args[2]:
             assert args[2] == f"{SHA}:src/public/lib/nbgv-python/pyproject.toml"
             return subprocess.CompletedProcess(
                 args,
@@ -288,16 +479,6 @@ version = "7.8.9.dev1"
             return handled
         if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
             return handled
-        out_dir = Path(args[args.index("--out-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "nbgv_python-7.8.9.dev1-py3-none-any.whl").write_text(
-            "",
-            encoding="utf-8",
-        )
-        (out_dir / "nbgv_python-7.8.9.dev1.tar.gz").write_text(
-            "",
-            encoding="utf-8",
-        )
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(
@@ -318,48 +499,29 @@ version = "7.8.9.dev1"
     assert project["resolved-version"] == "7.8.9.dev1"
 
 
-def test_nbgv_python_pypi_backend_runs_at_requested_commit(
+def test_pypi_build_system_nbgv_identity_uses_pep440_projection_without_build(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Run pyproject-version PyPI builds in the requested checkout."""
+    """Resolve PyPI build-system NBGV identity without planner-side builds."""
     snapshot = validate_authoring(REPO_ROOT)
-    requested_checkout: Path | None = None
+    captured_commands: list[list[str]] = []
 
     def fake_run(
         args: list[str],
         **kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
-        nonlocal requested_checkout
+        _assert_no_planner_build_command(args)
+        captured_commands.append(list(args))
         if handled := _fake_git_show_pyproject(
             args,
             name="hcoona-release-smoke-pypi",
             version=None,
         ):
             return handled
-        if "worktree" in args and "add" in args:
-            assert args[-1] == SHA
-            requested_checkout = Path(args[-2])
-            return subprocess.CompletedProcess(args, 0, "", "")
         if handled := _fake_git_worktree(args):
             return handled
         if handled := _fake_nbgv_get_version(args, semver2="7.8.9-dev.1"):
             return handled
-        assert requested_checkout is not None
-        out_dir = Path(args[args.index("--out-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        build_cwd = Path(cast("Path", kwargs["cwd"]))
-        version = (
-            "7.8.9.dev1" if build_cwd == requested_checkout else "9.9.9.dev1"
-        )
-        package_stem = "hcoona_release_smoke_pypi"
-        (out_dir / f"{package_stem}-{version}-py3-none-any.whl").write_text(
-            "",
-            encoding="utf-8",
-        )
-        (out_dir / f"{package_stem}-{version}.tar.gz").write_text(
-            "",
-            encoding="utf-8",
-        )
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(
@@ -378,7 +540,35 @@ def test_nbgv_python_pypi_backend_runs_at_requested_commit(
     node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
     identity = cast("Mapping[str, str]", node["resolved-publish-identity"])
     assert identity["version"] == "7.8.9.dev1"
-    assert identity["version"] != "9.9.9.dev1"
+    projection = cast("Mapping[str, object]", node["projection"])
+    filenames = cast(
+        "Mapping[str, str]",
+        projection["final-distribution-filenames-by-artifact-id"],
+    )
+    assert sorted(filenames.values()) == [
+        "hcoona_release_smoke_pypi-7.8.9.dev1-py3-none-any.whl",
+        "hcoona_release_smoke_pypi-7.8.9.dev1.tar.gz",
+    ]
+    assert not any("worktree" in command for command in captured_commands)
+
+
+def test_official_force_request_is_preserved_for_tag_retarget() -> None:
+    """Allow official force for tag retarget intent."""
+    snapshot = validate_authoring(REPO_ROOT)
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(
+                ["hcoona-release-smoke-pypi"],
+                profile="official",
+                force=True,
+            ),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+    envelope = cast("Mapping[str, object]", result.plan["envelope"])
+    assert envelope["request-flags"] == {"force": True}
 
 
 def test_nbgv_python_requested_commit_pyproject_failure_fails_closed(
@@ -469,6 +659,89 @@ def test_exact_satisfied_routes_to_skip_selector() -> None:
     assert node_id not in publish_nodes
 
 
+def test_github_release_mixed_siblings_keep_skip_satisfied() -> None:
+    """Same-release exact siblings stay skipped while repair stays active."""
+    base_snapshot = validate_authoring(REPO_ROOT)
+    snapshot = _snapshot_with_split_github_release_targets(
+        base_snapshot,
+        "nbgv-python",
+    )
+    bootstrap = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["nbgv-python"], force=True),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+            official_frozen_versions={"nbgv-python": ()},
+        ),
+    )
+    node_ids = sorted(
+        _publish_node_ids_for_family(bootstrap.plan, "github-release")
+    )
+    assert len(node_ids) == _SPLIT_GITHUB_RELEASE_NODE_COUNT
+
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["nbgv-python"], force=True),
+            repo_root=REPO_ROOT,
+            remote_observations=_remote_observations(
+                bootstrap.plan,
+                {
+                    node_ids[0]: "exact-satisfied",
+                    node_ids[1]: "partial",
+                },
+            ),
+            official_frozen_versions={"nbgv-python": ()},
+        ),
+    )
+
+    satisfied_node_id = node_ids[0]
+    repair_node_id = node_ids[1]
+    skip_node_ids = set(
+        _execution_ids(result.execution_sets, "skip-satisfied-publish-node-ids")
+    )
+    publish_intent_ids = set(
+        _execution_ids(result.execution_sets, "publish-intent-node-ids")
+    )
+    active_publish_ids = set(
+        _execution_ids(result.execution_sets, "active-publish-node-ids")
+    )
+    active_github_release_ids = set(
+        _execution_ids(
+            result.execution_sets,
+            "active-github-release-publish-node-ids",
+        )
+    )
+    selected_github_release_ids = set(
+        _execution_ids(
+            result.execution_sets,
+            "selected-github-release-publish-node-ids",
+        )
+    )
+
+    assert satisfied_node_id in skip_node_ids
+    assert repair_node_id not in skip_node_ids
+    assert satisfied_node_id not in publish_intent_ids
+    assert repair_node_id in publish_intent_ids
+    assert satisfied_node_id not in active_publish_ids
+    assert repair_node_id in active_publish_ids
+    assert satisfied_node_id not in active_github_release_ids
+    assert repair_node_id in active_github_release_ids
+    assert set(node_ids) <= selected_github_release_ids
+
+    publish_nodes = _publish_nodes(result.plan)
+    satisfied_node = cast(
+        "Mapping[str, object]", publish_nodes[satisfied_node_id]
+    )
+    repair_node = cast("Mapping[str, object]", publish_nodes[repair_node_id])
+    assert satisfied_node["publish-disposition"] == "skip-satisfied"
+    assert "publish-mode" not in satisfied_node
+    assert "overwrite-mutable-authorization" not in satisfied_node
+    assert repair_node["publish-disposition"] == "publish"
+    assert repair_node["publish-mode"] == "overwrite-mutable"
+
+
 def test_pypi_exact_satisfied_routes_to_skip_selector(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -479,6 +752,7 @@ def test_pypi_exact_satisfied_routes_to_skip_selector(
         args: list[str],
         **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
         if handled := _fake_git_show_pyproject(
             args,
             name="hcoona-release-smoke-pypi",
@@ -489,17 +763,6 @@ def test_pypi_exact_satisfied_routes_to_skip_selector(
             return handled
         if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
             return handled
-        out_dir = Path(args[args.index("--out-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        package_stem = "hcoona_release_smoke_pypi"
-        (out_dir / f"{package_stem}-2.1.0.dev1-py3-none-any.whl").write_text(
-            "",
-            encoding="utf-8",
-        )
-        (out_dir / f"{package_stem}-2.1.0.dev1.tar.gz").write_text(
-            "",
-            encoding="utf-8",
-        )
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(
@@ -544,6 +807,7 @@ def test_live_pypi_without_remote_observation_remains_gateable(
         args: list[str],
         **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
         if handled := _fake_git_show_pyproject(
             args,
             name="hcoona-release-smoke-pypi",
@@ -554,17 +818,6 @@ def test_live_pypi_without_remote_observation_remains_gateable(
             return handled
         if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
             return handled
-        out_dir = Path(args[args.index("--out-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        package_stem = "hcoona_release_smoke_pypi"
-        (out_dir / f"{package_stem}-2.1.0.dev1-py3-none-any.whl").write_text(
-            "",
-            encoding="utf-8",
-        )
-        (out_dir / f"{package_stem}-2.1.0.dev1.tar.gz").write_text(
-            "",
-            encoding="utf-8",
-        )
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(
@@ -708,6 +961,36 @@ def test_official_partial_github_release_fails_closed() -> None:
     }
 
 
+def test_official_github_release_prerelease_promotion_replaces_authoritative() -> (
+    None
+):
+    """Official same-tag prerelease-to-release replay uses replace-authoritative."""
+    snapshot = validate_authoring(REPO_ROOT)
+    first = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["nbgv-python"], profile="official"),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+    node_id = _github_release_node_id(first.plan)
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["nbgv-python"], profile="official"),
+            repo_root=REPO_ROOT,
+            remote_observations=_remote_observations(
+                first.plan, {node_id: "partial-authoritative"}
+            ),
+        ),
+    )
+
+    node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
+    assert node["publish-disposition"] == "publish"
+    assert node["publish-mode"] == "replace-authoritative"
+
+
 def test_circular_list_github_release_absent_plans_successfully() -> None:
     """Circular-list GitHub Release absent observation plans create-only."""
     snapshot = validate_authoring(REPO_ROOT)
@@ -732,18 +1015,27 @@ def test_circular_list_github_release_absent_plans_successfully() -> None:
     )
 
     node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
+    projection = cast("Mapping[str, object]", node["projection"])
+    names = cast("Mapping[str, str]", projection["asset-names-by-artifact-id"])
+
     assert node["publish-disposition"] == "publish"
     assert node["publish-mode"] == "create-only"
+    assert sorted(names.values()) == [
+        "circular-list.1.2.3.nupkg",
+        "circular-list.1.2.3.snupkg",
+    ]
+    assert "asset-sizes-by-artifact-id" not in projection
+    assert "asset-sha256-by-artifact-id" not in projection
     assert node_id in _execution_ids(
         result.execution_sets, "active-publish-node-ids"
     )
 
 
 def test_github_packages_nuget_absent_observation_plans_first_publish() -> None:
-    """GitHub Packages NuGet absent observation plans create-only publish."""
+    """GitHub Packages NuGet stays absent from active official plans."""
     snapshot = validate_authoring(REPO_ROOT)
     metadata = _dotnet_metadata(snapshot)
-    first = plan_release(
+    result = plan_release(
         snapshot,
         PlannerInputs(
             request=_request(
@@ -754,84 +1046,44 @@ def test_github_packages_nuget_absent_observation_plans_first_publish() -> None:
             dry_run=True,
         ),
     )
-    node_id = _publish_node_id_for_family(first.plan, "nuget")
-    result = plan_release(
-        snapshot,
-        PlannerInputs(
-            request=_request(
-                ["hcoona-release-smoke-github-packages"], profile="official"
-            ),
-            repo_root=REPO_ROOT,
-            dotnet_metadata=metadata,
-            remote_observations=_remote_observations(
-                first.plan, {node_id: "absent"}
-            ),
-        ),
+    snapshots = cast(
+        "Mapping[str, Mapping[str, object]]",
+        cast("Mapping[str, object]", result.plan["graph"])[
+            "target-instance-snapshots"
+        ],
     )
 
-    node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
-    assert node["target-instance-snapshot-id"] == "nuget/github-packages"
-    assert node["publish-disposition"] == "publish"
-    assert node["publish-mode"] == "create-only"
-    assert node_id in _execution_ids(
-        result.execution_sets, "active-publish-node-ids"
-    )
+    assert all(snapshot["family"] != "nuget" for snapshot in snapshots.values())
 
 
 def test_github_packages_nuget_exact_observation_skips_replay() -> None:
-    """GitHub Packages NuGet exact observation maps to skip-satisfied."""
+    """GitHub Packages NuGet stays absent from active buddy plans."""
     snapshot = validate_authoring(REPO_ROOT)
     metadata = _dotnet_metadata(snapshot)
-    first = plan_release(
+    result = plan_release(
         snapshot,
         PlannerInputs(
             request=_request(
-                ["hcoona-release-smoke-github-packages"], profile="official"
+                ["hcoona-release-smoke-github-packages"], profile="buddy"
             ),
             repo_root=REPO_ROOT,
             dotnet_metadata=metadata,
             dry_run=True,
         ),
     )
-    node_id = _publish_node_id_for_family(first.plan, "nuget")
-    result = plan_release(
-        snapshot,
-        PlannerInputs(
-            request=_request(
-                ["hcoona-release-smoke-github-packages"], profile="official"
-            ),
-            repo_root=REPO_ROOT,
-            dotnet_metadata=metadata,
-            remote_observations=_remote_observations(
-                first.plan, {node_id: "exact-satisfied"}
-            ),
-        ),
+    snapshots = cast(
+        "Mapping[str, Mapping[str, object]]",
+        cast("Mapping[str, object]", result.plan["graph"])[
+            "target-instance-snapshots"
+        ],
     )
 
-    node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
-    assert node["target-instance-snapshot-id"] == "nuget/github-packages"
-    assert node["publish-disposition"] == "skip-satisfied"
-    assert node_id in _execution_ids(
-        result.execution_sets, "skip-satisfied-publish-node-ids"
-    )
-    assert node_id not in _execution_ids(
-        result.execution_sets, "active-publish-node-ids"
-    )
+    assert all(snapshot["family"] != "nuget" for snapshot in snapshots.values())
 
 
 @pytest.mark.parametrize(
     ("project_id", "target_id", "package_name"),
     [
-        (
-            "hcoona-release-smoke-github-packages",
-            "nuget/github-packages",
-            "Hcoona.ReleaseSmoke.GithubPackages",
-        ),
-        (
-            "hcoona-release-smoke-nuget",
-            "nuget/github-packages",
-            "Hcoona.ReleaseSmoke.Nuget",
-        ),
         (
             "hcoona-release-smoke-npm",
             "npm/github-packages",
@@ -889,71 +1141,117 @@ def test_buddy_smoke_projects_plan_github_packages_publish(
     assert identity["package-name"] == package_name
 
 
-@pytest.mark.parametrize("profile", ["buddy", "official"])
-def test_nuget_rejects_deferred_package_id_coexistence_conflict(
-    profile: str,
+@pytest.mark.parametrize(
+    "project_id",
+    [
+        "hcoona-release-smoke-npm",
+        "hcoona-release-smoke-rubygems",
+    ],
+)
+def test_buddy_mixed_github_release_fails_closed_when_deactivated(
+    project_id: str,
 ) -> None:
-    """Reject NuGet buddy/official conflicts once PackageId is known."""
-    base = validate_authoring(REPO_ROOT)
-    source = base.projects["hcoona-release-smoke-nuget"]
-    official_nuget = next(
-        usage
-        for usage in source.profiles["official"]
-        if usage.uses == "nuget/nuget-org"
+    """Buddy GitHub Release deactivation fails closed even with registries."""
+    snapshot = validate_authoring(REPO_ROOT)
+    with pytest.raises(PlannerError) as error:
+        plan_release(
+            snapshot,
+            PlannerInputs(
+                request=_request([project_id], profile="buddy"),
+                repo_root=REPO_ROOT,
+                dry_run=True,
+                deactivate_buddy_github_release=True,
+            ),
+        )
+
+    assert error.value.diagnostics[0]["code"] == "IMMUTABLE_PROOF_UNAVAILABLE"
+    assert error.value.diagnostics[0]["details"] == {
+        "target": "github-release/public"
+    }
+
+
+def test_buddy_github_release_target_remains_fail_closed_without_deactivation() -> (
+    None
+):
+    """Unsupported buddy GitHub Release remains guarded unless deactivated."""
+    snapshot = validate_authoring(REPO_ROOT)
+    bootstrap = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["hcoona-release-smoke-npm"], profile="buddy"),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
     )
-    project = replace(
-        source,
-        project_id="nuget-coexistence-conflict",
-        display_name="NuGet Coexistence Conflict",
-        profiles={
-            "buddy": (official_nuget,),
-            "official": (official_nuget,),
-        },
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["hcoona-release-smoke-npm"], profile="buddy"),
+            repo_root=REPO_ROOT,
+            remote_observations=_remote_observations(bootstrap.plan),
+        ),
     )
-    snapshot = AuthoringSnapshot(
-        descriptor_api_version=base.descriptor_api_version,
-        catalog_path=base.catalog_path,
-        projects={project.project_id: project},
-        target_instances=base.target_instances,
-    )
-    dotnet_metadata = _dotnet_metadata(snapshot)
-    dotnet_projects = cast(
-        "dict[str, dict[str, object]]", dotnet_metadata["projects"]
-    )
-    dotnet_projects[project.project_id]["package-id"] = "Shared.Package"
+
+    assert result.execution_sets["active-github-release-publish-node-ids"]
+    assert result.execution_sets["active-publish-node-ids"]
+
+
+def test_buddy_github_release_only_target_fails_closed_when_deactivated() -> (
+    None
+):
+    """Buddy GitHub Release-only plans fail closed when deactivated."""
+    snapshot = validate_authoring(REPO_ROOT)
 
     with pytest.raises(PlannerError) as error:
         plan_release(
             snapshot,
             PlannerInputs(
-                request=_request([project.project_id], profile=profile),
+                request=_request(
+                    ["hcoona-release-smoke-github-release"],
+                    profile="buddy",
+                ),
                 repo_root=REPO_ROOT,
-                dotnet_metadata=dotnet_metadata,
+                dotnet_metadata=_dotnet_metadata(snapshot),
                 dry_run=True,
+                deactivate_buddy_github_release=True,
             ),
         )
 
-    diagnostic = error.value.diagnostics[0]
-    assert diagnostic["code"] == "PUBLISH_IDENTITY_CONFLICT"
-    details = cast("Mapping[str, object]", diagnostic["details"])
-    assert details["package-name"] == "Shared.Package"
-    assert details["target"] == "nuget/nuget-org"
+    assert error.value.diagnostics[0]["code"] == ("IMMUTABLE_PROOF_UNAVAILABLE")
+
+
+@pytest.mark.parametrize("profile", ["buddy", "official"])
+def test_nuget_rejects_deferred_package_id_coexistence_conflict(
+    profile: str,
+) -> None:
+    """Deferred NuGet registry targets do not reach coexistence planning."""
+    snapshot = validate_authoring(REPO_ROOT)
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["hcoona-release-smoke-nuget"], profile=profile),
+            repo_root=REPO_ROOT,
+            dotnet_metadata=_dotnet_metadata(snapshot),
+            dry_run=True,
+        ),
+    )
+    snapshots = cast(
+        "Mapping[str, Mapping[str, object]]",
+        cast("Mapping[str, object]", result.plan["graph"])[
+            "target-instance-snapshots"
+        ],
+    )
+
+    assert set(snapshots) == {"github-release/public"}
+    assert all(snapshot["family"] != "nuget" for snapshot in snapshots.values())
 
 
 @pytest.mark.parametrize("profile", ["buddy", "official"])
 def test_github_packages_same_name_allowed_profile_coexistence(
     profile: str,
 ) -> None:
-    """Allow buddy and official to share GitHub Packages identities."""
+    """Deferred GitHub Packages NuGet targets do not reach active plans."""
     snapshot = validate_authoring(REPO_ROOT)
-    dotnet_metadata = _dotnet_metadata(snapshot)
-    dotnet_projects = cast(
-        "dict[str, dict[str, object]]", dotnet_metadata["projects"]
-    )
-    dotnet_projects["hcoona-release-smoke-github-packages"]["package-id"] = (
-        "Hcoona.ReleaseSmoke.GithubPackages"
-    )
-
     result = plan_release(
         snapshot,
         PlannerInputs(
@@ -961,16 +1259,19 @@ def test_github_packages_same_name_allowed_profile_coexistence(
                 ["hcoona-release-smoke-github-packages"], profile=profile
             ),
             repo_root=REPO_ROOT,
-            dotnet_metadata=dotnet_metadata,
+            dotnet_metadata=_dotnet_metadata(snapshot),
             dry_run=True,
         ),
     )
+    snapshots = cast(
+        "Mapping[str, Mapping[str, object]]",
+        cast("Mapping[str, object]", result.plan["graph"])[
+            "target-instance-snapshots"
+        ],
+    )
 
-    node_id = _publish_node_id_for_family(result.plan, "nuget")
-    node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
-    identity = cast("Mapping[str, object]", node["resolved-publish-identity"])
-    assert node["target-instance-snapshot-id"] == "nuget/github-packages"
-    assert identity["package-name"] == "Hcoona.ReleaseSmoke.GithubPackages"
+    assert set(snapshots) == {"github-release/public"}
+    assert all(snapshot["family"] != "nuget" for snapshot in snapshots.values())
 
 
 def test_buddy_force_partial_github_release_overwrites_mutable() -> None:
@@ -991,6 +1292,13 @@ def test_buddy_force_partial_github_release_overwrites_mutable() -> None:
     )
     node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
     assert node["publish-mode"] == "overwrite-mutable"
+    assert node["overwrite-mutable-authorization"] == {
+        "kind": "planner-validated-buddy-force",
+        "profile": "buddy",
+        "force": True,
+        "remote-observation": "partial",
+        "mutability": "mutable-prerelease",
+    }
 
 
 def test_buddy_force_official_frozen_version_fails_closed() -> None:
@@ -1269,6 +1577,65 @@ def test_cli_passes_official_frozen_versions() -> None:
         _remove_flat_scratch(scratch)
 
 
+def test_cli_buddy_force_succeeds_with_selected_project_frozen_evidence() -> (
+    None
+):
+    """CLI buddy force accepts official-frozen evidence for the selected project."""
+    first = _plan(["nbgv-python"])
+    node_id = _github_release_node_id(first.plan)
+    scratch = REPO_ROOT / ".planner-cli-official-frozen-success"
+    try:
+        _remove_flat_scratch(scratch)
+        scratch.mkdir(parents=True)
+        request = scratch / "request.json"
+        remote = scratch / "remote.json"
+        frozen = scratch / "frozen.json"
+        plan_out = scratch / "plan.json"
+        execution_sets = scratch / "execution-sets.json"
+        diagnostics = scratch / "diagnostics.json"
+        request.write_text(
+            json.dumps(_request(["nbgv-python"], force=True)),
+            encoding="utf-8",
+        )
+        remote.write_text(
+            json.dumps(_remote_observations(first.plan, {node_id: "partial"})),
+            encoding="utf-8",
+        )
+        frozen.write_text(
+            json.dumps({"nbgv-python": []}),
+            encoding="utf-8",
+        )
+        old_argv = sys.argv
+        sys.argv = [
+            "three-workflow-release-planner",
+            "plan",
+            "--repo-root",
+            str(REPO_ROOT),
+            "--request",
+            str(request),
+            "--remote-observations",
+            str(remote),
+            "--official-frozen-versions",
+            str(frozen),
+            "--plan-out",
+            str(plan_out),
+            "--execution-sets-out",
+            str(execution_sets),
+            "--diagnostics-out",
+            str(diagnostics),
+        ]
+        try:
+            assert cli_main() == 0
+        finally:
+            sys.argv = old_argv
+        plan = json.loads(plan_out.read_text(encoding="utf-8"))
+        node = cast("Mapping[str, object]", _publish_nodes(plan)[node_id])
+        assert node["publish-mode"] == "overwrite-mutable"
+        assert not diagnostics.exists()
+    finally:
+        _remove_flat_scratch(scratch)
+
+
 def test_build_system_nbgv_resolves_node_project_version(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1317,7 +1684,7 @@ def test_build_system_nbgv_query_uses_request_commit(
 ) -> None:
     """Query NBGV at the requested commit, not ambient HEAD."""
     snapshot = validate_authoring(REPO_ROOT)
-    captured: list[str] = []
+    captured_commands: list[list[str]] = []
 
     def fake_run(
         args: list[str],
@@ -1329,7 +1696,7 @@ def test_build_system_nbgv_query_uses_request_commit(
             payload={"name": "hexo-renderer-asciidoc"},
         ):
             return handled
-        captured[:] = args
+        captured_commands.append(args)
         return subprocess.CompletedProcess(
             args,
             0,
@@ -1349,7 +1716,11 @@ def test_build_system_nbgv_query_uses_request_commit(
             dry_run=True,
         ),
     )
-    assert captured[captured.index("get-version") + 1] == SHA
+    nbgv_commands = [
+        args for args in captured_commands if "get-version" in args
+    ]
+    assert len(nbgv_commands) == 1
+    assert nbgv_commands[0][nbgv_commands[0].index("get-version") + 1] == SHA
 
 
 def test_npm_package_name_reads_requested_commit_package_json(
@@ -1430,7 +1801,7 @@ def test_npm_dual_artifact_projection_selects_registry_identity(
         args: list[str],
         **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
-        if len(args) > 1 and args[1] == "show":
+        if len(args) > 2 and args[1] == "show" and ":" in args[2]:
             return subprocess.CompletedProcess(
                 args,
                 0,
@@ -1508,6 +1879,207 @@ def test_npm_dual_artifact_projection_selects_registry_identity(
     ) == ["hcoona-hcoona-release-smoke-npm-dual-1.2.3-beta.4.tgz"]
 
 
+def test_npm_distribution_projection_uses_target_specific_pack_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Npm projections freeze names only and leave digests to build receipts."""
+    snapshot = validate_authoring(REPO_ROOT)
+    source = snapshot.projects["hcoona-release-smoke-npm"]
+    artifact_id = "npm-package"
+    official_targets = (
+        TargetUsage(
+            uses="github-release/public",
+            artifacts=(artifact_id,),
+            projection={},
+            projection_present=False,
+        ),
+        TargetUsage(
+            uses="npm/npmjs",
+            artifacts=(artifact_id,),
+            projection={"package-name": "plain-smoke"},
+            projection_present=True,
+        ),
+        TargetUsage(
+            uses="npm/github-packages",
+            artifacts=(artifact_id,),
+            projection={"package-name": "@hcoona/plain-smoke"},
+            projection_present=True,
+        ),
+    )
+    snapshot = replace(
+        snapshot,
+        projects={
+            **snapshot.projects,
+            source.project_id: replace(
+                source,
+                profiles={**source.profiles, "official": official_targets},
+            ),
+        },
+    )
+    package_json = {
+        "name": "ambient-smoke",
+        "version": "3.1.0-beta.1",
+        "scripts": {"build": "node build.js", "prepack": "node prepack.js"},
+    }
+    captured_commands: list[list[str]] = []
+
+    def fake_run(
+        args: list[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
+        captured_commands.append(list(args))
+        if handled := _fake_git_show_epoch(args):
+            return handled
+        if handled := _fake_git_show_json(
+            args,
+            path="src/public/lib/hcoona-release-smoke-npm/package.json",
+            payload=package_json,
+        ):
+            return handled
+        command = Path(str(args[0])).name
+        if command in {"dotnet", "nbgv"} and "get-version" in args:
+            return subprocess.CompletedProcess(
+                args, 0, json.dumps({"SemVer2": "3.1.0-beta.1"}), ""
+            )
+        message = f"unexpected planner subprocess: {args}"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_run,
+    )
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["hcoona-release-smoke-npm"], profile="official"),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+    validate_contract(result.plan)
+    target_snapshots = cast(
+        "Mapping[str, Mapping[str, object]]",
+        cast("Mapping[str, object]", result.plan["graph"])[
+            "target-instance-snapshots"
+        ],
+    )
+    npm_nodes = [
+        cast("Mapping[str, object]", node)
+        for node in _publish_nodes(result.plan).values()
+        if target_snapshots[
+            str(
+                cast("Mapping[str, object]", node)[
+                    "target-instance-snapshot-id"
+                ]
+            )
+        ]["family"]
+        == "npm"
+    ]
+    projections = [
+        cast("Mapping[str, object]", node["projection"]) for node in npm_nodes
+    ]
+    filename_maps = [
+        cast(
+            "Mapping[str, str]",
+            projection["final-distribution-filenames-by-artifact-id"],
+        )
+        for projection in projections
+    ]
+    filenames = [
+        next(iter(filename_map.values())) for filename_map in filename_maps
+    ]
+    assert sorted(filenames) == [
+        "hcoona-plain-smoke-3.1.0-beta.1.tgz",
+        "plain-smoke-3.1.0-beta.1.tgz",
+    ]
+    assert all(
+        "final-distribution-sha256-by-artifact-id" not in projection
+        for projection in projections
+    )
+    assert all(
+        "final-distribution-digests-by-artifact-id" not in projection
+        for projection in projections
+    )
+    assert not any("worktree" in command for command in captured_commands)
+
+
+def test_npm_distribution_projection_does_not_run_prepack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Planner does not execute prepack to derive npm projection evidence."""
+    snapshot = validate_authoring(REPO_ROOT)
+    source = snapshot.projects["hcoona-release-smoke-npm"]
+    artifact_id = "npm-package"
+    snapshot = replace(
+        snapshot,
+        projects={
+            **snapshot.projects,
+            source.project_id: replace(
+                source,
+                profiles={
+                    **source.profiles,
+                    "official": (
+                        TargetUsage(
+                            uses="npm/npmjs",
+                            artifacts=(artifact_id,),
+                            projection={"package-name": "plain-smoke"},
+                            projection_present=True,
+                        ),
+                    ),
+                },
+            ),
+        },
+    )
+    original_manifest = {
+        "name": "ambient-smoke",
+        "version": "3.1.0-beta.1",
+        "description": "before-prepack",
+        "scripts": {"prepack": "node prepack.js"},
+    }
+
+    def fake_run(
+        args: list[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
+        if handled := _fake_git_show_epoch(args):
+            return handled
+        if handled := _fake_git_show_json(
+            args,
+            path="src/public/lib/hcoona-release-smoke-npm/package.json",
+            payload=original_manifest,
+        ):
+            return handled
+        command = Path(str(args[0])).name
+        if command in {"dotnet", "nbgv"} and "get-version" in args:
+            return subprocess.CompletedProcess(
+                args, 0, json.dumps({"SemVer2": "3.1.0-beta.1"}), ""
+            )
+        message = f"unexpected planner subprocess: {args}"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_run,
+    )
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["hcoona-release-smoke-npm"], profile="official"),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+
+    validate_contract(result.plan)
+    node_id = _publish_node_id_for_family(result.plan, "npm")
+    node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
+    projection = cast("Mapping[str, object]", node["projection"])
+    assert projection["package-name"] == "plain-smoke"
+    assert "final-distribution-digests-by-artifact-id" not in projection
+
+
 def test_rubygems_metadata_uses_requested_commit_backend(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1523,6 +2095,7 @@ def test_rubygems_metadata_uses_requested_commit_backend(
         args: list[str],
         **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
         nonlocal saw_requested_checkout
         if "worktree" in args and "add" in args:
             assert args[-1] == SHA
@@ -1586,6 +2159,135 @@ def test_rubygems_metadata_uses_requested_commit_backend(
         projection["asset-names-by-artifact-id"],
     )
     assert gem_file in assets.values()
+
+
+def test_rubygems_distribution_projection_does_not_build_for_sha(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RubyGems projections leave content SHA authority to build receipts."""
+    snapshot = validate_authoring(REPO_ROOT)
+    gem_name = "hcoona-release-smoke-rubygems"
+    gem_version = "2.1.0.pre.alpha.1"
+    gem_file = f"{gem_name}-{gem_version}.gem"
+
+    def fake_run(
+        args: list[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
+        if handled := _fake_git_show_epoch(args):
+            return handled
+        if "worktree" in args:
+            if "add" in args:
+                checkout = Path(str(args[-2]))
+                release_root = (
+                    checkout / "src/public/lib/hcoona-release-smoke-rubygems"
+                )
+                release_root.mkdir(parents=True, exist_ok=True)
+                (release_root / f"{gem_name}.gemspec").write_text(
+                    "Gem::Specification.new\n",
+                    encoding="utf-8",
+                )
+            return subprocess.CompletedProcess(args, 0, "", "")
+        command = Path(str(args[0])).name
+        if command == "ruby":
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                json.dumps(
+                    {
+                        "name": gem_name,
+                        "version": gem_version,
+                        "file_name": gem_file,
+                    }
+                ),
+                "",
+            )
+        if command in {"dotnet", "nbgv"} and "get-version" in args:
+            return subprocess.CompletedProcess(
+                args, 0, json.dumps({"SemVer2": "2.1.0-alpha.1"}), ""
+            )
+        message = f"unexpected planner subprocess: {args}"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_run,
+    )
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(
+                ["hcoona-release-smoke-rubygems"], profile="official"
+            ),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+    validate_contract(result.plan)
+    node_id = _publish_node_id_for_family(result.plan, "rubygems")
+    node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
+    projection = cast("Mapping[str, object]", node["projection"])
+    assert "final-distribution-sha256-by-artifact-id" not in projection
+
+
+def test_rubygems_distribution_projection_ignores_gem_build_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Planner no longer runs gem build while projecting RubyGems nodes."""
+    snapshot = validate_authoring(REPO_ROOT)
+    gem_name = "hcoona-release-smoke-rubygems"
+    gem_version = "2.1.0.pre.alpha.1"
+    gem_file = f"{gem_name}-{gem_version}.gem"
+
+    def fake_run(
+        args: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
+        if handled := _fake_git_show_epoch(args):
+            return handled
+        if handled := _fake_git_worktree(args):
+            return handled
+        command = Path(str(args[0])).name
+        if command == "ruby":
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                json.dumps(
+                    {
+                        "name": gem_name,
+                        "version": gem_version,
+                        "file_name": gem_file,
+                    }
+                ),
+                "",
+            )
+        if command in {"dotnet", "nbgv"} and "get-version" in args:
+            return subprocess.CompletedProcess(
+                args, 0, json.dumps({"SemVer2": "2.1.0-alpha.1"}), ""
+            )
+        message = f"unexpected planner subprocess: {args}"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_run,
+    )
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(
+                ["hcoona-release-smoke-rubygems"], profile="official"
+            ),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+    node_id = _publish_node_id_for_family(result.plan, "rubygems")
+    node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
+    projection = cast("Mapping[str, object]", node["projection"])
+    assert "final-distribution-sha256-by-artifact-id" not in projection
 
 
 def test_build_system_nbgv_failure_fails_closed(
@@ -1707,16 +2409,17 @@ def test_pypi_filenames_are_taken_from_build_backend(
     } <= set(names.values())
 
 
-def test_pypi_rejects_platform_specific_wheel(
+def test_pypi_projection_does_not_run_backend_wheel_build(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """PyPI planning requires a pure Python py3-none-any wheel."""
+    """PyPI planning projects conventional filenames without building wheels."""
     snapshot = validate_authoring(REPO_ROOT)
 
     def fake_run(
         args: list[str],
         **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
         if handled := _fake_git_show_pyproject(
             args,
             name="nbgv-python",
@@ -1727,35 +2430,31 @@ def test_pypi_rejects_platform_specific_wheel(
             return handled
         if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
             return handled
-        out_dir = Path(args[args.index("--out-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (
-            out_dir / "nbgv_python-2.1.0.dev1-cp314-cp314-linux_x86_64.whl"
-        ).write_text(
-            "",
-            encoding="utf-8",
-        )
-        (out_dir / "nbgv_python-2.1.0.dev1.tar.gz").write_text(
-            "",
-            encoding="utf-8",
-        )
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(
         "three_workflow_release_planner.planner.subprocess.run",
         fake_run,
     )
-    with pytest.raises(PlannerError) as error:
-        plan_release(
-            snapshot,
-            PlannerInputs(
-                request=_request(
-                    ["hcoona-release-smoke-pypi"], profile="official"
-                ),
-                repo_root=REPO_ROOT,
-            ),
-        )
-    assert error.value.diagnostics[0]["code"] == "PYPI_FILENAME_COMPUTE_FAILED"
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["hcoona-release-smoke-pypi"], profile="official"),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+    node_id = _publish_node_id_for_family(result.plan, "pypi")
+    node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
+    projection = cast("Mapping[str, object]", node["projection"])
+    names = cast(
+        "Mapping[str, str]",
+        projection["final-distribution-filenames-by-artifact-id"],
+    )
+    assert {
+        "nbgv_python-2.1.0.dev1-py3-none-any.whl",
+        "nbgv_python-2.1.0.dev1.tar.gz",
+    } == set(names.values())
 
 
 def test_pypi_package_name_reads_requested_commit_pyproject(
@@ -1768,6 +2467,7 @@ def test_pypi_package_name_reads_requested_commit_pyproject(
         args: list[str],
         **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
         if handled := _fake_git_show_pyproject(
             args,
             name="requested-name",
@@ -1778,16 +2478,6 @@ def test_pypi_package_name_reads_requested_commit_pyproject(
             return handled
         if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
             return handled
-        out_dir = Path(args[args.index("--out-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "requested_name-2.1.0.dev1-py3-none-any.whl").write_text(
-            "",
-            encoding="utf-8",
-        )
-        (out_dir / "requested_name-2.1.0.dev1.tar.gz").write_text(
-            "",
-            encoding="utf-8",
-        )
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(
@@ -1819,6 +2509,7 @@ def test_pypi_dotted_package_name_matches_wheel_normalization(
         args: list[str],
         **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
         if handled := _fake_git_show_pyproject(
             args,
             name="requested.name",
@@ -1829,16 +2520,6 @@ def test_pypi_dotted_package_name_matches_wheel_normalization(
             return handled
         if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
             return handled
-        out_dir = Path(args[args.index("--out-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "requested_name-2.1.0.dev1-py3-none-any.whl").write_text(
-            "",
-            encoding="utf-8",
-        )
-        (out_dir / "requested_name-2.1.0.dev1.tar.gz").write_text(
-            "",
-            encoding="utf-8",
-        )
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(
@@ -1862,16 +2543,17 @@ def test_pypi_dotted_package_name_matches_wheel_normalization(
     }
 
 
-def test_pypi_build_system_nbgv_identity_uses_backend_normalized_version(
+def test_pypi_build_system_nbgv_identity_uses_pep440_normalized_version(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Use Hatchling's Python version for PyPI identity, not raw SemVer2."""
+    """Use a PEP 440 projection for PyPI identity, not raw SemVer2."""
     snapshot = validate_authoring(REPO_ROOT)
 
     def fake_run(
         args: list[str],
         **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
         if handled := _fake_git_show_pyproject(
             args,
             name="hcoona-release-smoke-pypi",
@@ -1887,21 +2569,6 @@ def test_pypi_build_system_nbgv_identity_uses_backend_normalized_version(
                 '{"SemVer2": "1.0.0-beta.5+gabcdef"}',
                 "",
             )
-        out_dir = Path(args[args.index("--out-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (
-            out_dir
-            / "hcoona_release_smoke_pypi-1.0.0b5+gabcdef-py3-none-any.whl"
-        ).write_text(
-            "",
-            encoding="utf-8",
-        )
-        (
-            out_dir / "hcoona_release_smoke_pypi-1.0.0b5+gabcdef.tar.gz"
-        ).write_text(
-            "",
-            encoding="utf-8",
-        )
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(
@@ -1942,6 +2609,7 @@ def test_pypi_build_system_nbgv_name_reads_requested_commit_pyproject(
         args: list[str],
         **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
         if handled := _fake_git_show_pyproject(
             args,
             name="requested-smoke",
@@ -1957,14 +2625,6 @@ def test_pypi_build_system_nbgv_name_reads_requested_commit_pyproject(
                 '{"SemVer2": "1.0.0-beta.5+gabcdef"}',
                 "",
             )
-        out_dir = Path(args[args.index("--out-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        wheel = out_dir / ("requested_smoke-1.0.0b5+gabcdef-py3-none-any.whl")
-        wheel.write_text("", encoding="utf-8")
-        (out_dir / "requested_smoke-1.0.0b5+gabcdef.tar.gz").write_text(
-            "",
-            encoding="utf-8",
-        )
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(
@@ -1986,28 +2646,25 @@ def test_pypi_build_system_nbgv_name_reads_requested_commit_pyproject(
     assert identity["package-name"] != "hcoona-release-smoke-pypi"
 
 
-def test_pypi_build_system_nbgv_backend_runs_at_requested_commit(
+def test_pypi_build_system_nbgv_query_uses_requested_commit_without_backend(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Run Hatchling in a requested-commit checkout, not ambient HEAD."""
+    """Query NBGV at the requested commit without materializing a build checkout."""
     snapshot = validate_authoring(REPO_ROOT)
-    requested_checkout: Path | None = None
+    captured_commands: list[list[str]] = []
 
     def fake_run(
         args: list[str],
         **kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
-        nonlocal requested_checkout
+        _assert_no_planner_build_command(args)
+        captured_commands.append(list(args))
         if handled := _fake_git_show_pyproject(
             args,
             name="hcoona-release-smoke-pypi",
             version=None,
         ):
             return handled
-        if "worktree" in args and "add" in args:
-            assert args[-1] == SHA
-            requested_checkout = Path(args[-2])
-            return subprocess.CompletedProcess(args, 0, "", "")
         if handled := _fake_git_worktree(args):
             return handled
         if "get-version" in args:
@@ -2018,25 +2675,6 @@ def test_pypi_build_system_nbgv_backend_runs_at_requested_commit(
                 '{"SemVer2": "1.0.0-beta.5+grequested"}',
                 "",
             )
-        assert requested_checkout is not None
-        out_dir = Path(args[args.index("--out-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        build_cwd = Path(cast("Path", kwargs["cwd"]))
-        if build_cwd == requested_checkout:
-            version = "1.0.0b5+grequested"
-        else:
-            version = "9.9.9+ambient"
-        wheel = (
-            out_dir / f"hcoona_release_smoke_pypi-{version}-py3-none-any.whl"
-        )
-        wheel.write_text(
-            "",
-            encoding="utf-8",
-        )
-        (out_dir / f"hcoona_release_smoke_pypi-{version}.tar.gz").write_text(
-            "",
-            encoding="utf-8",
-        )
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(
@@ -2055,19 +2693,20 @@ def test_pypi_build_system_nbgv_backend_runs_at_requested_commit(
     node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
     identity = cast("Mapping[str, str]", node["resolved-publish-identity"])
     assert identity["version"] == "1.0.0b5+grequested"
-    assert identity["version"] != "9.9.9+ambient"
+    assert not any("worktree" in command for command in captured_commands)
 
 
-def test_pypi_filename_compute_failure_fails_closed(
+def test_pypi_invalid_semver2_projection_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Fail closed when backend output cannot provide both PyPI filenames."""
+    """Fail closed when NBGV output cannot be projected to PEP 440."""
     snapshot = validate_authoring(REPO_ROOT)
 
     def fake_run(
         args: list[str],
         **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
         if handled := _fake_git_show_pyproject(
             args,
             name="nbgv-python",
@@ -2076,14 +2715,8 @@ def test_pypi_filename_compute_failure_fails_closed(
             return handled
         if handled := _fake_git_worktree(args):
             return handled
-        if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
+        if handled := _fake_nbgv_get_version(args, semver2="not a version"):
             return handled
-        out_dir = Path(args[args.index("--out-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "nbgv_python-2.1.0.dev1-py3-none-any.whl").write_text(
-            "",
-            encoding="utf-8",
-        )
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(
@@ -2098,31 +2731,33 @@ def test_pypi_filename_compute_failure_fails_closed(
                     ["hcoona-release-smoke-pypi"], profile="official"
                 ),
                 repo_root=REPO_ROOT,
+                dry_run=True,
             ),
         )
-    assert error.value.diagnostics[0]["code"] == "PYPI_FILENAME_COMPUTE_FAILED"
+    assert {diagnostic["code"] for diagnostic in error.value.diagnostics} == {
+        "PYPI_FILENAME_COMPUTE_FAILED"
+    }
 
 
-def test_pypi_checkout_failure_uses_pypi_diagnostic(
+def test_pypi_projection_does_not_materialize_build_checkout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """PyPI worktree failures are reported as PyPI filename failures."""
+    """PyPI projection reads metadata files directly and does not create worktrees."""
     snapshot = validate_authoring(REPO_ROOT)
+    captured_commands: list[list[str]] = []
 
     def fake_run(
         args: list[str],
         **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
+        captured_commands.append(list(args))
         if handled := _fake_git_show_pyproject(
             args,
             name="hcoona-release-smoke-pypi",
             version=None,
         ):
             return handled
-        if "worktree" in args and "add" in args:
-            return subprocess.CompletedProcess(
-                args, 128, "", "fatal: bad object"
-            )
         if handled := _fake_git_worktree(args):
             return handled
         if "get-version" in args:
@@ -2138,19 +2773,16 @@ def test_pypi_checkout_failure_uses_pypi_diagnostic(
         "three_workflow_release_planner.planner.subprocess.run",
         fake_run,
     )
-    with pytest.raises(PlannerError) as error:
-        plan_release(
-            snapshot,
-            PlannerInputs(
-                request=_request(
-                    ["hcoona-release-smoke-pypi"], profile="official"
-                ),
-                repo_root=REPO_ROOT,
-            ),
-        )
-    diagnostic = error.value.diagnostics[0]
-    assert diagnostic["code"] == "PYPI_FILENAME_COMPUTE_FAILED"
-    assert "RubyGems" not in str(diagnostic["message"])
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["hcoona-release-smoke-pypi"], profile="official"),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+    validate_contract(result.plan)
+    assert not any("worktree" in command for command in captured_commands)
 
 
 def test_pypi_wheel_only_publish_does_not_require_sdist(
@@ -2214,6 +2846,7 @@ def test_pypi_wheel_only_publish_does_not_require_sdist(
         args: list[str],
         **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
         if handled := _fake_git_show_pyproject(
             args,
             name="nbgv-python",
@@ -2224,13 +2857,6 @@ def test_pypi_wheel_only_publish_does_not_require_sdist(
             return handled
         if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
             return handled
-        assert "--sdist" not in args
-        out_dir = Path(args[args.index("--out-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "nbgv_python-2.1.0.dev1-py3-none-any.whl").write_text(
-            "",
-            encoding="utf-8",
-        )
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(
@@ -2249,6 +2875,102 @@ def test_pypi_wheel_only_publish_does_not_require_sdist(
     node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
     identity = cast("Mapping[str, str]", node["resolved-publish-identity"])
     assert identity["version"] == "2.1.0.dev1"
+    projection = cast("Mapping[str, object]", node["projection"])
+    names = cast(
+        "Mapping[str, str]",
+        projection["final-distribution-filenames-by-artifact-id"],
+    )
+    assert list(names.values()) == ["nbgv_python-2.1.0.dev1-py3-none-any.whl"]
+
+
+def test_pypi_wheel_only_publish_ignores_unbuilt_sdist_outputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Wheel-only PyPI planning does not inspect backend output directories."""
+    base = validate_authoring(REPO_ROOT)
+    source = base.projects["hcoona-release-smoke-pypi"]
+    pypi_usage = next(
+        usage
+        for usage in source.profiles["official"]
+        if base.target_instances[usage.uses].family == "pypi"
+    )
+    project = ProjectDescriptor(
+        project_id="wheel-only-pypi",
+        display_name="Wheel Only PyPI",
+        ecosystem=source.ecosystem,
+        release_kind=source.release_kind,
+        descriptor_path=source.descriptor_path,
+        release_root=source.release_root,
+        primary_manifest_path=source.primary_manifest_path,
+        auxiliary_input_paths=source.auxiliary_input_paths,
+        version_authority_kind=source.version_authority_kind,
+        variants=(
+            Variant(
+                "package",
+                {},
+                (
+                    Artifact(
+                        "wheel",
+                        "primary-package",
+                        "package",
+                        "wheel",
+                        (),
+                        "package",
+                        (),
+                    ),
+                ),
+            ),
+        ),
+        profiles={
+            "buddy": (),
+            "official": (
+                TargetUsage(
+                    pypi_usage.uses,
+                    ("wheel",),
+                    pypi_usage.projection,
+                    pypi_usage.projection_present,
+                ),
+            ),
+        },
+    )
+    snapshot = AuthoringSnapshot(
+        descriptor_api_version=base.descriptor_api_version,
+        catalog_path=base.catalog_path,
+        projects={"wheel-only-pypi": project},
+        target_instances=base.target_instances,
+    )
+
+    def fake_run(
+        args: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
+        if handled := _fake_git_show_pyproject(
+            args,
+            name="nbgv-python",
+            version="2.1.0.dev1",
+        ):
+            return handled
+        if handled := _fake_git_worktree(args):
+            return handled
+        if handled := _fake_nbgv_get_version(args, semver2="2.1.0-dev.1"):
+            return handled
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_run,
+    )
+    result = plan_release(
+        snapshot,
+        PlannerInputs(
+            request=_request(["wheel-only-pypi"], profile="official"),
+            repo_root=REPO_ROOT,
+            dry_run=True,
+        ),
+    )
+    node_id = _publish_node_id_for_family(result.plan, "pypi")
+    node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
     projection = cast("Mapping[str, object]", node["projection"])
     names = cast(
         "Mapping[str, str]",
@@ -2329,6 +3051,7 @@ def test_github_release_wheel_only_asset_does_not_require_sdist(
         args: list[str],
         **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
+        _assert_no_planner_build_command(args)
         if handled := _fake_git_show_pyproject(
             args,
             name="nbgv-python",
@@ -2337,13 +3060,6 @@ def test_github_release_wheel_only_asset_does_not_require_sdist(
             return handled
         if handled := _fake_git_worktree(args):
             return handled
-        assert "--sdist" not in args
-        out_dir = Path(args[args.index("--out-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "nbgv_python-2.1.0.dev1-py3-none-any.whl").write_text(
-            "",
-            encoding="utf-8",
-        )
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(
@@ -2363,45 +3079,55 @@ def test_github_release_wheel_only_asset_does_not_require_sdist(
     projection = cast("Mapping[str, object]", node["projection"])
     names = cast("Mapping[str, str]", projection["asset-names-by-artifact-id"])
     assert list(names.values()) == ["nbgv_python-2.1.0.dev1-py3-none-any.whl"]
+    assert "asset-sizes-by-artifact-id" not in projection
+    assert "asset-sha256-by-artifact-id" not in projection
 
 
-def test_wxt_browser_zip_projection_names_three_browser_assets(
+@pytest.mark.parametrize(
+    ("project_id", "metadata_kind"),
+    [
+        ("hcoona-release-smoke-wxt", "none"),
+        ("hcoona-release-smoke-dotnet-executable", "dotnet"),
+        ("hcoona-release-smoke-inno", "dotnet"),
+        ("hcoona-release-smoke-pypi", "none"),
+        ("hcoona-release-smoke-npm", "none"),
+        ("hcoona-release-smoke-rubygems", "none"),
+    ],
+)
+def test_active_github_release_asset_kinds_plan_names_without_build_evidence(
     monkeypatch: pytest.MonkeyPatch,
+    project_id: str,
+    metadata_kind: str,
 ) -> None:
-    """Name WXT browser zip assets for Chrome, Firefox, and Edge variants."""
+    """Active concrete GitHub Release asset kinds plan names without bytes."""
     snapshot = validate_authoring(REPO_ROOT)
 
-    def fake_run(
-        args: list[str],
-        **_kwargs: object,
-    ) -> subprocess.CompletedProcess[str]:
-        if handled := _fake_nbgv_get_version(args, semver2="1.2.3"):
-            return handled
-        return subprocess.CompletedProcess(args, 0, "", "")
+    monkeypatch.delitem(
+        sys.modules, "three_workflow_release_build", raising=False
+    )
 
-    monkeypatch.setattr(
-        "three_workflow_release_planner.planner.subprocess.run",
-        fake_run,
+    dotnet_metadata = (
+        _dotnet_metadata(snapshot) if metadata_kind == "dotnet" else None
     )
     result = plan_release(
         snapshot,
         PlannerInputs(
-            request=_request(["hcoona-release-smoke-wxt"]),
+            request=_request([project_id]),
             repo_root=REPO_ROOT,
+            dotnet_metadata=dotnet_metadata,
             dry_run=True,
         ),
     )
-
     node_id = _github_release_node_id(result.plan)
+
     node = cast("Mapping[str, object]", _publish_nodes(result.plan)[node_id])
+    artifact_ids = cast("Sequence[str]", node["artifact-ids"])
     projection = cast("Mapping[str, object]", node["projection"])
     names = cast("Mapping[str, str]", projection["asset-names-by-artifact-id"])
-    assert sorted(names.values()) == [
-        "hcoona-release-smoke-wxt-1.2.3-chrome.zip",
-        "hcoona-release-smoke-wxt-1.2.3-edge.zip",
-        "hcoona-release-smoke-wxt-1.2.3-firefox.zip",
-        "hcoona-release-smoke-wxt-1.2.3-sources.zip",
-    ]
+    assert set(names) == set(artifact_ids)
+    assert all(name for name in names.values())
+    assert "asset-sizes-by-artifact-id" not in projection
+    assert "asset-sha256-by-artifact-id" not in projection
 
 
 def test_dotnet_metadata_boundary_fails_closed_when_missing() -> None:
@@ -2463,6 +3189,88 @@ def test_unknown_project_fails_the_whole_request() -> None:
             ),
         )
     assert error.value.diagnostics[0]["code"] == "REQ_PROJECT_NOT_FOUND"
+
+
+@pytest.mark.parametrize(
+    "requested_project_ids",
+    [
+        [],
+        ["nbgv-python", "hcoona-release-smoke-pypi"],
+    ],
+)
+def test_planner_rejects_non_single_project_requests(
+    requested_project_ids: list[str],
+) -> None:
+    """Active planner requests must name exactly one project."""
+    snapshot = validate_authoring(REPO_ROOT)
+    with pytest.raises(PlannerError) as error:
+        plan_release(
+            snapshot,
+            PlannerInputs(
+                request=_request(requested_project_ids),
+                repo_root=REPO_ROOT,
+                dry_run=True,
+            ),
+        )
+    assert any(
+        diagnostic["code"] == "REQ_INVALID_INPUT"
+        for diagnostic in error.value.diagnostics
+    )
+    assert any(
+        "exactly one project" in str(diagnostic["message"])
+        for diagnostic in error.value.diagnostics
+    )
+
+
+@pytest.mark.parametrize(
+    "bad_commit_sha",
+    [
+        "HEAD",
+        "a" * 39,
+        "a" * 41,
+        "A" * 40,
+        "g" * 40,
+    ],
+)
+def test_planner_rejects_mutable_request_commit_sha_before_commands(
+    bad_commit_sha: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject non-immutable request SHAs before checkout or version commands."""
+    snapshot = validate_authoring(REPO_ROOT)
+    request = _request(["nbgv-python"])
+    request["commit-sha"] = bad_commit_sha
+
+    def fake_run(
+        args: Sequence[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        raise AssertionError(f"planner must reject before subprocess: {args}")
+
+    monkeypatch.setattr(
+        "three_workflow_release_planner.planner.subprocess.run",
+        fake_run,
+    )
+
+    with pytest.raises(PlannerError) as error:
+        plan_release(
+            snapshot,
+            PlannerInputs(
+                request=request,
+                repo_root=REPO_ROOT,
+                dry_run=True,
+            ),
+        )
+
+    assert any(
+        diagnostic["code"] == "REQ_INVALID_INPUT"
+        for diagnostic in error.value.diagnostics
+    )
+    assert any(
+        "40-char lowercase hex SHA" in str(details.get("issues", []))
+        for diagnostic in error.value.diagnostics
+        if isinstance(details := diagnostic.get("details"), dict)
+    )
 
 
 def _ci_request(changed_files: list[str]) -> dict[str, object]:
@@ -2939,17 +3747,19 @@ def test_ci_validation_plans_repository_infrastructure_paths() -> None:
         plan_ci_validation_from_repo,
     )
 
-    changed_files = sorted([
-        ".config/dotnet-tools.json",
-        ".github/hooks/telegram-notify.json",
-        ".github/workflows/ci.yml",
-        ".gitignore",
-        ".pre-commit-config.yaml",
-        "Directory.Build.targets",
-        "tests/fixtures/workflow-release-ci-validation-acceptance-matrix.json",
-        "tests/fixtures/workflow-release-acceptance-matrix.json",
-        "tests/test_workflow_release_control.py",
-    ])
+    changed_files = sorted(
+        [
+            ".config/dotnet-tools.json",
+            ".github/hooks/telegram-notify.json",
+            ".github/workflows/ci.yml",
+            ".gitignore",
+            ".pre-commit-config.yaml",
+            "Directory.Build.targets",
+            "tests/fixtures/workflow-release-ci-validation-acceptance-matrix.json",
+            "tests/fixtures/workflow-release-acceptance-matrix.json",
+            "tests/test_workflow_release_control.py",
+        ]
+    )
 
     snapshot = plan_ci_validation_from_repo(_ci_inputs(changed_files))
 
@@ -2960,6 +3770,50 @@ def test_ci_validation_plans_repository_infrastructure_paths() -> None:
     )
     assert snapshot.plan["verdict-intent"] == "executable"
     assert snapshot.plan["diagnostics"] == []
+
+
+def test_ci_validation_plans_workflow_governance_markdown_as_tooling() -> None:
+    """Active workflow governance markdown is release tooling, not docs-only."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    changed_files = sorted(
+        [
+            ".github/workflows/REFACTOR_PLAN.md",
+            ".github/workflows/docs/DESIGN.v2.md",
+        ]
+    )
+
+    snapshot = plan_ci_validation_from_repo(_ci_inputs(changed_files))
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    classification = cast(
+        "Mapping[str, object]",
+        snapshot.plan["classification"],
+    )
+    impacts = cast("Sequence[Mapping[str, object]]", classification["impacts"])
+    assert [impact["matched-paths"] for impact in impacts] == [
+        [path] for path in changed_files
+    ]
+    assert {impact["category"] for impact in impacts} == {
+        "workflow-release-infrastructure"
+    }
+    assert {
+        cast("Mapping[str, object]", impact["coverage-target"])["id"]
+        for impact in impacts
+    } == {"workflow-orchestration"}
+    assert {impact["source-rule"] for impact in impacts} == {
+        "workflow-release-workflow-orchestration"
+    }
+    assert classification["lightweight-only"] is False
 
 
 def test_ci_validation_derives_validation_only_capabilities() -> None:
@@ -3077,14 +3931,14 @@ def test_ci_validation_plans_transitive_downstream_dependency_basis() -> None:
         "to-subject-id": "python.package-b",
         "relation": "runtime",
     }
-    facts = planner_module._PlanningFacts(  # noqa: SLF001
+    facts = planner_module._PlanningFacts(
         subjects={},
         providers=(),
         dependency_edges=(edge_to_b, edge_to_c),
         dependency_failures=(),
     )
 
-    downstream = planner_module._downstream_subjects(  # noqa: SLF001
+    downstream = planner_module._downstream_subjects(
         "python.package-a",
         facts,
     )
@@ -3362,9 +4216,7 @@ def test_ci_validation_dotnet_release_artifacts_use_platform_runners() -> None:
             artifact["variant-dimensions"],
         )
         runner_by_os[str(dimensions["os"])] = str(
-            work_groups_by_id[str(obligation["work-group-id"])][
-                "runner-family"
-            ]
+            work_groups_by_id[str(obligation["work-group-id"])]["runner-family"]
         )
 
     assert runner_by_os["windows"] == "windows"
@@ -3805,6 +4657,100 @@ def test_ci_validation_workflow_release_project_paths_are_tooling() -> None:
     assert tooling_obligations
 
 
+def test_ci_validation_metadata_paths_are_fact_provider_tooling() -> None:
+    """Metadata package changes exercise the fact-provider surface."""
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        ci_validation_planner as ci,
+    )
+
+    changed_file = (
+        "src/public/lib/three-workflow-release-metadata/src/"
+        "three_workflow_release_metadata/dotnet_metadata.py"
+    )
+    impact = ci._classify_path(
+        changed_file,
+        ci._PlanningFacts({}, (), (), ()),
+    )
+
+    assert impact.category == "workflow-release-infrastructure"
+    assert impact.coverage_target == {
+        "type": "tooling-surface",
+        "id": "fact-provider",
+    }
+
+
+def test_ci_validation_active_release_helper_paths_are_tooling() -> None:
+    """Active release helper and config paths classify to closed surfaces."""
+    from three_workflow_release_contracts import (  # noqa: PLC0415
+        validate_ci_validation_plan,
+    )
+    from three_workflow_release_planner import (  # noqa: PLC0415
+        plan_ci_validation_from_repo,
+    )
+
+    release_orchestrate_helpers = {
+        path.relative_to(REPO_ROOT).as_posix(): "workflow-orchestration"
+        for path in sorted(
+            (REPO_ROOT / "eng/scripts").glob("release_orchestrate_*.sh")
+        )
+    }
+    release_publish_helpers = {
+        path.relative_to(REPO_ROOT).as_posix(): "publish-execution"
+        for path in sorted(
+            (REPO_ROOT / "eng/scripts").glob("publish_*_idempotent.sh")
+        )
+    }
+    expected_surfaces = (
+        {
+            ".github/CODEOWNERS": "workflow-orchestration",
+            ".github/actionlint.yaml": "workflow-orchestration",
+            "eng/scripts/find_project_path.py": "workflow-orchestration",
+            "eng/scripts/validate_pep440_version.py": "workflow-orchestration",
+            "eng/scripts/validate_semver2_version.py": "workflow-orchestration",
+            "eng/scripts/validate_rubygems_version.py": (
+                "workflow-orchestration"
+            ),
+            "eng/scripts/prepare_npm_publish.py": "publish-execution",
+            "eng/scripts/validate_pypi_remote_digests.sh": "publish-execution",
+            (
+                "eng/scripts/verify_python_distribution_exactness.py"
+            ): "build-execution",
+            "eng/scripts/verify_python_artifact_version.py": (
+                "build-execution"
+            ),
+            "tests/test_verify_python_distribution_exactness.py": (
+                "build-execution"
+            ),
+        }
+        | release_orchestrate_helpers
+        | release_publish_helpers
+    )
+    assert "eng/scripts/release_orchestrate_policy_publish_targets.sh" in (
+        expected_surfaces
+    )
+    assert "eng/scripts/validate_pypi_remote_digests.sh" in expected_surfaces
+    snapshot = plan_ci_validation_from_repo(
+        _ci_inputs(sorted(expected_surfaces)),
+    )
+
+    validate_ci_validation_plan(
+        snapshot.plan,
+        changed_files_snapshot=snapshot.changed_files_snapshot,
+        fact_snapshot=snapshot.fact_snapshot,
+    )
+    assert snapshot.plan["verdict-intent"] == "executable"
+    classification = cast(
+        "Mapping[str, object]", snapshot.plan["classification"]
+    )
+    impacts = cast("Sequence[Mapping[str, object]]", classification["impacts"])
+    surface_by_path = {
+        path: str(cast("Mapping[str, object]", impact["coverage-target"])["id"])
+        for impact in impacts
+        for path in cast("Sequence[str]", impact["matched-paths"])
+    }
+    assert surface_by_path == expected_surfaces
+
+
 def test_ci_validation_build_execution_scope_covers_build_subjects() -> None:
     """Build tooling changes select every active build-capable subject."""
     from three_workflow_release_contracts import (  # noqa: PLC0415
@@ -3939,7 +4885,7 @@ def test_ci_validation_capability_failures_cover_changed_files(
         **_kwargs: Any,
     ) -> list[dict[str, object]]:
         return [
-            ci_validation_planner._diagnostic(  # noqa: SLF001
+            ci_validation_planner._diagnostic(
                 code=DiagnosticFamily.FACT_PROVIDER_INSUFFICIENT.value,
                 detail=None,
                 message="forced capability failure",

@@ -1,0 +1,288 @@
+name: Build .NET Release Artifacts (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: 'Target commit SHA to build from'
+        required: true
+        type: string
+      plan_artifact_name:
+        description: 'Release plan artifact name'
+        required: true
+        type: string
+      execution_sets_artifact_name:
+        description: 'Finalized execution sets artifact name'
+        required: true
+        type: string
+      artifact_name:
+        description: 'Artifact name to upload flat release assets as'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  plan-runners:
+    name: Plan .NET release runners
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Checkout trusted control-plane
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ github.workflow_sha }}
+          path: .three-workflow-release/control-plane
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: '0.10.9'
+
+      - name: Download release plan
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.plan_artifact_name }}
+          path: .three-workflow-release/plan
+
+      - name: Download execution sets
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.execution_sets_artifact_name }}
+          path: .three-workflow-release/execution-sets
+
+      - name: Compute active .NET runner matrix
+        id: matrix
+        shell: bash
+        working-directory: .three-workflow-release/control-plane
+        run: |
+          set -Eeuo pipefail
+          matrix="$(
+            uv run python eng/scripts/workflow_release_control.py active-dotnet-runner-matrix \
+              --plan "${GITHUB_WORKSPACE}/.three-workflow-release/plan/release-plan.json" \
+              --execution-sets "${GITHUB_WORKSPACE}/.three-workflow-release/execution-sets/execution-sets.json" \
+              --allowed-runner-label ubuntu-latest \
+              --allowed-runner-label macos-latest \
+              --allowed-runner-label windows-latest
+          )"
+          echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
+
+  build:
+    name: Build .NET release artifacts (${{ matrix.runner_family }})
+    needs: plan-runners
+    runs-on: ${{ matrix.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan-runners.outputs.matrix) }}
+    steps:
+      - name: Checkout trusted control-plane
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ github.workflow_sha }}
+          path: .three-workflow-release/control-plane
+          persist-credentials: false
+
+      - name: Checkout release target
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.target }}
+          path: .three-workflow-release/target
+          persist-credentials: false
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: .three-workflow-release/target/global.json
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: '0.10.9'
+
+      - name: Download release plan
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.plan_artifact_name }}
+          path: .three-workflow-release/plan
+
+      - name: Download execution sets
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.execution_sets_artifact_name }}
+          path: .three-workflow-release/execution-sets
+
+      - name: Restore .NET tools
+        shell: bash
+        working-directory: .three-workflow-release/target
+        run: |
+          set -Eeuo pipefail
+          dotnet tool restore
+
+      - name: Build active .NET variants
+        shell: bash
+        working-directory: .three-workflow-release/control-plane
+        run: |
+          set -Eeuo pipefail
+          rm -rf "${GITHUB_WORKSPACE}/out" "${GITHUB_WORKSPACE}/.three-workflow-release/dotnet-build"
+          mkdir -p "${GITHUB_WORKSPACE}/out" "${GITHUB_WORKSPACE}/.three-workflow-release/dotnet-build"
+
+          mapfile -t variant_ids < <(
+            uv run python eng/scripts/workflow_release_control.py active-dotnet-variant-ids \
+              --plan "${GITHUB_WORKSPACE}/.three-workflow-release/plan/release-plan.json" \
+              --execution-sets "${GITHUB_WORKSPACE}/.three-workflow-release/execution-sets/execution-sets.json" \
+              --runner-family "${RUNNER_FAMILY}"
+          )
+          if [[ "${#variant_ids[@]}" -eq 0 ]]; then
+            echo "No active .NET variants were routed to ${RUNNER_FAMILY}." >&2
+            exit 1
+          fi
+
+          for variant_id in "${variant_ids[@]}"; do
+            variant_dir="${GITHUB_WORKSPACE}/.three-workflow-release/dotnet-build/${variant_id}"
+            mkdir -p "${variant_dir}"
+            uv run python eng/scripts/workflow_release_control.py build-request \
+              --plan "${GITHUB_WORKSPACE}/.three-workflow-release/plan/release-plan.json" \
+              --variant-id "${variant_id}" \
+              --out "${variant_dir}/build-request.json"
+            uv run three-workflow-release-build build \
+              --repo-root "${GITHUB_WORKSPACE}/.three-workflow-release/target" \
+              --request "${variant_dir}/build-request.json" \
+              --bundle-dir "${variant_dir}/bundle" \
+              --result-out "${variant_dir}/build-result.json" \
+              --diagnostics-out "${variant_dir}/build-diagnostics.json"
+            uv run python eng/scripts/workflow_release_control.py copy-dist-flat \
+              --src "${variant_dir}/bundle/dist" \
+              --out "${GITHUB_WORKSPACE}/out"
+          done
+
+          if ! compgen -G "${GITHUB_WORKSPACE}/out/*" >/dev/null; then
+            echo ".NET build produced no release asset files." >&2
+            exit 1
+          fi
+        env:
+          RUNNER_FAMILY: ${{ matrix.runner_family }}
+
+      - name: Upload runner dist artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact_name }}-dotnet-${{ matrix.artifact_suffix }}
+          path: ${{ github.workspace }}/out/*
+          if-no-files-found: error
+
+  merge:
+    name: Merge .NET release artifacts
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trusted control-plane
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ github.workflow_sha }}
+          path: .three-workflow-release/control-plane
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: '0.10.9'
+
+      - name: Download runner dist artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ${{ inputs.artifact_name }}-dotnet-*
+          path: .three-workflow-release/dotnet-runner-dist
+
+      - name: Download release plan
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.plan_artifact_name }}
+          path: .three-workflow-release/plan
+
+      - name: Download execution sets
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.execution_sets_artifact_name }}
+          path: .three-workflow-release/execution-sets
+
+      - name: Merge runner dist artifacts
+        shell: bash
+        working-directory: .three-workflow-release/control-plane
+        run: |
+          set -Eeuo pipefail
+          rm -rf "${GITHUB_WORKSPACE}/out"
+          mkdir -p "${GITHUB_WORKSPACE}/out"
+
+          found="false"
+          while IFS= read -r -d '' artifact_dir; do
+            found="true"
+            uv run python eng/scripts/workflow_release_control.py copy-dist-flat \
+              --src "${artifact_dir}" \
+              --out "${GITHUB_WORKSPACE}/out"
+          done < <(find "${GITHUB_WORKSPACE}/.three-workflow-release/dotnet-runner-dist" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
+
+          if [[ "${found}" != "true" ]]; then
+            echo "No .NET runner dist artifacts were downloaded." >&2
+            exit 1
+          fi
+
+          if ! compgen -G "${GITHUB_WORKSPACE}/out/*" >/dev/null; then
+            echo ".NET build produced no release asset files." >&2
+            exit 1
+          fi
+
+          uv run python eng/scripts/workflow_release_control.py validate-dotnet-dist \
+            --plan "${GITHUB_WORKSPACE}/.three-workflow-release/plan/release-plan.json" \
+            --execution-sets "${GITHUB_WORKSPACE}/.three-workflow-release/execution-sets/execution-sets.json" \
+            --dist "${GITHUB_WORKSPACE}/out"
+
+      - name: Write release asset receipts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "${GITHUB_WORKSPACE}/asset-receipts"
+          python - "${GITHUB_WORKSPACE}/out" "${GITHUB_WORKSPACE}/asset-receipts/release-asset-receipts.json" <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          out_dir = Path(sys.argv[1])
+          receipt_path = Path(sys.argv[2])
+          receipts = []
+          for path in sorted(out_dir.iterdir(), key=lambda item: item.name):
+              if not path.is_file() or path.name == receipt_path.name:
+                  continue
+              receipts.append(
+                  {
+                      "name": path.name,
+                      "size": path.stat().st_size,
+                      "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                  }
+              )
+          if not receipts:
+              raise SystemExit("no release assets found for receipt generation")
+          receipt_path.write_text(json.dumps(receipts, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ github.workspace }}/out/*
+          if-no-files-found: error
+      - name: Upload release asset receipts artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact_name }}-asset-receipts
+          path: ${{ github.workspace }}/asset-receipts/release-asset-receipts.json
+          if-no-files-found: error

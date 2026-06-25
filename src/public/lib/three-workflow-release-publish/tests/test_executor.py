@@ -7,12 +7,14 @@ import hashlib
 import io
 import json
 import subprocess
+import sys
 import tarfile
 import zipfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self
 
 import pytest
+import three_workflow_release_publish.cli as cli_module
 import three_workflow_release_publish.executor as executor_module
 from three_workflow_release_contracts import contracts, validate_contract
 from three_workflow_release_publish import PublishExecutorError, execute_publish
@@ -798,15 +800,14 @@ def test_rubygems_oidc_exchange_uses_github_actions_token(
     assert calls[1][2] == b'{"jwt": "github-oidc-token"}'
 
 
-def test_github_release_executor_uses_planned_asset_names_and_labels() -> None:
-    """Publish GitHub Release assets through gh using planner-frozen names."""
-    scratch = REPO_ROOT / ".publish-executor-github-test"
+def test_github_release_executor_fails_closed_without_gh_mutation() -> None:
+    """GitHub Release publication is owned by the release workflow."""
+    scratch = REPO_ROOT / ".publish-executor-github-disabled-test"
     _reset_scratch(scratch)
     try:
-        package = scratch / "input" / "wrong-name.nupkg"
+        package = scratch / "input" / "Example.1.2.3.nupkg"
         package.parent.mkdir(parents=True, exist_ok=True)
         package.write_bytes(b"asset")
-        bundle = REPO_ROOT / "attestations" / "Example.1.2.3.nupkg.json"
         request = _request(
             family="github-release",
             host="github",
@@ -815,7 +816,7 @@ def test_github_release_executor_uses_planned_asset_names_and_labels() -> None:
             identity={"release-tag": "release/example/v1.2.3"},
             projection={
                 "asset-names-by-artifact-id": {
-                    "artifact/package": "Example.1.2.3.nupkg",
+                    "artifact/package": package.name,
                 },
                 "asset-labels-by-artifact-id": {
                     "artifact/package": "NuGet package",
@@ -823,136 +824,10 @@ def test_github_release_executor_uses_planned_asset_names_and_labels() -> None:
             },
             desired_state={"release-state": "prerelease"},
         )
-        request["github-release-asset-attestations"]["artifact/package"][
-            "bundle-path"
-        ] = bundle.as_posix()
-        _write_attestation_bundles(request)
-        calls = _Calls(
-            responses={
-                ("gh", "release", "view"): json.dumps(
-                    {"url": "https://example.invalid", "assets": []},
-                ),
-            },
-        )
-
-        result = execute_publish(
-            request,
-            REPO_ROOT,
-            runner=calls.runner,
-            check_commit=False,
-            work_dir=scratch / "work",
-        )
-
-        validate_contract(result)
-        assert calls.commands[0][:3] == ["gh", "attestation", "verify"]
-        assert "--signer-workflow" in calls.commands[0]
-        assert calls.commands[0][4:6] == ["--bundle", bundle.as_posix()]
-        assert calls.commands[1][:4] == [
-            "gh",
-            "release",
-            "create",
-            "release/example/v1.2.3",
-        ]
-        assert any(
-            argument.endswith("Example.1.2.3.nupkg#NuGet package")
-            for argument in calls.commands[1]
-        )
-        evidence = result["evidence"]
-        assert isinstance(evidence, dict)
-        attestations = evidence["asset-attestations"]
-        assert isinstance(attestations, dict)
-        assert attestations["artifact/package"]["asset-name"] == (
-            "Example.1.2.3.nupkg"
-        )
-    finally:
-        _remove_attestation_bundles()
-        _reset_scratch(scratch)
-
-
-def test_github_release_replacement_promotes_after_asset_upload() -> None:
-    """Authoritative replacement promotes after verification/upload."""
-    scratch = REPO_ROOT / ".publish-executor-github-promote-test"
-    _reset_scratch(scratch)
-    try:
-        package = scratch / "input" / "wrong-name.nupkg"
-        package.parent.mkdir(parents=True, exist_ok=True)
-        package.write_bytes(b"asset")
-        request = _request(
-            family="github-release",
-            host="github",
-            artifact_path=package,
-            concrete_kind="nuget",
-            identity={"release-tag": "release/example/v1.2.3"},
-            projection={
-                "asset-names-by-artifact-id": {
-                    "artifact/package": "Example.1.2.3.nupkg",
-                },
-                "asset-labels-by-artifact-id": {},
-            },
-            desired_state={"release-state": "release"},
-        )
-        request["publish-node"]["publish-mode"] = "replace-authoritative"
-        _write_attestation_bundles(request)
-        calls = _Calls(
-            responses={
-                ("gh", "release", "view"): json.dumps(
-                    {"url": "https://example.invalid", "assets": []},
-                ),
-            },
-        )
-
-        execute_publish(
-            request,
-            REPO_ROOT,
-            runner=calls.runner,
-            check_commit=False,
-            work_dir=scratch / "work",
-        )
-
-        assert calls.commands[0][:3] == ["gh", "attestation", "verify"]
-        assert calls.commands[1][:3] == ["gh", "release", "view"]
-        assert calls.commands[2][:3] == ["gh", "release", "upload"]
-        assert calls.commands[3] == [
-            "gh",
-            "release",
-            "edit",
-            "release/example/v1.2.3",
-            "--repo",
-            "hcoona/three",
-            "--verify-tag",
-            "--prerelease=false",
-        ]
-    finally:
-        _remove_attestation_bundles()
-        _reset_scratch(scratch)
-
-
-def test_github_release_requires_attestation_bundle_file() -> None:
-    """Refuse a positive result when the supplied bundle path is missing."""
-    scratch = REPO_ROOT / ".publish-executor-github-attestation-test"
-    _reset_scratch(scratch)
-    try:
-        package = scratch / "input" / "wrong-name.nupkg"
-        package.parent.mkdir(parents=True, exist_ok=True)
-        package.write_bytes(b"asset")
-        request = _request(
-            family="github-release",
-            host="github",
-            artifact_path=package,
-            concrete_kind="nuget",
-            identity={"release-tag": "release/example/v1.2.3"},
-            projection={
-                "asset-names-by-artifact-id": {
-                    "artifact/package": "Example.1.2.3.nupkg",
-                },
-                "asset-labels-by-artifact-id": {},
-            },
-            desired_state={"release-state": "prerelease"},
-        )
-        _remove_attestation_bundles()
+        validate_contract(request)
         calls = _Calls()
 
-        with pytest.raises(PublishExecutorError, match="bundle is missing"):
+        with pytest.raises(PublishExecutorError) as error:
             execute_publish(
                 request,
                 REPO_ROOT,
@@ -960,20 +835,79 @@ def test_github_release_requires_attestation_bundle_file() -> None:
                 check_commit=False,
                 work_dir=scratch / "work",
             )
-        assert not any(
-            command[:3] == ["gh", "attestation", "verify"]
-            for command in calls.commands
-        )
-        assert not any(
-            command[:2] == ["gh", "release"] for command in calls.commands
-        )
+
+        assert error.value.code == "PUBLISH_GITHUB_RELEASE_DISABLED"
+        assert "release-create-github-release.yml" in str(error.value)
+        assert calls.commands == []
     finally:
         _reset_scratch(scratch)
 
 
-def test_github_release_rejects_publish_without_attached_attestations() -> None:
-    """Final GitHub Release publish cannot proceed from a base request."""
-    scratch = REPO_ROOT / ".publish-executor-github-missing-attestation-test"
+@pytest.mark.parametrize(
+    "mode",
+    ["create-only", "overwrite-mutable", "replace-authoritative"],
+)
+def test_github_release_modes_cannot_emit_publish_result(mode: str) -> None:
+    """No contract-valid GitHub Release request succeeds in this executor."""
+    scratch = REPO_ROOT / ".publish-executor-github-mode-disabled-test"
+    _reset_scratch(scratch)
+    try:
+        package = scratch / "input" / "Example.1.2.3.nupkg"
+        package.parent.mkdir(parents=True, exist_ok=True)
+        package.write_bytes(b"asset")
+        request = _request(
+            family="github-release",
+            host="github",
+            artifact_path=package,
+            concrete_kind="nuget",
+            identity={"release-tag": "release/example/v1.2.3"},
+            projection={
+                "asset-names-by-artifact-id": {
+                    "artifact/package": package.name,
+                },
+                "asset-labels-by-artifact-id": {},
+            },
+            desired_state={"release-state": "release"},
+        )
+        request["publish-node"]["publish-mode"] = mode
+        if mode == "replace-authoritative":
+            request["profile"] = "official"
+            request["publish-node"]["profile"] = "official"
+        if mode == "overwrite-mutable":
+            request["publish-node"]["desired-publish-state"] = {
+                "release-state": "prerelease",
+            }
+            request["publish-node"]["overwrite-mutable-authorization"] = {
+                "kind": "planner-validated-buddy-force",
+                "profile": "buddy",
+                "force": True,
+                "remote-observation": "partial",
+                "mutability": "mutable-prerelease",
+            }
+        validate_contract(request)
+        calls = _Calls()
+
+        with pytest.raises(PublishExecutorError) as error:
+            execute_publish(
+                request,
+                REPO_ROOT,
+                runner=calls.runner,
+                check_commit=False,
+                work_dir=scratch / "work",
+            )
+
+        assert error.value.code == "PUBLISH_GITHUB_RELEASE_DISABLED"
+        assert "release-create-github-release.yml" in str(error.value)
+        assert calls.commands == []
+    finally:
+        _reset_scratch(scratch)
+
+
+def test_github_release_cli_fails_closed_without_result(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The CLI returns failure and does not write a success result."""
+    scratch = REPO_ROOT / ".publish-executor-github-cli-disabled-test"
     _reset_scratch(scratch)
     try:
         package = scratch / "input" / "Example.1.2.3.nupkg"
@@ -993,111 +927,36 @@ def test_github_release_rejects_publish_without_attached_attestations() -> None:
             },
             desired_state={"release-state": "prerelease"},
         )
-        del request["github-release-asset-attestations"]
         validate_contract(request)
-        calls = _Calls()
+        request_path = scratch / "request.json"
+        result_path = scratch / "result.json"
+        request_path.write_text(
+            json.dumps(request),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "three-workflow-release-publish",
+                "publish",
+                "--repo-root",
+                REPO_ROOT.as_posix(),
+                "--request",
+                request_path.as_posix(),
+                "--result-out",
+                result_path.as_posix(),
+                "--work-dir",
+                (scratch / "work").as_posix(),
+            ],
+        )
 
-        with pytest.raises(PublishExecutorError, match="asset attestations"):
-            execute_publish(
-                request,
-                REPO_ROOT,
-                runner=calls.runner,
-                check_commit=False,
-                work_dir=scratch / "work",
-            )
+        exit_code = cli_module.main()
 
-        assert calls.commands == []
+        assert exit_code == 1
+        assert "release-create-github-release.yml" in capsys.readouterr().err
+        assert not result_path.exists()
     finally:
-        _reset_scratch(scratch)
-
-
-def test_github_release_rejects_invalid_attestation_bundle_path() -> None:
-    """Refuse unsafe repo-relative attestation bundle paths."""
-    scratch = REPO_ROOT / ".publish-executor-github-attestation-invalid-test"
-    _reset_scratch(scratch)
-    try:
-        package = scratch / "input" / "wrong-name.nupkg"
-        package.parent.mkdir(parents=True, exist_ok=True)
-        package.write_bytes(b"asset")
-        request = _request(
-            family="github-release",
-            host="github",
-            artifact_path=package,
-            concrete_kind="nuget",
-            identity={"release-tag": "release/example/v1.2.3"},
-            projection={
-                "asset-names-by-artifact-id": {
-                    "artifact/package": "Example.1.2.3.nupkg",
-                },
-                "asset-labels-by-artifact-id": {},
-            },
-            desired_state={"release-state": "prerelease"},
-        )
-        _remove_attestation_bundles()
-        request["github-release-asset-attestations"]["artifact/package"][
-            "bundle-path"
-        ] = "../attestation.json"
-        calls = _Calls()
-
-        with pytest.raises(PublishExecutorError, match="repo-relative"):
-            execute_publish(
-                request,
-                REPO_ROOT,
-                runner=calls.runner,
-                check_commit=False,
-                work_dir=scratch / "work",
-            )
-        assert not any(
-            command[:3] == ["gh", "attestation", "verify"]
-            for command in calls.commands
-        )
-        assert not any(
-            command[:2] == ["gh", "release"] for command in calls.commands
-        )
-    finally:
-        _remove_attestation_bundles()
-        _reset_scratch(scratch)
-
-
-def test_github_release_requires_verified_asset_attestation() -> None:
-    """Refuse a positive result when any bundle does not verify the asset."""
-    scratch = REPO_ROOT / ".publish-executor-github-attestation-bad-test"
-    _reset_scratch(scratch)
-    try:
-        package = scratch / "input" / "wrong-name.nupkg"
-        package.parent.mkdir(parents=True, exist_ok=True)
-        package.write_bytes(b"asset")
-        request = _request(
-            family="github-release",
-            host="github",
-            artifact_path=package,
-            concrete_kind="nuget",
-            identity={"release-tag": "release/example/v1.2.3"},
-            projection={
-                "asset-names-by-artifact-id": {
-                    "artifact/package": "Example.1.2.3.nupkg",
-                },
-                "asset-labels-by-artifact-id": {},
-            },
-            desired_state={"release-state": "prerelease"},
-        )
-        _write_attestation_bundles(request)
-        calls = _Calls(responses={("gh", "attestation", "verify"): "[]"})
-
-        with pytest.raises(PublishExecutorError, match="attestation"):
-            execute_publish(
-                request,
-                REPO_ROOT,
-                runner=calls.runner,
-                check_commit=False,
-                work_dir=scratch / "work",
-            )
-        assert "--bundle" in calls.commands[0]
-        assert not any(
-            command[:2] == ["gh", "release"] for command in calls.commands
-        )
-    finally:
-        _remove_attestation_bundles()
         _reset_scratch(scratch)
 
 
@@ -1247,10 +1106,6 @@ class _Calls:
             ):
                 stdout = response
                 break
-        else:
-            if command[:3] == ["gh", "attestation", "verify"]:
-                path = Path(command[3])
-                stdout = _attestation_verify_json(path.name, path.read_bytes())
         return subprocess.CompletedProcess(command, 0, stdout, "")
 
 
@@ -1297,6 +1152,16 @@ def _request(  # noqa: PLR0913
             **projection,
             "final-distribution-filenames-by-artifact-id": {
                 artifact_id: artifact_path.name
+            },
+        }
+    if (
+        family == "pypi"
+        and "final-distribution-sha256-by-artifact-id" not in projection
+    ):
+        projection = {
+            **projection,
+            "final-distribution-sha256-by-artifact-id": {
+                artifact_id: hashlib.sha256(data).hexdigest()
             },
         }
     request: dict[str, Any] = {
@@ -1366,16 +1231,8 @@ def _request(  # noqa: PLR0913
     if family == "github-release":
         request["publish-node"]["attestation"] = {
             "signer-workflow": (
-                "hcoona/three/.github/workflows/release-publish-node.yml"
+                "hcoona/three/.github/workflows/release-orchestrate.yml"
             ),
-        }
-        names = projection["asset-names-by-artifact-id"]
-        request["github-release-asset-attestations"] = {
-            artifact_id: {
-                "attestation-id": "att-1",
-                "attestation-url": "https://github.com/hcoona/three/attestations/1",
-                "bundle-path": f"attestations/{names[artifact_id]}.json",
-            },
         }
     validate_contract(request)
     return request
@@ -1447,10 +1304,16 @@ def _capabilities(family: str, host: str) -> dict[str, str]:
         "version-uniqueness-rule": "package-name-plus-version",
         "profile-coexistence-rule": "requires-distinct-name",
         "credential-posture": "oidc",
-        "publish-topology": "external-oidc-reusable-workflow"
-        if family == "rubygems"
-        else "external-oidc-entry-workflow",
+        "publish-topology": _external_oidc_topology(family),
     }
+
+
+def _external_oidc_topology(family: str) -> str:
+    if family == "nuget":
+        return "external-oidc-entry-workflow"
+    if family == "npm":
+        return "external-oidc-caller-workflow"
+    return "external-oidc-reusable-workflow"
 
 
 def _write_wheel(path: Path, name: str, version: str) -> None:
@@ -1487,45 +1350,6 @@ def _write_nuget_package(path: Path, name: str, version: str) -> None:
             "Example.nuspec",
             f"<package><metadata><id>{name}</id><version>{version}</version></metadata></package>",
         )
-
-
-def _attestation_verify_json(subject_name: str, data: bytes) -> str:
-    return json.dumps(
-        [
-            {
-                "verificationResult": {
-                    "statement": {
-                        "predicateType": "https://slsa.dev/provenance/v1",
-                        "subject": [
-                            {
-                                "name": subject_name,
-                                "digest": {
-                                    "sha256": hashlib.sha256(data).hexdigest()
-                                },
-                            }
-                        ],
-                    }
-                }
-            }
-        ]
-    )
-
-
-def _write_attestation_bundles(request: dict[str, Any]) -> None:
-    outputs = request.get("github-release-asset-attestations")
-    if not isinstance(outputs, dict):
-        return
-    for output in outputs.values():
-        assert isinstance(output, dict)
-        path = REPO_ROOT / str(output["bundle-path"])
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("{}", encoding="utf-8")
-
-
-def _remove_attestation_bundles() -> None:
-    root = REPO_ROOT / "attestations"
-    if root.exists():
-        _remove_tree(root)
 
 
 def _reset_scratch(path: Path) -> None:

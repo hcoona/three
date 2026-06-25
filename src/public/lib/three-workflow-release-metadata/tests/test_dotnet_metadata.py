@@ -27,6 +27,15 @@ CONTRACT_FIXTURES = (
     REPO_ROOT
     / "src/public/lib/three-workflow-release-contracts/tests/fixtures/valid"
 )
+_TRUSTED_NBGV = "/trusted/tools/nbgv"
+
+
+@pytest.fixture(autouse=True)
+def _trusted_nbgv_for_metadata_tests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Provide the isolated NBGV CLI path required by metadata collection."""
+    monkeypatch.setenv("THREE_WORKFLOW_RELEASE_NBGV_PATH", _TRUSTED_NBGV)
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -37,6 +46,11 @@ def _load(path: Path) -> dict[str, Any]:
 def _metadata_input() -> dict[str, Any]:
     """Return the shared valid .NET metadata input fixture."""
     return _load(CONTRACT_FIXTURES / "dotnet-planner-metadata-input.json")
+
+
+def _is_nbgv_call(args: Sequence[str]) -> bool:
+    """Return whether a subprocess invocation targets the trusted NBGV CLI."""
+    return Path(str(args[0])).name == "nbgv"
 
 
 def _metadata_input_with_manifests(
@@ -99,7 +113,7 @@ def _assert_input_diagnostic(error: DotnetMetadataError) -> None:
 
 def test_collect_dotnet_metadata_emits_closed_observation() -> None:
     """Collect versions and only required PackageId values."""
-    scratch = REPO_ROOT / ".metadata-packageid-success-test"
+    scratch = REPO_ROOT / ".metadata-packaged-success-test"
     _remove_tree_scratch(scratch)
     scratch.mkdir()
     calls: list[tuple[str, ...]] = []
@@ -116,7 +130,7 @@ def test_collect_dotnet_metadata_emits_closed_observation() -> None:
         ) -> subprocess.CompletedProcess[str]:
             assert cwd == REPO_ROOT.resolve()
             calls.append(tuple(args))
-            if "nbgv" in args:
+            if _is_nbgv_call(args):
                 return subprocess.CompletedProcess(
                     args,
                     0,
@@ -142,7 +156,7 @@ def test_collect_dotnet_metadata_emits_closed_observation() -> None:
         nbgv_projects = {
             call[call.index("--project") + 1]
             for call in calls
-            if "nbgv" in call
+            if _is_nbgv_call(call)
         }
         assert nbgv_projects == {
             ".metadata-packageid-success-test/App",
@@ -164,9 +178,98 @@ def test_collect_dotnet_metadata_emits_closed_observation() -> None:
         _remove_tree_scratch(scratch)
 
 
+def test_collect_dotnet_metadata_uses_trusted_nbgv_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Metadata collection must not invoke target-controlled tool manifests."""
+    scratch = REPO_ROOT / ".metadata-trusted-nbgv-test"
+    _remove_tree_scratch(scratch)
+    scratch.mkdir()
+    calls: list[tuple[str, ...]] = []
+    trusted_nbgv = scratch / "trusted-tools" / "nbgv"
+    monkeypatch.setenv("THREE_WORKFLOW_RELEASE_NBGV_PATH", str(trusted_nbgv))
+
+    try:
+        metadata_input = _metadata_input_with_manifests(
+            scratch,
+            package_id="Trusted.Example",
+        )
+
+        def runner(
+            args: Sequence[str],
+            cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            assert cwd == REPO_ROOT.resolve()
+            calls.append(tuple(args))
+            if args[0] == str(trusted_nbgv):
+                return subprocess.CompletedProcess(
+                    args,
+                    0,
+                    json.dumps({"SemVer2": "1.2.3"}),
+                    "",
+                )
+            return subprocess.CompletedProcess(args, 0, "Trusted.Example\n", "")
+
+        document = collect_dotnet_metadata(
+            metadata_input,
+            REPO_ROOT,
+            runner=runner,
+        )
+
+        validate_contract(document, metadata_input=metadata_input)
+        nbgv_calls = [call for call in calls if call[0] == str(trusted_nbgv)]
+        assert nbgv_calls
+        assert all("tool" not in call for call in nbgv_calls)
+        assert all("run" not in call for call in nbgv_calls)
+        assert all(call[1] == "get-version" for call in nbgv_calls)
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+@pytest.mark.parametrize(
+    ("configured_path", "expected_message"),
+    [
+        (None, "not configured"),
+        ("   ", "not configured"),
+        ("nbgv", "must be absolute"),
+    ],
+)
+def test_collect_dotnet_metadata_requires_valid_trusted_nbgv_path(
+    monkeypatch: pytest.MonkeyPatch,
+    configured_path: str | None,
+    expected_message: str,
+) -> None:
+    """Fail closed before metadata collection can fall back to PATH NBGV."""
+    if configured_path is None:
+        monkeypatch.delenv("THREE_WORKFLOW_RELEASE_NBGV_PATH", raising=False)
+    else:
+        monkeypatch.setenv("THREE_WORKFLOW_RELEASE_NBGV_PATH", configured_path)
+
+    def runner(
+        args: Sequence[str],
+        _cwd: Path,
+    ) -> subprocess.CompletedProcess[str]:
+        message = f"unexpected NBGV invocation: {args}"
+        raise AssertionError(message)
+
+    with pytest.raises(DotnetMetadataError) as error:
+        collect_dotnet_metadata(
+            _metadata_input(),
+            REPO_ROOT,
+            runner=runner,
+        )
+
+    _assert_input_diagnostic(error.value)
+    diagnostic = error.value.diagnostics[0]
+    assert expected_message in str(diagnostic["message"])
+    details = diagnostic["details"]
+    assert isinstance(details, dict)
+    assert details["environment-variable"] == "THREE_WORKFLOW_RELEASE_NBGV_PATH"
+
+
 def test_collect_dotnet_metadata_fails_closed_on_missing_package_id() -> None:
     """Reject NuGet-shaped projects when evaluated PackageId is empty."""
-    scratch = REPO_ROOT / ".metadata-packageid-empty-test"
+    scratch = REPO_ROOT / ".metadata-packaged-empty-test"
     _remove_tree_scratch(scratch)
     scratch.mkdir()
 
@@ -180,7 +283,7 @@ def test_collect_dotnet_metadata_fails_closed_on_missing_package_id() -> None:
             args: Sequence[str],
             _cwd: Path,
         ) -> subprocess.CompletedProcess[str]:
-            if "nbgv" in args:
+            if _is_nbgv_call(args):
                 return subprocess.CompletedProcess(
                     args,
                     0,
@@ -223,7 +326,7 @@ def test_collect_dotnet_metadata_accepts_active_conditional_package_id() -> (
             args: Sequence[str],
             _cwd: Path,
         ) -> subprocess.CompletedProcess[str]:
-            if "nbgv" in args:
+            if _is_nbgv_call(args):
                 return subprocess.CompletedProcess(
                     args,
                     0,
@@ -249,7 +352,7 @@ def test_collect_dotnet_metadata_accepts_active_conditional_package_id() -> (
 
 def test_collect_dotnet_metadata_accepts_valid_package_id_edges() -> None:
     """Accept NuGet-valid PackageId dots, hyphens, and underscores."""
-    scratch = REPO_ROOT / ".metadata-packageid-valid-edge-test"
+    scratch = REPO_ROOT / ".metadata-packaged-valid-edge-test"
     _remove_tree_scratch(scratch)
     scratch.mkdir()
     try:
@@ -262,7 +365,7 @@ def test_collect_dotnet_metadata_accepts_valid_package_id_edges() -> None:
             args: Sequence[str],
             _cwd: Path,
         ) -> subprocess.CompletedProcess[str]:
-            if "nbgv" in args:
+            if _is_nbgv_call(args):
                 return subprocess.CompletedProcess(
                     args,
                     0,
@@ -289,7 +392,7 @@ def test_collect_dotnet_metadata_accepts_valid_package_id_edges() -> None:
 def test_collect_dotnet_metadata_accepts_max_length_package_id() -> None:
     """Accept a NuGet PackageId at the 100-character maximum."""
     package_id = "A" * _MAX_NUGET_PACKAGE_ID_LENGTH
-    scratch = REPO_ROOT / ".metadata-packageid-max-length-test"
+    scratch = REPO_ROOT / ".metadata-packaged-max-length-test"
     _remove_tree_scratch(scratch)
     scratch.mkdir()
     try:
@@ -302,7 +405,7 @@ def test_collect_dotnet_metadata_accepts_max_length_package_id() -> None:
             args: Sequence[str],
             _cwd: Path,
         ) -> subprocess.CompletedProcess[str]:
-            if "nbgv" in args:
+            if _is_nbgv_call(args):
                 return subprocess.CompletedProcess(
                     args,
                     0,
@@ -329,7 +432,7 @@ def test_collect_dotnet_metadata_accepts_max_length_package_id() -> None:
 def test_collect_dotnet_metadata_rejects_over_length_package_id() -> None:
     """Reject an explicit NuGet PackageId longer than 100 characters."""
     package_id = "A" * _OVER_LENGTH_NUGET_PACKAGE_ID_LENGTH
-    scratch = REPO_ROOT / ".metadata-packageid-over-length-test"
+    scratch = REPO_ROOT / ".metadata-packaged-over-length-test"
     _remove_tree_scratch(scratch)
     scratch.mkdir()
     try:
@@ -342,7 +445,7 @@ def test_collect_dotnet_metadata_rejects_over_length_package_id() -> None:
             args: Sequence[str],
             _cwd: Path,
         ) -> subprocess.CompletedProcess[str]:
-            if "nbgv" in args:
+            if _is_nbgv_call(args):
                 return subprocess.CompletedProcess(
                     args,
                     0,
@@ -391,7 +494,7 @@ def test_collect_dotnet_metadata_rejects_over_length_evaluated_package_id() -> (
             args: Sequence[str],
             _cwd: Path,
         ) -> subprocess.CompletedProcess[str]:
-            if "nbgv" in args:
+            if _is_nbgv_call(args):
                 return subprocess.CompletedProcess(
                     args,
                     0,
@@ -429,7 +532,7 @@ def test_collect_dotnet_metadata_rejects_over_length_evaluated_package_id() -> (
 
 def test_collect_dotnet_metadata_rejects_invalid_package_id() -> None:
     """Reject PackageId values that violate NuGet NU1017 format."""
-    scratch = REPO_ROOT / ".metadata-packageid-invalid-test"
+    scratch = REPO_ROOT / ".metadata-packaged-invalid-test"
     _remove_tree_scratch(scratch)
     scratch.mkdir()
     try:
@@ -442,7 +545,7 @@ def test_collect_dotnet_metadata_rejects_invalid_package_id() -> None:
             args: Sequence[str],
             _cwd: Path,
         ) -> subprocess.CompletedProcess[str]:
-            if "nbgv" in args:
+            if _is_nbgv_call(args):
                 return subprocess.CompletedProcess(
                     args,
                     0,
@@ -482,7 +585,7 @@ def test_collect_dotnet_metadata_rejects_invalid_evaluated_package_id() -> None:
             args: Sequence[str],
             _cwd: Path,
         ) -> subprocess.CompletedProcess[str]:
-            if "nbgv" in args:
+            if _is_nbgv_call(args):
                 return subprocess.CompletedProcess(
                     args,
                     0,
@@ -528,7 +631,7 @@ def test_collect_dotnet_metadata_rejects_inactive_package_id_fallback() -> None:
             args: Sequence[str],
             _cwd: Path,
         ) -> subprocess.CompletedProcess[str]:
-            if "nbgv" in args:
+            if _is_nbgv_call(args):
                 return subprocess.CompletedProcess(
                     args,
                     0,
@@ -557,7 +660,7 @@ def test_collect_dotnet_metadata_rejects_inactive_package_id_fallback() -> None:
 
 def test_collect_dotnet_metadata_rejects_package_id_fallback() -> None:
     """Reject SDK fallback PackageId when no PackageId is authored."""
-    scratch = REPO_ROOT / ".metadata-packageid-fallback-test"
+    scratch = REPO_ROOT / ".metadata-packaged-fallback-test"
     _remove_tree_scratch(scratch)
     scratch.mkdir()
     try:
@@ -570,7 +673,7 @@ def test_collect_dotnet_metadata_rejects_package_id_fallback() -> None:
             args: Sequence[str],
             _cwd: Path,
         ) -> subprocess.CompletedProcess[str]:
-            if "nbgv" in args:
+            if _is_nbgv_call(args):
                 return subprocess.CompletedProcess(
                     args,
                     0,
@@ -601,7 +704,7 @@ def test_collect_dotnet_metadata_accepts_case_only_package_id_difference() -> (
     None
 ):
     """Accept case-only differences while preserving evaluated PackageId."""
-    scratch = REPO_ROOT / ".metadata-packageid-case-difference-test"
+    scratch = REPO_ROOT / ".metadata-packaged-case-difference-test"
     _remove_tree_scratch(scratch)
     scratch.mkdir()
     try:
@@ -614,7 +717,7 @@ def test_collect_dotnet_metadata_accepts_case_only_package_id_difference() -> (
             args: Sequence[str],
             _cwd: Path,
         ) -> subprocess.CompletedProcess[str]:
-            if "nbgv" in args:
+            if _is_nbgv_call(args):
                 return subprocess.CompletedProcess(
                     args,
                     0,
@@ -647,7 +750,7 @@ def test_collect_dotnet_metadata_accepts_case_only_package_id_difference() -> (
 
 def test_collect_dotnet_metadata_rejects_mismatched_package_id() -> None:
     """Reject when active pre-fallback PackageId differs from final value."""
-    scratch = REPO_ROOT / ".metadata-packageid-mismatch-test"
+    scratch = REPO_ROOT / ".metadata-packaged-mismatch-test"
     _remove_tree_scratch(scratch)
     scratch.mkdir()
     try:
@@ -660,7 +763,7 @@ def test_collect_dotnet_metadata_rejects_mismatched_package_id() -> None:
             args: Sequence[str],
             _cwd: Path,
         ) -> subprocess.CompletedProcess[str]:
-            if "nbgv" in args:
+            if _is_nbgv_call(args):
                 return subprocess.CompletedProcess(
                     args,
                     0,

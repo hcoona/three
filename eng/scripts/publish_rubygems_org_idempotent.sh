@@ -6,16 +6,18 @@
 # (OIDC), callers should run rubygems/configure-rubygems-credentials with trusted-publisher: true.
 #
 # Required env vars:
-#   PROJECT    Gem name
-#   VERSION    Gem version
+#   PACKAGE_NAME     Planner-frozen Ruby package name
+#   PACKAGE_VERSION  Planner-frozen Ruby package version
 #
 # Optional env vars:
 #   OUT_DIR    Directory containing the built gem (default: "$GITHUB_WORKSPACE/out")
+#   EXPECTED_GEM_FILENAME  Planner-frozen gem basename (default: "$PACKAGE_NAME-$PACKAGE_VERSION.gem")
+#   EXPECTED_GEM_SHA256    Compatibility-only lowercase SHA-256 digest (normally unset)
 
 set -Eeuo pipefail
 
-: "${PROJECT:?PROJECT is required}"
-: "${VERSION:?VERSION is required}"
+: "${PACKAGE_NAME:?PACKAGE_NAME is required}"
+: "${PACKAGE_VERSION:?PACKAGE_VERSION is required}"
 
 OUT_DIR="${OUT_DIR:-${GITHUB_WORKSPACE}/out}"
 
@@ -24,16 +26,37 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-gem_path="${OUT_DIR}/${PROJECT}-${VERSION}.gem"
+expected_gem_filename="${EXPECTED_GEM_FILENAME:-${PACKAGE_NAME}-${PACKAGE_VERSION}.gem}"
+if [[ "${expected_gem_filename}" != *.gem || "${expected_gem_filename}" == */* || "${expected_gem_filename}" == *\\* ]]; then
+  echo "Invalid expected gem filename: ${expected_gem_filename}" >&2
+  exit 1
+fi
+
+gem_path="${OUT_DIR}/${expected_gem_filename}"
 if [[ ! -f "${gem_path}" ]]; then
   echo "Missing gem artifact: ${gem_path}" >&2
   ls -la "${OUT_DIR}" >&2 || true
   exit 1
 fi
+actual_basename="$(basename "${gem_path}")"
+if [[ "${actual_basename}" != "${expected_gem_filename}" ]]; then
+  echo "Gem filename mismatch: expected ${expected_gem_filename}, got ${actual_basename}" >&2
+  exit 1
+fi
 
 local_sha=$(sha256sum "${gem_path}" | awk '{print $1}')
+if [[ -n "${EXPECTED_GEM_SHA256:-}" ]]; then
+  if [[ ! "${EXPECTED_GEM_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "Invalid expected gem SHA-256: ${EXPECTED_GEM_SHA256}" >&2
+    exit 1
+  fi
+  if [[ "${local_sha}" != "${EXPECTED_GEM_SHA256}" ]]; then
+    echo "Gem SHA-256 mismatch for ${actual_basename}: expected ${EXPECTED_GEM_SHA256}, got ${local_sha}" >&2
+    exit 1
+  fi
+fi
 
-api_url="https://rubygems.org/api/v2/rubygems/${PROJECT}/versions/${VERSION}.json?platform=ruby"
+api_url="https://rubygems.org/api/v2/rubygems/${PACKAGE_NAME}/versions/${PACKAGE_VERSION}.json?platform=ruby"
 resp_json="${RUNNER_TEMP:-/tmp}/rubygems.version.json"
 
 set +e
@@ -54,15 +77,15 @@ if [[ "${status}" == "200" ]]; then
     exit 1
   fi
   if [[ "${remote_sha}" == "${local_sha}" ]]; then
-    echo "Gem ${PROJECT} ${VERSION} is already published on RubyGems.org (digest match)."
+    echo "Gem ${PACKAGE_NAME} ${PACKAGE_VERSION} is already published on RubyGems.org (digest match)."
     exit 0
   fi
-  echo "Gem ${PROJECT} ${VERSION} already exists on RubyGems.org but digest differs." >&2
+  echo "Gem ${PACKAGE_NAME} ${PACKAGE_VERSION} already exists on RubyGems.org but digest differs." >&2
   exit 1
 fi
 
 if [[ "${status}" == "404" ]]; then
-  echo "Gem ${PROJECT} ${VERSION} not found on RubyGems.org yet; will attempt to push."
+  echo "Gem ${PACKAGE_NAME} ${PACKAGE_VERSION} not found on RubyGems.org yet; will attempt to push."
 elif [[ "${status}" == "429" || "${status}" =~ ^5[0-9][0-9]$ ]]; then
   echo "RubyGems.org API is rate-limited or unavailable (HTTP ${status})." >&2
   exit 1
@@ -84,7 +107,7 @@ set -e
 if [[ "${push_rc}" -ne 0 ]]; then
   if grep -Eqi '(already (exists|been pushed)|repushing|already pushed)' "${push_err}"; then
     echo "Push reported existing version; waiting and re-checking digest."
-    gem await "${PROJECT}:${VERSION}:ruby"
+    gem await "${PACKAGE_NAME}:${PACKAGE_VERSION}:ruby"
 
     status=$(curl -sS -L -o "${resp_json}" -w '%{http_code}' "${api_url}")
     if [[ "${status}" != "200" ]]; then
@@ -95,11 +118,11 @@ if [[ "${push_rc}" -ne 0 ]]; then
 
     remote_sha=$(jq -r '.sha // empty' "${resp_json}")
     if [[ "${remote_sha}" == "${local_sha}" ]]; then
-      echo "Gem ${PROJECT} ${VERSION} is already published on RubyGems.org (digest match)."
+      echo "Gem ${PACKAGE_NAME} ${PACKAGE_VERSION} is already published on RubyGems.org (digest match)."
       exit 0
     fi
 
-    echo "Gem ${PROJECT} ${VERSION} exists on RubyGems.org but digest differs." >&2
+    echo "Gem ${PACKAGE_NAME} ${PACKAGE_VERSION} exists on RubyGems.org but digest differs." >&2
     exit 1
   fi
 
@@ -108,5 +131,5 @@ if [[ "${push_rc}" -ne 0 ]]; then
   exit 1
 fi
 
-gem await "${PROJECT}:${VERSION}:ruby"
-echo "Published gem ${PROJECT} ${VERSION} to RubyGems.org."
+gem await "${PACKAGE_NAME}:${PACKAGE_VERSION}:ruby"
+echo "Published gem ${PACKAGE_NAME} ${PACKAGE_VERSION} to RubyGems.org."

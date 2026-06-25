@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from three_workflow_release_contracts import validate_contract
+from three_workflow_release_contracts import (
+    ArtifactNameInputs,
+    ContractValidationError,
+    artifact_name,
+    github_release_asset_binding_json,
+    validate_contract,
+)
+
 from three_workflow_release_proof import (
     ProofError,
     classify_github_release_observations,
@@ -36,7 +44,7 @@ def _run() -> dict[str, Any]:
     """Return admissible live run provenance."""
     return {
         "repository": "hcoona/three",
-        "workflow": "release-publish-node.yml",
+        "workflow": "release-orchestrate.yml",
         "run-id": 123,
         "run-attempt": 1,
         "head-sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -455,40 +463,129 @@ def test_immutable_classification_rejects_stale_or_rebound_proofs(
     assert error.value.code == "IMMUTABLE_PROOF_UNAVAILABLE"
 
 
-def test_github_release_asset_proof_wraps_publish_attestation_evidence() -> None:
-    """Emit closed asset proof wrappers from publish request/result evidence."""
+def test_github_release_asset_proof_wraps_github_release_attestation_evidence() -> None:
+    """Emit asset proofs from GitHub Release receipt and attestation evidence."""
     request = _load("publish-request.json")
-    result = _load("publish-result.json")
-    result["evidence"] = {
-        "asset-attestations": {
-            "artifact/package": {
-                "asset-name": "Example.1.2.3.nupkg",
-                "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                "predicate-type": "https://slsa.dev/provenance/v1",
-                "signer-workflow": "hcoona/three/.github/workflows/release-publish-node.yml",
-                "source-repository": "hcoona/three",
-                "source-digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "attestation-id": "att-1",
-                "attestation-url": "https://github.com/hcoona/three/attestations/1",
-                "bundle-path": "attestations/Example.1.2.3.nupkg.json",
-            },
-            "artifact/symbols": {
-                "asset-name": "Example.1.2.3.snupkg",
-                "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-                "predicate-type": "https://slsa.dev/provenance/v1",
-                "signer-workflow": "hcoona/three/.github/workflows/release-publish-node.yml",
-                "source-repository": "hcoona/three",
-                "source-digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "attestation-id": "att-2",
-                "attestation-url": "https://github.com/hcoona/three/attestations/2",
-                "bundle-path": "attestations/Example.1.2.3.snupkg.json",
-            },
-        }
-    }
+    result = _github_release_result_for_request()
+    attestations = _github_release_asset_attestations()
 
     proofs = github_release_asset_proofs(
         publish_request=request,
-        publish_result=result,
+        github_release_result=result,
+        asset_attestations=attestations,
+        run=_run(),
+    )
+
+    assert len(proofs) == 2
+    for proof in proofs:
+        validate_contract(proof)
+
+
+def test_github_release_asset_proof_accepts_release_asset_union_for_split_node() -> (
+    None
+):
+    """Per-node proof generation accepts sibling assets in release-level result."""
+    result = _github_release_result_for_request()
+    attestations = _github_release_asset_attestations()
+    generated: list[dict[str, Any]] = []
+
+    for node_id, artifact_id in [
+        ("publish-node/gh-package", "artifact/package"),
+        ("publish-node/gh-symbols", "artifact/symbols"),
+    ]:
+        request = _github_release_publish_request_for_artifact(
+            node_id,
+            artifact_id,
+        )
+        generated.extend(
+            github_release_asset_proofs(
+                publish_request=request,
+                github_release_result=result,
+                asset_attestations={artifact_id: attestations[artifact_id]},
+                run=_run(),
+            ),
+        )
+
+    assert [
+        proof["binding"]
+        for proof in sorted(
+            generated,
+            key=lambda proof: str(proof["binding"]["artifact-id"]),
+        )
+    ] == [
+        {
+            "publish-node-id": "publish-node/gh-package",
+            "artifact-id": "artifact/package",
+            "release-tag": "release/example/v1.2.3",
+            "asset-name": "Example.1.2.3.nupkg",
+        },
+        {
+            "publish-node-id": "publish-node/gh-symbols",
+            "artifact-id": "artifact/symbols",
+            "release-tag": "release/example/v1.2.3",
+            "asset-name": "Example.1.2.3.snupkg",
+        },
+    ]
+    for proof in generated:
+        validate_contract(proof)
+
+
+def test_github_release_asset_proof_separates_target_and_source_sha() -> None:
+    """GitHub Release proofs bind release target and attestation source separately."""
+    request = _load("publish-request.json")
+    request["attestation-source-sha"] = "d" * 40
+    result = _github_release_result_for_request()
+    attestations = _github_release_asset_attestations()
+    for evidence in attestations.values():
+        evidence["source-digest"] = "d" * 40
+    run = _run()
+    run["head-sha"] = "d" * 40
+
+    proofs = github_release_asset_proofs(
+        publish_request=request,
+        github_release_result=result,
+        asset_attestations=attestations,
+        run=run,
+    )
+
+    assert proofs
+    for proof in proofs:
+        validate_contract(proof)
+        run = cast("Mapping[str, object]", proof["run"])
+        attestation = cast("Mapping[str, object]", proof["attestation"])
+        assert proof["release-target-sha"] == "a" * 40
+        assert run["head-sha"] == "d" * 40
+        assert attestation["source-digest"] == "d" * 40
+
+
+def test_github_release_asset_proof_requires_run_repository_binding() -> None:
+    """Proof sidecars must be emitted by the target GitHub Release repository."""
+    run = _run()
+    run["repository"] = "hcoona/other"
+
+    with pytest.raises(ProofError, match="run repository"):
+        github_release_asset_proofs(
+            publish_request=_load("publish-request.json"),
+            github_release_result=_github_release_result_for_request(),
+            asset_attestations=_github_release_asset_attestations(),
+            run=run,
+        )
+
+
+def test_github_release_asset_proof_accepts_replace_authoritative_release() -> None:
+    """Official replace-authoritative receipts generate positive asset proofs."""
+    request = _load("publish-request.json")
+    request["profile"] = "official"
+    request["publish-node"]["profile"] = "official"
+    request["publish-node"]["publish-mode"] = "replace-authoritative"
+    request["publish-node"]["desired-publish-state"] = {"release-state": "release"}
+    result = _github_release_result_for_request()
+    result["releaseExisted"] = True
+
+    proofs = github_release_asset_proofs(
+        publish_request=request,
+        github_release_result=result,
+        asset_attestations=_github_release_asset_attestations(),
         run=_run(),
     )
 
@@ -500,39 +597,127 @@ def test_github_release_asset_proof_wraps_publish_attestation_evidence() -> None
 @pytest.mark.parametrize(
     ("field", "bad_value"),
     [
-        ("plan-id", "plan/other"),
-        ("project-id", "other-project"),
-        ("publish-node-id", "publish-node/other"),
-        ("target-instance-snapshot-id", "github-release/other"),
+        ("tagName", "release/example/v9.9.9"),
+        ("targetSha", "ffffffffffffffffffffffffffffffffffffffff"),
     ],
 )
-def test_github_release_asset_proof_rejects_publish_result_mismatch(
+def test_github_release_asset_proof_rejects_github_release_result_mismatch(
     field: str,
     bad_value: str,
 ) -> None:
-    """Publish result identity must match the request before proof emission."""
+    """GitHub Release result identity must match the request before proof emission."""
     request = _load("publish-request.json")
-    result = _github_release_publish_result_with_attestations()
+    result = _github_release_result_for_request()
     result[field] = bad_value
 
-    with pytest.raises(ProofError, match="publish result"):
+    with pytest.raises(ProofError, match="GitHub Release result"):
         github_release_asset_proofs(
             publish_request=request,
-            publish_result=result,
+            github_release_result=result,
+            asset_attestations=_github_release_asset_attestations(),
             run=_run(),
         )
 
 
-def test_github_release_asset_proof_rejects_publish_result_identity_mismatch() -> None:
-    """Publish result release identity must match the request release tag."""
+@pytest.mark.parametrize(
+    ("field", "bad_value", "message"),
+    [
+        ("name", "Example.1.2.3-other.nupkg", "asset set"),
+        ("size", 124, "asset size"),
+        ("sha256", "d" * 64, "asset sha256"),
+    ],
+)
+def test_github_release_asset_proof_rejects_result_asset_mismatch(
+    field: str,
+    bad_value: object,
+    message: str,
+) -> None:
+    """GitHub Release result asset receipt must match request asset evidence."""
     request = _load("publish-request.json")
-    result = _github_release_publish_result_with_attestations()
-    result["resolved-publish-identity"] = {"release-tag": "release/example/v9.9.9"}
+    result = _github_release_result_for_request()
+    result["assets"][0][field] = bad_value
 
-    with pytest.raises(ProofError, match="publish result identity"):
+    with pytest.raises(ProofError, match=message):
         github_release_asset_proofs(
             publish_request=request,
-            publish_result=result,
+            github_release_result=result,
+            asset_attestations=_github_release_asset_attestations(),
+            run=_run(),
+        )
+
+
+def test_github_release_asset_proof_requires_publish_request_evidence() -> None:
+    """GitHub Release receipts must be checked against build receipt evidence."""
+    request = _load("publish-request.json")
+    request["artifacts"]["artifact/package"].pop("byte-size")
+
+    with pytest.raises((ContractValidationError, ProofError), match="byte-size"):
+        github_release_asset_proofs(
+            publish_request=request,
+            github_release_result=_github_release_result_for_request(),
+            asset_attestations=_github_release_asset_attestations(),
+            run=_run(),
+        )
+
+
+def test_github_release_asset_proof_allows_create_only_proof_recovery() -> None:
+    """Create-only may recover proof wrappers when payload already exists exactly."""
+    result = _github_release_result_for_request()
+    result["releaseExisted"] = True
+
+    proofs = github_release_asset_proofs(
+        publish_request=_load("publish-request.json"),
+        github_release_result=result,
+        asset_attestations=_github_release_asset_attestations(),
+        run=_run(),
+    )
+
+    asset_names = {
+        cast("Mapping[str, object]", proof["binding"])["asset-name"] for proof in proofs
+    }
+    assert asset_names == {
+        "Example.1.2.3.nupkg",
+        "Example.1.2.3.snupkg",
+    }
+
+
+@pytest.mark.parametrize(
+    ("publish_mode", "release_existed", "profile", "release_state"),
+    [
+        ("overwrite-mutable", False, "buddy", "prerelease"),
+        ("replace-authoritative", False, "official", "release"),
+    ],
+)
+def test_github_release_asset_proof_rejects_release_existed_mode_mismatch(
+    publish_mode: str,
+    release_existed: bool,
+    profile: str,
+    release_state: str,
+) -> None:
+    """GitHub Release result releaseExisted must match the frozen publish mode."""
+    request = _load("publish-request.json")
+    request["profile"] = profile
+    request["publish-node"]["profile"] = profile
+    request["publish-node"]["publish-mode"] = publish_mode
+    request["publish-node"]["desired-publish-state"] = {
+        "release-state": release_state,
+    }
+    if publish_mode == "overwrite-mutable":
+        request["publish-node"]["overwrite-mutable-authorization"] = {
+            "kind": "planner-validated-buddy-force",
+            "profile": "buddy",
+            "force": True,
+            "remote-observation": "partial",
+            "mutability": "mutable-prerelease",
+        }
+    result = _github_release_result_for_request()
+    result["releaseExisted"] = release_existed
+
+    with pytest.raises(ProofError, match="releaseExisted"):
+        github_release_asset_proofs(
+            publish_request=request,
+            github_release_result=result,
+            asset_attestations=_github_release_asset_attestations(),
             run=_run(),
         )
 
@@ -546,8 +731,9 @@ def test_github_release_asset_proof_requires_slsa_predicate_type(
 ) -> None:
     """Asset proof evidence must preserve the verified attestation predicate."""
     request = _load("publish-request.json")
-    result = _github_release_publish_result_with_attestations()
-    package_evidence = result["evidence"]["asset-attestations"]["artifact/package"]
+    result = _github_release_result_for_request()
+    attestations = _github_release_asset_attestations()
+    package_evidence = attestations["artifact/package"]
     if predicate_type is None:
         del package_evidence["predicate-type"]
     else:
@@ -556,13 +742,14 @@ def test_github_release_asset_proof_requires_slsa_predicate_type(
     with pytest.raises(ProofError, match="predicate type"):
         github_release_asset_proofs(
             publish_request=request,
-            publish_result=result,
+            github_release_result=result,
+            asset_attestations=attestations,
             run=_run(),
         )
 
 
-def test_github_release_classification_uses_remote_verification_for_exact() -> None:
-    """Require exact state, asset set, labels, digest, signer, and source."""
+def test_github_release_classification_requires_asset_proofs_for_exact() -> None:
+    """Missing GitHub Release proof wrappers block exact-satisfied replay."""
     plan = _load("release-plan.json")
     remote = _github_release_remote_exact()
 
@@ -570,11 +757,425 @@ def test_github_release_classification_uses_remote_verification_for_exact() -> N
         plan=plan,
         remote_releases=remote,
         proofs=[],
+    ) == {"publish-node/gh": "partial"}
+
+
+def test_github_release_classification_uses_proof_and_remote_verification_for_exact() -> (
+    None
+):
+    """Require exact state, asset set, labels, digest, signer, source, and proofs."""
+    plan = _load("release-plan.json")
+    remote = _github_release_remote_exact()
+
+    assert classify_github_release_observations(
+        plan=plan,
+        remote_releases=remote,
+        proofs=_github_release_asset_proof_pair(),
     ) == {"publish-node/gh": "exact-satisfied"}
 
 
-def test_github_release_asset_proofs_are_optional_corroboration() -> None:
-    """A missing optional proof wrapper does not block current remote proof."""
+def test_github_release_classification_exact_with_distinct_target_and_source_sha() -> (
+    None
+):
+    """Exact GitHub Release replay accepts separated target and attestation source."""
+    proofs = _github_release_asset_proof_pair()
+    for proof in proofs:
+        proof["run"]["head-sha"] = "d" * 40
+        proof["attestation"]["source-digest"] = "d" * 40
+    remote = _github_release_remote_exact()
+    for asset in remote["publish-node/gh"]["assets"]:
+        asset["verified-attestation"]["source-digest"] = "d" * 40
+
+    assert classify_github_release_observations(
+        plan=_load("release-plan.json"),
+        remote_releases=remote,
+        proofs=proofs,
+    ) == {"publish-node/gh": "exact-satisfied"}
+
+
+def test_github_release_classification_exact_uses_release_level_asset_union() -> None:
+    """Same-release GitHub nodes accept the shared release-level payload union."""
+    plan = _github_release_plan_with_split_nodes()
+    remote = _github_release_remote_for_split_nodes()
+    proofs = _github_release_split_node_asset_proofs()
+
+    assert classify_github_release_observations(
+        plan=plan,
+        remote_releases=remote,
+        proofs=proofs,
+    ) == {
+        "publish-node/gh-package": "exact-satisfied",
+        "publish-node/gh-symbols": "exact-satisfied",
+    }
+
+
+def test_github_release_classification_counts_extra_asset_outside_union() -> None:
+    """Payload assets outside the same-release planned union remain non-exact."""
+    plan = _github_release_plan_with_split_nodes()
+    remote = _github_release_remote_for_split_nodes()
+    for release in remote.values():
+        release["assets"].append(
+            {
+                "name": "Example.1.2.3.extra.zip",
+                "label": "",
+                "byte-size": 789,
+                "digest": "sha256:" + ("d" * 64),
+                "verified-attestation": _verified_attestation(
+                    "Example.1.2.3.extra.zip",
+                    "d" * 64,
+                ),
+            },
+        )
+
+    assert classify_github_release_observations(
+        plan=plan,
+        remote_releases=remote,
+        proofs=_github_release_split_node_asset_proofs(),
+    ) == {
+        "publish-node/gh-package": "partial",
+        "publish-node/gh-symbols": "partial",
+    }
+
+
+def test_github_release_classification_ignores_proof_sidecar_assets_for_exact() -> None:
+    """Release asset proof wrappers do not count as extra payload assets."""
+    proofs = _github_release_asset_proof_pair()
+    remote = _github_release_remote_exact()
+    sidecar_name = _github_release_asset_proof_sidecar_name(proofs[0])
+    remote["publish-node/gh"]["assets"].append(
+        {
+            "name": sidecar_name,
+            "label": "",
+            "byte-size": 999,
+            "digest": "sha256:" + ("d" * 64),
+            "verified-attestation": _verified_attestation(
+                sidecar_name,
+                "d" * 64,
+            ),
+        },
+    )
+
+    assert classify_github_release_observations(
+        plan=_load("release-plan.json"),
+        remote_releases=remote,
+        proofs=proofs,
+    ) == {"publish-node/gh": "exact-satisfied"}
+
+
+@pytest.mark.parametrize(
+    "sidecar_name",
+    [
+        "release-github-release-asset-proof-v1-0123456789abcdef01234567-123-1.json",
+        "release-github-release-asset-proof-v1-malformed.json",
+    ],
+)
+def test_github_release_classification_counts_unvalidated_sidecar_asset_as_extra(
+    sidecar_name: str,
+) -> None:
+    """Sidecar-shaped assets are extra payload until matched to valid proof."""
+    remote = _github_release_remote_exact()
+    remote["publish-node/gh"]["assets"].append(
+        {
+            "name": sidecar_name,
+            "label": "",
+            "byte-size": 999,
+            "digest": "sha256:" + ("d" * 64),
+            "verified-attestation": _verified_attestation(
+                sidecar_name,
+                "d" * 64,
+            ),
+        },
+    )
+
+    assert classify_github_release_observations(
+        plan=_load("release-plan.json"),
+        remote_releases=remote,
+        proofs=_github_release_asset_proof_pair(),
+    ) == {"publish-node/gh": "partial"}
+
+
+@pytest.mark.parametrize(
+    ("binding_field", "binding_value"),
+    [
+        ("publish-node-id", "publish-node/rebound"),
+        ("artifact-id", "artifact/symbols"),
+    ],
+)
+def test_github_release_classification_counts_rebound_sidecar_asset_as_extra(
+    binding_field: str,
+    binding_value: str,
+) -> None:
+    """Schema-valid sidecars are ignorable only for the active node artifact map."""
+    proofs = _github_release_asset_proof_pair()
+    rebound_proof = deepcopy(proofs[0])
+    binding = cast("dict[str, Any]", rebound_proof["binding"])
+    binding[binding_field] = binding_value
+    sidecar_name = _github_release_asset_proof_sidecar_name(rebound_proof)
+    remote = _github_release_remote_exact()
+    remote["publish-node/gh"]["assets"].append(
+        {
+            "name": sidecar_name,
+            "label": "",
+            "byte-size": 999,
+            "digest": "sha256:" + ("d" * 64),
+            "verified-attestation": _verified_attestation(
+                sidecar_name,
+                "d" * 64,
+            ),
+        },
+    )
+
+    assert classify_github_release_observations(
+        plan=_load("release-plan.json"),
+        remote_releases=remote,
+        proofs=[rebound_proof, *proofs],
+    ) == {"publish-node/gh": "partial"}
+
+
+@pytest.mark.parametrize(
+    ("run_id", "attempt"),
+    [
+        (124, 1),
+        (123, 2),
+        (124, 2),
+    ],
+)
+def test_github_release_classification_counts_run_suffix_mismatched_sidecar_as_extra(
+    run_id: int,
+    attempt: int,
+) -> None:
+    """Sidecar filename matching includes binding digest, run id, and attempt."""
+    proofs = _github_release_asset_proof_pair()
+    sidecar_name = _github_release_asset_proof_sidecar_name_with_run_suffix(
+        proofs[0],
+        run_id=run_id,
+        attempt=attempt,
+    )
+    remote = _github_release_remote_exact()
+    remote["publish-node/gh"]["assets"].append(
+        {
+            "name": sidecar_name,
+            "label": "",
+            "byte-size": 999,
+            "digest": "sha256:" + ("d" * 64),
+            "verified-attestation": _verified_attestation(
+                sidecar_name,
+                "d" * 64,
+            ),
+        },
+    )
+
+    assert classify_github_release_observations(
+        plan=_load("release-plan.json"),
+        remote_releases=remote,
+        proofs=proofs,
+    ) == {"publish-node/gh": "partial"}
+
+
+@pytest.mark.parametrize(
+    "field_path",
+    [
+        ("run", "repository"),
+        ("attestation", "source-repository"),
+    ],
+)
+def test_github_release_classification_counts_foreign_repository_sidecar_as_extra(
+    field_path: tuple[str, str],
+) -> None:
+    """Proof sidecars are ignorable only when bound to the target repository."""
+    current_proofs = _github_release_asset_proof_pair()
+    foreign_sidecar = deepcopy(current_proofs[0])
+    foreign_sidecar["plan-id"] = "plan/old"
+    foreign_sidecar["run"]["run-id"] = 122
+    foreign_sidecar["run"]["head-sha"] = "f" * 40
+    foreign_sidecar[field_path[0]][field_path[1]] = "hcoona/other"
+    sidecar_name = _github_release_asset_proof_sidecar_name(foreign_sidecar)
+    remote = _github_release_remote_exact()
+    remote["publish-node/gh"]["assets"].append(
+        {
+            "name": sidecar_name,
+            "label": "",
+            "byte-size": 999,
+            "digest": "sha256:" + ("d" * 64),
+            "verified-attestation": _verified_attestation(
+                sidecar_name,
+                "d" * 64,
+            ),
+        },
+    )
+
+    assert classify_github_release_observations(
+        plan=_load("release-plan.json"),
+        remote_releases=remote,
+        proofs=[foreign_sidecar, *current_proofs],
+    ) == {"publish-node/gh": "partial"}
+
+
+def test_github_release_ignores_old_plan_same_target_sidecar_with_current_proofs() -> (
+    None
+):
+    """Historical same-target sidecars do not poison current exact proof replay."""
+    current_proofs = _github_release_asset_proof_pair()
+    historical_sidecar = deepcopy(current_proofs[0])
+    historical_sidecar["plan-id"] = "plan/old"
+    historical_sidecar["run"]["run-id"] = 122
+    sidecar_name = _github_release_asset_proof_sidecar_name(historical_sidecar)
+    remote = _github_release_remote_exact()
+    remote["publish-node/gh"]["assets"].append(
+        {
+            "name": sidecar_name,
+            "label": "",
+            "byte-size": 999,
+            "digest": "sha256:" + ("d" * 64),
+            "verified-attestation": _verified_attestation(
+                sidecar_name,
+                "d" * 64,
+            ),
+        },
+    )
+
+    assert classify_github_release_observations(
+        plan=_load("release-plan.json"),
+        remote_releases=deepcopy(remote),
+        proofs=[historical_sidecar],
+    ) == {"publish-node/gh": "partial"}
+    assert classify_github_release_observations(
+        plan=_load("release-plan.json"),
+        remote_releases=remote,
+        proofs=[historical_sidecar, *current_proofs],
+    ) == {"publish-node/gh": "exact-satisfied"}
+
+
+def test_github_release_counts_wrong_project_historical_sidecar_with_current_proofs() -> (
+    None
+):
+    """Historical sidecars are ignorable only for the current project."""
+    current_proofs = _github_release_asset_proof_pair()
+    historical_sidecar = deepcopy(current_proofs[0])
+    historical_sidecar["plan-id"] = "plan/old"
+    historical_sidecar["project-id"] = "other-project"
+    historical_sidecar["run"]["run-id"] = 122
+    sidecar_name = _github_release_asset_proof_sidecar_name(historical_sidecar)
+    remote = _github_release_remote_exact()
+    remote["publish-node/gh"]["assets"].append(
+        {
+            "name": sidecar_name,
+            "label": "",
+            "byte-size": 999,
+            "digest": "sha256:" + ("d" * 64),
+            "verified-attestation": _verified_attestation(
+                sidecar_name,
+                "d" * 64,
+            ),
+        },
+    )
+
+    assert classify_github_release_observations(
+        plan=_load("release-plan.json"),
+        remote_releases=remote,
+        proofs=[historical_sidecar, *current_proofs],
+    ) == {"publish-node/gh": "partial"}
+
+
+def test_github_release_counts_wrong_variant_historical_sidecar_with_current_proofs() -> (
+    None
+):
+    """Historical sidecars are ignorable only for the current artifact variant."""
+    current_proofs = _github_release_asset_proof_pair()
+    historical_sidecar = deepcopy(current_proofs[0])
+    historical_sidecar["plan-id"] = "plan/old"
+    historical_sidecar["variant-id"] = "variant/other"
+    historical_sidecar["run"]["run-id"] = 122
+    sidecar_name = _github_release_asset_proof_sidecar_name(historical_sidecar)
+    remote = _github_release_remote_exact()
+    remote["publish-node/gh"]["assets"].append(
+        {
+            "name": sidecar_name,
+            "label": "",
+            "byte-size": 999,
+            "digest": "sha256:" + ("d" * 64),
+            "verified-attestation": _verified_attestation(
+                sidecar_name,
+                "d" * 64,
+            ),
+        },
+    )
+
+    assert classify_github_release_observations(
+        plan=_load("release-plan.json"),
+        remote_releases=remote,
+        proofs=[historical_sidecar, *current_proofs],
+    ) == {"publish-node/gh": "partial"}
+
+
+def test_github_release_counts_stale_target_sidecar_even_with_current_proofs() -> None:
+    """Wrong-target sidecars remain visible extras and cannot prove exact payload."""
+    current_proofs = _github_release_asset_proof_pair()
+    stale_proof = deepcopy(current_proofs[0])
+    stale_proof["plan-id"] = "plan/old"
+    stale_proof["release-target-sha"] = "f" * 40
+    stale_proof["run"]["run-id"] = 122
+    stale_proof["run"]["run-attempt"] = 1
+    stale_proof["run"]["head-sha"] = "f" * 40
+    stale_sidecar_name = _github_release_asset_proof_sidecar_name(stale_proof)
+    remote = _github_release_remote_exact()
+    remote["publish-node/gh"]["assets"].append(
+        {
+            "name": stale_sidecar_name,
+            "label": "",
+            "byte-size": 999,
+            "digest": "sha256:" + ("d" * 64),
+            "verified-attestation": _verified_attestation(
+                stale_sidecar_name,
+                "d" * 64,
+            ),
+        },
+    )
+
+    assert classify_github_release_observations(
+        plan=_load("release-plan.json"),
+        remote_releases=deepcopy(remote),
+        proofs=[stale_proof],
+    ) == {"publish-node/gh": "partial"}
+    assert classify_github_release_observations(
+        plan=_load("release-plan.json"),
+        remote_releases=remote,
+        proofs=[stale_proof, *current_proofs],
+    ) == {"publish-node/gh": "partial"}
+
+
+def test_github_release_counts_source_digest_mismatched_sidecar_with_current_proofs() -> (
+    None
+):
+    """Current-target sidecars remain visible when proof provenance disagrees."""
+    current_proofs = _github_release_asset_proof_pair()
+    mismatched_sidecar = deepcopy(current_proofs[0])
+    mismatched_sidecar["run"]["run-id"] = 124
+    mismatched_sidecar["run"]["head-sha"] = "d" * 40
+    sidecar_name = _github_release_asset_proof_sidecar_name(mismatched_sidecar)
+    remote = _github_release_remote_exact()
+    remote["publish-node/gh"]["assets"].append(
+        {
+            "name": sidecar_name,
+            "label": "",
+            "byte-size": 999,
+            "digest": "sha256:" + ("d" * 64),
+            "verified-attestation": _verified_attestation(
+                sidecar_name,
+                "d" * 64,
+            ),
+        },
+    )
+
+    assert classify_github_release_observations(
+        plan=_load("release-plan.json"),
+        remote_releases=remote,
+        proofs=[mismatched_sidecar, *current_proofs],
+    ) == {"publish-node/gh": "partial"}
+
+
+def test_github_release_asset_proofs_are_required_for_each_asset() -> None:
+    """Every planned GitHub Release asset needs an admissible proof wrapper."""
     plan = _load("release-plan.json")
     proofs = [_load("github-release-asset-proof.json")]
     proofs[0]["run"] = _run()
@@ -584,7 +1185,7 @@ def test_github_release_asset_proofs_are_optional_corroboration() -> None:
         plan=plan,
         remote_releases=remote,
         proofs=proofs,
-    ) == {"publish-node/gh": "exact-satisfied"}
+    ) == {"publish-node/gh": "partial"}
 
     proofs.append(_load("github-release-asset-proof.json"))
     proofs[1]["binding"] = {
@@ -697,7 +1298,7 @@ def test_github_release_conflicting_asset_proofs_fail_before_remote_classificati
 def test_github_release_ignores_non_admissible_asset_wrappers(
     run_update: dict[str, bool],
 ) -> None:
-    """Non-admissible optional wrappers do not block current remote proof."""
+    """Non-admissible wrappers cannot make current remote proof exact."""
     proofs = _github_release_asset_proof_pair()
     for proof in proofs:
         proof["run"].update(run_update)
@@ -712,7 +1313,7 @@ def test_github_release_ignores_non_admissible_asset_wrappers(
         plan=_load("release-plan.json"),
         remote_releases=_github_release_remote_exact(),
         proofs=proofs,
-    ) == {"publish-node/gh": "exact-satisfied"}
+    ) == {"publish-node/gh": "partial"}
 
 
 @pytest.mark.parametrize(
@@ -733,6 +1334,8 @@ def test_github_release_conflicting_attestation_proof_fields_fail_closed(
     proofs = _github_release_asset_proof_pair()
     conflicting = deepcopy(proofs[0])
     conflicting["attestation"][attestation_field] = bad_value
+    if attestation_field == "source-digest":
+        conflicting["run"]["head-sha"] = bad_value
     proofs.append(conflicting)
 
     with pytest.raises(ProofError) as error:
@@ -771,7 +1374,7 @@ def test_github_release_stale_asset_proofs_are_ignored(
         plan=plan,
         remote_releases=_github_release_remote_exact(),
         proofs=proofs,
-    ) == {"publish-node/gh": "exact-satisfied"}
+    ) == {"publish-node/gh": "partial"}
 
 
 @pytest.mark.parametrize(
@@ -803,6 +1406,30 @@ def test_github_release_exact_requires_remote_digest(
     assert classify_github_release_observations(
         plan=plan,
         remote_releases=remote,
+        proofs=proofs,
+    ) == {"publish-node/gh": "partial"}
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("byte-size", 999),
+        ("sha256", "d" * 64),
+    ],
+)
+def test_github_release_exact_requires_build_receipt_evidence(
+    field: str,
+    value: object,
+) -> None:
+    """Remote exact classification is bound to proof build receipt bytes."""
+    plan = _load("release-plan.json")
+    proofs = _github_release_asset_proof_pair()
+    package_proof = proofs[0]
+    package_proof["artifact"][field] = value
+
+    assert classify_github_release_observations(
+        plan=plan,
+        remote_releases=_github_release_remote_exact(),
         proofs=proofs,
     ) == {"publish-node/gh": "partial"}
 
@@ -871,36 +1498,89 @@ def test_github_release_classification_conflicts_on_official_non_exact() -> None
     ) == {"publish-node/gh": "conflicting"}
 
 
-def _github_release_publish_result_with_attestations() -> dict[str, Any]:
-    """Return a publish-result fixture with GitHub Release attestation evidence."""
-    result = _load("publish-result.json")
-    result["evidence"] = {
-        "asset-attestations": {
-            "artifact/package": {
-                "asset-name": "Example.1.2.3.nupkg",
-                "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                "predicate-type": "https://slsa.dev/provenance/v1",
-                "signer-workflow": "hcoona/three/.github/workflows/release-publish-node.yml",
-                "source-repository": "hcoona/three",
-                "source-digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "attestation-id": "att-1",
-                "attestation-url": "https://github.com/hcoona/three/attestations/1",
-                "bundle-path": "attestations/Example.1.2.3.nupkg.json",
-            },
-            "artifact/symbols": {
-                "asset-name": "Example.1.2.3.snupkg",
-                "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-                "predicate-type": "https://slsa.dev/provenance/v1",
-                "signer-workflow": "hcoona/three/.github/workflows/release-publish-node.yml",
-                "source-repository": "hcoona/three",
-                "source-digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "attestation-id": "att-2",
-                "attestation-url": "https://github.com/hcoona/three/attestations/2",
-                "bundle-path": "attestations/Example.1.2.3.snupkg.json",
-            },
-        }
-    }
+def test_github_release_classification_promotes_official_prerelease_partial() -> None:
+    """A non-exact same-tag prerelease for desired release is authoritative partial."""
+    plan = _load("release-plan.json")
+    node = plan["graph"]["publish-nodes"]["publish-node/gh"]
+    node["desired-publish-state"] = {"release-state": "release"}
+    remote = _github_release_remote_exact()
+    remote["publish-node/gh"]["assets"] = []
+
+    assert classify_github_release_observations(
+        plan=plan,
+        remote_releases=remote,
+        proofs=[],
+    ) == {"publish-node/gh": "partial-authoritative"}
+
+
+def _github_release_result_for_request() -> dict[str, Any]:
+    """Return a GitHub Release result fixture matching publish-request assets."""
+    result = _load("github-release-result.json")
+    result["assets"] = [
+        {
+            "name": "Example.1.2.3.nupkg",
+            "size": 123,
+            "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        },
+        {
+            "name": "Example.1.2.3.snupkg",
+            "size": 456,
+            "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        },
+    ]
     return result
+
+
+def _github_release_asset_attestations() -> dict[str, Any]:
+    """Return GitHub Release asset attestation evidence keyed by artifact ID."""
+    return {
+        "artifact/package": {
+            "asset-name": "Example.1.2.3.nupkg",
+            "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "predicate-type": "https://slsa.dev/provenance/v1",
+            "signer-workflow": "hcoona/three/.github/workflows/release-orchestrate.yml",
+            "source-repository": "hcoona/three",
+            "source-digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "attestation-id": "att-1",
+            "attestation-url": "https://github.com/hcoona/three/attestations/1",
+            "bundle-path": "attestations/Example.1.2.3.nupkg.json",
+        },
+        "artifact/symbols": {
+            "asset-name": "Example.1.2.3.snupkg",
+            "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "predicate-type": "https://slsa.dev/provenance/v1",
+            "signer-workflow": "hcoona/three/.github/workflows/release-orchestrate.yml",
+            "source-repository": "hcoona/three",
+            "source-digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "attestation-id": "att-2",
+            "attestation-url": "https://github.com/hcoona/three/attestations/2",
+            "bundle-path": "attestations/Example.1.2.3.snupkg.json",
+        },
+    }
+
+
+def _github_release_publish_request_for_artifact(
+    node_id: str,
+    artifact_id: str,
+) -> dict[str, Any]:
+    """Return a GitHub Release publish request narrowed to one artifact."""
+    request = _load("publish-request.json")
+    request["publish-node-id"] = node_id
+    project = cast("dict[str, Any]", request["project"])
+    publish_node_ids = cast("list[str]", project["publish-node-ids"])
+    publish_node_ids[:] = [node_id]
+    node = cast("dict[str, Any]", request["publish-node"])
+    node["publish-node-id"] = node_id
+    node["artifact-ids"] = [artifact_id]
+    request["artifacts"] = {artifact_id: request["artifacts"][artifact_id]}
+    projection = cast("dict[str, dict[str, Any]]", node["projection"])
+    for by_artifact_id in projection.values():
+        by_artifact_id_keys = list(by_artifact_id)
+        for key in by_artifact_id_keys:
+            if key != artifact_id:
+                del by_artifact_id[key]
+    validate_contract(request)
+    return request
 
 
 def _immutable_build_result_receipt() -> dict[str, Any]:
@@ -936,11 +1616,10 @@ def _immutable_plan_for_family(family: str, filename: str) -> dict[str, Any]:
     concrete_kind = {"npm": "npm-package", "rubygems": "rubygem"}[family]
     contract_id = {"npm": "npm-publish", "rubygems": "rubygems-publish"}[family]
     host = {"npm": "registry.npmjs.org", "rubygems": "rubygems.org"}[family]
-    topology = (
-        "external-oidc-reusable-workflow"
-        if family == "rubygems"
-        else "external-oidc-entry-workflow"
-    )
+    topology = {
+        "npm": "external-oidc-caller-workflow",
+        "rubygems": "external-oidc-reusable-workflow",
+    }[family]
 
     node["artifact-ids"] = ["artifact/package"]
     node["publish-node-id"] = node_id
@@ -1014,10 +1693,76 @@ def _apply_dotted_updates(document: dict[str, Any], updates: dict[str, Any]) -> 
             target[parts[-1]] = value
 
 
+def _github_release_plan_with_split_nodes() -> dict[str, Any]:
+    """Return a plan with two same-release GitHub nodes and disjoint assets."""
+    plan = deepcopy(_load("release-plan.json"))
+    graph = cast("dict[str, Any]", plan["graph"])
+    publish_nodes = cast("dict[str, dict[str, Any]]", graph["publish-nodes"])
+    base_node = publish_nodes.pop("publish-node/gh")
+    package_node = base_node
+    symbols_node = deepcopy(base_node)
+
+    _narrow_github_release_node(
+        package_node,
+        node_id="publish-node/gh-package",
+        artifact_id="artifact/package",
+    )
+    _narrow_github_release_node(
+        symbols_node,
+        node_id="publish-node/gh-symbols",
+        artifact_id="artifact/symbols",
+    )
+    publish_nodes["publish-node/gh-package"] = package_node
+    publish_nodes["publish-node/gh-symbols"] = symbols_node
+
+    project = cast("dict[str, Any]", plan["envelope"]["projects"]["example"])
+    publish_node_ids = cast("list[str]", project["publish-node-ids"])
+    publish_node_ids[:] = [
+        "publish-node/gh-package",
+        "publish-node/gh-symbols",
+        "publish-node/nuget",
+    ]
+    validate_contract(plan)
+    return plan
+
+
+def _narrow_github_release_node(
+    node: dict[str, Any],
+    *,
+    node_id: str,
+    artifact_id: str,
+) -> None:
+    node["publish-node-id"] = node_id
+    node["artifact-ids"] = [artifact_id]
+    projection = cast("dict[str, dict[str, Any]]", node["projection"])
+    for by_artifact_id in projection.values():
+        for key in list(by_artifact_id):
+            if key != artifact_id:
+                del by_artifact_id[key]
+
+
+def _github_release_remote_for_split_nodes() -> dict[str, Any]:
+    """Return one release-level remote state observed for two split nodes."""
+    release = _github_release_remote_exact()["publish-node/gh"]
+    return {
+        "publish-node/gh-package": deepcopy(release),
+        "publish-node/gh-symbols": deepcopy(release),
+    }
+
+
+def _github_release_split_node_asset_proofs() -> list[dict[str, Any]]:
+    """Return per-node proofs for split package and symbols GitHub nodes."""
+    proofs = _github_release_asset_proof_pair()
+    proofs[0]["binding"]["publish-node-id"] = "publish-node/gh-package"
+    proofs[1]["binding"]["publish-node-id"] = "publish-node/gh-symbols"
+    return proofs
+
+
 def _github_release_asset_proof_pair() -> list[dict[str, Any]]:
     """Return matching proof wrappers for package and symbols release assets."""
     proofs = [_load("github-release-asset-proof.json")]
     proofs[0]["run"] = _run()
+    proofs[0]["release-target-sha"] = "a" * 40
     proofs.append(deepcopy(proofs[0]))
     proofs[1]["binding"] = {
         "publish-node-id": "publish-node/gh",
@@ -1035,6 +1780,40 @@ def _github_release_asset_proof_pair() -> list[dict[str, Any]]:
         "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     )
     return proofs
+
+
+def _github_release_asset_proof_sidecar_name(proof: dict[str, Any]) -> str:
+    """Return the persisted GitHub Release proof sidecar asset name."""
+    run = cast("dict[str, Any]", proof["run"])
+    binding = cast("dict[str, Any]", proof["binding"])
+    binding_json = github_release_asset_binding_json(
+        publish_node_id=str(binding["publish-node-id"]),
+        artifact_id=str(binding["artifact-id"]),
+        release_tag=str(binding["release-tag"]),
+        asset_name=str(binding["asset-name"]),
+    )
+    name = artifact_name(
+        "github-release-asset-proof",
+        ArtifactNameInputs(
+            run_id=int(run["run-id"]),
+            attempt=int(run["run-attempt"]),
+            binding_json=binding_json,
+        ),
+    )
+    return f"{name}.json"
+
+
+def _github_release_asset_proof_sidecar_name_with_run_suffix(
+    proof: dict[str, Any],
+    *,
+    run_id: int,
+    attempt: int,
+) -> str:
+    """Return a proof-bound name with a different run suffix."""
+    name = _github_release_asset_proof_sidecar_name(proof)
+    stem = name.removesuffix(".json")
+    prefix, _old_run_id, _old_attempt = stem.rsplit("-", 2)
+    return f"{prefix}-{run_id}-{attempt}.json"
 
 
 def _github_release_remote_exact() -> dict[str, Any]:
@@ -1079,7 +1858,7 @@ def _verified_attestation(subject_name: str, sha256: str) -> dict[str, Any]:
         "predicate-type": "https://slsa.dev/provenance/v1",
         "subject-name": subject_name,
         "subject-digest": f"sha256:{sha256}",
-        "signer-workflow": "hcoona/three/.github/workflows/release-publish-node.yml",
+        "signer-workflow": "hcoona/three/.github/workflows/release-orchestrate.yml",
         "source-repository": "hcoona/three",
         "source-digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     }

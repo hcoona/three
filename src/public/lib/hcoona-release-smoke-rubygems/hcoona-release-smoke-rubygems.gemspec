@@ -7,11 +7,10 @@ require "json"
 require "open3"
 
 nbgv_gemspec_version = lambda do |project_root|
+  nbgv_path = ENV.fetch("THREE_WORKFLOW_RELEASE_NBGV_PATH", "").strip
+  nbgv_command = nbgv_path.empty? ? ["dotnet", "tool", "run", "nbgv"] : [nbgv_path]
   stdout, stderr, status = Open3.capture3(
-    "dotnet",
-    "tool",
-    "run",
-    "nbgv",
+    *nbgv_command,
     "get-version",
     "--format",
     "json",

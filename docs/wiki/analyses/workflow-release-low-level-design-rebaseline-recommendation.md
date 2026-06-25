@@ -12,9 +12,10 @@ high-level architecture fixed, then run a focused low-level rebaseline and
 readiness check against the new topology constraints.
 
 The current design corpus has already incorporated topology-partitioned routing
-for first-class OIDC topology and first-delivery live PyPI and npmjs. This record
-captures why that low-level rebaseline was necessary, how it was bounded, and how
-to repeat or verify the same kind of pass after future middle-layer changes.
+for first-class OIDC topology and first-delivery live PyPI, npmjs, and
+RubyGems.org through `release-orchestrate.yml`. This record captures why that
+low-level rebaseline was necessary, how it was bounded, and how to repeat or
+verify the same kind of pass after future middle-layer changes.
 
 The expected outcome of such a pass is focused readiness evidence: identify any
 places where the low-level design still carries superseded topology assumptions,
@@ -36,22 +37,28 @@ checked for stale assumptions such as routing every live external publish throug
 one reusable workflow like `.github/workflows/release-publish-node.yml`.
 
 Status: the current corpus has been updated for topology-partitioned publish
-routing, including first-class OIDC topology and first-delivery live PyPI and
-npmjs through entry-workflow-bound paths. This page is not an assertion that the
-current low-level design remains broken; it is the recommendation and
-verification record for the rebaseline that addressed that risk.
+routing, including first-class OIDC topology and first-delivery live PyPI,
+npmjs, and RubyGems.org through reusable orchestrator jobs. PyPI and RubyGems.org
+use `external-oidc-reusable-workflow`; npmjs uses
+`external-oidc-caller-workflow` because npm validates the direct caller workflow
+for `workflow_call`. PyPI and npmjs no longer use the entry-workflow-bound
+assumptions recorded by the older rebaseline draft. This page is not an
+assertion that the current low-level design remains broken; it is the
+recommendation and verification record for the rebaseline that addressed that
+risk.
 
 ## Assumptions the Rebaseline Must Check
 
 - Live PyPI publication is part of first-delivery scope.
 - External OIDC publishing is not one uniform reusable workflow behavior.
-- PyPI is treated as entry-workflow-bound for current scope unless a successor
-  design proves another supported topology.
-- npmjs is entry-workflow-bound for first delivery because npm validates the
-  calling workflow for `workflow_call` publishes, and the current design keeps
-  the trusted-publisher filename bound to `official.yml`.
-- RubyGems.org can use a reusable-workflow-bound topology where registry support
-  is explicitly configured.
+- PyPI is treated as `external-oidc-reusable-workflow` for current scope, with
+  the trusted publisher bound to `release-orchestrate.yml` and the `pypi`
+  environment.
+- npmjs is treated as `external-oidc-caller-workflow` for first delivery, with
+  the trusted publisher bound to `official.yml` and the `npmjs` environment;
+  the reusable orchestrator job still mints the token and runs `npm publish`.
+- RubyGems.org uses the same reusable-workflow-bound topology where registry
+  support is explicitly configured.
 - GitHub Release and GitHub Packages remain GitHub-token publishing paths rather
   than external OIDC trusted-publisher paths.
 - The registry-trusted workflow filename is a release contract, not an internal
@@ -95,9 +102,12 @@ at the low-level layer.
 
 For the current corpus, this process should be read as a verification checklist:
 confirm that the low-level design now names stable trusted-publisher workflows,
-schedules entry-workflow-bound PyPI publication in the entry workflow, preserves
-caller-workflow-bound and reusable-workflow-bound OIDC paths where applicable,
-and keeps GitHub-token publication distinct from external OIDC paths.
+schedules PyPI, npmjs, and RubyGems.org publication in
+`release-orchestrate.yml` jobs with `pypi`, `npmjs`, and `rubygems`
+environments, binds active npmjs trusted publishing to the `official.yml` caller
+workflow identity, preserves entry-workflow-bound OIDC paths only for future
+targets that explicitly support them, and keeps GitHub-token publication
+distinct from external OIDC paths.
 
 ## Decision Boundary
 

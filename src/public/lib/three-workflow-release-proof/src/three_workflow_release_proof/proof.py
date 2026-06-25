@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections import defaultdict
@@ -115,24 +116,38 @@ def immutable_proofs(  # noqa: PLR0913
 def github_release_asset_proofs(
     *,
     publish_request: Mapping[str, object],
-    publish_result: Mapping[str, object],
+    github_release_result: Mapping[str, object],
+    asset_attestations: Mapping[str, object],
     run: Mapping[str, object],
 ) -> list[Json]:
     """Create validated GitHub Release asset proof wrappers."""
     validate_contract(dict(publish_request))
-    validate_contract(dict(publish_result))
+    validate_contract(dict(github_release_result))
     _require_live_run(run)
     node = _mapping(publish_request.get("publish-node"), "publish-node")
     target = _mapping(
         publish_request.get("target-instance-snapshot"),
         "target-instance-snapshot",
     )
-    destination = _mapping(target.get("destination"), "destination")
-    source_repository = (
-        f"{_string(destination.get('owner'), 'destination.owner')}/"
-        f"{_string(destination.get('repo'), 'destination.repo')}"
+    source_repository = _github_release_source_repository(
+        target,
+        "target-instance-snapshot",
     )
-    source_digest = _string(publish_request.get("commit-sha"), "commit-sha")
+    _require_equal(
+        run.get("repository"),
+        source_repository,
+        "run repository does not match the target",
+    )
+    release_target_sha = _string(publish_request.get("commit-sha"), "commit-sha")
+    source_digest = _string(
+        publish_request.get("attestation-source-sha", release_target_sha),
+        "attestation-source-sha",
+    )
+    _require_equal(
+        run.get("head-sha"),
+        source_digest,
+        "run head SHA does not match the attestation source digest",
+    )
     node_attestation = _mapping(node.get("attestation"), "publish-node.attestation")
     signer_workflow = _string(
         node_attestation.get("signer-workflow"),
@@ -148,14 +163,15 @@ def github_release_asset_proofs(
         projection.get("asset-names-by-artifact-id"),
         "asset-names-by-artifact-id",
     )
-    result_evidence = _mapping(publish_result.get("evidence"), "evidence")
-    attestations = _mapping(
-        result_evidence.get("asset-attestations"),
-        "evidence.asset-attestations",
-    )
     artifacts = _mapping(publish_request.get("artifacts"), "artifacts")
     publish_node_id = _string(publish_request.get("publish-node-id"), "publish-node-id")
-    _require_publish_result_matches_request(publish_request, publish_result, node)
+    _require_github_release_result_matches_request(
+        publish_request,
+        github_release_result,
+        node,
+        artifacts,
+        asset_names,
+    )
     proofs: list[Json] = []
     for artifact_id in _string_list(node.get("artifact-ids"), "artifact-ids"):
         artifact_input = _mapping(
@@ -164,8 +180,8 @@ def github_release_asset_proofs(
         )
         artifact = _artifact_receipt(artifact_input)
         evidence = _mapping(
-            attestations.get(artifact_id),
-            f"evidence.asset-attestations[{artifact_id}]",
+            asset_attestations.get(artifact_id),
+            f"asset-attestations[{artifact_id}]",
         )
         asset_name = _string(asset_names.get(artifact_id), "asset-name")
         _require_equal(
@@ -223,13 +239,14 @@ def github_release_asset_proofs(
             "plan-id": _string(publish_request.get("plan-id"), "plan-id"),
             "project-id": _string(node.get("project-id"), "project-id"),
             "variant-id": _artifact_variant_from_request(artifact_input),
+            "release-target-sha": release_target_sha,
             "run": dict(run),
             "artifact": artifact,
             "attestation": attestation,
         }
         validate_contract(proof)
         proofs.append(proof)
-    if len(proofs) != len(attestations):
+    if len(proofs) != len(asset_attestations):
         raise ProofError(
             "GitHub Release proof evidence has extra or missing assets",
             details={"publish-node-id": publish_node_id},
@@ -308,6 +325,7 @@ def classify_github_release_observations(
     """Classify GitHub Release nodes from normalized release state and proofs."""
     validate_contract(dict(plan))
     proof_index = _github_asset_proof_index(proofs, plan)
+    exact_contexts = _github_release_exact_contexts(plan, proofs)
     observations: dict[str, str] = {}
     for node_id, node in _publish_nodes(plan).items():
         target = _target(plan, node)
@@ -323,7 +341,17 @@ def classify_github_release_observations(
                 details={"publish-node-id": node_id},
             )
         remote_state = _github_remote_release_state(node_id, node, remote)
-        if _github_release_exact(node_id, node, target, plan, remote, proof_index):
+        expected_asset_names, ignorable_sidecar_names = exact_contexts[node_id]
+        if _github_release_exact(
+            node_id,
+            node,
+            target,
+            plan,
+            remote,
+            proof_index,
+            expected_asset_names,
+            ignorable_sidecar_names,
+        ):
             observations[node_id] = "exact-satisfied"
             continue
         desired = _mapping(
@@ -331,13 +359,74 @@ def classify_github_release_observations(
             "desired-publish-state",
         )
         desired_state = _string(desired.get("release-state"), "release-state")
-        if remote_state == "release" and desired_state == "prerelease":
+        if remote_state == "release":
             observations[node_id] = "conflicting"
-        elif remote_state == "release" and desired_state == "release":
-            observations[node_id] = "conflicting"
+        elif desired_state == "release":
+            observations[node_id] = "partial-authoritative"
         else:
             observations[node_id] = "partial"
     return observations
+
+
+def _github_release_exact_contexts(
+    plan: Mapping[str, object],
+    proofs: Sequence[Mapping[str, object]],
+) -> dict[str, tuple[set[str], set[str]]]:
+    """Return release-level payload and sidecar sets for every GitHub node."""
+    nodes = _publish_nodes(plan)
+    group_asset_names: dict[tuple[str, str], set[str]] = defaultdict(set)
+    group_node_ids: dict[tuple[str, str], list[str]] = defaultdict(list)
+    node_group_keys: dict[str, tuple[str, str]] = {}
+    for node_id, node in nodes.items():
+        target = _target(plan, node)
+        if target.get("family") != "github-release":
+            continue
+        group_key = _github_release_group_key(node, target)
+        node_group_keys[node_id] = group_key
+        group_node_ids[group_key].append(node_id)
+        group_asset_names[group_key].update(_github_release_planned_asset_names(node))
+
+    group_sidecar_names: dict[tuple[str, str], set[str]] = {}
+    for group_key, node_ids in group_node_ids.items():
+        sidecar_names: set[str] = set()
+        for node_id in node_ids:
+            sidecar_names.update(
+                _github_release_bound_asset_proof_sidecar_names(
+                    proofs,
+                    plan,
+                    node_id,
+                    nodes[node_id],
+                ),
+            )
+        group_sidecar_names[group_key] = sidecar_names
+
+    return {
+        node_id: (
+            group_asset_names[node_group_keys[node_id]],
+            group_sidecar_names[node_group_keys[node_id]],
+        )
+        for node_id in node_group_keys
+    }
+
+
+def _github_release_group_key(
+    node: Mapping[str, object],
+    target: Mapping[str, object],
+) -> tuple[str, str]:
+    identity = _mapping(node.get("resolved-publish-identity"), "identity")
+    return (
+        _github_release_source_repository(target),
+        _string(identity.get("release-tag"), "release-tag"),
+    )
+
+
+def _github_release_planned_asset_names(node: Mapping[str, object]) -> set[str]:
+    projection = _mapping(node.get("projection"), "projection")
+    names = _mapping(
+        projection.get("asset-names-by-artifact-id"),
+        "asset-names-by-artifact-id",
+    )
+    return {str(name) for name in names.values()}
 
 
 def _github_release_exact(
@@ -350,6 +439,8 @@ def _github_release_exact(
         tuple[str, str, str, str],
         Mapping[str, object] | None,
     ],
+    expected_asset_names: set[str],
+    ignorable_sidecar_names: set[str],
 ) -> bool:
     desired = _mapping(node.get("desired-publish-state"), "desired-publish-state")
     if remote.get("release-state") != desired.get("release-state"):
@@ -365,8 +456,12 @@ def _github_release_exact(
     )
     identity = _mapping(node.get("resolved-publish-identity"), "identity")
     release_tag = _string(identity.get("release-tag"), "release-tag")
-    remote_assets = _remote_assets(remote.get("assets"), node_id)
-    if set(remote_assets) != {str(name) for name in names.values()}:
+    remote_assets = _remote_assets(
+        remote.get("assets"),
+        node_id,
+        ignorable_sidecar_names,
+    )
+    if set(remote_assets) != expected_asset_names:
         return False
     for artifact_id, raw_name in names.items():
         if not isinstance(artifact_id, str) or not isinstance(raw_name, str):
@@ -378,14 +473,49 @@ def _github_release_exact(
                 return False
         elif remote_asset.get("label") != planned_label:
             return False
+        key = (node_id, artifact_id, release_tag, raw_name)
+        proof = proof_index.get(key)
+        if proof is None and key in proof_index:
+            raise ProofError(
+                "GitHub Release asset proofs conflict for the current plan",
+                code="GITHUB_RELEASE_ASSET_PROOF_CONFLICT",
+                details={
+                    "publish-node-id": node_id,
+                    "artifact-id": artifact_id,
+                    "asset-name": raw_name,
+                },
+            )
+        if proof is None:
+            return False
+        remote_size = remote_asset.get("byte-size")
+        if not isinstance(remote_size, int) or remote_size < 0:
+            return False
         node_attestation = _mapping(node.get("attestation"), "node.attestation")
-        destination = _mapping(target.get("destination"), "target.destination")
-        source_repository = (
-            f"{_string(destination.get('owner'), 'destination.owner')}/"
-            f"{_string(destination.get('repo'), 'destination.repo')}"
-        )
+        source_repository = _github_release_source_repository(target)
         remote_sha256 = _remote_asset_sha256(remote_asset)
-        if remote_sha256 is None or not isinstance(remote_asset.get("byte-size"), int):
+        if remote_sha256 is None:
+            return False
+        proof_artifact = _mapping(proof.get("artifact"), "proof.artifact")
+        proof_run = _mapping(proof.get("run"), "proof.run")
+        proof_attestation = _mapping(
+            proof.get("attestation"),
+            "proof.attestation",
+        )
+        source_digest = _string(
+            proof_attestation.get("source-digest"),
+            "proof.attestation.source-digest",
+        )
+        if proof_run.get("head-sha") != source_digest:
+            return False
+        receipt_size = _int(
+            proof_artifact.get("byte-size"),
+            "proof.artifact.byte-size",
+        )
+        receipt_sha256 = _string(
+            proof_artifact.get("sha256"),
+            "proof.artifact.sha256",
+        )
+        if remote_size != receipt_size or remote_sha256 != receipt_sha256:
             return False
         if not _remote_verified_attestation_matches(
             remote_asset,
@@ -393,32 +523,19 @@ def _github_release_exact(
             remote_sha256,
             _string(node_attestation.get("signer-workflow"), "signer-workflow"),
             source_repository,
-            _plan_commit_sha(plan),
+            source_digest,
         ):
             return False
-        key = (node_id, artifact_id, release_tag, raw_name)
-        if key in proof_index:
-            proof = proof_index[key]
-            if proof is None:
-                raise ProofError(
-                    "GitHub Release asset proofs conflict for the current plan",
-                    code="GITHUB_RELEASE_ASSET_PROOF_CONFLICT",
-                    details={
-                        "publish-node-id": node_id,
-                        "artifact-id": artifact_id,
-                        "asset-name": raw_name,
-                    },
-                )
-            if not _github_asset_proof_matches_remote(
-                proof,
-                remote_asset,
-                raw_name,
-                remote_sha256,
-                _string(node_attestation.get("signer-workflow"), "signer-workflow"),
-                source_repository,
-                _plan_commit_sha(plan),
-            ):
-                return False
+        if not _github_asset_proof_matches_remote(
+            proof,
+            remote_asset,
+            raw_name,
+            remote_sha256,
+            _string(node_attestation.get("signer-workflow"), "signer-workflow"),
+            source_repository,
+            source_digest,
+        ):
+            return False
     return True
 
 
@@ -678,6 +795,92 @@ def _github_asset_proof_index(
     return proof_index
 
 
+def _github_release_bound_asset_proof_sidecar_names(
+    proofs: Sequence[Mapping[str, object]],
+    plan: Mapping[str, object],
+    node_id: str,
+    node: Mapping[str, object],
+) -> set[str]:
+    """Return valid historical/current release proof sidecar names for this target."""
+    target = _target(plan, node)
+    if target.get("family") != "github-release":
+        return set()
+    source_repository = _github_release_source_repository(target)
+    artifact_ids = set(_string_list(node.get("artifact-ids"), "artifact-ids"))
+    identity = _mapping(node.get("resolved-publish-identity"), "identity")
+    release_tag = _string(identity.get("release-tag"), "release-tag")
+    node_attestation = _mapping(node.get("attestation"), "node.attestation")
+    signer_workflow = _string(
+        node_attestation.get("signer-workflow"),
+        "signer-workflow",
+    )
+    projection = _mapping(node.get("projection"), "projection")
+    asset_names = _mapping(
+        projection.get("asset-names-by-artifact-id"),
+        "asset-names-by-artifact-id",
+    )
+    names: set[str] = set()
+    for proof in proofs:
+        validate_contract(dict(proof))
+        if proof.get("kind") != "github-release-asset-proof":
+            continue
+        binding = _mapping(proof.get("binding"), "binding")
+        run = _mapping(proof.get("run"), "run")
+        key = (
+            _string(binding.get("publish-node-id"), "publish-node-id"),
+            _string(binding.get("artifact-id"), "artifact-id"),
+            _string(binding.get("release-tag"), "release-tag"),
+            _string(binding.get("asset-name"), "asset-name"),
+        )
+        if key[0] != node_id or not _is_admissible_run(run):
+            continue
+        if not _github_asset_proof_matches_sidecar_target(
+            proof,
+            binding,
+            run,
+            plan,
+            node,
+            key,
+            artifact_ids,
+            release_tag,
+            asset_names,
+            source_repository,
+            signer_workflow,
+        ):
+            continue
+        names.add(_github_asset_proof_sidecar_name(proof, binding, run))
+    return names
+
+
+def _github_asset_proof_sidecar_name(
+    proof: Mapping[str, object],
+    binding: Mapping[str, object] | None = None,
+    run: Mapping[str, object] | None = None,
+) -> str:
+    """Return the filename bound to a validated GitHub Release proof wrapper."""
+    if binding is None:
+        binding = _mapping(proof.get("binding"), "binding")
+    if run is None:
+        run = _mapping(proof.get("run"), "run")
+    binding_json = json.dumps(
+        {
+            "publish-node-id": _string(
+                binding.get("publish-node-id"),
+                "publish-node-id",
+            ),
+            "artifact-id": _string(binding.get("artifact-id"), "artifact-id"),
+            "release-tag": _string(binding.get("release-tag"), "release-tag"),
+            "asset-name": _string(binding.get("asset-name"), "asset-name"),
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(binding_json.encode("utf-8")).hexdigest()[:24]
+    run_id = _int(run.get("run-id"), "run-id")
+    attempt = _int(run.get("run-attempt"), "run-attempt")
+    return f"release-github-release-asset-proof-v1-{digest}-{run_id}-{attempt}.json"
+
+
 def _github_asset_proof_matches_plan(
     proof: Mapping[str, object],
     binding: Mapping[str, object],
@@ -703,15 +906,89 @@ def _github_asset_proof_matches_plan(
         variant_id = _artifact_variant(plan, key[1])
     except ProofError:
         return False
+    attestation = proof.get("attestation")
+    if not isinstance(attestation, Mapping):
+        return False
+    release_target_sha = proof.get("release-target-sha", run.get("head-sha"))
     return (
         proof.get("plan-id") == _plan_id(plan)
         and proof.get("project-id") == node.get("project-id")
         and proof.get("variant-id") == variant_id
-        and run.get("head-sha") == _plan_commit_sha(plan)
+        and release_target_sha == _plan_commit_sha(plan)
+        and run.get("head-sha") == attestation.get("source-digest")
         and binding.get("publish-node-id") == key[0]
         and binding.get("artifact-id") == key[1]
         and binding.get("release-tag") == identity.get("release-tag")
         and binding.get("asset-name") == names.get(key[1])
+    )
+
+
+def _github_asset_proof_matches_sidecar_target(
+    proof: Mapping[str, object],
+    binding: Mapping[str, object],
+    run: Mapping[str, object],
+    plan: Mapping[str, object],
+    node: Mapping[str, object],
+    key: tuple[str, str, str, str],
+    artifact_ids: set[str],
+    release_tag: str,
+    asset_names: Mapping[str, object],
+    source_repository: str,
+    signer_workflow: str,
+) -> bool:
+    """Return whether a proof wrapper is an ignorable sidecar for this target."""
+    if proof.get("project-id") != node.get("project-id"):
+        return False
+    if key[1] not in artifact_ids or key[2] != release_tag:
+        return False
+    try:
+        variant_id = _artifact_variant(plan, key[1])
+    except ProofError:
+        return False
+    if proof.get("variant-id") != variant_id:
+        return False
+    asset_name = asset_names.get(key[1])
+    if not isinstance(asset_name, str) or key[3] != asset_name:
+        return False
+    release_target_sha = proof.get("release-target-sha", run.get("head-sha"))
+    return release_target_sha == _plan_commit_sha(
+        plan
+    ) and _github_asset_proof_has_consistent_evidence(
+        proof,
+        binding,
+        run,
+        asset_name,
+        source_repository,
+        signer_workflow,
+    )
+
+
+def _github_asset_proof_has_consistent_evidence(
+    proof: Mapping[str, object],
+    binding: Mapping[str, object],
+    run: Mapping[str, object],
+    asset_name: str,
+    source_repository: str,
+    signer_workflow: str,
+) -> bool:
+    """Return whether a wrapper is internally consistent enough to hide as sidecar."""
+    artifact = _mapping(proof.get("artifact"), "proof.artifact")
+    attestation = _mapping(proof.get("attestation"), "proof.attestation")
+    artifact_size = _int(artifact.get("byte-size"), "proof.artifact.byte-size")
+    artifact_sha256 = _string(artifact.get("sha256"), "proof.artifact.sha256")
+    source_digest = _string(
+        attestation.get("source-digest"),
+        "proof.attestation.source-digest",
+    )
+    binding_asset_name = binding.get("asset-name")
+    return binding_asset_name == asset_name and _github_asset_proof_matches_remote(
+        proof,
+        {"byte-size": artifact_size},
+        asset_name,
+        artifact_sha256,
+        signer_workflow,
+        source_repository,
+        source_digest,
     )
 
 
@@ -725,10 +1002,13 @@ def _github_asset_proof_matches_remote(
     source_digest: str,
 ) -> bool:
     """Return whether an admissible wrapper corroborates current remote evidence."""
+    run = _mapping(proof.get("run"), "proof.run")
     artifact = _mapping(proof.get("artifact"), "proof.artifact")
     attestation = _mapping(proof.get("attestation"), "proof.attestation")
     return (
         remote_asset.get("byte-size") == artifact.get("byte-size")
+        and run.get("repository") == source_repository
+        and run.get("head-sha") == source_digest
         and artifact.get("sha256") == remote_sha256
         and attestation.get("predicate-type") == _GITHUB_PROOF_PREDICATE
         and attestation.get("subject-name") == asset_name
@@ -739,9 +1019,21 @@ def _github_asset_proof_matches_remote(
     )
 
 
+def _github_release_source_repository(
+    target: Mapping[str, object],
+    context: str = "target",
+) -> str:
+    """Return the expected owner/repository binding for a GitHub Release target."""
+    destination = _mapping(target.get("destination"), f"{context}.destination")
+    owner = _string(destination.get("owner"), f"{context}.destination.owner")
+    repo = _string(destination.get("repo"), f"{context}.destination.repo")
+    return f"{owner}/{repo}"
+
+
 def _same_github_asset_proofs(values: Sequence[Mapping[str, object]]) -> bool:
     if not values:
         return False
+    first_run = _mapping(values[0].get("run"), "run")
     first_artifact = _mapping(values[0].get("artifact"), "artifact")
     first_attestation = _mapping(values[0].get("attestation"), "attestation")
     artifact_fields = ("sha256", "byte-size")
@@ -754,8 +1046,11 @@ def _same_github_asset_proofs(values: Sequence[Mapping[str, object]]) -> bool:
         "source-digest",
     )
     for value in values[1:]:
+        run = _mapping(value.get("run"), "run")
         artifact = _mapping(value.get("artifact"), "artifact")
         attestation = _mapping(value.get("attestation"), "attestation")
+        if run.get("repository") != first_run.get("repository"):
+            return False
         if any(
             artifact.get(field) != first_artifact.get(field)
             for field in artifact_fields
@@ -769,40 +1064,96 @@ def _same_github_asset_proofs(values: Sequence[Mapping[str, object]]) -> bool:
     return True
 
 
-def _require_publish_result_matches_request(
+def _require_github_release_result_matches_request(
     request: Mapping[str, object],
     result: Mapping[str, object],
     node: Mapping[str, object],
+    artifacts: Mapping[str, object],
+    asset_names: Mapping[str, object],
 ) -> None:
-    """Fail closed unless publish result identity matches the request."""
-    checks = (
-        ("plan-id", request.get("plan-id")),
-        ("project-id", node.get("project-id")),
-        ("publish-node-id", request.get("publish-node-id")),
-        (
-            "target-instance-snapshot-id",
-            node.get("target-instance-snapshot-id"),
-        ),
-    )
-    for field, expected in checks:
-        _require_equal(
-            result.get(field),
-            expected,
-            f"publish result {field} does not match the request",
-        )
-    request_identity = _mapping(
+    """Fail closed unless a GitHub Release receipt matches the request."""
+    identity = _mapping(
         node.get("resolved-publish-identity"),
         "publish-node.resolved-publish-identity",
     )
-    result_identity = _mapping(
-        result.get("resolved-publish-identity"),
-        "publish-result.resolved-publish-identity",
+    _require_equal(
+        result.get("tagName"),
+        identity.get("release-tag"),
+        "GitHub Release result tagName does not match the request",
     )
     _require_equal(
-        dict(result_identity),
-        dict(request_identity),
-        "publish result identity does not match the request",
+        result.get("targetSha"),
+        request.get("commit-sha"),
+        "GitHub Release result targetSha does not match the request",
     )
+    publish_mode = _string(node.get("publish-mode"), "publish-node.publish-mode")
+    expected_release_existed = {
+        "overwrite-mutable": True,
+        "replace-authoritative": True,
+    }.get(publish_mode)
+    if publish_mode == "create-only":
+        release_existed = result.get("releaseExisted")
+        if release_existed is not False and release_existed is not True:
+            raise ProofError(
+                "GitHub Release result releaseExisted does not match publish-mode",
+            )
+    elif expected_release_existed is None:
+        raise ProofError(
+            "GitHub Release publish node has unsupported publish-mode",
+            details={"publish-mode": publish_mode},
+        )
+    else:
+        _require_equal(
+            result.get("releaseExisted"),
+            expected_release_existed,
+            "GitHub Release result releaseExisted does not match publish-mode",
+        )
+    result_assets = _mapping(
+        {
+            _string(asset.get("name"), "github-release-result.assets[].name"): asset
+            for asset in _sequence(
+                result.get("assets"),
+                "github-release-result.assets",
+            )
+            if isinstance(asset, Mapping)
+        },
+        "github-release-result.assets",
+    )
+    planned_assets: dict[str, tuple[int, str]] = {}
+    for artifact_id in _string_list(node.get("artifact-ids"), "artifact-ids"):
+        asset_name = _string(asset_names.get(artifact_id), "asset-name")
+        artifact = _artifact_receipt(
+            _mapping(artifacts.get(artifact_id), f"artifacts[{artifact_id}]")
+        )
+        planned_assets[asset_name] = (
+            _int(artifact.get("byte-size"), "artifact.byte-size"),
+            _string(artifact.get("sha256"), "artifact.sha256"),
+        )
+    missing_assets = set(planned_assets) - set(result_assets)
+    if missing_assets:
+        raise ProofError(
+            "GitHub Release result asset set does not match the request",
+            details={
+                "missing-assets": sorted(missing_assets),
+                "required-assets": sorted(planned_assets),
+                "actual-assets": sorted(result_assets),
+            },
+        )
+    for asset_name, (byte_size, sha256) in planned_assets.items():
+        result_asset = _mapping(
+            result_assets.get(asset_name),
+            f"github-release-result.assets[{asset_name}]",
+        )
+        _require_equal(
+            result_asset.get("size"),
+            byte_size,
+            "GitHub Release result asset size does not match the request",
+        )
+        _require_equal(
+            result_asset.get("sha256"),
+            sha256,
+            "GitHub Release result asset sha256 does not match the request",
+        )
 
 
 def _remote_asset_sha256(asset: Mapping[str, object]) -> str | None:
@@ -837,7 +1188,11 @@ def _remote_members(value: object, node_id: str) -> dict[str, str]:
     return members
 
 
-def _remote_assets(value: object, node_id: str) -> dict[str, Mapping[str, object]]:
+def _remote_assets(
+    value: object,
+    node_id: str,
+    valid_sidecar_names: set[str],
+) -> dict[str, Mapping[str, object]]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         raise ProofError(
             "remote assets must be an array",
@@ -848,6 +1203,8 @@ def _remote_assets(value: object, node_id: str) -> dict[str, Mapping[str, object
         if not isinstance(item, Mapping):
             raise ProofError("remote asset must be an object")
         name = _string(item.get("name"), "remote asset name")
+        if name in valid_sidecar_names:
+            continue
         if name in assets:
             raise ProofError(
                 "remote assets contain duplicate names",
@@ -979,6 +1336,12 @@ def _artifact_variant_from_request(artifact_input: Mapping[str, object]) -> str:
 def _mapping(value: object, path: str) -> Mapping[str, object]:
     if not isinstance(value, Mapping):
         raise ProofError(f"{path} must be an object")
+    return value
+
+
+def _sequence(value: object, path: str) -> Sequence[object]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise ProofError(f"{path} must be an array")
     return value
 
 

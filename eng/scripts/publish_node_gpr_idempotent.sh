@@ -3,41 +3,87 @@
 # Publish a Node package tarball to GitHub Packages (npm.pkg.github.com) with rerun-safe digest validation.
 #
 # Required env vars:
-#   OWNER      GitHub repository owner (e.g. hcoona)
-#   PROJECT    Unscoped project name
-#   VERSION    Package version
-#   DIST_TAG   npm dist-tag to publish under
+#   EXPECTED_PACKAGE_NAME  Frozen npm package name from resolved publish identity
+#   VERSION                Package version
+#   DIST_TAG               npm dist-tag to publish under
 #
 # Optional env vars:
-#   TARBALL    Path to the tarball (default: "$GITHUB_WORKSPACE/out/gpr.tgz")
+#   TARBALL    Path to the tarball (default: "$GITHUB_WORKSPACE/out/gpr.tgz"
+#              when present, otherwise the planner-frozen npm pack filename)
 #   REGISTRY   Registry URL (default: "https://npm.pkg.github.com")
 
 set -Eeuo pipefail
 
-: "${OWNER:?OWNER is required}"
-: "${PROJECT:?PROJECT is required}"
+: "${EXPECTED_PACKAGE_NAME:?EXPECTED_PACKAGE_NAME is required}"
 : "${VERSION:?VERSION is required}"
 : "${DIST_TAG:?DIST_TAG is required}"
 
-TARBALL="${TARBALL:-${GITHUB_WORKSPACE}/out/gpr.tgz}"
 REGISTRY="${REGISTRY:-https://npm.pkg.github.com}"
 
-pkg_name="@${OWNER,,}/${PROJECT}"
+pkg_name="${EXPECTED_PACKAGE_NAME}"
+
+if [[ -z "${TARBALL:-}" ]]; then
+  generic_tarball="${GITHUB_WORKSPACE}/out/gpr.tgz"
+  filename_name="${pkg_name}"
+  if [[ "${filename_name}" == @* ]]; then
+    filename_name="${filename_name#@}"
+    filename_name="${filename_name//\//-}"
+  fi
+  frozen_tarball="${GITHUB_WORKSPACE}/out/${filename_name}-${VERSION}.tgz"
+  if [[ -f "${generic_tarball}" ]]; then
+    TARBALL="${generic_tarball}"
+  else
+    TARBALL="${frozen_tarball}"
+  fi
+fi
 
 if [[ ! -f "${TARBALL}" ]]; then
   echo "Missing tarball: ${TARBALL}" >&2
   exit 1
 fi
 
-local_sri=$(node - <<'NODE'
+package_json=$(tar -xOf "${TARBALL}" package/package.json 2>/dev/null || tar -xOf "${TARBALL}" package.json 2>/dev/null || true)
+if [[ -z "${package_json}" ]]; then
+  echo "Missing package.json in tarball: ${TARBALL}" >&2
+  exit 1
+fi
+
+# shellcheck disable=SC2016 # JavaScript template literals are passed literally to node.
+npm_metadata=$(printf '%s' "${package_json}" | node -e '
+const fs = require("fs");
+const pkg = JSON.parse(fs.readFileSync(0, "utf8"));
+if (typeof pkg.name !== "string" || pkg.name.length === 0) {
+  console.error("tarball package.json must contain a non-empty string name");
+  process.exit(1);
+}
+if (typeof pkg.version !== "string" || pkg.version.length === 0) {
+  console.error("tarball package.json must contain a non-empty string version");
+  process.exit(1);
+}
+process.stdout.write(`${pkg.name}\t${pkg.version}`);
+')
+IFS=$'\t' read -r tarball_name tarball_version <<<"${npm_metadata}"
+
+if [[ "${tarball_name}" != "${pkg_name}" ]]; then
+  echo "tarball package.json name mismatch: expected ${pkg_name}, got ${tarball_name}" >&2
+  exit 1
+fi
+
+if [[ "${tarball_version}" != "${VERSION}" ]]; then
+  echo "tarball package.json version mismatch: expected ${VERSION}, got ${tarball_version}" >&2
+  exit 1
+fi
+
+local_sri=$(
+  node - "${TARBALL}" <<'NODE'
 const fs = require('fs');
 const crypto = require('crypto');
-const p = process.argv[1];
+const p = process.argv[2];
 const buf = fs.readFileSync(p);
 const hash = crypto.createHash('sha512').update(buf).digest('base64');
 console.log(`sha512-${hash}`);
 NODE
-"${TARBALL}")
+)
 
 err_file="${RUNNER_TEMP:-/tmp}/npm-view-gpr.err"
 : >"${err_file}"

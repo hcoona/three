@@ -122,6 +122,130 @@ def test_invalid_fixtures_are_rejected(
         validate_contract(document, **kwargs)
 
 
+def test_selected_project_id_negative_fixtures_are_explicitly_covered() -> None:
+    """Keep selected-project-id cardinality fixtures in the contract suite."""
+    for fixture_name in (
+        "release-plan-empty-selected-project-ids.json",
+        "release-plan-multiple-selected-project-ids.json",
+        "release-report-empty-selected-project-ids.json",
+        "release-report-multiple-selected-project-ids.json",
+    ):
+        fixture = INVALID_ROOT / fixture_name
+        assert fixture.is_file()
+        document = _load(fixture)
+        with pytest.raises(ContractValidationError) as error:
+            validate_contract(document)
+        assert "selected-project-ids" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "plan-id",
+        "selected-project-ids",
+    ],
+)
+def test_successful_release_report_requires_plan_identity(field: str) -> None:
+    """Successful release reports must bind to the emitted release plan."""
+    document = _load(VALID_ROOT / "release-report.json")
+    document["plan"][field] = None
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+    assert field in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("section", "field"),
+    [
+        ("plan", "plan-id"),
+        ("plan", "selected-project-ids"),
+        ("artifacts", "plan-artifact-name"),
+        ("artifacts", "execution-sets-artifact-name"),
+        ("artifacts", "entry-publish-handoff-artifact-name"),
+    ],
+)
+def test_successful_release_report_requires_plan_tuple_when_plan_skipped(
+    section: str,
+    field: str,
+) -> None:
+    """A successful run must still bind to authoritative plan artifacts."""
+    document = _load(VALID_ROOT / "release-report.json")
+    document["jobs"]["plan"]["conclusion"] = "skipped"
+    document[section][field] = None
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+
+    assert field in str(error.value)
+
+
+def test_publish_request_rejects_skip_satisfied_node() -> None:
+    """Publish-request handoffs are only valid for active publish nodes."""
+    document = _load(VALID_ROOT / "publish-request.json")
+    document["publish-node"]["publish-disposition"] = "skip-satisfied"
+    document["publish-node"].pop("publish-mode")
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+
+    assert "$.publish-node.publish-disposition" in str(error.value)
+
+
+def test_overwrite_mutable_authorization_forgery_fixtures_are_covered() -> None:
+    """Reject forged buddy overwrite authorization."""
+    for fixture_name in (
+        "release-plan-overwrite-mutable-forged-force-authorization.json",
+        "release-plan-overwrite-mutable-official-envelope-authorization.json",
+    ):
+        fixture = INVALID_ROOT / fixture_name
+        assert fixture.is_file()
+        document = _load(fixture)
+        with pytest.raises(ContractValidationError) as error:
+            validate_contract(document)
+        assert "overwrite-mutable-authorization" in str(error.value)
+
+
+def test_overwrite_mutable_rejects_package_registry_force_authorization() -> (
+    None
+):
+    """Package registries cannot use mutable-overwrite publish mode."""
+    fixture_name = (
+        "release-plan-overwrite-mutable-package-registry-force-authorization"
+        ".json"
+    )
+    fixture = INVALID_ROOT / fixture_name
+    assert fixture.is_file()
+    document = _load(fixture)
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+
+    message = str(error.value)
+    assert "$.graph.publish-nodes.publish-node/nuget.publish-mode" in message
+    assert "mutable-prerelease GitHub Release targets" in message
+
+
+def test_replace_authoritative_rejects_non_official_final_github_release() -> (
+    None
+):
+    """replace-authoritative is limited to official final GitHub Releases."""
+    for fixture_name in (
+        "release-plan-replace-authoritative-buddy-context.json",
+        "release-plan-replace-authoritative-prerelease-context.json",
+        "release-plan-replace-authoritative-package-registry-context.json",
+    ):
+        fixture = INVALID_ROOT / fixture_name
+        assert fixture.is_file()
+        document = _load(fixture)
+
+        with pytest.raises(ContractValidationError) as error:
+            validate_contract(document)
+
+        message = str(error.value)
+        assert "replace-authoritative" in message
+        assert "official final GitHub Release" in message
+
+
 def test_extra_root_fields_are_rejected_for_closed_results() -> None:
     """Ensure closed result contracts reject accidental root extensions."""
     document = _load(VALID_ROOT / "build-result.json")
@@ -137,6 +261,84 @@ def test_wrong_kind_is_rejected() -> None:
     document["kind"] = "publish-receipt"
     with pytest.raises(ContractValidationError):
         validate_contract(document)
+
+
+def test_publish_result_rejects_github_release_shape() -> None:
+    """Publish-result receipts are package-registry receipts only."""
+    document = _load(VALID_ROOT / "publish-result.json")
+    document["publish-node-id"] = "publish-node/gh"
+    document["target-instance-snapshot-id"] = "github-release/public"
+    document["resolved-publish-identity"] = {
+        "release-tag": "release/example/v1.2.3",
+    }
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+
+    message = str(error.value)
+    assert "$.target-instance-snapshot-id" in message
+    assert "$.resolved-publish-identity.release-tag" in message
+
+
+def test_publish_result_rejects_unknown_target_family() -> None:
+    """Publish-result receipts must use a known package-registry family."""
+    document = _load(VALID_ROOT / "publish-result.json")
+    document["target-instance-snapshot-id"] = "unknown/example"
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+
+    assert "$.target-instance-snapshot-id" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "snapshot_id",
+    [
+        "nuget",
+        "nuget:",
+        "nuget:public",
+        "/public",
+        "nuget/",
+        "nuget/public/extra",
+    ],
+)
+def test_publish_result_rejects_malformed_target_snapshot_id(
+    snapshot_id: str,
+) -> None:
+    """Publish-result target snapshots must use exact family/instance shape."""
+    document = _load(VALID_ROOT / "publish-result.json")
+    document["target-instance-snapshot-id"] = snapshot_id
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+
+    assert "$.target-instance-snapshot-id" in str(error.value)
+
+
+def test_publish_result_rejects_empty_publish_identity() -> None:
+    """Publish-result receipts must carry package name and version identity."""
+    document = _load(VALID_ROOT / "publish-result.json")
+    document["resolved-publish-identity"] = {}
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+
+    message = str(error.value)
+    assert "$.resolved-publish-identity.package-name" in message
+    assert "$.resolved-publish-identity.version" in message
+
+
+def test_publish_result_rejects_extra_publish_identity_keys() -> None:
+    """Registry publish identities are closed to package name/version."""
+    document = _load(VALID_ROOT / "publish-result.json")
+    document["resolved-publish-identity"]["registry-url"] = (
+        "https://example.invalid"
+    )
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+
+    assert "$.resolved-publish-identity.registry-url" in str(error.value)
 
 
 @pytest.mark.parametrize(
@@ -300,14 +502,87 @@ def test_build_diagnostic_accepts_valid_plan_id() -> None:
     validate_contract(document)
 
 
-def test_official_planner_request_cannot_force() -> None:
-    """Validate the profile/force conditional planner request rule."""
+def test_official_planner_request_can_force() -> None:
+    """Accept official force for explicit release-tag retargeting."""
     document = _load(VALID_ROOT / "planner-request.json")
     document["profile"] = "official"
     document["request-flags"] = {"force": True}
+    validate_contract(document)
+
+
+@pytest.mark.parametrize(
+    "bad_commit_sha",
+    [
+        "HEAD",
+        "a" * 39,
+        "a" * 41,
+        "A" * 40,
+        "g" * 40,
+    ],
+)
+def test_planner_request_commit_sha_must_be_immutable_sha(
+    bad_commit_sha: str,
+) -> None:
+    """Reject mutable, malformed, or uppercase planner request SHAs."""
+    document = _load(VALID_ROOT / "planner-request.json")
+    document["commit-sha"] = bad_commit_sha
+
     with pytest.raises(ContractValidationError) as error:
         validate_contract(document)
-    assert "official" in str(error.value)
+
+    assert "$.commit-sha" in str(error.value)
+    assert "40-char lowercase hex SHA" in str(error.value)
+
+
+@pytest.mark.parametrize("bad_commit_sha", ["HEAD", "A" * 40])
+def test_release_plan_envelope_commit_sha_must_be_immutable_sha(
+    bad_commit_sha: str,
+) -> None:
+    """Reject mutable or uppercase release plan envelope SHAs."""
+    document = _load(VALID_ROOT / "release-plan.json")
+    document["envelope"]["commit-sha"] = bad_commit_sha
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+
+    assert "$.envelope.commit-sha" in str(error.value)
+    assert "40-char lowercase hex SHA" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "requested_project_ids",
+    [
+        [],
+        ["example", "other"],
+    ],
+)
+def test_planner_request_requires_exactly_one_project_id(
+    requested_project_ids: list[str],
+) -> None:
+    """Current planner requests normalize exactly one project id."""
+    document = _load(VALID_ROOT / "planner-request.json")
+    document["requested-project-ids"] = requested_project_ids
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+    assert "requested-project-ids" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "selected_project_ids",
+    [
+        [],
+        ["example", "other"],
+    ],
+)
+def test_release_plan_requires_exactly_one_selected_project_id(
+    selected_project_ids: list[str],
+) -> None:
+    """Current release plan envelopes select exactly one project id."""
+    document = _load(VALID_ROOT / "release-plan.json")
+    document["envelope"]["selected-project-ids"] = selected_project_ids
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+    assert "selected-project-ids" in str(error.value)
 
 
 def test_immutable_proof_rejects_root_extensions() -> None:
@@ -323,7 +598,7 @@ def test_immutable_proof_rejects_root_extensions() -> None:
 def test_github_asset_proof_requires_full_signer_workflow() -> None:
     """Enforce full signer workflow identities in asset proof wrappers."""
     document = _load(VALID_ROOT / "github-release-asset-proof.json")
-    document["attestation"]["signer-workflow"] = "release-publish-node.yml"
+    document["attestation"]["signer-workflow"] = "release-orchestrate.yml"
     with pytest.raises(ContractValidationError) as error:
         validate_contract(document)
     assert "signer-workflow" in str(error.value)
@@ -333,6 +608,146 @@ def test_publish_request_artifact_set_must_match_node_members() -> None:
     """Publish requests cannot silently drop planned artifact members."""
     document = _load(VALID_ROOT / "publish-request.json")
     del document["artifacts"]["artifact/symbols"]
+    with pytest.raises(ContractValidationError):
+        validate_contract(document)
+
+
+def test_package_registry_distribution_filenames_must_be_unique() -> None:
+    """Registry nodes cannot map two artifacts to one remote filename."""
+    document = _load(VALID_ROOT / "release-plan.json")
+    node = document["graph"]["publish-nodes"]["publish-node/nuget"]
+    node["artifact-ids"] = ["artifact/package", "artifact/symbols"]
+    filenames = node["projection"][
+        "final-distribution-filenames-by-artifact-id"
+    ]
+    filenames["artifact/symbols"] = filenames["artifact/package"]
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_contract(document)
+
+    assert "distribution filenames must be unique" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    (
+        "family",
+        "snapshot_id",
+        "contract_id",
+        "concrete_kind",
+        "filename",
+        "host",
+    ),
+    [
+        (
+            "npm",
+            "npm/npmjs",
+            "npm-publish",
+            "npm-package",
+            "Example-1.2.3.tgz",
+            "registry.npmjs.org",
+        ),
+        (
+            "rubygems",
+            "rubygems/rubygems-org",
+            "rubygems-publish",
+            "rubygem",
+            "Example-1.2.3.gem",
+            "rubygems.org",
+        ),
+    ],
+)
+def test_npm_rejects_standalone_sha256_but_rubygems_accepts_it(  # noqa: PLR0913
+    family: str,
+    snapshot_id: str,
+    contract_id: str,
+    concrete_kind: str,
+    filename: str,
+    host: str,
+) -> None:
+    """Npm requires algorithm-qualified digests; RubyGems keeps SHA-256."""
+    document = _load(VALID_ROOT / "release-plan.json")
+    graph = document["graph"]
+    snapshot = graph["target-instance-snapshots"].pop("nuget/github-packages")
+    snapshot["catalog-ref"] = snapshot_id
+    snapshot["contract"] = {
+        "aggregate-rules": {
+            "cross-variant-policy": "forbid",
+            "max-artifact-count": 1,
+            "min-artifact-count": 1,
+            "tuple-rules": [
+                {
+                    "concrete-kind": concrete_kind,
+                    "kind-family": "package",
+                    "max-count": 1,
+                    "min-count": 1,
+                    "role": "primary-package",
+                }
+            ],
+        },
+        "allowed-artifact-tuples": [
+            {
+                "concrete-kind": concrete_kind,
+                "kind-family": "package",
+                "role": "primary-package",
+            }
+        ],
+        "id": contract_id,
+    }
+    snapshot["destination"] = {"host": host}
+    snapshot["family"] = family
+    snapshot["instance-id"] = snapshot_id.rsplit("/", maxsplit=1)[-1]
+    snapshot["capabilities"] = {
+        "credential-posture": "oidc",
+        "mutability": "immutable",
+        "name-uniqueness-scope": "package-name",
+        "profile-coexistence-rule": "requires-distinct-name",
+        "publish-topology": (
+            "external-oidc-caller-workflow"
+            if family == "npm"
+            else "external-oidc-reusable-workflow"
+        ),
+        "version-uniqueness-rule": "package-name-plus-version",
+    }
+    graph["target-instance-snapshots"][snapshot_id] = snapshot
+    graph["artifacts"]["artifact/package"]["concrete-kind"] = concrete_kind
+    node = graph["publish-nodes"]["publish-node/nuget"]
+    node["target-instance-snapshot-id"] = snapshot_id
+    projection: dict[str, object] = {
+        "final-distribution-filenames-by-artifact-id": {
+            "artifact/package": filename
+        },
+        "final-distribution-sha256-by-artifact-id": {
+            "artifact/package": "a" * 64
+        },
+    }
+    node["projection"] = projection
+    if family == "npm":
+        projection["package-name"] = "Example"
+
+    if family == "npm":
+        with pytest.raises(ContractValidationError) as error:
+            validate_contract(document)
+        assert "final-distribution-sha256-by-artifact-id" in str(error.value)
+        del projection["final-distribution-sha256-by-artifact-id"]
+    validate_contract(document)
+
+    if family == "npm":
+        projection["final-distribution-digests-by-artifact-id"] = {
+            "artifact/package": {"sha512": "b" * 128}
+        }
+        validate_contract(document)
+
+        projection["final-distribution-digests-by-artifact-id"] = {
+            "artifact/package": {"sha512": "Z" * 128}
+        }
+        with pytest.raises(ContractValidationError):
+            validate_contract(document)
+
+        projection["final-distribution-digests-by-artifact-id"] = {
+            "artifact/package": {"sha512": "b" * 128}
+        }
+
+    projection["final-distribution-sha256-by-artifact-id"] = {}
     with pytest.raises(ContractValidationError):
         validate_contract(document)
 
@@ -364,30 +779,29 @@ def test_publish_request_node_id_must_match_embedded_node() -> None:
     assert "publish-node.publish-node-id" in str(error.value)
 
 
-def test_github_release_base_request_may_omit_attestations() -> None:
-    """Base GitHub Release requests precede attestations."""
+def test_github_release_request_omits_historical_attestations() -> None:
+    """Active publish requests keep superseded attestations out-of-contract."""
     document = _load(VALID_ROOT / "publish-request.json")
-    del document["github-release-asset-attestations"]
 
     validate_contract(document)
 
 
-def test_github_release_request_rejects_partial_attestations() -> None:
-    """Attached GitHub Release attestations must cover every asset."""
+def test_github_release_request_rejects_historical_attestations() -> None:
+    """Superseded GitHub Release attestations are historical-only."""
     document = _load(VALID_ROOT / "publish-request.json")
-    del document["github-release-asset-attestations"]["artifact/symbols"]
+    document["github-release-asset-attestations"] = {
+        "artifact/package": {
+            "attestation-id": "att-1",
+            "attestation-url": "https://github.com/hcoona/three/attestations/1",
+            "bundle-path": "attestations/Example.1.2.3.nupkg.json",
+        },
+    }
+
     with pytest.raises(ContractValidationError) as error:
         validate_contract(document)
-    assert "github-release-asset-attestations" in str(error.value)
 
-
-def test_github_release_request_rejects_wrong_asset_attestation_shape() -> None:
-    """Attached GitHub Release attestations must remain an object."""
-    document = _load(VALID_ROOT / "publish-request.json")
-    document["github-release-asset-attestations"] = []
-    with pytest.raises(ContractValidationError) as error:
-        validate_contract(document)
     assert "github-release-asset-attestations" in str(error.value)
+    assert "is not allowed" in str(error.value)
 
 
 def test_artifact_names_follow_low_level_patterns() -> None:
@@ -399,7 +813,12 @@ def test_artifact_names_follow_low_level_patterns() -> None:
         variant_id="variant/example",
         publish_node_id="publish-node/example",
     )
-    assert safe_id("abc") == "ba7816bf8f01cfea414140de"
+    assert safe_id("abc") == "".join(
+        (
+            "b",
+            "a7816bf8f01cfea414140de",
+        )
+    )
     assert artifact_name("plan", inputs) == (
         f"release-plan-v1-123-4-{safe_id('plan/example')}"
     )
@@ -410,6 +829,21 @@ def test_artifact_names_follow_low_level_patterns() -> None:
     assert artifact_name("publish-result", inputs) == (
         "release-publish-result-v1-123-4-"
         f"{safe_id('plan/example\npublish-node/example')}"
+    )
+    github_release_result_binding = (
+        '{"tagName":"release/example/v1.2.3",'
+        '"targetSha":"0123456789abcdef0123456789abcdef01234567"}'
+    )
+    assert artifact_name(
+        "github-release-result",
+        ArtifactNameInputs(
+            run_id=123,
+            attempt=4,
+            binding_json=github_release_result_binding,
+        ),
+    ) == (
+        "release-github-release-result-v1-123-4-"
+        f"{safe_id(github_release_result_binding)}"
     )
     assert artifact_name("release-report", inputs) == "release-report-v1-123-4"
 

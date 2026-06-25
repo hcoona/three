@@ -1,6 +1,8 @@
 # /// script
 # requires-python = ">=3.14"
-# dependencies = []
+# dependencies = [
+#   "PyYAML>=6.0",
+# ]
 # ///
 
 """Find a project directory by package identity.
@@ -9,8 +11,12 @@ This is a unified detector for projects in this monorepo.
 
 Supported kinds:
 - Python: pyproject.toml with [project].name == <project>
-- Node: package.json with top-level name == <project>
+- Node: three.release.yml with project.id/display-name == <project> and
+  ecosystem node; package.json name exact matches are also accepted for
+  source-aligned legacy lookups
 - Ruby: <project>.gemspec file name (exact match)
+- .NET: three.release.yml with project.id/display-name == <project> and
+  ecosystem dotnet
 
 Exit code contract:
 - 0: unique match; print exactly one JSON object on stdout (single line)
@@ -34,6 +40,8 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+import yaml
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -137,9 +145,53 @@ def _python_matches(project: str, candidates: Iterable[Path]) -> list[_Match]:
     return matches
 
 
-def _node_matches(project: str, candidates: Iterable[Path]) -> list[_Match]:
-    matches: list[_Match] = []
-    for package_json in candidates:
+def _node_descriptor_matches(
+    project: str, descriptors: Iterable[Path]
+) -> dict[Path, _Match]:
+    matches: dict[Path, _Match] = {}
+    for descriptor in descriptors:
+        text = _safe_read_text(descriptor)
+        if text is None:
+            continue
+        try:
+            data: Any = yaml.safe_load(text)
+        except yaml.YAMLError as exc:
+            print(f"Skip {descriptor}: {exc}", file=sys.stderr)
+            continue
+        if not isinstance(data, dict):
+            continue
+        project_table = data.get("project")
+        if not isinstance(project_table, dict):
+            continue
+        if project_table.get("ecosystem") != "node":
+            continue
+        if project not in {
+            project_table.get("id"),
+            project_table.get("display-name"),
+        }:
+            continue
+        package_json = descriptor.parent / "package.json"
+        if not package_json.is_file():
+            msg = (
+                f"Node descriptor {descriptor} matches {project!r} but "
+                f"{package_json} does not exist"
+            )
+            raise RuntimeError(msg)
+        matches[descriptor.parent.resolve()] = _Match(
+            kind="node",
+            package_dir=descriptor.parent,
+            evidence=descriptor,
+        )
+    return matches
+
+
+def _node_package_json_matches(
+    project: str,
+    package_jsons: Iterable[Path],
+    existing: dict[Path, _Match],
+) -> dict[Path, _Match]:
+    matches = dict(existing)
+    for package_json in package_jsons:
         text = _safe_read_text(package_json)
         if text is None:
             continue
@@ -150,14 +202,28 @@ def _node_matches(project: str, candidates: Iterable[Path]) -> list[_Match]:
             continue
 
         if data.get("name") == project:
-            matches.append(
+            matches.setdefault(
+                package_json.parent.resolve(),
                 _Match(
                     kind="node",
                     package_dir=package_json.parent,
                     evidence=package_json,
-                )
+                ),
             )
     return matches
+
+
+def _node_matches(
+    project: str,
+    package_jsons: Iterable[Path],
+    descriptors: Iterable[Path],
+) -> list[_Match]:
+    descriptor_matches = _node_descriptor_matches(project, descriptors)
+    return list(
+        _node_package_json_matches(
+            project, package_jsons, descriptor_matches
+        ).values()
+    )
 
 
 def _ruby_matches(project: str, candidates: Iterable[Path]) -> list[_Match]:
@@ -169,6 +235,39 @@ def _ruby_matches(project: str, candidates: Iterable[Path]) -> list[_Match]:
             continue
         matches.append(
             _Match(kind="ruby", package_dir=gemspec.parent, evidence=gemspec)
+        )
+    return matches
+
+
+def _dotnet_matches(project: str, candidates: Iterable[Path]) -> list[_Match]:
+    matches: list[_Match] = []
+    for descriptor in candidates:
+        text = _safe_read_text(descriptor)
+        if text is None:
+            continue
+        try:
+            data: Any = yaml.safe_load(text)
+        except yaml.YAMLError as exc:
+            print(f"Skip {descriptor}: {exc}", file=sys.stderr)
+            continue
+        if not isinstance(data, dict):
+            continue
+        project_table = data.get("project")
+        if not isinstance(project_table, dict):
+            continue
+        if project_table.get("ecosystem") != "dotnet":
+            continue
+        if project not in {
+            project_table.get("id"),
+            project_table.get("display-name"),
+        }:
+            continue
+        matches.append(
+            _Match(
+                kind="dotnet",
+                package_dir=descriptor.parent,
+                evidence=descriptor,
+            )
         )
     return matches
 
@@ -214,12 +313,14 @@ def main() -> None:
         pyprojects = _run_fd(r"^pyproject\.toml$", root)
         package_jsons = _run_fd(r"^package\.json$", root)
         gemspecs = _run_fd(rf"^{re.escape(project)}\.gemspec$", root)
+        descriptors = _run_fd(r"^three\.release\.yml$", root)
 
         python = _python_matches(project, pyprojects)
-        node = _node_matches(project, package_jsons)
+        node = _node_matches(project, package_jsons, descriptors)
         ruby = _ruby_matches(project, gemspecs)
+        dotnet = _dotnet_matches(project, descriptors)
 
-        all_matches = python + node + ruby
+        all_matches = python + node + ruby + dotnet
 
         if not all_matches:
             print(
@@ -228,7 +329,9 @@ def main() -> None:
                 + "\n"
                 + _format_matches("node", node)
                 + "\n"
-                + _format_matches("ruby", ruby),
+                + _format_matches("ruby", ruby)
+                + "\n"
+                + _format_matches("dotnet", dotnet),
                 file=sys.stderr,
             )
             sys.exit(3)
@@ -240,7 +343,9 @@ def main() -> None:
                 + "\n"
                 + _format_matches("node", node)
                 + "\n"
-                + _format_matches("ruby", ruby),
+                + _format_matches("ruby", ruby)
+                + "\n"
+                + _format_matches("dotnet", dotnet),
                 file=sys.stderr,
             )
             sys.exit(2)

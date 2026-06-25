@@ -1,0 +1,275 @@
+name: Build Python Package (Reusable)
+
+env:
+  NBGV_VERSION: '3.9.50'
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: 'Target commit SHA to build from'
+        required: true
+        type: string
+      package_dir:
+        description: 'Directory containing the Python project to build'
+        required: true
+        type: string
+      version:
+        description: 'Expected package version (PEP440)'
+        required: true
+        type: string
+      python_version:
+        description: 'Python version for uv build'
+        required: true
+        type: string
+      artifact_name:
+        description: 'Verified distribution artifact name consumed by downstream jobs'
+        required: true
+        type: string
+      expected_distribution_filenames_json:
+        description: 'Plan-authorized JSON array of distribution filenames to build and verify'
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build Python package candidate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout release target
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.target }}
+          path: .three-workflow-release/target
+          persist-credentials: false
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: .three-workflow-release/target/global.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: '0.10.9'
+          cache-dependency-glob: '.three-workflow-release/target/uv.lock'
+
+      - name: Install trusted NBGV CLI for Python versioning
+        shell: bash
+        env:
+          NBGV_VERSION: ${{ env.NBGV_VERSION }}
+        run: |
+          set -Eeuo pipefail
+          trusted_tools="${RUNNER_TEMP}/trusted-dotnet-tools"
+          trusted_config="${RUNNER_TEMP}/trusted-nuget.config"
+          dotnet_home="${RUNNER_TEMP}/dotnet-cli-home"
+          mkdir -p "${trusted_tools}" "${dotnet_home}"
+          cat > "${trusted_config}" <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+            </packageSources>
+          </configuration>
+          XML
+          DOTNET_CLI_HOME="${dotnet_home}" \
+          NUGET_PACKAGES="${RUNNER_TEMP}/trusted-nuget-packages" \
+            dotnet tool install nbgv \
+              --tool-path "${trusted_tools}" \
+              --version "${NBGV_VERSION}" \
+              --configfile "${trusted_config}"
+          echo "NBGV_PYTHON_COMMAND=${trusted_tools}/nbgv" >> "${GITHUB_ENV}"
+
+      - name: Build package
+        shell: bash
+        working-directory: .three-workflow-release/target
+        env:
+          PACKAGE_DIR: ${{ inputs.package_dir }}
+          EXPECTED_DISTRIBUTIONS_JSON: ${{ inputs.expected_distribution_filenames_json }}
+        run: |
+          set -Eeuo pipefail
+          candidate_dist="${RUNNER_TEMP}/python-candidate-dist"
+          rm -rf "${candidate_dist}"
+          mkdir -p "${candidate_dist}"
+
+          cd "${PACKAGE_DIR}"
+          export TZ=UTC
+          export LC_ALL=C.UTF-8
+          : "${NBGV_PYTHON_COMMAND:?trusted NBGV command is required}"
+          export NBGV_PYTHON_COMMAND
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          export SOURCE_DATE_EPOCH
+                    mapfile -t distribution_filenames < <(
+                      jq -er '
+                        if type != "array" then
+                          error("expected distribution JSON must be an array")
+                        elif length == 0 then
+                          error("expected distribution JSON must list at least one file")
+                        else
+                          .[]
+                        end
+                      ' <<< "${EXPECTED_DISTRIBUTIONS_JSON}" || printf '%s\n' "__THREE_JQ_FAILED__"
+                    )
+                    build_wheel=false
+                    build_sdist=false
+                    for filename in "${distribution_filenames[@]}"; do
+                      case "${filename}" in
+                        __THREE_JQ_FAILED__)
+                          echo "failed to parse expected Python distributions" >&2
+                          exit 1
+                          ;;
+                        *.whl) build_wheel=true ;;
+                        *.tar.gz) build_sdist=true ;;
+                        *)
+                          echo "unsupported Python distribution filename: ${filename}" >&2
+                          exit 1
+                          ;;
+                      esac
+                    done
+                    distribution_build_args=()
+                    if [[ "${build_wheel}" == "true" ]]; then
+                      distribution_build_args+=(--wheel)
+                    fi
+                    if [[ "${build_sdist}" == "true" ]]; then
+                      distribution_build_args+=(--sdist)
+                    fi
+                    uv build "${distribution_build_args[@]}" --out-dir "${candidate_dist}"
+
+      - name: Upload untrusted candidate dist artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact_name }}-candidate
+          path: ${{ runner.temp }}/python-candidate-dist/*
+          if-no-files-found: error
+
+  verify:
+    name: Verify Python package candidate
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout trusted control-plane
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          ref: ${{ github.workflow_sha }}
+          path: .three-workflow-release/control-plane
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: '0.10.9'
+
+      - name: Download untrusted candidate dist artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.artifact_name }}-candidate
+          path: ${{ github.workspace }}/candidate-dist
+
+      - name: Verify built version matches tag
+        shell: bash
+        working-directory: .three-workflow-release/control-plane
+        env:
+          EXPECTED: ${{ inputs.version }}
+        run: |
+          set -Eeuo pipefail
+          uv run --script eng/scripts/verify_python_artifact_version.py "${EXPECTED}" "${GITHUB_WORKSPACE}/candidate-dist"
+
+      - name: Verify distribution filenames match release plan
+        shell: bash
+        env:
+          EXPECTED_DISTRIBUTIONS_JSON: ${{ inputs.expected_distribution_filenames_json }}
+        run: |
+          set -Eeuo pipefail
+          expected_file="${RUNNER_TEMP}/expected-python-distributions.txt"
+          actual_file="${RUNNER_TEMP}/actual-python-distributions.txt"
+          jq -er '
+            if type != "array" then
+              error("expected distribution JSON must be an array")
+            elif length == 0 then
+              error("expected distribution JSON must list at least one file")
+            else
+              .[]
+            end
+          ' <<< "${EXPECTED_DISTRIBUTIONS_JSON}" | sort > "${expected_file}"
+          find "${GITHUB_WORKSPACE}/candidate-dist" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort > "${actual_file}"
+          if ! diff -u "${expected_file}" "${actual_file}"; then
+            echo "Built Python distribution filenames do not match the finalized plan." >&2
+            exit 1
+          fi
+
+      - name: Stage verified dist artifact
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf "${GITHUB_WORKSPACE}/verified-dist"
+          mkdir -p "${GITHUB_WORKSPACE}/verified-dist"
+          while IFS= read -r -d '' distribution; do
+            cp -p -- "${distribution}" "${GITHUB_WORKSPACE}/verified-dist/"
+          done < <(
+            find "${GITHUB_WORKSPACE}/candidate-dist" \
+              -mindepth 1 \
+              -maxdepth 1 \
+              -type f \
+              -print0
+          )
+
+      - name: Write release asset receipts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "${GITHUB_WORKSPACE}/verified-receipts"
+          python - "${GITHUB_WORKSPACE}/verified-dist" "${GITHUB_WORKSPACE}/verified-receipts/release-asset-receipts.json" <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          out_dir = Path(sys.argv[1])
+          receipt_path = Path(sys.argv[2])
+          receipts = []
+          for path in sorted(out_dir.iterdir(), key=lambda item: item.name):
+              if not path.is_file() or path.name == receipt_path.name:
+                  continue
+              receipts.append(
+                  {
+                      "name": path.name,
+                      "size": path.stat().st_size,
+                      "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                  }
+              )
+          if not receipts:
+              raise SystemExit("no release assets found for receipt generation")
+          receipt_path.write_text(json.dumps(receipts, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ github.workspace }}/verified-dist/*
+          if-no-files-found: error
+      - name: Upload release asset receipts artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact_name }}-asset-receipts
+          path: ${{ github.workspace }}/verified-receipts/release-asset-receipts.json
+          if-no-files-found: error

@@ -9,7 +9,7 @@
     "attestation-id": "att-1",
     "attestation-url": "https://github.com/hcoona/three/attestations/1",
     "predicate-type": "https://slsa.dev/provenance/v1",
-    "signer-workflow": "hcoona/three/.github/workflows/release-publish-node.yml",
+    "signer-workflow": "hcoona/three/.github/workflows/release-orchestrate.yml",
     "source-digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "source-repository": "hcoona/three",
     "subject-digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -32,7 +32,7 @@
     "run-attempt": 1,
     "run-id": 123,
     "validation-only": false,
-    "workflow": "release-publish-node.yml"
+    "workflow": "release-orchestrate.yml"
   },
   "variant-id": "variant/v1"
 }

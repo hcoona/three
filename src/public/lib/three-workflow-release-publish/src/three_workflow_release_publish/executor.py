@@ -14,6 +14,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from email.parser import Parser
 from pathlib import Path
+from typing import NoReturn
 from urllib import parse
 from urllib import request as urlrequest
 
@@ -64,13 +65,6 @@ class _ArtifactInput:
     concrete_kind: str
 
 
-@dataclass(frozen=True, slots=True)
-class _GithubAttestationContext:
-    repo: str
-    source_digest: str
-    signer_workflow: str
-
-
 def execute_publish(
     request: Mapping[str, object],
     repo_root: Path,
@@ -83,12 +77,14 @@ def execute_publish(
     normalized_request = _validate_request(request)
     resolved_repo = repo_root.resolve()
     run = runner or _subprocess_runner
-    if check_commit:
-        _check_commit(normalized_request, resolved_repo, run)
-
     family = str(
         _mapping(normalized_request["target-instance-snapshot"])["family"]
     )
+    if family == "github-release":
+        _raise_github_release_disabled()
+    if check_commit:
+        _check_commit(normalized_request, resolved_repo, run)
+
     publish_node = _mapping(normalized_request["publish-node"])
     if publish_node.get("publish-disposition") != "publish":
         msg = "publish executor only accepts publish-disposition publish"
@@ -129,48 +125,7 @@ def _validate_request(request: Mapping[str, object]) -> Mapping[str, object]:
             phase="validation",
             details={"validation-error": str(exc)},
         ) from exc
-    _require_github_release_asset_attestations(request)
     return request
-
-
-def _require_github_release_asset_attestations(
-    request: Mapping[str, object],
-) -> None:
-    """Fail closed when GitHub Release attestations are absent."""
-    snapshot = _mapping(request["target-instance-snapshot"])
-    if snapshot.get("family") != "github-release":
-        return
-    if "github-release-asset-attestations" not in request:
-        msg = (
-            "GitHub Release publish request is missing attached "
-            "asset attestations"
-        )
-        raise PublishExecutorError(
-            msg,
-            code="PUBLISH_INVALID_INPUT",
-            phase="validation",
-            details={"field": "github-release-asset-attestations"},
-        )
-    outputs = _mapping(request["github-release-asset-attestations"])
-    node = _mapping(request["publish-node"])
-    expected = set(_mapping(request["artifacts"]).keys())
-    node_artifacts = node.get("artifact-ids")
-    if isinstance(node_artifacts, Sequence) and not isinstance(
-        node_artifacts, str
-    ):
-        expected = {str(artifact_id) for artifact_id in node_artifacts}
-    if set(outputs) != expected:
-        msg = "GitHub Release publish request has incomplete asset attestations"
-        raise PublishExecutorError(
-            msg,
-            code="PUBLISH_INVALID_INPUT",
-            phase="validation",
-            details={
-                "field": "github-release-asset-attestations",
-                "expected-artifact-ids": sorted(expected),
-                "actual-artifact-ids": sorted(outputs),
-            },
-        )
 
 
 def _check_commit(
@@ -671,7 +626,7 @@ def _execute_family(
 ) -> Json:
     """Dispatch to a target-family publish adapter."""
     if family == "github-release":
-        return _publish_github_release(request, artifacts, repo_root, runner)
+        _raise_github_release_disabled()
     if family == "pypi":
         return _publish_pypi(request, artifacts, repo_root, runner)
     if family == "npm":
@@ -684,338 +639,18 @@ def _execute_family(
     raise PublishExecutorError(msg, code="PUBLISH_UNSUPPORTED_TARGET")
 
 
-def _publish_github_release(
-    request: Mapping[str, object],
-    artifacts: Sequence[_ArtifactInput],
-    repo_root: Path,
-    runner: Runner,
-) -> Json:
-    """Create or converge a GitHub Release according to frozen mode."""
-    node = _mapping(request["publish-node"])
-    identity = _mapping(node["resolved-publish-identity"])
-    destination = _mapping(
-        _mapping(request["target-instance-snapshot"])["destination"]
+def _raise_github_release_disabled() -> NoReturn:
+    """Reject GitHub Release publication through the package executor."""
+    msg = (
+        "GitHub Release publication is handled by "
+        "release-create-github-release.yml; "
+        "three-workflow-release-publish only publishes package registries."
     )
-    projection = _mapping(node["projection"])
-    tag = str(identity["release-tag"])
-    repo = f"{destination['owner']}/{destination['repo']}"
-    desired_state = _mapping(node["desired-publish-state"])
-    prerelease = desired_state.get("release-state") == "prerelease"
-    assets = _github_asset_args(projection, artifacts)
-    mode = str(node["publish-mode"])
-    if mode not in {
-        "create-only",
-        "overwrite-mutable",
-        "replace-authoritative",
-    }:
-        msg = f"unsupported GitHub Release publish mode: {mode!r}"
-        raise PublishExecutorError(msg, code="PUBLISH_INVALID_INPUT")
-    attestation_evidence = _verify_github_release_asset_attestations(
-        request,
-        artifacts,
-        repo,
-        repo_root,
-        runner,
+    raise PublishExecutorError(
+        msg,
+        code="PUBLISH_GITHUB_RELEASE_DISABLED",
+        phase="validation",
     )
-    if mode == "create-only":
-        command = [
-            shutil.which("gh") or "gh",
-            "release",
-            "create",
-            tag,
-            *assets,
-            "--repo",
-            repo,
-            "--verify-tag",
-            "--title",
-            tag,
-            "--notes",
-            "",
-        ]
-        if prerelease:
-            command.append("--prerelease")
-        _run_checked(command, repo_root, runner)
-    elif mode in {"overwrite-mutable", "replace-authoritative"}:
-        _delete_extra_github_assets(tag, repo, projection, repo_root, runner)
-        edit = [
-            shutil.which("gh") or "gh",
-            "release",
-            "edit",
-            tag,
-            "--repo",
-            repo,
-            "--verify-tag",
-        ]
-        edit.append(f"--prerelease={str(prerelease).lower()}")
-        _run_checked(
-            [
-                shutil.which("gh") or "gh",
-                "release",
-                "upload",
-                tag,
-                *assets,
-                "--repo",
-                repo,
-                "--clobber",
-            ],
-            repo_root,
-            runner,
-        )
-        _run_checked(edit, repo_root, runner)
-    evidence = _github_release_evidence(tag, repo, repo_root, runner)
-    evidence["asset-attestations"] = attestation_evidence
-    return evidence
-
-
-def _github_asset_args(
-    projection: Mapping[str, object], artifacts: Sequence[_ArtifactInput]
-) -> list[str]:
-    """Create gh asset arguments with planner-frozen names and labels."""
-    names = _mapping(projection["asset-names-by-artifact-id"])
-    labels = _mapping(projection["asset-labels-by-artifact-id"])
-    result: list[str] = []
-    for artifact in artifacts:
-        planned_name = str(names[artifact.artifact_id])
-        if artifact.upload_path.name != planned_name:
-            msg = "GitHub Release upload asset name does not match plan"
-            raise PublishExecutorError(msg, code="PUBLISH_INVALID_INPUT")
-        label = labels.get(artifact.artifact_id)
-        suffix = f"#{label}" if isinstance(label, str) and label != "" else ""
-        result.append(f"{artifact.upload_path.as_posix()}{suffix}")
-    return result
-
-
-def _delete_extra_github_assets(
-    tag: str,
-    repo: str,
-    projection: Mapping[str, object],
-    repo_root: Path,
-    runner: Runner,
-) -> None:
-    """Delete unplanned assets before authoritative replacement."""
-    result = _run_checked(
-        [
-            shutil.which("gh") or "gh",
-            "release",
-            "view",
-            tag,
-            "--repo",
-            repo,
-            "--json",
-            "assets",
-        ],
-        repo_root,
-        runner,
-    )
-    try:
-        payload = json.loads(result.stdout or "{}")
-    except json.JSONDecodeError as exc:
-        msg = "gh release view emitted invalid JSON"
-        raise PublishExecutorError(msg) from exc
-    planned = set(_mapping(projection["asset-names-by-artifact-id"]).values())
-    for asset in payload.get("assets", []):
-        if isinstance(asset, Mapping) and asset.get("name") not in planned:
-            _run_checked(
-                [
-                    shutil.which("gh") or "gh",
-                    "release",
-                    "delete-asset",
-                    tag,
-                    str(asset["name"]),
-                    "--repo",
-                    repo,
-                    "--yes",
-                ],
-                repo_root,
-                runner,
-            )
-
-
-def _github_release_evidence(
-    tag: str, repo: str, repo_root: Path, runner: Runner
-) -> Json:
-    """Return small evidence from GitHub Release after mutation."""
-    result = _run_checked(
-        [
-            shutil.which("gh") or "gh",
-            "release",
-            "view",
-            tag,
-            "--repo",
-            repo,
-            "--json",
-            "url,assets,isPrerelease",
-        ],
-        repo_root,
-        runner,
-    )
-    try:
-        payload = json.loads(result.stdout or "{}")
-    except json.JSONDecodeError:
-        return {"release-tag": tag, "repository": repo}
-    evidence: Json = {
-        "release-tag": tag,
-        "repository": repo,
-    }
-    if isinstance(payload, Mapping):
-        if isinstance(payload.get("url"), str):
-            evidence["url"] = payload["url"]
-        if isinstance(payload.get("isPrerelease"), bool):
-            evidence["is-prerelease"] = payload["isPrerelease"]
-        assets = payload.get("assets")
-        if isinstance(assets, list):
-            evidence["asset-names"] = sorted(
-                asset["name"]
-                for asset in assets
-                if isinstance(asset, Mapping)
-                and isinstance(asset.get("name"), str)
-            )
-    return evidence
-
-
-def _verify_github_release_asset_attestations(
-    request: Mapping[str, object],
-    artifacts: Sequence[_ArtifactInput],
-    repo: str,
-    repo_root: Path,
-    runner: Runner,
-) -> dict[str, Json]:
-    """Fail closed unless every GitHub Release asset has verified provenance."""
-    node = _mapping(request["publish-node"])
-    attestation = _mapping(node["attestation"])
-    signer_workflow = str(attestation["signer-workflow"])
-    context = _GithubAttestationContext(
-        repo=repo,
-        source_digest=str(request["commit-sha"]),
-        signer_workflow=signer_workflow,
-    )
-    action_outputs = _mapping(request["github-release-asset-attestations"])
-    evidence: dict[str, Json] = {}
-    for artifact in artifacts:
-        output = _mapping(action_outputs[artifact.artifact_id])
-        bundle_path = _attestation_bundle_path(
-            repo_root, str(output["bundle-path"])
-        )
-        if not bundle_path.is_file():
-            msg = (
-                "GitHub Release asset attestation bundle is missing: "
-                f"{output['bundle-path']}"
-            )
-            raise PublishExecutorError(
-                msg,
-                code="PUBLISH_ATTESTATION_FAILED",
-                phase="verification",
-                details={"artifact-id": artifact.artifact_id},
-            )
-        verified = _verify_github_asset_attestation(
-            artifact,
-            bundle_path,
-            context,
-            repo_root,
-            runner,
-        )
-        evidence[artifact.artifact_id] = {
-            "asset-name": artifact.upload_path.name,
-            "sha256": verified["sha256"],
-            "predicate-type": "https://slsa.dev/provenance/v1",
-            "signer-workflow": signer_workflow,
-            "source-repository": repo,
-            "source-digest": str(request["commit-sha"]),
-            "attestation-id": str(output["attestation-id"]),
-            "attestation-url": str(output["attestation-url"]),
-            "bundle-path": str(output["bundle-path"]),
-        }
-        if "storage-record-ids" in output:
-            evidence[artifact.artifact_id]["storage-record-ids"] = str(
-                output["storage-record-ids"]
-            )
-    return evidence
-
-
-def _verify_github_asset_attestation(
-    artifact: _ArtifactInput,
-    bundle_path: Path,
-    context: _GithubAttestationContext,
-    repo_root: Path,
-    runner: Runner,
-) -> Json:
-    """Verify an uploaded GitHub Release asset's SLSA provenance attestation."""
-    result = _run_checked(
-        [
-            shutil.which("gh") or "gh",
-            "attestation",
-            "verify",
-            artifact.upload_path.as_posix(),
-            "--bundle",
-            bundle_path.as_posix(),
-            "--repo",
-            context.repo,
-            "--predicate-type",
-            "https://slsa.dev/provenance/v1",
-            "--signer-workflow",
-            context.signer_workflow,
-            "--source-digest",
-            context.source_digest,
-            "--format",
-            "json",
-        ],
-        repo_root,
-        runner,
-        code="PUBLISH_ATTESTATION_FAILED",
-        phase="verification",
-    )
-    try:
-        payload = json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        msg = "gh attestation verify emitted invalid JSON"
-        raise PublishExecutorError(
-            msg, code="PUBLISH_ATTESTATION_FAILED", phase="verification"
-        ) from exc
-    digest = _sha256_file(artifact.upload_path)
-    if not _attestation_subject_verified(
-        payload, artifact.upload_path.name, digest
-    ):
-        msg = (
-            "GitHub Release asset attestation does not bind the planned "
-            f"asset name and digest: {artifact.upload_path.name}"
-        )
-        raise PublishExecutorError(
-            msg,
-            code="PUBLISH_ATTESTATION_FAILED",
-            phase="verification",
-            details={"artifact-id": artifact.artifact_id},
-        )
-    return {"sha256": digest}
-
-
-def _attestation_subject_verified(
-    payload: object, subject_name: str, sha256: str
-) -> bool:
-    """Return whether gh verification JSON contains the expected subject."""
-    entries = payload if isinstance(payload, list) else [payload]
-    for entry in entries:
-        if not isinstance(entry, Mapping):
-            continue
-        verification = entry.get("verificationResult")
-        if not isinstance(verification, Mapping):
-            continue
-        statement = verification.get("statement")
-        if not isinstance(statement, Mapping):
-            continue
-        subjects = statement.get("subject")
-        if not isinstance(subjects, list):
-            continue
-        for subject in subjects:
-            if not isinstance(subject, Mapping):
-                continue
-            digest = subject.get("digest")
-            if (
-                subject.get("name") == subject_name
-                and isinstance(digest, Mapping)
-                and digest.get("sha256") == sha256
-            ):
-                return True
-    return False
 
 
 def _sha256_file(path: Path) -> str:
@@ -1549,19 +1184,6 @@ def _safe_repo_path(repo_root: Path, value: str) -> Path:
         msg = f"path escapes repository root: {value!r}"
         raise PublishExecutorError(msg, code="PUBLISH_INVALID_INPUT") from exc
     return resolved
-
-
-def _attestation_bundle_path(repo_root: Path, value: str) -> Path:
-    """Resolve an actions/attest bundle path for offline verification."""
-    if not value:
-        msg = "GitHub Release asset attestation bundle path is empty"
-        raise PublishExecutorError(
-            msg, code="PUBLISH_ATTESTATION_FAILED", phase="verification"
-        )
-    candidate = Path(value)
-    if candidate.is_absolute():
-        return candidate.resolve()
-    return _safe_repo_path(repo_root, value)
 
 
 def _mapping(value: object) -> Mapping[str, object]:

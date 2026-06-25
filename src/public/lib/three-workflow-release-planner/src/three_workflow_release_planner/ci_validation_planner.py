@@ -153,7 +153,31 @@ _WORKFLOW_RELEASE_SURFACE_GLOBS: tuple[tuple[str, str], ...] = (
         "workflow-release-contract",
     ),
     ("eng/release/**", "target-catalog"),
+    (".github/CODEOWNERS", "workflow-orchestration"),
+    (".github/actionlint.yaml", "workflow-orchestration"),
+    ("eng/scripts/find_project_path.py", "workflow-orchestration"),
+    ("eng/scripts/validate_pep440_version.py", "workflow-orchestration"),
+    ("eng/scripts/validate_semver2_version.py", "workflow-orchestration"),
+    ("eng/scripts/validate_rubygems_version.py", "workflow-orchestration"),
+    ("eng/scripts/release_orchestrate_*.sh", "workflow-orchestration"),
+    ("eng/scripts/prepare_npm_publish.py", "publish-execution"),
+    ("eng/scripts/publish_*_idempotent.sh", "publish-execution"),
+    ("eng/scripts/validate_pypi_remote_digests.sh", "publish-execution"),
+    (
+        "eng/scripts/verify_python_distribution_exactness.py",
+        "build-execution",
+    ),
+    (
+        "eng/scripts/verify_python_artifact_version.py",
+        "build-execution",
+    ),
+    (
+        "tests/test_verify_python_distribution_exactness.py",
+        "build-execution",
+    ),
     ("eng/scripts/workflow_release_*.py", "workflow-orchestration"),
+    (".github/workflows/REFACTOR_PLAN.md", "workflow-orchestration"),
+    (".github/workflows/docs/DESIGN.v2.md", "workflow-orchestration"),
     (".github/workflows/*.yml", "workflow-orchestration"),
     (".github/workflows/*.yaml", "workflow-orchestration"),
     (".github/workflows/release-*.yml", "workflow-orchestration"),
@@ -848,9 +872,7 @@ def _has_files_matching(root: Path, patterns: Sequence[str]) -> bool:
     if not root.is_dir():
         return False
     return any(
-        path.is_file()
-        for pattern in patterns
-        for path in root.rglob(pattern)
+        path.is_file() for pattern in patterns for path in root.rglob(pattern)
     )
 
 
@@ -2562,9 +2584,7 @@ def _classification(
 ) -> Json:
     return {
         "impacts": [_impact_record(impact) for impact in impacts],
-        "broad-expansions": _dedupe_records(
-            broad_expansions, "expansion-id"
-        ),
+        "broad-expansions": _dedupe_records(broad_expansions, "expansion-id"),
         "subject-selection-provenance": _dedupe_records(
             provenance, "provenance-id"
         ),

@@ -1,8 +1,9 @@
-"""Windows .NET metadata observation helper for workflow release planning."""
+""".NET metadata observation helper for workflow release planning."""
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -63,6 +64,7 @@ def collect_dotnet_metadata(
 ) -> Json:
     """Collect NBGV version and optional PackageId for .NET projects."""
     metadata = _validate_metadata_input(metadata_input)
+    nbgv = _trusted_nbgv_command()
 
     resolved_repo = repo_root.resolve()
     run = runner or _subprocess_runner
@@ -70,7 +72,7 @@ def collect_dotnet_metadata(
     diagnostics: list[Json] = []
     projects: dict[str, Json] = {}
     for project in _project_inputs(metadata):
-        entry = _collect_project(project, commit_sha, resolved_repo, run)
+        entry = _collect_project(project, commit_sha, resolved_repo, nbgv, run)
         if isinstance(entry, _ProjectFailure):
             diagnostics.append(entry.diagnostic)
             continue
@@ -165,6 +167,7 @@ def _collect_project(
     project: _ProjectInput,
     commit_sha: str,
     repo_root: Path,
+    nbgv: str,
     runner: Runner,
 ) -> Json | _ProjectFailure:
     manifest_path = _safe_repo_path(repo_root, project.primary_manifest_path)
@@ -183,6 +186,7 @@ def _collect_project(
         manifest_path,
         commit_sha,
         repo_root,
+        nbgv,
         runner,
     )
     if isinstance(version, _ProjectFailure):
@@ -206,22 +210,18 @@ def _collect_project(
     return entry
 
 
-def _resolved_version(
+def _resolved_version(  # noqa: PLR0913
     project_id: str,
     manifest_path: Path,
     commit_sha: str,
     repo_root: Path,
+    nbgv: str,
     runner: Runner,
 ) -> str | _ProjectFailure:
-    dotnet = shutil.which("dotnet") or "dotnet"
     project_dir = manifest_path.parent.relative_to(repo_root).as_posix()
     result = _run(
         [
-            dotnet,
-            "tool",
-            "run",
-            "nbgv",
-            "--",
+            nbgv,
             "get-version",
             commit_sha,
             "--project",
@@ -238,7 +238,7 @@ def _resolved_version(
                 project_id,
                 "build-system NBGV version authority could not be resolved",
                 details={
-                    "command": "dotnet tool run nbgv get-version",
+                    "command": "nbgv get-version",
                     "error": _command_error(result),
                 },
             )
@@ -262,6 +262,31 @@ def _resolved_version(
             )
         )
     return version
+
+
+def _trusted_nbgv_command() -> str:
+    """Return the trusted NBGV executable path for metadata collection."""
+    variable = "THREE_WORKFLOW_RELEASE_NBGV_PATH"
+    configured = os.environ.get(variable)
+    if configured is not None:
+        configured = configured.strip()
+    if not configured:
+        message = "trusted NBGV CLI path is not configured"
+        raise _metadata_input_error(
+            message,
+            {"environment-variable": variable},
+        )
+    path = Path(configured)
+    if not path.is_absolute():
+        message = "trusted NBGV CLI path must be absolute"
+        raise _metadata_input_error(
+            message,
+            {
+                "environment-variable": variable,
+                "configured-path": configured,
+            },
+        )
+    return configured
 
 
 def _package_id(

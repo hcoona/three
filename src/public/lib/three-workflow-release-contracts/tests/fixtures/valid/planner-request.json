@@ -6,5 +6,5 @@
   "request-flags": {
     "force": false
   },
-  "requested-project-ids": []
+  "requested-project-ids": ["example"]
 }

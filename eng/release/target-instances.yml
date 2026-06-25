@@ -18,30 +18,7 @@ families:
           credential-posture: github-token
           publish-topology: github-token
   nuget:
-    instances:
-      - id: nuget-org
-        contract: nuget-publish
-        destination:
-          host: nuget.org
-        capabilities:
-          mutability: immutable
-          name-uniqueness-scope: package-name
-          version-uniqueness-rule: package-name-plus-version
-          profile-coexistence-rule: requires-distinct-name
-          credential-posture: oidc
-          publish-topology: external-oidc-entry-workflow
-      - id: github-packages
-        contract: nuget-publish
-        destination:
-          host: nuget.pkg.github.com
-          owner: hcoona
-        capabilities:
-          mutability: immutable
-          name-uniqueness-scope: package-name-with-owner
-          version-uniqueness-rule: package-name-plus-version
-          profile-coexistence-rule: same-name-allowed
-          credential-posture: github-token
-          publish-topology: github-token
+    instances: []
   pypi:
     instances:
       - id: pypi
@@ -54,7 +31,7 @@ families:
           version-uniqueness-rule: package-name-plus-version
           profile-coexistence-rule: requires-distinct-name
           credential-posture: oidc
-          publish-topology: external-oidc-entry-workflow
+          publish-topology: external-oidc-reusable-workflow
   npm:
     instances:
       - id: npmjs
@@ -67,7 +44,7 @@ families:
           version-uniqueness-rule: package-name-plus-version
           profile-coexistence-rule: requires-distinct-name
           credential-posture: oidc
-          publish-topology: external-oidc-entry-workflow
+          publish-topology: external-oidc-caller-workflow
       - id: github-packages
         contract: npm-publish
         destination:

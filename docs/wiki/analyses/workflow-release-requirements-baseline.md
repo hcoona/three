@@ -51,11 +51,14 @@ Examples of acceptable behavior:
 
 - A canonical build may emit a raw binary plus an installer for that same binary
   variant in one pass.
-- NuGet.org receives a NuGet package.
+- A future NuGet.org registry path may receive a NuGet package after a reviewed
+  dotnet/NuGet workflow path and catalog entries are added; active first delivery
+  does not publish to NuGet registries.
 - Both outputs originate from the same underlying build result where that build
   is meant to represent the same shipped binary.
-- A library project may publish both its original package assets and a NuGet
-  package to GitHub Release.
+- A library project may publish package assets to GitHub Release; a future NuGet
+  registry package path remains deferred until active NuGet target catalog
+  instances exist.
 - An app project may publish either an Inno Setup installer or a host-specific
   `dotnet publish` binary, depending on the project's declared packaging path.
 - A Node package may add a scope when targeting GitHub Packages while preserving
@@ -94,9 +97,11 @@ Examples of disallowed behavior:
   effects.
 - A current-scope run with no external side effects does not enter that
   approval gate.
-- Current-scope no-side-effect cases include dry-run or validation-only runs,
-  zero-target runs, and runs where every selected publish node is already
-  planner-classified as `skip-satisfied`.
+- Active workflow-dispatch inputs do not expose dry-run or validation-only
+  modes. No-side-effect behavior in the active contract is therefore limited to
+  zero-target runs and runs where every selected publish node is already
+  planner-classified as `skip-satisfied`; operator-selected dry-run or
+  validation-only proof is historical/deferred successor scope.
 - Any repository user with `maintain` permission or higher may approve an
   `official` release when configured as a required reviewer for the protected
   environment.
@@ -108,23 +113,22 @@ Examples of disallowed behavior:
 
 ## Confirmed Lifecycle Rule
 
-- The first delivery scope should prioritize manual `workflow_dispatch`
-  initiation.
-- Each workflow-dispatch run may target one or more projects selected by input
-  parameters.
-- Omitted or empty `requested-project-ids` means all in-scope releasable
-  projects.
-- If `requested-project-ids` is explicitly non-empty, every id must resolve to an
-  in-scope releasable project or planning fails.
-- The resolved `selected-project-ids` set must be normalized to unique
-  lexicographic order.
+- The active first-delivery scope prioritizes manual `workflow_dispatch`
+  initiation for one selected project at a time, using required `project` and
+  `version` inputs plus optional `target` and `force_update_tag`.
+- Each active workflow-dispatch run targets exactly one project. Multi-project
+  dispatch, omitted/empty `requested-project-ids`, and all-project selection are
+  superseded/deferred.
+- If the active `project` input does not resolve to exactly one in-scope
+  releasable project, planning fails.
 - `buddy` and `official` are separate workflow entry points rather than a shared
   profile selector inside one workflow entry.
 - The first delivery scope must support rerunning the entire release against the
   same input.
 - For rerun purposes, "the same input" means the same workflow entry point, the
-  same resolved `selected-project-ids` scope, and the same release inputs.
-- Dry-run or validation-only selection is not part of that rerun identity.
+  same resolved single project, and the same release inputs.
+- Dry-run or validation-only selection is not active workflow-dispatch input and
+  is therefore not part of active rerun identity.
 - If whole-release rerun is later proven technically infeasible, that reduction
   must be re-confirmed with the user instead of being assumed by the team.
 - The first delivery scope does not require single-target retry.
@@ -132,9 +136,9 @@ Examples of disallowed behavior:
   and idempotent retry behavior.
 - Replay handling should stay automatic; the workflow does not need extra manual
   replay-choice controls.
-- The first delivery scope must support a dry-run or validation-only mode that
-  performs input and descriptor validation without publishing to external
-  targets.
+- The active first delivery does not expose operator-controlled dry-run or
+  validation-only dispatch inputs. A future no-side-effect validation mode may be
+  added only through a successor workflow contract.
 - If any discovered in-scope release descriptor is invalid, planning must fail
   before any release request is planned rather than silently dropping that
   project and continuing.
@@ -149,18 +153,22 @@ Examples of disallowed behavior:
   semantics; the workflow does not introduce a repo-specific cancellation model.
 - The first delivery scope does not require a repo-defined supersession model
   across release requests.
-- First delivery uses native GitHub Actions concurrency only for conservative
-  same-entry serialization with `cancel-in-progress: false`; it does not use
-  native in-progress duplicate-run cancellation.
-- The first-delivery concurrency key is the selected top-level entry workflow,
-  not the resolved commit or project subset. Finer-grained duplicate detection is
-  successor scope.
+- First delivery uses native GitHub Actions job-level concurrency only on the
+  active entry workflow's `orchestrate` job with `cancel-in-progress: false`; it
+  does not use native in-progress duplicate-run cancellation.
+- The active first-delivery concurrency key is
+  `release/${project_id}/v${release_version}`, derived
+  after entry authorization resolves the canonical single project and pinned
+  release target SHA.
 - Native GitHub Actions concurrency retains at most one running and one pending
-  run per group. If another same-entry run is queued while one run is already
-  running and one is pending, GitHub may cancel the older pending run and keep the
-  newer pending run. First delivery accepts that platform pending-replacement
-  behavior as pre-execution queue compaction, not as repo-defined supersession of
-  a running release.
+  run per group. If another run for the same resolved release identity, whether
+  from the `buddy` or `official` entry, is queued for the same dynamic release
+  concurrency group
+  (`release/${project_id}/v${release_version}`) while one
+  run is already running and one is pending, GitHub may cancel the older pending
+  run and keep the newer pending run. First delivery accepts that platform
+  pending-replacement behavior as pre-execution queue compaction, not as
+  repo-defined supersession of a running release.
 - When a release is cancelled, whether manually or by ordinary platform
   cancellation, it must stop the remaining unpublished targets while leaving
   already published results visible for manual follow-up.
@@ -177,20 +185,26 @@ Examples of disallowed behavior:
   tag existence alone.
 - If the required project-scoped release tag does not exist, workflow release
   creates it.
-- If the required project-scoped release tag already exists, workflow release
-  must confirm that it already points to the selected commit/object for that
-  run.
+- If the required project-scoped release tag already exists and
+  `force_update_tag` is omitted or `false`, workflow release must confirm that
+  it already points to the selected commit/object for that run.
+- If the required project-scoped release tag already exists, points elsewhere,
+  and the operator explicitly supplied `force_update_tag=true`, workflow release
+  may retarget that tag through the reviewed force path for the selected commit.
 - When one run requires more than one distinct project-scoped release tag,
   workflow release must first verify every already-existing required tag before
   creating any missing tag.
-- If an existing required project-scoped release tag points elsewhere, workflow
-  release must fail before publication.
-- If any required existing tag points elsewhere in such a multi-tag run,
-  workflow release must fail without creating new tags for that run.
+- If an existing required project-scoped release tag points elsewhere without
+  explicit `force_update_tag=true`, workflow release must fail before
+  publication.
+- If any required existing tag points elsewhere in such a multi-tag run without
+  explicit `force_update_tag=true`, workflow release must fail without creating
+  new tags for that run.
 - Only after the full required tag set passes verification may workflow release
   create any missing required tags for that run.
-- Retargeting or moving an existing required project-scoped release tag is out of
-  current scope and must not be attempted automatically.
+- Retargeting or moving an existing required project-scoped release tag must not
+  be attempted automatically; the only active retarget path is the explicit,
+  operator-approved `force_update_tag=true` workflow input.
 - A zero-target run, or any other run whose selected publish nodes contain no
   GitHub Release publication, must not imply a tag side effect.
 
@@ -225,19 +239,21 @@ Examples of disallowed behavior:
 - Overwrite should generally be avoided.
 - `official` does not allow overwrite.
 - `buddy` overwrite is allowed only as an exceptional explicit `FORCE` action.
-- For mutable GitHub Release replay outside the same-tag `buddy` to `official`
-  promotion path, non-`FORCE` reruns must fail planning rather than attempting
-  to reuse or overwrite the existing publication.
+- For mutable GitHub Release replay outside the same-tag official
+  prerelease-to-release `partial-authoritative` promotion path, non-`FORCE`
+  reruns must fail planning rather than attempting to reuse or overwrite the
+  existing publication.
 - Target-platform constraints always take precedence over any business desire to
   overwrite.
 - For immutable registries whose one package identity may own multiple immutable
   remote members, rerun handling is conservative: `absent` may publish,
   `exact-satisfied` may skip, and any same-identity non-exact observation
   (`partial` or `conflicting`) must fail closed for human intervention.
-- Current-scope NuGet/PyPI immutable handling must reliably distinguish an
-  already-satisfied publication from a same-identity mismatch before treating a
-  rerun as skippable; if that distinction cannot be established confidently,
-  the run must fail closed for human intervention.
+- Active PyPI immutable handling must reliably distinguish an already-satisfied
+  publication from a same-identity mismatch before treating a rerun as skippable;
+  if that distinction cannot be established confidently, the run must fail closed
+  for human intervention. Equivalent NuGet registry handling is future-only
+  because the active target catalog keeps `families.nuget.instances: []`.
 - In current scope, npm and RubyGems are single-member families, so that
   immutable-registry `partial` case does not arise there.
 - `buddy` to `official` promotion is in scope and must stay on the same commit
@@ -278,8 +294,11 @@ Examples of disallowed behavior:
   target class.
 - The target model must distinguish ecosystem-specific publication families
   rather than treating "package registry" as one undifferentiated bucket.
-- The first delivery scope includes GitHub Release plus the NuGet, PyPI, npm,
-  and RubyGems publication families.
+- The first delivery scope includes GitHub Release plus active PyPI, npm, and
+  RubyGems publication families. NuGet registry publication is deferred:
+  `eng/release/target-instances.yml` currently has `families.nuget.instances: []`,
+  so NuGet registry targets are future-only until a reviewed dotnet/NuGet
+  workflow path and catalog entries are added.
 - GitHub Release is mandatory for any non-zero-target profile, but a zero-target
   profile may omit it.
 - Package-registry publication remains descriptor-driven for both `buddy` and
@@ -292,9 +311,15 @@ Examples of disallowed behavior:
   target when the ecosystem is supported there, but that platform capability
   does not create a repo default.
 - Python is the known exception for GitHub Packages among the first-delivery
-  ecosystems: GitHub Packages is not available as a Python package target, so
-  Python `buddy` falls back to GitHub Release only, and Python `official`
-  package publication uses PyPI when declared.
+  ecosystems: GitHub Packages is not available as a Python package target.
+  Active `buddy` GitHub Release and Python `buddy` preview publication are
+  unsupported and must fail closed while `buddy` attestations remain disabled;
+  they must not be treated as a GitHub Release-only fallback. A selected `buddy`
+  descriptor containing `github-release/public` fails as a whole descriptor
+  before any registry publish, even when the descriptor also declares package
+  registry targets. A future Python `buddy` preview requires a reviewed,
+  attestation-enabled `buddy` path. Python `official` package publication uses
+  PyPI when declared.
 - The first delivery scope must include live `official` PyPI publication for at
   least one valid active `pypi/pypi` target. Live PyPI publishing must ship in
   the first-delivery topology.
@@ -340,9 +365,11 @@ Examples of disallowed behavior:
   publishing the same package name to the same registry from both profiles.
 - Acceptance must also prove one real direct `official` publication without a
   prior `buddy`.
-- Acceptance must explicitly prove multi-project `workflow_dispatch` scope in at
-  least one real run.
-- Acceptance must explicitly prove dry-run or validation-only behavior.
+- Acceptance for the active workflow-dispatch contract must prove single-project
+  selection. Multi-project dispatch proof is historical/deferred successor
+  scope.
+- Operator-selected dry-run or validation-only proof is historical/deferred
+  successor scope because those controls are not active dispatch inputs.
 - Acceptance must explicitly prove whole-release rerun behavior against the same
   input, including rerun after partial success on immutable targets.
 - Acceptance must explicitly prove manual cancellation behavior.
@@ -381,10 +408,10 @@ now tighter in ten places:
    approval, while `official` is `maintain+` plus an approval gate.
 4. The first delivery scope now prioritizes manual `workflow_dispatch`
    initiation.
-5. The first delivery scope must support whole-release rerun and dry run, with
-   dry run kept outside rerun identity, while replay concerns should be
-   addressed with skip detection and idempotent behavior rather than mandatory
-   single-target retry.
+5. The first delivery scope must support whole-release rerun; operator-selected
+   dry run is deferred outside the active dispatch contract, while replay
+   concerns should be addressed with skip detection and idempotent behavior
+   rather than mandatory single-target retry.
 6. The first delivery scope may preserve partial success and rely on manual
    remediation instead of mandatory automatic rollback.
 7. Version identity is now project-scoped and NBGV-derived, `official` freeze
@@ -402,9 +429,10 @@ now tighter in ten places:
    name.
 10. The first delivery scope now has concrete acceptance expectations around
     real-project coverage, real publication, real `official`, promotion,
-    direct-official validation, multi-project dispatch, dry-run, rerun,
+    direct-official validation, active single-project dispatch, rerun,
     cancellation, approval boundaries, and GitHub Packages coverage when that
-    target is exercised.
+    target is exercised, while multi-project dispatch and operator-selected
+    dry-run validation remain deferred.
 
 ## Requirements-Phase Design Deferrals
 
