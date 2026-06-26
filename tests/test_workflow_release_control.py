@@ -19,6 +19,7 @@ import sys
 import tarfile
 import zipfile
 from copy import deepcopy
+from datetime import datetime
 from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -23287,6 +23288,7 @@ def test_orchestrator_waits_for_missing_cross_family_artifact() -> None:
         json.dumps(context["fact_snapshot"]),
         encoding="utf-8",
     )
+    output_path = scratch / "github-output.txt"
 
     with pytest.raises(RuntimeError, match="could not select"):
         control._cmd_run_ci_validation_runner_family_orchestrator_step(
@@ -23308,9 +23310,357 @@ def test_orchestrator_waits_for_missing_cross_family_artifact() -> None:
                 slot_index="0",
                 observed_commit_sha=batch_contracts.TREE_SHA,
                 repo_root=str(REPO_ROOT),
-                github_output="",
+                github_output=str(output_path),
             )
         )
+    outputs = _github_outputs(output_path)
+    assert outputs["batch_selected"] == "false"
+    assert json.loads(outputs["waiting_batch_ids"]) == [batch["batch-id"]]
+    assert json.loads(outputs["terminal_dependency_blockers"]) == {
+        batch["batch-id"]: "repository is required"
+    }
+    _assert_ci_timing_shape(json.loads(outputs["dependency_selection_timing"]))
+    _assert_ci_timing_shape(json.loads(outputs["orchestrator_step_timing"]))
+
+
+def test_windows_orchestrator_step_emits_timing_evidence(  # noqa: C901
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hosted Windows orchestrator bundles expose wait and command timings."""
+    plan = cast("dict[str, object]", batch_contracts.plan())
+    batch_contracts.add_dependent_work_group(plan)
+    dependent_group = next(
+        group
+        for group in cast("list[dict[str, object]]", plan["work-groups"])
+        if group["work-group-id"] == "wg-dependent-gate"
+    )
+    dependent_group["ecosystem"] = "dotnet"
+    dependent_group["runner-family"] = "windows"
+    plan["plan-digest"] = ci_validation_plan_digest(plan)
+    context = batch_contracts.authorizing_context_kwargs()
+    materialization = batch_contracts.materialize_ci_validation_execution_batches(
+        plan=plan,
+        request=cast("dict[str, object]", context["request"]),
+        changed_files_snapshot=cast(
+            "dict[str, object]",
+            context["changed_files_snapshot"],
+        ),
+        fact_snapshot=cast("dict[str, object]", context["fact_snapshot"]),
+        expected_run_id=batch_contracts.RUN_ID,
+        expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+        created_at=batch_contracts.CREATED_AT,
+        execution_workflow="CI Validation",
+    )
+    manifest = cast("dict[str, object]", materialization.manifest)
+    batches = cast("list[dict[str, object]]", manifest["batches"])
+    batch = next(
+        item for item in batches if item["runner-family"] == "windows"
+    )
+    upstream_batch_id = cast("list[str]", batch["depends-on-batches"])[0]
+    upstream_batch = next(
+        item for item in batches if item["batch-id"] == upstream_batch_id
+    )
+    selector = cast(
+        "list[dict[str, object]]",
+        batch["ordered-selectors"],
+    )[0]
+    scratch = _ci_batch_bundle_scratch("windows-orchestrator-timing")
+    plan_path = scratch / "plan.json"
+    request_path = scratch / "request.json"
+    manifest_path = scratch / "execution-batch-manifest.json"
+    changed_files_path = scratch / "changed-files.json"
+    fact_snapshot_path = scratch / "fact-snapshot.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    request_path.write_text(json.dumps(context["request"]), encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    changed_files_path.write_text(
+        json.dumps(context["changed_files_snapshot"]),
+        encoding="utf-8",
+    )
+    fact_snapshot_path.write_text(
+        json.dumps(context["fact_snapshot"]),
+        encoding="utf-8",
+    )
+    upstream_selector = cast(
+        "list[dict[str, object]]",
+        upstream_batch["ordered-selectors"],
+    )[0]
+    upstream_result_dir = scratch / "upstream-validation-results"
+    upstream_result_dir.mkdir()
+    upstream_result_path = upstream_result_dir / "validation-result-000.json"
+    upstream_result_path.write_text(
+        json.dumps(
+            _ci_success_validation_result(
+                plan,
+                cast("str", upstream_selector["work-group-id"]),
+            )
+        ),
+        encoding="utf-8",
+    )
+    upstream_artifact_name = artifact_physical_name(
+        cast("str", upstream_batch["expected-batch-evidence-bundle-ref"])
+    )
+    upstream_bundle_path = (
+        scratch
+        / "prebuilt-upstream-artifact"
+        / upstream_artifact_name
+        / "batch-evidence-bundle.json"
+    )
+    upstream_bundle_path.parent.mkdir(parents=True)
+    control._cmd_write_ci_validation_batch_evidence_bundle(
+        argparse.Namespace(
+            plan=str(plan_path),
+            request=str(request_path),
+            execution_batch_manifest=str(manifest_path),
+            changed_files_snapshot=str(changed_files_path),
+            fact_snapshot=str(fact_snapshot_path),
+            observed_artifacts_dir=str(scratch / "observed-artifacts"),
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+            dependency_bundle=[],
+            _dependency_artifact_admissions=[],
+            observed_commit_sha=batch_contracts.TREE_SHA,
+            matrix_row_json=json.dumps(
+                control._ci_orchestrator_matrix_row(
+                    manifest,
+                    upstream_batch,
+                ),
+                separators=(",", ":"),
+            ),
+            repo_root=str(REPO_ROOT),
+            github_output=None,
+            workflow="CI Validation",
+            job=cast("str", manifest["execution-job"]),
+            validation_result=[str(upstream_result_path)],
+            dependency_results_json="",
+            started_at=batch_contracts.CREATED_AT,
+            completed_at=batch_contracts.CREATED_AT,
+            created_at=batch_contracts.CREATED_AT,
+            orchestrator_step=None,
+            bundle_out=str(upstream_bundle_path),
+        )
+    )
+    artifact_visible = False
+    fake_clock_seconds = 0.0
+    post_wait_tail_duration_ms = 2_500
+
+    def fake_run_batch_commands(args: argparse.Namespace) -> int:
+        result_dir = Path(args.result_out_dir)
+        result_dir.mkdir(parents=True, exist_ok=True)
+        result = _ci_success_validation_result(
+            plan,
+            cast("str", selector["work-group-id"]),
+        )
+        result["timing"] = {
+            "started-at": "2026-06-26T05:00:00.000Z",
+            "completed-at": "2026-06-26T05:00:04.000Z",
+            "duration-ms": 4000,
+        }
+        for index, command in enumerate(
+            cast("list[dict[str, object]]", result["commands"]),
+        ):
+            command["timing"] = {
+                "started-at": f"2026-06-26T05:00:0{index}.000Z",
+                "completed-at": f"2026-06-26T05:00:0{index + 1}.000Z",
+                "duration-ms": 1000,
+            }
+        (result_dir / "validation-result-000.json").write_text(
+            json.dumps(result),
+            encoding="utf-8",
+        )
+        return 0
+
+    def fake_api_multimap(
+        **_kwargs: object,
+    ) -> dict[str, list[Mapping[str, object]]]:
+        if not artifact_visible:
+            return {}
+        return {
+            upstream_artifact_name: [
+                {
+                    "id": "9100",
+                    "name": upstream_artifact_name,
+                    "expired": False,
+                    "workflow_run": {
+                        "id": int(batch_contracts.RUN_ID),
+                        "run_attempt": int(batch_contracts.RUN_ATTEMPT),
+                    },
+                }
+            ]
+        }
+
+    def fake_download(
+        _repository: str,
+        _artifact_api: Mapping[str, object],
+        artifact_name_value: str,
+        destination: Path,
+    ) -> None:
+        assert artifact_name_value == upstream_artifact_name
+        destination.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(
+            upstream_bundle_path,
+            destination / "batch-evidence-bundle.json",
+        )
+
+    def fake_sleep(seconds: float) -> None:
+        nonlocal artifact_visible, fake_clock_seconds
+        artifact_visible = True
+        fake_clock_seconds += seconds
+
+    def fake_monotonic() -> float:
+        return fake_clock_seconds
+
+    def fake_perf_counter_ns() -> int:
+        return int(fake_clock_seconds * 1_000_000_000)
+
+    write_ci_validation_batch_evidence_bundle = (
+        control._cmd_write_ci_validation_batch_evidence_bundle
+    )
+
+    def fake_write_ci_validation_batch_evidence_bundle(
+        args: argparse.Namespace,
+    ) -> int:
+        nonlocal fake_clock_seconds
+        result = write_ci_validation_batch_evidence_bundle(args)
+        fake_clock_seconds += post_wait_tail_duration_ms / 1000
+        return result
+
+    monkeypatch.setattr(
+        control,
+        "_cmd_run_ci_validation_batch_commands",
+        fake_run_batch_commands,
+    )
+    monkeypatch.setattr(
+        control,
+        "_ci_observed_artifact_api_multimap",
+        fake_api_multimap,
+    )
+    monkeypatch.setattr(control, "_download_artifact_by_id", fake_download)
+    monkeypatch.setattr(control.time, "sleep", fake_sleep)
+    monkeypatch.setattr(control.time, "monotonic", fake_monotonic)
+    monkeypatch.setattr(control.time, "perf_counter_ns", fake_perf_counter_ns)
+    monkeypatch.setattr(
+        control,
+        "_cmd_write_ci_validation_batch_evidence_bundle",
+        fake_write_ci_validation_batch_evidence_bundle,
+    )
+    output_path = scratch / "github-output.txt"
+
+    try:
+        assert (
+            control._cmd_run_ci_validation_runner_family_orchestrator_step(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    request=str(request_path),
+                    execution_batch_manifest=str(manifest_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    runner_family="windows",
+                    repository="owner/repo",
+                    workflow="CI Validation",
+                    job="execution-batch-windows-orchestrator",
+                    expected_run_id=batch_contracts.RUN_ID,
+                    expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+                    observed_artifacts_dir=str(scratch / "observed-artifacts"),
+                    state_dir=str(scratch / "state"),
+                    work_dir=str(scratch / "work"),
+                    slot_index="0",
+                    observed_commit_sha=batch_contracts.TREE_SHA,
+                    repo_root=str(REPO_ROOT),
+                    github_output=str(output_path),
+                    dependency_wait_timeout_seconds=30,
+                    dependency_poll_interval_seconds=15,
+                )
+            )
+            == 0
+        )
+
+        artifact_name = artifact_physical_name(
+            cast("str", batch["expected-batch-evidence-bundle-ref"]),
+        )
+        outputs = _github_outputs(output_path)
+        assert outputs["batch_selected"] == "true"
+        upload_dir = Path(outputs["batch_evidence_upload_path"])
+        assert upload_dir.is_dir()
+        assert (
+            outputs["batch_evidence_bundle_artifact_name"] == artifact_name
+        )
+        bundle = json.loads(
+            (upload_dir / "batch-evidence-bundle.json").read_text(
+                encoding="utf-8"
+            ),
+        )
+        validation_result_paths = sorted(
+            upload_dir.glob("validation-result-*.json")
+        )
+        assert validation_result_paths
+        uploaded_validation_result = json.loads(
+            validation_result_paths[0].read_text(encoding="utf-8"),
+        )
+        _assert_ci_timing_shape(uploaded_validation_result["timing"])
+        for command in cast(
+            "list[dict[str, object]]",
+            uploaded_validation_result["commands"],
+        ):
+            _assert_ci_timing_shape(command["timing"])
+        output_dependency_timing = json.loads(
+            outputs["dependency_selection_timing"]
+        )
+        output_step_timing = json.loads(outputs["orchestrator_step_timing"])
+        _assert_ci_timing_shape(output_dependency_timing)
+        _assert_ci_timing_shape(output_step_timing)
+        assert output_dependency_timing["duration-ms"] == 15_000
+        assert output_step_timing["duration-ms"] == (
+            15_000 + post_wait_tail_duration_ms
+        )
+        orchestrator_step = cast(
+            "dict[str, object]",
+            bundle["orchestrator-step"],
+        )
+        assert orchestrator_step["runner-family"] == "windows"
+        selection = cast(
+            "dict[str, object]",
+            orchestrator_step["dependency-selection"],
+        )
+        assert selection["selected-batch-id"] == batch["batch-id"]
+        _assert_ci_timing_shape(selection["timing"])
+        assert selection["timing"] == output_dependency_timing
+        for selector_result in cast(
+            "list[dict[str, object]]",
+            bundle["selector-results"],
+        ):
+            assert selector_result["runner-family"] == "windows"
+            _assert_ci_timing_shape(selector_result["timing"])
+            command_timings = cast(
+                "list[dict[str, object]]",
+                selector_result["command-timings"],
+            )
+            assert command_timings
+            for command_timing in command_timings:
+                _assert_ci_timing_shape(command_timing["timing"])
+        timing_sidecar = json.loads(
+            (
+                upload_dir / control._CI_ORCHESTRATOR_TIMING_SIDECAR_NAME
+            ).read_text(encoding="utf-8"),
+        )
+        assert timing_sidecar == {
+            "kind": "ci-validation-runner-family-orchestrator-step-timing",
+            "runner-family": "windows",
+            "slot-index": "0",
+            "batch-selected": True,
+            "selected-batch-id": batch["batch-id"],
+            "orchestrator-complete": False,
+            "batch-evidence-bundle-artifact-name": artifact_name,
+            "batch-evidence-bundle-artifact-ref": batch[
+                "expected-batch-evidence-bundle-ref"
+            ],
+            "dependency-selection-timing": output_dependency_timing,
+            "orchestrator-step-timing": output_step_timing,
+            "waiting-batch-ids": [],
+            "terminal-dependency-blockers": {},
+        }
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def test_ci_validation_batch_observation_cli_is_not_public() -> None:
@@ -28640,6 +28990,30 @@ def _github_outputs(path: Path) -> dict[str, str]:
     )
 
 
+def _assert_ci_timing_shape(value: object) -> None:
+    assert isinstance(value, dict)
+    assert set(value) == {"started-at", "completed-at", "duration-ms"}
+    assert re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z",
+        cast("str", value["started-at"]),
+    )
+    assert re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z",
+        cast("str", value["completed-at"]),
+    )
+    assert isinstance(value["duration-ms"], int)
+    assert value["duration-ms"] >= 0
+    started_at = datetime.fromisoformat(
+        cast("str", value["started-at"]).replace("Z", "+00:00"),
+    )
+    completed_at = datetime.fromisoformat(
+        cast("str", value["completed-at"]).replace("Z", "+00:00"),
+    )
+    elapsed_ms = int((completed_at - started_at).total_seconds() * 1000)
+    assert elapsed_ms >= 0
+    assert abs(cast("int", value["duration-ms"]) - elapsed_ms) <= 1000
+
+
 def test_ci_validation_command_runner_maps_exit_codes_to_outcome() -> None:
     """Mapped validation commands record no-publish command results."""
     scratch = SCRATCH / "ci-validation-command-runner"
@@ -28682,7 +29056,64 @@ def test_ci_validation_command_runner_maps_exit_codes_to_outcome() -> None:
         assert result["outcome"] == "success"
         assert result["commands"][0]["argv"][0] == sys.executable
         assert result["commands"][0]["capability"] == "test"
+        _assert_ci_timing_shape(result["timing"])
+        _assert_ci_timing_shape(result["commands"][0]["timing"])
         assert _github_outputs(output_path)["validation_outcome"] == "success"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_builtin_failure_records_timing() -> None:
+    """Failed builtin validation results retain result and command timing."""
+    scratch = SCRATCH / "ci-validation-builtin-failure-timing"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        result_path = scratch / "validation-result.json"
+        output_path = scratch / "outputs.txt"
+        matrix = {
+            "work-group-id": "wg-python",
+            "kind": "workflow-release-tooling",
+            "runner-family": "ubuntu",
+            "validation-commands": [
+                {
+                    "label": "unknown builtin",
+                    "capability": "test",
+                    "builtin": "unknown-builtin",
+                }
+            ],
+        }
+
+        assert (
+            control._cmd_run_ci_validation_commands(
+                argparse.Namespace(
+                    matrix_work_group_json=json.dumps(matrix),
+                    plan="",
+                    assignments="",
+                    changed_files_snapshot="",
+                    fact_snapshot="",
+                    observed_artifacts_dir="",
+                    observed_commit_sha=SHA_B,
+                    repo_root=str(REPO_ROOT),
+                    result_out=str(result_path),
+                    github_output=str(output_path),
+                )
+            )
+            == 0
+        )
+
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        command = result["commands"][0]
+        assert result["outcome"] == "blocking-failure"
+        assert command["outcome"] == "blocking-failure"
+        assert command["builtin"] == "unknown-builtin"
+        assert command["error"] == "frozen validation plan is required"
+        _assert_ci_timing_shape(result["timing"])
+        _assert_ci_timing_shape(command["timing"])
+        assert (
+            _github_outputs(output_path)["validation_outcome"]
+            == "blocking-failure"
+        )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -38813,6 +39244,8 @@ def test_run_ci_validation_batch_commands_skips_blocked_dependencies() -> None:
         assert completed.returncode == 0, completed.stderr
         assert validation_result["outcome"] == "skipped"
         assert validation_result["commands"][0]["error"] == "dependency-blocked"
+        _assert_ci_timing_shape(validation_result["timing"])
+        _assert_ci_timing_shape(validation_result["commands"][0]["timing"])
         rejected = subprocess.run(
             [*command, "--dependency-artifact-admission", "{}"],
             cwd=REPO_ROOT,
@@ -39153,6 +39586,55 @@ def test_ci_batch_writer_ignores_spoofed_dependency_result_json() -> None:
         assert dependency["outcome"] == "satisfied"
         assert dependency["admitted-for-gating"] is True
         assert selector_result["outcome"] == "success"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_preserves_selector_and_command_timing() -> None:
+    """Batch evidence preserves validation-result and command timing."""
+    scratch = _ci_batch_bundle_scratch("batch-selector-timing")
+    try:
+        plan, manifest = _ci_batch_contract_plan_and_manifest()
+        row = _ci_batch_matrix_rows(plan, manifest)[0]
+        batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        result = _ci_success_validation_result(
+            plan,
+            cast("str", selector["work-group-id"]),
+        )
+        timing = {
+            "started-at": "2026-06-26T05:00:00.123Z",
+            "completed-at": "2026-06-26T05:00:02.456Z",
+            "duration-ms": 2333,
+        }
+        result["timing"] = timing
+        command_timing = {
+            "started-at": "2026-06-26T05:00:00.500Z",
+            "completed-at": "2026-06-26T05:00:01.500Z",
+            "duration-ms": 1000,
+        }
+        commands = cast("list[dict[str, object]]", result["commands"])
+        commands[0]["timing"] = command_timing
+
+        bundle = _write_ci_batch_bundle(scratch, plan, manifest, row, [result])
+
+        selector_result = cast(
+            "list[dict[str, object]]",
+            bundle["selector-results"],
+        )[0]
+        assert selector_result["timing"] == timing
+        assert selector_result["command-timings"] == [
+            {
+                "index": commands[0]["index"],
+                "label": commands[0]["label"],
+                "capability": commands[0]["capability"],
+                "outcome": commands[0]["outcome"],
+                "timing": command_timing,
+            }
+        ]
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 

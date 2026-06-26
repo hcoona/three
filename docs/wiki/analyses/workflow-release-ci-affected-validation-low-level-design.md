@@ -2782,7 +2782,7 @@ shape:
 
 ```yaml
 common-envelope: inherited
-api-version: three.ci.validation.batch-evidence-bundle/v1alpha1
+api-version: three.ci.validation.batch-evidence-bundle/v1alpha2
 kind: ci-validation-batch-evidence-bundle
 artifact-ref: string
 bundle-id: string
@@ -2831,6 +2831,7 @@ execution-tree:
     verified: boolean
 started-at: string
 completed-at: string
+orchestrator-step: object # optional; required and non-null for runner-family orchestrator writers
 selector-results:
     - selector-result
 batch-diagnostics: [diagnostic-record]
@@ -2853,6 +2854,17 @@ and release-shaped artifact-family assumptions. `setup-profile-digest`,
 SHA-256 digests of the same canonical preimages used by the materializer. A
 release-shaped selector requires non-null `release-shaped-profile` and
 `release-shaped-profile-digest`; a non-release-shaped batch uses `null` for both.
+
+Timing-bearing v1alpha2 bundles may expose selector `timing`,
+`command-timings`, and runner-family orchestrator dependency-selection timing.
+Timing objects use UTC millisecond `started-at` and `completed-at` timestamps plus
+`duration-ms`; `completed-at` must be monotonic and duration must match elapsed
+wall-clock time within the contract tolerance.
+
+`orchestrator-step` is omitted by non-orchestrator/direct writers. Runner-family
+orchestrator writers must include a non-null object with the physical runner
+family, orchestrator slot index, selected batch ID, and dependency-selection
+timing.
 
 `writer` records validation-grade writer provenance inside the bundle, but it does
 not claim trusted producer identity. In G5 live CI, aggregation admits a batch

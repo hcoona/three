@@ -588,6 +588,106 @@ def test_release_shaped_batch_accepts_bound_source_proof() -> None:
     _validate_release_bundle(_release_batch_bundle())
 
 
+def test_batch_evidence_bundle_accepts_selector_timing() -> None:
+    """Selector timing is optional evidence metadata with stable shape."""
+    bundle = _release_batch_bundle()
+    selector = cast("list[dict[str, object]]", bundle["selector-results"])[0]
+    selector["timing"] = {
+        "started-at": "2026-06-26T05:00:00.123Z",
+        "completed-at": "2026-06-26T05:00:01.456Z",
+        "duration-ms": 1333,
+    }
+
+    _validate_release_bundle(bundle)
+
+
+def test_batch_evidence_bundle_accepts_command_timing_projection() -> None:
+    """Selector command timings are visible in batch evidence bundles."""
+    bundle = _release_batch_bundle()
+    selector = cast("list[dict[str, object]]", bundle["selector-results"])[0]
+    selector["command-timings"] = [
+        {
+            "index": 0,
+            "label": "python tests",
+            "capability": "test",
+            "outcome": "success",
+            "timing": {
+                "started-at": "2026-06-26T05:00:00.123Z",
+                "completed-at": "2026-06-26T05:00:01.456Z",
+                "duration-ms": 1333,
+            },
+        }
+    ]
+
+    _validate_release_bundle(bundle)
+
+
+def test_batch_evidence_bundle_rejects_malformed_selector_timing() -> None:
+    """Selector timing rejects non-stable timestamp and duration shapes."""
+    bundle = _release_batch_bundle()
+    selector = cast("list[dict[str, object]]", bundle["selector-results"])[0]
+    selector["timing"] = {
+        "started-at": "2026-06-26T05:00:00Z",
+        "completed-at": "2026-06-26T05:00:01.456Z",
+        "duration-ms": -1,
+    }
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    messages = "\n".join(str(issue) for issue in exc_info.value.issues)
+    assert ".selector-results[0].timing.started-at" in messages
+    assert ".selector-results[0].timing.duration-ms" in messages
+
+
+def test_batch_evidence_bundle_rejects_explicit_null_selector_timing() -> None:
+    """Missing timing is optional, but explicit null timing is invalid."""
+    bundle = _release_batch_bundle()
+    selector = cast("list[dict[str, object]]", bundle["selector-results"])[0]
+    selector["timing"] = None
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    messages = "\n".join(str(issue) for issue in exc_info.value.issues)
+    assert "$.selector-results[0].timing" in messages
+    assert "must be an object" in messages
+
+
+def test_batch_evidence_bundle_rejects_impossible_selector_timing() -> None:
+    """Timing duration must be monotonic and match wall-clock elapsed time."""
+    bundle = _release_batch_bundle()
+    selector = cast("list[dict[str, object]]", bundle["selector-results"])[0]
+    selector["timing"] = {
+        "started-at": "2026-06-26T05:00:02.000Z",
+        "completed-at": "2026-06-26T05:00:01.000Z",
+        "duration-ms": 1000,
+    }
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    messages = "\n".join(str(issue) for issue in exc_info.value.issues)
+    assert ".selector-results[0].timing.completed-at" in messages
+
+
+def test_batch_evidence_bundle_rejects_inconsistent_selector_timing() -> None:
+    """Timing duration has an explicit tolerance against elapsed timestamps."""
+    bundle = _release_batch_bundle()
+    selector = cast("list[dict[str, object]]", bundle["selector-results"])[0]
+    selector["timing"] = {
+        "started-at": "2026-06-26T05:00:00.000Z",
+        "completed-at": "2026-06-26T05:00:10.000Z",
+        "duration-ms": 1000,
+    }
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    messages = "\n".join(str(issue) for issue in exc_info.value.issues)
+    assert "must match completed-at minus started-at within 1000ms" in messages
+
+
 def test_release_shaped_batch_rejects_missing_obligation_results() -> None:
     """Successful release-shaped evidence must carry obligation results."""
     bundle = _release_batch_bundle()
@@ -1528,6 +1628,41 @@ def _writer_with_observed_identity(
     return writer
 
 
+def _orchestrator_step_for_batch(
+    batch: Mapping[str, object],
+    *,
+    slot_index: str = "0",
+) -> dict[str, object]:
+    return {
+        "runner-family": batch["runner-family"],
+        "slot-index": slot_index,
+        "dependency-selection": {
+            "timing": {
+                "started-at": "2026-06-26T05:00:00.000Z",
+                "completed-at": "2026-06-26T05:00:00.250Z",
+                "duration-ms": 250,
+            },
+            "selected-batch-id": batch["batch-id"],
+            "waiting-batch-ids": [],
+        },
+    }
+
+
+def _orchestrator_writer_bundle(
+    plan: dict[str, object],
+    manifest: dict[str, object],
+) -> dict[str, object]:
+    batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+    bundle = _bundle(plan, manifest)
+    bundle["writer"] = _writer_with_observed_identity(
+        manifest,
+        cast("str", batch["batch-id"]),
+        writer_context="orchestrator",
+    )
+    bundle["orchestrator-step"] = _orchestrator_step_for_batch(batch)
+    return bundle
+
+
 @pytest.mark.parametrize(
     "writer_context", ["direct", "orchestrator"], ids=["direct", "orchestrator"]
 )
@@ -1629,6 +1764,94 @@ def test_batch_bundle_rejects_direct_writer_with_slot_index() -> None:
         issue.path == "$.writer.observed-orchestrator-slot-index"
         for issue in error.value.issues
     )
+
+
+def test_batch_bundle_rejects_direct_writer_with_orchestrator_step() -> None:
+    """Direct execution batch writer bundles must omit orchestrator step."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    batch = cast("list[dict[str, object]]", manifest["batches"])[0]
+    bundle = _bundle(plan, manifest)
+    bundle["orchestrator-step"] = _orchestrator_step_for_batch(batch)
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_batch_evidence_bundle(
+            bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            **_authorizing_context_kwargs(),
+        )
+
+    assert any(
+        issue.path == "$.orchestrator-step" for issue in error.value.issues
+    )
+
+
+def test_batch_bundle_orchestrator_writer_requires_orchestrator_step() -> None:
+    """Physical orchestrator writer bundles must expose step evidence."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _orchestrator_writer_bundle(plan, manifest)
+    del bundle["orchestrator-step"]
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_batch_evidence_bundle(
+            bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            **_authorizing_context_kwargs(),
+        )
+
+    assert any(
+        issue.path == "$.orchestrator-step" for issue in error.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_path"),
+    [
+        (
+            "runner-family",
+            "windows",
+            "$.orchestrator-step.runner-family",
+        ),
+        ("slot-index", "1", "$.orchestrator-step.slot-index"),
+        (
+            "selected-batch-id",
+            "forged-batch",
+            "$.orchestrator-step.dependency-selection.selected-batch-id",
+        ),
+    ],
+    ids=["runner-family", "slot-index", "selected-batch-id"],
+)
+def test_batch_bundle_orchestrator_step_must_match_writer_and_batch(
+    field: str,
+    value: str,
+    expected_path: str,
+) -> None:
+    """Orchestrator step metadata is bound to the selected batch and slot."""
+    plan = _plan()
+    manifest = _manifest(plan)
+    bundle = _orchestrator_writer_bundle(plan, manifest)
+    orchestrator_step = cast("dict[str, object]", bundle["orchestrator-step"])
+    if field == "selected-batch-id":
+        dependency_selection = cast(
+            "dict[str, object]",
+            orchestrator_step["dependency-selection"],
+        )
+        dependency_selection[field] = value
+    else:
+        orchestrator_step[field] = value
+
+    with pytest.raises(ContractValidationError) as error:
+        validate_ci_validation_batch_evidence_bundle(
+            bundle,
+            plan=plan,
+            execution_batch_manifest=manifest,
+            **_authorizing_context_kwargs(),
+        )
+
+    assert any(issue.path == expected_path for issue in error.value.issues)
 
 
 @pytest.mark.parametrize(
@@ -3911,7 +4134,7 @@ def test_new_ci_validation_kinds_are_registered() -> None:
     )
     assert (
         API_VERSIONS_BY_KIND[CiValidationKind.BATCH_EVIDENCE_BUNDLE.value]
-        == "three.ci.validation.batch-evidence-bundle/v1alpha1"
+        == "three.ci.validation.batch-evidence-bundle/v1alpha2"
     )
     assert (
         API_VERSIONS_BY_KIND[CiValidationKind.AGGREGATE_EVIDENCE_MANIFEST.value]

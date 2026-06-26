@@ -34,7 +34,7 @@ from collections.abc import (
     Sequence,
 )
 from contextlib import suppress
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
 
@@ -42,6 +42,8 @@ import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _GITHUB_ATTESTATION_PREDICATE = "https://slsa.dev/provenance/v1"
+_CI_TIMING_DURATION_TOLERANCE_MS = 1000
+_CI_ORCHESTRATOR_TIMING_SIDECAR_NAME = "orchestrator-step-timing.json"
 for _WORKSPACE_SRC in (
     _REPO_ROOT / "src/public/lib/three-workflow-release-contracts/src",
     _REPO_ROOT / "src/public/lib/three-workflow-release-planner/src",
@@ -2567,6 +2569,7 @@ def _ci_execution_batch_dependency_layers(
 
 
 def _cmd_run_ci_validation_commands(args: argparse.Namespace) -> int:
+    work_group_timing = _ci_timing_start()
     matrix_work_group = _read_json_value(args.matrix_work_group_json)
     if not isinstance(matrix_work_group, Mapping):
         msg = "matrix work group must be a JSON object"
@@ -2599,17 +2602,21 @@ def _cmd_run_ci_validation_commands(args: argparse.Namespace) -> int:
             outcome = "blocking-failure"
         command_results.append(result)
     if not commands:
+        command_timing = _ci_timing_start()
         outcome = "blocking-failure"
         command_results.append(
-            {
-                "index": 0,
-                "label": "execution-mapping",
-                "argv": [],
-                "capability": None,
-                "exit-code": None,
-                "outcome": "blocking-failure",
-                "error": "no no-publish validation command is mapped",
-            }
+            _ci_attach_timing(
+                {
+                    "index": 0,
+                    "label": "execution-mapping",
+                    "argv": [],
+                    "capability": None,
+                    "exit-code": None,
+                    "outcome": "blocking-failure",
+                    "error": "no no-publish validation command is mapped",
+                },
+                command_timing,
+            )
         )
     result = {
         "work-group-id": matrix_work_group.get("work-group-id"),
@@ -2619,6 +2626,7 @@ def _cmd_run_ci_validation_commands(args: argparse.Namespace) -> int:
         "observed-commit-sha": getattr(args, "observed_commit_sha", "") or None,
         "outcome": outcome,
         "commands": command_results,
+        "timing": _ci_timing_finish(work_group_timing),
     }
     _write_json(Path(args.result_out), result)
     _write_outputs(
@@ -2762,6 +2770,8 @@ def _ci_dependency_blocked_validation_result(
     *,
     observed_commit_sha: str,
 ) -> Json:
+    work_group_timing = _ci_timing_start()
+    command_timing = _ci_timing_start()
     return {
         "work-group-id": matrix_work_group.get("work-group-id"),
         "kind": matrix_work_group.get("kind"),
@@ -2770,16 +2780,20 @@ def _ci_dependency_blocked_validation_result(
         "observed-commit-sha": observed_commit_sha or None,
         "outcome": "skipped",
         "commands": [
-            {
-                "index": 0,
-                "label": "dependency-gate",
-                "argv": [],
-                "capability": None,
-                "exit-code": None,
-                "outcome": "skipped",
-                "error": "dependency-blocked",
-            }
+            _ci_attach_timing(
+                {
+                    "index": 0,
+                    "label": "dependency-gate",
+                    "argv": [],
+                    "capability": None,
+                    "exit-code": None,
+                    "outcome": "skipped",
+                    "error": "dependency-blocked",
+                },
+                command_timing,
+            )
         ],
+        "timing": _ci_timing_finish(work_group_timing),
     }
 
 
@@ -2908,6 +2922,13 @@ def _cmd_write_ci_validation_batch_evidence_bundle(
         "dependency",
     )
     now = args.created_at or _utc_now()
+    orchestrator_step = getattr(args, "orchestrator_step", None)
+    if orchestrator_step is not None and not isinstance(
+        orchestrator_step,
+        Mapping,
+    ):
+        msg = "orchestrator_step must be an object"
+        raise TypeError(msg)
     selector_results: list[Json] = []
     prior_selector_outcomes: dict[str, str] = {}
     for selector in selectors:
@@ -2962,6 +2983,7 @@ def _cmd_write_ci_validation_batch_evidence_bundle(
         started_at=args.started_at or now,
         completed_at=args.completed_at or now,
         created_at=now,
+        orchestrator_step=orchestrator_step,
         request=request,
         changed_files_snapshot=changed_files_snapshot,
         fact_snapshot=fact_snapshot,
@@ -3004,9 +3026,10 @@ def _cmd_write_ci_validation_batch_evidence_bundle(
     return 0
 
 
-def _cmd_run_ci_validation_runner_family_orchestrator_step(
+def _cmd_run_ci_validation_runner_family_orchestrator_step(  # noqa: PLR0915
     args: argparse.Namespace,
 ) -> int:
+    orchestrator_step_timing = _ci_timing_start()
     execution_batch_manifest = _read_json(Path(args.execution_batch_manifest))
     state_dir = Path(args.state_dir)
     observed_root = Path(args.observed_artifacts_dir)
@@ -3047,6 +3070,7 @@ def _cmd_run_ci_validation_runner_family_orchestrator_step(
     )
     dependency_admissions: dict[str, Json] = {}
     terminal_blockers: dict[str, str] = {}
+    dependency_selection_timing = _ci_timing_start()
     ready, waiting = _ci_orchestrator_select_ready_batch_with_wait(
         family_batches=family_batches,
         batches_by_id=batches_by_id,
@@ -3059,6 +3083,9 @@ def _cmd_run_ci_validation_runner_family_orchestrator_step(
         terminal_blockers=terminal_blockers,
         wait_timeout_seconds=wait_timeout_seconds,
         poll_interval_seconds=poll_interval_seconds,
+    )
+    dependency_selection_timing_result = _ci_timing_finish(
+        dependency_selection_timing,
     )
     if ready is None:
         if waiting:
@@ -3073,7 +3100,37 @@ def _cmd_run_ci_validation_runner_family_orchestrator_step(
                     for batch_id, detail in sorted(terminal_blockers.items())
                 )
                 msg = f"{msg}; terminal dependency blockers: {details}"
+            orchestrator_step_timing_result = _ci_timing_finish(
+                orchestrator_step_timing,
+            )
+            _write_outputs(
+                args.github_output,
+                {
+                    "batch_selected": "false",
+                    "orchestrator_complete": "false",
+                    "waiting_batch_ids": json.dumps(
+                        sorted(waiting),
+                        separators=(",", ":"),
+                    ),
+                    "terminal_dependency_blockers": json.dumps(
+                        terminal_blockers,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    "dependency_selection_timing": json.dumps(
+                        dependency_selection_timing_result,
+                        separators=(",", ":"),
+                    ),
+                    "orchestrator_step_timing": json.dumps(
+                        orchestrator_step_timing_result,
+                        separators=(",", ":"),
+                    ),
+                },
+            )
             raise RuntimeError(msg)
+        orchestrator_step_timing_result = _ci_timing_finish(
+            orchestrator_step_timing,
+        )
         _write_outputs(
             args.github_output,
             {
@@ -3081,6 +3138,14 @@ def _cmd_run_ci_validation_runner_family_orchestrator_step(
                 "orchestrator_complete": "true",
                 "waiting_batch_ids": json.dumps(
                     [],
+                    separators=(",", ":"),
+                ),
+                "dependency_selection_timing": json.dumps(
+                    dependency_selection_timing_result,
+                    separators=(",", ":"),
+                ),
+                "orchestrator_step_timing": json.dumps(
+                    orchestrator_step_timing_result,
                     separators=(",", ":"),
                 ),
             },
@@ -3131,6 +3196,16 @@ def _cmd_run_ci_validation_runner_family_orchestrator_step(
     validation_result_paths = sorted(
         str(path) for path in result_dir.glob("*.json")
     )
+    bundle_timing = _ci_timing_finish(orchestrator_step_timing)
+    orchestrator_step = {
+        "runner-family": family,
+        "slot-index": str(args.slot_index),
+        "dependency-selection": {
+            "timing": dependency_selection_timing_result,
+            "selected-batch-id": batch_id,
+            "waiting-batch-ids": waiting,
+        },
+    }
     _cmd_write_ci_validation_batch_evidence_bundle(
         argparse.Namespace(
             **common,
@@ -3138,9 +3213,10 @@ def _cmd_run_ci_validation_runner_family_orchestrator_step(
             job=args.job,
             validation_result=validation_result_paths,
             dependency_results_json="",
-            started_at=None,
-            completed_at=None,
+            started_at=bundle_timing["started-at"],
+            completed_at=bundle_timing["completed-at"],
             created_at=None,
+            orchestrator_step=orchestrator_step,
             bundle_out=str(bundle_path),
         )
     )
@@ -3156,6 +3232,28 @@ def _cmd_run_ci_validation_runner_family_orchestrator_step(
             "upload-path": str(upload_dir),
         },
     )
+    orchestrator_step_timing_result = _ci_timing_finish(
+        orchestrator_step_timing,
+    )
+    _write_json(
+        upload_dir / _CI_ORCHESTRATOR_TIMING_SIDECAR_NAME,
+        {
+            "kind": "ci-validation-runner-family-orchestrator-step-timing",
+            "runner-family": family,
+            "slot-index": str(args.slot_index),
+            "batch-selected": True,
+            "selected-batch-id": batch_id,
+            "orchestrator-complete": False,
+            "batch-evidence-bundle-artifact-name": artifact_name,
+            "batch-evidence-bundle-artifact-ref": artifact_ref,
+            "dependency-selection-timing": dependency_selection_timing_result,
+            "orchestrator-step-timing": orchestrator_step_timing_result,
+            "waiting-batch-ids": sorted(waiting),
+            "terminal-dependency-blockers": dict(
+                sorted(terminal_blockers.items())
+            ),
+        },
+    )
     _write_outputs(
         args.github_output,
         {
@@ -3164,6 +3262,14 @@ def _cmd_run_ci_validation_runner_family_orchestrator_step(
             "batch_evidence_bundle_artifact_name": artifact_name,
             "batch_evidence_upload_path": str(upload_dir),
             "orchestrator_complete": "false",
+            "dependency_selection_timing": json.dumps(
+                dependency_selection_timing_result,
+                separators=(",", ":"),
+            ),
+            "orchestrator_step_timing": json.dumps(
+                orchestrator_step_timing_result,
+                separators=(",", ":"),
+            ),
         },
     )
     return 0
@@ -4527,7 +4633,7 @@ def _ci_batch_selector_result(
         work_group_id,
         outcome=outcome,
     )
-    return {
+    result = {
         "work-group-id": work_group_id,
         "selector-index": selector["selector-index"],
         "expected-evidence-id": selector["expected-evidence-id"],
@@ -4560,6 +4666,12 @@ def _ci_batch_selector_result(
         "diagnostics": diagnostics,
         "proof-admissibility": "validation-only",
     }
+    if validation_result is not None and "timing" in validation_result:
+        result["timing"] = _ci_validation_result_timing(validation_result)
+    command_timings = _ci_validation_result_command_timings(validation_result)
+    if command_timings:
+        result["command-timings"] = command_timings
+    return result
 
 
 def _ci_batch_normalized_dependency_results(
@@ -5212,39 +5324,49 @@ def _ci_run_validation_command(
     matrix_work_group: Mapping[str, object],
     repo_root: Path,
 ) -> Json:
+    timing = _ci_timing_start()
     if not isinstance(command, Mapping):
-        return _ci_validation_command_failure(
-            index,
-            f"command-{index}",
-            "command entry is not an object",
+        return _ci_attach_timing(
+            _ci_validation_command_failure(
+                index,
+                f"command-{index}",
+                "command entry is not an object",
+            ),
+            timing,
         )
     label = str(command.get("label") or f"command-{index}")
     capability = command.get("capability")
     capability_value = str(capability) if isinstance(capability, str) else None
     builtin = command.get("builtin")
     if isinstance(builtin, str):
-        return _ci_run_builtin_validation_command(
-            index=index,
-            label=label,
-            capability=capability_value,
-            builtin=builtin,
-            command=command,
-            plan=plan,
-            assignments=assignments,
-            changed_files_snapshot=changed_files_snapshot,
-            fact_snapshot=fact_snapshot,
-            observed_artifacts_dir=observed_artifacts_dir,
-            observed_commit_sha=observed_commit_sha,
-            matrix_work_group=matrix_work_group,
-            repo_root=repo_root,
+        return _ci_attach_timing(
+            _ci_run_builtin_validation_command(
+                index=index,
+                label=label,
+                capability=capability_value,
+                builtin=builtin,
+                command=command,
+                plan=plan,
+                assignments=assignments,
+                changed_files_snapshot=changed_files_snapshot,
+                fact_snapshot=fact_snapshot,
+                observed_artifacts_dir=observed_artifacts_dir,
+                observed_commit_sha=observed_commit_sha,
+                matrix_work_group=matrix_work_group,
+                repo_root=repo_root,
+            ),
+            timing,
         )
     argv = command.get("argv")
     if not isinstance(argv, Sequence) or isinstance(argv, str | bytes):
-        return _ci_validation_command_failure(
-            index,
-            label,
-            "command argv is not an array",
-            capability=capability_value,
+        return _ci_attach_timing(
+            _ci_validation_command_failure(
+                index,
+                label,
+                "command argv is not an array",
+                capability=capability_value,
+            ),
+            timing,
         )
     argv_list = [str(item) for item in argv]
     try:
@@ -5267,7 +5389,7 @@ def _ci_run_validation_command(
     }
     if error is not None:
         result["error"] = error
-    return result
+    return _ci_attach_timing(result, timing)
 
 
 def _ci_validation_command_failure(
@@ -22237,6 +22359,86 @@ def _utc_now() -> str:
             "+00:00",
             "Z",
         )
+    )
+
+
+def _ci_timing_start() -> tuple[datetime, int]:
+    return datetime.now(UTC), time.perf_counter_ns()
+
+
+def _ci_timing_finish(start: tuple[datetime, int]) -> Json:
+    started_at, started_ns = start
+    completed_ns = time.perf_counter_ns()
+    completed_at = datetime.now(UTC)
+    duration_ms = max(0, (completed_ns - started_ns) // 1_000_000)
+    elapsed_ms = int((completed_at - started_at).total_seconds() * 1000)
+    if (
+        completed_at < started_at
+        or abs(elapsed_ms - duration_ms) > _CI_TIMING_DURATION_TOLERANCE_MS
+    ):
+        completed_at = started_at + timedelta(milliseconds=duration_ms)
+    return {
+        "started-at": _utc_timestamp_milliseconds(started_at),
+        "completed-at": _utc_timestamp_milliseconds(completed_at),
+        "duration-ms": duration_ms,
+    }
+
+
+def _ci_attach_timing(
+    result: Mapping[str, object],
+    start: tuple[datetime, int],
+) -> Json:
+    timed = dict(result)
+    timed["timing"] = _ci_timing_finish(start)
+    return timed
+
+
+def _ci_validation_result_timing(
+    validation_result: Mapping[str, object] | None,
+) -> object:
+    if validation_result is None:
+        return None
+    timing = validation_result.get("timing")
+    if not isinstance(timing, Mapping):
+        return timing
+    return dict(timing)
+
+
+def _ci_validation_result_command_timings(
+    validation_result: Mapping[str, object] | None,
+) -> list[Json]:
+    commands = (
+        None if validation_result is None else validation_result.get("commands")
+    )
+    if not isinstance(commands, Sequence) or isinstance(commands, str | bytes):
+        return []
+    result: list[Json] = []
+    for command in commands:
+        if not isinstance(command, Mapping) or "timing" not in command:
+            continue
+        result.append(
+            {
+                "index": command.get("index"),
+                "label": command.get("label"),
+                "capability": command.get("capability"),
+                "outcome": command.get("outcome"),
+                "timing": _ci_validation_command_timing(command),
+            }
+        )
+    return result
+
+
+def _ci_validation_command_timing(command: Mapping[str, object]) -> object:
+    timing = command.get("timing")
+    if not isinstance(timing, Mapping):
+        return timing
+    return dict(timing)
+
+
+def _utc_timestamp_milliseconds(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat(timespec="milliseconds").replace(
+        "+00:00",
+        "Z",
     )
 
 

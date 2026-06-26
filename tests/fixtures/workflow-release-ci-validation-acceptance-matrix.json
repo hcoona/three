@@ -3230,6 +3230,42 @@
           },
           {
             "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_preserves_selector_and_command_timing"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_builtin_failure_records_timing"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_windows_orchestrator_step_emits_timing_evidence"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_evidence_bundle_accepts_selector_timing"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_evidence_bundle_accepts_command_timing_projection"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_evidence_bundle_rejects_malformed_selector_timing"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_evidence_bundle_rejects_explicit_null_selector_timing"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_evidence_bundle_rejects_impossible_selector_timing"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_evidence_bundle_rejects_inconsistent_selector_timing"
+          },
+          {
+            "type": "test",
             "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_materializer_allows_cross_family_batch_dependencies"
           },
           {
@@ -3485,6 +3521,18 @@
           {
             "type": "test",
             "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_bundle_freeze_rejects_forged_observed_writer_identity"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_bundle_orchestrator_writer_requires_orchestrator_step"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_bundle_rejects_direct_writer_with_orchestrator_step"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_bundle_orchestrator_step_must_match_writer_and_batch"
           }
         ],
         "aggregate-or-verdict": [

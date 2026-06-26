@@ -10,6 +10,7 @@ import hashlib
 import re
 from collections.abc import Iterator, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal, cast
 
 from three_workflow_release_contracts.ci_validation import (
@@ -90,6 +91,7 @@ _BUNDLE_ADMISSIBILITIES = frozenset(
 )
 _AGGREGATE_MAX_DURATION_SECONDS = 120
 _PROOF_ADMISSIBILITY = "validation-only"
+_TIMING_DURATION_TOLERANCE_MS = 1000
 _REPOSITORY_VALIDATION_BATCH_KINDS = frozenset(
     {"descriptor-validation", "workflow-release-tooling"},
 )
@@ -201,6 +203,16 @@ _BUNDLE_WRITER_KEYS = frozenset(
 _EXECUTION_TREE_KEYS = frozenset(
     {"observed-commit-sha", "source", "verified"},
 )
+_TIMING_KEYS = frozenset({"started-at", "completed-at", "duration-ms"})
+_ORCHESTRATOR_STEP_KEYS = frozenset(
+    {"runner-family", "slot-index", "dependency-selection"}
+)
+_ORCHESTRATOR_DEPENDENCY_SELECTION_KEYS = frozenset(
+    {"timing", "selected-batch-id", "waiting-batch-ids"}
+)
+_COMMAND_TIMING_KEYS = frozenset(
+    {"index", "label", "capability", "outcome", "timing"}
+)
 _SELECTOR_RESULT_KEYS = frozenset(
     {
         "work-group-id",
@@ -224,6 +236,7 @@ _SELECTOR_RESULT_KEYS = frozenset(
         "proof-admissibility",
     },
 )
+_SELECTOR_RESULT_OPTIONAL_KEYS = frozenset({"timing", "command-timings"})
 _DEPENDENCY_RESULT_KEYS = frozenset(
     {
         "work-group-id",
@@ -263,6 +276,7 @@ _BATCH_EVIDENCE_BUNDLE_KEYS = frozenset(
         "proof-admissibility",
     },
 )
+_BATCH_EVIDENCE_BUNDLE_OPTIONAL_KEYS = frozenset({"orchestrator-step"})
 _INPUT_ARTIFACT_KEYS = frozenset(
     {
         "artifact-ref",
@@ -1413,6 +1427,7 @@ def freeze_ci_validation_batch_evidence_bundle(  # noqa: PLR0913
     request: Mapping[str, object] | None = None,
     changed_files_snapshot: Mapping[str, object] | None = None,
     fact_snapshot: Mapping[str, object] | None = None,
+    orchestrator_step: Mapping[str, object] | None = None,
     expected_run_id: str | None = None,
     expected_run_attempt: str | None = None,
     dependency_evidence_bundles: Sequence[Mapping[str, object]] = (),
@@ -1492,6 +1507,8 @@ def freeze_ci_validation_batch_evidence_bundle(  # noqa: PLR0913
         ),
         "proof-admissibility": _PROOF_ADMISSIBILITY,
     }
+    if orchestrator_step is not None:
+        bundle["orchestrator-step"] = dict(orchestrator_step)
     validate_ci_validation_batch_evidence_bundle(
         bundle,
         plan=plan,
@@ -1565,7 +1582,13 @@ def validate_ci_validation_batch_evidence_bundle(  # noqa: PLR0913
         CiValidationKind.BATCH_EVIDENCE_BUNDLE,
         issues,
     )
-    _validate_root_keys(bundle, _BATCH_EVIDENCE_BUNDLE_KEYS, "$", issues)
+    _validate_root_keys_with_optional(
+        bundle,
+        _BATCH_EVIDENCE_BUNDLE_KEYS | _BATCH_EVIDENCE_BUNDLE_OPTIONAL_KEYS,
+        _BATCH_EVIDENCE_BUNDLE_OPTIONAL_KEYS,
+        "$",
+        issues,
+    )
     _validate_g1_schema_diagnostics(bundle.get("schema-diagnostics"), issues)
     _validate_expected_run(
         envelope, expected_run_id, expected_run_attempt, issues
@@ -1624,6 +1647,12 @@ def validate_ci_validation_batch_evidence_bundle(  # noqa: PLR0913
     _validate_execution_tree(
         bundle.get("execution-tree"),
         bundle.get("validation-tree"),
+        issues,
+    )
+    _validate_bundle_orchestrator_step_admission(
+        bundle,
+        bundle.get("writer"),
+        batch,
         issues,
     )
     _validate_non_empty_string(bundle.get("started-at"), "$.started-at", issues)
@@ -6444,6 +6473,256 @@ def _validate_execution_tree(
             )
 
 
+def _validate_timing(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if value is None:
+        issues.append(ValidationIssue(path, "must be an object"))
+        return
+    if not isinstance(value, Mapping):
+        issues.append(ValidationIssue(path, "must be an object"))
+        return
+    _validate_root_keys(value, _TIMING_KEYS, path, issues)
+    started_at = _validate_utc_millisecond_timestamp(
+        value.get("started-at"),
+        f"{path}.started-at",
+        issues,
+    )
+    completed_at = _validate_utc_millisecond_timestamp(
+        value.get("completed-at"),
+        f"{path}.completed-at",
+        issues,
+    )
+    duration = value.get("duration-ms")
+    if (
+        not isinstance(duration, int)
+        or isinstance(duration, bool)
+        or duration < 0
+    ):
+        issues.append(
+            ValidationIssue(
+                f"{path}.duration-ms",
+                "must be a non-negative integer",
+            )
+        )
+    if (
+        started_at is None
+        or completed_at is None
+        or not isinstance(duration, int)
+        or isinstance(duration, bool)
+        or duration < 0
+    ):
+        return
+    elapsed_ms = int((completed_at - started_at).total_seconds() * 1000)
+    if elapsed_ms < 0:
+        issues.append(
+            ValidationIssue(
+                f"{path}.completed-at",
+                "must be greater than or equal to started-at",
+            )
+        )
+        return
+    if abs(duration - elapsed_ms) > _TIMING_DURATION_TOLERANCE_MS:
+        issues.append(
+            ValidationIssue(
+                f"{path}.duration-ms",
+                (
+                    "must match completed-at minus started-at within "
+                    f"{_TIMING_DURATION_TOLERANCE_MS}ms"
+                ),
+            )
+        )
+
+
+def _validate_utc_millisecond_timestamp(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> datetime | None:
+    if not isinstance(value, str):
+        issues.append(ValidationIssue(path, "must be a string"))
+        return None
+    if (
+        re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z",
+            value,
+        )
+        is None
+    ):
+        issues.append(
+            ValidationIssue(
+                path,
+                "must be a UTC ISO 8601 timestamp with millisecond precision",
+            )
+        )
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        issues.append(
+            ValidationIssue(path, "must be a valid UTC ISO 8601 timestamp")
+        )
+        return None
+
+
+def _validate_orchestrator_step(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Mapping):
+        issues.append(ValidationIssue(path, "must be an object"))
+        return
+    _validate_root_keys(value, _ORCHESTRATOR_STEP_KEYS, path, issues)
+    _validate_non_empty_string(
+        value.get("runner-family"),
+        f"{path}.runner-family",
+        issues,
+    )
+    if value.get("runner-family") not in _RUNNER_FAMILIES:
+        issues.append(
+            ValidationIssue(
+                f"{path}.runner-family",
+                "must be a supported runner family",
+            )
+        )
+    _validate_non_empty_string(
+        value.get("slot-index"),
+        f"{path}.slot-index",
+        issues,
+    )
+    _validate_orchestrator_dependency_selection(
+        value.get("dependency-selection"),
+        f"{path}.dependency-selection",
+        issues,
+    )
+
+
+def _validate_bundle_orchestrator_step_admission(
+    bundle: Mapping[str, object],
+    writer: object,
+    batch: Mapping[str, object] | None,
+    issues: list[ValidationIssue],
+) -> None:
+    writer_identity_source = (
+        writer.get("identity-source") if isinstance(writer, Mapping) else None
+    )
+    has_orchestrator_step = "orchestrator-step" in bundle
+    if writer_identity_source == "github-actions-orchestrator-job-context":
+        if not has_orchestrator_step:
+            issues.append(
+                ValidationIssue(
+                    "$.orchestrator-step",
+                    "is required for orchestrator job context writers",
+                )
+            )
+    elif has_orchestrator_step:
+        issues.append(
+            ValidationIssue(
+                "$.orchestrator-step",
+                (
+                    "must be omitted unless writer uses orchestrator "
+                    "job context"
+                ),
+            )
+        )
+    if not has_orchestrator_step:
+        return
+    orchestrator_step = bundle.get("orchestrator-step")
+    _validate_orchestrator_step(
+        orchestrator_step,
+        "$.orchestrator-step",
+        issues,
+    )
+    _validate_orchestrator_step_matches_bundle(
+        orchestrator_step,
+        writer,
+        batch,
+        issues,
+    )
+
+
+def _validate_orchestrator_step_matches_bundle(
+    value: object,
+    writer: object,
+    batch: Mapping[str, object] | None,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Mapping):
+        return
+    if batch is not None:
+        runner_family = batch.get("runner-family")
+        if (
+            isinstance(runner_family, str)
+            and value.get("runner-family") != runner_family
+        ):
+            issues.append(
+                ValidationIssue(
+                    "$.orchestrator-step.runner-family",
+                    "must match bundle batch runner family",
+                )
+            )
+    if isinstance(writer, Mapping):
+        slot_index = writer.get("observed-orchestrator-slot-index")
+        if slot_index is not None and value.get("slot-index") != slot_index:
+            issues.append(
+                ValidationIssue(
+                    "$.orchestrator-step.slot-index",
+                    "must match writer observed orchestrator slot index",
+                )
+            )
+    selection = value.get("dependency-selection")
+    if not isinstance(selection, Mapping) or batch is None:
+        return
+    batch_id = batch.get("batch-id")
+    if (
+        isinstance(batch_id, str)
+        and selection.get("selected-batch-id") != batch_id
+    ):
+        issues.append(
+            ValidationIssue(
+                "$.orchestrator-step.dependency-selection.selected-batch-id",
+                "must match bundle batch id",
+            )
+        )
+
+
+def _validate_orchestrator_dependency_selection(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Mapping):
+        issues.append(ValidationIssue(path, "must be an object"))
+        return
+    _validate_root_keys(
+        value,
+        _ORCHESTRATOR_DEPENDENCY_SELECTION_KEYS,
+        path,
+        issues,
+    )
+    _validate_timing(value.get("timing"), f"{path}.timing", issues)
+    _validate_non_empty_string(
+        value.get("selected-batch-id"),
+        f"{path}.selected-batch-id",
+        issues,
+    )
+    waiting = value.get("waiting-batch-ids")
+    if not isinstance(waiting, Sequence) or isinstance(waiting, str | bytes):
+        issues.append(
+            ValidationIssue(f"{path}.waiting-batch-ids", "must be an array")
+        )
+    else:
+        for index, item in enumerate(waiting):
+            _validate_non_empty_string(
+                item,
+                f"{path}.waiting-batch-ids[{index}]",
+                issues,
+            )
+
+
 def _validate_selector_results(  # noqa: PLR0913
     value: object,
     batch: Mapping[str, object] | None,
@@ -6499,7 +6778,13 @@ def _validate_selector_result(
     plan: Mapping[str, object] | None,
     fact_snapshot: Mapping[str, object] | None,
 ) -> None:
-    _validate_root_keys(result, _SELECTOR_RESULT_KEYS, path, issues)
+    _validate_root_keys_with_optional(
+        result,
+        _SELECTOR_RESULT_KEYS | _SELECTOR_RESULT_OPTIONAL_KEYS,
+        _SELECTOR_RESULT_OPTIONAL_KEYS,
+        path,
+        issues,
+    )
     _validate_local_id(
         result.get("work-group-id"), f"{path}.work-group-id", issues
     )
@@ -6573,6 +6858,71 @@ def _validate_selector_result(
                 "must be validation-only",
             ),
         )
+    _validate_selector_result_timing_fields(result, path, issues)
+
+
+def _validate_selector_result_timing_fields(
+    result: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if "timing" in result:
+        _validate_timing(result.get("timing"), f"{path}.timing", issues)
+    if "command-timings" in result:
+        _validate_command_timings(
+            result.get("command-timings"),
+            f"{path}.command-timings",
+            issues,
+        )
+
+
+def _validate_command_timings(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        issues.append(ValidationIssue(path, "must be an array"))
+        return
+    for index, item in enumerate(value):
+        item_path = f"{path}[{index}]"
+        if not isinstance(item, Mapping):
+            issues.append(ValidationIssue(item_path, "must be an object"))
+            continue
+        _validate_root_keys(item, _COMMAND_TIMING_KEYS, item_path, issues)
+        command_index = item.get("index")
+        if (
+            not isinstance(command_index, int)
+            or isinstance(command_index, bool)
+            or command_index < 0
+        ):
+            issues.append(
+                ValidationIssue(
+                    f"{item_path}.index",
+                    "must be a non-negative integer",
+                )
+            )
+        _validate_non_empty_string(
+            item.get("label"),
+            f"{item_path}.label",
+            issues,
+        )
+        capability = item.get("capability")
+        if capability is not None and not isinstance(capability, str):
+            issues.append(
+                ValidationIssue(
+                    f"{item_path}.capability",
+                    "must be a string or null",
+                )
+            )
+        if item.get("outcome") not in _OUTCOMES:
+            issues.append(
+                ValidationIssue(
+                    f"{item_path}.outcome",
+                    "must be a known outcome",
+                )
+            )
+        _validate_timing(item.get("timing"), f"{item_path}.timing", issues)
 
 
 def _validate_selector_result_matches_slot(  # noqa: C901, PLR0913

@@ -855,3 +855,10 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   validation evidence for the next commit.
 - Kept unrelated workflow-doc scratch files out of scope while preserving the
   hosted CI evidence alignment updates in the wiki index and overview.
+
+## [2026-06-26] query | Record batch timing evidence contract
+
+- Updated the CI affected-validation low-level design to describe timing-bearing
+  batch evidence bundles as `v1alpha2`.
+- Recorded selector, command, and runner-family orchestrator dependency-selection
+  timing evidence requirements for hosted analysis.

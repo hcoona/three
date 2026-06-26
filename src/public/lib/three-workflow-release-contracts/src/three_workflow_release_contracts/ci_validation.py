@@ -531,7 +531,7 @@ API_VERSIONS_BY_KIND = {
         "three.ci.validation.execution-batch-manifest/v1alpha1"
     ),
     CiValidationKind.BATCH_EVIDENCE_BUNDLE.value: (
-        "three.ci.validation.batch-evidence-bundle/v1alpha1"
+        "three.ci.validation.batch-evidence-bundle/v1alpha2"
     ),
     CiValidationKind.AGGREGATE_EVIDENCE_MANIFEST.value: (
         "three.ci.validation.aggregate-evidence-manifest/v1alpha1"
