@@ -11,8 +11,9 @@ supporting assets in `../raw/`.
 
 - The wiki scaffold is in place.
 - The first release-focused source digests and analysis pages now exist.
-- The current repository has release policy fragments and package metadata, but
-  not yet a complete workflow layer.
+- The repository now has an active release workflow layer, with a few named
+  reconciliation gaps remaining around single-project dispatch wording and
+  publish-node/lifecycle doc alignment.
 - The requirements phase is signed off, and the wiki has now entered the design
   phase for workflow-based release.
 - The requirements-phase baseline now records descriptor gating, unified binary
@@ -21,19 +22,22 @@ supporting assets in `../raw/`.
   concerns and confirms that the remaining work is primarily design-oriented.
 - The baseline now also records role-based approval rules and first-delivery
   manual initiation.
-- The lifecycle baseline now includes whole-release rerun and dry-run support,
-  while leaving single-target retry out of the first delivery scope.
-- The request-scope baseline now treats one `workflow_dispatch` run as targeting
-  one or more selected projects within a single profile-specific workflow
-  entry point.
+- The active lifecycle baseline uses one live workflow execution path; dry-run
+  and validation-build dispatch inputs are not exposed by the current workflows.
+- The active request-scope baseline treats one `workflow_dispatch` run as
+  targeting exactly one `project` plus `version`, with optional `target` and
+  `force_update_tag`.
 - The failure baseline now allows partial success to remain visible and be
   repaired manually in the first delivery scope.
-- The lifecycle baseline now treats duplicate-run cancellation as an optional
-  native GitHub Actions concurrency behavior rather than as a repo-defined
-  supersession rule.
-- When that optional native cancellation is used, duplicate is defined by the
-  same workflow entry point and the same commit, regardless of project subset
-  or other inputs.
+- The lifecycle baseline does not adopt repo-defined in-progress duplicate-run
+  auto-cancellation in the first delivery scope.
+- After resolving the canonical release identity, both `buddy` and `official`
+  serialize only the job-level `orchestrate` call with
+  `cancel-in-progress: false` on the shared release group
+  `release/${project_id}/v${release_version}`.
+- The only accepted automatic replacement is GitHub's native replacement of an
+  older pending run in the same concurrency group; in-progress runs are not
+  auto-cancelled.
 - The versioning baseline now treats project-scoped NBGV identity as the
   primary version source, treats successful official GitHub Release publication
   for that project-scoped tag as the freezing event, and requires multiple
@@ -51,11 +55,9 @@ supporting assets in `../raw/`.
   and related packages or installers for the same binary variant, as long as it
   does not recompile divergent binaries per target.
 - The acceptance baseline now requires real-project, real-publication proof
-  across the representative library, app, Python, Node, and Ruby scenarios.
-- The acceptance baseline now also requires explicit proof for multi-project
-  dispatch, dry-run, rerun including immutable-target partial-success replay,
-  cancellation, approval boundaries, and GitHub Packages publication when that
-  target is in scope.
+  across the representative library, app, Python, Node, and Ruby scenarios; the
+  older multi-project dispatch and dry-run/validation-build probes are now
+  historical or deferred rather than active scope.
 - The official Python smoke full-success PyPI acceptance remains required but is
   intentionally deferred until all other validation is complete and these
   workflow changes have merged to `main`; after that merge, run it from a
@@ -71,9 +73,10 @@ supporting assets in `../raw/`.
   boundaries, graph ownership rules, artifact identity rules, the split between
   control-plane run envelope and plan envelope, and the shared target-instance
   catalog model on the publish side, where projects still opt in explicitly,
-  GitHub Packages is represented through host-specific target instances rather
-  than as a target family, and execution consumes plan snapshots rather than
-  re-reading the catalog.
+  active GitHub Packages support is represented through host-specific npm and
+  RubyGems target instances rather than as a target family, NuGet GitHub
+  Packages remains deferred/future vocabulary, and execution consumes plan
+  snapshots rather than re-reading the catalog.
 - The descriptor-schema page now normatively defines the release authoring
   files: project-owned `src/**/three.release.yml` descriptors, the shared
   `eng/release/target-instances.yml` catalog, field-scoped relative-path bases,
@@ -88,8 +91,10 @@ supporting assets in `../raw/`.
   `project.ecosystem` to allowed
   `source.primary-manifest` types, catalog references, the current-scope
   catalog contract vocabulary, family-specific destination shapes including
-  host-specific GitHub Packages instances inside the NuGet, npm, and RubyGems
-  families while recognizing that GitHub Packages has no PyPI registry, closed
+  active host-specific GitHub Packages instances only inside the npm and
+  RubyGems families while recognizing that GitHub Packages has no PyPI registry
+  and that NuGet GitHub Packages is deferred/future vocabulary until support
+  returns, closed
   current-scope
   capability assignments by family and host, closed current-scope projection
   shapes, contract-to-artifact compatibility rules, and the three-layer
@@ -142,11 +147,12 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
   conflict failures, while non-404 observation errors still fail hard.
 - The lower-layer design handoff now freezes the implementation seams that affect
   registry configuration and replay safety: stable workflow filenames for trusted
-  publishing, first-delivery live PyPI publication through
-  `publish-topology: external-oidc-entry-workflow`, entry-hosted publish
-  scheduling for entry-workflow-bound selectors, reusable-hosted scheduling for
-  caller-workflow-bound and reusable-workflow-bound selectors, entry inputs
-  including dry-run plus explicit validation-build, registered planner diagnostic
+  publishing, first-delivery live PyPI/RubyGems publication through reusable-workflow
+  OIDC topology, npmjs publication through caller-workflow OIDC topology,
+  entry-hosted publish scheduling only for remaining entry-workflow-bound
+  selectors, reusable-hosted scheduling for caller-workflow-bound and
+  reusable-workflow-bound selectors, entry inputs
+  with dry-run and validation-build behavior deferred or future-only, registered planner diagnostic
   codes, JSON handoff files, artifact and immutable-proof naming,
   registry-adapter obligations, GitHub permission boundaries, tag orchestration,
   and acceptance traceability.
@@ -157,10 +163,10 @@ FORCE` outcome matrix, normalized projection references onto plan artifact
   completion record.
 - The operator rollout runbook now records the final gate before real testing:
   complete Group 10 local and acceptance validation, run the final global
-  overview checks, manually configure the protected `release` environment and
-  registry trusted publishers, then progress from dry-run to validation-build,
-  zero-target or all-skip, GitHub-hosted live, and one-token-at-a-time external
-  OIDC live tests.
+  overview checks, manually configure active release/registry environments
+  (`github-release`, `pypi`, `npmjs-gate`, `npmjs`, and `rubygems` as applicable)
+  plus registry trusted publishers, then progress through staged active workflow
+  validation and one-token-at-a-time external OIDC live tests.
 
 ## Open Questions
 

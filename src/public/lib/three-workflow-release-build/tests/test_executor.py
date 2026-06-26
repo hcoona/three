@@ -4042,11 +4042,13 @@ def test_inno_setup_executor_runs_project_specific_scripts() -> None:
         (script_dir / "Build-InnoInstaller.ps1").write_text(
             "", encoding="utf-8"
         )
+        calls: list[tuple[tuple[str, ...], Path]] = []
 
         def runner(
             args: Sequence[str],
-            _cwd: Path,
+            cwd: Path,
         ) -> subprocess.CompletedProcess[str]:
+            calls.append((tuple(args), cwd))
             if "-InstallerOutputPath" in args:
                 assert "-InstallerFileName" not in args
                 out_dir = Path(args[args.index("-InstallerOutputPath") + 1])
@@ -4064,6 +4066,13 @@ def test_inno_setup_executor_runs_project_specific_scripts() -> None:
         )
 
         validate_contract(result)
+        assert Path(calls[0][0][0]).name == "dotnet"
+        assert calls[0][0][1:] == ("tool", "restore")
+        assert calls[0][1] == REPO_ROOT
+        assert calls[1][0][3].endswith(
+            "/script/Publish-ImageOcclusionEditor.ps1"
+        )
+        assert calls[2][0][3].endswith("/script/Build-InnoInstaller.ps1")
         assert set(_result_artifacts(result)) == {"artifact/installer"}
     finally:
         _remove_tree_scratch(scratch)
@@ -4112,8 +4121,10 @@ def test_inno_setup_executor_runs_generic_smoke_scripts() -> None:
         )
 
         validate_contract(result)
-        assert calls[0][3].endswith("/script/Publish.ps1")
-        assert calls[1][3].endswith("/script/Build-InnoInstaller.ps1")
+        assert Path(calls[0][0]).name == "dotnet"
+        assert calls[0][1:] == ("tool", "restore")
+        assert calls[1][3].endswith("/script/Publish.ps1")
+        assert calls[2][3].endswith("/script/Build-InnoInstaller.ps1")
         receipt = _result_artifacts(result)["artifact/installer"]
         assert isinstance(receipt, dict)
         assert receipt["bundle-relative-path"] == (

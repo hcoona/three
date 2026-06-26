@@ -1180,6 +1180,7 @@ def _dotnet_inno_setup(context: _BuildContext) -> dict[str, Path]:
     publish_root = context.output_root / publish_root_name
     installer_output = context.output_root / installer_root_name
     _mkdir_output_work_dir(installer_output)
+    _restore_dotnet_tools(context.repo_root, context.runner)
     pwsh = shutil.which("pwsh") or "pwsh"
     _run_checked(
         [
@@ -1218,6 +1219,18 @@ def _dotnet_inno_setup(context: _BuildContext) -> dict[str, Path]:
     )
     _validate_windows_pe_installers(produced)
     return produced
+
+
+def _restore_dotnet_tools(repo_root: Path, runner: Runner) -> None:
+    """Restore local .NET tools required by project build scripts."""
+    tool_manifest = repo_root / ".config" / "dotnet-tools.json"
+    if not tool_manifest.is_file():
+        return
+    _run_checked(
+        [shutil.which("dotnet") or "dotnet", "tool", "restore"],
+        repo_root,
+        runner,
+    )
 
 
 def _inno_setup_filename(request: Mapping[str, object]) -> str:

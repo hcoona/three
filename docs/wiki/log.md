@@ -831,3 +831,27 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   evidence `27111512179`, and the remaining non-blocking runtime follow-up
   wording while clarifying that only the current final global two-clean loop
   remains before final closure.
+
+## [2026-06-09] query | Release OIDC split topology alignment
+
+- Updated release topology wiki pages to supersede the earlier PyPI/npmjs
+  entry-workflow trusted-publisher guidance.
+- Recorded that PyPI, npmjs, and RubyGems.org token-minting jobs run in
+  `.github/workflows/release-orchestrate.yml` with environments `pypi`,
+  `npmjs`, and `rubygems`, and aligned attestation wording with
+  `actions/attest-build-provenance` jobs before GitHub Release upload.
+
+## [2026-06-19] query | Tighten release entry guards
+
+- Updated the workflow-release low-level design to require exact reusable caller
+  identity checks for reserved `official` and `buddy` channels.
+- Recorded checked-in buddy target authorization: non-empty buddy targets must
+  be reachable from a policy-authorized branch ref for the selected project and
+  channel.
+
+## [2026-06-26] query | Align hosted CI evidence docs
+
+- Recorded that `.github/workflows/docs/DESIGN.v2.md` remains required hosted
+  validation evidence for the next commit.
+- Kept unrelated workflow-doc scratch files out of scope while preserving the
+  hosted CI evidence alignment updates in the wiki index and overview.
