@@ -462,6 +462,63 @@ public sealed class ConfigurationPythonKeyringPhysicalWriterPhase4DTests
 
     [Theory]
     [MemberData(nameof(PythonPhysicalTargetKinds))]
+    public async Task RemoveThenApplyReinstallsPythonKeyringTarget(
+        ConfigurationTargetKind targetKind
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Host);
+        string targetPath = GetCanonicalPythonTargetPath(targetKind);
+        string manifestPath = CreateStatePath($"python-reapply-{targetKind}.json");
+        var manager = CreateManager(fileSystem, manifestPath);
+        ConfigurationChangePlan applyPlan = CreatePythonPlan(targetKind, targetPath);
+
+        await manager.ApplyAsync(applyPlan, TestContext.Current.CancellationToken);
+        string existingManifestJson = fileSystem.ReadAllText(manifestPath);
+        fileSystem.Calls.Clear();
+
+        ConfigurationChangePlan removePlan = applyPlan with
+        {
+            Manifest = applyPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                applyPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = HashMetadata("planned-value"),
+                },
+            ],
+        };
+
+        await manager.RemoveAsync(removePlan, TestContext.Current.CancellationToken);
+        Assert.True(fileSystem.FileExists(targetPath));
+        Assert.Equal(string.Empty, fileSystem.ReadAllText(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+        fileSystem.Calls.Clear();
+
+        ConfigurationPlanResult reinstallResult = await manager.ApplyAsync(
+            applyPlan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Applied, reinstallResult.State);
+        Assert.True(fileSystem.FileExists(targetPath));
+        Assert.Equal("planned-value", fileSystem.ReadAllText(targetPath));
+        UnixFileMode expectedMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        if (!OperatingSystem.IsWindows() && targetKind == ConfigurationTargetKind.KeyringShim)
+        {
+            expectedMode |= UnixFileMode.UserExecute;
+        }
+
+        Assert.Equal(expectedMode, fileSystem.GetUnixFileMode(targetPath));
+        Assert.True(fileSystem.FileExists(manifestPath));
+    }
+
+    [Theory]
+    [MemberData(nameof(PythonPhysicalTargetKinds))]
     public async Task ApplyRejectsPythonKeyringStaleManifestHashWithoutMutation(
         ConfigurationTargetKind targetKind
     )

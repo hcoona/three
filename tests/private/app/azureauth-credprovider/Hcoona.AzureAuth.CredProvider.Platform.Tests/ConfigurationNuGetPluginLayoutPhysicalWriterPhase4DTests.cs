@@ -121,6 +121,51 @@ public sealed class ConfigurationNuGetPluginLayoutPhysicalWriterPhase4DTests
         AssertNoNuGetPluginLayoutPhysicalMutationCalls(fileSystem.Calls);
     }
 
+    [Theory]
+    [InlineData(nameof(IConfigurationManager.ValidatePlan))]
+    [InlineData(nameof(IConfigurationManager.DryRunAsync))]
+    public async Task
+        FilesystemBackedPhase4DValidationAndDryRunRejectNuGetPluginLayoutManifestCollision(
+            string methodName
+        )
+    {
+        await AssertNuGetPluginLayoutManifestCollisionRejectedAsync(methodName);
+    }
+
+    private static async Task AssertNuGetPluginLayoutManifestCollisionRejectedAsync(
+        string methodName
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        string targetPath = CreateCanonicalNuGetPluginLayoutTargetRoot();
+        string manifestPath = Path.Combine(targetPath, "ownership-manifest.json");
+        var manager = CreateManager(fileSystem, manifestPath);
+        ConfigurationChangePlan plan = CreateNuGetPluginLayoutPlan(targetPath);
+
+        if (methodName == nameof(IConfigurationManager.ValidatePlan))
+        {
+            ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+            Assert.False(validationResult.IsValid);
+            Assert.NotNull(validationResult.Violation);
+            Assert.Contains(
+                "ownership manifest path",
+                validationResult.Violation,
+                StringComparison.Ordinal
+            );
+        }
+        else
+        {
+            var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+            );
+
+            Assert.Contains("ownership manifest path", exception.Message, StringComparison.Ordinal);
+        }
+
+        Assert.False(fileSystem.FileExists(manifestPath));
+        AssertNoNuGetPluginLayoutPhysicalMutationCalls(fileSystem.Calls);
+    }
+
     [Fact]
     public async Task ApplyWritesNuGetPluginLayoutMarkerAndManifestEntries()
     {

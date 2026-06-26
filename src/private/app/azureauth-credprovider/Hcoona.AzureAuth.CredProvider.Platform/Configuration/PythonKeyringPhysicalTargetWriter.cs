@@ -904,6 +904,6 @@ internal sealed class PythonKeyringPhysicalTargetWriter(IFileSystem fileSystem)
         FileMutationExpectation MutationExpectation
     )
     {
-        public bool Exists => OriginalContentsBytes is not null;
+        public bool Exists => OriginalContentsBytes is not null && OriginalContentsBytes.Length > 0;
     }
 }
