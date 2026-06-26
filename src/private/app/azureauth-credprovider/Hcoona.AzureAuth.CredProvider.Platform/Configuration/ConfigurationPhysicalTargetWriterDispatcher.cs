@@ -768,6 +768,23 @@ internal sealed class GitConfigPhysicalTargetWriter(IFileSystem fileSystem)
                     + "\"https://dev.azure.com\".useHttpPath only with canonical value true."
             );
         }
+
+        if (
+            string.Equals(
+                key.CanonicalConfigurationKey,
+                "credential.helper",
+                StringComparison.Ordinal
+            )
+            && change.Operation != ConfigurationChangeOperation.Remove
+            && change.Value is not null
+            && change.Value.StartsWith('!')
+        )
+        {
+            throw new NotSupportedException(
+                "The Git config physical writer supports credential.helper only with installed "
+                    + "helper entries, not shell snippet helpers."
+            );
+        }
     }
 
     internal static bool TryCanonicalizeSupportedConfigurationKey(

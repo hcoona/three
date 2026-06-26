@@ -585,6 +585,49 @@ public sealed class ConfigurationGitConfigPhysicalWriterPhase4DTests
     }
 
     [Fact]
+    public async Task ValidatePlanDryRunAndApplyRejectShellSnippetCredentialHelperValues()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/gitconfig-helper-shell-snippet-manifest.json";
+        const string targetPath = "/config/user.gitconfig";
+        const string existingGitConfig = """
+            [credential]
+                helper = manager-core
+            """;
+        const string shellSnippetHelperValue = "!echo hcoona-azureauth";
+        fileSystem.AtomicWriteAllText(targetPath, existingGitConfig);
+        fileSystem.Calls.Clear();
+        var manager = CreateManager(fileSystem, manifestPath);
+        ConfigurationChangePlan plan = CreateGitConfigPlan(
+            CreateGitConfigChange(
+                ConfigurationChangeOperation.Set,
+                targetPath,
+                "credential.helper",
+                shellSnippetHelperValue
+            )
+        );
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+        var dryRunException = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        AssertNoGitConfigPhysicalMutationCalls(fileSystem.Calls);
+        fileSystem.Calls.Clear();
+        var applyException = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+        AssertNoGitConfigPhysicalMutationCalls(fileSystem.Calls);
+
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
+        Assert.Contains("shell snippet", validationResult.Violation, StringComparison.Ordinal);
+        Assert.Contains("shell snippet", dryRunException.Message, StringComparison.Ordinal);
+        Assert.Contains("shell snippet", applyException.Message, StringComparison.Ordinal);
+        Assert.Equal(existingGitConfig, fileSystem.ReadAllText(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
     public async Task ApplyAllowsHelperWriteWhenLaterFalseShadowsEarlierTruthyUseHttpPath()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
