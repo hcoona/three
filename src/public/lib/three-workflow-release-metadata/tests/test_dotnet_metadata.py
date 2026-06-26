@@ -159,13 +159,13 @@ def test_collect_dotnet_metadata_emits_closed_observation() -> None:
             if _is_nbgv_call(call)
         }
         assert nbgv_projects == {
-            ".metadata-packageid-success-test/App",
-            ".metadata-packageid-success-test/Example",
+            ".metadata-packaged-success-test/App",
+            ".metadata-packaged-success-test/Example",
         }
         msbuild_calls = [call for call in calls if "msbuild" in call]
         assert len(msbuild_calls) == _PACKAGE_ID_MSBUILD_CALL_COUNT
         assert {call[2] for call in msbuild_calls} == {
-            ".metadata-packageid-success-test/Example/Example.csproj"
+            ".metadata-packaged-success-test/Example/Example.csproj"
         }
         assert any(
             "-p:ImportNuGetBuildTasksPackTargetsFromSdk=false" in call

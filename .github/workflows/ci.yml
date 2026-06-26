@@ -13,6 +13,9 @@ permissions:
   contents: read
   actions: read
 
+env:
+  NBGV_VERSION: '3.9.50'
+
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('ci/pr/{0}', github.event.pull_request.number) || github.event_name == 'push' && format('ci/push/{0}', github.ref) || format('ci/{0}/{1}', github.event_name, github.run_id) }}
   cancel-in-progress: true
@@ -333,9 +336,42 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: '**/packages.lock.json'
-      - name: Restore .NET local tools for NBGV-backed release planning
+      - name: Install trusted NBGV CLI for release planning
         shell: bash
-        run: dotnet tool restore
+        env:
+          NBGV_VERSION: ${{ env.NBGV_VERSION }}
+        run: |
+          set -Eeuo pipefail
+          trusted_tools="${RUNNER_TEMP}/trusted-dotnet-tools"
+          trusted_config="${RUNNER_TEMP}/trusted-nuget.config"
+          dotnet_home="${RUNNER_TEMP}/dotnet-cli-home"
+          mkdir -p "${trusted_tools}" "${dotnet_home}"
+          cat > "${trusted_config}" <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+            </packageSources>
+          </configuration>
+          XML
+          DOTNET_CLI_HOME="${dotnet_home}" \
+          NUGET_PACKAGES="${RUNNER_TEMP}/trusted-nuget-packages" \
+            dotnet tool install nbgv \
+              --tool-path "${trusted_tools}" \
+              --version "${NBGV_VERSION}" \
+              --configfile "${trusted_config}"
+          if [ "${RUNNER_OS:-}" = "Windows" ]; then
+            nbgv_path="${trusted_tools}/nbgv.exe"
+          else
+            nbgv_path="${trusted_tools}/nbgv"
+          fi
+          if [ ! -x "${nbgv_path}" ]; then
+            echo "Trusted NBGV CLI was not installed at ${nbgv_path}" >&2
+            exit 1
+          fi
+          echo "THREE_WORKFLOW_RELEASE_NBGV_PATH=${nbgv_path}" >> "${GITHUB_ENV}"
+          echo "NBGV_PYTHON_COMMAND=${nbgv_path}" >> "${GITHUB_ENV}"
       - name: Verify request producer boundary
         env:
           GH_TOKEN: ${{ github.token }}
@@ -556,9 +592,42 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: '**/packages.lock.json'
-      - name: Restore .NET local tools for NBGV-backed release planning
+      - name: Install trusted NBGV CLI for release planning
         shell: bash
-        run: dotnet tool restore
+        env:
+          NBGV_VERSION: ${{ env.NBGV_VERSION }}
+        run: |
+          set -Eeuo pipefail
+          trusted_tools="${RUNNER_TEMP}/trusted-dotnet-tools"
+          trusted_config="${RUNNER_TEMP}/trusted-nuget.config"
+          dotnet_home="${RUNNER_TEMP}/dotnet-cli-home"
+          mkdir -p "${trusted_tools}" "${dotnet_home}"
+          cat > "${trusted_config}" <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+            </packageSources>
+          </configuration>
+          XML
+          DOTNET_CLI_HOME="${dotnet_home}" \
+          NUGET_PACKAGES="${RUNNER_TEMP}/trusted-nuget-packages" \
+            dotnet tool install nbgv \
+              --tool-path "${trusted_tools}" \
+              --version "${NBGV_VERSION}" \
+              --configfile "${trusted_config}"
+          if [ "${RUNNER_OS:-}" = "Windows" ]; then
+            nbgv_path="${trusted_tools}/nbgv.exe"
+          else
+            nbgv_path="${trusted_tools}/nbgv"
+          fi
+          if [ ! -x "${nbgv_path}" ]; then
+            echo "Trusted NBGV CLI was not installed at ${nbgv_path}" >&2
+            exit 1
+          fi
+          echo "THREE_WORKFLOW_RELEASE_NBGV_PATH=${nbgv_path}" >> "${GITHUB_ENV}"
+          echo "NBGV_PYTHON_COMMAND=${nbgv_path}" >> "${GITHUB_ENV}"
       - name: Install Node.js for JavaScript/TypeScript validation
         uses: actions/setup-node@v6
         with:
@@ -1304,9 +1373,42 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: '**/packages.lock.json'
-      - name: Restore .NET local tools for NBGV-backed release planning
+      - name: Install trusted NBGV CLI for release planning
         shell: bash
-        run: dotnet tool restore
+        env:
+          NBGV_VERSION: ${{ env.NBGV_VERSION }}
+        run: |
+          set -Eeuo pipefail
+          trusted_tools="${RUNNER_TEMP}/trusted-dotnet-tools"
+          trusted_config="${RUNNER_TEMP}/trusted-nuget.config"
+          dotnet_home="${RUNNER_TEMP}/dotnet-cli-home"
+          mkdir -p "${trusted_tools}" "${dotnet_home}"
+          cat > "${trusted_config}" <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+            </packageSources>
+          </configuration>
+          XML
+          DOTNET_CLI_HOME="${dotnet_home}" \
+          NUGET_PACKAGES="${RUNNER_TEMP}/trusted-nuget-packages" \
+            dotnet tool install nbgv \
+              --tool-path "${trusted_tools}" \
+              --version "${NBGV_VERSION}" \
+              --configfile "${trusted_config}"
+          if [ "${RUNNER_OS:-}" = "Windows" ]; then
+            nbgv_path="${trusted_tools}/nbgv.exe"
+          else
+            nbgv_path="${trusted_tools}/nbgv"
+          fi
+          if [ ! -x "${nbgv_path}" ]; then
+            echo "Trusted NBGV CLI was not installed at ${nbgv_path}" >&2
+            exit 1
+          fi
+          echo "THREE_WORKFLOW_RELEASE_NBGV_PATH=${nbgv_path}" >> "${GITHUB_ENV}"
+          echo "NBGV_PYTHON_COMMAND=${nbgv_path}" >> "${GITHUB_ENV}"
       - uses: actions/download-artifact@v8
         if: ${{ needs.normalize-input.outputs.request-artifact-id != '' }}
         with:
@@ -2041,9 +2143,42 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: '**/packages.lock.json'
-      - name: Restore .NET local tools for NBGV-backed release planning
+      - name: Install trusted NBGV CLI for release planning
         shell: bash
-        run: dotnet tool restore
+        env:
+          NBGV_VERSION: ${{ env.NBGV_VERSION }}
+        run: |
+          set -Eeuo pipefail
+          trusted_tools="${RUNNER_TEMP}/trusted-dotnet-tools"
+          trusted_config="${RUNNER_TEMP}/trusted-nuget.config"
+          dotnet_home="${RUNNER_TEMP}/dotnet-cli-home"
+          mkdir -p "${trusted_tools}" "${dotnet_home}"
+          cat > "${trusted_config}" <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+            </packageSources>
+          </configuration>
+          XML
+          DOTNET_CLI_HOME="${dotnet_home}" \
+          NUGET_PACKAGES="${RUNNER_TEMP}/trusted-nuget-packages" \
+            dotnet tool install nbgv \
+              --tool-path "${trusted_tools}" \
+              --version "${NBGV_VERSION}" \
+              --configfile "${trusted_config}"
+          if [ "${RUNNER_OS:-}" = "Windows" ]; then
+            nbgv_path="${trusted_tools}/nbgv.exe"
+          else
+            nbgv_path="${trusted_tools}/nbgv"
+          fi
+          if [ ! -x "${nbgv_path}" ]; then
+            echo "Trusted NBGV CLI was not installed at ${nbgv_path}" >&2
+            exit 1
+          fi
+          echo "THREE_WORKFLOW_RELEASE_NBGV_PATH=${nbgv_path}" >> "${GITHUB_ENV}"
+          echo "NBGV_PYTHON_COMMAND=${nbgv_path}" >> "${GITHUB_ENV}"
       - uses: actions/download-artifact@v8
         if: ${{ needs.normalize-input.outputs.request-artifact-id != '' }}
         with:

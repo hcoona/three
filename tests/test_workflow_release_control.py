@@ -20677,6 +20677,38 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
     assert diagnostics_upload["with"]["name"] == (
         "${{ needs.normalize-input.outputs.planner-diagnostics-artifact-name }}"
     )
+    assert workflow["env"]["NBGV_VERSION"] == "3.9.50"
+    nbgv_backed_jobs = (
+        "plan",
+        "execution-batch-ubuntu-orchestrator",
+        "execution-batch-windows-orchestrator",
+        "execution-batch-macos-orchestrator",
+    )
+    for job_name in nbgv_backed_jobs:
+        steps = jobs[job_name]["steps"]
+        setup_index = next(
+            index
+            for index, step in enumerate(steps)
+            if step.get("uses") == "actions/setup-dotnet@v5"
+        )
+        install_index, install_step = next(
+            (index, step)
+            for index, step in enumerate(steps)
+            if step.get("name") == "Install trusted NBGV CLI for release planning"
+        )
+        run_text = "\n".join(str(step.get("run", "")) for step in steps)
+        install_run = install_step["run"]
+
+        assert setup_index < install_index
+        assert "dotnet tool restore" not in run_text
+        assert install_step["env"]["NBGV_VERSION"] == "${{ env.NBGV_VERSION }}"
+        assert "dotnet tool install nbgv" in install_run
+        assert '--tool-path "${trusted_tools}"' in install_run
+        assert '--version "${NBGV_VERSION}"' in install_run
+        assert '--configfile "${trusted_config}"' in install_run
+        assert "nbgv.exe" in install_run
+        assert "THREE_WORKFLOW_RELEASE_NBGV_PATH=${nbgv_path}" in install_run
+        assert "NBGV_PYTHON_COMMAND=${nbgv_path}" in install_run
 
 
 def test_ci_validation_dotnet_setup_uses_nuget_lockfile_cache() -> None:
