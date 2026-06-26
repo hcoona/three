@@ -47,6 +47,13 @@ public sealed class ConfigurationManager : IConfigurationManager
     private const string FileSystemLockFileName = ".azureauth-credprovider.fs.lock";
     private const string LifecycleLockDirectoryName = ".azureauth-credprovider.lifecycle-locks";
     private const string Sha256MetadataPrefix = "sha256:";
+    private const string PhysicalTargetManifestPreclaimMetadataKey =
+        "hcoona.azureAuthCredProvider.physicalTargetManifestState";
+    private const string PhysicalTargetManifestPreclaimMetadataValue = "prepared";
+    private const string GitConfigDevAzureComUseHttpPathKey =
+        "credential.https://dev.azure.com.useHttpPath";
+    private static readonly string GitConfigDevAzureComUseHttpPathTrueSha256 =
+        ComputeSha256("true");
     private static readonly SemaphoreSlim ExecutionLock = new(1, 1);
     private static readonly AsyncLocal<bool> ExecutionLockHeldByCurrentAsyncFlow = new();
     private readonly IFileSystem? fileSystem;
@@ -125,22 +132,26 @@ public sealed class ConfigurationManager : IConfigurationManager
 
         if (filesystemBacked && containsProjectionOnlyPhysicalTarget)
         {
-            EnsurePhysicalTargetDryRunDispatchPlanShapeSupported(plan);
             EnsureNoReservedInternalNonCiPhysicalTargetPaths(plan);
+            EnsurePhysicalTargetDryRunDispatchPlanShapeSupported(fileSystem, plan);
         }
 
+        ConfigurationChangePlan projectedPlan = containsProjectionOnlyPhysicalTarget
+            ? CanonicalizePhysicalTargetPlanForProjection(plan, filesystemBacked)
+            : plan;
         ConfigurationPlanResult plannedResult = CreatePlannedResult(
-            plan,
+            projectedPlan,
             ConfigurationPlanOperation.DryRun
         );
         if (!filesystemBacked)
         {
+            ValidateProjectedGitConfigManifestForReturn(plannedResult.OwnershipManifest);
             return ValueTask.FromResult(plannedResult);
         }
 
         EnsureFilesystemBackedDryRunOperationSupported(plan);
         return ValueTask.FromResult(
-            SimulateFilesystemBackedDryRun(plannedResult, plan, cancellationToken)
+            SimulateFilesystemBackedDryRun(plannedResult, projectedPlan, cancellationToken)
         );
     }
 
@@ -184,13 +195,18 @@ public sealed class ConfigurationManager : IConfigurationManager
         EnsureNoFilesystemBackedPhysicalTargetKindSamePathConflicts(plan);
         if (ContainsProjectionOnlyPhysicalTarget(plan))
         {
-            EnsurePhysicalTargetDispatchPlanShapeSupported(plan, operation);
             EnsureNoReservedInternalNonCiPhysicalTargetPaths(plan);
+            EnsurePhysicalTargetDispatchPlanShapeSupported(fileSystem, plan, operation);
             EnsureConditionalFileMutationsSupported(fileSystem);
-            ConfigurationPlanResult physicalPlannedResult = CreatePlannedResult(plan, operation);
+            ConfigurationChangePlan physicalPlan = CanonicalizePhysicalTargetPlan(plan);
+            EnsureGitConfigPhysicalWriterPreclaimValidationSupported(physicalPlan);
+            ConfigurationPlanResult physicalPlannedResult = CreatePlannedResult(
+                physicalPlan,
+                operation
+            );
             return await ExecutePhysicalTargetPlan(
                 physicalPlannedResult,
-                plan,
+                physicalPlan,
                 operation,
                 cancellationToken
             );
@@ -279,39 +295,207 @@ public sealed class ConfigurationManager : IConfigurationManager
         ExecutionLockHeldByCurrentAsyncFlow.Value = true;
         try
         {
-            PhysicalTargetManifestDispatchPreparation preparation =
-                await PreparePhysicalTargetManifestDispatch(
-                    plannedResult,
-                    plan,
-                    operation,
-                    cancellationToken
-                );
+            IFileSystem executionFileSystem = fileSystem!;
+            string manifestPath = ownershipManifestPath!;
+            IDisposable? crossProcessExecutionLock = null;
             try
             {
-                foreach (ConfigurationChange change in plan.Changes)
+                if (plan.TemporaryContainer is not null)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    await physicalTargetWriterDispatcher!.Dispatch(
-                        new ConfigurationPhysicalTargetWriterRequest(
-                            operation,
-                            change.TargetKind,
-                            change.Operation,
-                            change
-                        ),
-                        cancellationToken
+                    crossProcessExecutionLock = AcquireConfigurationExecutionLock(
+                        executionFileSystem,
+                        plan,
+                        manifestPath
                     );
                 }
 
-                return preparation.AppliedOwnershipManifest;
-            }
-            catch (Exception exception)
-            {
-                await RollBackPhysicalTargetManifestDispatchPreparation(
-                    plan,
-                    preparation,
-                    exception
+                PhysicalTargetManifestDispatchPreparation preparation =
+                    PreparePhysicalTargetManifestDispatch(
+                        plannedResult,
+                        plan,
+                        operation,
+                        cancellationToken
+                    );
+                var completedWrites = new Stack<FileRollbackSnapshot>();
+                if (plan.TemporaryContainer is null)
+                {
+                    crossProcessExecutionLock = AcquireConfigurationExecutionLock(
+                        executionFileSystem,
+                        plan,
+                        manifestPath
+                    );
+                    _ = ValidateCurrentManifestBeforePhysicalTargetManifestCommit(
+                        executionFileSystem,
+                        manifestPath,
+                        plan,
+                        operation,
+                        preparation.ManifestRollbackSnapshot
+                    );
+                }
+
+                FileRollbackSnapshot manifestDispatchSnapshot =
+                    preparation.ManifestRollbackSnapshot;
+                var dispatchRequest = new ConfigurationPhysicalTargetWriterRequest(
+                    operation,
+                    plan.Changes[0].TargetKind,
+                    plan.Changes,
+                    preparation.OwnershipProofs
                 );
-                throw;
+                ValidatePhysicalTargetDispatchBeforeManifestPreclaim(
+                    plan,
+                    operation,
+                    preparation.OwnershipProofs,
+                    cancellationToken
+                );
+                bool physicalTargetRollbackSafetyUnproven = false;
+                bool finalManifestRollbackUnsafeDueToStaleRetainedProof = false;
+                try
+                {
+                    manifestDispatchSnapshot = WritePreparedPhysicalTargetManifestPreclaim(
+                        executionFileSystem,
+                        manifestPath,
+                        preparation,
+                        completedWrites
+                    );
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await physicalTargetWriterDispatcher!.Dispatch(
+                        dispatchRequest,
+                        cancellationToken
+                    );
+
+                    try
+                    {
+                        ValidateAndRegisterCompletedPhysicalTargetFileMutations(
+                            executionFileSystem,
+                            plan,
+                            dispatchRequest.CompletedFileMutations,
+                            completedWrites
+                        );
+                    }
+                    catch (Exception completedMutationException)
+                        when (completedMutationException is not OperationCanceledException)
+                    {
+                        physicalTargetRollbackSafetyUnproven = true;
+                        throw;
+                    }
+
+                    ConfigurationPhysicalTargetOwnershipProof[] retainedOwnershipProofs =
+                        CreatePhysicalTargetOwnershipProofs(
+                            preparation.PreparedOwnershipManifest
+                        );
+                    ValidateRetainedOwnershipProofsAfterManifestPreclaim(
+                        retainedOwnershipProofs,
+                        ref finalManifestRollbackUnsafeDueToStaleRetainedProof,
+                        cancellationToken
+                    );
+                    CommitPreparedPhysicalTargetManifestDispatch(
+                        executionFileSystem,
+                        manifestPath,
+                        preparation,
+                        manifestDispatchSnapshot,
+                        completedWrites
+                    );
+                    try
+                    {
+                        ValidateAndRegisterCompletedPhysicalTargetFileMutations(
+                            executionFileSystem,
+                            plan,
+                            dispatchRequest.CompletedFileMutations,
+                            completedWrites
+                        );
+                    }
+                    catch (Exception completedMutationException)
+                        when (completedMutationException is not OperationCanceledException)
+                    {
+                        physicalTargetRollbackSafetyUnproven = true;
+                        throw;
+                    }
+
+                    ValidateRetainedOwnershipProofsAfterManifestPreclaim(
+                        retainedOwnershipProofs,
+                        ref finalManifestRollbackUnsafeDueToStaleRetainedProof,
+                        cancellationToken
+                    );
+                    VerifyCurrentPhysicalTargetManifestMatchesPreparedFinalState(
+                        executionFileSystem,
+                        manifestPath,
+                        preparation.PreparedOwnershipManifest
+                    );
+                    return preparation.PreparedOwnershipManifest;
+                }
+                catch (Exception exception)
+                {
+                    if (exception is PhysicalTargetManifestCommitIndeterminateException)
+                    {
+                        if (plan.ContainsCredentialMaterial)
+                        {
+                            ThrowSanitizedPhysicalTargetIndeterminateFailure(exception);
+                        }
+
+                        throw;
+                    }
+                    Exception failure = exception;
+                    if (dispatchRequest.CompletedFileMutations.Count > 0)
+                    {
+                        try
+                        {
+                            ValidateAndRegisterCompletedPhysicalTargetFileMutations(
+                                executionFileSystem,
+                                plan,
+                                dispatchRequest.CompletedFileMutations,
+                                completedWrites
+                            );
+                        }
+                        catch (Exception completedMutationException)
+                            when (completedMutationException is not OperationCanceledException)
+                        {
+                            failure = completedMutationException;
+                            physicalTargetRollbackSafetyUnproven = true;
+                        }
+                    }
+                    try
+                    {
+                        RollBackPhysicalTargetDispatchWithoutMaskingConflict(
+                            executionFileSystem,
+                            manifestPath,
+                            plan,
+                            manifestDispatchSnapshot,
+                            preparation.PreparedOwnershipManifest,
+                            completedWrites,
+                            physicalTargetRollbackSafetyUnproven,
+                            finalManifestRollbackUnsafeDueToStaleRetainedProof,
+                            failure
+                        );
+                    }
+                    catch (Exception rollbackException)
+                        when (
+                            plan.ContainsCredentialMaterial
+                            && rollbackException is not OperationCanceledException
+                        )
+                    {
+                        ThrowSanitizedPhysicalTargetRollbackFailure(
+                            failure,
+                            rollbackException
+                        );
+                    }
+
+                    if (failure is OperationCanceledException)
+                    {
+                        throw;
+                    }
+
+                    if (plan.ContainsCredentialMaterial)
+                    {
+                        ThrowSanitizedPhysicalTargetDispatchFailure(failure);
+                    }
+
+                    ExceptionDispatchInfo.Capture(failure).Throw();
+                    throw;
+                }
+            }
+            finally
+            {
+                crossProcessExecutionLock?.Dispose();
             }
         }
         finally
@@ -321,20 +505,53 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
     }
 
-    private async ValueTask<PhysicalTargetManifestDispatchPreparation>
-        PreparePhysicalTargetManifestDispatch(
+    private static void ThrowSanitizedPhysicalTargetDispatchFailure(
+        Exception exception,
+        string message = "Configuration physical target dispatch failure was rolled back."
+    )
+    {
+        var sanitizedException = new InvalidOperationException(message);
+        sanitizedException.Data["ConfigurationDispatchExceptionType"] =
+            exception.GetType().FullName ?? exception.GetType().Name;
+        sanitizedException.Data["ConfigurationDispatchExceptionHResult"] = exception.HResult;
+        throw sanitizedException;
+    }
+
+    private static void ThrowSanitizedPhysicalTargetRollbackFailure(
+        Exception dispatchException,
+        Exception rollbackException
+    )
+    {
+        var sanitizedException = new InvalidOperationException(
+            "Configuration physical target dispatch failure rollback failed."
+        );
+        sanitizedException.Data["ConfigurationDispatchExceptionType"] =
+            dispatchException.GetType().FullName ?? dispatchException.GetType().Name;
+        sanitizedException.Data["ConfigurationDispatchExceptionHResult"] =
+            dispatchException.HResult;
+        sanitizedException.Data["ConfigurationRollbackExceptionType"] =
+            rollbackException.GetType().FullName ?? rollbackException.GetType().Name;
+        sanitizedException.Data["ConfigurationRollbackExceptionHResult"] =
+            rollbackException.HResult;
+        throw sanitizedException;
+    }
+
+    private static void ThrowSanitizedPhysicalTargetIndeterminateFailure(Exception exception) =>
+        ThrowSanitizedPhysicalTargetDispatchFailure(
+            exception,
+            "Configuration physical target dispatch final manifest commit is indeterminate."
+        );
+
+    private PhysicalTargetManifestDispatchPreparation PreparePhysicalTargetManifestDispatch(
         ConfigurationPlanResult plannedResult,
         ConfigurationChangePlan plan,
         ConfigurationPlanOperation operation,
         CancellationToken cancellationToken
     )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         IFileSystem executionFileSystem = fileSystem!;
         string manifestPath = ownershipManifestPath!;
-        using IDisposable crossProcessExecutionLock =
-            plan.TemporaryContainer is null
-                ? NullDisposable.Instance
-                : AcquireConfigurationExecutionLock(executionFileSystem, plan, manifestPath);
         EnsureManifestParentChainIsUsable(executionFileSystem, manifestPath);
         EnsurePathIsNotUnsupportedReparsePoint(
             executionFileSystem,
@@ -353,15 +570,17 @@ public sealed class ConfigurationManager : IConfigurationManager
             );
         ConfigurationOwnershipManifest? manifestToWrite = null;
         bool deleteManifest = false;
+        ConfigurationOwnershipManifest? existingManifest = manifestSnapshot.Existed
+            ? ConfigurationOwnershipManifestSerializer.Deserialize(manifestSnapshot.Contents!)
+            : null;
         if (operation == ConfigurationPlanOperation.Remove)
         {
-            ConfigurationOwnershipManifest existingManifest =
-                ConfigurationOwnershipManifestSerializer.Deserialize(
-                    manifestSnapshot.Contents!
-                );
             manifestToWrite = CreateRemainingManifestAfterRemove(
                 executionFileSystem,
-                existingManifest,
+                existingManifest
+                    ?? throw new InvalidOperationException(
+                        "Configuration remove requires an existing ownership manifest."
+                    ),
                 ownershipManifest,
                 plan
             );
@@ -377,16 +596,237 @@ public sealed class ConfigurationManager : IConfigurationManager
             );
         }
 
-        manifestSnapshot = ValidateCurrentManifestBeforeMutation(
-            executionFileSystem,
-            manifestPath,
-            plan,
-            operation
+        return new PhysicalTargetManifestDispatchPreparation(
+            manifestToWrite,
+            deleteManifest,
+            manifestSnapshot,
+            CreatePhysicalTargetOwnershipProofs(existingManifest)
         );
-        var completedWrites = new Stack<FileRollbackSnapshot>();
+    }
+
+    private void ValidatePhysicalTargetDispatchBeforeManifestPreclaim(
+        ConfigurationChangePlan plan,
+        ConfigurationPlanOperation operation,
+        IReadOnlyList<ConfigurationPhysicalTargetOwnershipProof> ownershipProofs,
+        CancellationToken cancellationToken
+    )
+    {
+        IFileSystem executionFileSystem = fileSystem
+            ?? throw new InvalidOperationException(
+                "Configuration physical target dispatch validation requires a filesystem-backed "
+                    + "configuration manager."
+            );
+        ConfigurationPhysicalTargetWriterDispatcher? fallbackDispatcher = null;
+        IConfigurationPhysicalTargetWriterDispatcherValidator validator =
+            physicalTargetWriterDispatcher as IConfigurationPhysicalTargetWriterDispatcherValidator
+            ?? (fallbackDispatcher ??= new ConfigurationPhysicalTargetWriterDispatcher(
+                executionFileSystem
+            ));
+        validator.Validate(
+            new ConfigurationPhysicalTargetWriterRequest(
+                operation,
+                plan.Changes[0].TargetKind,
+                plan.Changes,
+                ownershipProofs
+            ),
+            cancellationToken
+        );
+
+        IConfigurationPhysicalTargetRetainedOwnershipProofValidator retainedProofValidator =
+            physicalTargetWriterDispatcher
+            as IConfigurationPhysicalTargetRetainedOwnershipProofValidator
+            ?? (fallbackDispatcher ??= new ConfigurationPhysicalTargetWriterDispatcher(
+                executionFileSystem
+            ));
+        retainedProofValidator.ValidateRetainedOwnershipProofs(
+            ownershipProofs,
+            cancellationToken
+        );
+    }
+
+    private void ValidateRetainedOwnershipProofsBeforePhysicalTargetManifestCommit(
+        IReadOnlyList<ConfigurationPhysicalTargetOwnershipProof> ownershipProofs,
+        CancellationToken cancellationToken
+    )
+    {
+        IFileSystem executionFileSystem = fileSystem
+            ?? throw new InvalidOperationException(
+                "Configuration physical target retained-proof validation requires a "
+                    + "filesystem-backed configuration manager."
+            );
+        IConfigurationPhysicalTargetRetainedOwnershipProofValidator retainedProofValidator =
+            physicalTargetWriterDispatcher
+            as IConfigurationPhysicalTargetRetainedOwnershipProofValidator
+            ?? new ConfigurationPhysicalTargetWriterDispatcher(executionFileSystem);
+        retainedProofValidator.ValidateRetainedOwnershipProofs(
+            ownershipProofs,
+            cancellationToken
+        );
+    }
+
+    private void ValidateRetainedOwnershipProofsAfterManifestPreclaim(
+        IReadOnlyList<ConfigurationPhysicalTargetOwnershipProof> ownershipProofs,
+        ref bool finalManifestRollbackUnsafeDueToStaleRetainedProof,
+        CancellationToken cancellationToken
+    )
+    {
         try
         {
-            if (deleteManifest)
+            ValidateRetainedOwnershipProofsBeforePhysicalTargetManifestCommit(
+                ownershipProofs,
+                cancellationToken
+            );
+            finalManifestRollbackUnsafeDueToStaleRetainedProof = false;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            finalManifestRollbackUnsafeDueToStaleRetainedProof = true;
+            throw;
+        }
+    }
+
+    private static void ValidateGitConfigRetainedUseHttpPathOwnershipProofs(
+        IFileSystem fileSystem,
+        ConfigurationOwnershipManifest? manifest,
+        CancellationToken cancellationToken
+    )
+    {
+        ConfigurationPhysicalTargetOwnershipProof[] retainedProofs =
+            CreatePhysicalTargetOwnershipProofs(manifest);
+        if (retainedProofs.Length == 0)
+        {
+            return;
+        }
+
+        new ConfigurationPhysicalTargetWriterDispatcher(fileSystem)
+            .ValidateRetainedOwnershipProofs(retainedProofs, cancellationToken);
+    }
+
+    private static void ValidateGitConfigRetainedUseHttpPathOwnershipProofsAfterGenericMutation(
+        IFileSystem fileSystem,
+        ConfigurationOwnershipManifest? manifest,
+        CancellationToken cancellationToken
+    )
+    {
+        if (CreatePhysicalTargetOwnershipProofs(manifest).Length == 0)
+        {
+            return;
+        }
+
+        ValidateGitConfigRetainedUseHttpPathOwnershipProofs(
+            fileSystem,
+            manifest,
+            cancellationToken
+        );
+    }
+
+    private static FileRollbackSnapshot WritePreparedPhysicalTargetManifestPreclaim(
+        IFileSystem executionFileSystem,
+        string manifestPath,
+        PhysicalTargetManifestDispatchPreparation preparation,
+        Stack<FileRollbackSnapshot> completedWrites
+    )
+    {
+        ConfigurationOwnershipManifest preclaimManifest =
+            CreatePhysicalTargetManifestPreclaim(executionFileSystem, preparation);
+        string preclaimManifestContents = ConfigurationOwnershipManifestSerializer.Serialize(
+            preclaimManifest
+        );
+        ExecuteAtomicWriteWithRollbackRegistration(
+            executionFileSystem,
+            manifestPath,
+            preclaimManifestContents,
+            options: AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly,
+            snapshot: preparation.ManifestRollbackSnapshot,
+            expectedCurrentHashForRollback: ComputeSha256(preclaimManifestContents),
+            completedWrites: completedWrites
+        );
+        FileRollbackSnapshot preclaimSnapshot = CaptureRollbackSnapshot(
+            executionFileSystem,
+            manifestPath
+        );
+        ValidateFileSnapshotIsRegularFile(
+            preclaimSnapshot,
+            "prepared configuration ownership manifest preclaim"
+        );
+        if (
+            !string.Equals(
+                preclaimSnapshot.ContentsSha256Hash,
+                ComputeSha256(preclaimManifestContents),
+                StringComparison.Ordinal
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "Configuration ownership manifest conflict: prepared manifest preclaim changed "
+                    + "before physical target dispatch."
+            );
+        }
+
+        return preclaimSnapshot;
+    }
+
+    private static ConfigurationOwnershipManifest CreatePhysicalTargetManifestPreclaim(
+        IFileSystem fileSystem,
+        PhysicalTargetManifestDispatchPreparation preparation
+    )
+    {
+        ConfigurationOwnershipManifest manifest = CanonicalizePhysicalTargetManifestForWrite(
+            fileSystem,
+            preparation.PreparedOwnershipManifest
+                ?? (
+                    preparation.ManifestRollbackSnapshot.Existed
+                        ? ConfigurationOwnershipManifestSerializer.Deserialize(
+                            preparation.ManifestRollbackSnapshot.Contents!
+                        )
+                        : throw new InvalidOperationException(
+                            "Configuration physical target dispatch requires a manifest preclaim."
+                        )
+                )
+        );
+        var safeMetadata = new Dictionary<string, string>(
+            manifest.SafeMetadata,
+            StringComparer.Ordinal
+        )
+        {
+            [PhysicalTargetManifestPreclaimMetadataKey] =
+                PhysicalTargetManifestPreclaimMetadataValue,
+        };
+        return manifest with { SafeMetadata = safeMetadata };
+    }
+
+    private static ConfigurationOwnershipManifest
+        EnsureFinalPhysicalTargetManifestHasNoPreclaimMetadata(
+        ConfigurationOwnershipManifest manifest
+    )
+    {
+        if (manifest.SafeMetadata.ContainsKey(PhysicalTargetManifestPreclaimMetadataKey))
+        {
+            throw new InvalidOperationException(
+                "Configuration ownership manifest conflict: final manifest contains reserved "
+                    + "physical target preclaim metadata."
+            );
+        }
+
+        return manifest;
+    }
+
+    private static void CommitPreparedPhysicalTargetManifestDispatch(
+        IFileSystem executionFileSystem,
+        string manifestPath,
+        PhysicalTargetManifestDispatchPreparation preparation,
+        FileRollbackSnapshot manifestDispatchSnapshot,
+        Stack<FileRollbackSnapshot> completedWrites
+    )
+    {
+        FileRollbackSnapshot manifestSnapshot = ValidatePreparedManifestPreclaimStillCurrent(
+            executionFileSystem,
+            manifestPath,
+            manifestDispatchSnapshot
+        );
+        if (preparation.DeleteManifest)
+        {
+            try
             {
                 ExecuteDeleteWithRollbackRegistration(
                     executionFileSystem,
@@ -395,15 +835,43 @@ public sealed class ConfigurationManager : IConfigurationManager
                     expectedCurrentHashForRollback: null,
                     completedWrites
                 );
-                return new PhysicalTargetManifestDispatchPreparation(null, completedWrites.Peek());
+            }
+            catch (FileMutationException exception)
+                when (exception.MutationMayHaveReachedDurableState)
+            {
+                if (
+                    !CurrentManifestMatchesPreparedFinalState(
+                        executionFileSystem,
+                        manifestPath,
+                        preparation.PreparedOwnershipManifest
+                    )
+                )
+                {
+                    throw new PhysicalTargetManifestCommitIndeterminateException(exception);
+                }
             }
 
-            string manifestContents = ConfigurationOwnershipManifestSerializer.Serialize(
-                manifestToWrite
-                    ?? throw new InvalidOperationException(
-                        "Configuration execution requires a prepared ownership manifest."
-                    )
+            VerifyCurrentPhysicalTargetManifestMatchesPreparedFinalState(
+                executionFileSystem,
+                manifestPath,
+                preparation.PreparedOwnershipManifest
             );
+            return;
+        }
+
+        string manifestContents = ConfigurationOwnershipManifestSerializer.Serialize(
+            CanonicalizePhysicalTargetManifestForWrite(
+                executionFileSystem,
+                EnsureFinalPhysicalTargetManifestHasNoPreclaimMetadata(
+                    preparation.PreparedOwnershipManifest
+                        ?? throw new InvalidOperationException(
+                            "Configuration execution requires a prepared ownership manifest."
+                        )
+                )
+            )
+        );
+        try
+        {
             ExecuteAtomicWriteWithRollbackRegistration(
                 executionFileSystem,
                 manifestPath,
@@ -413,58 +881,27 @@ public sealed class ConfigurationManager : IConfigurationManager
                 expectedCurrentHashForRollback: ComputeSha256(manifestContents),
                 completedWrites: completedWrites
             );
-            return new PhysicalTargetManifestDispatchPreparation(
-                manifestToWrite,
-                completedWrites.Peek()
-            );
         }
-        catch (Exception exception)
+        catch (FileMutationException exception)
+            when (exception.MutationMayHaveReachedDurableState)
         {
-            RollBackWithoutMaskingConflict(executionFileSystem, completedWrites, exception);
-            throw;
-        }
-    }
-
-    private ValueTask RollBackPhysicalTargetManifestDispatchPreparation(
-        ConfigurationChangePlan plan,
-        PhysicalTargetManifestDispatchPreparation preparation,
-        Exception originalException
-    )
-    {
-        IFileSystem executionFileSystem = fileSystem!;
-        string manifestPath = ownershipManifestPath!;
-        try
-        {
-            using IDisposable crossProcessExecutionLock =
-                plan.TemporaryContainer is null
-                    ? NullDisposable.Instance
-                    : AcquireConfigurationExecutionLock(executionFileSystem, plan, manifestPath);
-            EnsureManifestParentChainIsUsable(executionFileSystem, manifestPath);
-            EnsurePathIsNotUnsupportedReparsePoint(
-                executionFileSystem,
-                manifestPath,
-                "configuration ownership manifest"
-            );
-            RollBackPreparedPhysicalTargetManifestDispatchPreparation(
-                executionFileSystem,
-                preparation
-            );
-        }
-        catch (Exception rollbackException)
-            when (rollbackException is not OperationCanceledException)
-        {
-            var rollbackFailure = new InvalidOperationException(
-                "Configuration rollback failed after an apply/remove error.",
-                rollbackException
-            );
-            rollbackFailure.Data["ConfigurationDispatchExceptionType"] =
-                originalException.GetType().FullName ?? originalException.GetType().Name;
-            rollbackFailure.Data["ConfigurationDispatchExceptionHResult"] =
-                originalException.HResult;
-            throw rollbackFailure;
+            if (
+                !CurrentManifestMatchesPreparedFinalState(
+                    executionFileSystem,
+                    manifestPath,
+                    preparation.PreparedOwnershipManifest
+                )
+            )
+            {
+                throw new PhysicalTargetManifestCommitIndeterminateException(exception);
+            }
         }
 
-        return ValueTask.CompletedTask;
+        VerifyCurrentPhysicalTargetManifestMatchesPreparedFinalState(
+            executionFileSystem,
+            manifestPath,
+            preparation.PreparedOwnershipManifest
+        );
     }
 
     private void EnsureValidForExecution(
@@ -496,8 +933,9 @@ public sealed class ConfigurationManager : IConfigurationManager
 
         EnsureNoOwnershipManifestPathCollisionWithPhysicalTargets(plan);
         EnsureNoFilesystemBackedPhysicalTargetKindSamePathConflicts(plan);
-        EnsurePhysicalTargetDispatchPlanShapeSupported(plan, operation);
+        EnsureGitConfigGoldenSliceSupported(plan);
         EnsureNoReservedInternalNonCiPhysicalTargetPaths(plan);
+        EnsurePhysicalTargetDispatchPlanShapeSupported(fileSystem, plan, operation);
     }
 
     private static void EnsureProjectedOwnershipManifestValid(ConfigurationChangePlan plan)
@@ -507,6 +945,8 @@ public sealed class ConfigurationManager : IConfigurationManager
         {
             throw new ArgumentException(violation, nameof(plan));
         }
+
+        EnsureGitConfigGoldenSliceSupported(plan);
     }
 
     private string? GetValidatePlanValidationViolation(ConfigurationChangePlan plan)
@@ -517,13 +957,23 @@ public sealed class ConfigurationManager : IConfigurationManager
             return violation;
         }
 
+        violation = GetReservedPreclaimMetadataValidationViolation(plan);
+        if (violation is not null)
+        {
+            return violation;
+        }
+
         if (ContainsProjectionOnlyPhysicalTarget(plan))
         {
             violation = GetPhase4DPhysicalScaffoldPrecedencePlanningValidationViolation(plan);
             violation ??= GetOwnershipManifestPathCollisionWithPhysicalTargetsViolation(plan);
             violation ??= GetFilesystemBackedPhysicalTargetKindSamePathConflictViolation(plan);
-            violation ??= GetPhase4DPhysicalScaffoldPlanningViolation(plan);
             violation ??= GetReservedInternalPlanningPhysicalTargetPathViolation(plan);
+            violation ??= GetPhase4DPhysicalScaffoldPlanningViolation(fileSystem, plan);
+            violation ??= GetGitConfigStaticWriterPlanningValidationViolation(
+                plan,
+                GetRejectSecretGitConfigValueWritesBeforeManifestPreclaim()
+            );
             return violation ?? GetProjectionValidationViolation(plan);
         }
 
@@ -567,13 +1017,22 @@ public sealed class ConfigurationManager : IConfigurationManager
         {
             throw new ArgumentException(violation, nameof(plan));
         }
+
+        violation = GetReservedPreclaimMetadataValidationViolation(plan);
+        if (violation is not null)
+        {
+            throw new ArgumentException(violation, nameof(plan));
+        }
     }
 
-    private static void EnsureValidForPlanning(ConfigurationChangePlan plan)
+    private void EnsureValidForPlanning(ConfigurationChangePlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
 
-        string? violation = GetPlanningValidationViolation(plan);
+        string? violation = GetPlanningValidationViolation(
+            plan,
+            GetRejectSecretGitConfigValueWritesBeforeManifestPreclaim()
+        );
         if (violation is not null)
         {
             throw new ArgumentException(violation, nameof(plan));
@@ -594,6 +1053,13 @@ public sealed class ConfigurationManager : IConfigurationManager
     private static string? GetContractValidationViolation(ConfigurationChangePlan plan) =>
         ConfigurationChangePlanPolicy.GetViolation(plan);
 
+    private static string? GetReservedPreclaimMetadataValidationViolation(
+        ConfigurationChangePlan plan
+    ) =>
+        plan.Manifest?.SafeMetadata?.ContainsKey(PhysicalTargetManifestPreclaimMetadataKey) == true
+            ? "Configuration manifest metadata uses a reserved physical target preclaim key."
+            : null;
+
     private static string? GetProjectionValidationViolation(ConfigurationChangePlan plan)
     {
         ConfigurationPlannedOperation[] plannedOperations =
@@ -603,10 +1069,18 @@ public sealed class ConfigurationManager : IConfigurationManager
         return ConfigurationOwnershipManifestPolicy.GetViolation(manifest);
     }
 
-    private static string? GetPlanningValidationViolation(ConfigurationChangePlan plan)
+    private static string? GetPlanningValidationViolation(
+        ConfigurationChangePlan plan,
+        bool rejectSecretValueWrites
+    )
     {
         string? violation = GetContractValidationViolation(plan);
+        violation ??= GetReservedPreclaimMetadataValidationViolation(plan);
         violation ??= GetProjectionValidationViolation(plan);
+        violation ??= GetGitConfigStaticWriterPlanningValidationViolation(
+            plan,
+            rejectSecretValueWrites
+        );
         if (violation is not null)
         {
             return violation;
@@ -640,13 +1114,22 @@ public sealed class ConfigurationManager : IConfigurationManager
             return violation;
         }
 
-        violation = GetPhase4DPhysicalScaffoldPlanningViolation(plan);
+        violation = GetLexicalReservedInternalPlanningPhysicalTargetPathViolation(plan);
         if (violation is not null)
         {
             return violation;
         }
 
-        violation = GetLexicalReservedInternalPlanningPhysicalTargetPathViolation(plan);
+        violation = GetPhase4DPhysicalScaffoldPlanningViolation(null, plan);
+        if (violation is not null)
+        {
+            return violation;
+        }
+
+        violation = GetGitConfigStaticWriterPlanningValidationViolation(
+            plan,
+            rejectSecretValueWrites: true
+        );
         if (violation is not null)
         {
             return violation;
@@ -692,6 +1175,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             ?? GetPhysicalTargetKindSamePathConflictViolation(plan);
 
     private static string? GetPhase4DPhysicalScaffoldPlanningViolation(
+        IFileSystem? fileSystem,
         ConfigurationChangePlan plan
     )
     {
@@ -702,7 +1186,7 @@ public sealed class ConfigurationManager : IConfigurationManager
 
         try
         {
-            EnsurePhysicalTargetDryRunDispatchPlanShapeSupported(plan);
+            EnsurePhysicalTargetDryRunDispatchPlanShapeSupported(fileSystem, plan);
             return null;
         }
         catch (NotSupportedException exception)
@@ -1066,6 +1550,200 @@ public sealed class ConfigurationManager : IConfigurationManager
         };
     }
 
+    private ConfigurationChangePlan CanonicalizePhysicalTargetPlan(ConfigurationChangePlan plan)
+    {
+        if (!plan.Changes.Any(change => change.TargetKind == ConfigurationTargetKind.GitConfig))
+        {
+            return plan;
+        }
+
+        return plan with
+        {
+            Changes = plan.Changes.Select(CanonicalizePhysicalTargetChange).ToArray(),
+        };
+    }
+
+    private ConfigurationChange CanonicalizePhysicalTargetChange(ConfigurationChange change)
+    {
+        if (
+            change.TargetKind == ConfigurationTargetKind.GitConfig
+        )
+        {
+            return change with
+            {
+                TargetPathOrName = CreatePhysicalPathIdentity(
+                    fileSystem: fileSystem!,
+                    change.TargetPathOrName
+                ),
+                Key = GitConfigPhysicalTargetWriter.CanonicalizeSupportedConfigurationKey(
+                    change.Key
+                ),
+            };
+        }
+
+        return change;
+    }
+
+    private ConfigurationChangePlan CanonicalizePhysicalTargetPlanForProjection(
+        ConfigurationChangePlan plan,
+        bool filesystemBacked
+    ) =>
+        filesystemBacked
+            ? CanonicalizePhysicalTargetPlan(plan)
+            : CanonicalizeNoFilesystemPhysicalTargetPlan(plan);
+
+    private static ConfigurationChangePlan CanonicalizeNoFilesystemPhysicalTargetPlan(
+        ConfigurationChangePlan plan
+    )
+    {
+        if (!plan.Changes.Any(change => change.TargetKind == ConfigurationTargetKind.GitConfig))
+        {
+            return plan;
+        }
+
+        return plan with
+        {
+            Changes = plan.Changes.Select(CanonicalizeNoFilesystemPhysicalTargetChange).ToArray(),
+        };
+    }
+
+    private static ConfigurationChange CanonicalizeNoFilesystemPhysicalTargetChange(
+        ConfigurationChange change
+    )
+    {
+        if (change.TargetKind != ConfigurationTargetKind.GitConfig)
+        {
+            return change;
+        }
+
+        return change with
+        {
+            Key = GitConfigPhysicalTargetWriter.CanonicalizeSupportedConfigurationKey(change.Key),
+        };
+    }
+
+    private bool GetRejectSecretGitConfigValueWritesBeforeManifestPreclaim()
+    {
+        if (
+            physicalTargetWriterDispatcher
+            is not IConfigurationPhysicalTargetWriterDispatcherPreclaimPolicy preclaimPolicy
+        )
+        {
+            return true;
+        }
+
+        if (
+            !preclaimPolicy.RejectSecretGitConfigValueWritesBeforeManifestPreclaim
+            && physicalTargetWriterDispatcher
+                is not IConfigurationPhysicalTargetWriterDispatcherValidator
+        )
+        {
+            return true;
+        }
+
+        return preclaimPolicy.RejectSecretGitConfigValueWritesBeforeManifestPreclaim;
+    }
+
+    private void EnsureGitConfigPhysicalWriterPreclaimValidationSupported(
+        ConfigurationChangePlan plan
+    )
+    {
+        string? violation = GetGitConfigStaticWriterPlanningValidationViolation(
+            plan,
+            GetRejectSecretGitConfigValueWritesBeforeManifestPreclaim()
+        );
+        if (violation is not null)
+        {
+            throw new ArgumentException(violation, nameof(plan));
+        }
+    }
+
+    private static string? GetGitConfigStaticWriterPlanningValidationViolation(
+        ConfigurationChangePlan plan,
+        bool rejectSecretValueWrites
+    )
+    {
+        try
+        {
+            foreach (
+                ConfigurationChange change in plan.Changes.Where(change =>
+                    change.TargetKind == ConfigurationTargetKind.GitConfig
+                )
+            )
+            {
+                GitConfigPhysicalTargetWriter.ValidateChangeBeforeManifestPreclaim(
+                    change,
+                    rejectSecretValueWrites
+                );
+            }
+
+            return null;
+        }
+        catch (NotSupportedException exception)
+        {
+            return exception.Message;
+        }
+    }
+
+    private static void ValidateProjectedGitConfigManifestForReturn(
+        ConfigurationOwnershipManifest? manifest
+    )
+    {
+        if (manifest is null)
+        {
+            return;
+        }
+
+        ValidateGitConfigManifestEntriesAreVerifiableNonSecretValueWrites(
+            manifest.Entries.Where(entry => IsValueWritingOperation(entry.Operation))
+        );
+        ValidateGitConfigUseHttpPathManifestEntriesRetainCanonicalTrue(
+            manifest.Entries.Where(entry => IsValueWritingOperation(entry.Operation))
+        );
+    }
+
+    private static ConfigurationOwnershipManifest CanonicalizePhysicalTargetManifestForWrite(
+        IFileSystem fileSystem,
+        ConfigurationOwnershipManifest manifest
+    )
+    {
+        ArgumentNullException.ThrowIfNull(fileSystem);
+        ArgumentNullException.ThrowIfNull(manifest);
+
+        ConfigurationOwnershipManifest canonicalManifest = manifest with
+        {
+            Entries = manifest
+                .Entries.Select((entry, index) =>
+                    CanonicalizePhysicalTargetManifestEntryForWrite(fileSystem, entry) with
+                    {
+                        Sequence = index + 1,
+                    }
+                )
+                .ToArray(),
+        };
+        ConfigurationOwnershipManifestPolicy.EnsureValid(canonicalManifest);
+        ValidatePhysicalTargetManifestEntries(fileSystem, canonicalManifest);
+        return canonicalManifest;
+    }
+
+    private static ConfigurationOwnershipManifestEntry
+        CanonicalizePhysicalTargetManifestEntryForWrite(
+        IFileSystem fileSystem,
+        ConfigurationOwnershipManifestEntry entry
+    )
+    {
+        if (entry.TargetKind != ConfigurationTargetKind.GitConfig)
+        {
+            return entry;
+        }
+
+        return entry with
+        {
+            TargetPathOrName = CreatePhysicalPathIdentity(fileSystem, entry.TargetPathOrName),
+            Key = GitConfigPhysicalTargetWriter.CanonicalizeSupportedConfigurationKey(entry.Key),
+        };
+    }
+
     private ConfigurationOwnershipManifest? Execute(
         ConfigurationPlanResult plannedResult,
         ConfigurationChangePlan plan,
@@ -1101,6 +1779,15 @@ public sealed class ConfigurationManager : IConfigurationManager
                 manifestPath
             );
             ValidateExistingManifest(executionFileSystem, plan, manifestSnapshot, operation);
+            ValidateGitConfigRetainedUseHttpPathOwnershipProofs(
+                executionFileSystem,
+                manifestSnapshot.Existed
+                    ? ConfigurationOwnershipManifestSerializer.Deserialize(
+                        manifestSnapshot.Contents!
+                    )
+                    : null,
+                cancellationToken
+            );
             Dictionary<string, FileRollbackSnapshot> targetSnapshots = CaptureTargetSnapshots(
                 executionFileSystem,
                 plan
@@ -1124,6 +1811,11 @@ public sealed class ConfigurationManager : IConfigurationManager
             );
 
             var completedWrites = new Stack<FileRollbackSnapshot>();
+            bool finalManifestMayExistForRollbackHandling = false;
+            string? finalManifestSha256HashForRollbackHandling = null;
+            FileRollbackSnapshot? preFinalManifestSnapshotForRollbackHandling = null;
+            ConfigurationOwnershipManifest? finalManifestForRollbackHandling = null;
+            bool finalManifestRetainedProofValidationFailedForRollbackHandling = false;
             try
             {
                 foreach (ConfigurationChange change in plan.Changes)
@@ -1151,13 +1843,47 @@ public sealed class ConfigurationManager : IConfigurationManager
                 );
                 if (operation == ConfigurationPlanOperation.Remove)
                 {
+                    ConfigurationOwnershipManifest existingManifest =
+                        ConfigurationOwnershipManifestSerializer.Deserialize(
+                            manifestSnapshot.Contents!
+                        );
+                    ConfigurationOwnershipManifest? remainingManifestBeforeCommit =
+                        CreateRemainingManifestAfterRemove(
+                            executionFileSystem,
+                            existingManifest,
+                            ownershipManifest,
+                            plan
+                        );
+                    string? remainingManifestContents = null;
+                    ValidateGitConfigRetainedUseHttpPathOwnershipProofsAfterGenericMutation(
+                        executionFileSystem,
+                        remainingManifestBeforeCommit,
+                        cancellationToken
+                    );
+                    if (
+                        CreatePhysicalTargetOwnershipProofs(remainingManifestBeforeCommit)
+                            .Length > 0
+                    )
+                    {
+                        remainingManifestContents =
+                            ConfigurationOwnershipManifestSerializer.Serialize(
+                                remainingManifestBeforeCommit!
+                            );
+                        finalManifestSha256HashForRollbackHandling =
+                            ComputeSha256(remainingManifestContents);
+                        preFinalManifestSnapshotForRollbackHandling = manifestSnapshot;
+                        finalManifestForRollbackHandling = remainingManifestBeforeCommit;
+                    }
+
                     ConfigurationOwnershipManifest? remainingManifest = CommitManifestRemove(
                         executionFileSystem,
                         manifestPath,
                         manifestSnapshot,
-                        ownershipManifest,
-                        plan,
-                        completedWrites
+                        remainingManifestBeforeCommit,
+                        remainingManifestContents,
+                        completedWrites,
+                        ref finalManifestMayExistForRollbackHandling,
+                        ref finalManifestSha256HashForRollbackHandling
                     );
                     if (remainingManifest is null)
                     {
@@ -1169,6 +1895,31 @@ public sealed class ConfigurationManager : IConfigurationManager
                         );
                     }
 
+                    try
+                    {
+                        ValidateGitConfigRetainedUseHttpPathOwnershipProofsAfterGenericMutation(
+                            executionFileSystem,
+                            remainingManifest,
+                            cancellationToken
+                        );
+                    }
+                    catch (Exception retainedProofValidationException)
+                        when (retainedProofValidationException is not OperationCanceledException)
+                    {
+                        finalManifestRetainedProofValidationFailedForRollbackHandling = true;
+                        throw;
+                    }
+
+                    finalManifestMayExistForRollbackHandling = false;
+                    finalManifestSha256HashForRollbackHandling = null;
+                    preFinalManifestSnapshotForRollbackHandling = null;
+                    finalManifestForRollbackHandling = null;
+                    finalManifestRetainedProofValidationFailedForRollbackHandling = false;
+                    VerifyCurrentGenericManifestMatchesPreparedFinalState(
+                        executionFileSystem,
+                        manifestPath,
+                        remainingManifest
+                    );
                     return remainingManifest;
                 }
                 else
@@ -1178,17 +1929,60 @@ public sealed class ConfigurationManager : IConfigurationManager
                         ?? throw new InvalidOperationException(
                             "Configuration apply execution requires a precomputed merged manifest."
                         );
+                    ValidateGitConfigRetainedUseHttpPathOwnershipProofsAfterGenericMutation(
+                        executionFileSystem,
+                        mergedOwnershipManifest,
+                        cancellationToken
+                    );
                     string manifestContents = ConfigurationOwnershipManifestSerializer.Serialize(
                         mergedOwnershipManifest
                     );
+                    string manifestContentsSha256Hash = ComputeSha256(manifestContents);
+                    if (CreatePhysicalTargetOwnershipProofs(mergedOwnershipManifest).Length > 0)
+                    {
+                        finalManifestSha256HashForRollbackHandling =
+                            manifestContentsSha256Hash;
+                        preFinalManifestSnapshotForRollbackHandling = manifestSnapshot;
+                        finalManifestForRollbackHandling = mergedOwnershipManifest;
+                    }
+
                     ExecuteAtomicWriteWithRollbackRegistration(
                         executionFileSystem,
                         manifestPath,
                         manifestContents,
                         options: AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly,
                         snapshot: manifestSnapshot,
-                        expectedCurrentHashForRollback: ComputeSha256(manifestContents),
-                        completedWrites: completedWrites
+                        expectedCurrentHashForRollback: manifestContentsSha256Hash,
+                        completedWrites: completedWrites,
+                        unsafeFinalManifestMayExistForRollbackDeletion:
+                            ref finalManifestMayExistForRollbackHandling,
+                        unsafeFinalManifestSha256HashForRollbackDeletion:
+                            ref finalManifestSha256HashForRollbackHandling
+                    );
+                    try
+                    {
+                        ValidateGitConfigRetainedUseHttpPathOwnershipProofsAfterGenericMutation(
+                            executionFileSystem,
+                            mergedOwnershipManifest,
+                            cancellationToken
+                        );
+                    }
+                    catch (Exception retainedProofValidationException)
+                        when (retainedProofValidationException is not OperationCanceledException)
+                    {
+                        finalManifestRetainedProofValidationFailedForRollbackHandling = true;
+                        throw;
+                    }
+
+                    finalManifestMayExistForRollbackHandling = false;
+                    finalManifestSha256HashForRollbackHandling = null;
+                    preFinalManifestSnapshotForRollbackHandling = null;
+                    finalManifestForRollbackHandling = null;
+                    finalManifestRetainedProofValidationFailedForRollbackHandling = false;
+                    VerifyCurrentGenericManifestMatchesPreparedFinalState(
+                        executionFileSystem,
+                        manifestPath,
+                        mergedOwnershipManifest
                     );
                     return mergedOwnershipManifest;
                 }
@@ -1196,7 +1990,33 @@ public sealed class ConfigurationManager : IConfigurationManager
 
             catch (Exception exception)
             {
-                RollBackWithoutMaskingConflict(executionFileSystem, completedWrites, exception);
+                if (
+                    finalManifestMayExistForRollbackHandling
+                    && !string.IsNullOrWhiteSpace(finalManifestSha256HashForRollbackHandling)
+                    && preFinalManifestSnapshotForRollbackHandling is not null
+                )
+                {
+                    RollBackGenericMutationWithFinalManifestHandling(
+                        executionFileSystem,
+                        manifestPath,
+                        plan,
+                        completedWrites,
+                        finalManifestForRollbackHandling,
+                        preFinalManifestSnapshotForRollbackHandling,
+                        finalManifestSha256HashForRollbackHandling,
+                        finalManifestRetainedProofValidationFailedForRollbackHandling,
+                        exception
+                    );
+                }
+                else
+                {
+                    RollBackWithoutMaskingConflict(
+                        executionFileSystem,
+                        completedWrites,
+                        exception
+                    );
+                }
+
                 DeleteTemporaryContainerAfterRollback(executionFileSystem, plan, containerSnapshot);
                 throw;
             }
@@ -1253,13 +2073,14 @@ public sealed class ConfigurationManager : IConfigurationManager
             string manifestPath = ownershipManifestPath!;
             if (IsProjectionOnlyPhysicalTargetPlan(plan))
             {
-                EnsurePhysicalTargetDryRunDispatchPlanShapeSupported(plan);
+                EnsurePhysicalTargetDryRunDispatchPlanShapeSupported(fileSystem, plan);
                 EnsureConditionalFileMutationsSupported(dryRunFileSystem);
                 return SimulateProjectionOnlyPhysicalTargetDryRun(
                     dryRunFileSystem,
                     manifestPath,
                     plannedResult,
-                    plan
+                    plan,
+                    cancellationToken
                 );
             }
 
@@ -1288,7 +2109,7 @@ public sealed class ConfigurationManager : IConfigurationManager
                 );
             }
 
-            if (hasValueWritingChanges)
+            if (hasValueWritingChanges || !hasRemoveChanges)
             {
                 ValidateExistingManifest(
                     dryRunFileSystem,
@@ -1310,6 +2131,11 @@ public sealed class ConfigurationManager : IConfigurationManager
             ConfigurationOwnershipManifest? baseManifest = manifestSnapshot.Existed
                 ? ConfigurationOwnershipManifestSerializer.Deserialize(manifestSnapshot.Contents!)
                 : null;
+            ValidateGitConfigRetainedUseHttpPathOwnershipProofs(
+                dryRunFileSystem,
+                baseManifest,
+                cancellationToken
+            );
             if (hasRemoveChanges)
             {
                 baseManifest = CreateRemainingManifestAfterRemove(
@@ -1342,11 +2168,12 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
     }
 
-    private static ConfigurationPlanResult SimulateProjectionOnlyPhysicalTargetDryRun(
+    private ConfigurationPlanResult SimulateProjectionOnlyPhysicalTargetDryRun(
         IFileSystem dryRunFileSystem,
         string manifestPath,
         ConfigurationPlanResult plannedResult,
-        ConfigurationChangePlan plan
+        ConfigurationChangePlan plan,
+        CancellationToken cancellationToken
     )
     {
         EnsureManifestParentChainIsUsable(dryRunFileSystem, manifestPath);
@@ -1389,6 +2216,15 @@ public sealed class ConfigurationManager : IConfigurationManager
         ConfigurationOwnershipManifest? baseManifest = manifestSnapshot.Existed
             ? ConfigurationOwnershipManifestSerializer.Deserialize(manifestSnapshot.Contents!)
             : null;
+        ValidateProjectionOnlyPhysicalTargetDryRunPhysicalState(
+            dryRunFileSystem,
+            plan,
+            hasRemoveChanges
+                ? ConfigurationPlanOperation.Remove
+                : ConfigurationPlanOperation.Apply,
+            baseManifest,
+            cancellationToken
+        );
         if (hasRemoveChanges)
         {
             baseManifest = CreateRemainingManifestAfterRemove(
@@ -1417,6 +2253,38 @@ public sealed class ConfigurationManager : IConfigurationManager
         };
     }
 
+    private void ValidateProjectionOnlyPhysicalTargetDryRunPhysicalState(
+        IFileSystem dryRunFileSystem,
+        ConfigurationChangePlan plan,
+        ConfigurationPlanOperation operation,
+        ConfigurationOwnershipManifest? existingManifest,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!plan.Changes.All(change => change.TargetKind == ConfigurationTargetKind.GitConfig))
+        {
+            return;
+        }
+
+        EnsureGitConfigPhysicalWriterPreclaimValidationSupported(plan);
+        ConfigurationPhysicalTargetWriterDispatcher? fallbackDispatcher = null;
+        IConfigurationPhysicalTargetWriterDispatcherValidator validator =
+            physicalTargetWriterDispatcher as IConfigurationPhysicalTargetWriterDispatcherValidator
+            ?? (fallbackDispatcher ??= new ConfigurationPhysicalTargetWriterDispatcher(
+                dryRunFileSystem
+            ));
+        validator
+            .Validate(
+                new ConfigurationPhysicalTargetWriterRequest(
+                    operation,
+                    ConfigurationTargetKind.GitConfig,
+                    plan.Changes,
+                    CreatePhysicalTargetOwnershipProofs(existingManifest)
+                ),
+                cancellationToken
+            );
+    }
+
     private static IDisposable AcquireConfigurationExecutionLock(
         IFileSystem fileSystem,
         ConfigurationChangePlan plan,
@@ -1428,10 +2296,12 @@ public sealed class ConfigurationManager : IConfigurationManager
             return NullDisposable.Instance;
         }
 
-        string productOwnedRoot = fileSystem.GetFullPath(plan.TemporaryContainer!.ProductOwnedPath);
+        string lockScopeRoot = fileSystem.GetFullPath(
+            plan.TemporaryContainer?.ProductOwnedPath ?? manifestPath
+        );
         string lockDirectory = CreateConfigurationExecutionLockDirectory(
             fileSystem,
-            productOwnedRoot,
+            lockScopeRoot,
             manifestPath
         );
 
@@ -1504,19 +2374,13 @@ public sealed class ConfigurationManager : IConfigurationManager
         IFileSystem fileSystem,
         string manifestPath,
         FileRollbackSnapshot manifestSnapshot,
-        ConfigurationOwnershipManifest projectedManifest,
-        ConfigurationChangePlan plan,
-        Stack<FileRollbackSnapshot> completedWrites
+        ConfigurationOwnershipManifest? remainingManifest,
+        string? remainingManifestContents,
+        Stack<FileRollbackSnapshot> completedWrites,
+        ref bool unsafeFinalManifestMayExistForRollbackDeletion,
+        ref string? unsafeFinalManifestSha256HashForRollbackDeletion
     )
     {
-        ConfigurationOwnershipManifest existingManifest =
-            ConfigurationOwnershipManifestSerializer.Deserialize(manifestSnapshot.Contents!);
-        ConfigurationOwnershipManifest? remainingManifest = CreateRemainingManifestAfterRemove(
-            fileSystem,
-            existingManifest,
-            projectedManifest,
-            plan
-        );
         if (remainingManifest is null)
         {
             ExecuteDeleteWithRollbackRegistration(
@@ -1526,20 +2390,27 @@ public sealed class ConfigurationManager : IConfigurationManager
                 expectedCurrentHashForRollback: null,
                 completedWrites
             );
+            unsafeFinalManifestMayExistForRollbackDeletion = false;
+            unsafeFinalManifestSha256HashForRollbackDeletion = null;
             return null;
         }
 
-        string remainingManifestContents = ConfigurationOwnershipManifestSerializer.Serialize(
+        remainingManifestContents ??= ConfigurationOwnershipManifestSerializer.Serialize(
             remainingManifest
         );
+        string remainingManifestContentsSha256Hash = ComputeSha256(remainingManifestContents);
         ExecuteAtomicWriteWithRollbackRegistration(
             fileSystem,
             manifestPath,
             remainingManifestContents,
             options: AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly,
             snapshot: manifestSnapshot,
-            expectedCurrentHashForRollback: ComputeSha256(remainingManifestContents),
-            completedWrites: completedWrites
+            expectedCurrentHashForRollback: remainingManifestContentsSha256Hash,
+            completedWrites: completedWrites,
+            unsafeFinalManifestMayExistForRollbackDeletion:
+                ref unsafeFinalManifestMayExistForRollbackDeletion,
+            unsafeFinalManifestSha256HashForRollbackDeletion:
+                ref unsafeFinalManifestSha256HashForRollbackDeletion
         );
         return remainingManifest;
     }
@@ -1575,6 +2446,10 @@ public sealed class ConfigurationManager : IConfigurationManager
                     .Select((entry, index) => entry with { Sequence = index + 1 })
                     .ToArray(),
             };
+            valueOnlyManifest = CanonicalizePhysicalTargetManifestForWrite(
+                fileSystem,
+                valueOnlyManifest
+            );
             ValidateMergedManifestForApply(fileSystem, plan, valueOnlyManifest);
             return valueOnlyManifest;
         }
@@ -1616,6 +2491,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             Entries = mergedEntries.Select((entry, index) => entry with { Sequence = index + 1 })
                 .ToArray(),
         };
+        mergedManifest = CanonicalizePhysicalTargetManifestForWrite(fileSystem, mergedManifest);
         ValidateMergedManifestForApply(fileSystem, plan, mergedManifest);
         return mergedManifest;
     }
@@ -1640,8 +2516,14 @@ public sealed class ConfigurationManager : IConfigurationManager
     {
         if (existingManifest is null)
         {
-            ValidateMergedManifestForProjectionOnlyDryRun(fileSystem, plan, projectedManifest);
-            return projectedManifest;
+            ConfigurationOwnershipManifest canonicalProjectedManifest =
+                CanonicalizePhysicalTargetManifestForWrite(fileSystem, projectedManifest);
+            ValidateMergedManifestForProjectionOnlyDryRun(
+                fileSystem,
+                plan,
+                canonicalProjectedManifest
+            );
+            return canonicalProjectedManifest;
         }
 
         var replacements = projectedManifest.Entries.ToDictionary(
@@ -1681,6 +2563,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             Entries = mergedEntries.Select((entry, index) => entry with { Sequence = index + 1 })
                 .ToArray(),
         };
+        mergedManifest = CanonicalizePhysicalTargetManifestForWrite(fileSystem, mergedManifest);
         ValidateMergedManifestForProjectionOnlyDryRun(fileSystem, plan, mergedManifest);
         return mergedManifest;
     }
@@ -1730,6 +2613,8 @@ public sealed class ConfigurationManager : IConfigurationManager
                 || remainingEntries.Any(entry => entry.IsSecretValue),
             Entries = remainingEntries,
         };
+        remainingManifest =
+            CanonicalizePhysicalTargetManifestForWrite(fileSystem, remainingManifest);
         ConfigurationOwnershipManifestPolicy.EnsureValid(remainingManifest);
         return remainingManifest;
     }
@@ -1791,7 +2676,11 @@ public sealed class ConfigurationManager : IConfigurationManager
             ? GetPathIdentityComparison()
             : StringComparison.Ordinal;
         return string.Equals(changeTargetPathOrName, entryTargetPathOrName, targetPathComparison)
-            && string.Equals(change.Key, entry.Key, StringComparison.Ordinal);
+            && string.Equals(
+                CanonicalizePhysicalTargetManifestKey(change.TargetKind, change.Key),
+                CanonicalizePhysicalTargetManifestKey(entry.TargetKind, entry.Key),
+                StringComparison.Ordinal
+            );
     }
 
     private static string CreateEntryMergeKey(
@@ -1813,7 +2702,11 @@ public sealed class ConfigurationManager : IConfigurationManager
         string mergeTargetIdentity = HasCollisionCheckedPhysicalTargetPath(entry.TargetKind)
             ? CreatePhysicalPathIdentity(fileSystem, entry.TargetPathOrName)
             : entry.TargetPathOrName;
-        return CreateEntryKey(entry.TargetKind, mergeTargetIdentity, entry.Key);
+        return CreateEntryKey(
+            entry.TargetKind,
+            mergeTargetIdentity,
+            CanonicalizePhysicalTargetManifestKey(entry.TargetKind, entry.Key)
+        );
     }
 
     private static EntryMergeKeyComparer GetEntryMergeKeyComparer() =>
@@ -1824,6 +2717,14 @@ public sealed class ConfigurationManager : IConfigurationManager
         string targetPathOrName,
         string key
     ) => $"{targetKind}\n{targetPathOrName}\n{key}";
+
+    private static string CanonicalizePhysicalTargetManifestKey(
+        ConfigurationTargetKind targetKind,
+        string key
+    ) =>
+        targetKind == ConfigurationTargetKind.GitConfig
+            ? GitConfigPhysicalTargetWriter.CanonicalizeSupportedConfigurationKey(key)
+            : key;
 
     private sealed class EntryMergeKeyComparer : IEqualityComparer<string>
     {
@@ -2288,6 +3189,52 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
     }
 
+    private static void EnsurePhysicalFileParentChainIsUsable(
+        IFileSystem fileSystem,
+        string path,
+        string entryKind
+    )
+    {
+        string fullPath = fileSystem.GetFullPath(path);
+        string? parent = Path.GetDirectoryName(fullPath);
+        if (string.IsNullOrEmpty(parent))
+        {
+            parent = Directory.GetCurrentDirectory();
+        }
+
+        foreach (string directory in EnumerateDirectoryChain(parent))
+        {
+            try
+            {
+                if (IsUnsupportedLinkOrReparsePoint(fileSystem, directory))
+                {
+                    throw new NotSupportedException(
+                        "Filesystem-backed configuration execution rejects symbolic-link or "
+                            + $"reparse-point directories in {entryKind} parent paths."
+                    );
+                }
+
+                if (!fileSystem.DirectoryExists(directory) && fileSystem.FileExists(directory))
+                {
+                    throw new NotSupportedException(
+                        "Filesystem-backed configuration execution rejects non-directory entries "
+                            + $"in {entryKind} parent paths."
+                    );
+                }
+            }
+            catch (FileNotFoundException)
+            {
+                // Missing parent directories are tolerated for final-state reads and rollback
+                // expectation checks. The subsequent conditional mutation or snapshot read fails
+                // closed if the path cannot be proven to match the expected state.
+            }
+            catch (DirectoryNotFoundException)
+            {
+                // See FileNotFoundException handling above.
+            }
+        }
+    }
+
     private static void EnsureConditionalFileMutationsSupported(IFileSystem fileSystem)
     {
         if (!fileSystem.SupportsConditionalFileMutations)
@@ -2397,6 +3344,400 @@ public sealed class ConfigurationManager : IConfigurationManager
 
         return snapshots;
     }
+
+    private static void RegisterPhysicalTargetFileMutationForRollback(
+        string normalizedMutationPath,
+        ConfigurationPhysicalTargetFileMutation mutation,
+        Stack<FileRollbackSnapshot> completedWrites
+    )
+    {
+        if (!CompletedFileMutationRequiresRollbackRegistration(mutation))
+        {
+            return;
+        }
+
+        if (RollbackSnapshotsContainPath(completedWrites, normalizedMutationPath))
+        {
+            return;
+        }
+
+        if (mutation.PreviouslyExisted != (mutation.PreviousContentsBytes is not null))
+        {
+            throw new InvalidOperationException(
+                "Configuration physical target writer reported an invalid completed file "
+                    + "mutation."
+            );
+        }
+
+        RegisterRollbackSnapshot(
+            completedWrites,
+            new FileRollbackSnapshot(
+                normalizedMutationPath,
+                mutation.PreviouslyExisted
+                    ? FileRollbackSnapshotEntryKind.RegularFile
+                    : FileRollbackSnapshotEntryKind.Missing,
+                mutation.PreviousContentsBytes is null
+                    ? null
+                    : DecodeUtf8TextWithoutLeadingBom(mutation.PreviousContentsBytes),
+                mutation.PreviousContentsBytes,
+                mutation.PreviousContentsBytes is null
+                    ? null
+                    : ComputeSha256(mutation.PreviousContentsBytes)
+            ),
+            mutation.ExpectedCurrentSha256Hash
+        );
+    }
+
+    private static bool IsProvenNoRollbackCompletedFileMutationObservation(
+        ConfigurationPhysicalTargetFileMutation mutation
+    ) =>
+        mutation.PreviouslyExisted
+        && mutation.PreviousContentsBytes is not null
+        && !string.IsNullOrWhiteSpace(mutation.ExpectedCurrentSha256Hash)
+        && string.Equals(
+            mutation.ExpectedCurrentSha256Hash,
+            ComputeSha256(mutation.PreviousContentsBytes),
+            StringComparison.Ordinal
+        );
+
+    private static bool CompletedFileMutationRequiresRollbackRegistration(
+        ConfigurationPhysicalTargetFileMutation mutation
+    ) =>
+        mutation.RequiresRollback
+        || !IsProvenNoRollbackCompletedFileMutationObservation(mutation);
+
+    private static bool RollbackSnapshotsContainPath(
+        IEnumerable<FileRollbackSnapshot> snapshots,
+        string path
+    ) =>
+        snapshots.Any(snapshot =>
+            string.Equals(snapshot.Path, path, GetPathIdentityComparison())
+        );
+
+    private static void ValidateAndRegisterCompletedPhysicalTargetFileMutations(
+        IFileSystem fileSystem,
+        ConfigurationChangePlan plan,
+        IEnumerable<ConfigurationPhysicalTargetFileMutation> mutations,
+        Stack<FileRollbackSnapshot> completedWrites
+    )
+    {
+        ConfigurationPhysicalTargetFileMutation[] reportedMutations = mutations.ToArray();
+        string[] expectedGitConfigTargetPaths = plan
+            .Changes.Where(change => change.TargetKind == ConfigurationTargetKind.GitConfig)
+            .Select(change => CreatePhysicalPathIdentity(fileSystem, change.TargetPathOrName))
+            .Distinct(GetPathIdentityComparer())
+            .ToArray();
+        var expectedGitConfigTargetPathSet = new HashSet<string>(
+            expectedGitConfigTargetPaths,
+            GetPathIdentityComparer()
+        );
+        var mutationsByNormalizedPath =
+            new Dictionary<string, List<ConfigurationPhysicalTargetFileMutation>>(
+                GetPathIdentityComparer()
+            );
+        var pathsWithPreviousSnapshotInconsistency = new HashSet<string>(
+            GetPathIdentityComparer()
+        );
+        var mutationsWithPreviousSnapshotInconsistency =
+            new HashSet<ConfigurationPhysicalTargetFileMutation>();
+        InvalidOperationException? reportedMutationException = null;
+
+        foreach (ConfigurationPhysicalTargetFileMutation mutation in reportedMutations)
+        {
+            if (string.IsNullOrWhiteSpace(mutation.Path))
+            {
+                reportedMutationException ??= new InvalidOperationException(
+                    "Configuration physical target writer reported a completed file mutation "
+                        + "with an empty path."
+                );
+                continue;
+            }
+
+            string normalizedMutationPath;
+            try
+            {
+                normalizedMutationPath = CreatePhysicalPathIdentity(fileSystem, mutation.Path);
+            }
+            catch (Exception exception)
+                when (exception is ArgumentException or NotSupportedException or IOException)
+            {
+                reportedMutationException ??= new InvalidOperationException(
+                    "Configuration physical target writer reported a completed file mutation "
+                        + "with an invalid reported path.",
+                    exception
+                );
+                continue;
+            }
+
+            if (
+                expectedGitConfigTargetPaths.Length > 0
+                && !expectedGitConfigTargetPathSet.Contains(normalizedMutationPath)
+            )
+            {
+                reportedMutationException ??= new InvalidOperationException(
+                    "Configuration physical target writer reported a completed file mutation "
+                        + "for an unrelated Git config target path."
+                );
+                continue;
+            }
+
+            if (
+                !mutationsByNormalizedPath.TryGetValue(
+                    normalizedMutationPath,
+                    out List<ConfigurationPhysicalTargetFileMutation>? pathMutations
+                )
+            )
+            {
+                pathMutations = [];
+                mutationsByNormalizedPath.Add(normalizedMutationPath, pathMutations);
+            }
+            else
+            {
+                reportedMutationException ??= new InvalidOperationException(
+                    "Configuration physical target writer reported duplicate completed file "
+                        + "mutations for the same Git config target path."
+                );
+            }
+
+            try
+            {
+                ValidateCompletedPhysicalTargetFileMutationPreviousSnapshot(mutation);
+            }
+            catch (InvalidOperationException exception)
+            {
+                reportedMutationException ??= exception;
+                pathsWithPreviousSnapshotInconsistency.Add(normalizedMutationPath);
+                mutationsWithPreviousSnapshotInconsistency.Add(mutation);
+            }
+
+            pathMutations.Add(mutation);
+        }
+
+        foreach (
+            KeyValuePair<string, List<ConfigurationPhysicalTargetFileMutation>> mutationsByPath in
+                mutationsByNormalizedPath
+        )
+        {
+            ConfigurationPhysicalTargetFileMutation[] candidateMutations = mutationsByPath
+                .Value.Where(mutation =>
+                    !mutationsWithPreviousSnapshotInconsistency.Contains(mutation)
+                    && (
+                        !pathsWithPreviousSnapshotInconsistency.Contains(mutationsByPath.Key)
+                        || mutation.PreviouslyExisted
+                    )
+                )
+                .ToArray();
+            InvalidOperationException? candidateException =
+                ValidateAndRegisterBestCompletedPhysicalTargetFileMutation(
+                    fileSystem,
+                    mutationsByPath.Key,
+                    candidateMutations,
+                    completedWrites
+                );
+            reportedMutationException ??= candidateException;
+        }
+
+        if (reportedMutationException is not null)
+        {
+            throw reportedMutationException;
+        }
+
+        foreach (string expectedPath in expectedGitConfigTargetPaths)
+        {
+            if (!mutationsByNormalizedPath.ContainsKey(expectedPath))
+            {
+                throw new InvalidOperationException(
+                    "Configuration physical target writer did not report a completed file "
+                        + "mutation or observation for every Git config target path."
+                );
+            }
+        }
+    }
+
+    private static InvalidOperationException?
+        ValidateAndRegisterBestCompletedPhysicalTargetFileMutation(
+            IFileSystem fileSystem,
+            string normalizedMutationPath,
+            IReadOnlyList<ConfigurationPhysicalTargetFileMutation> mutations,
+            Stack<FileRollbackSnapshot> completedWrites
+        )
+    {
+        InvalidOperationException? candidateException = null;
+
+        foreach (
+            ConfigurationPhysicalTargetFileMutation mutation in mutations.Where(
+                CompletedFileMutationRequiresRollbackRegistration
+            )
+        )
+        {
+            if (
+                TryValidateAndRegisterCompletedPhysicalTargetFileMutation(
+                    fileSystem,
+                    normalizedMutationPath,
+                    mutation,
+                    completedWrites,
+                    ref candidateException
+                )
+            )
+            {
+                return null;
+            }
+        }
+
+        foreach (
+            ConfigurationPhysicalTargetFileMutation mutation in mutations.Where(mutation =>
+                !CompletedFileMutationRequiresRollbackRegistration(mutation)
+            )
+        )
+        {
+            if (
+                TryValidateAndRegisterCompletedPhysicalTargetFileMutation(
+                    fileSystem,
+                    normalizedMutationPath,
+                    mutation,
+                    completedWrites,
+                    ref candidateException
+                )
+            )
+            {
+                return null;
+            }
+        }
+
+        return candidateException;
+    }
+
+    private static bool TryValidateAndRegisterCompletedPhysicalTargetFileMutation(
+        IFileSystem fileSystem,
+        string normalizedMutationPath,
+        ConfigurationPhysicalTargetFileMutation mutation,
+        Stack<FileRollbackSnapshot> completedWrites,
+        ref InvalidOperationException? candidateException
+    )
+    {
+        try
+        {
+            ValidateCompletedPhysicalTargetFileMutation(
+                fileSystem,
+                normalizedMutationPath,
+                mutation
+            );
+            RegisterPhysicalTargetFileMutationForRollback(
+                normalizedMutationPath,
+                mutation,
+                completedWrites
+            );
+            return true;
+        }
+        catch (InvalidOperationException exception)
+        {
+            candidateException ??= exception;
+            return false;
+        }
+    }
+
+    private static void ValidateCompletedPhysicalTargetFileMutation(
+        IFileSystem fileSystem,
+        string normalizedMutationPath,
+        ConfigurationPhysicalTargetFileMutation mutation
+    )
+    {
+        ValidateCompletedPhysicalTargetFileMutationPreviousSnapshot(mutation);
+        if (string.IsNullOrWhiteSpace(mutation.ExpectedCurrentSha256Hash))
+        {
+            throw new InvalidOperationException(
+                "Configuration physical target writer reported a completed file mutation "
+                    + "without an expected current hash."
+            );
+        }
+
+        EnsurePhysicalFileParentChainIsUsable(
+            fileSystem,
+            normalizedMutationPath,
+            "completed physical target mutation"
+        );
+        EnsurePathIsNotUnsupportedReparsePoint(
+            fileSystem,
+            normalizedMutationPath,
+            "completed physical target mutation"
+        );
+        FileRollbackSnapshot currentSnapshot = CaptureRollbackSnapshot(
+            fileSystem,
+            normalizedMutationPath
+        );
+        ValidateFileSnapshotIsRegularFile(currentSnapshot, "completed physical target mutation");
+        if (
+            !currentSnapshot.Existed
+            || !string.Equals(
+                currentSnapshot.ContentsSha256Hash,
+                mutation.ExpectedCurrentSha256Hash,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "Configuration conflict: completed physical target mutation current hash "
+                    + "does not match."
+            );
+        }
+    }
+
+    private static void ValidateCompletedPhysicalTargetFileMutationPreviousSnapshot(
+        ConfigurationPhysicalTargetFileMutation mutation
+    )
+    {
+        if (mutation.PreviouslyExisted == (mutation.PreviousContentsBytes is not null))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            "Configuration physical target writer reported an invalid completed file mutation."
+        );
+    }
+
+    private static ConfigurationPhysicalTargetOwnershipProof[] CreatePhysicalTargetOwnershipProofs(
+        ConfigurationOwnershipManifest? existingManifest
+    )
+    {
+        if (existingManifest is null)
+        {
+            return [];
+        }
+
+        if (ContainsPhysicalTargetManifestPreclaimMetadataKey(existingManifest))
+        {
+            return [];
+        }
+
+        return existingManifest
+            .Entries.Where(entry => entry.TargetKind == ConfigurationTargetKind.GitConfig)
+            .Select(entry => new ConfigurationPhysicalTargetOwnershipProof(
+                entry.TargetKind,
+                entry.TargetPathOrName,
+                CanonicalizePhysicalTargetManifestKey(entry.TargetKind, entry.Key),
+                entry.PlannedValueSha256
+            ))
+            .ToArray();
+    }
+
+    private static bool IsPhysicalTargetManifestPreclaim(
+        ConfigurationOwnershipManifest manifest
+    ) =>
+        manifest.SafeMetadata.TryGetValue(
+            PhysicalTargetManifestPreclaimMetadataKey,
+            out string? state
+        )
+        && string.Equals(
+            state,
+            PhysicalTargetManifestPreclaimMetadataValue,
+            StringComparison.Ordinal
+        );
+
+    private static bool ContainsPhysicalTargetManifestPreclaimMetadataKey(
+        ConfigurationOwnershipManifest manifest
+    ) =>
+        manifest.SafeMetadata.ContainsKey(PhysicalTargetManifestPreclaimMetadataKey);
 
     private static FileRollbackSnapshot CaptureValidatedTargetRollbackSnapshot(
         IFileSystem fileSystem,
@@ -2590,18 +3931,13 @@ public sealed class ConfigurationManager : IConfigurationManager
     }
 
     private static void EnsurePhysicalTargetDispatchPlanShapeSupported(
+        IFileSystem? fileSystem,
         ConfigurationChangePlan plan,
         ConfigurationPlanOperation operation
     )
     {
         EnsurePhysicalTargetDispatchTargetShapeSupported(plan, "apply/remove");
-        if (plan.Changes.Count != 1)
-        {
-            throw new NotSupportedException(
-                "Configuration apply/remove currently supports dispatching only one 4D "
-                    + "physical target change per plan."
-            );
-        }
+        EnsurePhysicalTargetDispatchBatchShapeSupported(fileSystem, plan, "apply/remove");
 
         if (
             operation == ConfigurationPlanOperation.Apply
@@ -2624,20 +3960,17 @@ public sealed class ConfigurationManager : IConfigurationManager
                     + "target changes."
             );
         }
+
+        EnsureSupportedProjectionOnlyPhysicalTargetKinds(plan, "apply/remove");
     }
 
     private static void EnsurePhysicalTargetDryRunDispatchPlanShapeSupported(
+        IFileSystem? fileSystem,
         ConfigurationChangePlan plan
     )
     {
         EnsurePhysicalTargetDispatchTargetShapeSupported(plan, "dry-run");
-        if (plan.Changes.Count != 1)
-        {
-            throw new NotSupportedException(
-                "Configuration dry-run currently supports dispatching only one 4D physical target "
-                    + "change per plan."
-            );
-        }
+        EnsurePhysicalTargetDispatchBatchShapeSupported(fileSystem, plan, "dry-run");
 
         bool allValueWriting = plan.Changes.All(change =>
             IsValueWritingOperation(change.Operation)
@@ -2652,6 +3985,117 @@ public sealed class ConfigurationManager : IConfigurationManager
                     + "can be executed by apply or remove."
             );
         }
+
+        EnsureSupportedProjectionOnlyPhysicalTargetKinds(plan, "dry-run");
+    }
+
+    private static void EnsurePhysicalTargetDispatchBatchShapeSupported(
+        IFileSystem? fileSystem,
+        ConfigurationChangePlan plan,
+        string operationDescription
+    )
+    {
+        if (plan.Changes.Count != 1)
+        {
+            bool supportedGitConfigBatch =
+                plan.Changes.All(change => change.TargetKind == ConfigurationTargetKind.GitConfig)
+                && AllChangesTargetSameNormalizedPhysicalPath(fileSystem, plan.Changes);
+            if (!supportedGitConfigBatch)
+            {
+                throw new NotSupportedException(
+                    $"Configuration {operationDescription} currently supports dispatching only "
+                        + "one 4D physical target change per plan, except for GitConfig batches "
+                        + "that target the same normalized physical path."
+                );
+            }
+        }
+
+        if (plan.Changes.All(change => change.TargetKind == ConfigurationTargetKind.GitConfig))
+        {
+            EnsureGitConfigGoldenSliceSupported(plan);
+            EnsureNoDuplicateGitConfigPhysicalTargetKeys(plan, operationDescription);
+        }
+    }
+
+    private static void EnsureGitConfigGoldenSliceSupported(ConfigurationChangePlan plan)
+    {
+        foreach (
+            ConfigurationChange change in plan.Changes.Where(change =>
+                change.TargetKind == ConfigurationTargetKind.GitConfig
+            )
+        )
+        {
+            string canonicalKey =
+                GitConfigPhysicalTargetWriter.CanonicalizeSupportedConfigurationKey(change.Key);
+            if (
+                string.Equals(
+                    canonicalKey,
+                    "credential.https://dev.azure.com.useHttpPath",
+                    StringComparison.Ordinal
+                )
+                && IsValueWritingOperation(change.Operation)
+                && !string.Equals(change.Value, "true", StringComparison.Ordinal)
+            )
+            {
+                throw new NotSupportedException(
+                    "GitConfig golden-slice support requires credential "
+                        + "\"https://dev.azure.com\".useHttpPath to have canonical value true."
+                );
+            }
+        }
+    }
+
+    private static void EnsureNoDuplicateGitConfigPhysicalTargetKeys(
+        ConfigurationChangePlan plan,
+        string operationDescription
+    )
+    {
+        if (
+            plan
+                .Changes.Select(change =>
+                    GitConfigPhysicalTargetWriter.CanonicalizeSupportedConfigurationKey(
+                        change.Key
+                    )
+                )
+                .GroupBy(key => key, StringComparer.Ordinal)
+                .Any(group => group.Count() > 1)
+        )
+        {
+            throw new NotSupportedException(
+                $"Configuration {operationDescription} does not support multiple Git config "
+                    + "changes for the same canonical physical key."
+            );
+        }
+    }
+
+    private static bool AllChangesTargetSameNormalizedPhysicalPath(
+        IFileSystem? fileSystem,
+        IReadOnlyList<ConfigurationChange> changes
+    )
+    {
+        string firstPath = CreateDispatchPhysicalPathIdentity(fileSystem, changes[0]);
+        return changes
+            .Skip(1)
+            .All(change =>
+                string.Equals(
+                    CreateDispatchPhysicalPathIdentity(fileSystem, change),
+                    firstPath,
+                    GetPathIdentityComparison()
+                )
+            );
+    }
+
+    private static string CreateDispatchPhysicalPathIdentity(
+        IFileSystem? fileSystem,
+        ConfigurationChange change
+    )
+    {
+        if (fileSystem is null)
+        {
+            return CreatePlanningPhysicalPathIdentity(change);
+        }
+
+        return CreatePhysicalPathIdentity(fileSystem, change.TargetPathOrName);
     }
 
     private static void EnsurePhysicalTargetDispatchTargetShapeSupported(
@@ -2680,6 +4124,28 @@ public sealed class ConfigurationManager : IConfigurationManager
                     + "4D physical target kind per plan."
             );
         }
+
+    }
+
+    private static void EnsureSupportedProjectionOnlyPhysicalTargetKinds(
+        ConfigurationChangePlan plan,
+        string operationDescription
+    )
+    {
+        if (
+            plan.Changes.All(change =>
+                IsSupportedProjectionOnlyPhysicalTarget(change.TargetKind)
+            )
+        )
+        {
+            return;
+        }
+
+        throw new NotSupportedException(
+            $"Configuration {operationDescription} has no registered writer for this 4D "
+                + "physical configuration target kind. Phase 4D.2 currently supports only "
+                + "GitConfig physical targets."
+        );
     }
 
     private static void EnsureSupportedChangeOperations(ConfigurationChangePlan plan)
@@ -2778,6 +4244,14 @@ public sealed class ConfigurationManager : IConfigurationManager
         ValidateFileSnapshotIsRegularFile(manifestSnapshot, "configuration ownership manifest");
         ConfigurationOwnershipManifest existingManifest =
             ConfigurationOwnershipManifestSerializer.Deserialize(manifestSnapshot.Contents!);
+        if (ContainsPhysicalTargetManifestPreclaimMetadataKey(existingManifest))
+        {
+            throw new InvalidOperationException(
+                "Configuration ownership manifest conflict: existing manifest contains reserved "
+                    + "physical target dispatch preclaim metadata."
+            );
+        }
+
         ValidateOwnershipManifestPathDoesNotCollideWithPhysicalTargetEntries(
             fileSystem,
             manifestSnapshot.Path,
@@ -2879,6 +4353,21 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
 
         if (
+            nonCiPhysicalEntries.Any(entry =>
+                entry.TargetKind == ConfigurationTargetKind.GitConfig
+                && !fileSystem.IsPathFullyQualified(entry.TargetPathOrName)
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "Configuration ownership manifest conflict: Git config physical target entries "
+                    + "must use fully qualified target paths."
+            );
+        }
+
+        ValidateGitConfigManifestEntriesAreVerifiableNonSecretValueWrites(nonCiPhysicalEntries);
+        ValidateGitConfigUseHttpPathManifestEntriesRetainCanonicalTrue(nonCiPhysicalEntries);
+        if (
             nonCiPhysicalEntries
                 .Select(entry =>
                     (
@@ -2893,6 +4382,124 @@ public sealed class ConfigurationManager : IConfigurationManager
             throw new InvalidOperationException(
                 "Configuration ownership manifest conflict: physical target entries must not share "
                     + "the same physical target path with entries of another target kind."
+            );
+        }
+
+        if (
+            nonCiPhysicalEntries
+                .Where(entry => entry.TargetKind == ConfigurationTargetKind.GitConfig)
+                .GroupBy(
+                    entry =>
+                        CreateEntryKey(
+                            entry.TargetKind,
+                            CreatePhysicalPathIdentity(fileSystem, entry.TargetPathOrName),
+                            CanonicalizePhysicalTargetManifestKey(entry.TargetKind, entry.Key)
+                        ),
+                    GetEntryMergeKeyComparer()
+                )
+                .Any(group => group.Count() > 1)
+        )
+        {
+            throw new InvalidOperationException(
+                "Configuration ownership manifest conflict: Git config entries must not contain "
+                    + "multiple ownership records for the same canonical physical key."
+            );
+        }
+
+        ValidateNonCiPhysicalManifestEntriesHaveRegisteredRetainedProofSupport(
+            nonCiPhysicalEntries
+        );
+    }
+
+    private static void ValidateNonCiPhysicalManifestEntriesHaveRegisteredRetainedProofSupport(
+        IEnumerable<ConfigurationOwnershipManifestEntry> nonCiPhysicalEntries
+    )
+    {
+        if (
+            nonCiPhysicalEntries.Any(entry =>
+                !HasRegisteredRetainedProofSupport(entry.TargetKind)
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "Configuration ownership manifest conflict: non-CI physical target entries must "
+                    + "have a registered retained-proof validator and writer in this phase."
+            );
+        }
+    }
+
+    private static bool HasRegisteredRetainedProofSupport(
+        ConfigurationTargetKind targetKind
+    ) => targetKind == ConfigurationTargetKind.GitConfig;
+
+    private static void ValidateGitConfigManifestEntriesAreVerifiableNonSecretValueWrites(
+        IEnumerable<ConfigurationOwnershipManifestEntry> entries
+    )
+    {
+        foreach (
+            ConfigurationOwnershipManifestEntry entry in entries.Where(entry =>
+                entry.TargetKind == ConfigurationTargetKind.GitConfig
+            )
+        )
+        {
+            if (
+                IsValueWritingOperation(entry.Operation)
+                && entry.HasPlannedValue
+                && !entry.IsSecretValue
+                && IsLowercaseSha256Hex(entry.PlannedValueSha256)
+            )
+            {
+                continue;
+            }
+
+            throw new InvalidOperationException(
+                "Configuration ownership manifest conflict: Git config physical target entries "
+                    + "must be non-secret value-writing entries with verifiable planned value "
+                    + "SHA-256 hashes."
+            );
+        }
+    }
+
+    private static void ValidateGitConfigUseHttpPathManifestEntriesRetainCanonicalTrue(
+        IEnumerable<ConfigurationOwnershipManifestEntry> entries
+    )
+    {
+        foreach (
+            ConfigurationOwnershipManifestEntry entry in entries.Where(entry =>
+                entry.TargetKind == ConfigurationTargetKind.GitConfig
+            )
+        )
+        {
+            string canonicalKey = CanonicalizePhysicalTargetManifestKey(
+                entry.TargetKind,
+                entry.Key
+            );
+            if (
+                !string.Equals(
+                    canonicalKey,
+                    GitConfigDevAzureComUseHttpPathKey,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                continue;
+            }
+
+            if (
+                string.Equals(
+                    entry.PlannedValueSha256,
+                    GitConfigDevAzureComUseHttpPathTrueSha256,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                continue;
+            }
+
+            throw new InvalidOperationException(
+                "Configuration ownership manifest conflict: retained Git config credential "
+                    + "\"https://dev.azure.com\".useHttpPath entries must use canonical value "
+                    + "true."
             );
         }
     }
@@ -3112,6 +4719,75 @@ public sealed class ConfigurationManager : IConfigurationManager
         return snapshot;
     }
 
+    private static FileRollbackSnapshot ValidateCurrentManifestBeforePhysicalTargetManifestCommit(
+        IFileSystem fileSystem,
+        string manifestPath,
+        ConfigurationChangePlan plan,
+        ConfigurationPlanOperation operation,
+        FileRollbackSnapshot preparedManifestSnapshot
+    )
+    {
+        EnsureManifestParentChainIsUsable(fileSystem, manifestPath);
+        EnsurePathIsNotUnsupportedReparsePoint(
+            fileSystem,
+            manifestPath,
+            "configuration ownership manifest"
+        );
+        FileRollbackSnapshot snapshot = CaptureRollbackSnapshot(fileSystem, manifestPath);
+        if (!FileRollbackSnapshotsRepresentSameState(snapshot, preparedManifestSnapshot))
+        {
+            throw new InvalidOperationException(
+                "Configuration ownership manifest conflict: manifest changed during physical "
+                    + "target dispatch."
+            );
+        }
+
+        ValidateExistingManifest(fileSystem, plan, snapshot, operation);
+        return snapshot;
+    }
+
+    private static FileRollbackSnapshot ValidatePreparedManifestPreclaimStillCurrent(
+        IFileSystem fileSystem,
+        string manifestPath,
+        FileRollbackSnapshot preparedManifestSnapshot
+    )
+    {
+        EnsureManifestParentChainIsUsable(fileSystem, manifestPath);
+        EnsurePathIsNotUnsupportedReparsePoint(
+            fileSystem,
+            manifestPath,
+            "configuration ownership manifest"
+        );
+        FileRollbackSnapshot snapshot = CaptureRollbackSnapshot(fileSystem, manifestPath);
+        if (!FileRollbackSnapshotsRepresentSameState(snapshot, preparedManifestSnapshot))
+        {
+            throw new InvalidOperationException(
+                "Configuration ownership manifest conflict: manifest changed during physical "
+                    + "target dispatch."
+            );
+        }
+
+        return snapshot;
+    }
+
+    private static bool FileRollbackSnapshotsRepresentSameState(
+        FileRollbackSnapshot currentSnapshot,
+        FileRollbackSnapshot expectedSnapshot
+    )
+    {
+        if (currentSnapshot.EntryKind != expectedSnapshot.EntryKind)
+        {
+            return false;
+        }
+
+        return currentSnapshot.EntryKind != FileRollbackSnapshotEntryKind.RegularFile
+            || string.Equals(
+                currentSnapshot.ContentsSha256Hash,
+                expectedSnapshot.ContentsSha256Hash,
+                StringComparison.Ordinal
+            );
+    }
+
     private static void ValidateExpectedHash(
         string? expectedMetadata,
         string actualHash,
@@ -3224,6 +4900,59 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
     }
 
+    private static void ExecuteAtomicWriteWithRollbackRegistration(
+        IFileSystem fileSystem,
+        string path,
+        string contents,
+        AtomicWriteOptions options,
+        FileRollbackSnapshot snapshot,
+        string? expectedCurrentHashForRollback,
+        Stack<FileRollbackSnapshot> completedWrites,
+        ref bool unsafeFinalManifestMayExistForRollbackDeletion,
+        ref string? unsafeFinalManifestSha256HashForRollbackDeletion
+    )
+    {
+        try
+        {
+            ExecuteAtomicWriteWithRollbackRegistration(
+                fileSystem,
+                path,
+                contents,
+                options,
+                snapshot,
+                expectedCurrentHashForRollback,
+                completedWrites
+            );
+            unsafeFinalManifestMayExistForRollbackDeletion =
+                !string.IsNullOrWhiteSpace(
+                    unsafeFinalManifestSha256HashForRollbackDeletion
+                );
+        }
+        catch (FileMutationException exception)
+            when (exception.MutationMayHaveReachedDurableState)
+        {
+            unsafeFinalManifestMayExistForRollbackDeletion =
+                !string.IsNullOrWhiteSpace(
+                    unsafeFinalManifestSha256HashForRollbackDeletion
+                );
+            throw;
+        }
+        catch (FileMutationException exception)
+            when (!exception.MutationMayHaveReachedDurableState)
+        {
+            unsafeFinalManifestMayExistForRollbackDeletion = false;
+            unsafeFinalManifestSha256HashForRollbackDeletion = null;
+            throw;
+        }
+        catch (Exception exception)
+            when (exception is not OperationCanceledException and not FileMutationException)
+        {
+            unsafeFinalManifestMayExistForRollbackDeletion = false;
+            unsafeFinalManifestSha256HashForRollbackDeletion = null;
+            throw;
+        }
+    }
+
     private static void ExecuteDeleteWithRollbackRegistration(
         IFileSystem fileSystem,
         string path,
@@ -3265,27 +4994,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             FileRollbackSnapshot snapshot = snapshots.Pop();
             try
             {
-                if (snapshot.Existed)
-                {
-                    fileSystem.AtomicWriteAllBytes(
-                        snapshot.Path,
-                        snapshot.ContentsBytes!,
-                        options: AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly,
-                        expectation: CreateRollbackCurrentExpectation(snapshot)
-                    );
-                }
-                else
-                {
-                    if (!fileSystem.FileExists(snapshot.Path))
-                    {
-                        continue;
-                    }
-
-                    fileSystem.DeleteFile(
-                        snapshot.Path,
-                        CreateRollbackCurrentExpectation(snapshot)
-                    );
-                }
+                RollBackSnapshot(fileSystem, snapshot);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
@@ -3300,6 +5009,29 @@ public sealed class ConfigurationManager : IConfigurationManager
                 rollbackException
             );
         }
+    }
+
+    private static void RollBackSnapshot(IFileSystem fileSystem, FileRollbackSnapshot snapshot)
+    {
+        EnsurePhysicalFileParentChainIsUsable(fileSystem, snapshot.Path, "rollback target");
+        EnsurePathIsNotUnsupportedReparsePoint(fileSystem, snapshot.Path, "rollback target");
+        if (snapshot.Existed)
+        {
+            fileSystem.AtomicWriteAllBytes(
+                snapshot.Path,
+                snapshot.ContentsBytes!,
+                options: AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly,
+                expectation: CreateRollbackCurrentExpectation(snapshot)
+            );
+            return;
+        }
+
+        if (!fileSystem.FileExists(snapshot.Path))
+        {
+            return;
+        }
+
+        fileSystem.DeleteFile(snapshot.Path, CreateRollbackCurrentExpectation(snapshot));
     }
 
     private static void RollBackWithoutMaskingConflict(
@@ -3325,27 +5057,1155 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
     }
 
-    private static void RollBackPreparedPhysicalTargetManifestDispatchPreparation(
+    private static void RollBackGenericMutationWithFinalManifestHandling(
         IFileSystem fileSystem,
-        PhysicalTargetManifestDispatchPreparation preparation
+        string manifestPath,
+        ConfigurationChangePlan plan,
+        Stack<FileRollbackSnapshot> snapshots,
+        ConfigurationOwnershipManifest? expectedFinalManifest,
+        FileRollbackSnapshot preFinalManifestSnapshot,
+        string? expectedFinalManifestSha256Hash,
+        bool retainedProofValidationFailed,
+        Exception originalException
     )
     {
-        FileRollbackSnapshot manifestSnapshot = preparation.ManifestRollbackSnapshot;
-        if (manifestSnapshot.Existed)
+        try
         {
-            fileSystem.AtomicWriteAllBytes(
-                manifestSnapshot.Path,
-                manifestSnapshot.ContentsBytes!,
-                options: AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly,
-                expectation: CreateRollbackCurrentExpectation(manifestSnapshot)
+            if (
+                ShouldDeleteUnsafeFinalManifestAfterGenericRollback(
+                    fileSystem,
+                    manifestPath,
+                    plan,
+                    snapshots,
+                    expectedFinalManifest,
+                    preFinalManifestSnapshot,
+                    retainedProofValidationFailed
+                )
+            )
+            {
+                RollBackGenericMutationAndDeleteUnsafeFinalManifest(
+                    fileSystem,
+                    manifestPath,
+                    plan,
+                    snapshots,
+                    expectedFinalManifestSha256Hash
+                );
+            }
+            else
+            {
+                RollBack(fileSystem, snapshots);
+            }
+        }
+        catch (Exception rollbackException)
+            when (rollbackException is not OperationCanceledException)
+        {
+            if (IsConfigurationConflict(originalException))
+            {
+                originalException.Data["ConfigurationRollbackFailure"] = rollbackException.Message;
+                ExceptionDispatchInfo.Capture(originalException).Throw();
+            }
+
+            throw;
+        }
+    }
+
+    private static bool ShouldDeleteUnsafeFinalManifestAfterGenericRollback(
+        IFileSystem fileSystem,
+        string manifestPath,
+        ConfigurationChangePlan plan,
+        IEnumerable<FileRollbackSnapshot> snapshots,
+        ConfigurationOwnershipManifest? expectedFinalManifest,
+        FileRollbackSnapshot preFinalManifestSnapshot,
+        bool retainedProofValidationFailed
+    )
+    {
+        if (
+            expectedFinalManifest is null
+            || CreatePhysicalTargetOwnershipProofs(expectedFinalManifest).Length == 0
+        )
+        {
+            return false;
+        }
+
+        if (
+            CurrentManifestMatchesValidPreExistingSnapshot(
+                fileSystem,
+                manifestPath,
+                plan,
+                preFinalManifestSnapshot
+            )
+        )
+        {
+            return false;
+        }
+
+        return retainedProofValidationFailed
+            || !OwnershipManifestGitConfigProofsMatchCurrentFiles(
+                fileSystem,
+                expectedFinalManifest
+            )
+            || GenericRollbackWouldInvalidateFinalManifestEntries(
+                fileSystem,
+                manifestPath,
+                plan,
+                expectedFinalManifest,
+                snapshots
             );
+    }
+
+    private static void RollBackGenericMutationAndDeleteUnsafeFinalManifest(
+        IFileSystem fileSystem,
+        string manifestPath,
+        ConfigurationChangePlan plan,
+        Stack<FileRollbackSnapshot> snapshots,
+        string? unsafeFinalManifestSha256HashForRollbackDeletion
+    )
+    {
+        Exception? rollbackException = null;
+        while (snapshots.Count > 0)
+        {
+            FileRollbackSnapshot snapshot = snapshots.Pop();
+            if (string.Equals(snapshot.Path, manifestPath, GetPathIdentityComparison()))
+            {
+                continue;
+            }
+
+            try
+            {
+                RollBackSnapshot(fileSystem, snapshot);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                rollbackException ??= exception;
+            }
+        }
+
+        try
+        {
+            DeleteUnsafeFinalManifestRetainingGitConfigOwnership(
+                fileSystem,
+                manifestPath,
+                plan,
+                unsafeFinalManifestSha256HashForRollbackDeletion
+            );
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            rollbackException ??= exception;
+        }
+
+        if (rollbackException is not null)
+        {
+            throw new InvalidOperationException(
+                "Configuration rollback failed after an apply/remove error.",
+                rollbackException
+            );
+        }
+    }
+
+    private static void DeleteUnsafeFinalManifestRetainingGitConfigOwnership(
+        IFileSystem fileSystem,
+        string manifestPath,
+        ConfigurationChangePlan plan,
+        string? expectedUnsafeFinalManifestSha256Hash
+    )
+    {
+        EnsureManifestParentChainIsUsable(fileSystem, manifestPath);
+        EnsurePathIsNotUnsupportedReparsePoint(
+            fileSystem,
+            manifestPath,
+            "configuration ownership manifest"
+        );
+        FileRollbackSnapshot snapshot = CaptureRollbackSnapshot(fileSystem, manifestPath);
+        if (!snapshot.Existed)
+        {
             return;
         }
 
-        fileSystem.DeleteFile(
-            manifestSnapshot.Path,
-            CreateRollbackCurrentExpectation(manifestSnapshot)
+        ValidateFileSnapshotIsRegularFile(snapshot, "configuration ownership manifest");
+        ConfigurationOwnershipManifest currentManifest;
+        try
+        {
+            currentManifest = ConfigurationOwnershipManifestSerializer.Deserialize(
+                snapshot.Contents!
+            );
+        }
+        catch (Exception exception)
+            when (
+                exception is InvalidOperationException
+                    or System.Text.Json.JsonException
+                    or ArgumentException
+            )
+        {
+            return;
+        }
+
+        if (
+            ContainsPhysicalTargetManifestPreclaimMetadataKey(currentManifest)
+            || !ManifestIdentityMatches(currentManifest, plan)
+            || CreatePhysicalTargetOwnershipProofs(currentManifest).Length == 0
+        )
+        {
+            return;
+        }
+
+        if (
+            string.IsNullOrWhiteSpace(expectedUnsafeFinalManifestSha256Hash)
+            || !string.Equals(
+                snapshot.ContentsSha256Hash,
+                expectedUnsafeFinalManifestSha256Hash,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "Configuration ownership manifest conflict: unsafe final manifest changed before "
+                    + "rollback deletion."
+            );
+        }
+
+        fileSystem.DeleteFile(manifestPath, CreateMutationExpectation(snapshot));
+    }
+
+    private static bool CurrentManifestMatchesValidPreExistingSnapshot(
+        IFileSystem fileSystem,
+        string manifestPath,
+        ConfigurationChangePlan plan,
+        FileRollbackSnapshot preFinalManifestSnapshot
+    )
+    {
+        if (!preFinalManifestSnapshot.Existed)
+        {
+            return false;
+        }
+
+        try
+        {
+            EnsureManifestParentChainIsUsable(fileSystem, manifestPath);
+            EnsurePathIsNotUnsupportedReparsePoint(
+                fileSystem,
+                manifestPath,
+                "configuration ownership manifest"
+            );
+            FileRollbackSnapshot currentSnapshot = CaptureRollbackSnapshot(
+                fileSystem,
+                manifestPath
+            );
+            if (
+                !OwnershipManifestSnapshotsEquivalent(
+                    currentSnapshot,
+                    preFinalManifestSnapshot
+                )
+            )
+            {
+                return false;
+            }
+
+            ConfigurationOwnershipManifest preFinalManifest =
+                ConfigurationOwnershipManifestSerializer.Deserialize(
+                    preFinalManifestSnapshot.Contents!
+                );
+            ValidatePhysicalTargetManifestEntries(fileSystem, preFinalManifest);
+            ValidateCiTemporaryFileManifestWholeFileOwnership(fileSystem, plan, preFinalManifest);
+            return OwnershipManifestGitConfigProofsMatchCurrentFiles(
+                fileSystem,
+                preFinalManifest
+            );
+        }
+        catch (Exception exception)
+            when (
+                exception is IOException
+                    or UnauthorizedAccessException
+                    or NotSupportedException
+                    or InvalidOperationException
+                    or System.Text.Json.JsonException
+                    or ArgumentException
+            )
+        {
+            return false;
+        }
+    }
+
+    private static bool OwnershipManifestSnapshotsEquivalent(
+        FileRollbackSnapshot currentSnapshot,
+        FileRollbackSnapshot expectedSnapshot
+    )
+    {
+        if (FileRollbackSnapshotsRepresentSameState(currentSnapshot, expectedSnapshot))
+        {
+            return true;
+        }
+
+        if (!currentSnapshot.Existed || !expectedSnapshot.Existed)
+        {
+            return false;
+        }
+
+        ValidateFileSnapshotIsRegularFile(currentSnapshot, "configuration ownership manifest");
+        ValidateFileSnapshotIsRegularFile(expectedSnapshot, "configuration ownership manifest");
+        ConfigurationOwnershipManifest currentManifest =
+            ConfigurationOwnershipManifestSerializer.Deserialize(currentSnapshot.Contents!);
+        ConfigurationOwnershipManifest expectedManifest =
+            ConfigurationOwnershipManifestSerializer.Deserialize(expectedSnapshot.Contents!);
+        return string.Equals(
+            ConfigurationOwnershipManifestSerializer.Serialize(currentManifest),
+            ConfigurationOwnershipManifestSerializer.Serialize(expectedManifest),
+            StringComparison.Ordinal
         );
+    }
+
+    private static bool OwnershipManifestGitConfigProofsMatchCurrentFiles(
+        IFileSystem fileSystem,
+        ConfigurationOwnershipManifest manifest
+    )
+    {
+        try
+        {
+            ConfigurationPhysicalTargetOwnershipProof[] ownershipProofs =
+                CreatePhysicalTargetOwnershipProofs(manifest);
+            if (ownershipProofs.Length == 0)
+            {
+                return true;
+            }
+
+            new ConfigurationPhysicalTargetWriterDispatcher(fileSystem)
+                .ValidateRetainedOwnershipProofs(ownershipProofs, CancellationToken.None);
+            return true;
+        }
+        catch (Exception exception)
+            when (
+                exception is IOException
+                    or UnauthorizedAccessException
+                    or NotSupportedException
+                    or InvalidOperationException
+                    or System.Text.Json.JsonException
+                    or ArgumentException
+            )
+        {
+            return false;
+        }
+    }
+
+    private static bool GenericRollbackWouldInvalidateFinalManifestEntries(
+        IFileSystem fileSystem,
+        string manifestPath,
+        ConfigurationChangePlan plan,
+        ConfigurationOwnershipManifest finalManifest,
+        IEnumerable<FileRollbackSnapshot> snapshots
+    )
+    {
+        foreach (FileRollbackSnapshot snapshot in snapshots)
+        {
+            if (string.Equals(snapshot.Path, manifestPath, GetPathIdentityComparison()))
+            {
+                continue;
+            }
+
+            foreach (
+                ConfigurationChange change in plan.Changes.Where(change =>
+                    IsGenericFileTarget(change.TargetKind)
+                    && string.Equals(
+                        CreateCiTemporaryFileWholeFileIdentity(
+                            fileSystem,
+                            plan,
+                            change.TargetPathOrName
+                        ),
+                        Path.TrimEndingDirectorySeparator(
+                            CreatePhysicalPathIdentity(fileSystem, snapshot.Path)
+                        ),
+                        GetPathIdentityComparison()
+                    )
+                )
+            )
+            {
+                if (
+                    !FinalManifestEntryMatchesRolledBackGenericSnapshot(
+                        fileSystem,
+                        plan,
+                        finalManifest,
+                        change,
+                        snapshot
+                    )
+                )
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool FinalManifestEntryMatchesRolledBackGenericSnapshot(
+        IFileSystem fileSystem,
+        ConfigurationChangePlan plan,
+        ConfigurationOwnershipManifest finalManifest,
+        ConfigurationChange change,
+        FileRollbackSnapshot snapshot
+    )
+    {
+        ConfigurationOwnershipManifestEntry[] matchingEntries = finalManifest
+            .Entries.Where(entry => PlanChangeMatchesEntry(fileSystem, plan, change, entry))
+            .ToArray();
+        if (!snapshot.Existed)
+        {
+            return matchingEntries.Length == 0;
+        }
+
+        return matchingEntries.Length == 1
+            && string.Equals(
+                matchingEntries[0].PlannedValueSha256,
+                snapshot.ContentsSha256Hash,
+                StringComparison.Ordinal
+            );
+    }
+
+    private static void RollBackPhysicalTargetDispatchWithoutMaskingConflict(
+        IFileSystem fileSystem,
+        string manifestPath,
+        ConfigurationChangePlan plan,
+        FileRollbackSnapshot preparedManifestSnapshot,
+        ConfigurationOwnershipManifest? preparedOwnershipManifest,
+        Stack<FileRollbackSnapshot> snapshots,
+        bool physicalTargetRollbackSafetyUnproven,
+        bool finalManifestRollbackUnsafeDueToStaleRetainedProof,
+        Exception originalException
+    )
+    {
+        try
+        {
+            RollBackPhysicalTargetDispatch(
+                fileSystem,
+                manifestPath,
+                plan,
+                preparedManifestSnapshot,
+                preparedOwnershipManifest,
+                snapshots,
+                physicalTargetRollbackSafetyUnproven,
+                finalManifestRollbackUnsafeDueToStaleRetainedProof
+            );
+        }
+        catch (Exception rollbackException)
+            when (rollbackException is not OperationCanceledException)
+        {
+            if (IsConfigurationConflict(originalException))
+            {
+                originalException.Data["ConfigurationRollbackFailure"] = rollbackException.Message;
+                ExceptionDispatchInfo.Capture(originalException).Throw();
+            }
+
+            throw;
+        }
+    }
+
+    private static void RollBackPhysicalTargetDispatch(
+        IFileSystem fileSystem,
+        string manifestPath,
+        ConfigurationChangePlan plan,
+        FileRollbackSnapshot preparedManifestSnapshot,
+        ConfigurationOwnershipManifest? preparedOwnershipManifest,
+        Stack<FileRollbackSnapshot> snapshots,
+        bool physicalTargetRollbackSafetyUnproven,
+        bool finalManifestRollbackUnsafeDueToStaleRetainedProof
+    )
+    {
+        Exception? rollbackException = null;
+        bool physicalTargetRollbackFailedOrDeferred = physicalTargetRollbackSafetyUnproven;
+        bool finalOwnershipManifestRollbackUnsafe =
+            physicalTargetRollbackSafetyUnproven
+            || finalManifestRollbackUnsafeDueToStaleRetainedProof;
+        bool manifestMatchesPreparedSnapshot = ManifestMatchesSnapshot(
+            fileSystem,
+            manifestPath,
+            preparedManifestSnapshot
+        );
+        while (snapshots.Count > 0)
+        {
+            FileRollbackSnapshot snapshot = snapshots.Pop();
+            bool isManifestSnapshot = string.Equals(
+                snapshot.Path,
+                manifestPath,
+                GetPathIdentityComparison()
+            );
+            if (!isManifestSnapshot)
+            {
+                if (!manifestMatchesPreparedSnapshot)
+                {
+                    if (
+                        CurrentManifestAdoptsPreparedGitConfigEntriesForPhysicalSnapshot(
+                            fileSystem,
+                            manifestPath,
+                            plan,
+                            preparedOwnershipManifest,
+                            snapshot
+                        )
+                    )
+                    {
+                        physicalTargetRollbackFailedOrDeferred = true;
+                        finalOwnershipManifestRollbackUnsafe = true;
+                        continue;
+                    }
+                }
+                else
+                {
+                    manifestMatchesPreparedSnapshot = ManifestMatchesSnapshot(
+                        fileSystem,
+                        manifestPath,
+                        preparedManifestSnapshot
+                    );
+                    if (
+                        !manifestMatchesPreparedSnapshot
+                        && CurrentManifestAdoptsPreparedGitConfigEntriesForPhysicalSnapshot(
+                            fileSystem,
+                            manifestPath,
+                            plan,
+                            preparedOwnershipManifest,
+                            snapshot
+                        )
+                    )
+                    {
+                        physicalTargetRollbackFailedOrDeferred = true;
+                        finalOwnershipManifestRollbackUnsafe = true;
+                        continue;
+                    }
+                }
+            }
+            else
+            {
+                // Once final manifest rollback is unsafe, do not reinstate an older final
+                // ownership manifest. Rolling the current final manifest back to the prepared
+                // preclaim remains safe because preclaims are not accepted as final ownership.
+                bool manifestRollbackSnapshotMayReinstateOwnership =
+                    ManifestRollbackSnapshotMayReinstateOwnership(
+                        snapshot,
+                        preparedManifestSnapshot
+                    );
+                bool manifestRollbackSnapshotProofsMatchCurrentFiles =
+                    !manifestRollbackSnapshotMayReinstateOwnership
+                    || ManifestRollbackSnapshotGitConfigProofsMatchCurrentFiles(
+                        fileSystem,
+                        snapshot
+                    );
+                if (
+                    manifestRollbackSnapshotMayReinstateOwnership
+                    && (
+                        finalOwnershipManifestRollbackUnsafe
+                        || !manifestRollbackSnapshotProofsMatchCurrentFiles
+                    )
+                )
+                {
+                    manifestMatchesPreparedSnapshot = false;
+                    continue;
+                }
+
+                if (!SnapshotMatchesExpectedCurrentForRollback(fileSystem, snapshot))
+                {
+                    manifestMatchesPreparedSnapshot = false;
+                    continue;
+                }
+            }
+
+            try
+            {
+                RollBackSnapshot(fileSystem, snapshot);
+                if (isManifestSnapshot)
+                {
+                    manifestMatchesPreparedSnapshot = ManifestMatchesSnapshot(
+                        fileSystem,
+                        manifestPath,
+                        preparedManifestSnapshot
+                    );
+                }
+            }
+
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                rollbackException ??= exception;
+                if (isManifestSnapshot)
+                {
+                    manifestMatchesPreparedSnapshot = false;
+                }
+                else
+                {
+                    physicalTargetRollbackFailedOrDeferred = true;
+                    finalOwnershipManifestRollbackUnsafe = true;
+                }
+            }
+        }
+
+        if (rollbackException is not null)
+        {
+            throw new InvalidOperationException(
+                "Configuration rollback failed after an apply/remove error.",
+                rollbackException
+            );
+        }
+    }
+
+    private static bool ManifestRollbackSnapshotMayReinstateOwnership(
+        FileRollbackSnapshot snapshot,
+        FileRollbackSnapshot preparedManifestSnapshot
+    ) =>
+        snapshot.Existed
+        && !FileRollbackSnapshotsRepresentSameState(snapshot, preparedManifestSnapshot);
+
+    private static bool ManifestRollbackSnapshotGitConfigProofsMatchCurrentFiles(
+        IFileSystem fileSystem,
+        FileRollbackSnapshot snapshot
+    )
+    {
+        if (!snapshot.Existed)
+        {
+            return true;
+        }
+
+        try
+        {
+            ValidateFileSnapshotIsRegularFile(
+                snapshot,
+                "configuration ownership manifest rollback snapshot"
+            );
+            ConfigurationOwnershipManifest manifest =
+                ConfigurationOwnershipManifestSerializer.Deserialize(snapshot.Contents!);
+            ConfigurationPhysicalTargetOwnershipProof[] ownershipProofs =
+                CreatePhysicalTargetOwnershipProofs(manifest);
+            if (ownershipProofs.Length == 0)
+            {
+                return true;
+            }
+
+            new ConfigurationPhysicalTargetWriterDispatcher(fileSystem)
+                .ValidateRetainedOwnershipProofs(ownershipProofs, CancellationToken.None);
+            return true;
+        }
+        catch (Exception exception)
+            when (
+                exception is IOException
+                    or UnauthorizedAccessException
+                    or NotSupportedException
+                    or InvalidOperationException
+                    or System.Text.Json.JsonException
+                    or ArgumentException
+            )
+        {
+            return false;
+        }
+    }
+
+    private static bool CurrentManifestAdoptsPreparedGitConfigEntriesForPhysicalSnapshot(
+        IFileSystem fileSystem,
+        string manifestPath,
+        ConfigurationChangePlan plan,
+        ConfigurationOwnershipManifest? preparedOwnershipManifest,
+        FileRollbackSnapshot physicalSnapshot
+    )
+    {
+        if (!SnapshotMatchesExpectedCurrentForRollback(fileSystem, physicalSnapshot))
+        {
+            return false;
+        }
+
+        if (preparedOwnershipManifest is null)
+        {
+            return CurrentFinalManifestAdoptsPreparedGitConfigRemovals(
+                fileSystem,
+                manifestPath,
+                plan,
+                physicalSnapshot
+            );
+        }
+
+        ConfigurationOwnershipManifest? currentManifest = TryReadFinalOwnershipManifest(
+            fileSystem,
+            manifestPath,
+            plan
+        );
+        if (currentManifest is null)
+        {
+            return false;
+        }
+
+        if (!ManifestIdentityMatches(currentManifest, preparedOwnershipManifest))
+        {
+            return false;
+        }
+
+        ConfigurationChange[] affectedChanges = GetGitConfigChangesAffectedByPhysicalSnapshot(
+            fileSystem,
+            plan,
+            physicalSnapshot
+        );
+        if (affectedChanges.Length == 0)
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifestEntry[] currentPathEntries = currentManifest
+            .Entries.Where(entry =>
+                entry.TargetKind == ConfigurationTargetKind.GitConfig
+                && PhysicalTargetManifestEntryMatchesSnapshot(
+                    fileSystem,
+                    entry,
+                    physicalSnapshot
+                )
+            )
+            .ToArray();
+        ConfigurationOwnershipManifestEntry[] preparedPathEntries = preparedOwnershipManifest
+            .Entries.Where(entry =>
+                entry.TargetKind == ConfigurationTargetKind.GitConfig
+                && PhysicalTargetManifestEntryMatchesSnapshot(
+                    fileSystem,
+                    entry,
+                    physicalSnapshot
+                )
+            )
+            .ToArray();
+        return affectedChanges.All(change =>
+                AffectedGitConfigChangeIsAdoptedByCurrentManifest(change, currentPathEntries)
+            )
+            && preparedPathEntries.All(preparedEntry =>
+                PreparedGitConfigEntryIsAdoptedByCurrentManifest(
+                    fileSystem,
+                    preparedEntry,
+                    currentManifest
+                )
+            );
+    }
+
+    private static bool CurrentFinalManifestAdoptsPreparedGitConfigRemovals(
+        IFileSystem fileSystem,
+        string manifestPath,
+        ConfigurationChangePlan plan,
+        FileRollbackSnapshot physicalSnapshot
+    )
+    {
+        ConfigurationChange[] affectedChanges = GetGitConfigChangesAffectedByPhysicalSnapshot(
+            fileSystem,
+            plan,
+            physicalSnapshot
+        );
+        if (
+            affectedChanges.Length == 0
+            || affectedChanges.Any(change =>
+                change.Operation != ConfigurationChangeOperation.Remove
+            )
+        )
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifest? currentManifest = TryReadFinalOwnershipManifest(
+            fileSystem,
+            manifestPath,
+            plan
+        );
+        if (currentManifest is null)
+        {
+            return CurrentManifestMatchesPreparedFinalState(
+                fileSystem,
+                manifestPath,
+                preparedOwnershipManifest: null
+            );
+        }
+
+        if (!ManifestIdentityMatches(currentManifest, plan))
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifestEntry[] currentPathEntries = currentManifest
+            .Entries.Where(entry =>
+                entry.TargetKind == ConfigurationTargetKind.GitConfig
+                && PhysicalTargetManifestEntryMatchesSnapshot(
+                    fileSystem,
+                    entry,
+                    physicalSnapshot
+                )
+            )
+            .ToArray();
+        return affectedChanges.All(change =>
+            AffectedGitConfigChangeIsAdoptedByCurrentManifest(change, currentPathEntries)
+        );
+    }
+
+    private static ConfigurationChange[] GetGitConfigChangesAffectedByPhysicalSnapshot(
+        IFileSystem fileSystem,
+        ConfigurationChangePlan plan,
+        FileRollbackSnapshot physicalSnapshot
+    ) =>
+        plan
+            .Changes.Where(change =>
+                change.TargetKind == ConfigurationTargetKind.GitConfig
+                && string.Equals(
+                    CreatePhysicalPathIdentity(fileSystem, change.TargetPathOrName),
+                    CreatePhysicalPathIdentity(fileSystem, physicalSnapshot.Path),
+                    GetPathIdentityComparison()
+                )
+            )
+            .ToArray();
+
+    private static bool ManifestIdentityMatches(
+        ConfigurationOwnershipManifest currentManifest,
+        ConfigurationOwnershipManifest preparedManifest
+    ) =>
+        string.Equals(
+            currentManifest.ManifestId,
+            preparedManifest.ManifestId,
+            StringComparison.Ordinal
+        )
+        && string.Equals(
+            currentManifest.OwnerProductId,
+            preparedManifest.OwnerProductId,
+            StringComparison.Ordinal
+        )
+        && string.Equals(
+            currentManifest.EntrySelector,
+            preparedManifest.EntrySelector,
+            StringComparison.Ordinal
+        );
+
+    private static bool ManifestIdentityMatches(
+        ConfigurationOwnershipManifest currentManifest,
+        ConfigurationChangePlan plan
+    ) =>
+        string.Equals(
+            currentManifest.ManifestId,
+            plan.Manifest.ManifestId,
+            StringComparison.Ordinal
+        )
+        && string.Equals(
+            currentManifest.OwnerProductId,
+            plan.OwnerProductId,
+            StringComparison.Ordinal
+        )
+        && string.Equals(
+            currentManifest.EntrySelector,
+            plan.Manifest.EntrySelector,
+            StringComparison.Ordinal
+        );
+
+    private static bool AffectedGitConfigChangeIsAdoptedByCurrentManifest(
+        ConfigurationChange change,
+        IReadOnlyList<ConfigurationOwnershipManifestEntry> currentPathEntries
+    )
+    {
+        string affectedKey = CanonicalizePhysicalTargetManifestKey(change.TargetKind, change.Key);
+        ConfigurationOwnershipManifestEntry[] matchingCurrentEntries = currentPathEntries
+            .Where(entry =>
+                string.Equals(
+                    CanonicalizePhysicalTargetManifestKey(entry.TargetKind, entry.Key),
+                    affectedKey,
+                    StringComparison.Ordinal
+                )
+            )
+            .ToArray();
+        if (change.Operation == ConfigurationChangeOperation.Remove)
+        {
+            return matchingCurrentEntries.Length == 0;
+        }
+
+        if (matchingCurrentEntries.Length != 1 || change.Value is null)
+        {
+            return false;
+        }
+
+        return string.Equals(
+            matchingCurrentEntries[0].PlannedValueSha256,
+            ComputeSha256(Encoding.UTF8.GetBytes(change.Value)),
+            StringComparison.Ordinal
+        );
+    }
+
+    private static ConfigurationOwnershipManifest? TryReadFinalOwnershipManifest(
+        IFileSystem fileSystem,
+        string manifestPath,
+        ConfigurationChangePlan plan
+    )
+    {
+        try
+        {
+            EnsureManifestParentChainIsUsable(fileSystem, manifestPath);
+            EnsurePathIsNotUnsupportedReparsePoint(
+                fileSystem,
+                manifestPath,
+                "configuration ownership manifest"
+            );
+            FileRollbackSnapshot currentManifestSnapshot = CaptureRollbackSnapshot(
+                fileSystem,
+                manifestPath
+            );
+            if (!currentManifestSnapshot.Existed)
+            {
+                return null;
+            }
+
+            ValidateFileSnapshotIsRegularFile(
+                currentManifestSnapshot,
+                "configuration ownership manifest"
+            );
+            ConfigurationOwnershipManifest currentManifest =
+                ConfigurationOwnershipManifestSerializer.Deserialize(
+                    currentManifestSnapshot.Contents!
+                );
+            if (ContainsPhysicalTargetManifestPreclaimMetadataKey(currentManifest))
+            {
+                return null;
+            }
+
+            ConfigurationOwnershipManifestPolicy.EnsureValid(currentManifest);
+            ValidateOwnershipManifestPathDoesNotCollideWithPhysicalTargetEntries(
+                fileSystem,
+                manifestPath,
+                currentManifest
+            );
+            ValidatePhysicalTargetManifestEntries(fileSystem, currentManifest);
+            ValidateCiTemporaryFileManifestWholeFileOwnership(fileSystem, plan, currentManifest);
+            ValidateGitConfigRetainedUseHttpPathOwnershipProofs(
+                fileSystem,
+                currentManifest,
+                CancellationToken.None
+            );
+            return currentManifest;
+        }
+        catch (Exception exception)
+            when (
+                exception is IOException
+                    or UnauthorizedAccessException
+                    or NotSupportedException
+                    or InvalidOperationException
+                    or System.Text.Json.JsonException
+                    or ArgumentException
+            )
+        {
+            return null;
+        }
+    }
+
+    private static void VerifyCurrentPhysicalTargetManifestMatchesPreparedFinalState(
+        IFileSystem fileSystem,
+        string manifestPath,
+        ConfigurationOwnershipManifest? preparedOwnershipManifest
+    ) =>
+        VerifyCurrentManifestMatchesPreparedFinalState(
+            fileSystem,
+            manifestPath,
+            preparedOwnershipManifest,
+            "Configuration ownership manifest conflict: final manifest changed during physical "
+                + "target dispatch."
+        );
+
+    private static void VerifyCurrentGenericManifestMatchesPreparedFinalState(
+        IFileSystem fileSystem,
+        string manifestPath,
+        ConfigurationOwnershipManifest? preparedOwnershipManifest
+    ) =>
+        VerifyCurrentManifestMatchesPreparedFinalState(
+            fileSystem,
+            manifestPath,
+            preparedOwnershipManifest,
+            "Configuration ownership manifest conflict: final manifest changed during "
+                + "configuration operation."
+        );
+
+    private static void VerifyCurrentManifestMatchesPreparedFinalState(
+        IFileSystem fileSystem,
+        string manifestPath,
+        ConfigurationOwnershipManifest? preparedOwnershipManifest,
+        string conflictMessage
+    )
+    {
+        if (
+            CurrentManifestMatchesPreparedFinalState(
+                fileSystem,
+                manifestPath,
+                preparedOwnershipManifest
+            )
+        )
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(conflictMessage);
+    }
+
+    private static bool CurrentManifestMatchesPreparedFinalState(
+        IFileSystem fileSystem,
+        string manifestPath,
+        ConfigurationOwnershipManifest? preparedOwnershipManifest
+    )
+    {
+        try
+        {
+            EnsureManifestParentChainIsUsable(fileSystem, manifestPath);
+            EnsurePathIsNotUnsupportedReparsePoint(
+                fileSystem,
+                manifestPath,
+                "configuration ownership manifest"
+            );
+            FileRollbackSnapshot currentManifestSnapshot = CaptureRollbackSnapshot(
+                fileSystem,
+                manifestPath
+            );
+            if (preparedOwnershipManifest is null)
+            {
+                return !currentManifestSnapshot.Existed;
+            }
+
+            if (!currentManifestSnapshot.Existed)
+            {
+                return false;
+            }
+
+            ValidateFileSnapshotIsRegularFile(
+                currentManifestSnapshot,
+                "configuration ownership manifest"
+            );
+            ConfigurationOwnershipManifest currentManifest =
+                ConfigurationOwnershipManifestSerializer.Deserialize(
+                    currentManifestSnapshot.Contents!
+                );
+            string currentManifestContents = ConfigurationOwnershipManifestSerializer.Serialize(
+                currentManifest
+            );
+            string preparedManifestContents = ConfigurationOwnershipManifestSerializer.Serialize(
+                preparedOwnershipManifest
+            );
+            return string.Equals(
+                currentManifestContents,
+                preparedManifestContents,
+                StringComparison.Ordinal
+            );
+        }
+        catch (Exception exception)
+            when (
+                exception is IOException
+                    or UnauthorizedAccessException
+                    or NotSupportedException
+                    or InvalidOperationException
+                    or System.Text.Json.JsonException
+                    or ArgumentException
+            )
+        {
+            return false;
+        }
+    }
+
+    private static bool PhysicalTargetManifestEntryMatchesSnapshot(
+        IFileSystem fileSystem,
+        ConfigurationOwnershipManifestEntry entry,
+        FileRollbackSnapshot physicalSnapshot
+    ) =>
+        string.Equals(
+            CreatePhysicalPathIdentity(fileSystem, entry.TargetPathOrName),
+            CreatePhysicalPathIdentity(fileSystem, physicalSnapshot.Path),
+            GetPathIdentityComparison()
+        );
+
+    private static bool PreparedGitConfigEntryIsAdoptedByCurrentManifest(
+        IFileSystem fileSystem,
+        ConfigurationOwnershipManifestEntry preparedEntry,
+        ConfigurationOwnershipManifest currentManifest
+    )
+    {
+        if (string.IsNullOrWhiteSpace(preparedEntry.PlannedValueSha256))
+        {
+            return false;
+        }
+
+        string preparedTargetPath = CreatePhysicalPathIdentity(
+            fileSystem,
+            preparedEntry.TargetPathOrName
+        );
+        string preparedKey = CanonicalizePhysicalTargetManifestKey(
+            preparedEntry.TargetKind,
+            preparedEntry.Key
+        );
+        return currentManifest.Entries.Any(currentEntry =>
+            currentEntry.TargetKind == ConfigurationTargetKind.GitConfig
+            && string.Equals(
+                CreatePhysicalPathIdentity(fileSystem, currentEntry.TargetPathOrName),
+                preparedTargetPath,
+                GetPathIdentityComparison()
+            )
+            && string.Equals(
+                CanonicalizePhysicalTargetManifestKey(currentEntry.TargetKind, currentEntry.Key),
+                preparedKey,
+                StringComparison.Ordinal
+            )
+            && string.Equals(
+                currentEntry.PlannedValueSha256,
+                preparedEntry.PlannedValueSha256,
+                StringComparison.Ordinal
+            )
+        );
+    }
+
+    private static bool SnapshotMatchesExpectedCurrentForRollback(
+        IFileSystem fileSystem,
+        FileRollbackSnapshot snapshot
+    )
+    {
+        try
+        {
+            EnsurePhysicalFileParentChainIsUsable(fileSystem, snapshot.Path, "rollback target");
+            EnsurePathIsNotUnsupportedReparsePoint(fileSystem, snapshot.Path, "rollback target");
+            FileRollbackSnapshot currentSnapshot = CaptureRollbackSnapshot(
+                fileSystem,
+                snapshot.Path
+            );
+            if (snapshot.ExpectedCurrentHashForRollback is null)
+            {
+                return currentSnapshot.EntryKind == FileRollbackSnapshotEntryKind.Missing;
+            }
+
+            return currentSnapshot.EntryKind == FileRollbackSnapshotEntryKind.RegularFile
+                && string.Equals(
+                    currentSnapshot.ContentsSha256Hash,
+                    snapshot.ExpectedCurrentHashForRollback,
+                    StringComparison.Ordinal
+                );
+        }
+        catch (Exception exception)
+            when (
+                exception is IOException
+                    or UnauthorizedAccessException
+                    or NotSupportedException
+                    or InvalidOperationException
+            )
+        {
+            return false;
+        }
+    }
+
+    private static bool ManifestMatchesSnapshot(
+        IFileSystem fileSystem,
+        string manifestPath,
+        FileRollbackSnapshot preparedManifestSnapshot
+    )
+    {
+        try
+        {
+            EnsureManifestParentChainIsUsable(fileSystem, manifestPath);
+            EnsurePathIsNotUnsupportedReparsePoint(
+                fileSystem,
+                manifestPath,
+                "configuration ownership manifest"
+            );
+            return FileRollbackSnapshotsRepresentSameState(
+                CaptureRollbackSnapshot(fileSystem, manifestPath),
+                preparedManifestSnapshot
+            );
+        }
+        catch (Exception exception)
+            when (
+                exception is IOException
+                    or UnauthorizedAccessException
+                    or NotSupportedException
+                    or InvalidOperationException
+            )
+        {
+            return false;
+        }
     }
 
     private static void DeleteTemporaryContainerAfterFullRemove(
@@ -4719,6 +7579,10 @@ public sealed class ConfigurationManager : IConfigurationManager
                 or ConfigurationTargetKind.PythonKeyringBackend
                 or ConfigurationTargetKind.KeyringShim;
 
+    private static bool IsSupportedProjectionOnlyPhysicalTarget(
+        ConfigurationTargetKind targetKind
+    ) => targetKind == ConfigurationTargetKind.GitConfig;
+
     private static bool IsPhysicalFileSystemTarget(ConfigurationTargetKind targetKind) =>
         targetKind == ConfigurationTargetKind.CiTemporaryFile
         || IsProjectionOnlyPhysicalTarget(targetKind)
@@ -4740,6 +7604,9 @@ public sealed class ConfigurationManager : IConfigurationManager
                 or ConfigurationChangeOperation.Create
                 or ConfigurationChangeOperation.Update
                 or ConfigurationChangeOperation.Refresh;
+
+    private static bool IsLowercaseSha256Hex(string? value) =>
+        value is { Length: 64 } && value.All(IsLowercaseHex);
 
     private static string ComputeSha256(string value)
     {
@@ -4792,9 +7659,21 @@ public sealed class ConfigurationManager : IConfigurationManager
     );
 
     private sealed record PhysicalTargetManifestDispatchPreparation(
-        ConfigurationOwnershipManifest? AppliedOwnershipManifest,
-        FileRollbackSnapshot ManifestRollbackSnapshot
+        ConfigurationOwnershipManifest? PreparedOwnershipManifest,
+        bool DeleteManifest,
+        FileRollbackSnapshot ManifestRollbackSnapshot,
+        IReadOnlyList<ConfigurationPhysicalTargetOwnershipProof> OwnershipProofs
     );
+
+    private sealed class PhysicalTargetManifestCommitIndeterminateException(
+        Exception innerException
+    )
+        : InvalidOperationException(
+            "Configuration ownership manifest final commit may have reached durable state and "
+                + "could not be verified; rollback was skipped to avoid clobbering committed "
+                + "physical target state.",
+            innerException
+        );
 
     private sealed class NullDisposable : IDisposable
     {
