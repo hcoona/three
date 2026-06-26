@@ -28,13 +28,24 @@ public sealed class ConfigurationManagerTests
     private static readonly ConfigurationTargetKind[] Phase4DPhysicalTargetKindValues =
     [
         ConfigurationTargetKind.GitConfig,
+        ConfigurationTargetKind.PythonKeyringBackend,
+        ConfigurationTargetKind.KeyringShim,
+    ];
+
+    private static readonly ConfigurationTargetKind[] PythonPhysicalTargetKindValues =
+    [
+        ConfigurationTargetKind.PythonKeyringBackend,
+        ConfigurationTargetKind.KeyringShim,
+    ];
+
+    private static readonly ConfigurationTargetKind[] Phase4DPhysicalTargetCollisionKindValues =
+    [
+        ConfigurationTargetKind.GitConfig,
     ];
 
     private static readonly ConfigurationTargetKind[]
         UnsupportedRetainedNonCiPhysicalTargetKindValues =
         [
-            ConfigurationTargetKind.PythonKeyringBackend,
-            ConfigurationTargetKind.KeyringShim,
             ConfigurationTargetKind.Npmrc,
             ConfigurationTargetKind.Yarnrc,
         ];
@@ -65,6 +76,48 @@ public sealed class ConfigurationManagerTests
             "azureauth-credprovider"
         );
     }
+
+    private static string CreateKeyringShimTargetPath() =>
+        ConfigurationLayoutProjector.ProjectKeyringShim(
+            new ConfigurationLayoutProjectionContext
+            {
+                Platform = OperatingSystem.IsWindows()
+                    ? ConfigurationLayoutPlatform.Windows
+                    : OperatingSystem.IsMacOS()
+                        ? ConfigurationLayoutPlatform.MacOs
+                        : ConfigurationLayoutPlatform.Linux,
+                HomeDirectory = GetCurrentUserProfileDirectory(),
+                LocalAppDataDirectory = GetLocalAppDataDirectory(),
+                XdgDataHomeDirectory = Environment.GetEnvironmentVariable("XDG_DATA_HOME"),
+                XdgConfigHomeDirectory = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME"),
+            }
+        ).TargetPath;
+
+    private static string CreatePythonKeyringBackendTargetPath() =>
+        ConfigurationLayoutProjector.ProjectPythonKeyringBackend(
+            new ConfigurationLayoutProjectionContext
+            {
+                Platform = OperatingSystem.IsWindows()
+                    ? ConfigurationLayoutPlatform.Windows
+                    : OperatingSystem.IsMacOS()
+                        ? ConfigurationLayoutPlatform.MacOs
+                        : ConfigurationLayoutPlatform.Linux,
+                HomeDirectory = GetCurrentUserProfileDirectory(),
+                LocalAppDataDirectory = GetLocalAppDataDirectory(),
+                XdgDataHomeDirectory = Environment.GetEnvironmentVariable("XDG_DATA_HOME"),
+                XdgConfigHomeDirectory = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME"),
+            }
+        ).TargetPath;
+
+    private static string CreatePhase4DPhysicalTargetPath(ConfigurationTargetKind targetKind) =>
+        targetKind switch
+        {
+            ConfigurationTargetKind.GitConfig =>
+                $"/config/{targetKind.ToString().ToLower(CultureInfo.InvariantCulture)}",
+            ConfigurationTargetKind.PythonKeyringBackend => CreatePythonKeyringBackendTargetPath(),
+            ConfigurationTargetKind.KeyringShim => CreateKeyringShimTargetPath(),
+            _ => throw new ArgumentOutOfRangeException(nameof(targetKind), targetKind, null),
+        };
 
     private static string GetCurrentUserProfileDirectory()
     {
@@ -101,6 +154,25 @@ public sealed class ConfigurationManagerTests
         throw new InvalidOperationException("User profile directory is unavailable.");
     }
 
+    private static string GetLocalAppDataDirectory()
+    {
+        string? localAppData =
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (!string.IsNullOrWhiteSpace(localAppData))
+        {
+            return Path.TrimEndingDirectorySeparator(localAppData);
+        }
+
+        string? windowsLocalAppData = Environment.GetEnvironmentVariable("LOCALAPPDATA");
+        if (!string.IsNullOrWhiteSpace(windowsLocalAppData))
+        {
+            return Path.TrimEndingDirectorySeparator(windowsLocalAppData);
+        }
+
+        string userProfile = GetCurrentUserProfileDirectory();
+        return Path.Combine(userProfile, "AppData", "Local");
+    }
+
     public static bool IsWindows => OperatingSystem.IsWindows();
 
     public static TheoryData<string, ConfigurationTargetKind, string, string>
@@ -112,7 +184,7 @@ public sealed class ConfigurationManagerTests
     public static TheoryData<string, ConfigurationTargetKind, string, string>
         Phase4DPhysicalTargetOwnershipManifestCollisionCases =>
         CreatePhysicalTargetOwnershipManifestCollisionCases(
-            Phase4DPhysicalTargetKindValues
+            Phase4DPhysicalTargetCollisionKindValues
         );
 
     public static TheoryData<ConfigurationTargetKind> Phase4DPhysicalTargetKinds
@@ -124,6 +196,20 @@ public sealed class ConfigurationManagerTests
             {
                 cases.Add(targetKind);
             }
+            return cases;
+        }
+    }
+
+    public static TheoryData<ConfigurationTargetKind> PythonPhysicalTargetKinds
+    {
+        get
+        {
+            var cases = new TheoryData<ConfigurationTargetKind>();
+            foreach (ConfigurationTargetKind targetKind in PythonPhysicalTargetKindValues)
+            {
+                cases.Add(targetKind);
+            }
+
             return cases;
         }
     }
@@ -798,6 +884,119 @@ public sealed class ConfigurationManagerTests
         Assert.Contains("secret", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [MemberData(nameof(PythonPhysicalTargetKinds))]
+    public async Task DryRunAsyncRejectsInvalidPythonKeyringTargetPath(
+        ConfigurationTargetKind targetKind
+    )
+    {
+        var manager = new ConfigurationManager();
+        string targetPath = CreatePhase4DPhysicalTargetPath(targetKind);
+        string invalidTargetPath = Path.Combine(
+            Path.GetDirectoryName(targetPath)!,
+            "not-the-official-target"
+        );
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(targetKind, invalidTargetPath);
+
+        string expectedViolation =
+            targetKind == ConfigurationTargetKind.PythonKeyringBackend
+                ? "official per-user backend manifest file"
+                : "official per-user keyring shim path";
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(expectedViolation, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(PythonPhysicalTargetKinds))]
+    public async Task DryRunAsyncRejectsInvalidPythonKeyringTargetKey(
+        ConfigurationTargetKind targetKind
+    )
+    {
+        var manager = new ConfigurationManager();
+        string targetPath = CreatePhase4DPhysicalTargetPath(targetKind);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(targetKind, targetPath) with
+        {
+            Changes =
+            [
+                CreatePhysicalTargetChange(targetKind, targetPath) with
+                {
+                    Key = "not-physical-target",
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "canonical physical target key",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(PythonPhysicalTargetKinds))]
+    public async Task DryRunAsyncRejectsSecretPythonKeyringValues(
+        ConfigurationTargetKind targetKind
+    )
+    {
+        var manager = new ConfigurationManager();
+        string targetPath = CreatePhase4DPhysicalTargetPath(targetKind);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(targetKind, targetPath) with
+        {
+            ContainsCredentialMaterial = true,
+            Changes =
+            [
+                CreatePhysicalTargetChange(targetKind, targetPath) with
+                {
+                    IsSecretValue = true,
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("secret value-writing", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(PythonPhysicalTargetKinds))]
+    public async Task NoFilesystemDryRunRejectsMultiplePythonKeyringChanges(
+        ConfigurationTargetKind targetKind
+    )
+    {
+        var manager = new ConfigurationManager();
+        string targetPath = CreatePhase4DPhysicalTargetPath(targetKind);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(targetKind, targetPath) with
+        {
+            Changes =
+            [
+                CreatePhysicalTargetChange(targetKind, targetPath),
+                CreatePhysicalTargetChange(targetKind, targetPath) with
+                {
+                    Value = "second-planned-value",
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "one 4D physical target change per plan",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+    }
+
     [Fact]
     public async Task
         ValidateAcceptDryRunRejectMixedPhase4DAndNonPhase4DTargetsBeforeProjection()
@@ -879,7 +1078,7 @@ public sealed class ConfigurationManagerTests
                 setPlan.Changes[0],
                 CreatePhysicalTargetChange(
                     ConfigurationTargetKind.KeyringShim,
-                    "/config/planning-multi-kind-phase4d-keyring-shim"
+                    CreateKeyringShimTargetPath()
                 ),
             ],
         };
@@ -1164,8 +1363,7 @@ public sealed class ConfigurationManagerTests
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/phase4d-manifest.json";
-        string targetPath =
-            $"/config/{targetKind.ToString().ToLower(CultureInfo.InvariantCulture)}";
+        string targetPath = CreatePhase4DPhysicalTargetPath(targetKind);
         var manager = new ConfigurationManager(fileSystem, manifestPath);
         ConfigurationChangePlan plan = CreatePhysicalTargetPlan(targetKind, targetPath);
 
@@ -4208,9 +4406,7 @@ public sealed class ConfigurationManagerTests
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/no-writer-apply-manifest.json";
-        string targetPath =
-            "/config/no-writer-apply-"
-            + targetKind.ToString().ToLower(CultureInfo.InvariantCulture);
+        string targetPath = CreatePhase4DPhysicalTargetPath(targetKind);
         const string existingTargetContents = "pre-existing physical target contents";
         var manager = new ConfigurationManager(fileSystem, manifestPath);
         ConfigurationChangePlan plan = CreatePhysicalTargetPlan(targetKind, targetPath);
@@ -4244,9 +4440,7 @@ public sealed class ConfigurationManagerTests
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/no-writer-remove-manifest.json";
-        string targetPath =
-            "/config/no-writer-remove-"
-            + targetKind.ToString().ToLower(CultureInfo.InvariantCulture);
+        string targetPath = CreatePhase4DPhysicalTargetPath(targetKind);
         const string existingTargetContents = "pre-existing physical target contents";
         var manager = new ConfigurationManager(fileSystem, manifestPath);
         ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(targetKind, targetPath);
@@ -4820,9 +5014,7 @@ public sealed class ConfigurationManagerTests
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/fake-writer-apply-manifest.json";
-        string targetPath =
-            "/config/fake-writer-apply-"
-            + targetKind.ToString().ToLower(CultureInfo.InvariantCulture);
+        string targetPath = CreatePhase4DPhysicalTargetPath(targetKind);
         var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
         var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
         ConfigurationChangePlan plan = CreatePhysicalTargetPlan(targetKind, targetPath);
@@ -4855,9 +5047,7 @@ public sealed class ConfigurationManagerTests
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/fake-writer-remove-manifest.json";
-        string targetPath =
-            "/config/fake-writer-remove-"
-            + targetKind.ToString().ToLower(CultureInfo.InvariantCulture);
+        string targetPath = CreatePhase4DPhysicalTargetPath(targetKind);
         var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
         var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
         ConfigurationChangePlan applyPlan = CreatePhysicalTargetPlan(targetKind, targetPath);
@@ -4899,6 +5089,80 @@ public sealed class ConfigurationManagerTests
         );
         Assert.True(fileSystem.FileExists(targetPath));
         Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Theory]
+    [InlineData(ConfigurationTargetKind.PythonKeyringBackend)]
+    [InlineData(ConfigurationTargetKind.KeyringShim)]
+    public async Task FilesystemBackedRemoveRejectsPythonKeyringCompletedMutationOnUnrelatedPath(
+        ConfigurationTargetKind targetKind
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Host);
+        const string manifestPath = "/state/python-remove-unrelated-mutation-manifest.json";
+        string targetPath = CreatePhase4DPhysicalTargetPath(targetKind);
+        var setupDispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var setupManager = new ConfigurationManager(fileSystem, manifestPath, setupDispatcher);
+        ConfigurationChangePlan applyPlan = CreatePhysicalTargetPlan(targetKind, targetPath);
+
+        await setupManager.ApplyAsync(applyPlan, TestContext.Current.CancellationToken);
+        string existingManifestJson = fileSystem.ReadAllText(manifestPath);
+        string unrelatedMutationPath = Path.Combine(
+            Path.GetDirectoryName(targetPath)!,
+            "unrelated-python-keyring-target.txt"
+        );
+        fileSystem.AtomicWriteAllText(unrelatedMutationPath, "unrelated-value");
+        fileSystem.Calls.Clear();
+
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher((request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            request.RegisterCompletedFileMutation(
+                new ConfigurationPhysicalTargetFileMutation(
+                    unrelatedMutationPath,
+                    true,
+                    Encoding.UTF8.GetBytes("unrelated-value"),
+                    HashMetadata("unrelated-value"),
+                    RequiresRollback: false
+                )
+            );
+            return ValueTask.CompletedTask;
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan removePlan = applyPlan with
+        {
+            Manifest = applyPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            Changes =
+            [
+                applyPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = HashMetadata("planned-value"),
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.RemoveAsync(removePlan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "unrelated Python keyring target path",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Single(dispatcher.Requests);
+        AssertManifestAbsentOrPreparedPreclaim(
+            fileSystem,
+            manifestPath,
+            existingManifestJson
+        );
+        Assert.Equal("planned-value", fileSystem.ReadAllText(targetPath));
+        Assert.Equal("unrelated-value", fileSystem.ReadAllText(unrelatedMutationPath));
     }
 
     [Fact]
@@ -7786,7 +8050,7 @@ public sealed class ConfigurationManagerTests
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/mixed-phase4d-distinct-paths-manifest.json";
         const string gitTargetPath = "/config/mixed-phase4d-distinct-paths.gitconfig";
-        const string keyringTargetPath = "/config/mixed-phase4d-distinct-paths-keyring";
+        string keyringTargetPath = CreateKeyringShimTargetPath();
         const string existingGitTargetContents = "pre-existing git target contents";
         const string existingKeyringTargetContents = "pre-existing keyring target contents";
         var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);

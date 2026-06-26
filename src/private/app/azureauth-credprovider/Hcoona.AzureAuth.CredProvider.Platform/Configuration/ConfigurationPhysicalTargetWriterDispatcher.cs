@@ -44,6 +44,7 @@ internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
     private readonly GitConfigPhysicalTargetWriter gitConfigWriter = new(fileSystem);
     private readonly NuGetPluginLayoutPhysicalTargetWriter nuGetPluginLayoutWriter =
         new(fileSystem);
+    private readonly PythonKeyringPhysicalTargetWriter pythonKeyringWriter = new(fileSystem);
 
     public bool RejectSecretGitConfigValueWritesBeforeManifestPreclaim => true;
 
@@ -62,6 +63,10 @@ internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
                 break;
             case ConfigurationTargetKind.NuGetPluginLayout:
                 nuGetPluginLayoutWriter.Write(request, cancellationToken);
+                break;
+            case ConfigurationTargetKind.PythonKeyringBackend:
+            case ConfigurationTargetKind.KeyringShim:
+                pythonKeyringWriter.Write(request, cancellationToken);
                 break;
             default:
                 throw new NotSupportedException(
@@ -89,6 +94,10 @@ internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
             case ConfigurationTargetKind.NuGetPluginLayout:
                 nuGetPluginLayoutWriter.Validate(request, cancellationToken);
                 break;
+            case ConfigurationTargetKind.PythonKeyringBackend:
+            case ConfigurationTargetKind.KeyringShim:
+                pythonKeyringWriter.Validate(request, cancellationToken);
+                break;
             default:
                 throw new NotSupportedException(
                     "Configuration dry-run has no registered validator for this 4D physical "
@@ -106,6 +115,7 @@ internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
         cancellationToken.ThrowIfCancellationRequested();
         gitConfigWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
         nuGetPluginLayoutWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
+        pythonKeyringWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
     }
 }
 
@@ -202,7 +212,8 @@ internal sealed record ConfigurationPhysicalTargetFileMutation(
     bool PreviouslyExisted,
     byte[]? PreviousContentsBytes,
     string? ExpectedCurrentSha256Hash,
-    bool RequiresRollback = true
+    bool RequiresRollback = true,
+    UnixFileMode? PreviousUnixFileMode = null
 );
 
 internal sealed class GitConfigPhysicalTargetWriter(IFileSystem fileSystem)

@@ -1072,6 +1072,12 @@ public sealed class ConfigurationManager : IConfigurationManager
         {
             throw new ArgumentException(violation, nameof(plan));
         }
+
+        violation = GetPythonKeyringPlanningValidationViolation(plan);
+        if (violation is not null)
+        {
+            throw new ArgumentException(violation, nameof(plan));
+        }
     }
 
     private static string? GetContractValidationViolation(ConfigurationChangePlan plan) =>
@@ -1249,6 +1255,26 @@ public sealed class ConfigurationManager : IConfigurationManager
                         + "or be contained by the ownership manifest path.",
                     nameof(plan)
                 );
+            }
+        }
+    }
+
+    private static void EnsurePythonKeyringTargetPathsAreCanonical(ConfigurationChangePlan plan)
+    {
+        foreach (
+            ConfigurationChange change in plan.Changes.Where(change =>
+                change.TargetKind
+                    is ConfigurationTargetKind.PythonKeyringBackend
+                        or ConfigurationTargetKind.KeyringShim
+            )
+        )
+        {
+            string? violation = PythonKeyringPhysicalTargetWriter.GetPlanningValidationViolation(
+                change
+            );
+            if (violation is not null)
+            {
+                throw new NotSupportedException(violation);
             }
         }
     }
@@ -1529,6 +1555,45 @@ public sealed class ConfigurationManager : IConfigurationManager
             : null;
     }
 
+    private static void ValidatePythonKeyringManifestEntriesAreVerifiableNonSecretValueWrites(
+        IEnumerable<ConfigurationOwnershipManifestEntry> entries
+    )
+    {
+        foreach (
+            ConfigurationOwnershipManifestEntry entry in entries.Where(entry =>
+                entry.TargetKind
+                    is ConfigurationTargetKind.PythonKeyringBackend
+                        or ConfigurationTargetKind.KeyringShim
+            )
+        )
+        {
+            string? pathViolation =
+                PythonKeyringPhysicalTargetWriter.GetTargetPathValidationViolation(
+                    entry.TargetPathOrName,
+                    entry.TargetKind
+                );
+            if (pathViolation is not null)
+            {
+                throw new InvalidOperationException(pathViolation);
+            }
+
+            if (
+                !string.Equals(entry.Key, "physical-target", StringComparison.Ordinal)
+                || !IsValueWritingOperation(entry.Operation)
+                || !entry.HasPlannedValue
+                || entry.IsSecretValue
+                || !IsLowercaseSha256Hex(entry.PlannedValueSha256)
+            )
+            {
+                throw new InvalidOperationException(
+                    "Configuration ownership manifest conflict: Python keyring physical target "
+                        + "entries must be non-secret value-writing entries with verifiable "
+                        + "planned value SHA-256 hashes."
+                );
+            }
+        }
+    }
+
     private static string? GetPhysicalTargetKindSamePathConflictViolation(
         ConfigurationChangePlan plan
     ) =>
@@ -1756,6 +1821,9 @@ public sealed class ConfigurationManager : IConfigurationManager
             manifest.Entries.Where(entry => IsValueWritingOperation(entry.Operation))
         );
         ValidateGitConfigUseHttpPathManifestEntriesRetainCanonicalTrue(
+            manifest.Entries.Where(entry => IsValueWritingOperation(entry.Operation))
+        );
+        ValidatePythonKeyringManifestEntriesAreVerifiableNonSecretValueWrites(
             manifest.Entries.Where(entry => IsValueWritingOperation(entry.Operation))
         );
         ValidateNuGetPluginLayoutManifestEntriesAreVerifiableNonSecretValueWrites(
@@ -3443,7 +3511,8 @@ public sealed class ConfigurationManager : IConfigurationManager
                 mutation.PreviousContentsBytes,
                 mutation.PreviousContentsBytes is null
                     ? null
-                    : ComputeSha256(mutation.PreviousContentsBytes)
+                    : ComputeSha256(mutation.PreviousContentsBytes),
+                UnixFileMode: mutation.PreviousUnixFileMode
             ),
             mutation.ExpectedCurrentSha256Hash
         );
@@ -3495,12 +3564,24 @@ public sealed class ConfigurationManager : IConfigurationManager
             .Select(change => CreatePhysicalPathIdentity(fileSystem, change.TargetPathOrName))
             .Distinct(GetPathIdentityComparer())
             .ToArray();
+        string[] expectedPythonKeyringTargetPaths = plan
+            .Changes.Where(change =>
+                change.TargetKind is ConfigurationTargetKind.PythonKeyringBackend
+                    or ConfigurationTargetKind.KeyringShim
+            )
+            .Select(change => CreatePhysicalPathIdentity(fileSystem, change.TargetPathOrName))
+            .Distinct(GetPathIdentityComparer())
+            .ToArray();
         var expectedGitConfigTargetPathSet = new HashSet<string>(
             expectedGitConfigTargetPaths,
             GetPathIdentityComparer()
         );
         var expectedNuGetPluginLayoutTargetRootPathSet = new HashSet<string>(
             expectedNuGetPluginLayoutTargetRootPaths,
+            GetPathIdentityComparer()
+        );
+        var expectedPythonKeyringTargetPathSet = new HashSet<string>(
+            expectedPythonKeyringTargetPaths,
             GetPathIdentityComparer()
         );
         var mutationsByNormalizedPath =
@@ -3564,6 +3645,18 @@ public sealed class ConfigurationManager : IConfigurationManager
                     reportedMutationException ??= new InvalidOperationException(
                         "Configuration physical target writer reported a completed file mutation "
                             + "for an unrelated NuGet plugin layout target path."
+                    );
+                    continue;
+                }
+            }
+
+            if (expectedPythonKeyringTargetPaths.Length > 0)
+            {
+                if (!expectedPythonKeyringTargetPathSet.Contains(normalizedMutationPath))
+                {
+                    reportedMutationException ??= new InvalidOperationException(
+                        "Configuration physical target writer reported a completed file mutation "
+                            + "for an unrelated Python keyring target path."
                     );
                     continue;
                 }
@@ -3652,6 +3745,17 @@ public sealed class ConfigurationManager : IConfigurationManager
                 throw new InvalidOperationException(
                     "Configuration physical target writer did not report a completed file "
                         + "mutation or observation for every NuGet plugin layout target path."
+                );
+            }
+        }
+
+        foreach (string expectedPath in expectedPythonKeyringTargetPaths)
+        {
+            if (!mutationsByNormalizedPath.ContainsKey(expectedPath))
+            {
+                throw new InvalidOperationException(
+                    "Configuration physical target writer did not report a completed file "
+                        + "mutation or observation for every Python keyring target path."
                 );
             }
         }
@@ -3817,6 +3921,8 @@ public sealed class ConfigurationManager : IConfigurationManager
             .Entries.Where(entry =>
                 entry.TargetKind is ConfigurationTargetKind.GitConfig
                     or ConfigurationTargetKind.NuGetPluginLayout
+                    or ConfigurationTargetKind.PythonKeyringBackend
+                    or ConfigurationTargetKind.KeyringShim
             )
             .Select(entry => new ConfigurationPhysicalTargetOwnershipProof(
                 entry.TargetKind,
@@ -4044,6 +4150,7 @@ public sealed class ConfigurationManager : IConfigurationManager
     {
         EnsurePhysicalTargetDispatchTargetShapeSupported(plan, "apply/remove");
         EnsureNuGetPluginLayoutTargetRootsAreCanonical(plan);
+        EnsurePythonKeyringTargetPathsAreCanonical(plan);
         EnsurePhysicalTargetDispatchBatchShapeSupported(fileSystem, plan, "apply/remove");
 
         if (
@@ -4078,6 +4185,7 @@ public sealed class ConfigurationManager : IConfigurationManager
     {
         EnsurePhysicalTargetDispatchTargetShapeSupported(plan, "dry-run");
         EnsureNuGetPluginLayoutTargetRootsAreCanonical(plan);
+        EnsurePythonKeyringTargetPathsAreCanonical(plan);
         EnsurePhysicalTargetDispatchBatchShapeSupported(fileSystem, plan, "dry-run");
 
         bool allValueWriting = plan.Changes.All(change =>
@@ -4171,6 +4279,21 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
 
         return null;
+    }
+
+    private static string? GetPythonKeyringPlanningValidationViolation(
+        ConfigurationChangePlan plan
+    )
+    {
+        try
+        {
+            EnsurePythonKeyringTargetPathsAreCanonical(plan);
+            return null;
+        }
+        catch (NotSupportedException exception)
+        {
+            return exception.Message;
+        }
     }
 
     private static void EnsureGitConfigGoldenSliceSupported(ConfigurationChangePlan plan)
@@ -4300,7 +4423,8 @@ public sealed class ConfigurationManager : IConfigurationManager
         throw new NotSupportedException(
             $"Configuration {operationDescription} has no registered writer for this 4D "
                 + "physical configuration target kind. Phase 4D.2 currently supports only "
-                + "GitConfig and NuGetPluginLayout physical targets."
+                + "GitConfig, NuGetPluginLayout, PythonKeyringBackend, and KeyringShim "
+                + "physical targets."
         );
     }
 
@@ -4523,6 +4647,9 @@ public sealed class ConfigurationManager : IConfigurationManager
 
         ValidateGitConfigManifestEntriesAreVerifiableNonSecretValueWrites(nonCiPhysicalEntries);
         ValidateGitConfigUseHttpPathManifestEntriesRetainCanonicalTrue(nonCiPhysicalEntries);
+        ValidatePythonKeyringManifestEntriesAreVerifiableNonSecretValueWrites(
+            nonCiPhysicalEntries
+        );
         if (
             nonCiPhysicalEntries
                 .Select(entry =>
@@ -4589,7 +4716,10 @@ public sealed class ConfigurationManager : IConfigurationManager
         ConfigurationTargetKind targetKind
     ) =>
         targetKind is
-            ConfigurationTargetKind.GitConfig or ConfigurationTargetKind.NuGetPluginLayout;
+            ConfigurationTargetKind.GitConfig
+                or ConfigurationTargetKind.NuGetPluginLayout
+                or ConfigurationTargetKind.PythonKeyringBackend
+                or ConfigurationTargetKind.KeyringShim;
 
     private static void ValidateGitConfigManifestEntriesAreVerifiableNonSecretValueWrites(
         IEnumerable<ConfigurationOwnershipManifestEntry> entries
@@ -5263,6 +5393,10 @@ public sealed class ConfigurationManager : IConfigurationManager
                 options: AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly,
                 expectation: CreateRollbackCurrentExpectation(snapshot)
             );
+            if (snapshot.UnixFileMode is { } unixFileMode)
+            {
+                fileSystem.SetUnixFileMode(snapshot.Path, unixFileMode);
+            }
             return;
         }
 
@@ -7912,7 +8046,9 @@ public sealed class ConfigurationManager : IConfigurationManager
         ConfigurationTargetKind targetKind
     ) =>
         targetKind is ConfigurationTargetKind.GitConfig
-            or ConfigurationTargetKind.NuGetPluginLayout;
+            or ConfigurationTargetKind.NuGetPluginLayout
+            or ConfigurationTargetKind.PythonKeyringBackend
+            or ConfigurationTargetKind.KeyringShim;
 
     private static bool IsPhysicalFileSystemTarget(ConfigurationTargetKind targetKind) =>
         targetKind == ConfigurationTargetKind.CiTemporaryFile
@@ -7968,7 +8104,8 @@ public sealed class ConfigurationManager : IConfigurationManager
         string? Contents,
         byte[]? ContentsBytes,
         string? ContentsSha256Hash,
-        string? ExpectedCurrentHashForRollback = null
+        string? ExpectedCurrentHashForRollback = null,
+        UnixFileMode? UnixFileMode = null
     )
     {
         public bool Existed => EntryKind != FileRollbackSnapshotEntryKind.Missing;
