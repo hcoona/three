@@ -33,12 +33,73 @@ public sealed class ConfigurationManagerTests
     private static readonly ConfigurationTargetKind[]
         UnsupportedRetainedNonCiPhysicalTargetKindValues =
         [
-            ConfigurationTargetKind.NuGetPluginLayout,
             ConfigurationTargetKind.PythonKeyringBackend,
             ConfigurationTargetKind.KeyringShim,
             ConfigurationTargetKind.Npmrc,
             ConfigurationTargetKind.Yarnrc,
         ];
+
+    private static string CreateNuGetPluginLayoutTargetRoot(string? userName = null)
+    {
+        string homeDirectory = GetCurrentUserProfileDirectory();
+        if (userName is null)
+        {
+            return Path.Combine(
+                homeDirectory,
+                ".nuget",
+                "plugins",
+                "netcore",
+                "azureauth-credprovider"
+            );
+        }
+
+        string? parentDirectory = Path.GetDirectoryName(homeDirectory);
+        string userProfileDirectory = string.IsNullOrEmpty(parentDirectory)
+            ? Path.Combine(homeDirectory, userName)
+            : Path.Combine(parentDirectory, userName);
+        return Path.Combine(
+            userProfileDirectory,
+            ".nuget",
+            "plugins",
+            "netcore",
+            "azureauth-credprovider"
+        );
+    }
+
+    private static string GetCurrentUserProfileDirectory()
+    {
+        string? userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrWhiteSpace(userProfile))
+        {
+            return Path.TrimEndingDirectorySeparator(userProfile);
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            string? windowsUserProfile = Environment.GetEnvironmentVariable("USERPROFILE");
+            if (!string.IsNullOrWhiteSpace(windowsUserProfile))
+            {
+                return Path.TrimEndingDirectorySeparator(windowsUserProfile);
+            }
+
+            string? homeDrive = Environment.GetEnvironmentVariable("HOMEDRIVE");
+            string? homePath = Environment.GetEnvironmentVariable("HOMEPATH");
+            if (!string.IsNullOrWhiteSpace(homeDrive) && !string.IsNullOrWhiteSpace(homePath))
+            {
+                return Path.TrimEndingDirectorySeparator(homeDrive + homePath);
+            }
+        }
+        else
+        {
+            string? home = Environment.GetEnvironmentVariable("HOME");
+            if (!string.IsNullOrWhiteSpace(home))
+            {
+                return Path.TrimEndingDirectorySeparator(home);
+            }
+        }
+
+        throw new InvalidOperationException("User profile directory is unavailable.");
+    }
 
     public static bool IsWindows => OperatingSystem.IsWindows();
 
@@ -486,7 +547,7 @@ public sealed class ConfigurationManagerTests
         ValidateAcceptDryRunRejectUnsupportedPhase4DInstallAdapterBeforeProjection()
     {
         var manager = new ConfigurationManager();
-        const string targetPath = "/config/planning-install-adapter-phase4d";
+        string targetPath = CreateNuGetPluginLayoutTargetRoot();
         ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
             ConfigurationTargetKind.NuGetPluginLayout,
             targetPath
@@ -545,6 +606,196 @@ public sealed class ConfigurationManagerTests
             StringComparison.Ordinal
         );
         Assert.DoesNotContain("metadata", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task
+        ValidatePlanAndNoFilesystemDryRunRejectUnsupportedNuGetPluginLayoutRemoveAdapter()
+    {
+        var manager = new ConfigurationManager();
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            CreateNuGetPluginLayoutTargetRoot()
+        );
+        ConfigurationChangePlan plan = setPlan with
+        {
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.RemoveAdapter,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-adapter-entry",
+                },
+            ],
+        };
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+        ConfigurationPlanValidationResult acceptResult = await manager.AcceptPlanAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
+        Assert.Contains(
+            "remove-adapter",
+            validationResult.Violation,
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.False(acceptResult.IsValid);
+        Assert.NotNull(acceptResult.Violation);
+        Assert.Contains(
+            "remove-adapter",
+            acceptResult.Violation,
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("remove-adapter", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task
+        ValidatePlanAcceptPlanAndNoFilesystemDryRunRejectUnsupportedNuGetPluginLayoutKey()
+    {
+        var manager = new ConfigurationManager();
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            CreateNuGetPluginLayoutTargetRoot()
+        );
+        ConfigurationChangePlan plan = setPlan with
+        {
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Key = "unexpected-key",
+                },
+            ],
+        };
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+        ConfigurationPlanValidationResult acceptResult = await manager.AcceptPlanAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
+        Assert.Contains(
+            "canonical physical target key",
+            validationResult.Violation,
+            StringComparison.Ordinal
+        );
+        Assert.False(acceptResult.IsValid);
+        Assert.NotNull(acceptResult.Violation);
+        Assert.Contains(
+            "canonical physical target key",
+            acceptResult.Violation,
+            StringComparison.Ordinal
+        );
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(
+            "canonical physical target key",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public async Task
+        ValidatePlanAcceptPlanAndNoFilesystemDryRunRejectWhitespaceNuGetPluginLayoutValue()
+    {
+        var manager = new ConfigurationManager();
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            CreateNuGetPluginLayoutTargetRoot()
+        );
+        ConfigurationChangePlan plan = setPlan with
+        {
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    Value = "   ",
+                },
+            ],
+        };
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+        ConfigurationPlanValidationResult acceptResult = await manager.AcceptPlanAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
+        Assert.Contains(
+            "non-empty",
+            validationResult.Violation,
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.False(acceptResult.IsValid);
+        Assert.NotNull(acceptResult.Violation);
+        Assert.Contains(
+            "non-empty",
+            acceptResult.Violation,
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("non-empty", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task
+        ValidatePlanAcceptPlanAndNoFilesystemDryRunRejectSecretNuGetPluginLayoutValue()
+    {
+        var manager = new ConfigurationManager();
+        ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            CreateNuGetPluginLayoutTargetRoot()
+        );
+        ConfigurationChangePlan plan = setPlan with
+        {
+            Changes =
+            [
+                setPlan.Changes[0] with
+                {
+                    IsSecretValue = true,
+                    Value = "planned-value",
+                },
+            ],
+        };
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+        ConfigurationPlanValidationResult acceptResult = await manager.AcceptPlanAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
+        Assert.Contains("secret", validationResult.Violation, StringComparison.OrdinalIgnoreCase);
+        Assert.False(acceptResult.IsValid);
+        Assert.NotNull(acceptResult.Violation);
+        Assert.Contains("secret", acceptResult.Violation, StringComparison.OrdinalIgnoreCase);
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("secret", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -1347,24 +1598,34 @@ public sealed class ConfigurationManagerTests
 
     [Fact]
     public async Task
-        FilesystemBackedPhase4DDryRunRejectsUnsupportedNuGetPluginLayoutBeforeKeyCasingMerge()
+        FilesystemBackedPhase4DDryRunProjectsNuGetPluginLayoutWithoutMutation()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/key-casing-physical-manifest.json";
-        const string targetPath = "/config/key-casing/.gitconfig";
-        var manager = new ConfigurationManager(fileSystem, manifestPath);
+        string targetPath = CreateNuGetPluginLayoutTargetRoot();
+        var manager = new ConfigurationManager(
+            fileSystem,
+            manifestPath,
+            new ConfigurationPhysicalTargetWriterDispatcher(fileSystem)
+        );
         ConfigurationChangePlan casingPlan = CreatePhysicalTargetPlan(
             ConfigurationTargetKind.NuGetPluginLayout,
             targetPath
         );
 
-        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
-            await manager.DryRunAsync(casingPlan, TestContext.Current.CancellationToken)
+        ConfigurationPlanResult result = await manager.DryRunAsync(
+            casingPlan,
+            TestContext.Current.CancellationToken
         );
 
-        Assert.Contains("no registered writer", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(ConfigurationPlanState.Planned, result.State);
+        ConfigurationOwnershipManifestEntry entry = Assert.Single(
+            result.OwnershipManifest!.Entries
+        );
+        Assert.Equal(ConfigurationTargetKind.NuGetPluginLayout, entry.TargetKind);
+        Assert.Equal(targetPath, entry.TargetPathOrName);
+        Assert.Equal("physical-target", entry.Key);
         Assert.False(fileSystem.FileExists(manifestPath));
-        Assert.False(fileSystem.FileExists(targetPath));
         AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
     }
 
@@ -1783,7 +2044,7 @@ public sealed class ConfigurationManagerTests
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/missing-remove-adapter-physical-manifest.json";
-        const string removedTargetPath = "/config/missing-remove-adapter";
+        string removedTargetPath = CreateNuGetPluginLayoutTargetRoot();
         var manager = new ConfigurationManager(fileSystem, manifestPath);
         ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
             ConfigurationTargetKind.NuGetPluginLayout,
@@ -1802,11 +2063,15 @@ public sealed class ConfigurationManagerTests
             ],
         };
 
-        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
             await manager.DryRunAsync(removeAdapterPlan, TestContext.Current.CancellationToken)
         );
 
-        Assert.Contains("no registered writer", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            "remove-adapter",
+            exception.Message,
+            StringComparison.Ordinal
+        );
         Assert.False(fileSystem.FileExists(manifestPath));
         Assert.False(fileSystem.FileExists(removedTargetPath));
         AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
@@ -1818,8 +2083,8 @@ public sealed class ConfigurationManagerTests
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/unowned-remove-adapter-physical-manifest.json";
-        const string ownedTargetPath = "/config/owned-adapter";
-        const string unownedTargetPath = "/config/unowned-adapter";
+        string ownedTargetPath = CreateNuGetPluginLayoutTargetRoot();
+        string unownedTargetPath = CreateNuGetPluginLayoutTargetRoot("bob");
         ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
             ConfigurationTargetKind.NuGetPluginLayout,
             ownedTargetPath
@@ -1846,11 +2111,15 @@ public sealed class ConfigurationManagerTests
             ],
         };
 
-        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
             await manager.DryRunAsync(removeAdapterPlan, TestContext.Current.CancellationToken)
         );
 
-        Assert.Contains("no registered writer", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            "official per-user plugin convention root",
+            exception.Message,
+            StringComparison.Ordinal
+        );
         Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
         Assert.False(fileSystem.FileExists(ownedTargetPath));
         Assert.False(fileSystem.FileExists(unownedTargetPath));
@@ -1863,7 +2132,7 @@ public sealed class ConfigurationManagerTests
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/unowned-key-remove-adapter-physical-manifest.json";
-        const string targetPath = "/config/owned-key-adapter";
+        string targetPath = CreateNuGetPluginLayoutTargetRoot();
         ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
             ConfigurationTargetKind.NuGetPluginLayout,
             targetPath
@@ -1904,11 +2173,15 @@ public sealed class ConfigurationManagerTests
             ],
         };
 
-        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
             await manager.DryRunAsync(removeAdapterPlan, TestContext.Current.CancellationToken)
         );
 
-        Assert.Contains("no registered writer", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            "canonical physical target key",
+            exception.Message,
+            StringComparison.Ordinal
+        );
         Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
         Assert.False(fileSystem.FileExists(targetPath));
         AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
@@ -1920,8 +2193,8 @@ public sealed class ConfigurationManagerTests
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/remove-adapter-physical-manifest.json";
-        const string remainingTargetPath = "/config/remaining-adapter";
-        const string removedTargetPath = "/config/removed-adapter";
+        string remainingTargetPath = CreateNuGetPluginLayoutTargetRoot();
+        string removedTargetPath = CreateNuGetPluginLayoutTargetRoot("bob");
         ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
             ConfigurationTargetKind.NuGetPluginLayout,
             removedTargetPath
@@ -1970,11 +2243,15 @@ public sealed class ConfigurationManagerTests
             ],
         };
 
-        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
             await manager.DryRunAsync(removeAdapterPlan, TestContext.Current.CancellationToken)
         );
 
-        Assert.Contains("no registered writer", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            "official per-user plugin convention root",
+            exception.Message,
+            StringComparison.Ordinal
+        );
         Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
         Assert.False(fileSystem.FileExists(remainingTargetPath));
         Assert.False(fileSystem.FileExists(removedTargetPath));
@@ -1987,7 +2264,7 @@ public sealed class ConfigurationManagerTests
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/remove-adapter-preserve-key-physical-manifest.json";
-        const string targetPath = "/config/remove-adapter-preserve-key";
+        string targetPath = CreateNuGetPluginLayoutTargetRoot();
         ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
             ConfigurationTargetKind.NuGetPluginLayout,
             targetPath
@@ -2033,11 +2310,15 @@ public sealed class ConfigurationManagerTests
             ],
         };
 
-        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
             await manager.DryRunAsync(removeAdapterPlan, TestContext.Current.CancellationToken)
         );
 
-        Assert.Contains("no registered writer", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            "canonical physical target key",
+            exception.Message,
+            StringComparison.Ordinal
+        );
         Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
         Assert.False(fileSystem.FileExists(targetPath));
         AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
@@ -2049,9 +2330,9 @@ public sealed class ConfigurationManagerTests
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/replace-adapter-physical-manifest.json";
-        const string remainingTargetPath = "/config/remaining-replace-adapter";
-        const string removedTargetPath = "/config/removed-replace-adapter";
-        const string installedTargetPath = "/config/installed-replace-adapter";
+        string remainingTargetPath = CreateNuGetPluginLayoutTargetRoot();
+        string removedTargetPath = CreateNuGetPluginLayoutTargetRoot("bob");
+        string installedTargetPath = CreateNuGetPluginLayoutTargetRoot("carol");
         ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
             ConfigurationTargetKind.NuGetPluginLayout,
             removedTargetPath
@@ -2093,7 +2374,7 @@ public sealed class ConfigurationManagerTests
                 {
                     Operation = ConfigurationChangeOperation.RemoveAdapter,
                     TargetPathOrName = removedTargetPath,
-                    Key = "removed-replace-adapter-target",
+                    Key = "physical-target",
                     Value = null,
                     PreviousOwnedEntryMetadata = "previous-adapter-entry",
                 },
@@ -2101,18 +2382,18 @@ public sealed class ConfigurationManagerTests
                 {
                     Operation = ConfigurationChangeOperation.InstallAdapter,
                     TargetPathOrName = installedTargetPath,
-                    Key = "installed-replace-adapter-target",
+                    Key = "physical-target",
                     Value = null,
                 },
             ],
         };
 
-        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
             await manager.DryRunAsync(replaceAdapterPlan, TestContext.Current.CancellationToken)
         );
 
         Assert.Contains(
-            "only one 4D physical target change",
+            "official per-user plugin convention root",
             exception.Message,
             StringComparison.Ordinal
         );
@@ -2129,8 +2410,8 @@ public sealed class ConfigurationManagerTests
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/install-adapter-with-value-physical-manifest.json";
-        const string setTargetPath = "/config/value-writing-physical-nuget";
-        const string installedTargetPath = "/config/installed-value-writing-adapter";
+        string setTargetPath = CreateNuGetPluginLayoutTargetRoot();
+        string installedTargetPath = CreateNuGetPluginLayoutTargetRoot("bob");
         var manager = new ConfigurationManager(fileSystem, manifestPath);
         ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
             ConfigurationTargetKind.NuGetPluginLayout,
@@ -2154,12 +2435,12 @@ public sealed class ConfigurationManagerTests
             ],
         };
 
-        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
             await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
         );
 
         Assert.Contains(
-            "only one 4D physical target change",
+            "official per-user plugin convention root",
             exception.Message,
             StringComparison.Ordinal
         );
@@ -2181,8 +2462,8 @@ public sealed class ConfigurationManagerTests
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/remove-adapter-with-value-physical-manifest.json";
-        const string removeAdapterTargetPath = "/config/rejected-remove-adapter";
-        const string valueTargetPath = "/config/rejected-value-writing.gitconfig";
+        string removeAdapterTargetPath = CreateNuGetPluginLayoutTargetRoot();
+        string valueTargetPath = CreateNuGetPluginLayoutTargetRoot("bob");
         var manager = new ConfigurationManager(fileSystem, manifestPath);
         ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
             ConfigurationTargetKind.NuGetPluginLayout,
@@ -2197,7 +2478,7 @@ public sealed class ConfigurationManagerTests
                     Operation = ConfigurationChangeOperation.RemoveAdapter,
                     TargetKind = ConfigurationTargetKind.NuGetPluginLayout,
                     TargetPathOrName = removeAdapterTargetPath,
-                    Key = "removed-adapter-target",
+                    Key = "physical-target",
                     Value = null,
                     RequiresOwnershipRecord = true,
                     PreserveDeclarationsAndComments = true,
@@ -2217,15 +2498,10 @@ public sealed class ConfigurationManagerTests
         };
         fileSystem.Calls.Clear();
 
-        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
             await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
         );
-
-        Assert.Contains(
-            "only one 4D physical target change",
-            exception.Message,
-            StringComparison.Ordinal
-        );
+        Assert.Contains("remove-adapter", exception.Message, StringComparison.Ordinal);
         Assert.False(fileSystem.FileExists(manifestPath));
         Assert.False(fileSystem.FileExists(removeAdapterTargetPath));
         Assert.False(fileSystem.FileExists(valueTargetPath));
@@ -2838,8 +3114,11 @@ public sealed class ConfigurationManagerTests
     )
     {
         var manager = new ConfigurationManager();
-        string targetPath =
-            $"config/phase4d/{phase4DTargetKind.ToString().ToLower(CultureInfo.InvariantCulture)}";
+        string targetPath = phase4DTargetKind == ConfigurationTargetKind.NuGetPluginLayout
+            ? CreateNuGetPluginLayoutTargetRoot()
+            : $"config/phase4d/{phase4DTargetKind
+                .ToString()
+                .ToLower(CultureInfo.InvariantCulture)}";
         ConfigurationChangePlan plan = CreatePhysicalTargetPlan(phase4DTargetKind, targetPath) with
         {
             Changes =
@@ -2874,9 +3153,11 @@ public sealed class ConfigurationManagerTests
             "/state/phase4d-absolute-relative-manifest.json"
         );
         string targetPath =
-            $"config/phase4d-absolute-relative/{phase4DTargetKind
-                .ToString()
-                .ToLower(CultureInfo.InvariantCulture)}";
+            phase4DTargetKind == ConfigurationTargetKind.NuGetPluginLayout
+                ? CreateNuGetPluginLayoutTargetRoot()
+                : $"config/phase4d-absolute-relative/{phase4DTargetKind
+                    .ToString()
+                    .ToLower(CultureInfo.InvariantCulture)}";
         ConfigurationChangePlan plan = CreatePhysicalTargetPlan(phase4DTargetKind, targetPath) with
         {
             Changes =
@@ -2887,14 +3168,18 @@ public sealed class ConfigurationManagerTests
         };
 
         ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
+        string expectedViolation =
+            phase4DTargetKind == ConfigurationTargetKind.NuGetPluginLayout
+                ? "official per-user plugin convention root"
+                : "same physical target path";
 
         Assert.False(result.IsValid);
         Assert.NotNull(result.Violation);
-        Assert.Contains("same physical target path", result.Violation, StringComparison.Ordinal);
+        Assert.Contains(expectedViolation, result.Violation, StringComparison.Ordinal);
         var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
             await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
         );
-        Assert.Contains("same physical target path", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(expectedViolation, exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -4120,6 +4405,61 @@ public sealed class ConfigurationManagerTests
         Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
     }
 
+    [Fact]
+    public async Task
+        FilesystemBackedApplyRejectsOffTreeNuGetPluginLayoutManifestEntryBeforeDispatch()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-off-tree-nuget-manifest.json";
+        string targetPath = CreateNuGetPluginLayoutTargetRoot();
+        string offTreeTargetPath = CreateNuGetPluginLayoutTargetRoot("bob");
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.NuGetPluginLayout,
+            targetPath
+        );
+        ConfigurationOwnershipManifest projectedManifest = await CreateDryRunManifestAsync(plan);
+        ConfigurationOwnershipManifestEntry projectedEntry = Assert.Single(
+            projectedManifest.Entries
+        );
+        ConfigurationOwnershipManifest existingManifest = projectedManifest with
+        {
+            PlanId = "previous-phase4d-off-tree-nuget-manifest-plan",
+            ChangeSetId = "previous-phase4d-off-tree-nuget-manifest-changeset",
+            Entries =
+            [
+                projectedEntry with
+                {
+                    TargetPathOrName = offTreeTargetPath,
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        ConfigurationChangePlan planWithManifestHash = plan with
+        {
+            Manifest = plan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.ApplyAsync(planWithManifestHash, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "official per-user plugin convention root",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Empty(dispatcher.Requests);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
     [Theory]
     [MemberData(nameof(UnsupportedRetainedNonCiPhysicalTargetKinds))]
     public async Task
@@ -4240,7 +4580,7 @@ public sealed class ConfigurationManagerTests
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/non-value-writing-apply-manifest.json";
-        const string targetPath = "/config/non-value-writing-apply-nuget";
+        string targetPath = CreateNuGetPluginLayoutTargetRoot();
         var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
         var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
         ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(
@@ -4265,15 +4605,26 @@ public sealed class ConfigurationManagerTests
             ],
         };
 
-        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
-            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
-        );
+        Exception exception = operation == ConfigurationChangeOperation.RemoveAdapter
+            ? await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+            )
+            : await Assert.ThrowsAsync<NotSupportedException>(async () =>
+                await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+            );
 
-        Assert.Contains(
-            "apply currently supports only value-writing",
-            exception.Message,
-            StringComparison.Ordinal
-        );
+        if (operation == ConfigurationChangeOperation.RemoveAdapter)
+        {
+            Assert.Contains("remove-adapter", exception.Message, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains(
+                "apply currently supports only value-writing",
+                exception.Message,
+                StringComparison.Ordinal
+            );
+        }
         Assert.Empty(dispatcher.Requests);
         Assert.False(fileSystem.FileExists(targetPath));
         Assert.False(fileSystem.FileExists(manifestPath));
@@ -4286,7 +4637,7 @@ public sealed class ConfigurationManagerTests
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/non-ownership-removing-remove-manifest.json";
-        const string targetPath = "/config/non-ownership-removing-remove-nuget";
+        string targetPath = CreateNuGetPluginLayoutTargetRoot();
         var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
         var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
         ConfigurationChangePlan setPlan = CreatePhysicalTargetPlan(

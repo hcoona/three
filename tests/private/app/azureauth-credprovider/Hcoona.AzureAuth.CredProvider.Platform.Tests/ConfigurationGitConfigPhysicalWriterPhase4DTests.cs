@@ -1037,7 +1037,7 @@ public sealed class ConfigurationGitConfigPhysicalWriterPhase4DTests
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/gitconfig-unsupported-kind-manifest.json";
-        const string targetPath = "/config/nuget-plugin-layout";
+        const string targetPath = "/config/python-keyring-backend";
         var manager = CreateManager(fileSystem, manifestPath);
         ConfigurationChangePlan plan = ConfigurationChangePlanPolicy.Create(
             "plan-unsupported-kind-before-preclaim",
@@ -1055,7 +1055,7 @@ public sealed class ConfigurationGitConfigPhysicalWriterPhase4DTests
                 new ConfigurationChange
                 {
                     Operation = ConfigurationChangeOperation.Set,
-                    TargetKind = ConfigurationTargetKind.NuGetPluginLayout,
+                    TargetKind = ConfigurationTargetKind.PythonKeyringBackend,
                     TargetPathOrName = targetPath,
                     Key = "install",
                     Value = "planned-value",
@@ -1086,7 +1086,6 @@ public sealed class ConfigurationGitConfigPhysicalWriterPhase4DTests
     }
 
     [Theory]
-    [InlineData(ConfigurationTargetKind.NuGetPluginLayout)]
     [InlineData(ConfigurationTargetKind.PythonKeyringBackend)]
     [InlineData(ConfigurationTargetKind.KeyringShim)]
     public async Task

@@ -42,6 +42,8 @@ internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
     IConfigurationPhysicalTargetRetainedOwnershipProofValidator
 {
     private readonly GitConfigPhysicalTargetWriter gitConfigWriter = new(fileSystem);
+    private readonly NuGetPluginLayoutPhysicalTargetWriter nuGetPluginLayoutWriter =
+        new(fileSystem);
 
     public bool RejectSecretGitConfigValueWritesBeforeManifestPreclaim => true;
 
@@ -53,15 +55,21 @@ internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (request.TargetKind != ConfigurationTargetKind.GitConfig)
+        switch (request.TargetKind)
         {
-            throw new NotSupportedException(
-                "Configuration apply/remove has no registered writer for this 4D physical "
-                    + "configuration target kind."
-            );
+            case ConfigurationTargetKind.GitConfig:
+                gitConfigWriter.Write(request, cancellationToken);
+                break;
+            case ConfigurationTargetKind.NuGetPluginLayout:
+                nuGetPluginLayoutWriter.Write(request, cancellationToken);
+                break;
+            default:
+                throw new NotSupportedException(
+                    "Configuration apply/remove has no registered writer for this 4D physical "
+                        + "configuration target kind."
+                );
         }
 
-        gitConfigWriter.Write(request, cancellationToken);
         return ValueTask.CompletedTask;
     }
 
@@ -73,14 +81,20 @@ internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (request.TargetKind != ConfigurationTargetKind.GitConfig)
+        switch (request.TargetKind)
         {
-            throw new NotSupportedException(
-                "Configuration dry-run has no registered validator for this 4D physical "
-                    + "configuration target kind."
-            );
+            case ConfigurationTargetKind.GitConfig:
+                gitConfigWriter.Validate(request, cancellationToken);
+                break;
+            case ConfigurationTargetKind.NuGetPluginLayout:
+                nuGetPluginLayoutWriter.Validate(request, cancellationToken);
+                break;
+            default:
+                throw new NotSupportedException(
+                    "Configuration dry-run has no registered validator for this 4D physical "
+                        + "configuration target kind."
+                );
         }
-        gitConfigWriter.Validate(request, cancellationToken);
     }
 
     public void ValidateRetainedOwnershipProofs(
@@ -91,6 +105,7 @@ internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
         ArgumentNullException.ThrowIfNull(ownershipProofs);
         cancellationToken.ThrowIfCancellationRequested();
         gitConfigWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
+        nuGetPluginLayoutWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
     }
 }
 

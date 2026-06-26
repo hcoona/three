@@ -145,7 +145,7 @@ public sealed class ConfigurationManager : IConfigurationManager
         );
         if (!filesystemBacked)
         {
-            ValidateProjectedGitConfigManifestForReturn(plannedResult.OwnershipManifest);
+            ValidateProjectedPhysicalTargetManifestForReturn(plannedResult.OwnershipManifest);
             return ValueTask.FromResult(plannedResult);
         }
 
@@ -925,7 +925,13 @@ public sealed class ConfigurationManager : IConfigurationManager
         ConfigurationPlanOperation operation
     )
     {
-        string? violation = GetPhase4DPhysicalScaffoldPrecedencePlanningValidationViolation(plan);
+        string? violation = GetNuGetPluginLayoutPlanningValidationViolation(plan);
+        if (violation is not null)
+        {
+            throw new ArgumentException(violation, nameof(plan));
+        }
+
+        violation = GetPhase4DPhysicalScaffoldPrecedencePlanningValidationViolation(plan);
         if (violation is not null)
         {
             throw new ArgumentException(violation, nameof(plan));
@@ -963,6 +969,12 @@ public sealed class ConfigurationManager : IConfigurationManager
             return violation;
         }
 
+        violation = GetNuGetPluginLayoutPlanningValidationViolation(plan);
+        if (violation is not null)
+        {
+            return violation;
+        }
+
         if (ContainsProjectionOnlyPhysicalTarget(plan))
         {
             violation = GetPhase4DPhysicalScaffoldPrecedencePlanningValidationViolation(plan);
@@ -987,13 +999,19 @@ public sealed class ConfigurationManager : IConfigurationManager
         return violation;
     }
 
-    private static void EnsureValidForPhysicalTargetDryRunBeforeProjection(
+    private void EnsureValidForPhysicalTargetDryRunBeforeProjection(
         ConfigurationChangePlan plan
     )
     {
         ArgumentNullException.ThrowIfNull(plan);
 
-        string? violation = GetPhase4DPhysicalScaffoldPrecedencePlanningValidationViolation(plan);
+        string? violation = GetNuGetPluginLayoutPlanningValidationViolation(plan);
+        if (violation is not null)
+        {
+            throw new ArgumentException(violation, nameof(plan));
+        }
+
+        violation = GetPhase4DPhysicalScaffoldPrecedencePlanningValidationViolation(plan);
         if (violation is not null)
         {
             throw new ArgumentException(violation, nameof(plan));
@@ -1039,11 +1057,17 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
     }
 
-    private static void EnsureValidForNoFilesystemPlanning(ConfigurationChangePlan plan)
+    private void EnsureValidForNoFilesystemPlanning(ConfigurationChangePlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
 
-        string? violation = GetPhase4DPhysicalScaffoldFirstPlanningValidationViolation(plan);
+        string? violation = GetNuGetPluginLayoutPlanningValidationViolation(plan);
+        if (violation is not null)
+        {
+            throw new ArgumentException(violation, nameof(plan));
+        }
+
+        violation = GetPhase4DPhysicalScaffoldFirstPlanningValidationViolation(plan);
         if (violation is not null)
         {
             throw new ArgumentException(violation, nameof(plan));
@@ -1552,7 +1576,12 @@ public sealed class ConfigurationManager : IConfigurationManager
 
     private ConfigurationChangePlan CanonicalizePhysicalTargetPlan(ConfigurationChangePlan plan)
     {
-        if (!plan.Changes.Any(change => change.TargetKind == ConfigurationTargetKind.GitConfig))
+        if (
+            !plan.Changes.Any(change =>
+                change.TargetKind is ConfigurationTargetKind.GitConfig
+                    or ConfigurationTargetKind.NuGetPluginLayout
+            )
+        )
         {
             return plan;
         }
@@ -1566,15 +1595,25 @@ public sealed class ConfigurationManager : IConfigurationManager
     private ConfigurationChange CanonicalizePhysicalTargetChange(ConfigurationChange change)
     {
         if (
-            change.TargetKind == ConfigurationTargetKind.GitConfig
+            change.TargetKind is ConfigurationTargetKind.GitConfig
+                or ConfigurationTargetKind.NuGetPluginLayout
         )
         {
-            return change with
+            ConfigurationChange canonicalizedChange = change with
             {
                 TargetPathOrName = CreatePhysicalPathIdentity(
                     fileSystem: fileSystem!,
                     change.TargetPathOrName
                 ),
+            };
+
+            if (change.TargetKind != ConfigurationTargetKind.GitConfig)
+            {
+                return canonicalizedChange;
+            }
+
+            return canonicalizedChange with
+            {
                 Key = GitConfigPhysicalTargetWriter.CanonicalizeSupportedConfigurationKey(
                     change.Key
                 ),
@@ -1596,7 +1635,12 @@ public sealed class ConfigurationManager : IConfigurationManager
         ConfigurationChangePlan plan
     )
     {
-        if (!plan.Changes.Any(change => change.TargetKind == ConfigurationTargetKind.GitConfig))
+        if (
+            !plan.Changes.Any(change =>
+                change.TargetKind is ConfigurationTargetKind.GitConfig
+                    or ConfigurationTargetKind.NuGetPluginLayout
+            )
+        )
         {
             return plan;
         }
@@ -1611,12 +1655,26 @@ public sealed class ConfigurationManager : IConfigurationManager
         ConfigurationChange change
     )
     {
-        if (change.TargetKind != ConfigurationTargetKind.GitConfig)
+        if (
+            change.TargetKind
+                is not ConfigurationTargetKind.GitConfig
+                and not ConfigurationTargetKind.NuGetPluginLayout
+        )
         {
             return change;
         }
 
-        return change with
+        ConfigurationChange canonicalizedChange = change with
+        {
+            TargetPathOrName = CreatePlanningPhysicalPathIdentity(change),
+        };
+
+        if (change.TargetKind != ConfigurationTargetKind.GitConfig)
+        {
+            return canonicalizedChange;
+        }
+
+        return canonicalizedChange with
         {
             Key = GitConfigPhysicalTargetWriter.CanonicalizeSupportedConfigurationKey(change.Key),
         };
@@ -1685,7 +1743,7 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
     }
 
-    private static void ValidateProjectedGitConfigManifestForReturn(
+    private static void ValidateProjectedPhysicalTargetManifestForReturn(
         ConfigurationOwnershipManifest? manifest
     )
     {
@@ -1698,6 +1756,9 @@ public sealed class ConfigurationManager : IConfigurationManager
             manifest.Entries.Where(entry => IsValueWritingOperation(entry.Operation))
         );
         ValidateGitConfigUseHttpPathManifestEntriesRetainCanonicalTrue(
+            manifest.Entries.Where(entry => IsValueWritingOperation(entry.Operation))
+        );
+        ValidateNuGetPluginLayoutManifestEntriesAreVerifiableNonSecretValueWrites(
             manifest.Entries.Where(entry => IsValueWritingOperation(entry.Operation))
         );
     }
@@ -2261,7 +2322,7 @@ public sealed class ConfigurationManager : IConfigurationManager
         CancellationToken cancellationToken
     )
     {
-        if (!plan.Changes.All(change => change.TargetKind == ConfigurationTargetKind.GitConfig))
+        if (!plan.Changes.All(change => IsSupportedProjectionOnlyPhysicalTarget(change.TargetKind)))
         {
             return;
         }
@@ -2277,7 +2338,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             .Validate(
                 new ConfigurationPhysicalTargetWriterRequest(
                     operation,
-                    ConfigurationTargetKind.GitConfig,
+                    plan.Changes[0].TargetKind,
                     plan.Changes,
                     CreatePhysicalTargetOwnershipProofs(existingManifest)
                 ),
@@ -3427,8 +3488,19 @@ public sealed class ConfigurationManager : IConfigurationManager
             .Select(change => CreatePhysicalPathIdentity(fileSystem, change.TargetPathOrName))
             .Distinct(GetPathIdentityComparer())
             .ToArray();
+        string[] expectedNuGetPluginLayoutTargetRootPaths = plan
+            .Changes.Where(change =>
+                change.TargetKind == ConfigurationTargetKind.NuGetPluginLayout
+            )
+            .Select(change => CreatePhysicalPathIdentity(fileSystem, change.TargetPathOrName))
+            .Distinct(GetPathIdentityComparer())
+            .ToArray();
         var expectedGitConfigTargetPathSet = new HashSet<string>(
             expectedGitConfigTargetPaths,
+            GetPathIdentityComparer()
+        );
+        var expectedNuGetPluginLayoutTargetRootPathSet = new HashSet<string>(
+            expectedNuGetPluginLayoutTargetRootPaths,
             GetPathIdentityComparer()
         );
         var mutationsByNormalizedPath =
@@ -3469,16 +3541,32 @@ public sealed class ConfigurationManager : IConfigurationManager
                 continue;
             }
 
-            if (
-                expectedGitConfigTargetPaths.Length > 0
-                && !expectedGitConfigTargetPathSet.Contains(normalizedMutationPath)
-            )
+            if (expectedGitConfigTargetPaths.Length > 0)
             {
-                reportedMutationException ??= new InvalidOperationException(
-                    "Configuration physical target writer reported a completed file mutation "
-                        + "for an unrelated Git config target path."
-                );
-                continue;
+                if (!expectedGitConfigTargetPathSet.Contains(normalizedMutationPath))
+                {
+                    reportedMutationException ??= new InvalidOperationException(
+                        "Configuration physical target writer reported a completed file mutation "
+                            + "for an unrelated Git config target path."
+                    );
+                    continue;
+                }
+            }
+
+            if (expectedNuGetPluginLayoutTargetRootPaths.Length > 0)
+            {
+                if (
+                    !expectedNuGetPluginLayoutTargetRootPathSet.Any(expectedRootPath =>
+                        IsPathUnderDirectory(expectedRootPath, normalizedMutationPath)
+                    )
+                )
+                {
+                    reportedMutationException ??= new InvalidOperationException(
+                        "Configuration physical target writer reported a completed file mutation "
+                            + "for an unrelated NuGet plugin layout target path."
+                    );
+                    continue;
+                }
             }
 
             if (
@@ -3549,6 +3637,21 @@ public sealed class ConfigurationManager : IConfigurationManager
                 throw new InvalidOperationException(
                     "Configuration physical target writer did not report a completed file "
                         + "mutation or observation for every Git config target path."
+                );
+            }
+        }
+
+        foreach (string expectedRootPath in expectedNuGetPluginLayoutTargetRootPaths)
+        {
+            if (
+                !mutationsByNormalizedPath.Keys.Any(candidatePath =>
+                    IsPathUnderDirectory(expectedRootPath, candidatePath)
+                )
+            )
+            {
+                throw new InvalidOperationException(
+                    "Configuration physical target writer did not report a completed file "
+                        + "mutation or observation for every NuGet plugin layout target path."
                 );
             }
         }
@@ -3711,7 +3814,10 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
 
         return existingManifest
-            .Entries.Where(entry => entry.TargetKind == ConfigurationTargetKind.GitConfig)
+            .Entries.Where(entry =>
+                entry.TargetKind is ConfigurationTargetKind.GitConfig
+                    or ConfigurationTargetKind.NuGetPluginLayout
+            )
             .Select(entry => new ConfigurationPhysicalTargetOwnershipProof(
                 entry.TargetKind,
                 entry.TargetPathOrName,
@@ -3937,6 +4043,7 @@ public sealed class ConfigurationManager : IConfigurationManager
     )
     {
         EnsurePhysicalTargetDispatchTargetShapeSupported(plan, "apply/remove");
+        EnsureNuGetPluginLayoutTargetRootsAreCanonical(plan);
         EnsurePhysicalTargetDispatchBatchShapeSupported(fileSystem, plan, "apply/remove");
 
         if (
@@ -3970,6 +4077,7 @@ public sealed class ConfigurationManager : IConfigurationManager
     )
     {
         EnsurePhysicalTargetDispatchTargetShapeSupported(plan, "dry-run");
+        EnsureNuGetPluginLayoutTargetRootsAreCanonical(plan);
         EnsurePhysicalTargetDispatchBatchShapeSupported(fileSystem, plan, "dry-run");
 
         bool allValueWriting = plan.Changes.All(change =>
@@ -4015,6 +4123,54 @@ public sealed class ConfigurationManager : IConfigurationManager
             EnsureGitConfigGoldenSliceSupported(plan);
             EnsureNoDuplicateGitConfigPhysicalTargetKeys(plan, operationDescription);
         }
+    }
+
+    private static void EnsureNuGetPluginLayoutTargetRootsAreCanonical(ConfigurationChangePlan plan)
+    {
+        foreach (
+            ConfigurationChange change in plan.Changes.Where(change =>
+                change.TargetKind == ConfigurationTargetKind.NuGetPluginLayout
+            )
+        )
+        {
+            string? violation =
+                NuGetPluginLayoutPhysicalTargetWriter.GetTargetRootPathValidationViolation(
+                    change.TargetPathOrName
+                );
+            if (violation is not null)
+            {
+                throw new NotSupportedException(violation);
+            }
+        }
+    }
+
+    private string? GetNuGetPluginLayoutPlanningValidationViolation(
+        ConfigurationChangePlan plan
+    )
+    {
+        string? violation = GetReservedInternalPlanningPhysicalTargetPathViolation(plan);
+        if (violation is not null)
+        {
+            return violation;
+        }
+
+        foreach (
+            ConfigurationChange change in plan.Changes.Where(change =>
+                change.TargetKind == ConfigurationTargetKind.NuGetPluginLayout
+            )
+        )
+        {
+            string? changeViolation =
+                NuGetPluginLayoutPhysicalTargetWriter.GetPlanningValidationViolation(
+                change
+            );
+            if (changeViolation is not null)
+            {
+                return changeViolation;
+            }
+        }
+
+        return null;
     }
 
     private static void EnsureGitConfigGoldenSliceSupported(ConfigurationChangePlan plan)
@@ -4144,7 +4300,7 @@ public sealed class ConfigurationManager : IConfigurationManager
         throw new NotSupportedException(
             $"Configuration {operationDescription} has no registered writer for this 4D "
                 + "physical configuration target kind. Phase 4D.2 currently supports only "
-                + "GitConfig physical targets."
+                + "GitConfig and NuGetPluginLayout physical targets."
         );
     }
 
@@ -4385,6 +4541,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             );
         }
 
+        ValidateNuGetPluginLayoutManifestEntries(fileSystem, nonCiPhysicalEntries);
         if (
             nonCiPhysicalEntries
                 .Where(entry => entry.TargetKind == ConfigurationTargetKind.GitConfig)
@@ -4430,7 +4587,9 @@ public sealed class ConfigurationManager : IConfigurationManager
 
     private static bool HasRegisteredRetainedProofSupport(
         ConfigurationTargetKind targetKind
-    ) => targetKind == ConfigurationTargetKind.GitConfig;
+    ) =>
+        targetKind is
+            ConfigurationTargetKind.GitConfig or ConfigurationTargetKind.NuGetPluginLayout;
 
     private static void ValidateGitConfigManifestEntriesAreVerifiableNonSecretValueWrites(
         IEnumerable<ConfigurationOwnershipManifestEntry> entries
@@ -4457,6 +4616,87 @@ public sealed class ConfigurationManager : IConfigurationManager
                     + "must be non-secret value-writing entries with verifiable planned value "
                     + "SHA-256 hashes."
             );
+        }
+    }
+
+    private static void ValidateNuGetPluginLayoutManifestEntries(
+        IFileSystem fileSystem,
+        IEnumerable<ConfigurationOwnershipManifestEntry> entries
+    )
+    {
+        foreach (
+            ConfigurationOwnershipManifestEntry entry in entries.Where(entry =>
+                entry.TargetKind == ConfigurationTargetKind.NuGetPluginLayout
+            )
+        )
+        {
+            if (!fileSystem.IsPathFullyQualified(entry.TargetPathOrName))
+            {
+                throw new InvalidOperationException(
+                    "Configuration ownership manifest conflict: NuGet plugin layout "
+                        + "physical target entries must use fully qualified target paths."
+                );
+            }
+
+            if (!IsCanonicalNuGetPluginLayoutTargetRootPath(entry.TargetPathOrName))
+            {
+                throw new InvalidOperationException(
+                    "Configuration ownership manifest conflict: NuGet plugin layout "
+                        + "physical target entries must use the official per-user plugin "
+                        + "convention root."
+                );
+            }
+
+            if (
+                !string.Equals(entry.Key, "physical-target", StringComparison.Ordinal)
+                || !IsValueWritingOperation(entry.Operation)
+                || !entry.HasPlannedValue
+                || entry.IsSecretValue
+                || !IsLowercaseSha256Hex(entry.PlannedValueSha256)
+            )
+            {
+                throw new InvalidOperationException(
+                    "Configuration ownership manifest conflict: NuGet plugin layout "
+                        + "physical target entries must be non-secret value-writing entries "
+                        + "with verifiable planned value SHA-256 hashes."
+                );
+            }
+        }
+    }
+
+    private static void ValidateNuGetPluginLayoutManifestEntriesAreVerifiableNonSecretValueWrites(
+        IEnumerable<ConfigurationOwnershipManifestEntry> entries
+    )
+    {
+        foreach (
+            ConfigurationOwnershipManifestEntry entry in entries.Where(entry =>
+                entry.TargetKind == ConfigurationTargetKind.NuGetPluginLayout
+            )
+        )
+        {
+            if (!IsCanonicalNuGetPluginLayoutTargetRootPath(entry.TargetPathOrName))
+            {
+                throw new InvalidOperationException(
+                    "Configuration ownership manifest conflict: NuGet plugin layout "
+                        + "physical target entries must use the official per-user plugin "
+                        + "convention root."
+                );
+            }
+
+            if (
+                !string.Equals(entry.Key, "physical-target", StringComparison.Ordinal)
+                || !IsValueWritingOperation(entry.Operation)
+                || !entry.HasPlannedValue
+                || entry.IsSecretValue
+                || !IsLowercaseSha256Hex(entry.PlannedValueSha256)
+            )
+            {
+                throw new InvalidOperationException(
+                    "Configuration ownership manifest conflict: NuGet plugin layout "
+                        + "physical target entries must be non-secret value-writing entries "
+                        + "with verifiable planned value SHA-256 hashes."
+                );
+            }
         }
     }
 
@@ -7267,6 +7507,95 @@ public sealed class ConfigurationManager : IConfigurationManager
             : NormalizeAbsoluteConfigurationPathSegments(path);
     }
 
+    internal static bool IsCanonicalNuGetPluginLayoutTargetRootPath(string targetPath)
+    {
+        if (
+            string.IsNullOrWhiteSpace(targetPath)
+            || ContainsPhysicalPathTraversalSegments(targetPath)
+        )
+        {
+            return false;
+        }
+
+        string normalizedTargetPath = NormalizePhysicalTargetConfigurationPathSegments(targetPath);
+        string canonicalTargetPath = GetCanonicalNuGetPluginLayoutTargetRootPath();
+        return !string.IsNullOrWhiteSpace(canonicalTargetPath)
+            && string.Equals(
+                normalizedTargetPath,
+                canonicalTargetPath,
+                GetPathIdentityComparison()
+            );
+    }
+
+    private static bool ContainsPhysicalPathTraversalSegments(string path)
+    {
+        string normalizedPath = NormalizeRelativeConfigurationPathSegments(path);
+        return normalizedPath
+            .Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Any(segment => segment is "." or "..");
+    }
+
+    private static string GetCanonicalNuGetPluginLayoutTargetRootPath()
+    {
+        string homeDirectory = GetCurrentUserProfileDirectory();
+        if (string.IsNullOrWhiteSpace(homeDirectory))
+        {
+            return string.Empty;
+        }
+
+        ConfigurationLayoutProjectionContext context = new()
+        {
+            Platform = GetCurrentLayoutPlatform(),
+            HomeDirectory = homeDirectory,
+        };
+
+        return NormalizePhysicalTargetConfigurationPathSegments(
+            ConfigurationLayoutProjector.ProjectNuGetPluginLayout(context).TargetPath
+        );
+    }
+
+    private static ConfigurationLayoutPlatform GetCurrentLayoutPlatform() =>
+        OperatingSystem.IsWindows()
+            ? ConfigurationLayoutPlatform.Windows
+            : OperatingSystem.IsMacOS()
+                ? ConfigurationLayoutPlatform.MacOs
+                : ConfigurationLayoutPlatform.Linux;
+
+    private static string GetCurrentUserProfileDirectory()
+    {
+        string? userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrWhiteSpace(userProfile))
+        {
+            return Path.TrimEndingDirectorySeparator(userProfile);
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            string? windowsUserProfile = Environment.GetEnvironmentVariable("USERPROFILE");
+            if (!string.IsNullOrWhiteSpace(windowsUserProfile))
+            {
+                return Path.TrimEndingDirectorySeparator(windowsUserProfile);
+            }
+
+            string? homeDrive = Environment.GetEnvironmentVariable("HOMEDRIVE");
+            string? homePath = Environment.GetEnvironmentVariable("HOMEPATH");
+            if (!string.IsNullOrWhiteSpace(homeDrive) && !string.IsNullOrWhiteSpace(homePath))
+            {
+                return Path.TrimEndingDirectorySeparator(homeDrive + homePath);
+            }
+        }
+        else
+        {
+            string? home = Environment.GetEnvironmentVariable("HOME");
+            if (!string.IsNullOrWhiteSpace(home))
+            {
+                return Path.TrimEndingDirectorySeparator(home);
+            }
+        }
+
+        return string.Empty;
+    }
+
     private static string NormalizeRelativeConfigurationPathSegments(string path)
     {
         if (IsRootedInvalidConfigurationPath(path))
@@ -7581,7 +7910,9 @@ public sealed class ConfigurationManager : IConfigurationManager
 
     private static bool IsSupportedProjectionOnlyPhysicalTarget(
         ConfigurationTargetKind targetKind
-    ) => targetKind == ConfigurationTargetKind.GitConfig;
+    ) =>
+        targetKind is ConfigurationTargetKind.GitConfig
+            or ConfigurationTargetKind.NuGetPluginLayout;
 
     private static bool IsPhysicalFileSystemTarget(ConfigurationTargetKind targetKind) =>
         targetKind == ConfigurationTargetKind.CiTemporaryFile
