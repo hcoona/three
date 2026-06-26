@@ -243,10 +243,6 @@
           {
             "type": "path",
             "value": ".github/workflows/docs/DESIGN.v2.md"
-          },
-          {
-            "type": "path",
-            "value": ".github/workflows/REFACTOR_PLAN.md"
           }
         ],
         "planning-evidence": [

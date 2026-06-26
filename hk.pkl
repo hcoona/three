@@ -248,7 +248,6 @@ local workflow_release_validation = new Mapping<String, Step> {
       ".github/actionlint.yaml",
       ".github/workflows/*.yml",
       ".github/workflows/*.yaml",
-      ".github/workflows/REFACTOR_PLAN.md",
       ".github/workflows/docs/DESIGN.v2.md",
       "docs/wiki/analyses/workflow-release-*.md",
       "eng/release/**",

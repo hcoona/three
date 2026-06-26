@@ -2354,6 +2354,17 @@ def test_ci_acceptance_matrix_rows_are_actionable() -> None:
         "no-publication-boundary",
     ]
     test_nodeids = _all_test_nodeids()
+    tracked_paths: set[str] | None = None
+    if GIT is not None:
+        tracked_paths_output = subprocess.run(
+            [GIT, "ls-files", "-z"],
+            cwd=REPO_ROOT,
+            check=True,
+            stdout=subprocess.PIPE,
+        ).stdout.decode("utf-8")
+        tracked_paths = {
+            path for path in tracked_paths_output.split("\0") if path
+        }
 
     for row in matrix["rows"]:
         assert row["validation-mode"] == "ci-acceptance"
@@ -2377,11 +2388,15 @@ def test_ci_acceptance_matrix_rows_are_actionable() -> None:
                 reference_keys.append((ref_type, value))
                 if ref_type == "path":
                     assert (REPO_ROOT / value).is_file(), (row["id"], column)
+                    if tracked_paths is not None:
+                        assert value in tracked_paths, (row["id"], column, value)
                 elif ref_type == "test":
                     assert value in test_nodeids, (row["id"], column, value)
                     row_test_refs.append(value)
                 elif ref_type == "workflow":
                     assert (REPO_ROOT / value).is_file(), (row["id"], column)
+                    if tracked_paths is not None:
+                        assert value in tracked_paths, (row["id"], column, value)
                 else:
                     raise AssertionError((row["id"], column, ref_type))
             assert len(reference_keys) == len(set(reference_keys)), (
@@ -39531,7 +39546,6 @@ def test_hk_runs_focused_workflow_release_validation() -> None:
     assert ".github/actionlint.yaml" in hk_config
     assert ".github/workflows/*.yml" in hk_config
     assert ".github/workflows/*.yaml" in hk_config
-    assert ".github/workflows/REFACTOR_PLAN.md" in hk_config
     assert ".github/workflows/docs/DESIGN.v2.md" in hk_config
     assert "docs/wiki/analyses/workflow-release-*.md" in hk_config
     assert "eng/release/**" in hk_config
@@ -39566,7 +39580,6 @@ def test_hk_runs_focused_workflow_release_validation() -> None:
     assert r"\.github/actionlint\.yaml$" in pre_commit_config
     assert r"\.github/workflows/[^/]*\.yml$" in pre_commit_config
     assert r"\.github/workflows/[^/]*\.yaml$" in pre_commit_config
-    assert r"\.github/workflows/REFACTOR_PLAN\.md$" in pre_commit_config
     assert r"\.github/workflows/docs/DESIGN\.v2\.md$" in pre_commit_config
     assert (
         "docs/wiki/analyses/"
@@ -39594,7 +39607,7 @@ def test_hk_runs_focused_workflow_release_validation() -> None:
     for helper_path in (
         ".github/workflows/codeql.yml",
         ".github/workflows/generated-test.yaml",
-        ".github/workflows/REFACTOR_PLAN.md",
+        ".github/workflows/docs/DESIGN.v2.md",
         "docs/wiki/analyses/workflow-release-descriptor-schema.md",
         "docs/wiki/analyses/workflow-release-low-level-design.md",
         "eng/scripts/find_project_path.py",

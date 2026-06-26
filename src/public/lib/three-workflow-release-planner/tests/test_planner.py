@@ -3781,12 +3781,7 @@ def test_ci_validation_plans_workflow_governance_markdown_as_tooling() -> None:
         plan_ci_validation_from_repo,
     )
 
-    changed_files = sorted(
-        [
-            ".github/workflows/REFACTOR_PLAN.md",
-            ".github/workflows/docs/DESIGN.v2.md",
-        ]
-    )
+    changed_files = [".github/workflows/docs/DESIGN.v2.md"]
 
     snapshot = plan_ci_validation_from_repo(_ci_inputs(changed_files))
 

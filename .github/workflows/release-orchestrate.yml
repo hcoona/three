@@ -539,7 +539,7 @@ jobs:
   # in needs: and must still enforce their own plan-derived gates.
   # NOTE: The validate_inputs.sh changes shipped in the same Step 2 PR ARE breaking for
   # edge-case callers (stricter channel_allowlist regex, new reserved names x-official/x-buddy,
-  # new pre-case guards). See REFACTOR_PLAN.md §2 (Breaking changes in Step 2) for details.
+  # new pre-case guards). See .github/workflows/docs/DESIGN.v2.md for the active topology.
   # NOTE: Any exit 1 in this job (e.g., unrecognized project_variant) will fail dependent
   # jobs. This is intentional: the hub context must be derivable on every run.
   # NOTE: All guard jobs and policy-publish-targets are included in needs: so any spoke
@@ -595,7 +595,7 @@ jobs:
     # PREREQUISITE: The GitHub Environments 'release-official' and 'release-buddy' MUST
     # be pre-created in repository Settings → Environments with required reviewers before
     # any spoke is deployed. GitHub auto-creates missing environments with NO protection
-    # rules, silently bypassing the approval gate. See REFACTOR_PLAN.md §3 Step 3 notes.
+    # rules, silently bypassing the approval gate.
     outputs:
       channel_profile: ${{ steps.context.outputs.channel_profile }}
       # ROUTING-ONLY: channel_profile is metadata for spoke routing and diagnostics.
@@ -609,8 +609,7 @@ jobs:
       target_environment: ${{ steps.context.outputs.target_environment }}
       publish_mode: ${{ steps.context.outputs.publish_mode }}
       # COMPLIANCE: publish_mode='publish'|'build-only' is the current routing contract.
-      # See REFACTOR_PLAN.md §2.2 for the routing contract and the Step 4 design decision
-      # note for the known node-npm multi-target gap.
+      # See .github/workflows/docs/DESIGN.v2.md for the active release topology.
       # NOTE: project_variant is intentionally NOT a job output — it is hub-internal only.
       # (HUB-ROUTING: used only for publish_mode derivation and step-summary diagnostics.)
       # Do NOT promote it to outputs: — any needs: resolve-hub-context consumer could
@@ -634,7 +633,6 @@ jobs:
         # TODO(Step 6): Extract this run: block to eng/scripts/release_orchestrate_hub_context.sh
         # for improved local testability and Phase 3 self-test coverage (structural +
         # behavioral guards equivalent to Phase 0/2 in release_orchestrate_policy_self_test.sh).
-        # See REFACTOR_PLAN.md Step 6 for context on the extraction plan.
         run: |
           set -Eeuo pipefail
 

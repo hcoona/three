@@ -644,7 +644,7 @@ check_pattern_present "format check in *) case arm" \
 if [[ "${FAIL_PHASE2}" -ne 0 ]]; then
   echo "Step-2 guard presence check failed. A CHANNEL validation guard is missing" >&2
   echo "from ${VALIDATE_INPUTS_SH}. See each guard's inline comment for design intent." >&2
-  echo "See REFACTOR_PLAN.md §2 (Step 2) for the full validation design." >&2
+  echo "See .github/workflows/docs/DESIGN.v2.md for the active release topology." >&2
   exit 1
 fi
 echo "Step-2 guard presence self-test passed."

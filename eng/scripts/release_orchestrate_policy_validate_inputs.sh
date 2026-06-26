@@ -166,7 +166,7 @@ fi
 # or 'buddy'. Accepting them as direct channel inputs would route to
 # 'release-x-official'/'release-x-buddy' and undermine the escape-slug convention.
 if [[ "${CHANNEL}" == "x-official" || "${CHANNEL}" == "x-buddy" ]]; then
-  echo "Channel '${CHANNEL}' is reserved as an internal remapping slug and cannot be used as a direct channel input. These names are used by the release system to prevent environment name collisions. Choose a different channel name. See .github/workflows/REFACTOR_PLAN.md \"Breaking changes in Step 2\" for migration guidance." >&2
+  echo "Channel '${CHANNEL}' is reserved as an internal remapping slug and cannot be used as a direct channel input. These names are used by the release system to prevent environment name collisions. Choose a different channel name. See .github/workflows/docs/DESIGN.v2.md for the active release topology." >&2
   exit 1
 fi
 
@@ -218,7 +218,7 @@ case "${CHANNEL}" in
       echo "  No consecutive separators, mixed sequences, or leading/trailing separators." >&2
       echo "  Valid examples: staging, my-channel, canary2" >&2
       echo "  Common fixes: use lowercase only; remove leading/trailing separators; avoid consecutive hyphens/underscores." >&2
-      echo "  See .github/workflows/REFACTOR_PLAN.md \"Breaking changes in Step 2\" for migration examples." >&2
+      echo "  See .github/workflows/docs/DESIGN.v2.md for the active release topology." >&2
       exit 1
     fi
     # SECURITY: Allowlisted channels bypass ALL policy assertions (official/buddy

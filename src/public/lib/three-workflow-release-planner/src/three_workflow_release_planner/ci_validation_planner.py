@@ -176,7 +176,6 @@ _WORKFLOW_RELEASE_SURFACE_GLOBS: tuple[tuple[str, str], ...] = (
         "build-execution",
     ),
     ("eng/scripts/workflow_release_*.py", "workflow-orchestration"),
-    (".github/workflows/REFACTOR_PLAN.md", "workflow-orchestration"),
     (".github/workflows/docs/DESIGN.v2.md", "workflow-orchestration"),
     (".github/workflows/*.yml", "workflow-orchestration"),
     (".github/workflows/*.yaml", "workflow-orchestration"),
