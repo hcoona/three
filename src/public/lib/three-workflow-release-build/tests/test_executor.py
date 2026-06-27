@@ -981,13 +981,13 @@ def test_profile_timing_corrects_contract_invalid_clock_drift(
     started_at = datetime(2026, 6, 26, 5, 0, 0, tzinfo=UTC)
     wall_completed_at = started_at + timedelta(milliseconds=4500)
 
-    class DriftedDatetime(datetime):
-        @classmethod
-        def now(cls, tz: Any = None) -> datetime:
-            del cls, tz
+    class DriftedClock:
+        @staticmethod
+        def now(tz: Any = None) -> datetime:
+            del tz
             return wall_completed_at
 
-    monkeypatch.setattr(executor_module, "datetime", DriftedDatetime)
+    monkeypatch.setattr(executor_module, "datetime", DriftedClock)
     monkeypatch.setattr(
         executor_module.time,
         "perf_counter_ns",
