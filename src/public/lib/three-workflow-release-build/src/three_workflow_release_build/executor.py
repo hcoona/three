@@ -43,7 +43,7 @@ _BROWSER_NORMALIZED_VERSION_PARTS = 3
 _BROWSER_MAX_VERSION_PARTS = 4
 _BROWSER_MAX_VERSION_PART = 65535
 _PROFILE_TELEMETRY_FILE = "release-build-profile-telemetry.json"
-_TIMING_DURATION_TOLERANCE_MS = 5000
+_TIMING_DURATION_TOLERANCE_MS = 1000
 _SUPPORTED_KINDS = {
     "dotnet": {"nuget", "snupkg", "executable", "inno-setup"},
     "python": {"wheel", "sdist"},
@@ -141,8 +141,7 @@ class _BuildTelemetry:
         self._subprocess_index += 1
         self._script_dir.mkdir(parents=True, exist_ok=True)
         filename = (
-            f"{self._subprocess_index:04d}-"
-            f"{_safe_profile_filename(phase)}.json"
+            f"{self._subprocess_index:04d}-{_safe_profile_filename(phase)}.json"
         )
         return self._script_dir / filename
 
@@ -183,9 +182,7 @@ class _BuildTelemetry:
         if exit_code is not None:
             record["exit-code"] = exit_code
         if output_paths:
-            record["output-paths"] = [
-                path.as_posix() for path in output_paths
-            ]
+            record["output-paths"] = [path.as_posix() for path in output_paths]
         if binlog_path is not None:
             record["binlog-path"] = binlog_path.as_posix()
             record["binlog-exists"] = binlog_path.is_file()
@@ -431,9 +428,13 @@ def _profile_timing_finish(start: tuple[datetime, int]) -> Json:
 
 
 def _utc_timestamp_milliseconds(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat(timespec="milliseconds").replace(
-        "+00:00",
-        "Z",
+    return (
+        value.astimezone(UTC)
+        .isoformat(timespec="milliseconds")
+        .replace(
+            "+00:00",
+            "Z",
+        )
     )
 
 

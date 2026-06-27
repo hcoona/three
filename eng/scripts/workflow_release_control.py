@@ -24406,11 +24406,24 @@ def _ci_attach_uploaded_release_profile_evidence(
         telemetry = command.get("profile-telemetry")
         if not isinstance(telemetry, dict):
             continue
-        copied, path_aliases = _ci_copy_release_profile_evidence(
-            telemetry,
-            result_path=result_path,
-            repo_root=repo_root,
-        )
+        upload_timing = _ci_timing_start()
+        try:
+            copied, path_aliases = _ci_copy_release_profile_evidence(
+                telemetry,
+                result_path=result_path,
+                repo_root=repo_root,
+            )
+        except (OSError, shutil.Error) as exc:
+            _ci_record_release_profile_evidence_upload_failure(
+                telemetry,
+                upload_timing,
+                error=str(exc),
+            )
+            with suppress(OSError):
+                shutil.rmtree(
+                    _ci_release_profile_evidence_dir_for_result(result_path),
+                )
+            continue
         if copied:
             _ci_add_uploaded_release_profile_aliases(telemetry, path_aliases)
             telemetry["uploaded-evidence-path"] = (
@@ -24420,6 +24433,25 @@ def _ci_attach_uploaded_release_profile_evidence(
                 )
             )
             telemetry["uploaded-evidence-files"] = copied
+
+
+def _ci_record_release_profile_evidence_upload_failure(
+    telemetry: Json,
+    start: tuple[datetime, int],
+    *,
+    error: str,
+) -> None:
+    phases = telemetry.get("phases")
+    if not isinstance(phases, list):
+        return
+    phases.append(
+        {
+            "phase": "profile-evidence-upload",
+            "outcome": "failure",
+            **_ci_timing_finish(start),
+            "error": error or "profile evidence upload failed",
+        },
+    )
 
 
 def _ci_copy_release_profile_evidence(  # noqa: C901

@@ -1768,6 +1768,87 @@ def test_batch_evidence_bundle_accepts_command_timing_projection() -> None:
     _validate_release_bundle(bundle)
 
 
+def test_release_shaped_batch_accepts_profile_telemetry_with_timing() -> None:
+    """Release-shaped detail validates profile telemetry beside timings."""
+    bundle = _release_batch_bundle()
+    detail = _release_bundle_detail(bundle)
+    profile_telemetry = _valid_release_profile_telemetry()
+    detail["profile-telemetry"] = profile_telemetry
+    selector = cast("list[dict[str, object]]", bundle["selector-results"])[0]
+    selector["timing"] = {
+        "started-at": "2026-06-26T05:00:00.123Z",
+        "completed-at": "2026-06-26T05:00:02.456Z",
+        "duration-ms": 2333,
+    }
+    selector["command-timings"] = [
+        {
+            "index": 0,
+            "label": "release-shaped-artifact",
+            "capability": None,
+            "outcome": "success",
+            "timing": {
+                "started-at": "2026-06-26T05:00:00.500Z",
+                "completed-at": "2026-06-26T05:00:01.500Z",
+                "duration-ms": 1000,
+            },
+        }
+    ]
+
+    _validate_release_bundle(bundle)
+
+    assert detail["profile-telemetry"] == profile_telemetry
+    assert "timing" in selector
+    assert "command-timings" in selector
+
+
+def test_orchestrator_release_shaped_batch_accepts_profile_and_timing() -> None:
+    """Orchestrator release-shaped bundles validate profile plus timing."""
+    _, manifest = _release_plan_and_manifest()
+    batch = next(
+        batch
+        for batch in cast("list[dict[str, object]]", manifest["batches"])
+        if cast("dict[str, object]", batch["compatibility-profile"])[
+            "release-shaped-profile"
+        ]
+        is not None
+    )
+    bundle = _release_batch_bundle()
+    bundle["writer"] = _writer_with_observed_identity(
+        manifest,
+        cast("str", batch["batch-id"]),
+        writer_context="orchestrator",
+    )
+    bundle["orchestrator-step"] = _orchestrator_step_for_batch(batch)
+    detail = _release_bundle_detail(bundle)
+    detail["profile-telemetry"] = _valid_release_profile_telemetry()
+    selector = cast("list[dict[str, object]]", bundle["selector-results"])[0]
+    selector["timing"] = {
+        "started-at": "2026-06-26T05:00:00.123Z",
+        "completed-at": "2026-06-26T05:00:02.456Z",
+        "duration-ms": 2333,
+    }
+    selector["command-timings"] = [
+        {
+            "index": 0,
+            "label": "release-shaped-artifact",
+            "capability": None,
+            "outcome": "success",
+            "timing": {
+                "started-at": "2026-06-26T05:00:00.500Z",
+                "completed-at": "2026-06-26T05:00:01.500Z",
+                "duration-ms": 1000,
+            },
+        }
+    ]
+
+    _validate_release_bundle(bundle)
+
+    assert bundle["orchestrator-step"]
+    assert detail["profile-telemetry"]
+    assert selector["timing"]
+    assert selector["command-timings"]
+
+
 def test_batch_evidence_bundle_rejects_malformed_selector_timing() -> None:
     """Selector timing rejects non-stable timestamp and duration shapes."""
     bundle = _release_batch_bundle()

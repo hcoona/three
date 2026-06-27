@@ -112,11 +112,18 @@ function Add-ProfilePhase {
         [string[]]$OutputPaths = @(),
         [string]$ErrorMessage
     )
+    $durationMs = [int64]$Stopwatch.Elapsed.TotalMilliseconds
+    $startedAtUtc = $StartedAt.ToUniversalTime()
+    $completedAtUtc = (Get-Date).ToUniversalTime()
+    $elapsedMs = [int64](($completedAtUtc - $startedAtUtc).TotalMilliseconds)
+    if ($completedAtUtc -lt $startedAtUtc -or [Math]::Abs($elapsedMs - $durationMs) -gt 1000) {
+        $completedAtUtc = $startedAtUtc.AddMilliseconds($durationMs)
+    }
     $record = [ordered]@{
         phase = $Phase
-        'started-at' = $StartedAt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
-        'completed-at' = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
-        'duration-ms' = [int64]$Stopwatch.Elapsed.TotalMilliseconds
+        'started-at' = $startedAtUtc.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+        'completed-at' = $completedAtUtc.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+        'duration-ms' = $durationMs
         outcome = $Outcome
         argv = @($Argv | ForEach-Object { Convert-ProfileTelemetryText $_ })
         cwd = $Cwd
@@ -311,11 +318,6 @@ $requiredInnoInputs = @(
     (Join-Path $ProjectDir 'LICENSE.MIT.txt'),
     (Join-Path $ProjectDir 'THIRD-PARTY-NOTICES.TXT')
 )
-foreach ($requiredInnoInput in $requiredInnoInputs) {
-    if (-not (Test-Path -LiteralPath $requiredInnoInput -PathType Leaf)) {
-        throw "Required Inno Setup input not found: $requiredInnoInput"
-    }
-}
 
 # Stage Inno inputs outside the validation worktree so ISCC consumes short, deterministic paths.
 $stagingStartedAt = Get-Date
@@ -325,58 +327,86 @@ $InnoWorkRoot = Join-Path $InnoTempBase ("image-occlusion-inno-{0}" -f [guid]::N
 $StagedPublishDir = Join-Path $InnoWorkRoot 'publish'
 $StagedProjectDir = Join-Path $InnoWorkRoot 'project'
 $ShortInstallerOutputPath = Join-Path $InnoWorkRoot 'out'
-New-Item -ItemType Directory -Force -Path $StagedPublishDir, $StagedProjectDir, $ShortInstallerOutputPath | Out-Null
-
-$publishItems = @(Get-ChildItem -LiteralPath $PublishOutputPath -Force)
-if ($publishItems.Count -eq 0) {
-    throw "Publish output is empty: $PublishOutputPath"
-}
-foreach ($publishItem in $publishItems) {
-    Copy-Item -LiteralPath $publishItem.FullName -Destination $StagedPublishDir -Recurse -Force
-}
-
-$projectAssetRelativePaths = @(
-    'imageocclusioneditor.ico',
-    'README.md',
-    'LICENSE',
-    'LICENSE.GPL3.txt',
-    'LICENSE.MIT.txt',
-    'THIRD-PARTY-NOTICES.TXT',
-    'Resources/Template_IIOT.txt',
-    'Resources/Template_IIOTT.txt'
-)
-foreach ($relativePath in $projectAssetRelativePaths) {
-    $sourcePath = Join-Path $ProjectDir $relativePath
-    if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
-        continue
-    }
-    $destinationPath = Join-Path $StagedProjectDir $relativePath
-    $destinationDirectory = Split-Path -Parent $destinationPath
-    if (-not (Test-Path -LiteralPath $destinationDirectory)) {
-        New-Item -ItemType Directory -Force -Path $destinationDirectory | Out-Null
-    }
-    Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
-}
-
-$InnoPublishDir = (Resolve-Path -LiteralPath $StagedPublishDir).Path
-$InnoProjectDir = (Resolve-Path -LiteralPath $StagedProjectDir).Path
-$ShortInstallerOutputPath = (Resolve-Path -LiteralPath $ShortInstallerOutputPath).Path
-$stagedExePath = Join-Path $InnoPublishDir ("{0}.exe" -f $AssemblyName)
-if (-not (Test-Path -LiteralPath $stagedExePath -PathType Leaf)) {
-    throw "Staged published executable not found: $stagedExePath"
-}
-foreach ($requiredInnoInput in $requiredInnoInputs) {
-    $relativeInputPath = [System.IO.Path]::GetRelativePath($ProjectDir, $requiredInnoInput)
-    $stagedInputPath = Join-Path $InnoProjectDir $relativeInputPath
-    if (-not (Test-Path -LiteralPath $stagedInputPath -PathType Leaf)) {
-        throw "Staged Inno Setup input not found: $stagedInputPath"
-    }
-}
-
 $StagedSetupIss = Join-Path $InnoWorkRoot 'Setup.iss'
-Copy-Item -LiteralPath $SetupIss -Destination $StagedSetupIss -Force
-$stagingStopwatch.Stop()
-Add-ProfilePhase -Phase 'inno-staging-copy' -StartedAt $stagingStartedAt -Stopwatch $stagingStopwatch -Outcome 'success' -OutputPaths @($StagedPublishDir, $StagedProjectDir, $StagedSetupIss)
+$stagingPhaseRecorded = $false
+try {
+    New-Item -ItemType Directory -Force -Path $StagedPublishDir, $StagedProjectDir, $ShortInstallerOutputPath -ErrorAction Stop | Out-Null
+
+    foreach ($requiredInnoInput in $requiredInnoInputs) {
+        if (-not (Test-Path -LiteralPath $requiredInnoInput -PathType Leaf)) {
+            throw "Required Inno Setup input not found: $requiredInnoInput"
+        }
+    }
+
+    $publishItems = @(Get-ChildItem -LiteralPath $PublishOutputPath -Force -ErrorAction Stop)
+    if ($publishItems.Count -eq 0) {
+        throw "Publish output is empty: $PublishOutputPath"
+    }
+    foreach ($publishItem in $publishItems) {
+        Copy-Item -LiteralPath $publishItem.FullName -Destination $StagedPublishDir -Recurse -Force -ErrorAction Stop
+    }
+
+    $projectAssetRelativePaths = @(
+        'imageocclusioneditor.ico',
+        'README.md',
+        'LICENSE',
+        'LICENSE.GPL3.txt',
+        'LICENSE.MIT.txt',
+        'THIRD-PARTY-NOTICES.TXT',
+        'Resources/Template_IIOT.txt',
+        'Resources/Template_IIOTT.txt'
+    )
+    foreach ($relativePath in $projectAssetRelativePaths) {
+        $sourcePath = Join-Path $ProjectDir $relativePath
+        if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+            continue
+        }
+        $destinationPath = Join-Path $StagedProjectDir $relativePath
+        $destinationDirectory = Split-Path -Parent $destinationPath
+        if (-not (Test-Path -LiteralPath $destinationDirectory)) {
+            New-Item -ItemType Directory -Force -Path $destinationDirectory -ErrorAction Stop | Out-Null
+        }
+        Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force -ErrorAction Stop
+    }
+
+    $InnoPublishDir = (Resolve-Path -LiteralPath $StagedPublishDir -ErrorAction Stop).Path
+    $InnoProjectDir = (Resolve-Path -LiteralPath $StagedProjectDir -ErrorAction Stop).Path
+    $ShortInstallerOutputPath = (Resolve-Path -LiteralPath $ShortInstallerOutputPath -ErrorAction Stop).Path
+    $stagedExePath = Join-Path $InnoPublishDir ("{0}.exe" -f $AssemblyName)
+    if (-not (Test-Path -LiteralPath $stagedExePath -PathType Leaf)) {
+        throw "Staged published executable not found: $stagedExePath"
+    }
+    foreach ($requiredInnoInput in $requiredInnoInputs) {
+        $relativeInputPath = [System.IO.Path]::GetRelativePath($ProjectDir, $requiredInnoInput)
+        $stagedInputPath = Join-Path $InnoProjectDir $relativeInputPath
+        if (-not (Test-Path -LiteralPath $stagedInputPath -PathType Leaf)) {
+            throw "Staged Inno Setup input not found: $stagedInputPath"
+        }
+    }
+
+    Copy-Item -LiteralPath $SetupIss -Destination $StagedSetupIss -Force -ErrorAction Stop
+    $stagingStopwatch.Stop()
+    $stagingPhaseRecorded = $true
+    Add-ProfilePhase -Phase 'inno-staging-copy' -StartedAt $stagingStartedAt -Stopwatch $stagingStopwatch -Outcome 'success' -OutputPaths @($StagedPublishDir, $StagedProjectDir, $StagedSetupIss)
+}
+catch {
+    if ($stagingStopwatch.IsRunning) {
+        $stagingStopwatch.Stop()
+    }
+    if (-not $stagingPhaseRecorded) {
+        Add-ProfilePhase -Phase 'inno-staging-copy' -StartedAt $stagingStartedAt -Stopwatch $stagingStopwatch -Outcome 'failure' -OutputPaths @($StagedPublishDir, $StagedProjectDir, $StagedSetupIss) -ErrorMessage $_.Exception.Message
+    }
+    if (-not $env:IMAGE_OCCLUSION_EDITOR_KEEP_INNO_TEMP -and (Test-Path -LiteralPath $InnoWorkRoot)) {
+        try {
+            Remove-Item -LiteralPath $InnoWorkRoot -Recurse -Force -ErrorAction Stop
+        }
+        catch {
+            Write-Warning "Inno temporary staging cleanup failed: $($_.Exception.Message)" -WarningAction Continue
+        }
+    }
+    Write-ProfileTelemetry
+    throw
+}
 
 Write-Status "Inno Staged Publish: $InnoPublishDir" 'Info'
 Write-Status "Inno Staged Project: $InnoProjectDir" 'Info'
@@ -493,6 +523,22 @@ catch {
         else {
             Add-ProfilePhase -Phase 'iscc-compile' -StartedAt $isccStartedAt -Stopwatch $isccStopwatch -Outcome 'failure' -Argv (@($ISCC) + $isccArgs) -OutputPaths @($ShortInstallerOutputPath) -ErrorMessage $isccErrorMessage
         }
+    }
+    $cleanupStartedAt = Get-Date
+    $cleanupStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        if (-not $env:IMAGE_OCCLUSION_EDITOR_KEEP_INNO_TEMP -and (Test-Path -LiteralPath $InnoWorkRoot)) {
+            Remove-Item -LiteralPath $InnoWorkRoot -Recurse -Force -ErrorAction Stop
+        }
+        $cleanupStopwatch.Stop()
+        Add-ProfilePhase -Phase 'inno-temp-cleanup' -StartedAt $cleanupStartedAt -Stopwatch $cleanupStopwatch -Outcome 'success' -OutputPaths @()
+    }
+    catch {
+        if ($cleanupStopwatch.IsRunning) {
+            $cleanupStopwatch.Stop()
+        }
+        Add-ProfilePhase -Phase 'inno-temp-cleanup' -StartedAt $cleanupStartedAt -Stopwatch $cleanupStopwatch -Outcome 'failure' -OutputPaths @() -ErrorMessage $_.Exception.Message
+        Write-Warning "Inno temporary staging cleanup failed: $($_.Exception.Message)" -WarningAction Continue
     }
     Write-ProfileTelemetry
     throw

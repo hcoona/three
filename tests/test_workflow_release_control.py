@@ -23475,6 +23475,51 @@ def test_windows_orchestrator_step_emits_timing_evidence(  # noqa: C901
                 "completed-at": f"2026-06-26T05:00:0{index + 1}.000Z",
                 "duration-ms": 1000,
             }
+        profile_evidence_dir = (
+            result_dir / "validation-result-000-profile-evidence"
+        )
+        profile_binlog = (
+            profile_evidence_dir
+            / "_profile/runs/profile-run/binlogs/0001-dotnet-pack.binlog"
+        )
+        profile_binlog.parent.mkdir(parents=True)
+        profile_binlog.write_bytes(b"profile binlog")
+        profile_sidecar = (
+            profile_evidence_dir / "release-build-profile-telemetry.json"
+        )
+        profile_sidecar.write_text(
+            json.dumps(
+                {
+                    "kind": "release-build-profile-telemetry",
+                    "schema-version": 1,
+                    "profile-root": ".three-ci-validation/work/profile-run",
+                    "phases": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        commands = cast("list[dict[str, object]]", result["commands"])
+        commands[0]["profile-telemetry"] = {
+            "kind": "release-shaped-validation-profile-telemetry",
+            "schema-version": 1,
+            "phases": [
+                {
+                    "phase": "release-build-execute-build",
+                    "outcome": "success",
+                    "started-at": "2026-06-26T05:00:00.000Z",
+                    "completed-at": "2026-06-26T05:00:01.000Z",
+                    "duration-ms": 1000,
+                }
+            ],
+            "uploaded-evidence-path": "validation-result-000-profile-evidence",
+            "uploaded-evidence-files": [
+                "validation-result-000-profile-evidence/release-build-profile-telemetry.json",
+                (
+                    "validation-result-000-profile-evidence/_profile/runs/"
+                    "profile-run/binlogs/0001-dotnet-pack.binlog"
+                ),
+            ],
+        }
         (result_dir / "validation-result-000.json").write_text(
             json.dumps(result),
             encoding="utf-8",
@@ -23612,6 +23657,31 @@ def test_windows_orchestrator_step_emits_timing_evidence(  # noqa: C901
             uploaded_validation_result["commands"],
         ):
             _assert_ci_timing_shape(command["timing"])
+        uploaded_profile = cast(
+            "Mapping[str, object]",
+            cast(
+                "Sequence[Mapping[str, object]]",
+                uploaded_validation_result["commands"],
+            )[0]["profile-telemetry"],
+        )
+        assert uploaded_profile["uploaded-evidence-path"] == (
+            "validation-result-000-profile-evidence"
+        )
+        uploaded_profile_files = cast(
+            "Sequence[str]",
+            uploaded_profile["uploaded-evidence-files"],
+        )
+        assert all(
+            (upload_dir / path).is_file() for path in uploaded_profile_files
+        )
+        assert any(
+            path.endswith("release-build-profile-telemetry.json")
+            for path in uploaded_profile_files
+        )
+        assert any(
+            path.endswith("0001-dotnet-pack.binlog")
+            for path in uploaded_profile_files
+        )
         output_dependency_timing = json.loads(
             outputs["dependency_selection_timing"]
         )
@@ -23634,10 +23704,11 @@ def test_windows_orchestrator_step_emits_timing_evidence(  # noqa: C901
         assert selection["selected-batch-id"] == batch["batch-id"]
         _assert_ci_timing_shape(selection["timing"])
         assert selection["timing"] == output_dependency_timing
-        for selector_result in cast(
+        selector_results = cast(
             "list[dict[str, object]]",
             bundle["selector-results"],
-        ):
+        )
+        for selector_result in selector_results:
             assert selector_result["runner-family"] == "windows"
             _assert_ci_timing_shape(selector_result["timing"])
             command_timings = cast(
@@ -23647,6 +23718,40 @@ def test_windows_orchestrator_step_emits_timing_evidence(  # noqa: C901
             assert command_timings
             for command_timing in command_timings:
                 _assert_ci_timing_shape(command_timing["timing"])
+        selected_selector_result = next(
+            selector_result
+            for selector_result in selector_results
+            if selector_result["work-group-id"] == selector["work-group-id"]
+        )
+        selected_evidence = cast(
+            "dict[str, object]",
+            selected_selector_result["evidence"],
+        )
+        if "category-result" in selected_evidence:
+            selected_category_result = cast(
+                "dict[str, object]",
+                selected_evidence["category-result"],
+            )
+            selected_detail = cast(
+                "dict[str, object]",
+                selected_category_result["detail"],
+            )
+            bundled_profile = cast(
+                "Mapping[str, object]",
+                selected_detail["profile-telemetry"],
+            )
+            assert bundled_profile == uploaded_profile
+            bundled_profile_files = cast(
+                "Sequence[str]",
+                bundled_profile["uploaded-evidence-files"],
+            )
+            assert list(bundled_profile_files) == list(uploaded_profile_files)
+            assert (
+                bundled_profile["uploaded-evidence-path"]
+                == (uploaded_profile["uploaded-evidence-path"])
+            )
+        else:
+            assert selected_evidence["category"] == "ecosystem-gate"
         timing_sidecar = json.loads(
             (
                 upload_dir / control._CI_ORCHESTRATOR_TIMING_SIDECAR_NAME
@@ -30227,6 +30332,377 @@ def test_ci_validation_release_shaped_materializes_missing_mapping(
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def test_ci_validation_release_shaped_profile_and_timing_coexist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Release-shaped validation keeps timing when profile evidence uploads."""
+    scratch = SCRATCH / "ci-validation-release-shaped-profile-timing"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        _install_release_shaped_profile_build(
+            monkeypatch,
+            scratch=scratch,
+            artifact_refs=artifact_refs,
+        )
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "success"
+        _assert_ci_timing_shape(result["timing"])
+        command = cast(
+            "Mapping[str, object]",
+            cast("Sequence[object]", result["commands"])[0],
+        )
+        _assert_ci_timing_shape(command["timing"])
+        profile_telemetry = cast(
+            "Mapping[str, object]",
+            command["profile-telemetry"],
+        )
+        assert profile_telemetry["kind"] == (
+            "release-shaped-validation-profile-telemetry"
+        )
+        assert profile_telemetry["uploaded-evidence-path"] == (
+            "validation-result-profile-evidence"
+        )
+        uploaded_files = cast(
+            "Sequence[str]",
+            profile_telemetry["uploaded-evidence-files"],
+        )
+        assert any(
+            path.endswith("release-build-profile-telemetry.json")
+            for path in uploaded_files
+        )
+        assert any(
+            path.endswith("0001-dotnet-pack.binlog") for path in uploaded_files
+        )
+        assert all((scratch / path).is_file() for path in uploaded_files)
+        assert "timing" in result
+        assert "timing" in command
+        batch_evidence = control._ci_validation_evidence(
+            plan,
+            "wg-release",
+            outcome="success",
+            diagnostics=[],
+            validation_result=result,
+            fact_snapshot=_release_shaped_no_publish_fact_snapshot(),
+            batch_bundle=True,
+        )
+        batch_detail = cast(
+            "Mapping[str, object]",
+            cast(
+                "Mapping[str, object]",
+                batch_evidence["category-result"],
+            )["detail"],
+        )
+        batch_profile_telemetry = cast(
+            "Mapping[str, object]",
+            batch_detail["profile-telemetry"],
+        )
+        assert batch_profile_telemetry == profile_telemetry
+        assert batch_profile_telemetry["uploaded-evidence-files"] == (
+            uploaded_files
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_writer_serializes_release_shaped_profile_and_timing() -> None:
+    """Serialized release-shaped batch evidence keeps timing and profiles."""
+    scratch = _ci_batch_bundle_scratch("batch-release-profile-timing")
+    try:
+        release_fixtures = _release_batch_contract_fixtures()
+        plan, manifest = release_fixtures.__dict__[
+            "_release_plan_and_manifest"
+        ]()
+        authorizing_context = release_fixtures.__dict__[
+            "_release_authorizing_context"
+        ]()
+        authorizing_context["expected_run_id"] = batch_contracts.RUN_ID
+        authorizing_context["expected_run_attempt"] = (
+            batch_contracts.RUN_ATTEMPT
+        )
+        batch = next(
+            item
+            for item in cast("list[dict[str, object]]", manifest["batches"])
+            if cast(
+                "dict[str, object]",
+                item["compatibility-profile"],
+            )["release-shaped-profile"]
+            is not None
+        )
+        row = next(
+            item
+            for item in cast(
+                "list[dict[str, object]]",
+                ci_validation_execution_batch_matrix(
+                    manifest,
+                    plan=plan,
+                    **authorizing_context,
+                )["include"],
+            )
+            if item["batch-id"] == batch["batch-id"]
+        )
+        selector = cast(
+            "list[dict[str, object]]",
+            batch["ordered-selectors"],
+        )[0]
+        slot = cast("dict[str, object]", selector["expected-evidence-slot"])
+        obligation = cast(
+            "list[dict[str, object]]",
+            plan["artifact-obligations"],
+        )[0]
+        artifact = cast("dict[str, object]", obligation["artifact"])
+        artifact_ref = cast("list[str]", artifact["expected-artifact-refs"])[0]
+        digest = "a" * 64
+        timing = {
+            "started-at": "2026-06-26T05:00:00.123Z",
+            "completed-at": "2026-06-26T05:00:02.456Z",
+            "duration-ms": 2333,
+        }
+        command_timing = {
+            "started-at": "2026-06-26T05:00:00.500Z",
+            "completed-at": "2026-06-26T05:00:01.500Z",
+            "duration-ms": 1000,
+        }
+        profile_telemetry = {
+            "kind": "release-shaped-validation-profile-telemetry",
+            "schema-version": 1,
+            "phases": [
+                {
+                    "phase": "release-build-execute-build",
+                    "outcome": "success",
+                    "started-at": "2026-06-26T05:00:00.000Z",
+                    "completed-at": "2026-06-26T05:00:01.000Z",
+                    "duration-ms": 1000,
+                }
+            ],
+            "uploaded-evidence-path": "validation-result-000-profile-evidence",
+            "uploaded-evidence-files": [
+                "validation-result-000-profile-evidence/release-build-profile-telemetry.json",
+                (
+                    "validation-result-000-profile-evidence/_profile/runs/"
+                    "profile-run/binlogs/0001-dotnet-pack.binlog"
+                ),
+            ],
+        }
+        for uploaded_file in cast(
+            "list[str]",
+            profile_telemetry["uploaded-evidence-files"],
+        ):
+            uploaded_path = scratch / uploaded_file
+            uploaded_path.parent.mkdir(parents=True, exist_ok=True)
+            uploaded_path.write_bytes(b"profile evidence")
+        command = {
+            "index": 0,
+            "label": "release-shaped-artifact",
+            "argv": [],
+            "capability": None,
+            "exit-code": 0,
+            "outcome": "success",
+            "timing": command_timing,
+            "artifact-obligation-results": [
+                {
+                    "artifact-obligation-id": obligation[
+                        "artifact-obligation-id"
+                    ],
+                    "descriptor": {
+                        "path": obligation["descriptor-path"],
+                        "identity": "example",
+                    },
+                    "profile-coverage": obligation["profile-coverage"],
+                    "artifact": {
+                        "planned": artifact,
+                        "observed": {
+                            "refs": [artifact_ref],
+                            "digests": [
+                                {
+                                    "artifact-ref": artifact_ref,
+                                    "algorithm": "sha256",
+                                    "digest": digest,
+                                    "digest-available": True,
+                                    "diagnostics": [],
+                                }
+                            ],
+                        },
+                        "outcome": "success",
+                        "diagnostics": [],
+                    },
+                    "release-receipt": {
+                        "planned": obligation["release-receipt"],
+                        "expected": True,
+                        "schema-checked": True,
+                        "outcome": "success",
+                        "diagnostics": [],
+                    },
+                    "outcome": "success",
+                    "diagnostics": [],
+                }
+            ],
+            "evidence-source": "no-publish-validation",
+            "source-proof": {
+                "kind": "no-publish-validation-result",
+                "work-group-id": selector["work-group-id"],
+                "coverage-target": slot["coverage-target"],
+                "observed-commit-sha": batch_contracts.TREE_SHA,
+                "artifact-digests": [
+                    {
+                        "artifact-ref": artifact_ref,
+                        "algorithm": "sha256",
+                        "digest": digest,
+                        "byte-source": {
+                            "kind": "validation-build-output",
+                            "path": (
+                                ".three-ci-validation/work/"
+                                "validation-build/pkg.whl"
+                            ),
+                            "size": 1,
+                        },
+                    }
+                ],
+            },
+            "profile-telemetry": profile_telemetry,
+        }
+        result = {
+            "work-group-id": selector["work-group-id"],
+            "kind": "release-shaped-artifact",
+            "runner-family": "ubuntu",
+            "coverage-target": slot["coverage-target"],
+            "observed-commit-sha": batch_contracts.TREE_SHA,
+            "outcome": "success",
+            "timing": timing,
+            "commands": [command],
+        }
+
+        _write_ci_batch_bundle(
+            scratch,
+            plan,
+            manifest,
+            row,
+            [result],
+            authorizing_context=authorizing_context,
+        )
+        bundle = json.loads(
+            (scratch / "batch-evidence-bundle.json").read_text(encoding="utf-8")
+        )
+
+        selector_result = cast(
+            "list[dict[str, object]]",
+            bundle["selector-results"],
+        )[0]
+        assert selector_result["work-group-id"] == selector["work-group-id"]
+        assert selector_result["timing"] == timing
+        assert selector_result["command-timings"] == [
+            {
+                "index": 0,
+                "label": "release-shaped-artifact",
+                "capability": None,
+                "outcome": "success",
+                "timing": command_timing,
+            }
+        ]
+        evidence = cast("dict[str, object]", selector_result["evidence"])
+        assert evidence["category"] == "release-shaped-artifact"
+        category_result = cast(
+            "dict[str, object]",
+            evidence["category-result"],
+        )
+        detail = cast("dict[str, object]", category_result["detail"])
+        serialized_profile = cast(
+            "dict[str, object]",
+            detail["profile-telemetry"],
+        )
+        assert serialized_profile == profile_telemetry
+        assert serialized_profile["uploaded-evidence-path"] == (
+            "validation-result-000-profile-evidence"
+        )
+        uploaded_files = cast(
+            "list[str]",
+            serialized_profile["uploaded-evidence-files"],
+        )
+        assert uploaded_files == profile_telemetry["uploaded-evidence-files"]
+        assert all((scratch / path).is_file() for path in uploaded_files)
+        assert any(
+            path.endswith("release-build-profile-telemetry.json")
+            for path in uploaded_files
+        )
+        assert any(
+            path.endswith("0001-dotnet-pack.binlog") for path in uploaded_files
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_profile_copy_failure_preserves_timing_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Profile evidence copy failures do not block core timing result JSON."""
+    scratch = SCRATCH / "ci-validation-release-shaped-profile-copy-failure"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        _install_release_shaped_profile_build(
+            monkeypatch,
+            scratch=scratch,
+            artifact_refs=artifact_refs,
+        )
+
+        def fail_profile_copy(_source: Path, _target: Path) -> None:
+            message = "simulated profile evidence copy failure"
+            raise OSError(message)
+
+        monkeypatch.setattr(control.shutil, "copy2", fail_profile_copy)
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "success"
+        _assert_ci_timing_shape(result["timing"])
+        command = cast(
+            "Mapping[str, object]",
+            cast("Sequence[object]", result["commands"])[0],
+        )
+        _assert_ci_timing_shape(command["timing"])
+        profile_telemetry = cast(
+            "Mapping[str, object]",
+            command["profile-telemetry"],
+        )
+        assert "uploaded-evidence-path" not in profile_telemetry
+        assert "uploaded-evidence-files" not in profile_telemetry
+        phases = cast(
+            "Sequence[Mapping[str, object]]",
+            profile_telemetry["phases"],
+        )
+        upload_failures = [
+            phase
+            for phase in phases
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        assert len(upload_failures) == 1
+        assert upload_failures[0]["outcome"] == "failure"
+        assert "simulated profile evidence copy failure" in cast(
+            "str",
+            upload_failures[0]["error"],
+        )
+        for key in ("started-at", "completed-at", "duration-ms"):
+            assert key in upload_failures[0]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def test_ci_validation_release_shaped_build_failure_uploads_profile_evidence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -31058,6 +31534,86 @@ def _release_shaped_no_publish_matrix(
         ),
         "no-publish": True,
     }
+
+
+def _install_release_shaped_profile_build(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    scratch: Path,
+    artifact_refs: Sequence[str],
+    output_bytes: bytes = b"profiled wheel",
+) -> None:
+    def fake_build_request(
+        **_kwargs: object,
+    ) -> tuple[dict[str, object], dict[str, list[str]]]:
+        return {"kind": "build-request"}, {
+            "artifact/wheel": list(artifact_refs)
+        }
+
+    def fake_execute_build(
+        *,
+        request: Mapping[str, object],
+        repo_root: Path,
+        bundle_dir: Path,
+    ) -> dict[str, object]:
+        assert request["kind"] == "build-request"
+        assert repo_root == scratch
+        output = bundle_dir / "dist/a.whl"
+        output.parent.mkdir(parents=True)
+        output.write_bytes(output_bytes)
+        profile_root = bundle_dir / "_profile/runs/profile-run"
+        binlog = profile_root / "binlogs/0001-dotnet-pack.binlog"
+        binlog.parent.mkdir(parents=True)
+        binlog.write_bytes(b"profile binlog")
+        (bundle_dir / "release-build-profile-telemetry.json").write_text(
+            json.dumps(
+                {
+                    "kind": "release-build-profile-telemetry",
+                    "schema-version": 1,
+                    "profile-root": profile_root.as_posix(),
+                    "phases": [
+                        {
+                            "phase": "dotnet-pack",
+                            "started-at": "2026-01-01T00:00:00.000Z",
+                            "completed-at": "2026-01-01T00:00:01.000Z",
+                            "duration-ms": 1000,
+                            "outcome": "success",
+                            "argv": [
+                                "dotnet",
+                                "pack",
+                                f"/bl:{binlog.as_posix()}",
+                            ],
+                            "cwd": repo_root.as_posix(),
+                            "exit-code": 0,
+                            "output-paths": [output.as_posix()],
+                            "binlog-directory": binlog.parent.as_posix(),
+                            "binlog-path": binlog.as_posix(),
+                            "binlog-paths": [binlog.as_posix()],
+                        }
+                    ],
+                },
+            ),
+            encoding="utf-8",
+        )
+        return {
+            "kind": "build-result",
+            "artifacts": {
+                "artifact/wheel": {
+                    "bundle-relative-path": "dist/a.whl",
+                }
+            },
+        }
+
+    monkeypatch.setattr(
+        control,
+        "_ci_no_publish_release_shaped_build_request",
+        fake_build_request,
+    )
+    monkeypatch.setattr(
+        control,
+        "_ci_execute_no_publish_release_shaped_build",
+        fake_execute_build,
+    )
 
 
 def _release_shaped_no_publish_fact_snapshot(
@@ -31899,6 +32455,22 @@ def _ci_batch_bundle_scratch(test_name: str) -> Path:
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True)
     return scratch
+
+
+def _release_batch_contract_fixtures() -> Any:
+    fixture_path = (
+        REPO_ROOT / "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py"
+    )
+    fixture_spec = importlib.util.spec_from_file_location(
+        "ci_validation_batch_test_fixtures",
+        fixture_path,
+    )
+    assert fixture_spec is not None
+    assert fixture_spec.loader is not None
+    fixture_module = importlib.util.module_from_spec(fixture_spec)
+    fixture_spec.loader.exec_module(fixture_module)
+    return fixture_module
 
 
 def _ci_batch_contract_plan_and_manifest() -> tuple[

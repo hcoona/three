@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tarfile
 import zipfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -31,6 +32,8 @@ if TYPE_CHECKING:
 
 REPO_ROOT = Path(__file__).parents[5]
 SHA = "a" * 40
+TIMING_DURATION_TOLERANCE_MS = 1000
+POWERSHELL_TIMING_MIN_DURATION_MS = 25
 
 
 def _request(  # noqa: PLR0913
@@ -969,6 +972,35 @@ def test_profile_telemetry_uses_unique_run_roots_for_repeated_builds() -> None:
         assert Path(roots[1]).is_dir()
     finally:
         _remove_tree_scratch(scratch)
+
+
+def test_profile_timing_corrects_contract_invalid_clock_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Profile phase timing cannot emit 1-5s wall/monotonic drift."""
+    started_at = datetime(2026, 6, 26, 5, 0, 0, tzinfo=UTC)
+    wall_completed_at = started_at + timedelta(milliseconds=4500)
+
+    class DriftedDatetime(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> datetime:
+            del cls, tz
+            return wall_completed_at
+
+    monkeypatch.setattr(executor_module, "datetime", DriftedDatetime)
+    monkeypatch.setattr(
+        executor_module.time,
+        "perf_counter_ns",
+        lambda: 1_500_000_000,
+    )
+
+    timing = executor_module._profile_timing_finish((started_at, 0))  # noqa: SLF001
+
+    assert timing == {
+        "started-at": "2026-06-26T05:00:00.000Z",
+        "completed-at": "2026-06-26T05:00:01.500Z",
+        "duration-ms": 1500,
+    }
 
 
 def test_dotnet_pack_excludes_legacy_symbols_nupkg_from_primary_package() -> (
@@ -5079,6 +5111,119 @@ def test_powershell_profile_telemetry_warnings_ignore_warning_preference() -> (
         assert all("-WarningAction Continue" in line for line in warning_lines)
 
 
+def test_powershell_profile_phase_timing_corrects_clock_drift(
+    tmp_path: Path,
+) -> None:
+    """PowerShell sidecars keep completed-at aligned to stopwatch duration."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for profile timing tests")
+    scripts = (
+        _smoke_inno_publish_script(),
+        _smoke_inno_installer_script(),
+        _image_occlusion_publish_script(),
+        _image_occlusion_inno_installer_script(),
+    )
+    for script in scripts:
+        script_text = script.read_text(encoding="utf-8")
+        functions = []
+        if "function Convert-ProfileTelemetryText" in script_text:
+            functions.append(
+                _extract_powershell_function(
+                    script_text,
+                    "Convert-ProfileTelemetryText",
+                )
+            )
+        functions.append(
+            _extract_powershell_function(script_text, "Add-ProfilePhase")
+        )
+        harness = tmp_path / f"{script.parent.parent.name}-timing.ps1"
+        harness.write_text(
+            "\n".join(
+                [
+                    "$ErrorActionPreference = 'Stop'",
+                    "Set-StrictMode -Version Latest",
+                    (
+                        "$profilePhases = "
+                        "[System.Collections.Generic.List[object]]::new()"
+                    ),
+                    *functions,
+                    (
+                        "function Get-Date { "
+                        "[datetime]::Parse("
+                        "'2026-06-26T05:00:04.500Z', "
+                        "[System.Globalization.CultureInfo]::InvariantCulture, "
+                        "[System.Globalization.DateTimeStyles]::AdjustToUniversal"
+                        ") }"
+                    ),
+                    (
+                        "$startedAt = [datetime]::Parse("
+                        "'2026-06-26T05:00:00.000Z', "
+                        "[System.Globalization.CultureInfo]::InvariantCulture, "
+                        "[System.Globalization.DateTimeStyles]::AdjustToUniversal"
+                        ")"
+                    ),
+                    "$stopwatch = [System.Diagnostics.Stopwatch]::StartNew()",
+                    (
+                        "while ($stopwatch.ElapsedMilliseconds -lt "
+                        f"{POWERSHELL_TIMING_MIN_DURATION_MS}) {{ "
+                        "Start-Sleep -Milliseconds 1 }"
+                    ),
+                    "$stopwatch.Stop()",
+                    (
+                        "Add-ProfilePhase -Phase 'drift-test' "
+                        "-StartedAt $startedAt -Stopwatch $stopwatch "
+                        "-Outcome 'success'"
+                    ),
+                    "$profilePhases[0] | ConvertTo-Json -Depth 8",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        result = subprocess.run(  # noqa: S603
+            [
+                pwsh,
+                "-NoLogo",
+                "-NoProfile",
+                "-File",
+                str(harness),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
+        record = json.loads(result.stdout)
+        started_at = datetime.fromisoformat(
+            record["started-at"].replace("Z", "+00:00")
+        )
+        completed_at = datetime.fromisoformat(
+            record["completed-at"].replace("Z", "+00:00")
+        )
+        expected_completed_at = started_at + timedelta(
+            milliseconds=record["duration-ms"],
+        )
+        elapsed_ms = int(
+            (completed_at - started_at).total_seconds()
+            * TIMING_DURATION_TOLERANCE_MS
+        )
+        assert record["duration-ms"] >= POWERSHELL_TIMING_MIN_DURATION_MS
+        assert record["completed-at"] != "2026-06-26T05:00:04.500Z"
+        assert (
+            abs(
+                (completed_at - expected_completed_at).total_seconds()
+                * TIMING_DURATION_TOLERANCE_MS
+            )
+            <= 1
+        )
+        assert (
+            abs(elapsed_ms - record["duration-ms"])
+            <= TIMING_DURATION_TOLERANCE_MS
+        )
+
+
 def test_image_occlusion_inno_telemetry_omits_deleted_temp_paths(
     tmp_path: Path,
 ) -> None:
@@ -5125,6 +5270,62 @@ def test_image_occlusion_inno_telemetry_omits_deleted_temp_paths(
     assert "inno-staging-copy" in phase_names
     assert "iscc-compile" in phase_names
     assert "inno-temp-cleanup" in phase_names
+
+
+def test_image_occlusion_inno_required_input_failure_writes_telemetry(
+    tmp_path: Path,
+) -> None:
+    """Missing required Inno inputs emit staging telemetry before rethrowing."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for ImageOcclusion Inno tests")
+    project_root = _copy_image_occlusion_inno_test_project(
+        tmp_path,
+        missing_required_input="LICENSE.MIT.txt",
+    )
+    publish_root = _prepare_image_occlusion_publish_output(tmp_path)
+    installer_root = tmp_path / "installer"
+    telemetry_path = tmp_path / "profile" / "powershell" / "installer.json"
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    fake_iscc = tmp_path / "fake-iscc.ps1"
+    fake_iscc.write_text("exit 0", encoding="utf-8")
+    env = _image_occlusion_inno_env(runner_temp)
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(project_root / "script/Build-InnoInstaller.ps1"),
+            "-PublishOutputRoot",
+            str(publish_root),
+            "-InstallerOutputPath",
+            str(installer_root),
+            "-InnoSetupCompiler",
+            str(fake_iscc),
+            "-TelemetryOutputPath",
+            str(telemetry_path),
+        ],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "Required Inno Setup input not found" in result.stderr
+    assert "LICENSE.MIT.txt" in result.stderr
+    telemetry = json.loads(telemetry_path.read_text(encoding="utf-8-sig"))
+    phases = telemetry["phases"]
+    phase_names = [phase["phase"] for phase in phases]
+    assert phase_names == ["inno-staging-copy"]
+    staging_phase = phases[0]
+    assert staging_phase["outcome"] == "failure"
+    assert "Required Inno Setup input not found" in staging_phase["error"]
+    assert "LICENSE.MIT.txt" in staging_phase["error"]
+    assert list(runner_temp.glob("image-occlusion-inno-*")) == []
 
 
 def test_image_occlusion_inno_copy_back_failure_writes_telemetry(
@@ -5228,6 +5429,10 @@ def test_image_occlusion_inno_nonzero_failure_records_diagnostics(
     iscc_phase = next(
         phase for phase in phases if phase["phase"] == "iscc-compile"
     )
+    cleanup_phase = next(
+        phase for phase in phases if phase["phase"] == "inno-temp-cleanup"
+    )
+    assert phases.index(iscc_phase) < phases.index(cleanup_phase)
     assert iscc_phase["outcome"] == "failure"
     assert iscc_phase["exit-code"] == expected_exit_code
     assert "ISCC output:" in iscc_phase["error"]
@@ -5236,6 +5441,8 @@ def test_image_occlusion_inno_nonzero_failure_records_diagnostics(
     assert "token=<redacted>" in iscc_phase["error"]
     assert str(runner_temp) not in iscc_phase["error"]
     assert "inno-work:" in iscc_phase["error"]
+    assert cleanup_phase["outcome"] == "success"
+    assert list(runner_temp.glob("image-occlusion-inno-*")) == []
 
 
 def test_image_occlusion_inno_records_missing_iscc_resolution_failure(
@@ -5573,12 +5780,20 @@ def _write_versioned_dotnet_assembly_as_exe(
     if create_result.returncode != 0:
         pytest.skip(f"dotnet new failed: {create_result.stderr}")
     publish_result = subprocess.run(  # noqa: S603
+        # The binlog keeps this test helper compliant when targeted tests
+        # exercise ImageOcclusion PowerShell behavior through a real assembly.
         [
             dotnet,
             "publish",
             str(source_dir),
             "-c",
             "Release",
+            (
+                "/bl:"
+                + (
+                    tmp_path / f"{assembly_name}-versioned-exe-publish.binlog"
+                ).as_posix()
+            ),
             f"/p:AssemblyName={assembly_name}",
             "/p:FileVersion=1.2.3.4",
             "/p:AssemblyVersion=1.2.3.4",
@@ -5764,6 +5979,77 @@ def _image_occlusion_inno_env(runner_temp: Path) -> dict[str, str]:
 
 def _ps_single_quote(value: Path) -> str:
     return "'" + str(value).replace("'", "''") + "'"
+
+
+def _copy_image_occlusion_inno_test_project(
+    tmp_path: Path,
+    *,
+    missing_required_input: str | None = None,
+) -> Path:
+    target_framework, runtime_identifier, assembly_name = (
+        _image_occlusion_project_metadata()
+    )
+    project_root = tmp_path / "image-occlusion-project"
+    script_dir = project_root / "script"
+    script_dir.mkdir(parents=True)
+    source_script_dir = REPO_ROOT / "src/public/app/ImageOcclusionEditor/script"
+    for name in ("Build-InnoInstaller.ps1", "Helpers.ps1", "Setup.iss"):
+        shutil.copy2(source_script_dir / name, script_dir / name)
+    csproj_dir = project_root / "ImageOcclusionEditorWinUI3"
+    csproj_dir.mkdir()
+    (csproj_dir / "ImageOcclusionEditorWinUI3.csproj").write_text(
+        "\n".join(
+            [
+                '<Project Sdk="Microsoft.NET.Sdk">',
+                "  <PropertyGroup>",
+                f"    <TargetFramework>{target_framework}</TargetFramework>",
+                f"    <AssemblyName>{assembly_name}</AssemblyName>",
+                (
+                    f"    <RuntimeIdentifier>{runtime_identifier}"
+                    "</RuntimeIdentifier>"
+                ),
+                "  </PropertyGroup>",
+                "</Project>",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    for relative_path in (
+        "imageocclusioneditor.ico",
+        "README.md",
+        "LICENSE",
+        "LICENSE.GPL3.txt",
+        "LICENSE.MIT.txt",
+        "THIRD-PARTY-NOTICES.TXT",
+    ):
+        if relative_path == missing_required_input:
+            continue
+        (project_root / relative_path).write_text(
+            f"test fixture for {relative_path}",
+            encoding="utf-8",
+        )
+    return project_root
+
+
+def _extract_powershell_function(script_text: str, function_name: str) -> str:
+    match = re.search(
+        rf"^function\s+{re.escape(function_name)}\s*\{{",
+        script_text,
+        flags=re.MULTILINE,
+    )
+    assert match is not None, function_name
+    index = script_text.index("{", match.start())
+    depth = 0
+    for position in range(index, len(script_text)):
+        char = script_text[position]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return script_text[match.start() : position + 1]
+    message = f"unterminated PowerShell function: {function_name}"
+    raise AssertionError(message)
 
 
 def test_executor_fails_closed_on_missing_output() -> None:

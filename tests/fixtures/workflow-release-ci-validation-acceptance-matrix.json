@@ -3238,7 +3238,15 @@
           },
           {
             "type": "test",
+            "value": "src/public/lib/three-workflow-release-build/tests/test_executor.py::test_profile_timing_corrects_contract_invalid_clock_drift"
+          },
+          {
+            "type": "test",
             "value": "tests/test_workflow_release_control.py::test_windows_orchestrator_step_emits_timing_evidence"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-build/tests/test_executor.py::test_powershell_profile_phase_timing_corrects_clock_drift"
           },
           {
             "type": "test",
@@ -3247,6 +3255,34 @@
           {
             "type": "test",
             "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_evidence_bundle_accepts_command_timing_projection"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_release_shaped_materializes_missing_mapping"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_release_shaped_profile_and_timing_coexist"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_writer_serializes_release_shaped_profile_and_timing"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_profile_copy_failure_preserves_timing_result"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_release_shaped_build_failure_uploads_profile_evidence"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_release_shaped_batch_accepts_profile_telemetry_with_timing"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_orchestrator_release_shaped_batch_accepts_profile_and_timing"
           },
           {
             "type": "test",

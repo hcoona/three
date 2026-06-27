@@ -22,11 +22,18 @@ function Add-ProfilePhase {
         [string]$BinlogPath,
         [string]$ErrorMessage
     )
+    $durationMs = [int64]$Stopwatch.Elapsed.TotalMilliseconds
+    $startedAtUtc = $StartedAt.ToUniversalTime()
+    $completedAtUtc = (Get-Date).ToUniversalTime()
+    $elapsedMs = [int64](($completedAtUtc - $startedAtUtc).TotalMilliseconds)
+    if ($completedAtUtc -lt $startedAtUtc -or [Math]::Abs($elapsedMs - $durationMs) -gt 1000) {
+        $completedAtUtc = $startedAtUtc.AddMilliseconds($durationMs)
+    }
     $record = [ordered]@{
         phase = $Phase
-        'started-at' = $StartedAt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
-        'completed-at' = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
-        'duration-ms' = [int64]$Stopwatch.Elapsed.TotalMilliseconds
+        'started-at' = $startedAtUtc.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+        'completed-at' = $completedAtUtc.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+        'duration-ms' = $durationMs
         outcome = $Outcome
         argv = @($Argv)
         cwd = $Cwd
