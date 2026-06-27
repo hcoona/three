@@ -18,7 +18,7 @@ import subprocess
 import sys
 import tarfile
 import zipfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from datetime import datetime
 from itertools import pairwise
@@ -63,7 +63,7 @@ from three_workflow_release_proof import (
 from tests import ci_validation_batch_fixtures as batch_contracts
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping
+    from collections.abc import Callable, Iterable, Iterator, Mapping
 
 REPO_ROOT = Path(__file__).parents[1]
 SCRIPT = REPO_ROOT / "eng/scripts/workflow_release_control.py"
@@ -23777,6 +23777,2274 @@ def test_windows_orchestrator_step_emits_timing_evidence(  # noqa: C901
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def test_orchestrator_profile_evidence_copy_failure_keeps_outputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Orchestrator upload staging failures do not claim profile uploads."""
+    scratch = SCRATCH / "ci-orchestrator-profile-evidence-copy-failure"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        batch = {
+            "batch-id": "batch-1",
+            "runner-family": "ubuntu",
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/batch-1/batch-evidence-bundle.json"
+            ),
+            "depends-on-batches": [],
+            "batch-writer": {"expected-job-identity": "job"},
+            "compatibility-profile": {
+                "ecosystem": "python",
+                "setup-profile": "setup-ubuntu-python",
+                "execution-profile": "exec-ecosystem-gate-python",
+            },
+        }
+        manifest = {"batches": [batch]}
+        manifest_path = scratch / "execution-batch-manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        for name in (
+            "plan.json",
+            "request.json",
+            "changed-files.json",
+            "fact-snapshot.json",
+        ):
+            (scratch / name).write_text("{}", encoding="utf-8")
+
+        def fake_run_batch_commands(args: argparse.Namespace) -> int:
+            result_dir = Path(args.result_out_dir)
+            result_dir.mkdir(parents=True, exist_ok=True)
+            profile_dir = result_dir / "validation-result-000-profile-evidence"
+            binlog = profile_dir / "_profile/runs/run-1/binlogs/build.binlog"
+            binlog.parent.mkdir(parents=True)
+            binlog.write_bytes(b"binlog")
+            (profile_dir / "release-build-profile-telemetry.json").write_text(
+                "{}",
+                encoding="utf-8",
+            )
+            result = {
+                "work-group-id": "wg",
+                "kind": "release-shaped-artifact",
+                "runner-family": "ubuntu",
+                "coverage-target": {"type": "subject", "id": "python.example"},
+                "observed-commit-sha": batch_contracts.TREE_SHA,
+                "outcome": "success",
+                "commands": [
+                    {
+                        "index": 0,
+                        "label": "release-shaped-artifact",
+                        "outcome": "success",
+                        "profile-telemetry": {
+                            "kind": (
+                                "release-shaped-validation-profile-telemetry"
+                            ),
+                            "schema-version": 1,
+                            "phases": [],
+                            "uploaded-evidence-path": (
+                                "validation-result-000-profile-evidence"
+                            ),
+                            "uploaded-evidence-files": [
+                                (
+                                    "validation-result-000-profile-evidence/"
+                                    "release-build-profile-telemetry.json"
+                                ),
+                                (
+                                    "validation-result-000-profile-evidence/"
+                                    "_profile/runs/run-1/binlogs/build.binlog"
+                                ),
+                            ],
+                            "release-build": {
+                                "executor": {
+                                    "phases": [
+                                        {
+                                            "binlog-uploaded-evidence-path": (
+                                                "validation-result-000-"
+                                                "profile-evidence/_profile/"
+                                                "runs/run-1/binlogs/build.binlog"
+                                            ),
+                                            "binlog-uploaded-evidence-paths": [
+                                                (
+                                                    "validation-result-000-"
+                                                    "profile-evidence/_profile/"
+                                                    "runs/run-1/binlogs/"
+                                                    "build.binlog"
+                                                )
+                                            ],
+                                            "uploaded-evidence-argv": [
+                                                "dotnet",
+                                                (
+                                                    "/bl:validation-result-000-"
+                                                    "profile-evidence/_profile/"
+                                                    "runs/run-1/binlogs/"
+                                                    "build.binlog"
+                                                ),
+                                            ],
+                                        }
+                                    ],
+                                }
+                            },
+                        },
+                    }
+                ],
+            }
+            (result_dir / "validation-result-000.json").write_text(
+                json.dumps(result),
+                encoding="utf-8",
+            )
+            return 0
+
+        def fake_write_bundle(args: argparse.Namespace) -> int:
+            result = json.loads(
+                Path(args.validation_result[0]).read_text(encoding="utf-8")
+            )
+            profile = result["commands"][0]["profile-telemetry"]
+            control._write_json(
+                Path(args.bundle_out),
+                {
+                    "selector-results": [
+                        {
+                            "evidence": {
+                                "category-result": {
+                                    "detail": {"profile-telemetry": profile}
+                                }
+                            }
+                        }
+                    ],
+                    "orchestrator-step": args.orchestrator_step,
+                },
+            )
+            return 0
+
+        real_copy2 = shutil.copy2
+
+        def fail_profile_copy2(
+            src: str | Path,
+            dst: str | Path,
+            *args: object,
+            **kwargs: object,
+        ) -> Path:
+            if "validation-result-000-profile-evidence" in Path(src).parts:
+                msg = "simulated upload staging copy failure"
+                raise OSError(msg)
+            return real_copy2(src, dst, *args, **kwargs)
+
+        monkeypatch.setattr(
+            control,
+            "_cmd_run_ci_validation_batch_commands",
+            fake_run_batch_commands,
+        )
+        monkeypatch.setattr(
+            control,
+            "_cmd_write_ci_validation_batch_evidence_bundle",
+            fake_write_bundle,
+        )
+        monkeypatch.setattr(control.shutil, "copy2", fail_profile_copy2)
+        output_path = scratch / "github-output.txt"
+
+        assert (
+            control._cmd_run_ci_validation_runner_family_orchestrator_step(
+                argparse.Namespace(
+                    plan=str(scratch / "plan.json"),
+                    request=str(scratch / "request.json"),
+                    execution_batch_manifest=str(manifest_path),
+                    changed_files_snapshot=str(scratch / "changed-files.json"),
+                    fact_snapshot=str(scratch / "fact-snapshot.json"),
+                    runner_family="ubuntu",
+                    repository="",
+                    workflow="CI Validation",
+                    job="execution-batch-ubuntu-orchestrator",
+                    expected_run_id=batch_contracts.RUN_ID,
+                    expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+                    observed_artifacts_dir=str(scratch / "observed-artifacts"),
+                    state_dir=str(scratch / "state"),
+                    work_dir=str(scratch / "work"),
+                    slot_index="0",
+                    observed_commit_sha=batch_contracts.TREE_SHA,
+                    repo_root=str(REPO_ROOT),
+                    github_output=str(output_path),
+                    dependency_wait_timeout_seconds=0,
+                    dependency_poll_interval_seconds=0,
+                )
+            )
+            == 0
+        )
+
+        outputs = _github_outputs(output_path)
+        upload_dir = Path(outputs["batch_evidence_upload_path"])
+        assert (upload_dir / "batch-evidence-bundle.json").is_file()
+        assert (
+            upload_dir / control._CI_ORCHESTRATOR_TIMING_SIDECAR_NAME
+        ).is_file()
+        assert (scratch / "state/ran/batch-1.json").is_file()
+        profile_upload_dir = (
+            upload_dir / "validation-result-000-profile-evidence"
+        )
+        assert profile_upload_dir.exists()
+        assert not any(path.is_file() for path in profile_upload_dir.rglob("*"))
+        uploaded_result = json.loads(
+            (upload_dir / "validation-result-000.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        uploaded_profile = uploaded_result["commands"][0]["profile-telemetry"]
+        assert "uploaded-evidence-path" not in uploaded_profile
+        assert "uploaded-evidence-files" not in uploaded_profile
+        executor_phase = uploaded_profile["release-build"]["executor"][
+            "phases"
+        ][0]
+        assert "binlog-uploaded-evidence-path" not in executor_phase
+        assert "binlog-uploaded-evidence-paths" not in executor_phase
+        assert "uploaded-evidence-argv" not in executor_phase
+        upload_failures = [
+            phase
+            for phase in uploaded_profile["phases"]
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        assert len(upload_failures) == 1
+        assert upload_failures[0]["outcome"] == "failure"
+        _assert_ci_phase_timing_shape(upload_failures[0])
+        assert "simulated upload staging copy failure" in cast(
+            "str",
+            upload_failures[0]["error"],
+        )
+        bundle = json.loads(
+            (upload_dir / "batch-evidence-bundle.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        bundle_profile = bundle["selector-results"][0]["evidence"][
+            "category-result"
+        ]["detail"]["profile-telemetry"]
+        assert "uploaded-evidence-path" not in bundle_profile
+        assert "uploaded-evidence-files" not in bundle_profile
+        bundle_executor_phase = bundle_profile["release-build"]["executor"][
+            "phases"
+        ][0]
+        assert "binlog-uploaded-evidence-path" not in bundle_executor_phase
+        assert "binlog-uploaded-evidence-paths" not in bundle_executor_phase
+        assert "uploaded-evidence-argv" not in bundle_executor_phase
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_orchestrator_profile_evidence_symlink_skip_keeps_safe_staged_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Orchestrator symlink skips do not discard copied profile evidence."""
+    if not hasattr(os, "symlink"):
+        pytest.skip("symlinks are not available on this platform")
+    scratch = SCRATCH / "ci-orchestrator-profile-evidence-symlink-skip"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        batch = {
+            "batch-id": "batch-1",
+            "runner-family": "ubuntu",
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/batch-1/batch-evidence-bundle.json"
+            ),
+            "depends-on-batches": [],
+            "batch-writer": {"expected-job-identity": "job"},
+            "compatibility-profile": {
+                "ecosystem": "python",
+                "setup-profile": "setup-ubuntu-python",
+                "execution-profile": "exec-ecosystem-gate-python",
+            },
+        }
+        manifest = {"batches": [batch]}
+        manifest_path = scratch / "execution-batch-manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        for name in (
+            "plan.json",
+            "request.json",
+            "changed-files.json",
+            "fact-snapshot.json",
+        ):
+            (scratch / name).write_text("{}", encoding="utf-8")
+
+        def fake_run_batch_commands(args: argparse.Namespace) -> int:
+            result_dir = Path(args.result_out_dir)
+            result_dir.mkdir(parents=True, exist_ok=True)
+            profile_dir = result_dir / "validation-result-000-profile-evidence"
+            binlog = profile_dir / "_profile/runs/run-1/binlogs/build.binlog"
+            binlog.parent.mkdir(parents=True)
+            binlog.write_bytes(b"safe binlog")
+            (profile_dir / "release-build-profile-telemetry.json").write_text(
+                json.dumps(
+                    {
+                        "phases": [
+                            {
+                                "binlog-uploaded-evidence-path": (
+                                    "validation-result-000-profile-evidence/"
+                                    "_profile/runs/run-1/binlogs/build.binlog"
+                                ),
+                                "binlog-uploaded-evidence-paths": [
+                                    (
+                                        "validation-result-000-profile-evidence/"
+                                        "_profile/runs/run-1/binlogs/"
+                                        "build.binlog"
+                                    )
+                                ],
+                                "uploaded-evidence-argv": [
+                                    "dotnet",
+                                    (
+                                        "/bl:validation-result-000-profile-"
+                                        "evidence/_profile/runs/run-1/"
+                                        "binlogs/build.binlog"
+                                    ),
+                                ],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            outside_secret = scratch / "outside-secret.txt"
+            outside_secret.write_text("do not copy", encoding="utf-8")
+            (
+                profile_dir / "_profile/runs/run-1/binlogs/secret-link"
+            ).symlink_to(outside_secret)
+            result = {
+                "work-group-id": "wg",
+                "kind": "release-shaped-artifact",
+                "runner-family": "ubuntu",
+                "coverage-target": {"type": "subject", "id": "python.example"},
+                "observed-commit-sha": batch_contracts.TREE_SHA,
+                "outcome": "success",
+                "commands": [
+                    {
+                        "index": 0,
+                        "label": "release-shaped-artifact",
+                        "outcome": "success",
+                        "profile-telemetry": {
+                            "kind": (
+                                "release-shaped-validation-profile-telemetry"
+                            ),
+                            "schema-version": 1,
+                            "phases": [],
+                            "uploaded-evidence-path": (
+                                "validation-result-000-profile-evidence"
+                            ),
+                            "uploaded-evidence-files": [
+                                (
+                                    "validation-result-000-profile-evidence/"
+                                    "release-build-profile-telemetry.json"
+                                ),
+                                (
+                                    "validation-result-000-profile-evidence/"
+                                    "_profile/runs/run-1/binlogs/build.binlog"
+                                ),
+                            ],
+                            "release-build": {
+                                "executor": {
+                                    "phases": [
+                                        {
+                                            "binlog-uploaded-evidence-path": (
+                                                "validation-result-000-"
+                                                "profile-evidence/_profile/"
+                                                "runs/run-1/binlogs/build.binlog"
+                                            ),
+                                            "binlog-uploaded-evidence-paths": [
+                                                (
+                                                    "validation-result-000-"
+                                                    "profile-evidence/_profile/"
+                                                    "runs/run-1/binlogs/"
+                                                    "build.binlog"
+                                                )
+                                            ],
+                                            "uploaded-evidence-argv": [
+                                                "dotnet",
+                                                (
+                                                    "/bl:validation-result-000-"
+                                                    "profile-evidence/_profile/"
+                                                    "runs/run-1/binlogs/"
+                                                    "build.binlog"
+                                                ),
+                                            ],
+                                        }
+                                    ],
+                                }
+                            },
+                        },
+                    }
+                ],
+            }
+            (result_dir / "validation-result-000.json").write_text(
+                json.dumps(result),
+                encoding="utf-8",
+            )
+            return 0
+
+        def fake_write_bundle(args: argparse.Namespace) -> int:
+            result = json.loads(
+                Path(args.validation_result[0]).read_text(encoding="utf-8")
+            )
+            profile = result["commands"][0]["profile-telemetry"]
+            control._write_json(
+                Path(args.bundle_out),
+                {
+                    "selector-results": [
+                        {
+                            "evidence": {
+                                "category-result": {
+                                    "detail": {"profile-telemetry": profile}
+                                }
+                            }
+                        }
+                    ],
+                    "orchestrator-step": args.orchestrator_step,
+                },
+            )
+            return 0
+
+        monkeypatch.setattr(
+            control,
+            "_cmd_run_ci_validation_batch_commands",
+            fake_run_batch_commands,
+        )
+        monkeypatch.setattr(
+            control,
+            "_cmd_write_ci_validation_batch_evidence_bundle",
+            fake_write_bundle,
+        )
+        stale_file = (
+            scratch
+            / "work/upload/validation-result-000-profile-evidence/stale.txt"
+        )
+        stale_file.parent.mkdir(parents=True)
+        stale_file.write_text("stale upload payload", encoding="utf-8")
+        output_path = scratch / "github-output.txt"
+
+        assert (
+            control._cmd_run_ci_validation_runner_family_orchestrator_step(
+                argparse.Namespace(
+                    plan=str(scratch / "plan.json"),
+                    request=str(scratch / "request.json"),
+                    execution_batch_manifest=str(manifest_path),
+                    changed_files_snapshot=str(scratch / "changed-files.json"),
+                    fact_snapshot=str(scratch / "fact-snapshot.json"),
+                    runner_family="ubuntu",
+                    repository="",
+                    workflow="CI Validation",
+                    job="execution-batch-ubuntu-orchestrator",
+                    expected_run_id=batch_contracts.RUN_ID,
+                    expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+                    observed_artifacts_dir=str(scratch / "observed-artifacts"),
+                    state_dir=str(scratch / "state"),
+                    work_dir=str(scratch / "work"),
+                    slot_index="0",
+                    observed_commit_sha=batch_contracts.TREE_SHA,
+                    repo_root=str(REPO_ROOT),
+                    github_output=str(output_path),
+                    dependency_wait_timeout_seconds=0,
+                    dependency_poll_interval_seconds=0,
+                )
+            )
+            == 0
+        )
+
+        upload_dir = Path(
+            _github_outputs(output_path)["batch_evidence_upload_path"]
+        )
+        profile_upload_dir = (
+            upload_dir / "validation-result-000-profile-evidence"
+        )
+        assert (
+            profile_upload_dir / "release-build-profile-telemetry.json"
+        ).is_file()
+        uploaded_sidecar = json.loads(
+            (
+                profile_upload_dir / "release-build-profile-telemetry.json"
+            ).read_text(encoding="utf-8")
+        )
+        uploaded_sidecar_phase = uploaded_sidecar["phases"][0]
+        assert "binlog-uploaded-evidence-path" not in uploaded_sidecar_phase
+        assert "binlog-uploaded-evidence-paths" not in uploaded_sidecar_phase
+        assert "uploaded-evidence-argv" not in uploaded_sidecar_phase
+        assert (
+            profile_upload_dir / "_profile/runs/run-1/binlogs/build.binlog"
+        ).is_file()
+        assert not (profile_upload_dir / "stale.txt").exists()
+        assert not (
+            profile_upload_dir / "_profile/runs/run-1/binlogs/secret-link"
+        ).exists()
+        uploaded_text = "\n".join(
+            path.read_text(encoding="utf-8", errors="ignore")
+            for path in profile_upload_dir.rglob("*")
+            if path.is_file()
+        )
+        assert "do not copy" not in uploaded_text
+
+        uploaded_result = json.loads(
+            (upload_dir / "validation-result-000.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        uploaded_profile = uploaded_result["commands"][0]["profile-telemetry"]
+        assert "uploaded-evidence-path" not in uploaded_profile
+        assert "uploaded-evidence-files" not in uploaded_profile
+        executor_phase = uploaded_profile["release-build"]["executor"][
+            "phases"
+        ][0]
+        assert "binlog-uploaded-evidence-path" not in executor_phase
+        assert "binlog-uploaded-evidence-paths" not in executor_phase
+        assert "uploaded-evidence-argv" not in executor_phase
+        upload_failures = [
+            phase
+            for phase in uploaded_profile["phases"]
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        assert len(upload_failures) == 1
+        assert upload_failures[0]["outcome"] == "failure"
+        _assert_ci_phase_timing_shape(upload_failures[0])
+        assert "secret-link (symlink)" in cast(
+            "str",
+            upload_failures[0]["error"],
+        )
+        bundle = json.loads(
+            (upload_dir / "batch-evidence-bundle.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        bundle_profile = bundle["selector-results"][0]["evidence"][
+            "category-result"
+        ]["detail"]["profile-telemetry"]
+        assert "uploaded-evidence-path" not in bundle_profile
+        assert "uploaded-evidence-files" not in bundle_profile
+        bundle_executor_phase = bundle_profile["release-build"]["executor"][
+            "phases"
+        ][0]
+        assert "binlog-uploaded-evidence-path" not in bundle_executor_phase
+        assert "binlog-uploaded-evidence-paths" not in bundle_executor_phase
+        assert "uploaded-evidence-argv" not in bundle_executor_phase
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_orchestrator_profile_evidence_missing_claimed_file_scrubs_upload_claims(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Existing staged profile evidence is reconciled with claimed files."""
+    scratch = SCRATCH / "ci-orchestrator-profile-evidence-missing-claim"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        batch = {
+            "batch-id": "batch-1",
+            "runner-family": "ubuntu",
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/batch-1/batch-evidence-bundle.json"
+            ),
+            "depends-on-batches": [],
+            "batch-writer": {"expected-job-identity": "job"},
+            "compatibility-profile": {
+                "ecosystem": "python",
+                "setup-profile": "setup-ubuntu-python",
+                "execution-profile": "exec-ecosystem-gate-python",
+            },
+        }
+        manifest = {"batches": [batch]}
+        manifest_path = scratch / "execution-batch-manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        for name in (
+            "plan.json",
+            "request.json",
+            "changed-files.json",
+            "fact-snapshot.json",
+        ):
+            (scratch / name).write_text("{}", encoding="utf-8")
+
+        missing_binlog_claim = (
+            "validation-result-000-profile-evidence/_profile/runs/run-1/"
+            "binlogs/missing.binlog"
+        )
+
+        def fake_run_batch_commands(args: argparse.Namespace) -> int:
+            result_dir = Path(args.result_out_dir)
+            result_dir.mkdir(parents=True, exist_ok=True)
+            profile_dir = result_dir / "validation-result-000-profile-evidence"
+            profile_dir.mkdir()
+            (profile_dir / "safe-note.txt").write_text(
+                "safe copied evidence",
+                encoding="utf-8",
+            )
+            (profile_dir / "release-build-profile-telemetry.json").write_text(
+                json.dumps(
+                    {
+                        "phases": [
+                            {
+                                "binlog-uploaded-evidence-path": (
+                                    missing_binlog_claim
+                                ),
+                                "binlog-uploaded-evidence-paths": [
+                                    missing_binlog_claim
+                                ],
+                                "uploaded-evidence-argv": [
+                                    "dotnet",
+                                    f"/bl:{missing_binlog_claim}",
+                                ],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = {
+                "work-group-id": "wg",
+                "kind": "release-shaped-artifact",
+                "runner-family": "ubuntu",
+                "coverage-target": {"type": "subject", "id": "python.example"},
+                "observed-commit-sha": batch_contracts.TREE_SHA,
+                "outcome": "success",
+                "commands": [
+                    {
+                        "index": 0,
+                        "label": "release-shaped-artifact",
+                        "outcome": "success",
+                        "profile-telemetry": {
+                            "kind": (
+                                "release-shaped-validation-profile-telemetry"
+                            ),
+                            "schema-version": 1,
+                            "phases": [],
+                            "uploaded-evidence-path": (
+                                "validation-result-000-profile-evidence"
+                            ),
+                            "uploaded-evidence-files": [
+                                (
+                                    "validation-result-000-profile-evidence/"
+                                    "release-build-profile-telemetry.json"
+                                ),
+                                missing_binlog_claim,
+                            ],
+                            "release-build": {
+                                "executor": {
+                                    "phases": [
+                                        {
+                                            "binlog-uploaded-evidence-path": (
+                                                missing_binlog_claim
+                                            ),
+                                            "binlog-uploaded-evidence-paths": [
+                                                missing_binlog_claim
+                                            ],
+                                            "uploaded-evidence-argv": [
+                                                "dotnet",
+                                                f"/bl:{missing_binlog_claim}",
+                                            ],
+                                        }
+                                    ],
+                                }
+                            },
+                        },
+                    }
+                ],
+            }
+            (result_dir / "validation-result-000.json").write_text(
+                json.dumps(result),
+                encoding="utf-8",
+            )
+            return 0
+
+        def fake_write_bundle(args: argparse.Namespace) -> int:
+            result = json.loads(
+                Path(args.validation_result[0]).read_text(encoding="utf-8")
+            )
+            profile = result["commands"][0]["profile-telemetry"]
+            control._write_json(
+                Path(args.bundle_out),
+                {
+                    "selector-results": [
+                        {
+                            "evidence": {
+                                "category-result": {
+                                    "detail": {"profile-telemetry": profile}
+                                }
+                            }
+                        }
+                    ],
+                    "orchestrator-step": args.orchestrator_step,
+                },
+            )
+            return 0
+
+        monkeypatch.setattr(
+            control,
+            "_cmd_run_ci_validation_batch_commands",
+            fake_run_batch_commands,
+        )
+        monkeypatch.setattr(
+            control,
+            "_cmd_write_ci_validation_batch_evidence_bundle",
+            fake_write_bundle,
+        )
+        output_path = scratch / "github-output.txt"
+
+        assert (
+            control._cmd_run_ci_validation_runner_family_orchestrator_step(
+                argparse.Namespace(
+                    plan=str(scratch / "plan.json"),
+                    request=str(scratch / "request.json"),
+                    execution_batch_manifest=str(manifest_path),
+                    changed_files_snapshot=str(scratch / "changed-files.json"),
+                    fact_snapshot=str(scratch / "fact-snapshot.json"),
+                    runner_family="ubuntu",
+                    repository="",
+                    workflow="CI Validation",
+                    job="execution-batch-ubuntu-orchestrator",
+                    expected_run_id=batch_contracts.RUN_ID,
+                    expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+                    observed_artifacts_dir=str(scratch / "observed-artifacts"),
+                    state_dir=str(scratch / "state"),
+                    work_dir=str(scratch / "work"),
+                    slot_index="0",
+                    observed_commit_sha=batch_contracts.TREE_SHA,
+                    repo_root=str(REPO_ROOT),
+                    github_output=str(output_path),
+                    dependency_wait_timeout_seconds=0,
+                    dependency_poll_interval_seconds=0,
+                )
+            )
+            == 0
+        )
+
+        upload_dir = Path(
+            _github_outputs(output_path)["batch_evidence_upload_path"]
+        )
+        profile_upload_dir = (
+            upload_dir / "validation-result-000-profile-evidence"
+        )
+        assert (profile_upload_dir / "safe-note.txt").is_file()
+        uploaded_sidecar = json.loads(
+            (
+                profile_upload_dir / "release-build-profile-telemetry.json"
+            ).read_text(encoding="utf-8")
+        )
+        uploaded_sidecar_phase = uploaded_sidecar["phases"][0]
+        assert "binlog-uploaded-evidence-path" not in uploaded_sidecar_phase
+        assert "binlog-uploaded-evidence-paths" not in uploaded_sidecar_phase
+        assert "uploaded-evidence-argv" not in uploaded_sidecar_phase
+
+        uploaded_result = json.loads(
+            (upload_dir / "validation-result-000.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        uploaded_profile = uploaded_result["commands"][0]["profile-telemetry"]
+        assert "uploaded-evidence-path" not in uploaded_profile
+        assert "uploaded-evidence-files" not in uploaded_profile
+        executor_phase = uploaded_profile["release-build"]["executor"][
+            "phases"
+        ][0]
+        assert "binlog-uploaded-evidence-path" not in executor_phase
+        assert "binlog-uploaded-evidence-paths" not in executor_phase
+        assert "uploaded-evidence-argv" not in executor_phase
+        upload_failures = [
+            phase
+            for phase in uploaded_profile["phases"]
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        assert len(upload_failures) == 1
+        assert upload_failures[0]["outcome"] == "failure"
+        _assert_ci_phase_timing_shape(upload_failures[0])
+        upload_error = cast("str", upload_failures[0]["error"])
+        assert "missing claimed path" in upload_error
+        assert "missing.binlog" in upload_error
+
+        bundle = json.loads(
+            (upload_dir / "batch-evidence-bundle.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        bundle_profile = bundle["selector-results"][0]["evidence"][
+            "category-result"
+        ]["detail"]["profile-telemetry"]
+        assert "uploaded-evidence-path" not in bundle_profile
+        assert "uploaded-evidence-files" not in bundle_profile
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_orchestrator_profile_evidence_argv_directory_claim_accepts_staged_directory() -> (
+    None
+):
+    """Directory-valued uploaded argv claims accept staged directories."""
+    scratch = SCRATCH / "ci-orchestrator-profile-evidence-argv-directory"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        upload_dir = scratch / "upload"
+        result_path = upload_dir / "validation-result-000.json"
+        profile_upload_dir = (
+            upload_dir / "validation-result-000-profile-evidence"
+        )
+        binlog_dir = profile_upload_dir / "_profile/runs/run-1/binlogs"
+        binlog_dir.mkdir(parents=True)
+        sidecar_path = (
+            profile_upload_dir / "release-build-profile-telemetry.json"
+        )
+        sidecar_path.write_text(
+            json.dumps(
+                {
+                    "phases": [
+                        {
+                            "uploaded-evidence-argv": [
+                                "pwsh",
+                                "-MsBuildBinlogDirectory",
+                                (
+                                    "validation-result-000-profile-evidence/"
+                                    "_profile/runs/run-1/binlogs"
+                                ),
+                            ],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = {
+            "commands": [
+                {
+                    "profile-telemetry": {
+                        "phases": [],
+                        "uploaded-evidence-path": (
+                            "validation-result-000-profile-evidence"
+                        ),
+                        "uploaded-evidence-files": [
+                            (
+                                "validation-result-000-profile-evidence/"
+                                "release-build-profile-telemetry.json"
+                            ),
+                        ],
+                        "release-build": {
+                            "executor": {
+                                "phases": [
+                                    {
+                                        "uploaded-evidence-argv": [
+                                            "pwsh",
+                                            "-MsBuildBinlogDirectory",
+                                            (
+                                                "validation-result-000-"
+                                                "profile-evidence/_profile/"
+                                                "runs/run-1/binlogs"
+                                            ),
+                                        ],
+                                    }
+                                ],
+                            },
+                        },
+                    },
+                },
+            ],
+        }
+        control._write_json(result_path, result)
+
+        control._ci_reconcile_staged_release_profile_evidence_claims(
+            result_path,
+            profile_upload_dir,
+            control._ci_timing_start(),
+        )
+
+        uploaded_result = json.loads(result_path.read_text(encoding="utf-8"))
+        uploaded_profile = uploaded_result["commands"][0]["profile-telemetry"]
+        assert uploaded_profile["uploaded-evidence-path"] == (
+            "validation-result-000-profile-evidence"
+        )
+        assert uploaded_profile["uploaded-evidence-files"] == [
+            (
+                "validation-result-000-profile-evidence/"
+                "release-build-profile-telemetry.json"
+            )
+        ]
+        assert not [
+            phase
+            for phase in uploaded_profile["phases"]
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        executor_phase = uploaded_profile["release-build"]["executor"][
+            "phases"
+        ][0]
+        assert executor_phase["uploaded-evidence-argv"] == [
+            "pwsh",
+            "-MsBuildBinlogDirectory",
+            (
+                "validation-result-000-profile-evidence/_profile/runs/run-1/"
+                "binlogs"
+            ),
+        ]
+        uploaded_sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        assert uploaded_sidecar["phases"][0]["uploaded-evidence-argv"] == [
+            "pwsh",
+            "-MsBuildBinlogDirectory",
+            (
+                "validation-result-000-profile-evidence/_profile/runs/run-1/"
+                "binlogs"
+            ),
+        ]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_orchestrator_profile_evidence_opaque_argv_keeps_upload_claims() -> (
+    None
+):
+    """Opaque executable and option argv entries are not evidence claims."""
+    scratch = SCRATCH / "ci-orchestrator-profile-evidence-opaque-argv"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        upload_dir = scratch / "upload"
+        result_path = upload_dir / "validation-result-000.json"
+        profile_upload_dir = (
+            upload_dir / "validation-result-000-profile-evidence"
+        )
+        binlog = profile_upload_dir / "_profile/runs/run-1/binlogs/build.binlog"
+        response_file = profile_upload_dir / "args/build.rsp"
+        binlog.parent.mkdir(parents=True)
+        response_file.parent.mkdir(parents=True)
+        binlog.write_bytes(b"binlog")
+        response_file.write_text("/p:Configuration=Release", encoding="utf-8")
+        sidecar_path = (
+            profile_upload_dir / "release-build-profile-telemetry.json"
+        )
+        valid_sidecar_claim = (
+            "validation-result-000-profile-evidence/"
+            "release-build-profile-telemetry.json"
+        )
+        valid_binlog_claim = (
+            "validation-result-000-profile-evidence/_profile/runs/run-1/"
+            "binlogs/build.binlog"
+        )
+        valid_response_claim = (
+            "validation-result-000-profile-evidence/args/build.rsp"
+        )
+        uploaded_argv = [
+            "/usr/bin/dotnet",
+            "pack",
+            "/p:Version=1.2.3",
+            f"/bl:LogFile={valid_binlog_claim};ProjectImports=None",
+            f"@{valid_response_claim}",
+        ]
+        sidecar_path.write_text(
+            json.dumps({"phases": [{"uploaded-evidence-argv": uploaded_argv}]}),
+            encoding="utf-8",
+        )
+        result = {
+            "commands": [
+                {
+                    "profile-telemetry": {
+                        "phases": [],
+                        "uploaded-evidence-path": (
+                            "validation-result-000-profile-evidence"
+                        ),
+                        "uploaded-evidence-files": [
+                            valid_sidecar_claim,
+                        ],
+                        "release-build": {
+                            "executor": {
+                                "phases": [
+                                    {"uploaded-evidence-argv": uploaded_argv}
+                                ],
+                            },
+                        },
+                    },
+                },
+            ],
+        }
+        control._write_json(result_path, result)
+
+        control._ci_reconcile_staged_release_profile_evidence_claims(
+            result_path,
+            profile_upload_dir,
+            control._ci_timing_start(),
+        )
+
+        uploaded_result = json.loads(result_path.read_text(encoding="utf-8"))
+        uploaded_profile = uploaded_result["commands"][0]["profile-telemetry"]
+        assert uploaded_profile["uploaded-evidence-path"] == (
+            "validation-result-000-profile-evidence"
+        )
+        assert uploaded_profile["uploaded-evidence-files"] == [
+            valid_sidecar_claim,
+        ]
+        assert (
+            valid_binlog_claim
+            not in uploaded_profile["uploaded-evidence-files"]
+        )
+        assert (
+            valid_response_claim
+            not in uploaded_profile["uploaded-evidence-files"]
+        )
+        assert not [
+            phase
+            for phase in uploaded_profile["phases"]
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        executor_phase = uploaded_profile["release-build"]["executor"][
+            "phases"
+        ][0]
+        assert executor_phase["uploaded-evidence-argv"] == uploaded_argv
+        uploaded_sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        assert uploaded_sidecar["phases"][0]["uploaded-evidence-argv"] == (
+            uploaded_argv
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_orchestrator_profile_evidence_ordinary_uploaded_argv_paths_are_not_claims() -> (
+    None
+):
+    """Ordinary uploaded argv paths do not become profile evidence claims."""
+    scratch = SCRATCH / "ci-orchestrator-profile-evidence-ordinary-argv"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        upload_dir = scratch / "upload"
+        result_path = upload_dir / "validation-result-000.json"
+        profile_upload_dir = (
+            upload_dir / "validation-result-000-profile-evidence"
+        )
+        profile_upload_dir.mkdir(parents=True)
+        sidecar_path = (
+            profile_upload_dir / "release-build-profile-telemetry.json"
+        )
+        valid_sidecar_claim = (
+            "validation-result-000-profile-evidence/"
+            "release-build-profile-telemetry.json"
+        )
+        ordinary_argv = [
+            "pwsh",
+            "-File",
+            "script/Publish.ps1",
+            "-OutputRoot",
+            ".three-ci-validation/work/validation-build/release-shaped/out",
+            "/p:Version=1.2.3",
+            "artifacts/package.nupkg",
+        ]
+        sidecar_path.write_text(
+            json.dumps({"phases": [{"uploaded-evidence-argv": ordinary_argv}]}),
+            encoding="utf-8",
+        )
+        result = {
+            "commands": [
+                {
+                    "profile-telemetry": {
+                        "phases": [],
+                        "uploaded-evidence-path": (
+                            "validation-result-000-profile-evidence"
+                        ),
+                        "uploaded-evidence-files": [valid_sidecar_claim],
+                        "release-build": {
+                            "executor": {
+                                "phases": [
+                                    {"uploaded-evidence-argv": ordinary_argv}
+                                ],
+                            },
+                        },
+                    },
+                },
+            ],
+        }
+        control._write_json(result_path, result)
+
+        control._ci_reconcile_staged_release_profile_evidence_claims(
+            result_path,
+            profile_upload_dir,
+            control._ci_timing_start(),
+        )
+
+        uploaded_result = json.loads(result_path.read_text(encoding="utf-8"))
+        uploaded_profile = uploaded_result["commands"][0]["profile-telemetry"]
+        assert uploaded_profile["uploaded-evidence-path"] == (
+            "validation-result-000-profile-evidence"
+        )
+        assert uploaded_profile["uploaded-evidence-files"] == [
+            valid_sidecar_claim
+        ]
+        assert not [
+            phase
+            for phase in uploaded_profile["phases"]
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        executor_phase = uploaded_profile["release-build"]["executor"][
+            "phases"
+        ][0]
+        assert executor_phase["uploaded-evidence-argv"] == ordinary_argv
+        uploaded_sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        assert uploaded_sidecar["phases"][0]["uploaded-evidence-argv"] == (
+            ordinary_argv
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_orchestrator_profile_evidence_argv_only_missing_claims_scrub_upload_claims() -> (
+    None
+):
+    """Missing argv-only profile evidence claims fail closed."""
+    scratch = SCRATCH / "ci-orchestrator-profile-evidence-argv-only-missing"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        upload_dir = scratch / "upload"
+        result_path = upload_dir / "validation-result-000.json"
+        profile_upload_dir = (
+            upload_dir / "validation-result-000-profile-evidence"
+        )
+        profile_upload_dir.mkdir(parents=True)
+        sidecar_path = (
+            profile_upload_dir / "release-build-profile-telemetry.json"
+        )
+        valid_sidecar_claim = (
+            "validation-result-000-profile-evidence/"
+            "release-build-profile-telemetry.json"
+        )
+        missing_binlog_claim = (
+            "validation-result-000-profile-evidence/_profile/runs/run-1/"
+            "binlogs/missing.binlog"
+        )
+        missing_response_claim = (
+            "validation-result-000-profile-evidence/args/missing.rsp"
+        )
+        uploaded_argv = [
+            "dotnet",
+            "pack",
+            f"/bl:LogFile={missing_binlog_claim};ProjectImports=None",
+            f"@{missing_response_claim}",
+        ]
+        sidecar_path.write_text(
+            json.dumps({"phases": [{"uploaded-evidence-argv": uploaded_argv}]}),
+            encoding="utf-8",
+        )
+        result = {
+            "commands": [
+                {
+                    "profile-telemetry": {
+                        "phases": [],
+                        "uploaded-evidence-path": (
+                            "validation-result-000-profile-evidence"
+                        ),
+                        "uploaded-evidence-files": [valid_sidecar_claim],
+                        "release-build": {
+                            "executor": {
+                                "phases": [
+                                    {"uploaded-evidence-argv": uploaded_argv}
+                                ],
+                            },
+                        },
+                    },
+                },
+            ],
+        }
+        control._write_json(result_path, result)
+
+        control._ci_reconcile_staged_release_profile_evidence_claims(
+            result_path,
+            profile_upload_dir,
+            control._ci_timing_start(),
+        )
+
+        uploaded_result = json.loads(result_path.read_text(encoding="utf-8"))
+        uploaded_profile = uploaded_result["commands"][0]["profile-telemetry"]
+        assert "uploaded-evidence-path" not in uploaded_profile
+        assert "uploaded-evidence-files" not in uploaded_profile
+        executor_phase = uploaded_profile["release-build"]["executor"][
+            "phases"
+        ][0]
+        assert "uploaded-evidence-argv" not in executor_phase
+        upload_failures = [
+            phase
+            for phase in uploaded_profile["phases"]
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        assert len(upload_failures) == 1
+        assert upload_failures[0]["outcome"] == "failure"
+        _assert_ci_phase_timing_shape(upload_failures[0])
+        upload_error = cast("str", upload_failures[0]["error"])
+        assert missing_binlog_claim in upload_error
+        assert missing_response_claim in upload_error
+        assert valid_sidecar_claim not in upload_error
+
+        uploaded_sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        uploaded_sidecar_phase = uploaded_sidecar["phases"][0]
+        assert "uploaded-evidence-argv" not in uploaded_sidecar_phase
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_orchestrator_profile_evidence_stale_uploaded_evidence_path_scrubs_upload_claims() -> (
+    None
+):
+    """Stale uploaded evidence directory claims fail even with valid files."""
+    scratch = SCRATCH / "ci-orchestrator-profile-evidence-stale-path"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        upload_dir = scratch / "upload"
+        result_path = upload_dir / "validation-result-000.json"
+        profile_upload_dir = (
+            upload_dir / "validation-result-000-profile-evidence"
+        )
+        binlog = profile_upload_dir / "_profile/runs/run-1/binlogs/build.binlog"
+        binlog.parent.mkdir(parents=True)
+        binlog.write_bytes(b"binlog")
+        sidecar_path = (
+            profile_upload_dir / "release-build-profile-telemetry.json"
+        )
+        stale_profile_claim = "validation-result-999-profile-evidence"
+        valid_sidecar_claim = (
+            "validation-result-000-profile-evidence/"
+            "release-build-profile-telemetry.json"
+        )
+        valid_binlog_claim = (
+            "validation-result-000-profile-evidence/_profile/runs/run-1/"
+            "binlogs/build.binlog"
+        )
+        sidecar_path.write_text(
+            json.dumps(
+                {
+                    "uploaded-evidence-path": stale_profile_claim,
+                    "uploaded-evidence-files": [
+                        valid_sidecar_claim,
+                        valid_binlog_claim,
+                    ],
+                    "phases": [
+                        {
+                            "binlog-uploaded-evidence-path": (
+                                valid_binlog_claim
+                            ),
+                            "binlog-uploaded-evidence-paths": [
+                                valid_binlog_claim
+                            ],
+                            "uploaded-evidence-argv": [
+                                "dotnet",
+                                f"/bl:{valid_binlog_claim}",
+                            ],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = {
+            "commands": [
+                {
+                    "profile-telemetry": {
+                        "phases": [],
+                        "uploaded-evidence-path": stale_profile_claim,
+                        "uploaded-evidence-files": [
+                            valid_sidecar_claim,
+                            valid_binlog_claim,
+                        ],
+                        "release-build": {
+                            "executor": {
+                                "phases": [
+                                    {
+                                        "binlog-uploaded-evidence-path": (
+                                            valid_binlog_claim
+                                        ),
+                                        "binlog-uploaded-evidence-paths": [
+                                            valid_binlog_claim
+                                        ],
+                                        "uploaded-evidence-argv": [
+                                            "dotnet",
+                                            f"/bl:{valid_binlog_claim}",
+                                        ],
+                                    }
+                                ],
+                            },
+                        },
+                    },
+                },
+            ],
+        }
+        control._write_json(result_path, result)
+
+        control._ci_reconcile_staged_release_profile_evidence_claims(
+            result_path,
+            profile_upload_dir,
+            control._ci_timing_start(),
+        )
+
+        assert (upload_dir / valid_sidecar_claim).is_file()
+        assert (upload_dir / valid_binlog_claim).is_file()
+        uploaded_result = json.loads(result_path.read_text(encoding="utf-8"))
+        uploaded_profile = uploaded_result["commands"][0]["profile-telemetry"]
+        assert "uploaded-evidence-path" not in uploaded_profile
+        assert "uploaded-evidence-files" not in uploaded_profile
+        executor_phase = uploaded_profile["release-build"]["executor"][
+            "phases"
+        ][0]
+        assert "binlog-uploaded-evidence-path" not in executor_phase
+        assert "binlog-uploaded-evidence-paths" not in executor_phase
+        assert "uploaded-evidence-argv" not in executor_phase
+        upload_failures = [
+            phase
+            for phase in uploaded_profile["phases"]
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        assert len(upload_failures) == 1
+        assert upload_failures[0]["outcome"] == "failure"
+        _assert_ci_phase_timing_shape(upload_failures[0])
+        assert stale_profile_claim in cast("str", upload_failures[0]["error"])
+        assert valid_binlog_claim not in cast(
+            "str",
+            upload_failures[0]["error"],
+        )
+
+        uploaded_sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        assert "uploaded-evidence-path" not in uploaded_sidecar
+        assert "uploaded-evidence-files" not in uploaded_sidecar
+        uploaded_sidecar_phase = uploaded_sidecar["phases"][0]
+        assert "binlog-uploaded-evidence-path" not in uploaded_sidecar_phase
+        assert "binlog-uploaded-evidence-paths" not in uploaded_sidecar_phase
+        assert "uploaded-evidence-argv" not in uploaded_sidecar_phase
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_orchestrator_profile_evidence_stale_relative_directory_argv_scrubs_upload_claims() -> (
+    None
+):
+    """Stale relative directory-valued uploaded argv claims fail closed."""
+    scratch = SCRATCH / "ci-orchestrator-profile-evidence-stale-dir-argv"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        upload_dir = scratch / "upload"
+        result_path = upload_dir / "validation-result-000.json"
+        profile_upload_dir = (
+            upload_dir / "validation-result-000-profile-evidence"
+        )
+        binlog = profile_upload_dir / "_profile/runs/run-1/binlogs/build.binlog"
+        binlog.parent.mkdir(parents=True)
+        binlog.write_bytes(b"binlog")
+        sidecar_path = (
+            profile_upload_dir / "release-build-profile-telemetry.json"
+        )
+        valid_sidecar_claim = (
+            "validation-result-000-profile-evidence/"
+            "release-build-profile-telemetry.json"
+        )
+        valid_binlog_claim = (
+            "validation-result-000-profile-evidence/_profile/runs/run-1/"
+            "binlogs/build.binlog"
+        )
+        stale_directory_claim = (
+            "validation-result-999-profile-evidence/_profile/runs/run-1/binlogs"
+        )
+        sidecar_path.write_text(
+            json.dumps(
+                {
+                    "phases": [
+                        {
+                            "binlog-uploaded-evidence-path": (
+                                valid_binlog_claim
+                            ),
+                            "uploaded-evidence-argv": [
+                                "/usr/bin/pwsh",
+                                "/p:Version=1.2.3",
+                                "-MsBuildBinlogDirectory",
+                                stale_directory_claim,
+                            ],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = {
+            "commands": [
+                {
+                    "profile-telemetry": {
+                        "phases": [],
+                        "uploaded-evidence-path": (
+                            "validation-result-000-profile-evidence"
+                        ),
+                        "uploaded-evidence-files": [
+                            valid_sidecar_claim,
+                            valid_binlog_claim,
+                        ],
+                        "release-build": {
+                            "executor": {
+                                "phases": [
+                                    {
+                                        "binlog-uploaded-evidence-path": (
+                                            valid_binlog_claim
+                                        ),
+                                        "uploaded-evidence-argv": [
+                                            "/usr/bin/pwsh",
+                                            "/p:Version=1.2.3",
+                                            "-MsBuildBinlogDirectory",
+                                            stale_directory_claim,
+                                        ],
+                                    }
+                                ],
+                            },
+                        },
+                    },
+                },
+            ],
+        }
+        control._write_json(result_path, result)
+
+        control._ci_reconcile_staged_release_profile_evidence_claims(
+            result_path,
+            profile_upload_dir,
+            control._ci_timing_start(),
+        )
+
+        uploaded_result = json.loads(result_path.read_text(encoding="utf-8"))
+        uploaded_profile = uploaded_result["commands"][0]["profile-telemetry"]
+        assert "uploaded-evidence-path" not in uploaded_profile
+        assert "uploaded-evidence-files" not in uploaded_profile
+        executor_phase = uploaded_profile["release-build"]["executor"][
+            "phases"
+        ][0]
+        assert "binlog-uploaded-evidence-path" not in executor_phase
+        assert "uploaded-evidence-argv" not in executor_phase
+        upload_failures = [
+            phase
+            for phase in uploaded_profile["phases"]
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        assert len(upload_failures) == 1
+        assert upload_failures[0]["outcome"] == "failure"
+        _assert_ci_phase_timing_shape(upload_failures[0])
+        upload_error = cast("str", upload_failures[0]["error"])
+        assert stale_directory_claim in upload_error
+        assert valid_binlog_claim not in upload_error
+        assert "/usr/bin/pwsh" not in upload_error
+        assert "/p:Version=1.2.3" not in upload_error
+
+        uploaded_sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        uploaded_sidecar_phase = uploaded_sidecar["phases"][0]
+        assert "binlog-uploaded-evidence-path" not in uploaded_sidecar_phase
+        assert "uploaded-evidence-argv" not in uploaded_sidecar_phase
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_copy_release_profile_evidence_scrubs_stale_sidecar_uploaded_metadata() -> (
+    None
+):
+    """Normalized profile sidecars drop stale uploaded metadata before aliasing."""
+    scratch = SCRATCH / "ci-profile-evidence-sidecar-stale-metadata"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        repo_root = scratch
+        bundle_dir = scratch / ".three-ci-validation/work/validation-build"
+        profile_root = bundle_dir / "_profile/runs/run-1"
+        binlog = profile_root / "binlogs/build.binlog"
+        binlog.parent.mkdir(parents=True)
+        binlog.write_bytes(b"binlog")
+        stale_binlog_claim = (
+            "validation-result-stale-profile-evidence/_profile/runs/old/"
+            "binlogs/stale.binlog"
+        )
+        telemetry = {
+            "release-build": {
+                "bundle-dir": bundle_dir.as_posix(),
+                "executor": {
+                    "kind": "release-build-profile-telemetry",
+                    "schema-version": 1,
+                    "profile-root": profile_root.as_posix(),
+                    "uploaded-evidence-path": (
+                        "validation-result-stale-profile-evidence"
+                    ),
+                    "uploaded-evidence-files": [stale_binlog_claim],
+                    "phases": [
+                        {
+                            "phase": "dotnet-pack",
+                            "argv": [
+                                "dotnet",
+                                "pack",
+                                f"/bl:{binlog.as_posix()}",
+                            ],
+                            "binlog-path": binlog.as_posix(),
+                            "binlog-paths": [binlog.as_posix()],
+                            "binlog-uploaded-evidence-path": (
+                                stale_binlog_claim
+                            ),
+                            "binlog-uploaded-evidence-paths": [
+                                stale_binlog_claim
+                            ],
+                            "uploaded-evidence-argv": [
+                                "dotnet",
+                                f"/bl:{stale_binlog_claim}",
+                            ],
+                        }
+                    ],
+                },
+            },
+        }
+        result_path = scratch / "validation-result.json"
+
+        copied, path_aliases, skipped_paths = (
+            control._ci_copy_release_profile_evidence(
+                telemetry,
+                result_path=result_path,
+                repo_root=repo_root,
+            )
+        )
+
+        assert skipped_paths == []
+        assert any(
+            path.endswith("release-build-profile-telemetry.json")
+            for path in copied
+        )
+        assert any(path.endswith("build.binlog") for path in copied)
+        assert path_aliases
+        sidecar_path = (
+            scratch / "validation-result-profile-evidence/"
+            "release-build-profile-telemetry.json"
+        )
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        sidecar_text = sidecar_path.read_text(encoding="utf-8")
+        assert "validation-result-stale-profile-evidence" not in sidecar_text
+        assert "uploaded-evidence-path" not in sidecar
+        assert "uploaded-evidence-files" not in sidecar
+        phase = sidecar["phases"][0]
+        fresh_binlog_claim = phase["binlog-uploaded-evidence-path"]
+        assert fresh_binlog_claim.endswith("build.binlog")
+        assert fresh_binlog_claim != stale_binlog_claim
+        assert phase["binlog-uploaded-evidence-paths"] == [fresh_binlog_claim]
+        assert phase["uploaded-evidence-argv"] == [
+            "dotnet",
+            "pack",
+            f"/bl:{fresh_binlog_claim}",
+        ]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_orchestrator_profile_evidence_regular_file_scrubs_upload_claims(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Top-level non-directory profile evidence paths fail closed."""
+    scratch = SCRATCH / "ci-orchestrator-profile-evidence-regular-file"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        batch = {
+            "batch-id": "batch-1",
+            "runner-family": "ubuntu",
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/batch-1/batch-evidence-bundle.json"
+            ),
+            "depends-on-batches": [],
+            "batch-writer": {"expected-job-identity": "job"},
+            "compatibility-profile": {
+                "ecosystem": "python",
+                "setup-profile": "setup-ubuntu-python",
+                "execution-profile": "exec-ecosystem-gate-python",
+            },
+        }
+        manifest = {"batches": [batch]}
+        manifest_path = scratch / "execution-batch-manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        for name in (
+            "plan.json",
+            "request.json",
+            "changed-files.json",
+            "fact-snapshot.json",
+        ):
+            (scratch / name).write_text("{}", encoding="utf-8")
+
+        def fake_run_batch_commands(args: argparse.Namespace) -> int:
+            result_dir = Path(args.result_out_dir)
+            result_dir.mkdir(parents=True, exist_ok=True)
+            profile_path = result_dir / "validation-result-000-profile-evidence"
+            profile_path.write_text("not a directory", encoding="utf-8")
+            result = {
+                "work-group-id": "wg",
+                "kind": "release-shaped-artifact",
+                "runner-family": "ubuntu",
+                "coverage-target": {"type": "subject", "id": "python.example"},
+                "observed-commit-sha": batch_contracts.TREE_SHA,
+                "outcome": "success",
+                "commands": [
+                    {
+                        "index": 0,
+                        "label": "release-shaped-artifact",
+                        "outcome": "success",
+                        "profile-telemetry": {
+                            "kind": (
+                                "release-shaped-validation-profile-telemetry"
+                            ),
+                            "schema-version": 1,
+                            "phases": [],
+                            "uploaded-evidence-path": (
+                                "validation-result-000-profile-evidence"
+                            ),
+                            "uploaded-evidence-files": [
+                                (
+                                    "validation-result-000-profile-evidence/"
+                                    "release-build-profile-telemetry.json"
+                                ),
+                            ],
+                            "release-build": {
+                                "executor": {
+                                    "phases": [
+                                        {
+                                            "binlog-uploaded-evidence-path": (
+                                                "validation-result-000-"
+                                                "profile-evidence/_profile/"
+                                                "runs/run-1/binlogs/build.binlog"
+                                            ),
+                                            "binlog-uploaded-evidence-paths": [
+                                                (
+                                                    "validation-result-000-"
+                                                    "profile-evidence/_profile/"
+                                                    "runs/run-1/binlogs/"
+                                                    "build.binlog"
+                                                )
+                                            ],
+                                            "uploaded-evidence-argv": [
+                                                "dotnet",
+                                                (
+                                                    "/bl:validation-result-000-"
+                                                    "profile-evidence/_profile/"
+                                                    "runs/run-1/binlogs/"
+                                                    "build.binlog"
+                                                ),
+                                            ],
+                                        }
+                                    ],
+                                }
+                            },
+                        },
+                    }
+                ],
+            }
+            (result_dir / "validation-result-000.json").write_text(
+                json.dumps(result),
+                encoding="utf-8",
+            )
+            return 0
+
+        def fake_write_bundle(args: argparse.Namespace) -> int:
+            result = json.loads(
+                Path(args.validation_result[0]).read_text(encoding="utf-8")
+            )
+            profile = result["commands"][0]["profile-telemetry"]
+            control._write_json(
+                Path(args.bundle_out),
+                {
+                    "selector-results": [
+                        {
+                            "evidence": {
+                                "category-result": {
+                                    "detail": {"profile-telemetry": profile}
+                                }
+                            }
+                        }
+                    ],
+                    "orchestrator-step": args.orchestrator_step,
+                },
+            )
+            return 0
+
+        monkeypatch.setattr(
+            control,
+            "_cmd_run_ci_validation_batch_commands",
+            fake_run_batch_commands,
+        )
+        monkeypatch.setattr(
+            control,
+            "_cmd_write_ci_validation_batch_evidence_bundle",
+            fake_write_bundle,
+        )
+        stale_file = (
+            scratch
+            / "work/upload/validation-result-000-profile-evidence/stale.txt"
+        )
+        stale_file.parent.mkdir(parents=True)
+        stale_file.write_text("stale upload payload", encoding="utf-8")
+        output_path = scratch / "github-output.txt"
+
+        assert (
+            control._cmd_run_ci_validation_runner_family_orchestrator_step(
+                argparse.Namespace(
+                    plan=str(scratch / "plan.json"),
+                    request=str(scratch / "request.json"),
+                    execution_batch_manifest=str(manifest_path),
+                    changed_files_snapshot=str(scratch / "changed-files.json"),
+                    fact_snapshot=str(scratch / "fact-snapshot.json"),
+                    runner_family="ubuntu",
+                    repository="",
+                    workflow="CI Validation",
+                    job="execution-batch-ubuntu-orchestrator",
+                    expected_run_id=batch_contracts.RUN_ID,
+                    expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+                    observed_artifacts_dir=str(scratch / "observed-artifacts"),
+                    state_dir=str(scratch / "state"),
+                    work_dir=str(scratch / "work"),
+                    slot_index="0",
+                    observed_commit_sha=batch_contracts.TREE_SHA,
+                    repo_root=str(REPO_ROOT),
+                    github_output=str(output_path),
+                    dependency_wait_timeout_seconds=0,
+                    dependency_poll_interval_seconds=0,
+                )
+            )
+            == 0
+        )
+
+        upload_dir = Path(
+            _github_outputs(output_path)["batch_evidence_upload_path"]
+        )
+        profile_upload_dir = (
+            upload_dir / "validation-result-000-profile-evidence"
+        )
+        assert not profile_upload_dir.exists()
+        assert (upload_dir / "batch-evidence-bundle.json").is_file()
+        assert (upload_dir / "validation-result-000.json").is_file()
+        assert (
+            upload_dir / control._CI_ORCHESTRATOR_TIMING_SIDECAR_NAME
+        ).is_file()
+        uploaded_result = json.loads(
+            (upload_dir / "validation-result-000.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        uploaded_profile = uploaded_result["commands"][0]["profile-telemetry"]
+        assert "uploaded-evidence-path" not in uploaded_profile
+        assert "uploaded-evidence-files" not in uploaded_profile
+        executor_phase = uploaded_profile["release-build"]["executor"][
+            "phases"
+        ][0]
+        assert "binlog-uploaded-evidence-path" not in executor_phase
+        assert "binlog-uploaded-evidence-paths" not in executor_phase
+        assert "uploaded-evidence-argv" not in executor_phase
+        upload_failures = [
+            phase
+            for phase in uploaded_profile["phases"]
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        assert len(upload_failures) == 1
+        assert upload_failures[0]["outcome"] == "failure"
+        _assert_ci_phase_timing_shape(upload_failures[0])
+        assert "not a directory" in cast("str", upload_failures[0]["error"])
+
+        bundle = json.loads(
+            (upload_dir / "batch-evidence-bundle.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        bundle_profile = bundle["selector-results"][0]["evidence"][
+            "category-result"
+        ]["detail"]["profile-telemetry"]
+        assert "uploaded-evidence-path" not in bundle_profile
+        assert "uploaded-evidence-files" not in bundle_profile
+        bundle_executor_phase = bundle_profile["release-build"]["executor"][
+            "phases"
+        ][0]
+        assert "binlog-uploaded-evidence-path" not in bundle_executor_phase
+        assert "binlog-uploaded-evidence-paths" not in bundle_executor_phase
+        assert "uploaded-evidence-argv" not in bundle_executor_phase
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_orchestrator_missing_profile_evidence_scrubs_upload_claims(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing claimed profile evidence paths fail closed without noisy extras."""
+    scratch = SCRATCH / "ci-orchestrator-profile-evidence-missing"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        batch = {
+            "batch-id": "batch-1",
+            "runner-family": "ubuntu",
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/batch-1/batch-evidence-bundle.json"
+            ),
+            "depends-on-batches": [],
+            "batch-writer": {"expected-job-identity": "job"},
+            "compatibility-profile": {
+                "ecosystem": "python",
+                "setup-profile": "setup-ubuntu-python",
+                "execution-profile": "exec-ecosystem-gate-python",
+            },
+        }
+        manifest = {"batches": [batch]}
+        manifest_path = scratch / "execution-batch-manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        for name in (
+            "plan.json",
+            "request.json",
+            "changed-files.json",
+            "fact-snapshot.json",
+        ):
+            (scratch / name).write_text("{}", encoding="utf-8")
+
+        def claimed_profile_telemetry(index: int) -> dict[str, object]:
+            return {
+                "kind": "release-shaped-validation-profile-telemetry",
+                "schema-version": 1,
+                "phases": [],
+                "uploaded-evidence-path": (
+                    f"validation-result-{index:03d}-profile-evidence"
+                ),
+                "uploaded-evidence-files": [
+                    (
+                        f"validation-result-{index:03d}-profile-evidence/"
+                        "release-build-profile-telemetry.json"
+                    ),
+                ],
+                "release-build": {
+                    "executor": {
+                        "phases": [
+                            {
+                                "binlog-uploaded-evidence-path": (
+                                    f"validation-result-{index:03d}-"
+                                    "profile-evidence/_profile/runs/run-1/"
+                                    "binlogs/build.binlog"
+                                ),
+                                "binlog-uploaded-evidence-paths": [
+                                    (
+                                        f"validation-result-{index:03d}-"
+                                        "profile-evidence/_profile/runs/run-1/"
+                                        "binlogs/build.binlog"
+                                    )
+                                ],
+                                "uploaded-evidence-argv": [
+                                    "dotnet",
+                                    (
+                                        f"/bl:validation-result-{index:03d}-"
+                                        "profile-evidence/_profile/runs/run-1/"
+                                        "binlogs/build.binlog"
+                                    ),
+                                ],
+                            }
+                        ],
+                    }
+                },
+            }
+
+        def fake_run_batch_commands(args: argparse.Namespace) -> int:
+            result_dir = Path(args.result_out_dir)
+            result_dir.mkdir(parents=True, exist_ok=True)
+            for index, profile_telemetry in (
+                (0, claimed_profile_telemetry(0)),
+                (
+                    1,
+                    {
+                        "kind": "release-shaped-validation-profile-telemetry",
+                        "schema-version": 1,
+                        "phases": [],
+                    },
+                ),
+            ):
+                result = {
+                    "work-group-id": "wg",
+                    "kind": "release-shaped-artifact",
+                    "runner-family": "ubuntu",
+                    "coverage-target": {
+                        "type": "subject",
+                        "id": f"python.example.{index}",
+                    },
+                    "observed-commit-sha": batch_contracts.TREE_SHA,
+                    "outcome": "success",
+                    "commands": [
+                        {
+                            "index": 0,
+                            "label": "release-shaped-artifact",
+                            "outcome": "success",
+                            "profile-telemetry": profile_telemetry,
+                        }
+                    ],
+                }
+                (result_dir / f"validation-result-{index:03d}.json").write_text(
+                    json.dumps(result),
+                    encoding="utf-8",
+                )
+            return 0
+
+        def fake_write_bundle(args: argparse.Namespace) -> int:
+            selector_results = []
+            for validation_result in args.validation_result:
+                result = json.loads(
+                    Path(validation_result).read_text(encoding="utf-8")
+                )
+                profile = result["commands"][0]["profile-telemetry"]
+                selector_results.append(
+                    {
+                        "evidence": {
+                            "category-result": {
+                                "detail": {"profile-telemetry": profile}
+                            }
+                        }
+                    }
+                )
+            control._write_json(
+                Path(args.bundle_out),
+                {
+                    "selector-results": selector_results,
+                    "orchestrator-step": args.orchestrator_step,
+                },
+            )
+            return 0
+
+        monkeypatch.setattr(
+            control,
+            "_cmd_run_ci_validation_batch_commands",
+            fake_run_batch_commands,
+        )
+        monkeypatch.setattr(
+            control,
+            "_cmd_write_ci_validation_batch_evidence_bundle",
+            fake_write_bundle,
+        )
+        for index in range(2):
+            stale_file = scratch / (
+                "work/upload/"
+                f"validation-result-{index:03d}-profile-evidence/stale.txt"
+            )
+            stale_file.parent.mkdir(parents=True)
+            stale_file.write_text("stale upload payload", encoding="utf-8")
+        output_path = scratch / "github-output.txt"
+
+        assert (
+            control._cmd_run_ci_validation_runner_family_orchestrator_step(
+                argparse.Namespace(
+                    plan=str(scratch / "plan.json"),
+                    request=str(scratch / "request.json"),
+                    execution_batch_manifest=str(manifest_path),
+                    changed_files_snapshot=str(scratch / "changed-files.json"),
+                    fact_snapshot=str(scratch / "fact-snapshot.json"),
+                    runner_family="ubuntu",
+                    repository="",
+                    workflow="CI Validation",
+                    job="execution-batch-ubuntu-orchestrator",
+                    expected_run_id=batch_contracts.RUN_ID,
+                    expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+                    observed_artifacts_dir=str(scratch / "observed-artifacts"),
+                    state_dir=str(scratch / "state"),
+                    work_dir=str(scratch / "work"),
+                    slot_index="0",
+                    observed_commit_sha=batch_contracts.TREE_SHA,
+                    repo_root=str(REPO_ROOT),
+                    github_output=str(output_path),
+                    dependency_wait_timeout_seconds=0,
+                    dependency_poll_interval_seconds=0,
+                )
+            )
+            == 0
+        )
+
+        upload_dir = Path(
+            _github_outputs(output_path)["batch_evidence_upload_path"]
+        )
+        assert (upload_dir / "batch-evidence-bundle.json").is_file()
+        assert (upload_dir / "validation-result-000.json").is_file()
+        assert (upload_dir / "validation-result-001.json").is_file()
+        assert (
+            upload_dir / control._CI_ORCHESTRATOR_TIMING_SIDECAR_NAME
+        ).is_file()
+        assert (scratch / "state/ran/batch-1.json").is_file()
+        for index in range(2):
+            assert not (
+                upload_dir / f"validation-result-{index:03d}-profile-evidence"
+            ).exists()
+
+        uploaded_result = json.loads(
+            (upload_dir / "validation-result-000.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        uploaded_profile = uploaded_result["commands"][0]["profile-telemetry"]
+        assert "uploaded-evidence-path" not in uploaded_profile
+        assert "uploaded-evidence-files" not in uploaded_profile
+        executor_phase = uploaded_profile["release-build"]["executor"][
+            "phases"
+        ][0]
+        assert "binlog-uploaded-evidence-path" not in executor_phase
+        assert "binlog-uploaded-evidence-paths" not in executor_phase
+        assert "uploaded-evidence-argv" not in executor_phase
+        upload_failures = [
+            phase
+            for phase in uploaded_profile["phases"]
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        assert len(upload_failures) == 1
+        assert upload_failures[0]["outcome"] == "failure"
+        _assert_ci_phase_timing_shape(upload_failures[0])
+        assert "missing" in cast("str", upload_failures[0]["error"])
+
+        quiet_result = json.loads(
+            (upload_dir / "validation-result-001.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        quiet_profile = quiet_result["commands"][0]["profile-telemetry"]
+        assert quiet_profile["phases"] == []
+        assert "uploaded-evidence-path" not in quiet_profile
+        assert "uploaded-evidence-files" not in quiet_profile
+
+        bundle = json.loads(
+            (upload_dir / "batch-evidence-bundle.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        bundle_profiles = [
+            selector_result["evidence"]["category-result"]["detail"][
+                "profile-telemetry"
+            ]
+            for selector_result in bundle["selector-results"]
+        ]
+        assert "uploaded-evidence-path" not in bundle_profiles[0]
+        assert "uploaded-evidence-files" not in bundle_profiles[0]
+        assert bundle_profiles[1]["phases"] == []
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_orchestrator_top_level_profile_evidence_symlink_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A top-level symlink profile evidence path is never staged."""
+    if not hasattr(os, "symlink"):
+        pytest.skip("symlinks are not available on this platform")
+    scratch = SCRATCH / "ci-orchestrator-profile-evidence-top-symlink"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        batch = {
+            "batch-id": "batch-1",
+            "runner-family": "ubuntu",
+            "expected-batch-evidence-bundle-ref": (
+                "ci-validation/batches/1/1/batch-1/batch-evidence-bundle.json"
+            ),
+            "depends-on-batches": [],
+            "batch-writer": {"expected-job-identity": "job"},
+            "compatibility-profile": {
+                "ecosystem": "python",
+                "setup-profile": "setup-ubuntu-python",
+                "execution-profile": "exec-ecosystem-gate-python",
+            },
+        }
+        manifest = {"batches": [batch]}
+        manifest_path = scratch / "execution-batch-manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        for name in (
+            "plan.json",
+            "request.json",
+            "changed-files.json",
+            "fact-snapshot.json",
+        ):
+            (scratch / name).write_text("{}", encoding="utf-8")
+
+        def fake_run_batch_commands(args: argparse.Namespace) -> int:
+            result_dir = Path(args.result_out_dir)
+            result_dir.mkdir(parents=True, exist_ok=True)
+            external_dir = scratch / "external-profile-evidence"
+            external_dir.mkdir()
+            (external_dir / "secret.binlog").write_text(
+                "external profile evidence secret",
+                encoding="utf-8",
+            )
+            profile_path = result_dir / "validation-result-000-profile-evidence"
+            profile_path.symlink_to(external_dir, target_is_directory=True)
+            result = {
+                "work-group-id": "wg",
+                "kind": "release-shaped-artifact",
+                "runner-family": "ubuntu",
+                "coverage-target": {"type": "subject", "id": "python.example"},
+                "observed-commit-sha": batch_contracts.TREE_SHA,
+                "outcome": "success",
+                "commands": [
+                    {
+                        "index": 0,
+                        "label": "release-shaped-artifact",
+                        "outcome": "success",
+                        "profile-telemetry": {
+                            "kind": (
+                                "release-shaped-validation-profile-telemetry"
+                            ),
+                            "schema-version": 1,
+                            "phases": [],
+                            "uploaded-evidence-path": (
+                                "validation-result-000-profile-evidence"
+                            ),
+                            "uploaded-evidence-files": [
+                                (
+                                    "validation-result-000-profile-evidence/"
+                                    "secret.binlog"
+                                ),
+                            ],
+                            "release-build": {
+                                "executor": {
+                                    "phases": [
+                                        {
+                                            "binlog-uploaded-evidence-path": (
+                                                "validation-result-000-"
+                                                "profile-evidence/secret.binlog"
+                                            ),
+                                            "binlog-uploaded-evidence-paths": [
+                                                (
+                                                    "validation-result-000-"
+                                                    "profile-evidence/"
+                                                    "secret.binlog"
+                                                )
+                                            ],
+                                            "uploaded-evidence-argv": [
+                                                "dotnet",
+                                                (
+                                                    "/bl:validation-result-000-"
+                                                    "profile-evidence/"
+                                                    "secret.binlog"
+                                                ),
+                                            ],
+                                        }
+                                    ],
+                                }
+                            },
+                        },
+                    }
+                ],
+            }
+            (result_dir / "validation-result-000.json").write_text(
+                json.dumps(result),
+                encoding="utf-8",
+            )
+            return 0
+
+        def fake_write_bundle(args: argparse.Namespace) -> int:
+            result = json.loads(
+                Path(args.validation_result[0]).read_text(encoding="utf-8")
+            )
+            profile = result["commands"][0]["profile-telemetry"]
+            control._write_json(
+                Path(args.bundle_out),
+                {
+                    "selector-results": [
+                        {
+                            "evidence": {
+                                "category-result": {
+                                    "detail": {"profile-telemetry": profile}
+                                }
+                            }
+                        }
+                    ],
+                    "orchestrator-step": args.orchestrator_step,
+                },
+            )
+            return 0
+
+        monkeypatch.setattr(
+            control,
+            "_cmd_run_ci_validation_batch_commands",
+            fake_run_batch_commands,
+        )
+        monkeypatch.setattr(
+            control,
+            "_cmd_write_ci_validation_batch_evidence_bundle",
+            fake_write_bundle,
+        )
+        stale_file = (
+            scratch
+            / "work/upload/validation-result-000-profile-evidence/stale.txt"
+        )
+        stale_file.parent.mkdir(parents=True)
+        stale_file.write_text("stale upload payload", encoding="utf-8")
+        output_path = scratch / "github-output.txt"
+
+        assert (
+            control._cmd_run_ci_validation_runner_family_orchestrator_step(
+                argparse.Namespace(
+                    plan=str(scratch / "plan.json"),
+                    request=str(scratch / "request.json"),
+                    execution_batch_manifest=str(manifest_path),
+                    changed_files_snapshot=str(scratch / "changed-files.json"),
+                    fact_snapshot=str(scratch / "fact-snapshot.json"),
+                    runner_family="ubuntu",
+                    repository="",
+                    workflow="CI Validation",
+                    job="execution-batch-ubuntu-orchestrator",
+                    expected_run_id=batch_contracts.RUN_ID,
+                    expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+                    observed_artifacts_dir=str(scratch / "observed-artifacts"),
+                    state_dir=str(scratch / "state"),
+                    work_dir=str(scratch / "work"),
+                    slot_index="0",
+                    observed_commit_sha=batch_contracts.TREE_SHA,
+                    repo_root=str(REPO_ROOT),
+                    github_output=str(output_path),
+                    dependency_wait_timeout_seconds=0,
+                    dependency_poll_interval_seconds=0,
+                )
+            )
+            == 0
+        )
+
+        upload_dir = Path(
+            _github_outputs(output_path)["batch_evidence_upload_path"]
+        )
+        profile_upload_dir = (
+            upload_dir / "validation-result-000-profile-evidence"
+        )
+        assert not profile_upload_dir.exists()
+        assert (upload_dir / "batch-evidence-bundle.json").is_file()
+        assert (upload_dir / "validation-result-000.json").is_file()
+        assert (
+            upload_dir / control._CI_ORCHESTRATOR_TIMING_SIDECAR_NAME
+        ).is_file()
+        assert (scratch / "state/ran/batch-1.json").is_file()
+        uploaded_text = "\n".join(
+            path.read_text(encoding="utf-8", errors="ignore")
+            for path in upload_dir.rglob("*")
+            if path.is_file()
+        )
+        assert "external profile evidence secret" not in uploaded_text
+        assert "stale upload payload" not in uploaded_text
+
+        uploaded_result = json.loads(
+            (upload_dir / "validation-result-000.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        uploaded_profile = uploaded_result["commands"][0]["profile-telemetry"]
+        assert "uploaded-evidence-path" not in uploaded_profile
+        assert "uploaded-evidence-files" not in uploaded_profile
+        executor_phase = uploaded_profile["release-build"]["executor"][
+            "phases"
+        ][0]
+        assert "binlog-uploaded-evidence-path" not in executor_phase
+        assert "binlog-uploaded-evidence-paths" not in executor_phase
+        assert "uploaded-evidence-argv" not in executor_phase
+        upload_failures = [
+            phase
+            for phase in uploaded_profile["phases"]
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        assert len(upload_failures) == 1
+        assert upload_failures[0]["outcome"] == "failure"
+        _assert_ci_phase_timing_shape(upload_failures[0])
+        assert "symlink" in cast("str", upload_failures[0]["error"])
+
+        bundle = json.loads(
+            (upload_dir / "batch-evidence-bundle.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        bundle_profile = bundle["selector-results"][0]["evidence"][
+            "category-result"
+        ]["detail"]["profile-telemetry"]
+        assert "uploaded-evidence-path" not in bundle_profile
+        assert "uploaded-evidence-files" not in bundle_profile
+        bundle_executor_phase = bundle_profile["release-build"]["executor"][
+            "phases"
+        ][0]
+        assert "binlog-uploaded-evidence-path" not in bundle_executor_phase
+        assert "binlog-uploaded-evidence-paths" not in bundle_executor_phase
+        assert "uploaded-evidence-argv" not in bundle_executor_phase
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def test_ci_validation_batch_observation_cli_is_not_public() -> None:
     """Caller-writable producer observation sidecars are not exposed."""
     result = subprocess.run(
@@ -29128,6 +31396,17 @@ def _assert_ci_timing_shape(value: object) -> None:
     assert abs(cast("int", value["duration-ms"]) - elapsed_ms) <= 1000
 
 
+def _assert_ci_phase_timing_shape(phase: Mapping[str, object]) -> None:
+    for key in ("started-at", "completed-at", "duration-ms"):
+        assert key in phase
+    _assert_ci_timing_shape(
+        {
+            key: phase[key]
+            for key in ("started-at", "completed-at", "duration-ms")
+        }
+    )
+
+
 def test_ci_validation_command_runner_maps_exit_codes_to_outcome() -> None:
     """Mapped validation commands record no-publish command results."""
     scratch = SCRATCH / "ci-validation-command-runner"
@@ -30257,6 +32536,18 @@ def test_ci_validation_release_shaped_materializes_missing_mapping(
             path.endswith("release-build-profile-telemetry.json")
             for path in uploaded_files
         )
+        uploaded_sidecar = (
+            scratch
+            / "validation-result-profile-evidence"
+            / "release-build-profile-telemetry.json"
+        )
+        uploaded_sidecar_payload = json.loads(
+            uploaded_sidecar.read_text(encoding="utf-8")
+        )
+        assert uploaded_sidecar_payload == executor_telemetry
+        uploaded_sidecar_text = uploaded_sidecar.read_text(encoding="utf-8")
+        assert str(scratch) not in uploaded_sidecar_text
+        assert '"/bl:/' not in uploaded_sidecar_text
         assert any(
             path.endswith("0001-dotnet-pack.binlog") for path in uploaded_files
         )
@@ -30266,6 +32557,7 @@ def test_ci_validation_release_shaped_materializes_missing_mapping(
         )
         assert uploaded_binlog.endswith("0001-dotnet-pack.binlog")
         assert uploaded_binlog in uploaded_files
+        assert f"/bl:{uploaded_binlog}" in uploaded_sidecar_text
         uploaded_argv = cast(
             "Sequence[str]", executor_phase["uploaded-evidence-argv"]
         )
@@ -30409,6 +32701,427 @@ def test_ci_validation_release_shaped_profile_and_timing_coexist(
         assert batch_profile_telemetry == profile_telemetry
         assert batch_profile_telemetry["uploaded-evidence-files"] == (
             uploaded_files
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_profile_evidence_upload_skips_symlinks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Profile evidence upload does not follow symlinks out of the run root."""
+    if not hasattr(os, "symlink"):
+        pytest.skip("symlinks are not available on this platform")
+    scratch = SCRATCH / "ci-validation-profile-evidence-symlink"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+
+        def fake_build_request(
+            **_kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            return {"kind": "build-request"}, {"artifact/wheel": artifact_refs}
+
+        def fake_execute_build(
+            *,
+            request: Mapping[str, object],
+            repo_root: Path,
+            bundle_dir: Path,
+        ) -> dict[str, object]:
+            assert request["kind"] == "build-request"
+            assert repo_root == scratch
+            output = bundle_dir / "dist/a.whl"
+            output.parent.mkdir(parents=True)
+            output.write_bytes(b"profiled wheel")
+            profile_root = bundle_dir / "_profile/runs/profile-run"
+            binlog = profile_root / "binlogs/0001-dotnet-pack.binlog"
+            binlog.parent.mkdir(parents=True)
+            binlog.write_bytes(b"profile binlog")
+            external_file = scratch / "outside-secret.txt"
+            external_file.write_text("external secret", encoding="utf-8")
+            (profile_root / "binlogs/external-secret-link.txt").symlink_to(
+                external_file,
+            )
+            external_dir = scratch / "outside-dir"
+            external_dir.mkdir()
+            (external_dir / "external.binlog").write_bytes(b"external")
+            (profile_root / "external-dir-link").symlink_to(
+                external_dir,
+                target_is_directory=True,
+            )
+            (bundle_dir / "release-build-profile-telemetry.json").write_text(
+                json.dumps(
+                    {
+                        "kind": "release-build-profile-telemetry",
+                        "schema-version": 1,
+                        "profile-root": profile_root.as_posix(),
+                        "phases": [
+                            {
+                                "phase": "dotnet-pack",
+                                "started-at": "2026-01-01T00:00:00.000Z",
+                                "completed-at": "2026-01-01T00:00:01.000Z",
+                                "duration-ms": 1000,
+                                "outcome": "success",
+                                "argv": [
+                                    "dotnet",
+                                    "pack",
+                                    f"/bl:{binlog.as_posix()}",
+                                ],
+                                "cwd": repo_root.as_posix(),
+                                "exit-code": 0,
+                                "output-paths": [output.as_posix()],
+                                "binlog-directory": binlog.parent.as_posix(),
+                                "binlog-path": binlog.as_posix(),
+                                "binlog-paths": [binlog.as_posix()],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return {
+                "kind": "build-result",
+                "artifacts": {
+                    "artifact/wheel": {
+                        "bundle-relative-path": "dist/a.whl",
+                    }
+                },
+            }
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fake_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fake_execute_build,
+        )
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        profile_telemetry = cast(
+            "Mapping[str, object]",
+            cast("Sequence[Mapping[str, object]]", result["commands"])[0][
+                "profile-telemetry"
+            ],
+        )
+        uploaded_files = cast(
+            "Sequence[str]",
+            profile_telemetry["uploaded-evidence-files"],
+        )
+        assert any(
+            path.endswith("0001-dotnet-pack.binlog") for path in uploaded_files
+        )
+        assert not any(
+            "external-secret-link" in path for path in uploaded_files
+        )
+        assert not any("external-dir-link" in path for path in uploaded_files)
+        assert not (
+            scratch
+            / "validation-result-profile-evidence/_profile/runs/profile-run/"
+            "binlogs/external-secret-link.txt"
+        ).exists()
+        assert not (
+            scratch
+            / "validation-result-profile-evidence/_profile/runs/profile-run/"
+            "external-dir-link/external.binlog"
+        ).exists()
+        phases = cast(
+            "Sequence[Mapping[str, object]]",
+            profile_telemetry["phases"],
+        )
+        upload_failures = [
+            phase
+            for phase in phases
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        assert len(upload_failures) == 1
+        assert upload_failures[0]["outcome"] == "failure"
+        assert "external-secret-link.txt (symlink)" in cast(
+            "str",
+            upload_failures[0]["error"],
+        )
+        assert "external-dir-link (symlink)" in cast(
+            "str",
+            upload_failures[0]["error"],
+        )
+        for key in ("started-at", "completed-at", "duration-ms"):
+            assert key in upload_failures[0]
+        uploaded_text = "\n".join(
+            path.read_text(encoding="utf-8", errors="ignore")
+            for path in (scratch / "validation-result-profile-evidence").rglob(
+                "*"
+            )
+            if path.is_file()
+        )
+        assert "external secret" not in uploaded_text
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_profile_evidence_upload_skips_unreadable_entries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Profile evidence upload keeps safe files when one entry is unreadable."""
+    scratch = SCRATCH / "ci-validation-profile-evidence-unreadable-entry"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+
+        def fake_build_request(
+            **_kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            return {"kind": "build-request"}, {"artifact/wheel": artifact_refs}
+
+        def fake_execute_build(
+            *,
+            request: Mapping[str, object],
+            repo_root: Path,
+            bundle_dir: Path,
+        ) -> dict[str, object]:
+            assert request["kind"] == "build-request"
+            assert repo_root == scratch
+            output = bundle_dir / "dist/a.whl"
+            output.parent.mkdir(parents=True)
+            output.write_bytes(b"profiled wheel")
+            profile_root = bundle_dir / "_profile/runs/profile-run"
+            binlog = profile_root / "binlogs/0001-dotnet-pack.binlog"
+            binlog.parent.mkdir(parents=True)
+            binlog.write_bytes(b"profile binlog")
+            unreadable_file = profile_root / "unreadable-dir/secret.binlog"
+            unreadable_file.parent.mkdir()
+            unreadable_file.write_bytes(b"do not copy")
+            (bundle_dir / "release-build-profile-telemetry.json").write_text(
+                json.dumps(
+                    {
+                        "kind": "release-build-profile-telemetry",
+                        "schema-version": 1,
+                        "profile-root": profile_root.as_posix(),
+                        "phases": [
+                            {
+                                "phase": "dotnet-pack",
+                                "started-at": "2026-01-01T00:00:00.000Z",
+                                "completed-at": "2026-01-01T00:00:01.000Z",
+                                "duration-ms": 1000,
+                                "outcome": "success",
+                                "argv": [
+                                    "dotnet",
+                                    "pack",
+                                    f"/bl:{binlog.as_posix()}",
+                                ],
+                                "cwd": repo_root.as_posix(),
+                                "exit-code": 0,
+                                "output-paths": [output.as_posix()],
+                                "binlog-directory": binlog.parent.as_posix(),
+                                "binlog-path": binlog.as_posix(),
+                                "binlog-paths": [binlog.as_posix()],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return {
+                "kind": "build-result",
+                "artifacts": {
+                    "artifact/wheel": {
+                        "bundle-relative-path": "dist/a.whl",
+                    }
+                },
+            }
+
+        original_iterdir = Path.iterdir
+
+        def fail_unreadable_iterdir(path: Path) -> Iterator[Path]:
+            if path.name == "unreadable-dir":
+                message = "simulated unreadable profile entry"
+                raise OSError(message)
+            return original_iterdir(path)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fake_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fake_execute_build,
+        )
+        monkeypatch.setattr(Path, "iterdir", fail_unreadable_iterdir)
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        profile_telemetry = cast(
+            "Mapping[str, object]",
+            cast("Sequence[Mapping[str, object]]", result["commands"])[0][
+                "profile-telemetry"
+            ],
+        )
+        uploaded_files = cast(
+            "Sequence[str]",
+            profile_telemetry["uploaded-evidence-files"],
+        )
+        assert any(
+            path.endswith("0001-dotnet-pack.binlog") for path in uploaded_files
+        )
+        assert any(
+            path.endswith("release-build-profile-telemetry.json")
+            for path in uploaded_files
+        )
+        assert not any("secret.binlog" in path for path in uploaded_files)
+        assert not (
+            scratch
+            / "validation-result-profile-evidence/_profile/runs/profile-run/"
+            "unreadable-dir/secret.binlog"
+        ).exists()
+        phases = cast(
+            "Sequence[Mapping[str, object]]",
+            profile_telemetry["phases"],
+        )
+        upload_failures = [
+            phase
+            for phase in phases
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        assert len(upload_failures) == 1
+        assert upload_failures[0]["outcome"] == "failure"
+        upload_error = cast("str", upload_failures[0]["error"])
+        assert "unreadable-dir (unreadable:" in upload_error
+        assert "simulated unreadable profile entry" in upload_error
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_profile_evidence_upload_reports_non_directory_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Profile evidence upload reports an explicit non-directory profile root."""
+    scratch = SCRATCH / "ci-validation-profile-evidence-non-directory-root"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+
+        def fake_build_request(
+            **_kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            return {"kind": "build-request"}, {"artifact/wheel": artifact_refs}
+
+        def fake_execute_build(
+            *,
+            request: Mapping[str, object],
+            repo_root: Path,
+            bundle_dir: Path,
+        ) -> dict[str, object]:
+            assert request["kind"] == "build-request"
+            assert repo_root == scratch
+            output = bundle_dir / "dist/a.whl"
+            output.parent.mkdir(parents=True)
+            output.write_bytes(b"profiled wheel")
+            profile_root = bundle_dir / "_profile/runs/profile-run"
+            profile_root.parent.mkdir(parents=True)
+            profile_root.write_text("not a directory", encoding="utf-8")
+            (bundle_dir / "release-build-profile-telemetry.json").write_text(
+                json.dumps(
+                    {
+                        "kind": "release-build-profile-telemetry",
+                        "schema-version": 1,
+                        "profile-root": profile_root.as_posix(),
+                        "phases": [
+                            {
+                                "phase": "dotnet-pack",
+                                "started-at": "2026-01-01T00:00:00.000Z",
+                                "completed-at": "2026-01-01T00:00:01.000Z",
+                                "duration-ms": 1000,
+                                "outcome": "success",
+                                "argv": ["dotnet", "pack"],
+                                "cwd": repo_root.as_posix(),
+                                "exit-code": 0,
+                                "output-paths": [output.as_posix()],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return {
+                "kind": "build-result",
+                "artifacts": {
+                    "artifact/wheel": {
+                        "bundle-relative-path": "dist/a.whl",
+                    }
+                },
+            }
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fake_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fake_execute_build,
+        )
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        profile_telemetry = cast(
+            "Mapping[str, object]",
+            cast("Sequence[Mapping[str, object]]", result["commands"])[0][
+                "profile-telemetry"
+            ],
+        )
+        assert profile_telemetry["uploaded-evidence-path"] == (
+            "validation-result-profile-evidence"
+        )
+        assert profile_telemetry["uploaded-evidence-files"] == [
+            (
+                "validation-result-profile-evidence/"
+                "release-build-profile-telemetry.json"
+            )
+        ]
+        assert (
+            scratch / "validation-result-profile-evidence/"
+            "release-build-profile-telemetry.json"
+        ).is_file()
+        phases = cast(
+            "Sequence[Mapping[str, object]]",
+            profile_telemetry["phases"],
+        )
+        upload_failures = [
+            phase
+            for phase in phases
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        assert len(upload_failures) == 1
+        assert upload_failures[0]["outcome"] == "failure"
+        assert "_profile/runs/profile-run (not a directory)" in cast(
+            "str",
+            upload_failures[0]["error"],
         )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
@@ -30657,7 +33370,11 @@ def test_ci_validation_profile_copy_failure_preserves_timing_result(
             artifact_refs=artifact_refs,
         )
 
-        def fail_profile_copy(_source: Path, _target: Path) -> None:
+        def fail_profile_copy(
+            _source: Path,
+            _target: Path,
+            **_kwargs: object,
+        ) -> None:
             message = "simulated profile evidence copy failure"
             raise OSError(message)
 
@@ -30680,8 +33397,21 @@ def test_ci_validation_profile_copy_failure_preserves_timing_result(
             "Mapping[str, object]",
             command["profile-telemetry"],
         )
-        assert "uploaded-evidence-path" not in profile_telemetry
-        assert "uploaded-evidence-files" not in profile_telemetry
+        assert (
+            profile_telemetry["uploaded-evidence-path"]
+            == "validation-result-profile-evidence"
+        )
+        uploaded_files = cast(
+            "Sequence[str]",
+            profile_telemetry["uploaded-evidence-files"],
+        )
+        assert uploaded_files == [
+            (
+                "validation-result-profile-evidence/"
+                "release-build-profile-telemetry.json"
+            )
+        ]
+        assert (scratch / uploaded_files[0]).is_file()
         phases = cast(
             "Sequence[Mapping[str, object]]",
             profile_telemetry["phases"],
@@ -30699,6 +33429,112 @@ def test_ci_validation_profile_copy_failure_preserves_timing_result(
         )
         for key in ("started-at", "completed-at", "duration-ms"):
             assert key in upload_failures[0]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_profile_sidecar_write_failure_preserves_copied_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Failed normalized sidecar writes keep copied profile evidence."""
+    scratch = SCRATCH / "ci-validation-release-shaped-profile-sidecar-failure"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        _install_release_shaped_profile_build(
+            monkeypatch,
+            scratch=scratch,
+            artifact_refs=artifact_refs,
+        )
+        original_write_json = control._write_json
+
+        def fail_sidecar_write(path: Path, document: object) -> None:
+            if (
+                path.name == "release-build-profile-telemetry.json"
+                and path.parent.name == "validation-result-profile-evidence"
+            ):
+                message = "simulated normalized sidecar write failure"
+                raise OSError(message)
+            original_write_json(path, document)
+
+        monkeypatch.setattr(control, "_write_json", fail_sidecar_write)
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        profile_telemetry = cast(
+            "Mapping[str, object]",
+            cast("Sequence[Mapping[str, object]]", result["commands"])[0][
+                "profile-telemetry"
+            ],
+        )
+        assert (
+            profile_telemetry["uploaded-evidence-path"]
+            == "validation-result-profile-evidence"
+        )
+        uploaded_files = cast(
+            "Sequence[str]",
+            profile_telemetry["uploaded-evidence-files"],
+        )
+        assert any(
+            path.endswith("0001-dotnet-pack.binlog") for path in uploaded_files
+        )
+        assert not any(
+            path.endswith("release-build-profile-telemetry.json")
+            for path in uploaded_files
+        )
+        assert all((scratch / path).is_file() for path in uploaded_files)
+        assert not (
+            scratch / "validation-result-profile-evidence/"
+            "release-build-profile-telemetry.json"
+        ).exists()
+        release_build = cast(
+            "Mapping[str, object]",
+            profile_telemetry["release-build"],
+        )
+        executor_telemetry = cast(
+            "Mapping[str, object]",
+            release_build["executor"],
+        )
+        executor_phase = cast(
+            "Mapping[str, object]",
+            cast("Sequence[object]", executor_telemetry["phases"])[0],
+        )
+        uploaded_binlog = cast(
+            "str",
+            executor_phase["binlog-uploaded-evidence-path"],
+        )
+        assert uploaded_binlog.endswith("0001-dotnet-pack.binlog")
+        assert uploaded_binlog in uploaded_files
+        assert executor_phase["binlog-uploaded-evidence-paths"] == [
+            uploaded_binlog
+        ]
+        uploaded_argv = cast(
+            "Sequence[str]",
+            executor_phase["uploaded-evidence-argv"],
+        )
+        assert any(arg == f"/bl:{uploaded_binlog}" for arg in uploaded_argv)
+        phases = cast(
+            "Sequence[Mapping[str, object]]",
+            profile_telemetry["phases"],
+        )
+        upload_failures = [
+            phase
+            for phase in phases
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        assert len(upload_failures) == 1
+        assert upload_failures[0]["outcome"] == "failure"
+        assert "simulated normalized sidecar write failure" in cast(
+            "str",
+            upload_failures[0]["error"],
+        )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 

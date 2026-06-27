@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+import copy
 import errno
 import fnmatch
 import functools
@@ -68,9 +69,21 @@ _CI_PROFILE_PATH_SEQUENCE_KEYS = frozenset(
     }
 )
 _CI_PROFILE_ARGV_KEYS = frozenset({"argv", "uploaded-evidence-argv"})
+_CI_UPLOADED_PROFILE_EVIDENCE_CLAIM_KEYS = frozenset(
+    {
+        "uploaded-evidence-path",
+        "uploaded-evidence-files",
+        "uploaded-evidence-argv",
+        "binlog-uploaded-evidence-path",
+        "binlog-uploaded-evidence-paths",
+    }
+)
 _CI_MSBUILD_BINLOG_ARG_RE = re.compile(
     r"(?i)^(?P<prefix>/bl:|-bl:|/binaryLogger:|-binaryLogger:)"
     r"(?P<payload>.+)$",
+)
+_CI_PROFILE_EVIDENCE_UPLOAD_DIR_RE = re.compile(
+    r"^validation-result(?:-.+)?-profile-evidence$",
 )
 _CI_PROFILE_ARGV_PATH_VALUE_SWITCHES = frozenset(
     {
@@ -81,6 +94,12 @@ _CI_PROFILE_ARGV_PATH_VALUE_SWITCHES = frozenset(
         "-outputroot",
         "-telemetryoutputpath",
         "/o",
+    }
+)
+_CI_PROFILE_ARGV_DIRECTORY_PATH_VALUE_SWITCHES = frozenset(
+    {
+        "-msbuildbinlogdirectory",
+        "-outputroot",
     }
 )
 _CI_PROFILE_ARGV_PATH_ASSIGNMENT_RE = re.compile(
@@ -3113,7 +3132,7 @@ def _cmd_write_ci_validation_batch_evidence_bundle(
     return 0
 
 
-def _cmd_run_ci_validation_runner_family_orchestrator_step(  # noqa: PLR0915
+def _cmd_run_ci_validation_runner_family_orchestrator_step(  # noqa: C901, PLR0912, PLR0915
     args: argparse.Namespace,
 ) -> int:
     orchestrator_step_timing = _ci_timing_start()
@@ -3283,6 +3302,85 @@ def _cmd_run_ci_validation_runner_family_orchestrator_step(  # noqa: PLR0915
     validation_result_paths = sorted(
         str(path) for path in result_dir.glob("*.json")
     )
+    for result_path in validation_result_paths:
+        source_result = Path(result_path)
+        profile_evidence_dir = _ci_release_profile_evidence_dir_for_result(
+            source_result,
+        )
+        profile_upload_target = upload_dir / profile_evidence_dir.name
+        if profile_evidence_dir.is_symlink() or (
+            profile_evidence_dir.exists() and not profile_evidence_dir.is_dir()
+        ):
+            profile_upload_timing = _ci_timing_start()
+            reason = (
+                "symlink"
+                if profile_evidence_dir.is_symlink()
+                else "not a directory"
+            )
+            _ci_mark_result_profile_evidence_upload_staging_failure(
+                source_result,
+                profile_upload_timing,
+                error=_ci_release_profile_evidence_skip_label(
+                    profile_evidence_dir,
+                    reason=reason,
+                ),
+            )
+            with suppress(OSError):
+                _ci_remove_existing_profile_upload_target(
+                    profile_upload_target,
+                )
+            continue
+        if not profile_evidence_dir.is_dir():
+            profile_upload_timing = _ci_timing_start()
+            _ci_mark_result_profile_evidence_upload_staging_failure(
+                source_result,
+                profile_upload_timing,
+                error=_ci_release_profile_evidence_skip_label(
+                    profile_evidence_dir,
+                    reason="missing",
+                ),
+            )
+            with suppress(OSError):
+                _ci_remove_existing_profile_upload_target(
+                    profile_upload_target,
+                )
+            continue
+        profile_upload_timing = _ci_timing_start()
+        try:
+            _ci_remove_existing_profile_upload_target(profile_upload_target)
+            skipped_paths = _ci_copy_tree_skipping_symlinks(
+                profile_evidence_dir,
+                profile_upload_target,
+            )
+        except (OSError, shutil.Error) as exc:
+            _ci_mark_result_profile_evidence_upload_staging_failure(
+                source_result,
+                profile_upload_timing,
+                error=str(exc),
+            )
+            with suppress(OSError):
+                _ci_remove_existing_profile_upload_target(
+                    profile_upload_target,
+                )
+        else:
+            if skipped_paths:
+                _ci_mark_result_profile_evidence_upload_staging_failure(
+                    source_result,
+                    profile_upload_timing,
+                    error=(
+                        "profile evidence upload staging skipped or failed "
+                        f"path(s): {', '.join(skipped_paths)}"
+                    ),
+                )
+                _ci_scrub_staged_release_profile_sidecar(
+                    profile_upload_target,
+                )
+            else:
+                _ci_reconcile_staged_release_profile_evidence_claims(
+                    source_result,
+                    profile_upload_target,
+                    profile_upload_timing,
+                )
     bundle_timing = _ci_timing_finish(orchestrator_step_timing)
     orchestrator_step = {
         "runner-family": family,
@@ -3311,15 +3409,6 @@ def _cmd_run_ci_validation_runner_family_orchestrator_step(  # noqa: PLR0915
     for result_path in validation_result_paths:
         source_result = Path(result_path)
         shutil.copy2(source_result, upload_dir / source_result.name)
-        profile_evidence_dir = _ci_release_profile_evidence_dir_for_result(
-            source_result,
-        )
-        if profile_evidence_dir.is_dir():
-            shutil.copytree(
-                profile_evidence_dir,
-                upload_dir / profile_evidence_dir.name,
-                dirs_exist_ok=True,
-            )
     _write_json(
         _ci_orchestrator_ran_state_path(state_dir, batch_id),
         {
@@ -22787,8 +22876,7 @@ def _ci_release_build_profile_root(
                     if repo_relative_path.is_dir()
                     else bundle_dir / path
                 )
-            if path.is_dir():
-                return path
+            return path
     legacy_profile = bundle_dir / "_profile"
     return legacy_profile if legacy_profile.is_dir() else None
 
@@ -22962,6 +23050,27 @@ def _ci_normalize_profile_argv_text(
 
 def _ci_profile_argv_switch_expects_path_value(value: str) -> bool:
     return value.lower() in _CI_PROFILE_ARGV_PATH_VALUE_SWITCHES
+
+
+def _ci_profile_argv_path_value_claim_kind(
+    value: str,
+) -> Literal["file", "directory"] | None:
+    normalized = value.lower()
+    if normalized in _CI_PROFILE_ARGV_DIRECTORY_PATH_VALUE_SWITCHES:
+        return "directory"
+    if normalized in _CI_PROFILE_ARGV_PATH_VALUE_SWITCHES:
+        return "file"
+    return None
+
+
+def _ci_profile_argv_text_is_opaque_command(value: str) -> bool:
+    return (
+        _CI_MSBUILD_BINLOG_ARG_RE.match(value) is None
+        and _CI_PROFILE_ARGV_PATH_ASSIGNMENT_RE.match(value) is None
+        and _CI_PROFILE_ARGV_PATH_DEFINITION_RE.match(value) is None
+        and _CI_PROFILE_ARGV_PATH_PREFIX_RE.match(value) is None
+        and not _ci_profile_argv_switch_expects_path_value(value)
+    )
 
 
 def _ci_rewrite_msbuild_binlog_payload_paths(
@@ -24408,22 +24517,23 @@ def _ci_attach_uploaded_release_profile_evidence(
             continue
         upload_timing = _ci_timing_start()
         try:
-            copied, path_aliases = _ci_copy_release_profile_evidence(
-                telemetry,
-                result_path=result_path,
-                repo_root=repo_root,
+            copied, path_aliases, skipped_paths = (
+                _ci_copy_release_profile_evidence(
+                    telemetry,
+                    result_path=result_path,
+                    repo_root=repo_root,
+                )
             )
         except (OSError, shutil.Error) as exc:
+            _ci_scrub_uploaded_release_profile_evidence_claims(telemetry)
             _ci_record_release_profile_evidence_upload_failure(
                 telemetry,
                 upload_timing,
                 error=str(exc),
             )
-            with suppress(OSError):
-                shutil.rmtree(
-                    _ci_release_profile_evidence_dir_for_result(result_path),
-                )
             continue
+        if copied or skipped_paths:
+            _ci_scrub_uploaded_release_profile_evidence_claims(telemetry)
         if copied:
             _ci_add_uploaded_release_profile_aliases(telemetry, path_aliases)
             telemetry["uploaded-evidence-path"] = (
@@ -24433,6 +24543,15 @@ def _ci_attach_uploaded_release_profile_evidence(
                 )
             )
             telemetry["uploaded-evidence-files"] = copied
+        if skipped_paths:
+            _ci_record_release_profile_evidence_upload_failure(
+                telemetry,
+                upload_timing,
+                error=(
+                    "profile evidence upload skipped or failed "
+                    f"path(s): {', '.join(skipped_paths)}"
+                ),
+            )
 
 
 def _ci_record_release_profile_evidence_upload_failure(
@@ -24454,23 +24573,601 @@ def _ci_record_release_profile_evidence_upload_failure(
     )
 
 
-def _ci_copy_release_profile_evidence(  # noqa: C901
+def _ci_copy_tree_skipping_symlinks(source: Path, target: Path) -> list[str]:
+    if source.is_symlink():
+        return [
+            _ci_release_profile_evidence_skip_label(source, reason="symlink")
+        ]
+    try:
+        source_root = source.resolve(strict=True)
+    except OSError as exc:
+        return [
+            _ci_release_profile_evidence_skip_label(
+                source,
+                reason=f"unresolvable: {exc}",
+            )
+        ]
+    if not source.is_dir():
+        return [
+            _ci_release_profile_evidence_skip_label(
+                source,
+                reason="not a directory",
+            )
+        ]
+    skipped: list[str] = []
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return [
+            _ci_release_profile_evidence_skip_label(
+                source,
+                reason=f"destination unavailable: {exc}",
+            )
+        ]
+    _ci_copy_tree_entries_skipping_symlinks(
+        source,
+        target,
+        source_base=source,
+        source_root=source_root,
+        skipped=skipped,
+    )
+    return skipped
+
+
+def _ci_remove_existing_profile_upload_target(target: Path) -> None:
+    if target.is_symlink() or target.is_file():
+        target.unlink()
+    elif target.exists():
+        shutil.rmtree(target)
+
+
+def _ci_copy_tree_entries_skipping_symlinks(
+    source_dir: Path,
+    target_dir: Path,
+    *,
+    source_base: Path,
+    source_root: Path,
+    skipped: list[str],
+) -> None:
+    try:
+        entries = sorted(source_dir.iterdir())
+    except OSError as exc:
+        skipped.append(
+            _ci_release_profile_evidence_skip_label(
+                _ci_relative_path_or_self(source_dir, source_base),
+                reason=f"unreadable: {exc}",
+            )
+        )
+        return
+    for source in entries:
+        relative_source = source.relative_to(source_base)
+        if source.is_symlink():
+            skipped.append(
+                _ci_release_profile_evidence_skip_label(
+                    relative_source,
+                    reason="symlink",
+                )
+            )
+            continue
+        try:
+            source.resolve(strict=True).relative_to(source_root)
+        except OSError as exc:
+            skipped.append(
+                _ci_release_profile_evidence_skip_label(
+                    relative_source,
+                    reason=f"unresolvable: {exc}",
+                )
+            )
+            continue
+        except ValueError:
+            skipped.append(
+                _ci_release_profile_evidence_skip_label(
+                    relative_source,
+                    reason="outside source root",
+                )
+            )
+            continue
+        target = target_dir / source.name
+        if source.is_dir():
+            try:
+                target.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                skipped.append(
+                    _ci_release_profile_evidence_skip_label(
+                        relative_source,
+                        reason=f"copy failed: {exc}",
+                    )
+                )
+                continue
+            _ci_copy_tree_entries_skipping_symlinks(
+                source,
+                target,
+                source_base=source_base,
+                source_root=source_root,
+                skipped=skipped,
+            )
+        elif source.is_file():
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target, follow_symlinks=False)
+            except (OSError, shutil.Error) as exc:
+                skipped.append(
+                    _ci_release_profile_evidence_skip_label(
+                        relative_source,
+                        reason=f"copy failed: {exc}",
+                    )
+                )
+        else:
+            skipped.append(
+                _ci_release_profile_evidence_skip_label(
+                    relative_source,
+                    reason="not a regular file",
+                )
+            )
+
+
+def _ci_mark_result_profile_evidence_upload_staging_failure(
+    result_path: Path,
+    start: tuple[datetime, int],
+    *,
+    error: str,
+    force: bool = False,
+) -> None:
+    try:
+        validation_result = _read_json(result_path)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return
+    if not isinstance(validation_result, dict):
+        return
+    commands = validation_result.get("commands")
+    if not isinstance(commands, list):
+        return
+    changed = False
+    timing_result = _ci_timing_finish(start)
+    for command in commands:
+        if not isinstance(command, dict):
+            continue
+        telemetry = command.get("profile-telemetry")
+        if not isinstance(telemetry, dict):
+            continue
+        if not force and not _ci_has_uploaded_release_profile_evidence_claims(
+            telemetry
+        ):
+            continue
+        _ci_scrub_uploaded_release_profile_evidence_claims(telemetry)
+        phases = telemetry.get("phases")
+        if isinstance(phases, list):
+            phases.append(
+                {
+                    "phase": "profile-evidence-upload",
+                    "outcome": "failure",
+                    **timing_result,
+                    "error": error or "profile evidence upload staging failed",
+                },
+            )
+        changed = True
+    if changed:
+        _write_json(result_path, validation_result)
+
+
+def _ci_scrub_staged_release_profile_sidecar(
+    profile_upload_target: Path,
+) -> None:
+    sidecar_path = (
+        profile_upload_target / "release-build-profile-telemetry.json"
+    )
+    if not sidecar_path.is_file() or sidecar_path.is_symlink():
+        return
+    try:
+        sidecar = _read_json(sidecar_path)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError):
+        return
+    if not _ci_has_uploaded_release_profile_evidence_claims(sidecar):
+        return
+    _ci_scrub_uploaded_release_profile_evidence_claims(sidecar)
+    _write_json(sidecar_path, sidecar)
+
+
+def _ci_reconcile_staged_release_profile_evidence_claims(
+    result_path: Path,
+    profile_upload_target: Path,
+    start: tuple[datetime, int],
+) -> None:
+    missing_claims: list[str] = []
+    try:
+        validation_result = _read_json(result_path)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError):
+        validation_result = {}
+    missing_claims.extend(
+        _ci_missing_uploaded_release_profile_evidence_claims(
+            validation_result,
+            profile_upload_target=profile_upload_target,
+        )
+    )
+    sidecar_path = (
+        profile_upload_target / "release-build-profile-telemetry.json"
+    )
+    if sidecar_path.is_file() and not sidecar_path.is_symlink():
+        try:
+            sidecar = _read_json(sidecar_path)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError):
+            sidecar = {}
+        missing_claims.extend(
+            _ci_missing_uploaded_release_profile_evidence_claims(
+                sidecar,
+                profile_upload_target=profile_upload_target,
+            )
+        )
+    missing_claims = sorted(dict.fromkeys(missing_claims))
+    if not missing_claims:
+        return
+    _ci_mark_result_profile_evidence_upload_staging_failure(
+        result_path,
+        start,
+        error=(
+            "profile evidence upload staging missing claimed path(s): "
+            f"{', '.join(missing_claims)}"
+        ),
+        force=True,
+    )
+    _ci_scrub_staged_release_profile_sidecar(profile_upload_target)
+
+
+def _ci_missing_uploaded_release_profile_evidence_claims(
+    value: object,
+    *,
+    profile_upload_target: Path,
+) -> list[str]:
+    return [
+        claim_path
+        for claim_path, claim_kind in (
+            _ci_uploaded_release_profile_evidence_claims(
+                value,
+                profile_upload_target=profile_upload_target,
+            )
+        )
+        if not _ci_uploaded_release_profile_claim_is_staged(
+            claim_path,
+            claim_kind,
+            profile_upload_target=profile_upload_target,
+        )
+    ]
+
+
+def _ci_uploaded_release_profile_evidence_claims(
+    value: object,
+    *,
+    profile_upload_target: Path,
+) -> list[tuple[str, Literal["file", "directory", "profile-directory"]]]:
+    claims: list[tuple[str, Literal["file", "directory", "profile-directory"]]]
+    claims = []
+    if isinstance(value, dict):
+        uploaded_path = value.get("uploaded-evidence-path")
+        if isinstance(uploaded_path, str):
+            claims.append((uploaded_path, "profile-directory"))
+        binlog_path = value.get("binlog-uploaded-evidence-path")
+        if isinstance(binlog_path, str):
+            claims.append((binlog_path, "file"))
+        for key in (
+            "uploaded-evidence-files",
+            "binlog-uploaded-evidence-paths",
+        ):
+            sequence = value.get(key)
+            if isinstance(sequence, Sequence) and not isinstance(
+                sequence,
+                str | bytes,
+            ):
+                claims.extend(
+                    (item, "file") for item in sequence if isinstance(item, str)
+                )
+        argv = value.get("uploaded-evidence-argv")
+        if isinstance(argv, Sequence) and not isinstance(argv, str | bytes):
+            claims.extend(
+                _ci_uploaded_release_profile_argv_claims(
+                    argv,
+                    profile_upload_target=profile_upload_target,
+                )
+            )
+        for item in value.values():
+            claims.extend(
+                _ci_uploaded_release_profile_evidence_claims(
+                    item,
+                    profile_upload_target=profile_upload_target,
+                )
+            )
+    elif isinstance(value, list):
+        for item in value:
+            claims.extend(
+                _ci_uploaded_release_profile_evidence_claims(
+                    item,
+                    profile_upload_target=profile_upload_target,
+                )
+            )
+    return claims
+
+
+def _ci_uploaded_release_profile_argv_claims(
+    argv: Sequence[object],
+    *,
+    profile_upload_target: Path,
+) -> list[tuple[str, Literal["file", "directory"]]]:
+    claims: list[tuple[str, Literal["file", "directory"]]] = []
+    path_value_claim_kind: Literal["file", "directory"] | None = None
+    for index, item in enumerate(argv):
+        if not isinstance(item, str):
+            path_value_claim_kind = None
+            continue
+        if path_value_claim_kind is not None:
+            claims.extend(
+                _ci_uploaded_release_profile_explicit_path_claims(
+                    item,
+                    path_value_claim_kind,
+                    profile_upload_target=profile_upload_target,
+                )
+            )
+            path_value_claim_kind = None
+            continue
+        if index == 0 and _ci_profile_argv_text_is_opaque_command(item):
+            path_value_claim_kind = None
+            continue
+        match = _CI_MSBUILD_BINLOG_ARG_RE.match(item)
+        if match is not None:
+            claims.extend(
+                _ci_msbuild_binlog_payload_file_claims(
+                    match.group("payload"),
+                    profile_upload_target=profile_upload_target,
+                )
+            )
+        else:
+            claims.extend(
+                _ci_uploaded_release_profile_argv_item_claims(
+                    item,
+                    profile_upload_target=profile_upload_target,
+                )
+            )
+        path_value_claim_kind = _ci_profile_argv_path_value_claim_kind(item)
+    return claims
+
+
+def _ci_uploaded_release_profile_explicit_path_claims(
+    value: str,
+    claim_kind: Literal["file", "directory"],
+    *,
+    profile_upload_target: Path,
+) -> list[tuple[str, Literal["file", "directory"]]]:
+    claim = _ci_trim_msbuild_binlog_path_quotes(value)
+    if not claim:
+        return []
+    if _ci_uploaded_release_profile_claim_looks_evidence_upload(
+        claim,
+        profile_upload_target=profile_upload_target,
+    ):
+        return [(claim, claim_kind)]
+    return []
+
+
+def _ci_uploaded_release_profile_standalone_path_claims(
+    value: str,
+    claim_kind: Literal["file", "directory"],
+    *,
+    profile_upload_target: Path,
+) -> list[tuple[str, Literal["file", "directory"]]]:
+    return _ci_uploaded_release_profile_explicit_path_claims(
+        value,
+        claim_kind,
+        profile_upload_target=profile_upload_target,
+    )
+
+
+def _ci_uploaded_release_profile_argv_item_claims(
+    value: str,
+    *,
+    profile_upload_target: Path,
+) -> list[tuple[str, Literal["file", "directory"]]]:
+    assignment = _CI_PROFILE_ARGV_PATH_ASSIGNMENT_RE.match(value)
+    if assignment is not None:
+        claim_kind = _ci_profile_argv_path_value_claim_kind(
+            assignment.group("switch"),
+        )
+        if claim_kind is None:
+            return []
+        return _ci_uploaded_release_profile_explicit_path_claims(
+            assignment.group("path"),
+            claim_kind,
+            profile_upload_target=profile_upload_target,
+        )
+    definition = _CI_PROFILE_ARGV_PATH_DEFINITION_RE.match(value)
+    if definition is not None:
+        return _ci_uploaded_release_profile_explicit_path_claims(
+            definition.group("path"),
+            "file",
+            profile_upload_target=profile_upload_target,
+        )
+    prefixed = _CI_PROFILE_ARGV_PATH_PREFIX_RE.match(value)
+    if prefixed is not None:
+        return _ci_uploaded_release_profile_standalone_path_claims(
+            prefixed.group("path"),
+            "file",
+            profile_upload_target=profile_upload_target,
+        )
+    return _ci_uploaded_release_profile_standalone_path_claims(
+        value,
+        "file",
+        profile_upload_target=profile_upload_target,
+    )
+
+
+def _ci_msbuild_binlog_payload_file_claims(
+    value: str,
+    *,
+    profile_upload_target: Path,
+) -> list[tuple[str, Literal["file", "directory"]]]:
+    claims: list[tuple[str, Literal["file", "directory"]]] = []
+    for index, item in enumerate(value.split(";")):
+        name, separator, property_value = item.partition("=")
+        if separator and name.lower() == "logfile":
+            claims.extend(
+                _ci_uploaded_release_profile_explicit_path_claims(
+                    property_value,
+                    "file",
+                    profile_upload_target=profile_upload_target,
+                )
+            )
+            continue
+        if separator or not item:
+            continue
+        unquoted = _ci_trim_msbuild_binlog_path_quotes(item)
+        if index == 0 or _ci_msbuild_binlog_payload_item_looks_path_bearing(
+            unquoted,
+        ):
+            claims.extend(
+                _ci_uploaded_release_profile_explicit_path_claims(
+                    item,
+                    "file",
+                    profile_upload_target=profile_upload_target,
+                )
+            )
+    return claims
+
+
+def _ci_staged_profile_claims_from_path_text(
+    value: str,
+    claim_kind: Literal["file", "directory"],
+    *,
+    profile_upload_target: Path,
+) -> list[tuple[str, Literal["file", "directory"]]]:
+    return _ci_uploaded_release_profile_standalone_path_claims(
+        value,
+        claim_kind,
+        profile_upload_target=profile_upload_target,
+    )
+
+
+def _ci_uploaded_release_profile_claim_looks_staged(
+    value: str,
+    *,
+    profile_upload_target: Path,
+) -> bool:
+    if not value:
+        return False
+    path = Path(value)
+    if path.is_absolute():
+        try:
+            path.resolve(strict=False).relative_to(
+                profile_upload_target.resolve(strict=False),
+            )
+        except (OSError, ValueError):
+            return False
+        return True
+    normalized = PurePosixPath(value.replace("\\", "/")).as_posix()
+    target_name = profile_upload_target.name
+    return normalized == target_name or normalized.startswith(f"{target_name}/")
+
+
+def _ci_uploaded_release_profile_claim_looks_evidence_upload(
+    value: str,
+    *,
+    profile_upload_target: Path,
+) -> bool:
+    if _ci_uploaded_release_profile_claim_looks_staged(
+        value,
+        profile_upload_target=profile_upload_target,
+    ):
+        return True
+    normalized = PurePosixPath(value.replace("\\", "/")).as_posix()
+    return any(
+        _CI_PROFILE_EVIDENCE_UPLOAD_DIR_RE.match(part) is not None
+        for part in normalized.split("/")
+    )
+
+
+def _ci_uploaded_release_profile_claim_path(
+    value: str,
+    *,
+    profile_upload_target: Path,
+) -> Path:
+    path = Path(value)
+    if not path.is_absolute():
+        path = profile_upload_target.parent / PurePosixPath(
+            value.replace("\\", "/"),
+        )
+    return path
+
+
+def _ci_uploaded_release_profile_claim_is_staged(
+    value: str,
+    claim_kind: Literal["file", "directory", "profile-directory"],
+    *,
+    profile_upload_target: Path,
+) -> bool:
+    path = _ci_uploaded_release_profile_claim_path(
+        value,
+        profile_upload_target=profile_upload_target,
+    )
+    try:
+        resolved_path = path.resolve(strict=False)
+        resolved_target = profile_upload_target.resolve(strict=False)
+    except OSError:
+        return False
+    if claim_kind == "profile-directory":
+        return (
+            resolved_path == resolved_target
+            and path.is_dir()
+            and not path.is_symlink()
+        )
+    try:
+        resolved_path.relative_to(resolved_target)
+    except (OSError, ValueError):
+        return False
+    if claim_kind == "directory":
+        return path.is_dir() and not path.is_symlink()
+    return path.is_file() and not path.is_symlink()
+
+
+def _ci_scrub_uploaded_release_profile_evidence_claims(value: object) -> None:
+    if isinstance(value, dict):
+        for key in _CI_UPLOADED_PROFILE_EVIDENCE_CLAIM_KEYS:
+            value.pop(key, None)
+        for item in value.values():
+            _ci_scrub_uploaded_release_profile_evidence_claims(item)
+    elif isinstance(value, list):
+        for item in value:
+            _ci_scrub_uploaded_release_profile_evidence_claims(item)
+
+
+def _ci_has_uploaded_release_profile_evidence_claims(value: object) -> bool:
+    if isinstance(value, dict):
+        return any(
+            key in value for key in _CI_UPLOADED_PROFILE_EVIDENCE_CLAIM_KEYS
+        ) or any(
+            _ci_has_uploaded_release_profile_evidence_claims(item)
+            for item in value.values()
+        )
+    if isinstance(value, list):
+        return any(
+            _ci_has_uploaded_release_profile_evidence_claims(item)
+            for item in value
+        )
+    return False
+
+
+def _ci_copy_release_profile_evidence(
     telemetry: Mapping[str, object],
     *,
     result_path: Path,
     repo_root: Path,
-) -> tuple[list[str], dict[str, str]]:
+) -> tuple[list[str], dict[str, str], list[str]]:
     release_build = telemetry.get("release-build")
     if not isinstance(release_build, Mapping):
-        return [], {}
+        return [], {}, []
     bundle_dir_text = release_build.get("bundle-dir")
     if not isinstance(bundle_dir_text, str) or not bundle_dir_text:
-        return [], {}
+        return [], {}, []
     bundle_dir = Path(bundle_dir_text)
     if not bundle_dir.is_absolute():
         bundle_dir = repo_root / bundle_dir
     if not bundle_dir.is_dir():
-        return [], {}
+        return [], {}, []
     destination = _ci_release_profile_evidence_dir_for_result(result_path)
     profile_root = _ci_release_build_profile_root_from_metadata(
         release_build,
@@ -24481,26 +25178,241 @@ def _ci_copy_release_profile_evidence(  # noqa: C901
         shutil.rmtree(destination)
     copied: list[str] = []
     path_aliases: dict[str, str] = {}
-    sources: list[tuple[Path, Path]] = [
-        (
-            bundle_dir / "release-build-profile-telemetry.json",
-            Path("release-build-profile-telemetry.json"),
-        ),
-    ]
+    skipped_paths: list[str] = []
     if profile_root is not None:
         try:
             profile_target = profile_root.resolve().relative_to(
                 bundle_dir.resolve(),
             )
-        except ValueError:
+        except (OSError, ValueError):
             profile_target = Path("_profile") / profile_root.name
-        sources.append((profile_root, profile_target))
-    for source, relative_target in sources:
-        if source.is_file():
-            destination.mkdir(parents=True, exist_ok=True)
-            target = destination / relative_target
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
+        copied.extend(
+            _ci_copy_release_profile_evidence_tree(
+                profile_root,
+                destination / profile_target,
+                result_path=result_path,
+                repo_root=repo_root,
+                bundle_dir=bundle_dir,
+                path_aliases=path_aliases,
+                skipped_paths=skipped_paths,
+            )
+        )
+    try:
+        sidecar_path = _ci_write_normalized_release_profile_sidecar(
+            telemetry,
+            destination=destination,
+            result_path=result_path,
+            repo_root=repo_root,
+            bundle_dir=bundle_dir,
+            path_aliases=path_aliases,
+        )
+    except OSError as exc:
+        sidecar_path = None
+        with suppress(OSError):
+            (destination / "release-build-profile-telemetry.json").unlink()
+        skipped_paths.append(
+            _ci_release_profile_evidence_skip_label(
+                Path("release-build-profile-telemetry.json"),
+                reason=f"normalized sidecar write failed: {exc}",
+            )
+        )
+    if sidecar_path is not None:
+        copied.insert(0, sidecar_path)
+    return copied, path_aliases, skipped_paths
+
+
+def _ci_release_profile_evidence_skip_label(
+    path: Path,
+    *,
+    reason: str,
+    repo_root: Path | None = None,
+    bundle_dir: Path | None = None,
+) -> str:
+    label = path.as_posix()
+    if bundle_dir is not None:
+        with suppress(ValueError):
+            label = path.relative_to(bundle_dir).as_posix()
+    if repo_root is not None and label == path.as_posix():
+        with suppress(ValueError):
+            label = path.relative_to(repo_root).as_posix()
+    return f"{label} ({reason})"
+
+
+def _ci_relative_path_or_self(path: Path, base: Path) -> Path:
+    with suppress(ValueError):
+        return path.relative_to(base)
+    return path
+
+
+def _ci_copy_release_profile_evidence_tree(
+    source: Path,
+    target: Path,
+    *,
+    result_path: Path,
+    repo_root: Path,
+    bundle_dir: Path,
+    path_aliases: dict[str, str],
+    skipped_paths: list[str],
+) -> list[str]:
+    if source.is_symlink():
+        skipped_paths.append(
+            _ci_release_profile_evidence_skip_label(
+                source,
+                repo_root=repo_root,
+                bundle_dir=bundle_dir,
+                reason="symlink",
+            )
+        )
+        return []
+    try:
+        source_root = source.resolve(strict=True)
+    except OSError as exc:
+        skipped_paths.append(
+            _ci_release_profile_evidence_skip_label(
+                source,
+                repo_root=repo_root,
+                bundle_dir=bundle_dir,
+                reason=f"unresolvable: {exc}",
+            )
+        )
+        return []
+    if not source.is_dir():
+        skipped_paths.append(
+            _ci_release_profile_evidence_skip_label(
+                source,
+                repo_root=repo_root,
+                bundle_dir=bundle_dir,
+                reason="not a directory",
+            )
+        )
+        return []
+
+    copied: list[str] = []
+    target.mkdir(parents=True, exist_ok=True)
+    uploaded_dir = _ci_upload_payload_relative_path(
+        target,
+        result_path=result_path,
+    )
+    _ci_add_release_profile_path_aliases(
+        path_aliases,
+        source,
+        uploaded_dir,
+        repo_root=repo_root,
+        bundle_dir=bundle_dir,
+    )
+    _ci_copy_release_profile_evidence_tree_entries(
+        source,
+        target,
+        source_base=source,
+        source_root=source_root,
+        result_path=result_path,
+        repo_root=repo_root,
+        bundle_dir=bundle_dir,
+        path_aliases=path_aliases,
+        copied=copied,
+        skipped_paths=skipped_paths,
+    )
+    return copied
+
+
+def _ci_copy_release_profile_evidence_tree_entries(
+    source_dir: Path,
+    target_dir: Path,
+    *,
+    source_base: Path,
+    source_root: Path,
+    result_path: Path,
+    repo_root: Path,
+    bundle_dir: Path,
+    path_aliases: dict[str, str],
+    copied: list[str],
+    skipped_paths: list[str],
+) -> None:
+    try:
+        entries = sorted(source_dir.iterdir())
+    except OSError as exc:
+        skipped_paths.append(
+            _ci_release_profile_evidence_skip_label(
+                _ci_relative_path_or_self(source_dir, source_base),
+                reason=f"unreadable: {exc}",
+            )
+        )
+        return
+    for source in entries:
+        relative_source = source.relative_to(source_base)
+        if source.is_symlink():
+            skipped_paths.append(
+                _ci_release_profile_evidence_skip_label(
+                    relative_source,
+                    reason="symlink",
+                )
+            )
+            continue
+        try:
+            source.resolve(strict=True).relative_to(source_root)
+        except OSError as exc:
+            skipped_paths.append(
+                _ci_release_profile_evidence_skip_label(
+                    relative_source,
+                    reason=f"unresolvable: {exc}",
+                )
+            )
+            continue
+        except ValueError:
+            skipped_paths.append(
+                _ci_release_profile_evidence_skip_label(
+                    relative_source,
+                    reason="outside source root",
+                )
+            )
+            continue
+        target = target_dir / source.name
+        if source.is_dir():
+            try:
+                target.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                skipped_paths.append(
+                    _ci_release_profile_evidence_skip_label(
+                        relative_source,
+                        reason=f"copy failed: {exc}",
+                    )
+                )
+                continue
+            uploaded_dir = _ci_upload_payload_relative_path(
+                target,
+                result_path=result_path,
+            )
+            _ci_add_release_profile_path_aliases(
+                path_aliases,
+                source,
+                uploaded_dir,
+                repo_root=repo_root,
+                bundle_dir=bundle_dir,
+            )
+            _ci_copy_release_profile_evidence_tree_entries(
+                source,
+                target,
+                source_base=source_base,
+                source_root=source_root,
+                result_path=result_path,
+                repo_root=repo_root,
+                bundle_dir=bundle_dir,
+                path_aliases=path_aliases,
+                copied=copied,
+                skipped_paths=skipped_paths,
+            )
+        elif source.is_file():
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target, follow_symlinks=False)
+            except (OSError, shutil.Error) as exc:
+                skipped_paths.append(
+                    _ci_release_profile_evidence_skip_label(
+                        relative_source,
+                        reason=f"copy failed: {exc}",
+                    )
+                )
+                continue
             uploaded_path = _ci_upload_payload_relative_path(
                 target,
                 result_path=result_path,
@@ -24513,47 +25425,51 @@ def _ci_copy_release_profile_evidence(  # noqa: C901
                 repo_root=repo_root,
                 bundle_dir=bundle_dir,
             )
-        elif source.is_dir():
-            target = destination / relative_target
-            shutil.copytree(source, target, dirs_exist_ok=True)
-            uploaded_dir = _ci_upload_payload_relative_path(
-                target,
-                result_path=result_path,
+        else:
+            skipped_paths.append(
+                _ci_release_profile_evidence_skip_label(
+                    relative_source,
+                    reason="not a regular file",
+                )
             )
-            _ci_add_release_profile_path_aliases(
-                path_aliases,
-                source,
-                uploaded_dir,
-                repo_root=repo_root,
-                bundle_dir=bundle_dir,
-            )
-            for path in sorted(target.rglob("*")):
-                if not path.is_file():
-                    continue
-                uploaded_parent = _ci_upload_payload_relative_path(
-                    path.parent,
-                    result_path=result_path,
-                )
-                _ci_add_release_profile_path_aliases(
-                    path_aliases,
-                    source / path.relative_to(target).parent,
-                    uploaded_parent,
-                    repo_root=repo_root,
-                    bundle_dir=bundle_dir,
-                )
-                uploaded_path = _ci_upload_payload_relative_path(
-                    path,
-                    result_path=result_path,
-                )
-                copied.append(uploaded_path)
-                _ci_add_release_profile_path_aliases(
-                    path_aliases,
-                    source / path.relative_to(target),
-                    uploaded_path,
-                    repo_root=repo_root,
-                    bundle_dir=bundle_dir,
-                )
-    return copied, path_aliases
+
+
+def _ci_write_normalized_release_profile_sidecar(
+    telemetry: Mapping[str, object],
+    *,
+    destination: Path,
+    result_path: Path,
+    repo_root: Path,
+    bundle_dir: Path,
+    path_aliases: dict[str, str],
+) -> str | None:
+    release_build = telemetry.get("release-build")
+    if not isinstance(release_build, Mapping):
+        return None
+    executor = release_build.get("executor")
+    if not isinstance(executor, Mapping):
+        return None
+    destination.mkdir(parents=True, exist_ok=True)
+    target = destination / "release-build-profile-telemetry.json"
+    uploaded_path = _ci_upload_payload_relative_path(
+        target,
+        result_path=result_path,
+    )
+    telemetry_path = bundle_dir / "release-build-profile-telemetry.json"
+    sidecar_aliases = dict(path_aliases)
+    _ci_add_release_profile_path_aliases(
+        sidecar_aliases,
+        telemetry_path,
+        uploaded_path,
+        repo_root=repo_root,
+        bundle_dir=bundle_dir,
+    )
+    sidecar = copy.deepcopy(executor)
+    _ci_scrub_uploaded_release_profile_evidence_claims(sidecar)
+    _ci_add_uploaded_release_profile_aliases(sidecar, sidecar_aliases)
+    _write_json(target, sidecar)
+    path_aliases.update(sidecar_aliases)
+    return uploaded_path
 
 
 def _ci_add_release_profile_path_aliases(
@@ -24715,8 +25631,7 @@ def _ci_release_build_profile_root_from_metadata(
         path = Path(profile_root)
         if not path.is_absolute():
             path = repo_root / path
-        if path.is_dir():
-            return path
+        return path
     executor = release_build.get("executor")
     if isinstance(executor, Mapping):
         executor_root = executor.get("profile-root")
@@ -24724,8 +25639,7 @@ def _ci_release_build_profile_root_from_metadata(
             path = Path(executor_root)
             if not path.is_absolute():
                 path = repo_root / path
-            if path.is_dir():
-                return path
+            return path
     legacy_profile = bundle_dir / "_profile"
     return legacy_profile if legacy_profile.is_dir() else None
 

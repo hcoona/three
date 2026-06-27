@@ -3286,6 +3286,122 @@
           },
           {
             "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_orchestrator_profile_evidence_copy_failure_keeps_outputs"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_orchestrator_profile_evidence_symlink_skip_keeps_safe_staged_files"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_orchestrator_profile_evidence_missing_claimed_file_scrubs_upload_claims"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_orchestrator_profile_evidence_argv_directory_claim_accepts_staged_directory"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_orchestrator_profile_evidence_opaque_argv_keeps_upload_claims"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_orchestrator_profile_evidence_stale_uploaded_evidence_path_scrubs_upload_claims"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_orchestrator_profile_evidence_stale_relative_directory_argv_scrubs_upload_claims"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_orchestrator_profile_evidence_ordinary_uploaded_argv_paths_are_not_claims"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_orchestrator_profile_evidence_argv_only_missing_claims_scrub_upload_claims"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_copy_release_profile_evidence_scrubs_stale_sidecar_uploaded_metadata"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_orchestrator_profile_evidence_regular_file_scrubs_upload_claims"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_profile_evidence_upload_skips_symlinks"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_orchestrator_missing_profile_evidence_scrubs_upload_claims"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_orchestrator_top_level_profile_evidence_symlink_fails_closed"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_profile_evidence_upload_skips_unreadable_entries"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_profile_evidence_upload_reports_non_directory_root"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_profile_sidecar_write_failure_preserves_copied_evidence"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_contract_allows_release_shaped_failure_profile_telemetry"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_release_shaped_batch_rejects_invalid_profile_metadata_paths"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_release_shaped_batch_rejects_invalid_profile_telemetry_paths"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_release_shaped_batch_rejects_invalid_nested_release_phase_paths"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_release_shaped_batch_rejects_invalid_profile_argv_paths"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_release_shaped_batch_rejects_later_absolute_profile_argv_paths"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_release_shaped_batch_rejects_invalid_uploaded_evidence_contract"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-build/tests/test_executor.py::test_smoke_inno_telemetry_write_failure_preserves_iscc_failure"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-build/tests/test_executor.py::test_powershell_profile_telemetry_warnings_ignore_warning_preference"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-build/tests/test_executor.py::test_image_occlusion_inno_telemetry_omits_deleted_temp_paths"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-build/tests/test_executor.py::test_image_occlusion_inno_required_input_failure_writes_telemetry"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-build/tests/test_executor.py::test_image_occlusion_inno_copy_back_failure_writes_telemetry"
+          },
+          {
+            "type": "test",
             "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_batch_evidence_bundle_rejects_malformed_selector_timing"
           },
           {
