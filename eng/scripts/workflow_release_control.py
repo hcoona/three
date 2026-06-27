@@ -10738,6 +10738,23 @@ def _ci_missing_execution_batch_manifest_payloads(  # noqa: PLR0915
             boundary_diagnostics,
         )
     )
+    plan_validation_changed_files_snapshot = (
+        changed_files_snapshot
+        if not no_authority_invalid_plan
+        and _ci_aggregate_input_is_valid(
+            input_artifacts, "changed-files-snapshot"
+        )
+        else None
+    )
+    plan_validation_fact_snapshot = (
+        fact_snapshot
+        if not no_authority_invalid_plan
+        and _ci_aggregate_input_is_valid(input_artifacts, "fact-snapshot")
+        else None
+    )
+    needs_descriptor_target_context = _ci_plan_has_descriptor_coverage_targets(
+        plan,
+    )
     if not _ci_invalid_plan_detail_requires_retained_projection(
         _ci_missing_plan_invalid_plan_detail(boundary_diagnostics),
     ):
@@ -10834,12 +10851,20 @@ def _ci_missing_execution_batch_manifest_payloads(  # noqa: PLR0915
         execution_batch_manifest=None,
         request=request if aggregate_manifest_plan is not None else None,
         changed_files_snapshot=(
-            authoritative_changed_files_snapshot
+            (
+                plan_validation_changed_files_snapshot
+                if required_input_failure and needs_descriptor_target_context
+                else authoritative_changed_files_snapshot
+            )
             if aggregate_manifest_plan is not None
             else None
         ),
         fact_snapshot=(
-            authoritative_fact_snapshot
+            (
+                plan_validation_fact_snapshot
+                if required_input_failure and needs_descriptor_target_context
+                else authoritative_fact_snapshot
+            )
             if aggregate_manifest_plan is not None
             else None
         ),
@@ -11331,6 +11356,31 @@ def _ci_aggregate_input_is_valid(
         "valid",
         "not-required",
     }
+
+
+def _ci_plan_has_descriptor_coverage_targets(
+    plan: Mapping[str, object],
+) -> bool:
+    for section_name in (
+        "work-groups",
+        "evidence-expectations",
+        "descriptor-obligations",
+    ):
+        section = plan.get(section_name)
+        if not isinstance(section, Sequence) or isinstance(
+            section, str | bytes
+        ):
+            continue
+        for item in section:
+            if not isinstance(item, Mapping):
+                continue
+            coverage_target = item.get("coverage-target")
+            if (
+                isinstance(coverage_target, Mapping)
+                and coverage_target.get("type") == "descriptor"
+            ):
+                return True
+    return False
 
 
 def _ci_close_snapshot_input_authority(

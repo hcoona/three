@@ -224,6 +224,10 @@
           },
           {
             "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_plan_dotnet_setup_skips_unused_nuget_cache"
+          },
+          {
+            "type": "test",
             "value": "tests/test_workflow_release_control.py::test_ci_validation_command_mapping_uses_required_no_publish_checks"
           }
         ]
@@ -2331,6 +2335,10 @@
           {
             "type": "test",
             "value": "tests/test_workflow_release_control.py::test_ci_batch_aggregation_materialization_missing_fails_closed"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_batch_aggregation_missing_manifest_keeps_descriptor_context"
           },
           {
             "type": "test",

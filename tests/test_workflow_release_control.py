@@ -20738,29 +20738,46 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
         assert "NBGV_PYTHON_COMMAND=${nbgv_path}" in install_run
 
 
-def test_ci_validation_dotnet_setup_uses_nuget_lockfile_cache() -> None:
-    """CI validation caches NuGet packages for NBGV-backed jobs."""
+def test_ci_validation_plan_dotnet_setup_skips_unused_nuget_cache() -> None:
+    """Trusted NBGV setup avoids unused NuGet cache cleanup on cache misses."""
     workflow = yaml.safe_load(_workflow("ci.yml"))
     jobs = workflow["jobs"]
-    dotnet_setup_jobs = (
+    expected_trusted_nbgv_jobs = {
         "plan",
         "execution-batch-ubuntu-orchestrator",
         "execution-batch-windows-orchestrator",
         "execution-batch-macos-orchestrator",
-    )
+    }
+    actual_trusted_nbgv_jobs = set()
 
-    for job_name in dotnet_setup_jobs:
-        setup_step = next(
-            step
-            for step in jobs[job_name]["steps"]
-            if step.get("uses") == "actions/setup-dotnet@v5"
-        )
+    for job_name, job in jobs.items():
+        steps = job.get("steps", [])
+        for install_index, install_step in enumerate(steps):
+            install_run = str(install_step.get("run", ""))
+            if "dotnet tool install nbgv" not in install_run:
+                continue
+            if (
+                'NUGET_PACKAGES="${RUNNER_TEMP}/trusted-nuget-packages"'
+                not in install_run
+            ):
+                continue
+            setup_step = next(
+                (
+                    step
+                    for step in reversed(steps[:install_index])
+                    if step.get("uses") == "actions/setup-dotnet@v5"
+                ),
+                None,
+            )
 
-        assert setup_step["with"] == {
-            "global-json-file": "global.json",
-            "cache": True,
-            "cache-dependency-path": "**/packages.lock.json",
-        }
+            actual_trusted_nbgv_jobs.add(job_name)
+            assert setup_step is not None, job_name
+            setup_with = setup_step["with"]
+            assert setup_with["global-json-file"] == "global.json"
+            assert "cache" not in setup_with, job_name
+            assert "cache-dependency-path" not in setup_with, job_name
+
+    assert actual_trusted_nbgv_jobs == expected_trusted_nbgv_jobs
 
 
 def test_ci_validation_workflow_uses_current_batch_evidence_commands() -> None:
@@ -35309,6 +35326,22 @@ def _release_batch_contract_fixtures() -> Any:
     return fixture_module
 
 
+def _validation_plan_contract_fixtures() -> Any:
+    fixture_path = (
+        REPO_ROOT / "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_plans.py"
+    )
+    fixture_spec = importlib.util.spec_from_file_location(
+        "ci_validation_plan_test_fixtures",
+        fixture_path,
+    )
+    assert fixture_spec is not None
+    assert fixture_spec.loader is not None
+    fixture_module = importlib.util.module_from_spec(fixture_spec)
+    fixture_spec.loader.exec_module(fixture_module)
+    return fixture_module
+
+
 def _ci_batch_contract_plan_and_manifest() -> tuple[
     dict[str, object], dict[str, object]
 ]:
@@ -35318,6 +35351,46 @@ def _ci_batch_contract_plan_and_manifest() -> tuple[
         batch_contracts.manifest(plan),
     )
     return plan, manifest
+
+
+def _ci_descriptor_target_plan_context() -> tuple[
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+]:
+    fixtures = _validation_plan_contract_fixtures()
+    snapshot = fixtures._scheduled_full_plan_snapshot()
+    plan = cast("dict[str, object]", deepcopy(snapshot.plan))
+    changed_files_snapshot = cast(
+        "dict[str, object]",
+        deepcopy(snapshot.changed_files_snapshot),
+    )
+    fact_snapshot = cast(
+        "dict[str, object]",
+        deepcopy(snapshot.fact_snapshot),
+    )
+    request = fixtures._scheduled_full_request()
+    materialization = (
+        batch_contracts.materialize_ci_validation_execution_batches(
+            plan=plan,
+            request=request,
+            changed_files_snapshot=changed_files_snapshot,
+            fact_snapshot=fact_snapshot,
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+            created_at=batch_contracts.CREATED_AT,
+            execution_workflow="CI Validation",
+        )
+    )
+    return (
+        plan,
+        request,
+        changed_files_snapshot,
+        fact_snapshot,
+        cast("dict[str, object]", materialization.manifest),
+    )
 
 
 def _ci_batch_matrix_rows(
@@ -36078,6 +36151,149 @@ def _write_empty_ci_downloader_observation(observed_root: Path) -> None:
             }
         ),
         encoding="utf-8",
+    )
+
+
+def test_ci_batch_aggregation_missing_manifest_keeps_descriptor_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing execution manifests still validate descriptor targets."""
+    (
+        plan,
+        request,
+        changed_files_snapshot,
+        fact_snapshot,
+        _execution_manifest,
+    ) = _ci_descriptor_target_plan_context()
+    with pytest.raises(
+        ContractValidationError,
+        match="descriptor target is unresolved",
+    ):
+        control.validate_ci_validation_plan(
+            plan,
+            changed_files_snapshot=changed_files_snapshot,
+        )
+
+    plan_path = tmp_path / "validation-plan.json"
+    request_path = tmp_path / "ci-validation-request.json"
+    changed_files_path = tmp_path / "changed-files.json"
+    fact_snapshot_path = tmp_path / "fact-snapshot.json"
+    observed_root = tmp_path / "observed-artifacts"
+    aggregate_manifest_path = tmp_path / "aggregate-evidence-manifest.json"
+    summary_path = tmp_path / "aggregate-summary.json"
+    output_path = tmp_path / "outputs.txt"
+    for path, document in (
+        (plan_path, plan),
+        (request_path, request),
+        (changed_files_path, changed_files_snapshot),
+        (fact_snapshot_path, fact_snapshot),
+    ):
+        path.write_text(json.dumps(document), encoding="utf-8")
+    _write_empty_ci_downloader_observation(observed_root)
+    run_artifacts = [
+        _ci_artifact_metadata(
+            control.ci_validation_request_artifact_ref(
+                run_id=batch_contracts.RUN_ID,
+                run_attempt=batch_contracts.RUN_ATTEMPT,
+            ),
+            artifact_id=7001,
+        ),
+        _ci_artifact_metadata(
+            control.ci_validation_plan_artifact_ref(
+                run_id=batch_contracts.RUN_ID,
+                run_attempt=batch_contracts.RUN_ATTEMPT,
+            ),
+            artifact_id=8001,
+        ),
+        _ci_artifact_metadata(
+            control.ci_validation_changed_files_snapshot_artifact_ref(
+                run_id=batch_contracts.RUN_ID,
+                run_attempt=batch_contracts.RUN_ATTEMPT,
+            ),
+            artifact_id=7101,
+        ),
+        _ci_artifact_metadata(
+            control.ci_validation_fact_snapshot_artifact_ref(
+                run_id=batch_contracts.RUN_ID,
+                run_attempt=batch_contracts.RUN_ATTEMPT,
+            ),
+            artifact_id=7201,
+        ),
+    ]
+    monkeypatch.setattr(
+        control,
+        "_github_actions_run_artifacts",
+        lambda **_kwargs: run_artifacts,
+    )
+    aggregate_args = argparse.Namespace(
+        repository="hcoona/three",
+        workflow="CI Validation",
+        run_id=batch_contracts.RUN_ID,
+        run_attempt=batch_contracts.RUN_ATTEMPT,
+        plan=str(plan_path),
+        request=str(request_path),
+        execution_batch_manifest="",
+        changed_files_snapshot=str(changed_files_path),
+        fact_snapshot=str(fact_snapshot_path),
+        observed_artifacts_dir=str(observed_root),
+        expected_request_artifact_id="7001",
+        expected_plan_artifact_id="8001",
+        expected_changed_files_snapshot_artifact_id="7101",
+        expected_fact_snapshot_artifact_id="7201",
+        expected_execution_batch_manifest_artifact_id=None,
+        aggregate_evidence_manifest_artifact_id=None,
+        aggregate_evidence_manifest_producer_verified=None,
+        aggregate_phase="evidence",
+        batch_materialization_failed=True,
+        created_at=batch_contracts.CREATED_AT,
+        started_at=batch_contracts.CREATED_AT,
+        completed_at=batch_contracts.CREATED_AT,
+        aggregate_evidence_manifest_out=str(aggregate_manifest_path),
+        aggregate_summary_out=str(summary_path),
+        github_output=str(output_path),
+    )
+
+    evidence_result = control._cmd_aggregate_ci_evidence(aggregate_args)
+
+    aggregate_manifest = json.loads(
+        aggregate_manifest_path.read_text(encoding="utf-8"),
+    )
+    execution_input = aggregate_manifest["input-artifacts"][
+        "execution-batch-manifest"
+    ]
+    plan_input = aggregate_manifest["input-artifacts"]["validation-plan"]
+    fact_snapshot_input = aggregate_manifest["input-artifacts"]["fact-snapshot"]
+    assert evidence_result == 0
+    assert execution_input["admissibility"] == "missing"
+    assert plan_input["admissibility"] == "valid"
+    assert plan_input["diagnostics"] == []
+    assert fact_snapshot_input["admissibility"] == "valid"
+    assert fact_snapshot_input["diagnostics"] == []
+    assert aggregate_manifest["plan-digest"] == ci_validation_plan_digest(plan)
+    assert (
+        aggregate_manifest["projection-authority"]["mode"] == "scheduled_full"
+    )
+    assert "descriptor target is unresolved" not in json.dumps(
+        aggregate_manifest,
+        sort_keys=True,
+    )
+
+    aggregate_args.aggregate_phase = "summary"
+    aggregate_args.aggregate_evidence_manifest_artifact_id = (
+        "aggregate-upload-id"
+    )
+    aggregate_args.aggregate_evidence_manifest_producer_verified = True
+    result = control._cmd_aggregate_ci_evidence(aggregate_args)
+
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert result == 1
+    assert summary["reason"]["invalid-plan"] is False
+    assert summary["reason"]["required-input-artifact-failure"] is True
+    assert summary["schema-diagnostics"] == []
+    assert "descriptor target is unresolved" not in json.dumps(
+        summary,
+        sort_keys=True,
     )
 
 
