@@ -10,10 +10,13 @@ import shutil
 import stat
 import subprocess
 import tarfile
+import time
+import uuid
 import zipfile
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from email.parser import Parser
 from fnmatch import fnmatchcase
 from pathlib import Path
@@ -39,6 +42,8 @@ _BROWSER_MIN_VERSION_PARTS = 2
 _BROWSER_NORMALIZED_VERSION_PARTS = 3
 _BROWSER_MAX_VERSION_PARTS = 4
 _BROWSER_MAX_VERSION_PART = 65535
+_PROFILE_TELEMETRY_FILE = "release-build-profile-telemetry.json"
+_TIMING_DURATION_TOLERANCE_MS = 5000
 _SUPPORTED_KINDS = {
     "dotnet": {"nuget", "snupkg", "executable", "inno-setup"},
     "python": {"wheel", "sdist"},
@@ -96,6 +101,125 @@ class _ProducedArtifact:
     receipt_extra: Json | None = None
 
 
+class _BuildTelemetry:
+    """Collect release-build profile timing without changing contracts."""
+
+    def __init__(self, bundle_dir: Path) -> None:
+        self._bundle_dir = bundle_dir
+        self._phases: list[Json] = []
+        self._subprocess_index = 0
+        run_id = (
+            f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')}-"
+            f"{os.getpid()}-{uuid.uuid4().hex[:12]}"
+        )
+        self._profile_dir = bundle_dir / "_profile" / "runs" / run_id
+        self._binlog_dir = self._profile_dir / "binlogs"
+        self._script_dir = self._profile_dir / "powershell"
+
+    @property
+    def path(self) -> Path:
+        """Return the profile telemetry sidecar path."""
+        return self._bundle_dir / _PROFILE_TELEMETRY_FILE
+
+    @property
+    def profile_dir(self) -> Path:
+        """Return the profile telemetry support directory."""
+        return self._profile_dir
+
+    def next_binlog_path(self, phase: str) -> Path:
+        """Return a deterministic, collision-free MSBuild binlog path."""
+        self._subprocess_index += 1
+        self._binlog_dir.mkdir(parents=True, exist_ok=True)
+        filename = (
+            f"{self._subprocess_index:04d}-"
+            f"{_safe_profile_filename(phase)}.binlog"
+        )
+        return self._binlog_dir / filename
+
+    def next_script_telemetry_path(self, phase: str) -> Path:
+        """Return a deterministic PowerShell script telemetry path."""
+        self._subprocess_index += 1
+        self._script_dir.mkdir(parents=True, exist_ok=True)
+        filename = (
+            f"{self._subprocess_index:04d}-"
+            f"{_safe_profile_filename(phase)}.json"
+        )
+        return self._script_dir / filename
+
+    def next_script_binlog_dir(self, phase: str) -> Path:
+        """Return a deterministic script binlog directory."""
+        self._subprocess_index += 1
+        path = (
+            self._binlog_dir
+            / f"{self._subprocess_index:04d}-{_safe_profile_filename(phase)}"
+        )
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def record_phase(  # noqa: PLR0913
+        self,
+        phase: str,
+        start: tuple[datetime, int],
+        *,
+        outcome: str,
+        cwd: Path | None = None,
+        argv: Sequence[str] | None = None,
+        exit_code: int | None = None,
+        output_paths: Sequence[Path] = (),
+        binlog_path: Path | None = None,
+        binlog_dir: Path | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Append one structured phase timing record."""
+        record: Json = {
+            "phase": phase,
+            "outcome": outcome,
+            **_profile_timing_finish(start),
+        }
+        if cwd is not None:
+            record["cwd"] = cwd.as_posix()
+        if argv is not None:
+            record["argv"] = [str(item) for item in argv]
+        if exit_code is not None:
+            record["exit-code"] = exit_code
+        if output_paths:
+            record["output-paths"] = [
+                path.as_posix() for path in output_paths
+            ]
+        if binlog_path is not None:
+            record["binlog-path"] = binlog_path.as_posix()
+            record["binlog-exists"] = binlog_path.is_file()
+        if binlog_dir is not None:
+            record["binlog-directory"] = binlog_dir.as_posix()
+            record["binlog-paths"] = [
+                path.as_posix() for path in sorted(binlog_dir.glob("*.binlog"))
+            ]
+        if error is not None:
+            record["error"] = error
+        self._phases.append(record)
+
+    def write(self) -> None:
+        """Write profile telemetry sidecar JSON best-effort."""
+        try:
+            self._profile_dir.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(
+                json.dumps(
+                    {
+                        "kind": "release-build-profile-telemetry",
+                        "schema-version": 1,
+                        "profile-root": self._profile_dir.as_posix(),
+                        "phases": self._phases,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+
+
 @dataclass(frozen=True, slots=True)
 class _BuildContext:
     request: Mapping[str, object]
@@ -105,6 +229,7 @@ class _BuildContext:
     output_root: Path
     runner: Runner
     repo_root: Path
+    telemetry: _BuildTelemetry
 
 
 @dataclass(frozen=True, slots=True)
@@ -283,7 +408,41 @@ def _request_artifact_id(request: Mapping[str, object]) -> str | None:
     return None
 
 
-def execute_build(
+def _profile_timing_start() -> tuple[datetime, int]:
+    return datetime.now(UTC), time.perf_counter_ns()
+
+
+def _profile_timing_finish(start: tuple[datetime, int]) -> Json:
+    started_at, started_ns = start
+    completed_ns = time.perf_counter_ns()
+    completed_at = datetime.now(UTC)
+    duration_ms = max(0, (completed_ns - started_ns) // 1_000_000)
+    elapsed_ms = int((completed_at - started_at).total_seconds() * 1000)
+    if (
+        completed_at < started_at
+        or abs(elapsed_ms - duration_ms) > _TIMING_DURATION_TOLERANCE_MS
+    ):
+        completed_at = started_at + timedelta(milliseconds=duration_ms)
+    return {
+        "started-at": _utc_timestamp_milliseconds(started_at),
+        "completed-at": _utc_timestamp_milliseconds(completed_at),
+        "duration-ms": duration_ms,
+    }
+
+
+def _utc_timestamp_milliseconds(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat(timespec="milliseconds").replace(
+        "+00:00",
+        "Z",
+    )
+
+
+def _safe_profile_filename(value: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip(".-")
+    return safe or "phase"
+
+
+def execute_build(  # noqa: PLR0915
     request: Mapping[str, object],
     repo_root: Path,
     bundle_dir: Path,
@@ -304,6 +463,7 @@ def execute_build(
             exc,
             operation="mkdir",
         )
+    telemetry = _BuildTelemetry(resolved_bundle)
     run = runner or _subprocess_runner
 
     project = _mapping(normalized_request["project"], "project")
@@ -313,7 +473,26 @@ def execute_build(
     _validate_supported_artifacts(ecosystem, artifacts)
     variant_id = _variant_id_from_request(normalized_request)
 
-    output_root, dist_dir = _prepare_bundle_dirs(resolved_bundle)
+    prepare_timing = _profile_timing_start()
+    try:
+        output_root, dist_dir = _prepare_bundle_dirs(resolved_bundle)
+    except Exception as exc:
+        telemetry.record_phase(
+            "prepare-bundle-directories",
+            prepare_timing,
+            outcome="failure",
+            cwd=resolved_bundle,
+            error=str(exc),
+        )
+        telemetry.write()
+        raise
+    telemetry.record_phase(
+        "prepare-bundle-directories",
+        prepare_timing,
+        outcome="success",
+        cwd=resolved_bundle,
+        output_paths=[output_root, dist_dir],
+    )
 
     if not artifacts:
         msg = (
@@ -323,13 +502,16 @@ def execute_build(
 
     materialized_repo = resolved_repo
     worktree: _PinnedWorktree | None = None
-    if check_commit:
-        materialized_repo = _materialize_pinned_worktree(
-            normalized_request, resolved_repo, resolved_bundle, run
-        )
-        worktree = _PinnedWorktree(materialized_repo, resolved_repo, run)
-
     try:
+        if check_commit:
+            materialized_repo = _materialize_pinned_worktree(
+                normalized_request,
+                resolved_repo,
+                resolved_bundle,
+                run,
+                telemetry,
+            )
+            worktree = _PinnedWorktree(materialized_repo, resolved_repo, run)
         project_root = _safe_repo_path(
             materialized_repo, str(project["release-root"])
         )
@@ -345,14 +527,53 @@ def execute_build(
             output_root=output_root,
             runner=run,
             repo_root=materialized_repo,
+            telemetry=telemetry,
         )
-        produced = _execute_ecosystem(ecosystem, context)
+        execute_timing = _profile_timing_start()
+        try:
+            produced = _execute_ecosystem(ecosystem, context)
+        except Exception as exc:
+            telemetry.record_phase(
+                "execute-ecosystem-build",
+                execute_timing,
+                outcome="failure",
+                cwd=context.project_root,
+                error=str(exc),
+            )
+            raise
+        telemetry.record_phase(
+            "execute-ecosystem-build",
+            execute_timing,
+            outcome="success",
+            cwd=context.project_root,
+        )
         if set(produced) != {slot.artifact_id for slot in artifacts}:
             msg = "produced artifact ids do not exactly match build request"
             raise BuildExecutorError(msg, code="BUILD_OUTPUT_INVALID")
 
-        receipts = _receipt_produced_artifacts(
-            produced, dist_dir, resolved_bundle
+        receipt_timing = _profile_timing_start()
+        try:
+            receipts = _receipt_produced_artifacts(
+                produced, dist_dir, resolved_bundle
+            )
+        except Exception as exc:
+            telemetry.record_phase(
+                "receipt-copy-and-hash",
+                receipt_timing,
+                outcome="failure",
+                cwd=dist_dir,
+                error=str(exc),
+            )
+            raise
+        telemetry.record_phase(
+            "receipt-copy-and-hash",
+            receipt_timing,
+            outcome="success",
+            cwd=dist_dir,
+            output_paths=[
+                dist_dir / str(item["bundle-relative-path"])
+                for item in receipts.values()
+            ],
         )
         result = _build_result(
             normalized_request, variant, variant_id, receipts
@@ -360,6 +581,7 @@ def execute_build(
     finally:
         if worktree is not None:
             worktree.remove()
+        telemetry.write()
     return result
 
 
@@ -1059,6 +1281,7 @@ def _dotnet_build(
             context.manifest,
             context.output_root,
             context.runner,
+            context.telemetry,
         )
     if kinds == {"inno-setup"}:
         return _plain_produced_artifacts(_dotnet_inno_setup(context))
@@ -1084,11 +1307,21 @@ def _dotnet_pack(
         f"-p:PackageVersion={frozen_version}",
         f"-p:WorkflowReleaseFrozenPackageVersion={frozen_version}",
     ]
+    binlog_path = context.telemetry.next_binlog_path("dotnet-pack")
+    command.append(f"/bl:{binlog_path.as_posix()}")
     if any(slot.concrete_kind == "snupkg" for slot in context.artifacts):
         command.extend(
             ["-p:IncludeSymbols=true", "-p:SymbolPackageFormat=snupkg"]
         )
-    _run_checked(command, context.manifest.parent, context.runner)
+    _run_checked(
+        command,
+        context.manifest.parent,
+        context.runner,
+        telemetry=context.telemetry,
+        phase="dotnet-pack",
+        binlog_path=binlog_path,
+        output_paths=[output],
+    )
     produced = _match_outputs(
         context.artifacts,
         {
@@ -1110,12 +1343,13 @@ def _dotnet_pack(
     return produced
 
 
-def _dotnet_publish_executable(
+def _dotnet_publish_executable(  # noqa: PLR0913
     request: Mapping[str, object],
     artifacts: Sequence[_ArtifactSlot],
     manifest: Path,
     output_root: Path,
     runner: Runner,
+    telemetry: _BuildTelemetry,
 ) -> dict[str, Path | _ProducedArtifact]:
     """Run dotnet publish for one single-file executable artifact."""
     _require_single_kind(artifacts, "executable")
@@ -1145,7 +1379,17 @@ def _dotnet_publish_executable(
         "-p:PublishSingleFile=true",
         version_property,
     ]
-    _run_checked(command, manifest.parent, runner)
+    binlog_path = telemetry.next_binlog_path("dotnet-publish")
+    command.append(f"/bl:{binlog_path.as_posix()}")
+    _run_checked(
+        command,
+        manifest.parent,
+        runner,
+        telemetry=telemetry,
+        phase="dotnet-publish",
+        binlog_path=binlog_path,
+        output_paths=[output],
+    )
     companion_patterns = tuple(
         companion.path
         for artifact in artifacts
@@ -1180,8 +1424,14 @@ def _dotnet_inno_setup(context: _BuildContext) -> dict[str, Path]:
     publish_root = context.output_root / publish_root_name
     installer_output = context.output_root / installer_root_name
     _mkdir_output_work_dir(installer_output)
-    _restore_dotnet_tools(context.repo_root, context.runner)
+    _restore_dotnet_tools(context.repo_root, context.runner, context.telemetry)
     pwsh = shutil.which("pwsh") or "pwsh"
+    publish_telemetry = context.telemetry.next_script_telemetry_path(
+        "inno-publish-script"
+    )
+    publish_binlog_dir = context.telemetry.next_script_binlog_dir(
+        "inno-publish-script"
+    )
     _run_checked(
         [
             pwsh,
@@ -1192,9 +1442,20 @@ def _dotnet_inno_setup(context: _BuildContext) -> dict[str, Path]:
             "Release",
             "-OutputRoot",
             publish_root.as_posix(),
+            "-TelemetryOutputPath",
+            publish_telemetry.as_posix(),
+            "-MsBuildBinlogDirectory",
+            publish_binlog_dir.as_posix(),
         ],
         context.repo_root,
         context.runner,
+        telemetry=context.telemetry,
+        phase="inno-publish-script",
+        binlog_dir=publish_binlog_dir,
+        output_paths=[publish_root, publish_telemetry],
+    )
+    installer_telemetry = context.telemetry.next_script_telemetry_path(
+        "inno-installer-script"
     )
     installer_command = [
         pwsh,
@@ -1207,12 +1468,21 @@ def _dotnet_inno_setup(context: _BuildContext) -> dict[str, Path]:
         publish_root.as_posix(),
         "-InstallerOutputPath",
         installer_output.as_posix(),
+        "-TelemetryOutputPath",
+        installer_telemetry.as_posix(),
     ]
     if project_id != "image-occlusion-editor":
         installer_command.extend(
             ["-InstallerFileName", _inno_setup_filename(context.request)]
         )
-    _run_checked(installer_command, context.repo_root, context.runner)
+    _run_checked(
+        installer_command,
+        context.repo_root,
+        context.runner,
+        telemetry=context.telemetry,
+        phase="inno-installer-script",
+        output_paths=[installer_output, installer_telemetry],
+    )
     produced = _match_outputs(
         context.artifacts,
         {"inno-setup": tuple(installer_output.glob("*.exe"))},
@@ -1221,7 +1491,11 @@ def _dotnet_inno_setup(context: _BuildContext) -> dict[str, Path]:
     return produced
 
 
-def _restore_dotnet_tools(repo_root: Path, runner: Runner) -> None:
+def _restore_dotnet_tools(
+    repo_root: Path,
+    runner: Runner,
+    telemetry: _BuildTelemetry,
+) -> None:
     """Restore local .NET tools required by project build scripts."""
     tool_manifest = repo_root / ".config" / "dotnet-tools.json"
     if not tool_manifest.is_file():
@@ -1230,6 +1504,8 @@ def _restore_dotnet_tools(repo_root: Path, runner: Runner) -> None:
         [shutil.which("dotnet") or "dotnet", "tool", "restore"],
         repo_root,
         runner,
+        telemetry=telemetry,
+        phase="dotnet-tool-restore",
     )
 
 
@@ -1603,6 +1879,7 @@ def _materialize_pinned_worktree(
     repo_root: Path,
     bundle_dir: Path,
     runner: Runner,
+    telemetry: _BuildTelemetry,
 ) -> Path:
     """Materialize the request commit in a detached worktree."""
     result = _run_checked(
@@ -1610,6 +1887,8 @@ def _materialize_pinned_worktree(
         repo_root,
         runner,
         code="BUILD_CHECKOUT_FAILED",
+        telemetry=telemetry,
+        phase="git-rev-parse-head",
     )
     actual = result.stdout.strip()
     expected = str(request["commit-sha"])
@@ -1628,6 +1907,8 @@ def _materialize_pinned_worktree(
         repo_root,
         runner,
         code="BUILD_CHECKOUT_FAILED",
+        telemetry=telemetry,
+        phase="git-rev-parse-common-dir",
     )
     git_dir_text = git_dir_result.stdout.strip()
     git_dir = Path(git_dir_text)
@@ -1679,6 +1960,8 @@ def _materialize_pinned_worktree(
             repo_root,
             runner,
             code="BUILD_CHECKOUT_FAILED",
+            telemetry=telemetry,
+            phase="git-worktree-add",
         )
     except BuildExecutorError:
         if worktree_path.exists():
@@ -1692,17 +1975,35 @@ def _materialize_pinned_worktree(
     return worktree_path.resolve()
 
 
-def _run_checked(
+def _run_checked(  # noqa: PLR0913
     args: Sequence[str],
     cwd: Path,
     runner: Runner,
     *,
     code: str = "BUILD_FAILED",
+    telemetry: _BuildTelemetry | None = None,
+    phase: str = "subprocess",
+    binlog_path: Path | None = None,
+    binlog_dir: Path | None = None,
+    output_paths: Sequence[Path] = (),
 ) -> subprocess.CompletedProcess[str]:
     """Run a subprocess through the injectable runner and require success."""
+    timing = _profile_timing_start()
     try:
         result = runner(args, cwd)
     except OSError as exc:
+        if telemetry is not None:
+            telemetry.record_phase(
+                phase,
+                timing,
+                outcome="failure",
+                cwd=cwd,
+                argv=args,
+                binlog_path=binlog_path,
+                binlog_dir=binlog_dir,
+                output_paths=output_paths,
+                error=str(exc),
+            )
         command = " ".join(args[:3])
         msg = f"{command} could not start: {exc}"
         raise BuildExecutorError(
@@ -1719,6 +2020,18 @@ def _run_checked(
                 "error": str(exc),
             },
         ) from exc
+    if telemetry is not None:
+        telemetry.record_phase(
+            phase,
+            timing,
+            outcome="success" if result.returncode == 0 else "failure",
+            cwd=cwd,
+            argv=args,
+            exit_code=result.returncode,
+            binlog_path=binlog_path,
+            binlog_dir=binlog_dir,
+            output_paths=output_paths,
+        )
     if result.returncode != 0:
         stderr = result.stderr.strip()
         stdout = result.stdout.strip()

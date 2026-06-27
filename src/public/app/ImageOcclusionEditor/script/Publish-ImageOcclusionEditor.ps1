@@ -42,7 +42,9 @@
 param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
-    [string]$OutputRoot
+    [string]$OutputRoot,
+    [string]$TelemetryOutputPath,
+    [string]$MsBuildBinlogDirectory
 )
 
 Set-StrictMode -Version Latest
@@ -50,6 +52,67 @@ $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 $PSNativeCommandUseErrorActionPreference = $true
 $PSStyle.OutputRendering = 'Ansi'
+$profilePhases = [System.Collections.Generic.List[object]]::new()
+
+function Add-ProfilePhase {
+    param(
+        [Parameter(Mandatory = $true)][string]$Phase,
+        [Parameter(Mandatory = $true)][datetime]$StartedAt,
+        [Parameter(Mandatory = $true)][System.Diagnostics.Stopwatch]$Stopwatch,
+        [Parameter(Mandatory = $true)][string]$Outcome,
+        [object[]]$Argv = @(),
+        [AllowNull()][object]$ExitCode = 0,
+        [string]$Cwd = (Get-Location).Path,
+        [string[]]$OutputPaths = @(),
+        [string]$BinlogPath,
+        [string]$ErrorMessage
+    )
+    $record = [ordered]@{
+        phase = $Phase
+        'started-at' = $StartedAt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+        'completed-at' = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+        'duration-ms' = [int64]$Stopwatch.Elapsed.TotalMilliseconds
+        outcome = $Outcome
+        argv = @($Argv)
+        cwd = $Cwd
+        'output-paths' = @($OutputPaths)
+    }
+    if ($PSBoundParameters.ContainsKey('ExitCode')) {
+        if ($null -ne $ExitCode) {
+            $record['exit-code'] = $ExitCode
+        }
+    }
+    else {
+        $record['exit-code'] = 0
+    }
+    if ($BinlogPath) {
+        $record['binlog-path'] = $BinlogPath
+        $record['binlog-exists'] = Test-Path -LiteralPath $BinlogPath -PathType Leaf
+    }
+    if ($ErrorMessage) {
+        $record['error'] = $ErrorMessage
+    }
+    $profilePhases.Add([pscustomobject]$record)
+}
+
+function Write-ProfileTelemetry {
+    if (-not $TelemetryOutputPath) { return }
+    try {
+        $parent = Split-Path -Parent $TelemetryOutputPath
+        if ($parent) {
+            New-Item -ItemType Directory -Force -Path $parent | Out-Null
+        }
+        @{
+            kind = 'powershell-release-build-profile-telemetry'
+            'schema-version' = 1
+            script = $PSCommandPath
+            phases = @($profilePhases)
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $TelemetryOutputPath -Encoding UTF8
+    }
+    catch {
+        Write-Warning "Profile telemetry could not be written to '$TelemetryOutputPath': $($_.Exception.Message)" -WarningAction Continue
+    }
+}
 
 # Dot-source shared helpers
 . (Join-Path $PSScriptRoot 'Helpers.ps1')
@@ -94,6 +157,12 @@ $publishArgs = @(
 if ($Runtime) {
     $publishArgs += @('-r', $Runtime)
 }
+$publishBinlogPath = $null
+if ($MsBuildBinlogDirectory) {
+    New-Item -ItemType Directory -Force -Path $MsBuildBinlogDirectory | Out-Null
+    $publishBinlogPath = Join-Path $MsBuildBinlogDirectory 'dotnet-publish.binlog'
+    $publishArgs += "/bl:$publishBinlogPath"
+}
 
 # Use locked restore mode if lock file exists
 $lockFile = Join-Path $projectDir 'packages.lock.json'
@@ -104,12 +173,25 @@ if (Test-Path -LiteralPath $lockFile) {
 # 4) Run publish
 $cmdLine = 'dotnet ' + ($publishArgs -join ' ')
 Write-Verbose "Run: $cmdLine"
+$publishStartedAt = Get-Date
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+$publishOutput = @()
+$exit = $null
+$previousNativePreference = $PSNativeCommandUseErrorActionPreference
 try {
-    $previousNativePreference = $PSNativeCommandUseErrorActionPreference
     $PSNativeCommandUseErrorActionPreference = $false
-    $publishOutput = & dotnet @publishArgs 2>&1
-    $exit = $LASTEXITCODE
+    try {
+        $publishOutput = & dotnet @publishArgs 2>&1
+        $exit = $LASTEXITCODE
+    }
+    catch {
+        if ($stopwatch.IsRunning) {
+            $stopwatch.Stop()
+        }
+        Add-ProfilePhase -Phase 'dotnet-publish' -StartedAt $publishStartedAt -Stopwatch $stopwatch -Outcome 'failure' -Argv (@('dotnet') + $publishArgs) -ExitCode $null -OutputPaths @($publishDir) -BinlogPath $publishBinlogPath -ErrorMessage $_.Exception.Message
+        Write-ProfileTelemetry
+        throw
+    }
 }
 finally {
     $PSNativeCommandUseErrorActionPreference = $previousNativePreference
@@ -118,6 +200,7 @@ $stopwatch.Stop()
 foreach ($line in $publishOutput) {
     Write-Information ($line.ToString())
 }
+Add-ProfilePhase -Phase 'dotnet-publish' -StartedAt $publishStartedAt -Stopwatch $stopwatch -Outcome $(if ($exit -eq 0) { 'success' } else { 'failure' }) -Argv (@('dotnet') + $publishArgs) -ExitCode $exit -OutputPaths @($publishDir) -BinlogPath $publishBinlogPath
 if ($exit -ne 0) {
     Write-Error "dotnet publish command failed: $cmdLine" -ErrorAction Continue
     Write-Error "dotnet publish exit code: $exit" -ErrorAction Continue
@@ -127,20 +210,50 @@ if ($exit -ne 0) {
             Write-Error ($line.ToString()) -ErrorAction Continue
         }
     }
+    Write-ProfileTelemetry
     throw "dotnet publish failed, exit code: $exit"
 }
 Write-Information ("Publish done in {0}s" -f [Math]::Round($stopwatch.Elapsed.TotalSeconds, 2))
 
 # Generate SBOM via CycloneDX (shared helper)
+$cycloneStartedAt = Get-Date
+$cycloneStopwatch = $null
+$manifestPath = Join-Path $publishDir "_manifest"
+$cycloneArgv = @(
+    'dotnet',
+    'tool',
+    'run',
+    'dotnet-CycloneDX',
+    '--',
+    $csprojPath,
+    '-o',
+    $manifestPath,
+    '--exclude-dev',
+    '--exclude-test-projects',
+    '--output-format',
+    'Json',
+    '--disable-package-restore'
+)
+$cycloneExitCode = $null
 try {
-    $manifestPath = Join-Path $publishDir "_manifest"
     Write-Information "Generating SBOM with CycloneDX..."
-    $bomPath = Invoke-CycloneDX -ProjectPath $csprojPath -OutDir $manifestPath
+    $cycloneStartedAt = Get-Date
+    $cycloneStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $bomPath = Invoke-CycloneDX -ProjectPath $csprojPath -OutDir $manifestPath -DisablePackageRestore -CommandArgv ([ref]$cycloneArgv) -ExitCode ([ref]$cycloneExitCode)
+    $cycloneStopwatch.Stop()
+    Add-ProfilePhase -Phase 'cyclonedx-sbom' -StartedAt $cycloneStartedAt -Stopwatch $cycloneStopwatch -Outcome 'success' -Argv $cycloneArgv -OutputPaths @($bomPath)
     Write-Information "SBOM generated at: $bomPath"
 }
 catch {
+    if ($cycloneStopwatch) {
+        $cycloneStopwatch.Stop()
+        Add-ProfilePhase -Phase 'cyclonedx-sbom' -StartedAt $cycloneStartedAt -Stopwatch $cycloneStopwatch -Outcome 'failure' -Argv $cycloneArgv -ExitCode $cycloneExitCode -OutputPaths @($manifestPath) -ErrorMessage $_.Exception.Message
+    }
     Write-Error "CycloneDX failed: $($_.Exception.Message)"
     throw
+}
+finally {
+    Write-ProfileTelemetry
 }
 
 # 5) Show key outputs (AOT vs non-AOT layouts may differ)

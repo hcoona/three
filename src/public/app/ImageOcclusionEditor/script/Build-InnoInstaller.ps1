@@ -58,7 +58,9 @@ param(
 
     [string]$InstallerOutputPath,
 
-    [string]$PublishOutputRoot
+    [string]$PublishOutputRoot,
+
+    [string]$TelemetryOutputPath
 )
 
 Set-StrictMode -Version Latest
@@ -66,6 +68,107 @@ $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 $PSNativeCommandUseErrorActionPreference = $true
 $PSStyle.OutputRendering = 'Ansi'
+$profilePhases = [System.Collections.Generic.List[object]]::new()
+$maxDiagnosticCharacters = 4000
+
+function Convert-ProfileTelemetryText {
+    param([AllowNull()][object]$Value)
+
+    if ($null -eq $Value) {
+        return $null
+    }
+
+    $text = $Value.ToString()
+    $workRootVariable = Get-Variable -Name 'InnoWorkRoot' -Scope Script -ErrorAction SilentlyContinue
+    if ($workRootVariable -and -not [string]::IsNullOrWhiteSpace($workRootVariable.Value)) {
+        $trimChars = @([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+        $workRoot = $workRootVariable.Value.ToString().TrimEnd($trimChars)
+        $candidateRoots = @($workRoot, ($workRoot -replace '\\', '/'), ($workRoot -replace '/', '\')) | Select-Object -Unique
+        foreach ($candidateRoot in $candidateRoots) {
+            if ([string]::IsNullOrWhiteSpace($candidateRoot)) {
+                continue
+            }
+            $text = [System.Text.RegularExpressions.Regex]::Replace(
+                $text,
+                [System.Text.RegularExpressions.Regex]::Escape($candidateRoot),
+                'inno-work:',
+                [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+            )
+        }
+    }
+
+    return $text
+}
+
+function Add-ProfilePhase {
+    param(
+        [Parameter(Mandatory)][string]$Phase,
+        [Parameter(Mandatory)][datetime]$StartedAt,
+        [Parameter(Mandatory)][System.Diagnostics.Stopwatch]$Stopwatch,
+        [Parameter(Mandatory)][string]$Outcome,
+        [object[]]$Argv = @(),
+        [AllowNull()][System.Nullable[int]]$ExitCode = $null,
+        [string]$Cwd = (Get-Location).Path,
+        [string[]]$OutputPaths = @(),
+        [string]$ErrorMessage
+    )
+    $record = [ordered]@{
+        phase = $Phase
+        'started-at' = $StartedAt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+        'completed-at' = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+        'duration-ms' = [int64]$Stopwatch.Elapsed.TotalMilliseconds
+        outcome = $Outcome
+        argv = @($Argv | ForEach-Object { Convert-ProfileTelemetryText $_ })
+        cwd = $Cwd
+        'output-paths' = @($OutputPaths | ForEach-Object { Convert-ProfileTelemetryText $_ })
+    }
+    if ($null -ne $ExitCode) {
+        $record['exit-code'] = $ExitCode
+    }
+    if ($ErrorMessage) {
+        $record['error'] = Convert-ProfileTelemetryText $ErrorMessage
+    }
+    $profilePhases.Add([pscustomobject]$record)
+}
+
+function Format-SafeDiagnosticText {
+    param(
+        [object[]]$Output = @(),
+        [int]$MaxCharacters = $maxDiagnosticCharacters
+    )
+
+    $text = (@($Output | Where-Object { $null -ne $_ } | ForEach-Object { $_.ToString() }) -join [System.Environment]::NewLine).Trim()
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        return ''
+    }
+    $text = $text -replace '(?i)(authorization:\s*bearer\s+)[A-Za-z0-9._~+/\-]+=*', '$1<redacted>'
+    $text = $text -replace '(?i)((?:token|secret|password|passwd|api[-_]?key)\s*[:=]\s*)[^\s;]+', '$1<redacted>'
+    $text = Convert-ProfileTelemetryText $text
+    if ($text.Length -gt $MaxCharacters) {
+        $remaining = $text.Length - $MaxCharacters
+        $text = $text.Substring(0, $MaxCharacters) + [System.Environment]::NewLine + "[truncated $remaining characters]"
+    }
+    return $text
+}
+
+function Write-ProfileTelemetry {
+    if (-not $TelemetryOutputPath) { return }
+    try {
+        $parent = Split-Path -Parent $TelemetryOutputPath
+        if ($parent) {
+            New-Item -ItemType Directory -Force -Path $parent | Out-Null
+        }
+        @{
+            kind = 'powershell-release-build-profile-telemetry'
+            'schema-version' = 1
+            script = $PSCommandPath
+            phases = @($profilePhases)
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $TelemetryOutputPath -Encoding UTF8
+    }
+    catch {
+        Write-Warning "Profile telemetry could not be written to '$TelemetryOutputPath': $($_.Exception.Message)" -WarningAction Continue
+    }
+}
 
 # Utility: Write compact status
 function Write-Status {
@@ -173,7 +276,26 @@ Write-Status "Published exe FileVersion: $AppVersion" 'Info'
 # Clean options removed; always ensure installer output directory exists later
 
 ## Use shared helper to locate ISCC
-$ISCC = Get-ISCCPath -Hint $InnoSetupCompiler
+$compilerResolutionStartedAt = Get-Date
+$compilerResolutionStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+try {
+    $ISCC = Get-ISCCPath -Hint $InnoSetupCompiler
+}
+catch {
+    $compilerResolutionStopwatch.Stop()
+    $compilerResolutionArgv = @()
+    if (-not [string]::IsNullOrWhiteSpace($InnoSetupCompiler)) {
+        $compilerResolutionArgv = @($InnoSetupCompiler)
+    }
+    Add-ProfilePhase -Phase 'iscc-compiler-resolution' -StartedAt $compilerResolutionStartedAt -Stopwatch $compilerResolutionStopwatch -Outcome 'failure' -Argv $compilerResolutionArgv -ErrorMessage $_.Exception.Message
+    Write-ProfileTelemetry
+    throw
+}
+finally {
+    if ($compilerResolutionStopwatch.IsRunning) {
+        $compilerResolutionStopwatch.Stop()
+    }
+}
 Write-Status "Using ISCC: $ISCC" 'Info'
 
 # Build installer
@@ -196,6 +318,8 @@ foreach ($requiredInnoInput in $requiredInnoInputs) {
 }
 
 # Stage Inno inputs outside the validation worktree so ISCC consumes short, deterministic paths.
+$stagingStartedAt = Get-Date
+$stagingStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 $InnoTempBase = Get-InnoTempBase
 $InnoWorkRoot = Join-Path $InnoTempBase ("image-occlusion-inno-{0}" -f [guid]::NewGuid().ToString('N'))
 $StagedPublishDir = Join-Path $InnoWorkRoot 'publish'
@@ -251,6 +375,8 @@ foreach ($requiredInnoInput in $requiredInnoInputs) {
 
 $StagedSetupIss = Join-Path $InnoWorkRoot 'Setup.iss'
 Copy-Item -LiteralPath $SetupIss -Destination $StagedSetupIss -Force
+$stagingStopwatch.Stop()
+Add-ProfilePhase -Phase 'inno-staging-copy' -StartedAt $stagingStartedAt -Stopwatch $stagingStopwatch -Outcome 'success' -OutputPaths @($StagedPublishDir, $StagedProjectDir, $StagedSetupIss)
 
 Write-Status "Inno Staged Publish: $InnoPublishDir" 'Info'
 Write-Status "Inno Staged Project: $InnoProjectDir" 'Info'
@@ -265,17 +391,43 @@ $previousPublishDir = $env:IMAGE_OCCLUSION_EDITOR_INNO_PUBLISH_DIR
 $previousProjectDir = $env:IMAGE_OCCLUSION_EDITOR_INNO_PROJECT_DIR
 $previousAppVersion = $env:IMAGE_OCCLUSION_EDITOR_INNO_APP_VERSION
 $previousNativeCommandPreference = $PSNativeCommandUseErrorActionPreference
+$isccStartedAt = Get-Date
+$isccStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+$isccPhaseRecorded = $false
+$isccExitCode = $null
+$isccArgs = @()
 try {
     $env:IMAGE_OCCLUSION_EDITOR_INNO_PUBLISH_DIR = $InnoPublishDir
     $env:IMAGE_OCCLUSION_EDITOR_INNO_PROJECT_DIR = $InnoProjectDir
     $env:IMAGE_OCCLUSION_EDITOR_INNO_APP_VERSION = $AppVersion
     $isccArgs = @($StagedSetupIss, $outArg)
     $PSNativeCommandUseErrorActionPreference = $false
-    $isccOutput = & $ISCC @isccArgs 2>&1
-    $isccExitCode = $LASTEXITCODE
+    $isccOutput = @(& $ISCC @isccArgs 2>&1)
+    $lastExitCodeVariable = Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue
+    if ($lastExitCodeVariable -and $null -ne $lastExitCodeVariable.Value) {
+        $isccExitCode = [int]$lastExitCodeVariable.Value
+    }
     $isccOutputLines = @($isccOutput | ForEach-Object { $_.ToString() })
     foreach ($isccOutputLine in $isccOutputLines) {
         Write-Information "[ISCC] $isccOutputLine" -InformationAction Continue
+    }
+    $isccStopwatch.Stop()
+    $isccErrorMessage = $null
+    if ($null -eq $isccExitCode) {
+        $isccOutputText = if ($isccOutputLines.Count -gt 0) {
+            $isccOutputLines -join [Environment]::NewLine
+        }
+        else {
+            '<no ISCC output captured>'
+        }
+        $isccErrorMessage = Format-SafeDiagnosticText -Output @(
+            'ISCC launch failed before producing an exit code.',
+            'ISCC output:',
+            $isccOutputText
+        )
+        Add-ProfilePhase -Phase 'iscc-compile' -StartedAt $isccStartedAt -Stopwatch $isccStopwatch -Outcome 'failure' -Argv (@($ISCC) + $isccArgs) -OutputPaths @($ShortInstallerOutputPath) -ErrorMessage $isccErrorMessage
+        $isccPhaseRecorded = $true
+        throw $isccErrorMessage
     }
     if ($isccExitCode -ne 0) {
         $originalPublishFiles = @(Get-ChildItem -LiteralPath $PublishOutputPath -Recurse -File -Force)
@@ -316,10 +468,39 @@ try {
             'Longest staged publish paths:',
             ($longestStagedPublishPaths -join [Environment]::NewLine)
         )
-        throw ($diagnostics -join [Environment]::NewLine)
+        $isccErrorMessage = Format-SafeDiagnosticText -Output $diagnostics
+    }
+    Add-ProfilePhase -Phase 'iscc-compile' -StartedAt $isccStartedAt -Stopwatch $isccStopwatch -Outcome $(if ($isccExitCode -eq 0) { 'success' } else { 'failure' }) -Argv (@($ISCC) + $isccArgs) -ExitCode $isccExitCode -OutputPaths @($ShortInstallerOutputPath) -ErrorMessage $isccErrorMessage
+    $isccPhaseRecorded = $true
+    if ($isccExitCode -ne 0) {
+        throw $isccErrorMessage
     }
 }
+catch {
+    if ($isccStopwatch.IsRunning) {
+        $isccStopwatch.Stop()
+    }
+    if (-not $isccPhaseRecorded) {
+        $isccErrorMessage = if ($null -ne $isccExitCode) {
+            $_.Exception.Message
+        }
+        else {
+            "ISCC launch failed before producing an exit code: $($_.Exception.Message)"
+        }
+        if ($null -ne $isccExitCode) {
+            Add-ProfilePhase -Phase 'iscc-compile' -StartedAt $isccStartedAt -Stopwatch $isccStopwatch -Outcome 'failure' -Argv (@($ISCC) + $isccArgs) -ExitCode $isccExitCode -OutputPaths @($ShortInstallerOutputPath) -ErrorMessage $isccErrorMessage
+        }
+        else {
+            Add-ProfilePhase -Phase 'iscc-compile' -StartedAt $isccStartedAt -Stopwatch $isccStopwatch -Outcome 'failure' -Argv (@($ISCC) + $isccArgs) -OutputPaths @($ShortInstallerOutputPath) -ErrorMessage $isccErrorMessage
+        }
+    }
+    Write-ProfileTelemetry
+    throw
+}
 finally {
+    if ($isccStopwatch.IsRunning) {
+        $isccStopwatch.Stop()
+    }
     $PSNativeCommandUseErrorActionPreference = $previousNativeCommandPreference
     $env:IMAGE_OCCLUSION_EDITOR_INNO_PUBLISH_DIR = $previousPublishDir
     $env:IMAGE_OCCLUSION_EDITOR_INNO_PROJECT_DIR = $previousProjectDir
@@ -327,15 +508,61 @@ finally {
 }
 
 # Copy the short-path compiler output back to the release-build executor contract directory.
-$builtInstallers = @(Get-ChildItem -LiteralPath $ShortInstallerOutputPath -Filter '*.exe' -File -ErrorAction SilentlyContinue)
-if ($builtInstallers.Count -eq 0) {
-    throw "ISCC finished but no installer .exe was found in the short output folder: $ShortInstallerOutputPath"
+$copyBackStartedAt = Get-Date
+$copyBackStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+$copyBackPhaseRecorded = $false
+$copyBackFailure = $null
+try {
+    $builtInstallers = @(Get-ChildItem -LiteralPath $ShortInstallerOutputPath -Filter '*.exe' -File -ErrorAction SilentlyContinue)
+    if ($builtInstallers.Count -eq 0) {
+        $copyBackStopwatch.Stop()
+        $copyBackPhaseRecorded = $true
+        Add-ProfilePhase -Phase 'installer-copy-back' -StartedAt $copyBackStartedAt -Stopwatch $copyBackStopwatch -Outcome 'failure' -OutputPaths @($InstallerOutputPath) -ErrorMessage "No installer .exe was found in $ShortInstallerOutputPath."
+        throw "ISCC finished but no installer .exe was found in the short output folder: $ShortInstallerOutputPath"
+    }
+    foreach ($builtInstaller in $builtInstallers) {
+        Copy-Item -LiteralPath $builtInstaller.FullName -Destination (Join-Path $InstallerOutputPath $builtInstaller.Name) -Force -ErrorAction Stop
+    }
+    $copyBackStopwatch.Stop()
+    $copyBackPhaseRecorded = $true
+    Add-ProfilePhase -Phase 'installer-copy-back' -StartedAt $copyBackStartedAt -Stopwatch $copyBackStopwatch -Outcome 'success' -OutputPaths @($InstallerOutputPath)
 }
-foreach ($builtInstaller in $builtInstallers) {
-    Copy-Item -LiteralPath $builtInstaller.FullName -Destination (Join-Path $InstallerOutputPath $builtInstaller.Name) -Force
+catch {
+    $copyBackFailure = $_
+    if ($copyBackStopwatch.IsRunning) {
+        $copyBackStopwatch.Stop()
+    }
+    if (-not $copyBackPhaseRecorded) {
+        Add-ProfilePhase -Phase 'installer-copy-back' -StartedAt $copyBackStartedAt -Stopwatch $copyBackStopwatch -Outcome 'failure' -OutputPaths @($InstallerOutputPath) -ErrorMessage $_.Exception.Message
+    }
+    throw
 }
-if (-not $env:IMAGE_OCCLUSION_EDITOR_KEEP_INNO_TEMP) {
-    Remove-Item -LiteralPath $InnoWorkRoot -Recurse -Force
+finally {
+    $cleanupFailure = $null
+    $cleanupStartedAt = Get-Date
+    $cleanupStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        if (-not $env:IMAGE_OCCLUSION_EDITOR_KEEP_INNO_TEMP) {
+            Remove-Item -LiteralPath $InnoWorkRoot -Recurse -Force -ErrorAction Stop
+        }
+        $cleanupStopwatch.Stop()
+        Add-ProfilePhase -Phase 'inno-temp-cleanup' -StartedAt $cleanupStartedAt -Stopwatch $cleanupStopwatch -Outcome 'success' -OutputPaths @()
+    }
+    catch {
+        $cleanupFailure = $_
+        if ($cleanupStopwatch.IsRunning) {
+            $cleanupStopwatch.Stop()
+        }
+        Add-ProfilePhase -Phase 'inno-temp-cleanup' -StartedAt $cleanupStartedAt -Stopwatch $cleanupStopwatch -Outcome 'failure' -OutputPaths @() -ErrorMessage $_.Exception.Message
+        Write-Warning "Inno temporary staging cleanup failed: $($_.Exception.Message)" -WarningAction Continue
+    }
+    finally {
+        Write-ProfileTelemetry
+    }
+
+    if ($null -ne $cleanupFailure -and $null -eq $copyBackFailure) {
+        throw $cleanupFailure
+    }
 }
 
 # Try to discover the output installer file (by convention from .csproj)

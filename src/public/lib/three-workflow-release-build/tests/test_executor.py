@@ -6,6 +6,8 @@ import hashlib
 import io
 import json
 import os
+import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -884,10 +886,87 @@ def test_dotnet_pack_uses_frozen_version_and_symbols() -> None:
         assert "-p:SymbolPackageFormat=snupkg" in calls[0]
         assert "-p:PackageVersion=1.2.3" in calls[0]
         assert "-p:WorkflowReleaseFrozenPackageVersion=1.2.3" in calls[0]
+        binlog_args = [arg for arg in calls[0] if arg.startswith("/bl:")]
+        assert len(binlog_args) == 1
+        assert "/_profile/runs/" in binlog_args[0]
+        assert binlog_args[0].endswith("/binlogs/0001-dotnet-pack.binlog")
         assert set(_result_artifacts(result)) == {
             "artifact/nuget",
             "artifact/snupkg",
         }
+        telemetry = json.loads(
+            (scratch / "bundle/release-build-profile-telemetry.json").read_text(
+                encoding="utf-8",
+            ),
+        )
+        dotnet_pack = [
+            phase
+            for phase in telemetry["phases"]
+            if phase["phase"] == "dotnet-pack"
+        ]
+        assert len(dotnet_pack) == 1
+        assert dotnet_pack[0]["argv"] == list(calls[0])
+        assert "/_profile/runs/" in dotnet_pack[0]["binlog-path"]
+        assert dotnet_pack[0]["binlog-path"].endswith(
+            "/binlogs/0001-dotnet-pack.binlog",
+        )
+        assert "/_profile/runs/" in telemetry["profile-root"]
+    finally:
+        _remove_tree_scratch(scratch)
+
+
+def test_profile_telemetry_uses_unique_run_roots_for_repeated_builds() -> None:
+    """Repeated bundle executions use unique roots."""
+    scratch = REPO_ROOT / ".build-executor-profile-run-root-test"
+    _remove_tree_scratch(scratch)
+    try:
+        request = _request(
+            scratch,
+            ecosystem="dotnet",
+            artifacts={
+                "artifact/nuget": ("primary-package", "package", "nuget"),
+            },
+        )
+
+        def runner(
+            args: Sequence[str],
+            _cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            out_dir = Path(args[args.index("--output") + 1])
+            _write_nuget_package(out_dir / "Example.1.2.3.nupkg", "1.2.3")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        roots: list[str] = []
+        for _ in range(2):
+            execute_build(
+                request,
+                REPO_ROOT,
+                scratch / "bundle",
+                runner=runner,
+                check_commit=False,
+            )
+            telemetry_path = (
+                scratch / "bundle/release-build-profile-telemetry.json"
+            )
+            telemetry = json.loads(
+                telemetry_path.read_text(
+                    encoding="utf-8",
+                ),
+            )
+            roots.append(str(telemetry["profile-root"]))
+            dotnet_pack = next(
+                phase
+                for phase in telemetry["phases"]
+                if phase["phase"] == "dotnet-pack"
+            )
+            assert dotnet_pack["binlog-path"].endswith(
+                "/binlogs/0001-dotnet-pack.binlog",
+            )
+            assert str(dotnet_pack["binlog-path"]).startswith(roots[-1])
+
+        assert roots[0] != roots[1]
+        assert Path(roots[0]).is_dir()
+        assert Path(roots[1]).is_dir()
     finally:
         _remove_tree_scratch(scratch)
 
@@ -1174,6 +1253,12 @@ def test_dotnet_executable_requires_one_single_file_candidate() -> None:
 
         validate_contract(result)
         assert "-p:PublishTrimmed=false" not in calls[0]
+        assert any(
+            "/_profile/runs/" in arg
+            and arg.endswith("/binlogs/0001-dotnet-publish.binlog")
+            for arg in calls[0]
+            if arg.startswith("/bl:")
+        )
         receipt = _result_artifacts(result)["artifact/exe"]
         assert isinstance(receipt, dict)
         assert receipt["bundle-relative-path"] == "dist/example-1.2.3-linux-x64"
@@ -2639,6 +2724,7 @@ def test_node_workspace_runner_installs_pnpm_dependencies() -> None:
             return subprocess.CompletedProcess(args, 0, "", "")
 
         build_context = vars(executor_module)["_BuildContext"]
+        build_telemetry = vars(executor_module)["_BuildTelemetry"]
         prepare_runner = vars(executor_module)["_prepare_node_package_runner"]
         context = build_context(
             request={},
@@ -2648,6 +2734,7 @@ def test_node_workspace_runner_installs_pnpm_dependencies() -> None:
             output_root=scratch / "out",
             runner=runner,
             repo_root=scratch,
+            telemetry=build_telemetry(scratch / "bundle"),
         )
 
         package_runner = prepare_runner(context)
@@ -4072,8 +4159,43 @@ def test_inno_setup_executor_runs_project_specific_scripts() -> None:
         assert calls[1][0][3].endswith(
             "/script/Publish-ImageOcclusionEditor.ps1"
         )
+        assert "-TelemetryOutputPath" in calls[1][0]
+        assert "-MsBuildBinlogDirectory" in calls[1][0]
+        assert calls[1][0][
+            calls[1][0].index("-TelemetryOutputPath") + 1
+        ].endswith("/powershell/0001-inno-publish-script.json")
+        assert (
+            "/_profile/runs/"
+            in calls[1][0][calls[1][0].index("-TelemetryOutputPath") + 1]
+        )
+        assert calls[1][0][
+            calls[1][0].index("-MsBuildBinlogDirectory") + 1
+        ].endswith("/binlogs/0002-inno-publish-script")
+        assert (
+            "/_profile/runs/"
+            in calls[1][0][calls[1][0].index("-MsBuildBinlogDirectory") + 1]
+        )
         assert calls[2][0][3].endswith("/script/Build-InnoInstaller.ps1")
+        assert "-TelemetryOutputPath" in calls[2][0]
+        assert calls[2][0][
+            calls[2][0].index("-TelemetryOutputPath") + 1
+        ].endswith("/powershell/0003-inno-installer-script.json")
+        assert (
+            "/_profile/runs/"
+            in calls[2][0][calls[2][0].index("-TelemetryOutputPath") + 1]
+        )
         assert set(_result_artifacts(result)) == {"artifact/installer"}
+        telemetry = json.loads(
+            (scratch / "bundle/release-build-profile-telemetry.json").read_text(
+                encoding="utf-8",
+            ),
+        )
+        phases = {phase["phase"] for phase in telemetry["phases"]}
+        assert {
+            "dotnet-tool-restore",
+            "inno-publish-script",
+            "inno-installer-script",
+        } <= phases
     finally:
         _remove_tree_scratch(scratch)
 
@@ -4124,7 +4246,31 @@ def test_inno_setup_executor_runs_generic_smoke_scripts() -> None:
         assert Path(calls[0][0]).name == "dotnet"
         assert calls[0][1:] == ("tool", "restore")
         assert calls[1][3].endswith("/script/Publish.ps1")
+        assert "-TelemetryOutputPath" in calls[1]
+        assert "-MsBuildBinlogDirectory" in calls[1]
+        assert calls[1][calls[1].index("-TelemetryOutputPath") + 1].endswith(
+            "/powershell/0001-inno-publish-script.json",
+        )
+        assert (
+            "/_profile/runs/"
+            in calls[1][calls[1].index("-TelemetryOutputPath") + 1]
+        )
+        assert calls[1][calls[1].index("-MsBuildBinlogDirectory") + 1].endswith(
+            "/binlogs/0002-inno-publish-script",
+        )
+        assert (
+            "/_profile/runs/"
+            in calls[1][calls[1].index("-MsBuildBinlogDirectory") + 1]
+        )
         assert calls[2][3].endswith("/script/Build-InnoInstaller.ps1")
+        assert "-TelemetryOutputPath" in calls[2]
+        assert calls[2][calls[2].index("-TelemetryOutputPath") + 1].endswith(
+            "/powershell/0003-inno-installer-script.json",
+        )
+        assert (
+            "/_profile/runs/"
+            in calls[2][calls[2].index("-TelemetryOutputPath") + 1]
+        )
         receipt = _result_artifacts(result)["artifact/installer"]
         assert isinstance(receipt, dict)
         assert receipt["bundle-relative-path"] == (
@@ -4179,6 +4325,1445 @@ def test_inno_setup_executor_rejects_fake_text_exe() -> None:
             )
     finally:
         _remove_tree_scratch(scratch)
+
+
+def test_smoke_inno_publish_records_dotnet_failure_with_native_error_preference(
+    tmp_path: Path,
+) -> None:
+    """Smoke publish sidecar records nonzero dotnet under native throw mode."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for smoke Inno publish tests")
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    expected_exit_code = 23
+    if os.name == "nt":
+        fake_dotnet = fake_bin / "dotnet.cmd"
+        fake_dotnet.write_text(
+            "\r\n".join(
+                [
+                    "@echo off",
+                    "echo fake dotnet publish failed 1>&2",
+                    f"exit /b {expected_exit_code}",
+                ],
+            ),
+            encoding="utf-8",
+        )
+    else:
+        fake_dotnet = fake_bin / "dotnet"
+        fake_dotnet.write_text(
+            "\n".join(
+                [
+                    "#!/usr/bin/env bash",
+                    "echo 'fake dotnet publish failed' >&2",
+                    f"exit {expected_exit_code}",
+                ],
+            ),
+            encoding="utf-8",
+        )
+        fake_dotnet.chmod(fake_dotnet.stat().st_mode | stat.S_IXUSR)
+    telemetry_path = tmp_path / "profile" / "publish.json"
+    binlog_dir = tmp_path / "binlogs"
+    output_root = tmp_path / "publish"
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env.get('PATH', '')}"
+    command = (
+        "$ErrorActionPreference = 'Stop'; "
+        "$PSNativeCommandUseErrorActionPreference = $true; "
+        f"& {_ps_single_quote(_smoke_inno_publish_script())} "
+        f"-OutputRoot {_ps_single_quote(output_root)} "
+        f"-TelemetryOutputPath {_ps_single_quote(telemetry_path)} "
+        f"-MsBuildBinlogDirectory {_ps_single_quote(binlog_dir)}"
+    )
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-Command",
+            command,
+        ],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert f"exit code: {expected_exit_code}" in result.stderr
+    telemetry = json.loads(telemetry_path.read_text(encoding="utf-8-sig"))
+    phases = telemetry["phases"]
+    assert [phase["phase"] for phase in phases] == ["dotnet-publish"]
+    assert phases[0]["outcome"] == "failure"
+    assert phases[0]["exit-code"] == expected_exit_code
+    assert phases[0]["binlog-path"].endswith("dotnet-publish.binlog")
+    assert phases[0]["binlog-exists"] is False
+
+
+def test_smoke_inno_publish_records_missing_dotnet_start_failure(
+    tmp_path: Path,
+) -> None:
+    """Smoke publish sidecar records telemetry when dotnet cannot start."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for smoke Inno publish tests")
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    telemetry_path = tmp_path / "profile" / "publish.json"
+    binlog_dir = tmp_path / "binlogs"
+    output_root = tmp_path / "publish"
+    env = os.environ.copy()
+    env["PATH"] = str(empty_bin)
+    if os.name == "nt":
+        env["Path"] = str(empty_bin)
+    command = (
+        "$ErrorActionPreference = 'Stop'; "
+        "$PSNativeCommandUseErrorActionPreference = $true; "
+        f"& {_ps_single_quote(_smoke_inno_publish_script())} "
+        f"-OutputRoot {_ps_single_quote(output_root)} "
+        f"-TelemetryOutputPath {_ps_single_quote(telemetry_path)} "
+        f"-MsBuildBinlogDirectory {_ps_single_quote(binlog_dir)}"
+    )
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-Command",
+            command,
+        ],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    telemetry = json.loads(telemetry_path.read_text(encoding="utf-8-sig"))
+    phases = telemetry["phases"]
+    assert [phase["phase"] for phase in phases] == ["dotnet-publish"]
+    phase = phases[0]
+    assert phase["outcome"] == "failure"
+    assert phase["argv"][0] == "dotnet"
+    assert "publish" in phase["argv"]
+    assert phase["cwd"]
+    assert "exit-code" not in phase
+    assert phase["error"]
+    assert "dotnet" in phase["error"].lower()
+    assert phase["binlog-path"].endswith("dotnet-publish.binlog")
+    assert phase["binlog-exists"] is False
+
+
+def test_image_occlusion_publish_records_missing_dotnet_start_failure(
+    tmp_path: Path,
+) -> None:
+    """ImageOcclusion publish records telemetry when dotnet cannot start."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for ImageOcclusion publish tests")
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    telemetry_path = tmp_path / "profile" / "publish.json"
+    binlog_dir = tmp_path / "binlogs"
+    output_root = tmp_path / "publish"
+    env = os.environ.copy()
+    env["PATH"] = str(empty_bin)
+    if os.name == "nt":
+        env["Path"] = str(empty_bin)
+    command = (
+        "$ErrorActionPreference = 'Stop'; "
+        "$PSNativeCommandUseErrorActionPreference = $true; "
+        f"& {_ps_single_quote(_image_occlusion_publish_script())} "
+        f"-OutputRoot {_ps_single_quote(output_root)} "
+        f"-TelemetryOutputPath {_ps_single_quote(telemetry_path)} "
+        f"-MsBuildBinlogDirectory {_ps_single_quote(binlog_dir)}"
+    )
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-Command",
+            command,
+        ],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    telemetry = json.loads(telemetry_path.read_text(encoding="utf-8-sig"))
+    phases = telemetry["phases"]
+    assert [phase["phase"] for phase in phases] == ["dotnet-publish"]
+    phase = phases[0]
+    assert phase["outcome"] == "failure"
+    assert phase["argv"][0] == "dotnet"
+    assert "publish" in phase["argv"]
+    assert phase["cwd"]
+    assert "exit-code" not in phase
+    assert phase["error"]
+    assert "dotnet" in phase["error"].lower()
+    assert phase["binlog-path"].endswith("dotnet-publish.binlog")
+    assert phase["binlog-exists"] is False
+
+
+def test_image_occlusion_publish_records_cyclonedx_command_argv(
+    tmp_path: Path,
+) -> None:
+    """ImageOcclusion publish records the actual CycloneDX command argv."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for ImageOcclusion publish tests")
+    if os.name == "nt":
+        pytest.skip("POSIX fake dotnet is required for this argv probe")
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    _write_fake_image_occlusion_dotnet(
+        fake_bin / "dotnet",
+        cyclone_success=True,
+    )
+    output_root = tmp_path / "publish-root"
+    telemetry_path = tmp_path / "profile" / "publish.json"
+    target_framework, runtime_identifier, _assembly_name = (
+        _image_occlusion_project_metadata()
+    )
+    manifest_path = (
+        output_root
+        / "ImageOcclusionEditor"
+        / "Release"
+        / target_framework
+        / runtime_identifier
+        / "_manifest"
+    )
+    csproj_path = (
+        REPO_ROOT
+        / "src/public/app/ImageOcclusionEditor"
+        / "ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj"
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env.get('PATH', '')}"
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(_image_occlusion_publish_script()),
+            "-OutputRoot",
+            str(output_root),
+            "-TelemetryOutputPath",
+            str(telemetry_path),
+        ],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    telemetry = json.loads(telemetry_path.read_text(encoding="utf-8-sig"))
+    phases = {phase["phase"]: phase for phase in telemetry["phases"]}
+    cyclone_phase = phases["cyclonedx-sbom"]
+    assert cyclone_phase["outcome"] == "success"
+    assert cyclone_phase["exit-code"] == 0
+    cyclone_argv = cyclone_phase["argv"]
+    assert cyclone_argv[:5] == [
+        "dotnet",
+        "tool",
+        "run",
+        "dotnet-CycloneDX",
+        "--",
+    ]
+    assert str(csproj_path) in cyclone_argv
+    assert cyclone_argv[cyclone_argv.index("-o") + 1] == str(manifest_path)
+    assert "--exclude-dev" in cyclone_argv
+    assert "--exclude-test-projects" in cyclone_argv
+    assert cyclone_argv[cyclone_argv.index("--output-format") + 1] == "Json"
+    assert "--disable-package-restore" in cyclone_argv
+
+
+def test_image_occlusion_publish_records_failed_cyclonedx_command_argv(
+    tmp_path: Path,
+) -> None:
+    """ImageOcclusion publish records CycloneDX failure argv with path args."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for ImageOcclusion publish tests")
+    if os.name == "nt":
+        pytest.skip("POSIX fake dotnet is required for this argv probe")
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    _write_fake_image_occlusion_dotnet(
+        fake_bin / "dotnet",
+        cyclone_success=False,
+        cyclone_failure_exit_codes=(41, 43, 44),
+    )
+    _write_failing_executable(fake_bin / "dotnet-CycloneDX", exit_code=42)
+    expected_exit_code = 44
+    output_root = tmp_path / "publish-root"
+    telemetry_path = tmp_path / "profile" / "publish.json"
+    argv_log_path = tmp_path / "cyclonedx-argv.jsonl"
+    target_framework, runtime_identifier, _assembly_name = (
+        _image_occlusion_project_metadata()
+    )
+    manifest_path = (
+        output_root
+        / "ImageOcclusionEditor"
+        / "Release"
+        / target_framework
+        / runtime_identifier
+        / "_manifest"
+    )
+    csproj_path = (
+        REPO_ROOT
+        / "src/public/app/ImageOcclusionEditor"
+        / "ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj"
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env.get('PATH', '')}"
+    env["CYCLONEDX_FAKE_ARGV_LOG"] = str(argv_log_path)
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(_image_occlusion_publish_script()),
+            "-OutputRoot",
+            str(output_root),
+            "-TelemetryOutputPath",
+            str(telemetry_path),
+        ],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    telemetry = json.loads(telemetry_path.read_text(encoding="utf-8-sig"))
+    phases = {phase["phase"]: phase for phase in telemetry["phases"]}
+    cyclone_phase = phases["cyclonedx-sbom"]
+    assert cyclone_phase["outcome"] == "failure"
+    cyclone_argv = cyclone_phase["argv"]
+    expected_common_args = [
+        str(csproj_path),
+        "-o",
+        str(manifest_path),
+        "--exclude-dev",
+        "--exclude-test-projects",
+        "--output-format",
+        "Json",
+        "--disable-package-restore",
+    ]
+    expected_initial_argv = [
+        "dotnet",
+        "tool",
+        "run",
+        "dotnet-CycloneDX",
+        "--",
+        *expected_common_args,
+    ]
+    expected_direct_argv = ["dotnet-CycloneDX", *expected_common_args]
+    expected_dotnet_tool_argv = [
+        "dotnet",
+        "dotnet-CycloneDX",
+        *expected_common_args,
+    ]
+    expected_final_argv = ["dotnet", "CycloneDX", *expected_common_args]
+    attempted_argvs = [
+        [Path(argv[0]).name, *argv[1:]]
+        for argv in (
+            json.loads(line)
+            for line in argv_log_path.read_text(encoding="utf-8").splitlines()
+        )
+        if len(argv) > 1 and argv[1] != "publish"
+    ]
+    assert attempted_argvs == [
+        expected_initial_argv,
+        expected_direct_argv,
+        expected_dotnet_tool_argv,
+        expected_final_argv,
+    ]
+    assert cyclone_argv == expected_final_argv
+    assert cyclone_argv != expected_initial_argv
+    assert cyclone_phase["exit-code"] == expected_exit_code
+    assert cyclone_phase["output-paths"] == [str(manifest_path)]
+    assert cyclone_phase["error"]
+
+
+def test_image_occlusion_publish_omits_cyclonedx_exit_code_without_process_code(
+    tmp_path: Path,
+) -> None:
+    """ImageOcclusion publish omits CycloneDX exit-code when no CLI starts."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for ImageOcclusion publish tests")
+    if os.name == "nt":
+        pytest.skip("POSIX fake dotnet is required for this argv probe")
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    fake_dotnet = fake_bin / "dotnet"
+    fake_dotnet.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "set -euo pipefail",
+                "if [ \"${1:-}\" = 'publish' ]; then",
+                '    /bin/rm -- "$0"',
+                "    exit 0",
+                "fi",
+                "exit 42",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    fake_dotnet.chmod(fake_dotnet.stat().st_mode | stat.S_IXUSR)
+    output_root = tmp_path / "publish-root"
+    telemetry_path = tmp_path / "profile" / "publish.json"
+    target_framework, runtime_identifier, _assembly_name = (
+        _image_occlusion_project_metadata()
+    )
+    manifest_path = (
+        output_root
+        / "ImageOcclusionEditor"
+        / "Release"
+        / target_framework
+        / runtime_identifier
+        / "_manifest"
+    )
+    csproj_path = (
+        REPO_ROOT
+        / "src/public/app/ImageOcclusionEditor"
+        / "ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj"
+    )
+    env = os.environ.copy()
+    env["PATH"] = str(fake_bin)
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(_image_occlusion_publish_script()),
+            "-OutputRoot",
+            str(output_root),
+            "-TelemetryOutputPath",
+            str(telemetry_path),
+        ],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    telemetry = json.loads(telemetry_path.read_text(encoding="utf-8-sig"))
+    phases = {phase["phase"]: phase for phase in telemetry["phases"]}
+    cyclone_phase = phases["cyclonedx-sbom"]
+    assert cyclone_phase["outcome"] == "failure"
+    assert cyclone_phase["argv"] == [
+        "dotnet",
+        "CycloneDX",
+        str(csproj_path),
+        "-o",
+        str(manifest_path),
+        "--exclude-dev",
+        "--exclude-test-projects",
+        "--output-format",
+        "Json",
+        "--disable-package-restore",
+    ]
+    assert "exit-code" not in cyclone_phase
+    assert cyclone_phase["output-paths"] == [str(manifest_path)]
+    assert cyclone_phase["error"]
+
+
+def test_smoke_inno_script_includes_iscc_failure_diagnostics(
+    tmp_path: Path,
+) -> None:
+    """Smoke installer script records sanitized ISCC failure output."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for smoke Inno script tests")
+    publish_root = tmp_path / "publish"
+    installer_root = tmp_path / "installer"
+    telemetry_path = tmp_path / "telemetry.json"
+    publish_root.mkdir()
+    (publish_root / "hcoona-release-smoke-inno.exe").write_bytes(b"MZapp")
+    fake_iscc = tmp_path / "fake-iscc"
+    fake_iscc.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env bash",
+                "echo 'ISCC compiler started' >&2",
+                "echo 'token=super-secret-token' >&2",
+                "echo 'error: invalid Setup directive' >&2",
+                "exit 42",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    fake_iscc.chmod(fake_iscc.stat().st_mode | stat.S_IXUSR)
+    expected_exit_code = 42
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(_smoke_inno_installer_script()),
+            "-PublishOutputRoot",
+            str(publish_root),
+            "-InstallerOutputPath",
+            str(installer_root),
+            "-InnoSetupCompiler",
+            str(fake_iscc),
+            "-TelemetryOutputPath",
+            str(telemetry_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "super-secret-token" not in result.stdout
+    assert "super-secret-token" not in result.stderr
+    telemetry = json.loads(telemetry_path.read_text(encoding="utf-8-sig"))
+    phase = telemetry["phases"][0]
+    assert phase["phase"] == "iscc-compile"
+    assert phase["outcome"] == "failure"
+    assert phase["exit-code"] == expected_exit_code
+    assert phase["error"] == os.linesep.join(
+        [
+            "Inno Setup failed, exit code: 42",
+            "ISCC output:",
+            "ISCC compiler started",
+            "token=<redacted>",
+            "error: invalid Setup directive",
+        ],
+    )
+
+
+def test_smoke_inno_script_records_missing_iscc_resolution_failure(
+    tmp_path: Path,
+) -> None:
+    """Smoke installer sidecar records telemetry when ISCC cannot resolve."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for smoke Inno script tests")
+    publish_root = tmp_path / "publish"
+    installer_root = tmp_path / "installer"
+    telemetry_path = tmp_path / "telemetry.json"
+    missing_iscc = tmp_path / "missing-iscc"
+    publish_root.mkdir()
+    (publish_root / "hcoona-release-smoke-inno.exe").write_bytes(b"MZapp")
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(_smoke_inno_installer_script()),
+            "-PublishOutputRoot",
+            str(publish_root),
+            "-InstallerOutputPath",
+            str(installer_root),
+            "-InnoSetupCompiler",
+            str(missing_iscc),
+            "-TelemetryOutputPath",
+            str(telemetry_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    telemetry = json.loads(telemetry_path.read_text(encoding="utf-8-sig"))
+    phases = telemetry["phases"]
+    assert [phase["phase"] for phase in phases] == [
+        "iscc-compiler-resolution",
+    ]
+    phase = phases[0]
+    assert phase["outcome"] == "failure"
+    assert "exit-code" not in phase
+    assert str(missing_iscc) in phase["error"]
+
+
+def test_smoke_inno_script_no_hint_iscc_resolution_failure_uses_empty_argv(
+    tmp_path: Path,
+) -> None:
+    """Smoke installer sidecar emits empty argv without an ISCC hint."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for smoke Inno script tests")
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    publish_root = tmp_path / "publish"
+    installer_root = tmp_path / "installer"
+    telemetry_path = tmp_path / "telemetry.json"
+    publish_root.mkdir()
+    (publish_root / "hcoona-release-smoke-inno.exe").write_bytes(b"MZapp")
+    env = os.environ.copy()
+    env["PATH"] = str(empty_bin)
+    if os.name == "nt":
+        env["Path"] = str(empty_bin)
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(_smoke_inno_installer_script()),
+            "-PublishOutputRoot",
+            str(publish_root),
+            "-InstallerOutputPath",
+            str(installer_root),
+            "-TelemetryOutputPath",
+            str(telemetry_path),
+        ],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    telemetry = json.loads(telemetry_path.read_text(encoding="utf-8-sig"))
+    phase = telemetry["phases"][0]
+    assert phase["phase"] == "iscc-compiler-resolution"
+    assert phase["outcome"] == "failure"
+    assert phase.get("argv", []) == []
+    assert "exit-code" not in phase
+    assert "Inno Setup compiler" in phase["error"]
+
+
+def test_smoke_inno_script_records_iscc_start_failure_without_exit_code(
+    tmp_path: Path,
+) -> None:
+    """Smoke installer sidecar omits exit-code when ISCC never starts."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for smoke Inno script tests")
+    if os.name == "nt":
+        pytest.skip("POSIX shebang start-failure probe is not portable")
+    publish_root = tmp_path / "publish"
+    installer_root = tmp_path / "installer"
+    telemetry_path = tmp_path / "telemetry.json"
+    publish_root.mkdir()
+    (publish_root / "hcoona-release-smoke-inno.exe").write_bytes(b"MZapp")
+    fake_iscc = tmp_path / "fake-iscc"
+    fake_iscc.write_text(
+        "\n".join(
+            [
+                "#!/definitely/missing/iscc-interpreter",
+                "echo 'unreachable'",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    fake_iscc.chmod(fake_iscc.stat().st_mode | stat.S_IXUSR)
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(_smoke_inno_installer_script()),
+            "-PublishOutputRoot",
+            str(publish_root),
+            "-InstallerOutputPath",
+            str(installer_root),
+            "-InnoSetupCompiler",
+            str(fake_iscc),
+            "-TelemetryOutputPath",
+            str(telemetry_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    telemetry = json.loads(telemetry_path.read_text(encoding="utf-8-sig"))
+    phases = telemetry["phases"]
+    assert [phase["phase"] for phase in phases] == ["iscc-compile"]
+    phase = phases[0]
+    assert phase["outcome"] == "failure"
+    assert "exit-code" not in phase
+    assert "ISCC launch failed before producing an exit code" in phase["error"]
+    assert "unreachable" not in phase["error"]
+
+
+def test_smoke_inno_telemetry_write_failure_preserves_iscc_failure(
+    tmp_path: Path,
+) -> None:
+    """Best-effort telemetry warnings do not mask the ISCC failure."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for smoke Inno script tests")
+    publish_root = tmp_path / "publish"
+    installer_root = tmp_path / "installer"
+    telemetry_parent = tmp_path / "telemetry-parent-file"
+    telemetry_path = telemetry_parent / "telemetry.json"
+    publish_root.mkdir()
+    telemetry_parent.write_text("not a directory", encoding="utf-8")
+    (publish_root / "hcoona-release-smoke-inno.exe").write_bytes(b"MZapp")
+    fake_iscc = tmp_path / "fake-iscc"
+    fake_iscc.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env bash",
+                "echo 'error: invalid Setup directive' >&2",
+                "exit 42",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    fake_iscc.chmod(fake_iscc.stat().st_mode | stat.S_IXUSR)
+    command = (
+        "$WarningPreference = 'Stop'; "
+        f"& {_ps_single_quote(_smoke_inno_installer_script())} "
+        f"-PublishOutputRoot {_ps_single_quote(publish_root)} "
+        f"-InstallerOutputPath {_ps_single_quote(installer_root)} "
+        f"-InnoSetupCompiler {_ps_single_quote(fake_iscc)} "
+        f"-TelemetryOutputPath {_ps_single_quote(telemetry_path)}"
+    )
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-Command",
+            command,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "Inno Setup failed, exit code: 42" in result.stderr
+    assert "directive" in result.stderr
+    assert (
+        "Profile telemetry could not be written"
+        in f"{result.stdout}\n{result.stderr}"
+    )
+
+
+def test_powershell_profile_telemetry_warnings_ignore_warning_preference() -> (
+    None
+):
+    """All PowerShell telemetry write warnings force non-terminating output."""
+    for script in _powershell_telemetry_scripts():
+        warning_lines = [
+            line
+            for line in script.read_text(encoding="utf-8").splitlines()
+            if "Profile telemetry could not be written" in line
+        ]
+        assert warning_lines, script
+        assert all("-WarningAction Continue" in line for line in warning_lines)
+
+
+def test_image_occlusion_inno_telemetry_omits_deleted_temp_paths(
+    tmp_path: Path,
+) -> None:
+    """ImageOcclusion Inno sidecar aliases deleted staging paths."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for ImageOcclusion Inno tests")
+    publish_root = _prepare_image_occlusion_publish_output(tmp_path)
+    installer_root = tmp_path / "installer"
+    telemetry_path = tmp_path / "profile" / "powershell" / "installer.json"
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    fake_iscc = _write_fake_image_occlusion_iscc(tmp_path / "fake-iscc")
+    env = _image_occlusion_inno_env(runner_temp)
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(_image_occlusion_inno_installer_script()),
+            "-PublishOutputRoot",
+            str(publish_root),
+            "-InstallerOutputPath",
+            str(installer_root),
+            "-InnoSetupCompiler",
+            str(fake_iscc),
+            "-TelemetryOutputPath",
+            str(telemetry_path),
+        ],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    telemetry_text = telemetry_path.read_text(encoding="utf-8-sig")
+    assert str(runner_temp) not in telemetry_text
+    assert "inno-work:" in telemetry_text
+    telemetry = json.loads(telemetry_text)
+    phase_names = [phase["phase"] for phase in telemetry["phases"]]
+    assert "inno-staging-copy" in phase_names
+    assert "iscc-compile" in phase_names
+    assert "inno-temp-cleanup" in phase_names
+
+
+def test_image_occlusion_inno_copy_back_failure_writes_telemetry(
+    tmp_path: Path,
+) -> None:
+    """Copy-back failures record installer-copy-back before cleanup."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for ImageOcclusion Inno tests")
+    publish_root = _prepare_image_occlusion_publish_output(tmp_path)
+    installer_root = tmp_path / "installer"
+    telemetry_path = tmp_path / "profile" / "powershell" / "installer.json"
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    fake_iscc = _write_fake_image_occlusion_iscc(tmp_path / "fake-iscc")
+    env = _image_occlusion_inno_env(runner_temp)
+    env["TEST_INSTALLER_OUTPUT_PATH"] = str(installer_root)
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(_image_occlusion_inno_installer_script()),
+            "-PublishOutputRoot",
+            str(publish_root),
+            "-InstallerOutputPath",
+            str(installer_root),
+            "-InnoSetupCompiler",
+            str(fake_iscc),
+            "-TelemetryOutputPath",
+            str(telemetry_path),
+        ],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    telemetry_text = telemetry_path.read_text(encoding="utf-8-sig")
+    assert str(runner_temp) not in telemetry_text
+    telemetry = json.loads(telemetry_text)
+    phases = telemetry["phases"]
+    phase_names = [phase["phase"] for phase in phases]
+    copy_back_index = phase_names.index("installer-copy-back")
+    cleanup_index = phase_names.index("inno-temp-cleanup")
+    assert copy_back_index < cleanup_index
+    copy_back = [
+        phase for phase in phases if phase["phase"] == "installer-copy-back"
+    ]
+    assert len(copy_back) == 1
+    assert copy_back[0]["outcome"] == "failure"
+    cleanup = phases[cleanup_index]
+    assert cleanup["outcome"] == "success"
+    assert list(runner_temp.glob("image-occlusion-inno-*")) == []
+
+
+def test_image_occlusion_inno_nonzero_failure_records_diagnostics(
+    tmp_path: Path,
+) -> None:
+    """ImageOcclusion installer sidecar records diagnostics on ISCC nonzero."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for ImageOcclusion Inno tests")
+    publish_root = _prepare_image_occlusion_publish_output(tmp_path)
+    installer_root = tmp_path / "installer"
+    telemetry_path = tmp_path / "profile" / "powershell" / "installer.json"
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    fake_iscc = _write_failing_image_occlusion_iscc(tmp_path / "fake-iscc")
+    expected_exit_code = 42
+    env = _image_occlusion_inno_env(runner_temp)
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(_image_occlusion_inno_installer_script()),
+            "-PublishOutputRoot",
+            str(publish_root),
+            "-InstallerOutputPath",
+            str(installer_root),
+            "-InnoSetupCompiler",
+            str(fake_iscc),
+            "-TelemetryOutputPath",
+            str(telemetry_path),
+        ],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    telemetry = json.loads(telemetry_path.read_text(encoding="utf-8-sig"))
+    phases = telemetry["phases"]
+    iscc_phase = next(
+        phase for phase in phases if phase["phase"] == "iscc-compile"
+    )
+    assert iscc_phase["outcome"] == "failure"
+    assert iscc_phase["exit-code"] == expected_exit_code
+    assert "ISCC output:" in iscc_phase["error"]
+    assert "invalid Setup directive" in iscc_phase["error"]
+    assert "super-secret-token" not in iscc_phase["error"]
+    assert "token=<redacted>" in iscc_phase["error"]
+    assert str(runner_temp) not in iscc_phase["error"]
+    assert "inno-work:" in iscc_phase["error"]
+
+
+def test_image_occlusion_inno_records_missing_iscc_resolution_failure(
+    tmp_path: Path,
+) -> None:
+    """ImageOcclusion installer records telemetry when ISCC cannot resolve."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for ImageOcclusion Inno tests")
+    publish_root = _prepare_image_occlusion_publish_output(tmp_path)
+    installer_root = tmp_path / "installer"
+    telemetry_path = tmp_path / "profile" / "powershell" / "installer.json"
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    missing_iscc = tmp_path / "missing-iscc"
+    env = _image_occlusion_inno_env(runner_temp)
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(_image_occlusion_inno_installer_script()),
+            "-PublishOutputRoot",
+            str(publish_root),
+            "-InstallerOutputPath",
+            str(installer_root),
+            "-InnoSetupCompiler",
+            str(missing_iscc),
+            "-TelemetryOutputPath",
+            str(telemetry_path),
+        ],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    telemetry = json.loads(telemetry_path.read_text(encoding="utf-8-sig"))
+    phases = telemetry["phases"]
+    assert [phase["phase"] for phase in phases] == [
+        "iscc-compiler-resolution",
+    ]
+    phase = phases[0]
+    assert phase["outcome"] == "failure"
+    assert "exit-code" not in phase
+    assert str(missing_iscc) in phase["error"]
+
+
+def test_image_occlusion_inno_no_hint_iscc_resolution_failure_uses_empty_argv(
+    tmp_path: Path,
+) -> None:
+    """ImageOcclusion installer emits empty argv without an ISCC hint."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for ImageOcclusion Inno tests")
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    publish_root = _prepare_image_occlusion_publish_output(tmp_path)
+    installer_root = tmp_path / "installer"
+    telemetry_path = tmp_path / "profile" / "powershell" / "installer.json"
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    env = _image_occlusion_inno_env(runner_temp)
+    env["PATH"] = str(empty_bin)
+    if os.name == "nt":
+        env["Path"] = str(empty_bin)
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(_image_occlusion_inno_installer_script()),
+            "-PublishOutputRoot",
+            str(publish_root),
+            "-InstallerOutputPath",
+            str(installer_root),
+            "-TelemetryOutputPath",
+            str(telemetry_path),
+        ],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    telemetry = json.loads(telemetry_path.read_text(encoding="utf-8-sig"))
+    phase = telemetry["phases"][0]
+    assert phase["phase"] == "iscc-compiler-resolution"
+    assert phase["outcome"] == "failure"
+    assert phase.get("argv", []) == []
+    assert "exit-code" not in phase
+    assert "Inno Setup compiler" in phase["error"]
+
+
+def test_image_occlusion_inno_records_iscc_start_failure_without_exit_code(
+    tmp_path: Path,
+) -> None:
+    """ImageOcclusion installer omits exit-code when ISCC never starts."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for ImageOcclusion Inno tests")
+    if os.name == "nt":
+        pytest.skip("POSIX shebang start-failure probe is not portable")
+    publish_root = _prepare_image_occlusion_publish_output(tmp_path)
+    installer_root = tmp_path / "installer"
+    telemetry_path = tmp_path / "profile" / "powershell" / "installer.json"
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    fake_iscc = tmp_path / "fake-iscc"
+    fake_iscc.write_text(
+        "\n".join(
+            [
+                "#!/definitely/missing/iscc-interpreter",
+                "echo 'unreachable'",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    fake_iscc.chmod(fake_iscc.stat().st_mode | stat.S_IXUSR)
+    env = _image_occlusion_inno_env(runner_temp)
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(_image_occlusion_inno_installer_script()),
+            "-PublishOutputRoot",
+            str(publish_root),
+            "-InstallerOutputPath",
+            str(installer_root),
+            "-InnoSetupCompiler",
+            str(fake_iscc),
+            "-TelemetryOutputPath",
+            str(telemetry_path),
+        ],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    telemetry = json.loads(telemetry_path.read_text(encoding="utf-8-sig"))
+    phases = telemetry["phases"]
+    iscc_phase = next(
+        phase for phase in phases if phase["phase"] == "iscc-compile"
+    )
+    assert iscc_phase["outcome"] == "failure"
+    assert "exit-code" not in iscc_phase
+    assert (
+        "ISCC launch failed before producing an exit code"
+        in iscc_phase["error"]
+    )
+    assert "unreachable" not in iscc_phase["error"]
+
+
+def test_smoke_inno_script_records_missing_installer_validation_failure(
+    tmp_path: Path,
+) -> None:
+    """Smoke installer sidecar records absent output as failure."""
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required for smoke Inno script tests")
+    publish_root = tmp_path / "publish"
+    installer_root = tmp_path / "installer"
+    telemetry_path = tmp_path / "telemetry.json"
+    publish_root.mkdir()
+    (publish_root / "hcoona-release-smoke-inno.exe").write_bytes(b"MZapp")
+    fake_iscc = tmp_path / "fake-iscc"
+    fake_iscc.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env bash",
+                "echo 'ISCC compiler completed without producing an installer'",
+                "exit 0",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    fake_iscc.chmod(fake_iscc.stat().st_mode | stat.S_IXUSR)
+
+    result = subprocess.run(  # noqa: S603
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(_smoke_inno_installer_script()),
+            "-PublishOutputRoot",
+            str(publish_root),
+            "-InstallerOutputPath",
+            str(installer_root),
+            "-InnoSetupCompiler",
+            str(fake_iscc),
+            "-TelemetryOutputPath",
+            str(telemetry_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    telemetry = json.loads(telemetry_path.read_text(encoding="utf-8-sig"))
+    phases = telemetry["phases"]
+    assert [phase["phase"] for phase in phases] == [
+        "iscc-compile",
+        "installer-output-validation",
+    ]
+    assert phases[0]["outcome"] == "success"
+    assert phases[1]["outcome"] == "failure"
+    assert "expected installer was not found" in phases[1]["error"]
+
+
+def _smoke_inno_installer_script() -> Path:
+    script = "src/public/lib/hcoona-release-smoke-inno/script"
+    return REPO_ROOT / script / "Build-InnoInstaller.ps1"
+
+
+def _smoke_inno_publish_script() -> Path:
+    return (
+        REPO_ROOT
+        / "src/public/lib/hcoona-release-smoke-inno/script"
+        / "Publish.ps1"
+    )
+
+
+def _image_occlusion_publish_script() -> Path:
+    return (
+        REPO_ROOT
+        / "src/public/app/ImageOcclusionEditor/script"
+        / "Publish-ImageOcclusionEditor.ps1"
+    )
+
+
+def _powershell_telemetry_scripts() -> tuple[Path, ...]:
+    smoke_script_dir = (
+        REPO_ROOT / "src/public/lib/hcoona-release-smoke-inno/script"
+    )
+    image_script_dir = REPO_ROOT / "src/public/app/ImageOcclusionEditor/script"
+    return (
+        smoke_script_dir / "Publish.ps1",
+        smoke_script_dir / "Build-InnoInstaller.ps1",
+        image_script_dir / "Publish-ImageOcclusionEditor.ps1",
+        image_script_dir / "Build-InnoInstaller.ps1",
+    )
+
+
+def _image_occlusion_inno_installer_script() -> Path:
+    return (
+        REPO_ROOT
+        / "src/public/app/ImageOcclusionEditor/script/Build-InnoInstaller.ps1"
+    )
+
+
+def _image_occlusion_project_metadata() -> tuple[str, str, str]:
+    app_path = "src/public/app/ImageOcclusionEditor"
+    csproj = (
+        REPO_ROOT
+        / app_path
+        / ("ImageOcclusionEditorWinUI3/ImageOcclusionEditorWinUI3.csproj")
+    )
+    project_text = csproj.read_text(encoding="utf-8")
+
+    def property_text(name: str) -> str | None:
+        match = re.search(rf"<{name}>(.*?)</{name}>", project_text)
+        if match is None:
+            return None
+        value = match.group(1).strip()
+        return value or None
+
+    target_framework = property_text("TargetFramework")
+    assembly_name = property_text("AssemblyName") or "ImageOcclusionEditor"
+    runtime_identifier = property_text("RuntimeIdentifier")
+    if runtime_identifier is None:
+        runtime_identifiers = property_text("RuntimeIdentifiers")
+        if runtime_identifiers is not None:
+            runtime_identifier = next(
+                (
+                    item.strip()
+                    for item in runtime_identifiers.split(";")
+                    if item.strip()
+                ),
+                None,
+            )
+    assert target_framework is not None
+    assert runtime_identifier is not None
+    return target_framework, runtime_identifier, assembly_name
+
+
+def _prepare_image_occlusion_publish_output(tmp_path: Path) -> Path:
+    target_framework, runtime_identifier, assembly_name = (
+        _image_occlusion_project_metadata()
+    )
+    publish_root = tmp_path / "publish-root"
+    publish_dir = (
+        publish_root
+        / "ImageOcclusionEditor"
+        / "Release"
+        / target_framework
+        / runtime_identifier
+    )
+    publish_dir.mkdir(parents=True)
+    _write_versioned_dotnet_assembly_as_exe(
+        publish_dir / f"{assembly_name}.exe",
+        tmp_path,
+        assembly_name,
+    )
+    return publish_root
+
+
+def _write_versioned_dotnet_assembly_as_exe(
+    target: Path,
+    tmp_path: Path,
+    assembly_name: str,
+) -> None:
+    dotnet = shutil.which("dotnet")
+    if dotnet is None:
+        pytest.skip("dotnet is required to create a versioned Windows exe")
+    source_dir = tmp_path / "versioned-exe-src"
+    create_result = subprocess.run(  # noqa: S603
+        [dotnet, "new", "console", "--no-restore", "-o", str(source_dir)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if create_result.returncode != 0:
+        pytest.skip(f"dotnet new failed: {create_result.stderr}")
+    publish_result = subprocess.run(  # noqa: S603
+        [
+            dotnet,
+            "publish",
+            str(source_dir),
+            "-c",
+            "Release",
+            f"/p:AssemblyName={assembly_name}",
+            "/p:FileVersion=1.2.3.4",
+            "/p:AssemblyVersion=1.2.3.4",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if publish_result.returncode != 0:
+        pytest.skip(f"dotnet publish failed: {publish_result.stderr}")
+    candidates = sorted(
+        (source_dir / "bin").glob(
+            f"Release/*/publish/{assembly_name}.dll",
+        ),
+    )
+    assert candidates
+    shutil.copy2(candidates[0], target)
+
+
+def _write_fake_image_occlusion_dotnet(
+    path: Path,
+    *,
+    cyclone_success: bool,
+    cyclone_failure_exit_codes: tuple[int, int, int] = (42, 42, 42),
+) -> Path:
+    (
+        cyclone_tool_run_failure_exit_code,
+        cyclone_dotnet_tool_failure_exit_code,
+        cyclone_dotnet_global_failure_exit_code,
+    ) = cyclone_failure_exit_codes
+    cyclone_lines = (
+        [
+            "    out=''",
+            "    previous=''",
+            '    for arg in "$@"; do',
+            '        if [ "$previous" = \'-o\' ]; then out="$arg"; fi',
+            '        previous="$arg"',
+            "    done",
+            '    mkdir -p "$out"',
+            (
+                "    printf '%s' '{\"bomFormat\":\"CycloneDX\"}' "
+                '> "$out/bom.json"'
+            ),
+            "    exit 0",
+        ]
+        if cyclone_success
+        else [
+            "    echo 'fake CycloneDX failed' >&2",
+            f"    exit {cyclone_tool_run_failure_exit_code}",
+        ]
+    )
+    cyclone_fallback_lines = (
+        []
+        if cyclone_success
+        else [
+            "if [ \"${1:-}\" = 'dotnet-CycloneDX' ]; then",
+            f"    exit {cyclone_dotnet_tool_failure_exit_code}",
+            "fi",
+            "if [ \"${1:-}\" = 'CycloneDX' ]; then",
+            f"    exit {cyclone_dotnet_global_failure_exit_code}",
+            "fi",
+        ]
+    )
+    path.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env bash",
+                "set -euo pipefail",
+                *_fake_argv_log_lines(),
+                "if [ \"${1:-}\" = 'publish' ]; then exit 0; fi",
+                "if [ \"${1:-}\" = 'tool' ] "
+                "&& [ \"${2:-}\" = 'run' ] "
+                "&& [ \"${3:-}\" = 'dotnet-CycloneDX' ]; then",
+                *cyclone_lines,
+                "fi",
+                *cyclone_fallback_lines,
+                "exit 42",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+    return path
+
+
+def _fake_argv_log_lines() -> list[str]:
+    return [
+        'if [ -n "${CYCLONEDX_FAKE_ARGV_LOG:-}" ]; then',
+        '    python3 - "$CYCLONEDX_FAKE_ARGV_LOG" "$0" "$@" <<\'PY\'',
+        "import json",
+        "import sys",
+        "with open(sys.argv[1], 'a', encoding='utf-8') as f:",
+        "    f.write(json.dumps(sys.argv[2:]) + '\\n')",
+        "PY",
+        "fi",
+    ]
+
+
+def _write_failing_executable(path: Path, *, exit_code: int = 42) -> Path:
+    path.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env bash",
+                *_fake_argv_log_lines(),
+                "echo 'fake command failed' >&2",
+                f"exit {exit_code}",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+    return path
+
+
+def _write_fake_image_occlusion_iscc(path: Path) -> Path:
+    if path.suffix.lower() != ".ps1":
+        path = path.with_suffix(".ps1")
+    path.write_text(
+        "\n".join(
+            [
+                "$ErrorActionPreference = 'Stop'",
+                "$out = ''",
+                "foreach ($arg in $args) {",
+                "    if ($arg.StartsWith('/O')) {",
+                "        $out = $arg.Substring(2)",
+                "    }",
+                "}",
+                "if ([string]::IsNullOrWhiteSpace($out)) {",
+                "    Write-Error 'Missing /O output argument.'",
+                "    exit 2",
+                "}",
+                "New-Item -ItemType Directory -Force -Path $out | Out-Null",
+                "$name = 'ImageOcclusionEditorWinUI3_Setup.exe'",
+                "$installer = Join-Path $out $name",
+                "$text = 'MZinstaller'",
+                "$bytes = [System.Text.Encoding]::ASCII.GetBytes($text)",
+                "[System.IO.File]::WriteAllBytes($installer, $bytes)",
+                "$conflict = $env:TEST_INSTALLER_OUTPUT_PATH",
+                "if (-not [string]::IsNullOrWhiteSpace($conflict)) {",
+                "    if (Test-Path -LiteralPath $conflict) {",
+                "        Remove-Item -LiteralPath $conflict -Recurse -Force",
+                "    }",
+                "    Set-Content -LiteralPath $conflict "
+                "-Value 'copy-back path conflict' -Encoding UTF8",
+                "}",
+                "exit 0",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _write_failing_image_occlusion_iscc(path: Path) -> Path:
+    if path.suffix.lower() != ".ps1":
+        path = path.with_suffix(".ps1")
+    path.write_text(
+        "\n".join(
+            [
+                "$ErrorActionPreference = 'Continue'",
+                "Write-Output 'ISCC compiler started'",
+                "Write-Output 'token=super-secret-token'",
+                "Write-Error 'error: invalid Setup directive'",
+                "exit 42",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _image_occlusion_inno_env(runner_temp: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    env.pop("IMAGE_OCCLUSION_EDITOR_KEEP_INNO_TEMP", None)
+    env.pop("TEST_INSTALLER_OUTPUT_PATH", None)
+    temp_path = str(runner_temp)
+    env["RUNNER_TEMP"] = temp_path
+    env["TEMP"] = temp_path
+    env["TMP"] = temp_path
+    env["TMPDIR"] = temp_path
+    return env
+
+
+def _ps_single_quote(value: Path) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
 
 
 def test_executor_fails_closed_on_missing_output() -> None:

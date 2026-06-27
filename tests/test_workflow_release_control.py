@@ -18,13 +18,15 @@ import subprocess
 import sys
 import tarfile
 import zipfile
+from collections.abc import Sequence
 from copy import deepcopy
 from datetime import datetime
 from itertools import pairwise
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
+import three_workflow_release_contracts.ci_validation_batches as ci_validation_batch_contracts
 import yaml
 from three_workflow_release_authoring import validate_authoring
 from three_workflow_release_build import execute_build
@@ -61,7 +63,7 @@ from three_workflow_release_proof import (
 from tests import ci_validation_batch_fixtures as batch_contracts
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Mapping
 
 REPO_ROOT = Path(__file__).parents[1]
 SCRIPT = REPO_ROOT / "eng/scripts/workflow_release_control.py"
@@ -2390,14 +2392,22 @@ def test_ci_acceptance_matrix_rows_are_actionable() -> None:
                 if ref_type == "path":
                     assert (REPO_ROOT / value).is_file(), (row["id"], column)
                     if tracked_paths is not None:
-                        assert value in tracked_paths, (row["id"], column, value)
+                        assert value in tracked_paths, (
+                            row["id"],
+                            column,
+                            value,
+                        )
                 elif ref_type == "test":
                     assert value in test_nodeids, (row["id"], column, value)
                     row_test_refs.append(value)
                 elif ref_type == "workflow":
                     assert (REPO_ROOT / value).is_file(), (row["id"], column)
                     if tracked_paths is not None:
-                        assert value in tracked_paths, (row["id"], column, value)
+                        assert value in tracked_paths, (
+                            row["id"],
+                            column,
+                            value,
+                        )
                 else:
                     raise AssertionError((row["id"], column, ref_type))
             assert len(reference_keys) == len(set(reference_keys)), (
@@ -20710,7 +20720,8 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
         install_index, install_step = next(
             (index, step)
             for index, step in enumerate(steps)
-            if step.get("name") == "Install trusted NBGV CLI for release planning"
+            if step.get("name")
+            == "Install trusted NBGV CLI for release planning"
         )
         run_text = "\n".join(str(step.get("run", "")) for step in steps)
         install_run = install_step["run"]
@@ -23338,24 +23349,24 @@ def test_windows_orchestrator_step_emits_timing_evidence(  # noqa: C901
     dependent_group["runner-family"] = "windows"
     plan["plan-digest"] = ci_validation_plan_digest(plan)
     context = batch_contracts.authorizing_context_kwargs()
-    materialization = batch_contracts.materialize_ci_validation_execution_batches(
-        plan=plan,
-        request=cast("dict[str, object]", context["request"]),
-        changed_files_snapshot=cast(
-            "dict[str, object]",
-            context["changed_files_snapshot"],
-        ),
-        fact_snapshot=cast("dict[str, object]", context["fact_snapshot"]),
-        expected_run_id=batch_contracts.RUN_ID,
-        expected_run_attempt=batch_contracts.RUN_ATTEMPT,
-        created_at=batch_contracts.CREATED_AT,
-        execution_workflow="CI Validation",
+    materialization = (
+        batch_contracts.materialize_ci_validation_execution_batches(
+            plan=plan,
+            request=cast("dict[str, object]", context["request"]),
+            changed_files_snapshot=cast(
+                "dict[str, object]",
+                context["changed_files_snapshot"],
+            ),
+            fact_snapshot=cast("dict[str, object]", context["fact_snapshot"]),
+            expected_run_id=batch_contracts.RUN_ID,
+            expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+            created_at=batch_contracts.CREATED_AT,
+            execution_workflow="CI Validation",
+        )
     )
     manifest = cast("dict[str, object]", materialization.manifest)
     batches = cast("list[dict[str, object]]", manifest["batches"])
-    batch = next(
-        item for item in batches if item["runner-family"] == "windows"
-    )
+    batch = next(item for item in batches if item["runner-family"] == "windows")
     upstream_batch_id = cast("list[str]", batch["depends-on-batches"])[0]
     upstream_batch = next(
         item for item in batches if item["batch-id"] == upstream_batch_id
@@ -23582,9 +23593,7 @@ def test_windows_orchestrator_step_emits_timing_evidence(  # noqa: C901
         assert outputs["batch_selected"] == "true"
         upload_dir = Path(outputs["batch_evidence_upload_path"])
         assert upload_dir.is_dir()
-        assert (
-            outputs["batch_evidence_bundle_artifact_name"] == artifact_name
-        )
+        assert outputs["batch_evidence_bundle_artifact_name"] == artifact_name
         bundle = json.loads(
             (upload_dir / "batch-evidence-bundle.json").read_text(
                 encoding="utf-8"
@@ -29651,6 +29660,21 @@ def test_ci_validation_release_shaped_artifact_does_not_fabricate_success() -> (
         command = validation_result["commands"][0]
         assert command["builtin"] == "release-shaped-artifact"
         assert "artifact-shape-unconfirmed" in command["error"]
+        failure_profile_telemetry = {
+            "kind": "release-shaped-validation-profile-telemetry",
+            "schema-version": 1,
+            "phases": [
+                {
+                    "phase": "release-build-execute-build",
+                    "outcome": "failure",
+                    "started-at": "2026-01-01T00:00:00.000Z",
+                    "completed-at": "2026-01-01T00:00:01.000Z",
+                    "duration-ms": 1000,
+                    "error": "simulated build failure",
+                }
+            ],
+        }
+        command["profile-telemetry"] = failure_profile_telemetry
         assert (
             control._ci_validation_outcome(
                 plan,
@@ -29689,6 +29713,7 @@ def test_ci_validation_release_shaped_artifact_does_not_fabricate_success() -> (
             batch_bundle=True,
         )
         batch_detail = batch_evidence["category-result"]["detail"]
+        assert batch_detail["profile-telemetry"] == failure_profile_telemetry
         obligation_result = batch_detail["artifact-obligation-results"][0]
         assert (
             obligation_result["artifact"]["observed"]["digests"][0][
@@ -29726,6 +29751,70 @@ def test_ci_validation_release_shaped_artifact_does_not_fabricate_success() -> (
         )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_contract_allows_release_shaped_failure_profile_telemetry() -> (
+    None
+):
+    """Batch contracts admit failure profile telemetry in release-shaped detail."""
+    artifact_refs = [
+        "ci-validation/artifacts/python/example/example-1.0.0-py3-none-any.whl"
+    ]
+    plan = _release_shaped_no_publish_plan(artifact_refs)
+    diagnostics = control._ci_validation_diagnostics(
+        plan,
+        "wg-release",
+        outcome="blocking-failure",
+    )
+    fact_snapshot = _release_shaped_no_publish_fact_snapshot()
+    profile_telemetry = {
+        "kind": "release-shaped-validation-profile-telemetry",
+        "schema-version": 1,
+        "phases": [
+            {
+                "phase": "release-build-execute-build",
+                "outcome": "failure",
+                "started-at": "2026-01-01T00:00:00.000Z",
+                "completed-at": "2026-01-01T00:00:01.000Z",
+                "duration-ms": 1000,
+            }
+        ],
+    }
+    evidence = control._ci_validation_evidence(
+        plan,
+        "wg-release",
+        outcome="blocking-failure",
+        diagnostics=diagnostics,
+        validation_result={
+            "commands": [
+                {
+                    "outcome": "blocking-failure",
+                    "profile-telemetry": profile_telemetry,
+                }
+            ]
+        },
+        fact_snapshot=fact_snapshot,
+        batch_bundle=True,
+    )
+    detail = cast(
+        "Mapping[str, object]",
+        cast("Mapping[str, object]", evidence["category-result"])["detail"],
+    )
+    issues: list[object] = []
+
+    ci_validation_batch_contracts._validate_release_shaped_batch_detail(
+        detail,
+        "blocking-failure",
+        [],
+        "$.selector-results[0].evidence.category-result.detail",
+        issues,
+        selector_result={"diagnostics": diagnostics},
+        plan=plan,
+        fact_snapshot=fact_snapshot,
+    )
+
+    assert not issues
+    assert detail["profile-telemetry"] == profile_telemetry
 
 
 def test_ci_validation_release_shaped_no_publish_missing_mapping_blocks() -> (
@@ -29849,6 +29938,92 @@ def test_ci_validation_release_shaped_materializes_missing_mapping(
             output = bundle_dir / "dist/a.whl"
             output.parent.mkdir(parents=True)
             output.write_bytes(output_bytes)
+            script_path = repo_root / "script/Publish.ps1"
+            script_path.parent.mkdir(parents=True)
+            script_path.write_text("param()\n", encoding="utf-8")
+            output_root = bundle_dir / "out"
+            output_root.mkdir(parents=True)
+            fake_profile_root = bundle_dir / "_profile/runs/current-run"
+            fake_binlog = fake_profile_root / "binlogs/0001-dotnet-pack.binlog"
+            fake_binlog.parent.mkdir(parents=True)
+            fake_binlog.write_bytes(b"binlog")
+            powershell_telemetry = fake_profile_root / "powershell/publish.json"
+            powershell_telemetry.parent.mkdir(parents=True)
+            powershell_telemetry.write_text(
+                json.dumps(
+                    {
+                        "kind": "powershell-release-build-profile-telemetry",
+                        "schema-version": 1,
+                        "script": script_path.as_posix(),
+                        "phases": [
+                            {
+                                "phase": "dotnet-publish",
+                                "started-at": "2026-01-01T00:00:00.000Z",
+                                "completed-at": "2026-01-01T00:00:01.000Z",
+                                "duration-ms": 1000,
+                                "outcome": "success",
+                                "argv": [
+                                    "dotnet",
+                                    "publish",
+                                    "--output",
+                                    output_root.as_posix(),
+                                    f"/bl:{fake_binlog.as_posix()}",
+                                ],
+                                "cwd": repo_root.as_posix(),
+                                "exit-code": 0,
+                                "output-paths": [output_root.as_posix()],
+                                "binlog-directory": fake_binlog.parent.as_posix(),
+                                "binlog-path": fake_binlog.as_posix(),
+                                "binlog-paths": [fake_binlog.as_posix()],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stale_binlog = (
+                bundle_dir / "_profile/runs/stale-run/binlogs/stale.binlog"
+            )
+            stale_binlog.parent.mkdir(parents=True)
+            stale_binlog.write_bytes(b"stale")
+            (bundle_dir / "release-build-profile-telemetry.json").write_text(
+                json.dumps(
+                    {
+                        "kind": "release-build-profile-telemetry",
+                        "schema-version": 1,
+                        "profile-root": fake_profile_root.as_posix(),
+                        "phases": [
+                            {
+                                "phase": "dotnet-pack",
+                                "started-at": "2026-01-01T00:00:00.000Z",
+                                "completed-at": "2026-01-01T00:00:01.000Z",
+                                "duration-ms": 1000,
+                                "outcome": "success",
+                                "argv": [
+                                    "pwsh",
+                                    "-File",
+                                    script_path.as_posix(),
+                                    "-OutputRoot",
+                                    output_root.as_posix(),
+                                    "-TelemetryOutputPath",
+                                    powershell_telemetry.as_posix(),
+                                    "-MsBuildBinlogDirectory",
+                                    fake_binlog.parent.as_posix(),
+                                    output.as_posix(),
+                                    f"/bl:{fake_binlog.as_posix()}",
+                                ],
+                                "cwd": repo_root.as_posix(),
+                                "exit-code": 0,
+                                "output-paths": [output.as_posix()],
+                                "binlog-directory": fake_binlog.parent.as_posix(),
+                                "binlog-path": fake_binlog.as_posix(),
+                                "binlog-paths": [fake_binlog.as_posix()],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
             return {
                 "kind": "build-result",
                 "artifacts": {
@@ -29881,8 +30056,476 @@ def test_ci_validation_release_shaped_materializes_missing_mapping(
             digests[artifact_refs[0]]
             == hashlib.sha256(output_bytes).hexdigest()
         )
+        command = cast(
+            "Mapping[str, object]",
+            cast("Sequence[object]", result["commands"])[0],
+        )
+        profile_telemetry = cast(
+            "Mapping[str, object]",
+            command["profile-telemetry"],
+        )
+        assert profile_telemetry["kind"] == (
+            "release-shaped-validation-profile-telemetry"
+        )
+        top_level_phases = cast(
+            "Sequence[Mapping[str, object]]",
+            profile_telemetry["phases"],
+        )
+        assert {phase["phase"] for phase in top_level_phases} >= {
+            "release-build-execute-build",
+            "validation-build-artifact-mapping-record",
+            "artifact-digest-observation",
+        }
+        for phase in top_level_phases:
+            for key in (
+                "cwd",
+                "output-path",
+                "binlog-path",
+                "binlog-directory",
+            ):
+                value = phase.get(key)
+                if isinstance(value, str):
+                    assert not Path(value).is_absolute()
+                    assert ".." not in PurePosixPath(value).parts
+                    assert str(scratch) not in value
+            for key in ("output-paths", "binlog-paths"):
+                value = phase.get(key)
+                if isinstance(value, Sequence) and not isinstance(
+                    value,
+                    str | bytes,
+                ):
+                    for item in value:
+                        assert isinstance(item, str)
+                        assert not Path(item).is_absolute()
+                        assert ".." not in PurePosixPath(item).parts
+                        assert str(scratch) not in item
+        assert any(phase.get("cwd") == "." for phase in top_level_phases)
+        release_build = cast(
+            "Mapping[str, object]",
+            profile_telemetry["release-build"],
+        )
+        executor_telemetry = cast(
+            "Mapping[str, object]",
+            release_build["executor"],
+        )
+        assert executor_telemetry["path"].endswith(
+            "release-build-profile-telemetry.json",
+        )
+        assert not Path(cast("str", executor_telemetry["path"])).is_absolute()
+        assert not Path(
+            cast("str", executor_telemetry["profile-root"])
+        ).is_absolute()
+        executor_phase = cast(
+            "Mapping[str, object]",
+            cast("Sequence[object]", executor_telemetry["phases"])[0],
+        )
+        assert not Path(cast("str", executor_phase["cwd"])).is_absolute()
+        assert not Path(
+            cast("str", executor_phase["binlog-path"])
+        ).is_absolute()
+        executor_binlog_directory = cast(
+            "str",
+            executor_phase["binlog-directory"],
+        )
+        assert not Path(executor_binlog_directory).is_absolute()
+        assert ".." not in PurePosixPath(executor_binlog_directory).parts
+        assert str(scratch) not in executor_binlog_directory
+        assert all(
+            not Path(path).is_absolute()
+            for path in cast("Sequence[str]", executor_phase["output-paths"])
+        )
+        assert all(
+            not Path(path).is_absolute()
+            for path in cast("Sequence[str]", executor_phase["binlog-paths"])
+        )
+        uploaded_files = cast(
+            "Sequence[str]",
+            profile_telemetry["uploaded-evidence-files"],
+        )
+        uploaded_path = cast("str", profile_telemetry["uploaded-evidence-path"])
+        assert uploaded_path == "validation-result-profile-evidence"
+        assert (scratch / uploaded_path).is_dir()
+        assert not Path(uploaded_path).is_absolute()
+        assert all(not Path(path).is_absolute() for path in uploaded_files)
+        assert all((scratch / path).is_file() for path in uploaded_files)
+        assert any(
+            path.endswith("release-build-profile-telemetry.json")
+            for path in uploaded_files
+        )
+        assert any(
+            path.endswith("0001-dotnet-pack.binlog") for path in uploaded_files
+        )
+        uploaded_binlog = cast(
+            "str",
+            executor_phase["binlog-uploaded-evidence-path"],
+        )
+        assert uploaded_binlog.endswith("0001-dotnet-pack.binlog")
+        assert uploaded_binlog in uploaded_files
+        uploaded_argv = cast(
+            "Sequence[str]", executor_phase["uploaded-evidence-argv"]
+        )
+        assert any(arg == f"/bl:{uploaded_binlog}" for arg in uploaded_argv)
+        assert str(scratch) not in " ".join(uploaded_argv)
+        assert (
+            uploaded_argv[uploaded_argv.index("-File") + 1]
+            == "script/Publish.ps1"
+        )
+        output_root_arg = uploaded_argv[uploaded_argv.index("-OutputRoot") + 1]
+        assert output_root_arg.startswith(
+            ".three-ci-validation/work/validation-build/release-shaped/"
+        )
+        assert output_root_arg.endswith("/out")
+        uploaded_powershell = (
+            "validation-result-profile-evidence/_profile/runs/current-run/"
+            "powershell/publish.json"
+        )
+        assert (
+            uploaded_argv[uploaded_argv.index("-TelemetryOutputPath") + 1]
+            == uploaded_powershell
+        )
+        assert uploaded_argv[
+            uploaded_argv.index("-MsBuildBinlogDirectory") + 1
+        ] == str(PurePosixPath(uploaded_binlog).parent)
+        standalone_output_arg = next(
+            arg for arg in uploaded_argv if arg.endswith("/dist/a.whl")
+        )
+        assert standalone_output_arg.startswith(
+            ".three-ci-validation/work/validation-build/release-shaped/"
+        )
+        assert not any(path.endswith("stale.binlog") for path in uploaded_files)
+        powershell = cast(
+            "Sequence[Mapping[str, object]]",
+            release_build["powershell"],
+        )
+        powershell_path = cast("str", powershell[0]["path"])
+        assert powershell_path.startswith(
+            ".three-ci-validation/work/validation-build/release-shaped/"
+        )
+        assert powershell_path.endswith(
+            "/_profile/runs/current-run/powershell/publish.json"
+        )
+        powershell_phase = cast(
+            "Mapping[str, object]",
+            cast("Sequence[object]", powershell[0]["phases"])[0],
+        )
+        powershell_binlog_directory = cast(
+            "str",
+            powershell_phase["binlog-directory"],
+        )
+        assert not Path(powershell_binlog_directory).is_absolute()
+        assert ".." not in PurePosixPath(powershell_binlog_directory).parts
+        assert str(scratch) not in powershell_binlog_directory
+        powershell_uploaded_argv = cast(
+            "Sequence[str]",
+            powershell_phase["uploaded-evidence-argv"],
+        )
+        assert str(scratch) not in " ".join(powershell_uploaded_argv)
+        assert any(
+            arg == f"/bl:{uploaded_binlog}" for arg in powershell_uploaded_argv
+        )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_build_failure_uploads_profile_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Build failures keep failure-shaped profile telemetry and evidence files."""
+    scratch = SCRATCH / "ci-validation-release-shaped-build-failure-profile"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+
+        def fake_build_request(
+            **_kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            return {"kind": "build-request"}, {"artifact/wheel": artifact_refs}
+
+        def fake_execute_build(
+            *,
+            request: Mapping[str, object],
+            repo_root: Path,
+            bundle_dir: Path,
+        ) -> dict[str, object]:
+            assert request["kind"] == "build-request"
+            assert repo_root == scratch
+            profile_root = bundle_dir / "_profile/runs/failing-run"
+            binlog = profile_root / "binlogs/0001-dotnet-pack.binlog"
+            binlog.parent.mkdir(parents=True)
+            binlog.write_bytes(b"failure binlog")
+            (bundle_dir / "release-build-profile-telemetry.json").write_text(
+                json.dumps(
+                    {
+                        "kind": "release-build-profile-telemetry",
+                        "schema-version": 1,
+                        "profile-root": profile_root.as_posix(),
+                        "phases": [
+                            {
+                                "phase": "dotnet-pack",
+                                "started-at": "2026-01-01T00:00:00.000Z",
+                                "completed-at": "2026-01-01T00:00:01.000Z",
+                                "duration-ms": 1000,
+                                "outcome": "failure",
+                                "argv": [
+                                    "dotnet",
+                                    "pack",
+                                    f"/bl:{binlog.as_posix()}",
+                                ],
+                                "cwd": repo_root.as_posix(),
+                                "exit-code": 1,
+                                "binlog-path": binlog.as_posix(),
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            msg = "simulated validation build failure"
+            raise ValueError(msg)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fake_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fake_execute_build,
+        )
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        command = cast(
+            "Mapping[str, object]",
+            cast("Sequence[object]", result["commands"])[0],
+        )
+        assert command["outcome"] == "blocking-failure"
+        assert "simulated validation build failure" in str(command["error"])
+        profile_telemetry = cast(
+            "Mapping[str, object]",
+            command["profile-telemetry"],
+        )
+        assert profile_telemetry["kind"] == (
+            "release-shaped-validation-profile-telemetry"
+        )
+        phases = cast(
+            "Sequence[Mapping[str, object]]", profile_telemetry["phases"]
+        )
+        assert any(
+            phase["phase"] == "release-build-execute-build"
+            and phase["outcome"] == "failure"
+            for phase in phases
+        )
+        release_build = cast(
+            "Mapping[str, object]",
+            profile_telemetry["release-build"],
+        )
+        executor_telemetry = cast(
+            "Mapping[str, object]",
+            release_build["executor"],
+        )
+        executor_phases = cast(
+            "Sequence[Mapping[str, object]]",
+            executor_telemetry["phases"],
+        )
+        assert executor_phases[0]["outcome"] == "failure"
+        assert not Path(
+            cast("str", executor_phases[0]["binlog-path"])
+        ).is_absolute()
+        uploaded_path = cast("str", profile_telemetry["uploaded-evidence-path"])
+        uploaded_files = cast(
+            "Sequence[str]",
+            profile_telemetry["uploaded-evidence-files"],
+        )
+        assert uploaded_path == "validation-result-profile-evidence"
+        assert (scratch / uploaded_path).is_dir()
+        assert all(not Path(path).is_absolute() for path in uploaded_files)
+        assert all((scratch / path).is_file() for path in uploaded_files)
+        assert any(
+            path.endswith("release-build-profile-telemetry.json")
+            for path in uploaded_files
+        )
+        assert any(
+            path.endswith("0001-dotnet-pack.binlog") for path in uploaded_files
+        )
+        uploaded_binlog = cast(
+            "str",
+            executor_phases[0]["binlog-uploaded-evidence-path"],
+        )
+        assert uploaded_binlog in uploaded_files
+        uploaded_argv = cast(
+            "Sequence[str]",
+            executor_phases[0]["uploaded-evidence-argv"],
+        )
+        assert any(arg == f"/bl:{uploaded_binlog}" for arg in uploaded_argv)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_profile_argv_normalizes_prefixed_path_switches(
+    tmp_path: Path,
+) -> None:
+    """Profile argv normalization handles path payloads inside switch tokens."""
+    repo_root = tmp_path / "repo"
+    bundle_dir = repo_root / ".three-ci-validation/work/validation-build"
+    bundle_dir.mkdir(parents=True)
+    normalized = control._ci_normalize_profile_telemetry_paths(
+        {
+            "argv": [
+                "dotnet",
+                f"--output={bundle_dir / 'out'}",
+                f"-o:{bundle_dir / 'short-out'}",
+                f"@{repo_root / 'args.rsp'}",
+                "ISCC.exe",
+                f"/O{bundle_dir / 'installer'}",
+                f"/DPublishDir={bundle_dir / 'publish'}",
+            ],
+        },
+        repo_root=repo_root,
+        bundle_dir=bundle_dir,
+    )
+
+    argv = cast(
+        "Sequence[str]", cast("Mapping[str, object]", normalized)["argv"]
+    )
+    assert argv == [
+        "dotnet",
+        "--output=.three-ci-validation/work/validation-build/out",
+        "-o:.three-ci-validation/work/validation-build/short-out",
+        "@args.rsp",
+        "ISCC.exe",
+        "/O.three-ci-validation/work/validation-build/installer",
+        "/DPublishDir=.three-ci-validation/work/validation-build/publish",
+    ]
+
+
+def test_ci_profile_argv_normalizes_msbuild_binlog_payload_paths(
+    tmp_path: Path,
+) -> None:
+    """Profile argv normalization handles MSBuild binary logger payloads."""
+    repo_root = tmp_path / "repo"
+    bundle_dir = repo_root / ".three-ci-validation/work/validation-build"
+    binlog_dir = bundle_dir / "_profile/runs/run-1/binlogs"
+    binlog_dir.mkdir(parents=True)
+    binlogs = [
+        binlog_dir / "0001-dotnet-pack.binlog",
+        binlog_dir / "0002-dotnet-pack.binlog",
+        binlog_dir / "0003-dotnet-pack.binlog",
+        binlog_dir / "0004-dotnet-pack.binlog",
+        binlog_dir / "0005-dotnet-pack.binlog",
+    ]
+    normalized_binlogs = [
+        PurePosixPath(
+            ".three-ci-validation/work/validation-build/"
+            f"_profile/runs/run-1/binlogs/{path.name}",
+        ).as_posix()
+        for path in binlogs
+    ]
+
+    normalized = control._ci_normalize_profile_telemetry_paths(
+        {
+            "argv": [
+                "dotnet",
+                f"/bl:LogFile={binlogs[0].as_posix()};ProjectImports=None",
+                f'/bl:LogFile="{binlogs[1].as_posix()}";ProjectImports=None',
+                f'/bl:"{binlogs[2].as_posix()}"',
+                f"/bl:ProjectImports=None;{binlogs[3].as_posix()}",
+                f"/binaryLogger:{binlogs[4].as_posix()}",
+                "-binaryLogger:ProjectImports=None",
+            ],
+        },
+        repo_root=repo_root,
+        bundle_dir=bundle_dir,
+    )
+
+    argv = cast(
+        "Sequence[str]", cast("Mapping[str, object]", normalized)["argv"]
+    )
+    assert argv == [
+        "dotnet",
+        f"/bl:LogFile={normalized_binlogs[0]};ProjectImports=None",
+        f'/bl:LogFile="{normalized_binlogs[1]}";ProjectImports=None',
+        f'/bl:"{normalized_binlogs[2]}"',
+        f"/bl:ProjectImports=None;{normalized_binlogs[3]}",
+        f"/binaryLogger:{normalized_binlogs[4]}",
+        "-binaryLogger:ProjectImports=None",
+    ]
+
+
+def test_ci_uploaded_profile_argv_aliases_prefixed_path_switches() -> None:
+    """Uploaded argv aliasing handles response-file and ISCC path switches."""
+    aliases = {
+        "build/out": "validation-result-profile-evidence/build/out",
+        "build/publish": "validation-result-profile-evidence/build/publish",
+        "args.rsp": "validation-result-profile-evidence/args.rsp",
+    }
+
+    uploaded_argv = control._ci_uploaded_profile_argv_alias_sequence(
+        [
+            "ISCC.exe",
+            "/Obuild/out",
+            "/DPublishDir=build/publish",
+            "@args.rsp",
+        ],
+        aliases,
+    )
+
+    assert uploaded_argv == [
+        "ISCC.exe",
+        "/Ovalidation-result-profile-evidence/build/out",
+        "/DPublishDir=validation-result-profile-evidence/build/publish",
+        "@validation-result-profile-evidence/args.rsp",
+    ]
+
+
+def test_ci_uploaded_profile_argv_aliases_msbuild_binlog_payload_paths() -> (
+    None
+):
+    """Uploaded argv aliasing handles MSBuild binary logger payload paths."""
+    source_binlogs = [
+        f"/scratch/profile/binlogs/000{index}-dotnet-pack.binlog"
+        for index in range(1, 6)
+    ]
+    uploaded_binlogs = [
+        (
+            "validation-result-profile-evidence/_profile/runs/run-1/"
+            f"binlogs/000{index}-dotnet-pack.binlog"
+        )
+        for index in range(1, 6)
+    ]
+    aliases = dict(zip(source_binlogs, uploaded_binlogs, strict=True))
+
+    uploaded_argv = control._ci_uploaded_profile_argv_alias_sequence(
+        [
+            "dotnet",
+            f"/bl:LogFile={source_binlogs[0]};ProjectImports=None",
+            f'/bl:LogFile="{source_binlogs[1]}";ProjectImports=None',
+            f'/bl:"{source_binlogs[2]}"',
+            f"/bl:ProjectImports=None;{source_binlogs[3]}",
+            f"/binaryLogger:{source_binlogs[4]}",
+            "-binaryLogger:ProjectImports=None",
+        ],
+        aliases,
+    )
+
+    assert uploaded_argv == [
+        "dotnet",
+        f"/bl:LogFile={uploaded_binlogs[0]};ProjectImports=None",
+        f'/bl:LogFile="{uploaded_binlogs[1]}";ProjectImports=None',
+        f'/bl:"{uploaded_binlogs[2]}"',
+        f"/bl:ProjectImports=None;{uploaded_binlogs[3]}",
+        f"/binaryLogger:{uploaded_binlogs[4]}",
+        "-binaryLogger:ProjectImports=None",
+    ]
 
 
 def test_ci_validation_materialization_matches_descriptor_handle() -> None:

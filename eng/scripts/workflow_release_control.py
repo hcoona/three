@@ -28,6 +28,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 from collections.abc import (
+    Callable,
     Collection,
     Iterable,
     Mapping,
@@ -44,6 +45,81 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _GITHUB_ATTESTATION_PREDICATE = "https://slsa.dev/provenance/v1"
 _CI_TIMING_DURATION_TOLERANCE_MS = 1000
 _CI_ORCHESTRATOR_TIMING_SIDECAR_NAME = "orchestrator-step-timing.json"
+_CI_PROFILE_PATH_KEYS = frozenset(
+    {
+        "binlog-directory",
+        "binlog-path",
+        "binlog-uploaded-evidence-path",
+        "bundle-dir",
+        "cwd",
+        "output-path",
+        "path",
+        "profile-root",
+        "script",
+        "uploaded-evidence-path",
+    }
+)
+_CI_PROFILE_PATH_SEQUENCE_KEYS = frozenset(
+    {
+        "binlog-paths",
+        "binlog-uploaded-evidence-paths",
+        "output-paths",
+        "uploaded-evidence-files",
+    }
+)
+_CI_PROFILE_ARGV_KEYS = frozenset({"argv", "uploaded-evidence-argv"})
+_CI_MSBUILD_BINLOG_ARG_RE = re.compile(
+    r"(?i)^(?P<prefix>/bl:|-bl:|/binaryLogger:|-binaryLogger:)"
+    r"(?P<payload>.+)$",
+)
+_CI_PROFILE_ARGV_PATH_VALUE_SWITCHES = frozenset(
+    {
+        "--output",
+        "-o",
+        "-file",
+        "-msbuildbinlogdirectory",
+        "-outputroot",
+        "-telemetryoutputpath",
+        "/o",
+    }
+)
+_CI_PROFILE_ARGV_PATH_ASSIGNMENT_RE = re.compile(
+    r"(?i)^"
+    r"(?P<switch>--output|-o|-file|-msbuildbinlogdirectory|"
+    r"-outputroot|-telemetryoutputpath|/o)"
+    r"(?P<separator>[:=])"
+    r"(?P<path>.+)$",
+)
+_CI_PROFILE_ARGV_PATH_PREFIX_RE = re.compile(r"^(?P<prefix>@|/O)(?P<path>.+)$")
+_CI_PROFILE_ARGV_PATH_DEFINITION_RE = re.compile(
+    r"(?i)^(?P<prefix>/DPublishDir=)(?P<path>.+)$",
+)
+_CI_QUOTED_PROFILE_PATH_MIN_LENGTH = 2
+_CI_PROFILE_POSIX_SINGLE_COMPONENT_ABSOLUTE_PATHS = frozenset(
+    {
+        "/bin",
+        "/boot",
+        "/dev",
+        "/etc",
+        "/home",
+        "/lib",
+        "/lib64",
+        "/media",
+        "/mnt",
+        "/opt",
+        "/proc",
+        "/root",
+        "/run",
+        "/sbin",
+        "/srv",
+        "/sys",
+        "/" + "tmp",
+        "/usr",
+        "/var",
+        "/work",
+        "/workspace",
+    },
+)
 for _WORKSPACE_SRC in (
     _REPO_ROOT / "src/public/lib/three-workflow-release-contracts/src",
     _REPO_ROOT / "src/public/lib/three-workflow-release-planner/src",
@@ -158,6 +234,12 @@ _CiOrchestratorDependencyAdmission = tuple[
     str | None,
 ]
 _CiOrchestratorDependencyReadiness = tuple[bool, bool, str | None]
+
+
+class _CiReleaseShapedBuildError(ValueError):
+    def __init__(self, message: str, profile_telemetry: Json) -> None:
+        self.profile_telemetry = profile_telemetry
+        super().__init__(message)
 
 
 class _TrustedDependencyBundle(dict[str, object]):
@@ -2628,6 +2710,11 @@ def _cmd_run_ci_validation_commands(args: argparse.Namespace) -> int:
         "commands": command_results,
         "timing": _ci_timing_finish(work_group_timing),
     }
+    _ci_attach_uploaded_release_profile_evidence(
+        result,
+        result_path=Path(args.result_out),
+        repo_root=Path(args.repo_root),
+    )
     _write_json(Path(args.result_out), result)
     _write_outputs(
         args.github_output,
@@ -3222,7 +3309,17 @@ def _cmd_run_ci_validation_runner_family_orchestrator_step(  # noqa: PLR0915
     )
     shutil.copy2(bundle_path, upload_dir / "batch-evidence-bundle.json")
     for result_path in validation_result_paths:
-        shutil.copy2(result_path, upload_dir / Path(result_path).name)
+        source_result = Path(result_path)
+        shutil.copy2(source_result, upload_dir / source_result.name)
+        profile_evidence_dir = _ci_release_profile_evidence_dir_for_result(
+            source_result,
+        )
+        if profile_evidence_dir.is_dir():
+            shutil.copytree(
+                profile_evidence_dir,
+                upload_dir / profile_evidence_dir.name,
+                dirs_exist_ok=True,
+            )
     _write_json(
         _ci_orchestrator_ran_state_path(state_dir, batch_id),
         {
@@ -5859,7 +5956,7 @@ def _ci_tooling_builtin_outcome(
     return "success", None
 
 
-def _ci_release_shaped_artifact_builtin_outcome(  # noqa: PLR0911
+def _ci_release_shaped_artifact_builtin_outcome(  # noqa: C901, PLR0911
     plan: Json | None,
     assignments: Json | None,
     changed_files_snapshot: Json | None,
@@ -5922,6 +6019,12 @@ def _ci_release_shaped_artifact_builtin_outcome(  # noqa: PLR0911
         )
         if no_publish is not None:
             return "success", None, no_publish
+    except _CiReleaseShapedBuildError as exc:
+        return (
+            "blocking-failure",
+            str(exc),
+            {"profile-telemetry": exc.profile_telemetry},
+        )
     except (KeyError, TypeError, ValueError) as exc:
         return "blocking-failure", str(exc), {}
     return (
@@ -5946,27 +6049,56 @@ def _ci_no_publish_release_shaped_artifact_evidence(
         for obligation in obligations
         for ref in _ci_artifact_expected_refs(obligation)
     ]
+    profile_phases: list[Json] = []
+    mapping_timing = _ci_timing_start()
     mapping_present, output_by_ref = (
         _ci_declared_validation_build_output_mapping(
             repo_root=repo_root,
             expected_refs=expected_refs,
         )
     )
+    _ci_profile_phase_record(
+        profile_phases,
+        "validation-build-output-mapping-initial",
+        mapping_timing,
+        outcome="success",
+        cwd=repo_root,
+    )
+    validation_build_bundle_dir: Path | None = None
     if output_by_ref is None or not set(expected_refs).issubset(output_by_ref):
         if mapping_present and output_by_ref is None:
             return None
-        _ci_materialize_no_publish_release_shaped_artifacts(
-            plan=plan,
-            obligations=obligations,
-            observed_commit_sha=observed_commit_sha,
-            repo_root=repo_root,
+        validation_build_bundle_dir = (
+            _ci_materialize_no_publish_release_shaped_artifacts(
+                plan=plan,
+                obligations=obligations,
+                observed_commit_sha=observed_commit_sha,
+                repo_root=repo_root,
+                profile_phases=profile_phases,
+            )
         )
+        mapping_timing = _ci_timing_start()
         output_by_ref = _ci_validation_build_outputs_by_artifact_ref(
             repo_root=repo_root,
             expected_refs=expected_refs,
         )
+        _ci_profile_phase_record(
+            profile_phases,
+            "validation-build-output-mapping-after-materialization",
+            mapping_timing,
+            outcome="success" if output_by_ref is not None else "failure",
+            cwd=repo_root,
+        )
         if output_by_ref is None:
             return None
+    release_build_telemetry = (
+        _ci_release_build_profile_telemetry(
+            validation_build_bundle_dir,
+            repo_root=repo_root,
+        )
+        if validation_build_bundle_dir is not None
+        else None
+    )
     digest_entries: list[Json] = []
     results: list[Json] = []
     for obligation in obligations:
@@ -5983,10 +6115,20 @@ def _ci_no_publish_release_shaped_artifact_evidence(
         observed_digests: list[Json] = []
         for artifact_ref in refs:
             output = output_by_ref[artifact_ref]
+            digest_timing = _ci_timing_start()
             digest_entry = _ci_validation_build_digest_entry(
                 artifact_ref=artifact_ref,
                 path=output,
                 repo_root=repo_root,
+            )
+            _ci_profile_phase_record(
+                profile_phases,
+                "artifact-digest-observation",
+                digest_timing,
+                outcome="success",
+                cwd=repo_root,
+                artifact_ref=artifact_ref,
+                output_path=output,
             )
             observed_digests.append(
                 {
@@ -6026,6 +6168,11 @@ def _ci_no_publish_release_shaped_artifact_evidence(
                 "diagnostics": [],
             }
         )
+    profile_telemetry = _ci_release_shaped_profile_telemetry(
+        profile_phases,
+        release_build_telemetry=release_build_telemetry,
+        repo_root=repo_root,
+    )
     return {
         "evidence-source": "no-publish-validation",
         "source-proof": {
@@ -6039,6 +6186,7 @@ def _ci_no_publish_release_shaped_artifact_evidence(
             ),
         },
         "artifact-obligation-results": results,
+        "profile-telemetry": profile_telemetry,
     }
 
 
@@ -6064,7 +6212,8 @@ def _ci_materialize_no_publish_release_shaped_artifacts(
     obligations: Sequence[Mapping[str, object]],
     observed_commit_sha: str,
     repo_root: Path,
-) -> None:
+    profile_phases: list[Json] | None = None,
+) -> Path | None:
     build = _ci_no_publish_release_shaped_build_request(
         plan=plan,
         obligations=obligations,
@@ -6072,7 +6221,7 @@ def _ci_materialize_no_publish_release_shaped_artifacts(
         repo_root=repo_root,
     )
     if build is None:
-        return
+        return None
     request, artifact_refs_by_build_id = build
     request_digest = hashlib.sha256(
         json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
@@ -6085,17 +6234,96 @@ def _ci_materialize_no_publish_release_shaped_artifacts(
         / "release-shaped"
         / request_digest
     )
-    result = _ci_execute_no_publish_release_shaped_build(
-        request=request,
-        repo_root=repo_root,
-        bundle_dir=bundle_dir,
+    execute_timing = _ci_timing_start()
+    try:
+        result = _ci_execute_no_publish_release_shaped_build(
+            request=request,
+            repo_root=repo_root,
+            bundle_dir=bundle_dir,
+        )
+    except ValueError as exc:
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-build-execute-build",
+            execute_timing,
+            outcome="failure",
+            cwd=repo_root,
+            output_path=bundle_dir,
+            error=str(exc),
+        )
+        release_build_telemetry = _ci_release_build_profile_telemetry(
+            bundle_dir,
+            repo_root=repo_root,
+        )
+        raise _CiReleaseShapedBuildError(
+            str(exc),
+            _ci_release_shaped_profile_telemetry(
+                profile_phases,
+                release_build_telemetry=release_build_telemetry,
+                repo_root=repo_root,
+            ),
+        ) from exc
+    _ci_profile_phase_record(
+        profile_phases,
+        "release-build-execute-build",
+        execute_timing,
+        outcome="success",
+        cwd=repo_root,
+        output_path=bundle_dir,
     )
-    _ci_record_validation_build_result_artifacts(
-        repo_root=repo_root,
-        bundle_dir=bundle_dir,
-        result=result,
-        artifact_refs_by_build_id=artifact_refs_by_build_id,
+    record_timing = _ci_timing_start()
+    try:
+        _ci_record_validation_build_result_artifacts(
+            repo_root=repo_root,
+            bundle_dir=bundle_dir,
+            result=result,
+            artifact_refs_by_build_id=artifact_refs_by_build_id,
+        )
+    except (OSError, KeyError, TypeError, ValueError) as exc:
+        mapping_path = (
+            repo_root
+            / ".three-ci-validation"
+            / "work"
+            / "validation-build-artifacts.json"
+        )
+        _ci_profile_phase_record(
+            profile_phases,
+            "validation-build-artifact-mapping-record",
+            record_timing,
+            outcome="failure",
+            cwd=repo_root,
+            output_path=mapping_path,
+            error=str(exc),
+        )
+        release_build_telemetry = _ci_release_build_profile_telemetry(
+            bundle_dir,
+            repo_root=repo_root,
+        )
+        failure_message = (
+            f"release-shaped validation build materialization failed: {exc}"
+        )
+        raise _CiReleaseShapedBuildError(
+            failure_message,
+            _ci_release_shaped_profile_telemetry(
+                profile_phases,
+                release_build_telemetry=release_build_telemetry,
+                repo_root=repo_root,
+            ),
+        ) from exc
+    _ci_profile_phase_record(
+        profile_phases,
+        "validation-build-artifact-mapping-record",
+        record_timing,
+        outcome="success",
+        cwd=repo_root,
+        output_path=(
+            repo_root
+            / ".three-ci-validation"
+            / "work"
+            / "validation-build-artifacts.json"
+        ),
     )
+    return bundle_dir
 
 
 def _ci_no_publish_release_shaped_build_request(  # noqa: PLR0911
@@ -22393,6 +22621,474 @@ def _ci_attach_timing(
     return timed
 
 
+def _ci_profile_phase_record(
+    phases: list[Json] | None,
+    phase: str,
+    start: tuple[datetime, int],
+    *,
+    outcome: str,
+    cwd: Path | None = None,
+    artifact_ref: str | None = None,
+    output_path: Path | None = None,
+    error: str | None = None,
+) -> None:
+    if phases is None:
+        return
+    record: Json = {
+        "phase": phase,
+        "outcome": outcome,
+        **_ci_timing_finish(start),
+    }
+    if cwd is not None:
+        record["cwd"] = cwd.as_posix()
+    if artifact_ref is not None:
+        record["artifact-ref"] = artifact_ref
+    if output_path is not None:
+        record["output-path"] = output_path.as_posix()
+    if error is not None:
+        record["error"] = error
+    phases.append(record)
+
+
+def _ci_release_shaped_profile_telemetry(
+    profile_phases: Sequence[Mapping[str, object]] | None,
+    *,
+    release_build_telemetry: Mapping[str, object] | None,
+    repo_root: Path,
+) -> Json:
+    profile_telemetry: Json = {
+        "kind": "release-shaped-validation-profile-telemetry",
+        "schema-version": 1,
+        "phases": [
+            _ci_normalize_top_level_profile_phase_paths(
+                phase,
+                repo_root=repo_root,
+            )
+            for phase in profile_phases or ()
+        ],
+    }
+    if release_build_telemetry is not None:
+        profile_telemetry["release-build"] = dict(release_build_telemetry)
+    return profile_telemetry
+
+
+def _ci_normalize_top_level_profile_phase_paths(
+    phase: Mapping[str, object],
+    *,
+    repo_root: Path,
+) -> Json:
+    normalized: Json = dict(phase)
+    for key in ("cwd", "output-path", "binlog-path", "binlog-directory"):
+        value = normalized.get(key)
+        if isinstance(value, str):
+            normalized[key] = _ci_normalize_top_level_profile_phase_path(
+                value,
+                repo_root=repo_root,
+            )
+    for key in ("output-paths", "binlog-paths"):
+        value = normalized.get(key)
+        if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+            normalized[key] = [
+                _ci_normalize_top_level_profile_phase_path(
+                    item,
+                    repo_root=repo_root,
+                )
+                if isinstance(item, str)
+                else item
+                for item in value
+            ]
+    return normalized
+
+
+def _ci_normalize_top_level_profile_phase_path(
+    value: str,
+    *,
+    repo_root: Path,
+) -> str:
+    path = Path(value)
+    if path.is_absolute():
+        return _ci_profile_relative_path(path, repo_root)
+    return PurePosixPath(value.replace("\\", "/")).as_posix()
+
+
+def _ci_release_build_profile_telemetry(
+    bundle_dir: Path | None,
+    *,
+    repo_root: Path,
+) -> Json | None:
+    if bundle_dir is None:
+        return None
+    telemetry_path = bundle_dir / "release-build-profile-telemetry.json"
+    telemetry = _read_optional_mapping_json(telemetry_path)
+    powershell_telemetry: list[Json] = []
+    profile_root = _ci_release_build_profile_root(
+        bundle_dir,
+        telemetry,
+        repo_root=repo_root,
+    )
+    powershell_dir = (
+        profile_root / "powershell" if profile_root is not None else None
+    )
+    if powershell_dir is not None and powershell_dir.is_dir():
+        for path in sorted(powershell_dir.glob("*.json")):
+            payload = _read_optional_mapping_json(path)
+            if payload is None:
+                continue
+            payload = dict(payload)
+            payload["path"] = _ci_profile_relative_path(path, repo_root)
+            payload = cast(
+                "Json",
+                _ci_normalize_profile_telemetry_paths(
+                    payload,
+                    repo_root=repo_root,
+                    bundle_dir=bundle_dir,
+                ),
+            )
+            powershell_telemetry.append(payload)
+    if telemetry is None and not powershell_telemetry:
+        return None
+    result: Json = {
+        "bundle-dir": _ci_profile_relative_path(bundle_dir, repo_root),
+    }
+    if profile_root is not None:
+        result["profile-root"] = _ci_profile_relative_path(
+            profile_root,
+            repo_root,
+        )
+    if telemetry is not None:
+        executor_telemetry = {
+            **dict(telemetry),
+            "path": _ci_profile_relative_path(telemetry_path, repo_root),
+        }
+        result["executor"] = _ci_normalize_profile_telemetry_paths(
+            executor_telemetry,
+            repo_root=repo_root,
+            bundle_dir=bundle_dir,
+        )
+    if powershell_telemetry:
+        result["powershell"] = powershell_telemetry
+    return result
+
+
+def _ci_release_build_profile_root(
+    bundle_dir: Path,
+    telemetry: Mapping[str, object] | None,
+    *,
+    repo_root: Path,
+) -> Path | None:
+    if telemetry is not None:
+        profile_root = telemetry.get("profile-root")
+        if isinstance(profile_root, str) and profile_root:
+            path = Path(profile_root)
+            if not path.is_absolute():
+                repo_relative_path = repo_root / path
+                path = (
+                    repo_relative_path
+                    if repo_relative_path.is_dir()
+                    else bundle_dir / path
+                )
+            if path.is_dir():
+                return path
+    legacy_profile = bundle_dir / "_profile"
+    return legacy_profile if legacy_profile.is_dir() else None
+
+
+def _read_optional_mapping_json(path: Path) -> Mapping[str, object] | None:
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, Mapping) else None
+
+
+def _ci_profile_relative_path(path: Path, repo_root: Path) -> str:
+    try:
+        return path.resolve().relative_to(repo_root.resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _ci_normalize_profile_telemetry_paths(
+    value: object,
+    *,
+    repo_root: Path,
+    bundle_dir: Path,
+) -> object:
+    if isinstance(value, Mapping):
+        normalized: Json = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if key_text in _CI_PROFILE_PATH_KEYS and isinstance(item, str):
+                normalized[key_text] = _ci_normalize_profile_path_text(
+                    item,
+                    repo_root=repo_root,
+                    bundle_dir=bundle_dir,
+                )
+            elif key_text in _CI_PROFILE_PATH_SEQUENCE_KEYS:
+                normalized[key_text] = _ci_normalize_profile_path_sequence(
+                    item,
+                    repo_root=repo_root,
+                    bundle_dir=bundle_dir,
+                )
+            elif key_text in _CI_PROFILE_ARGV_KEYS:
+                normalized[key_text] = _ci_normalize_profile_argv_sequence(
+                    item,
+                    repo_root=repo_root,
+                    bundle_dir=bundle_dir,
+                )
+            else:
+                normalized[key_text] = _ci_normalize_profile_telemetry_paths(
+                    item,
+                    repo_root=repo_root,
+                    bundle_dir=bundle_dir,
+                )
+        return normalized
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        return [
+            _ci_normalize_profile_telemetry_paths(
+                item,
+                repo_root=repo_root,
+                bundle_dir=bundle_dir,
+            )
+            for item in value
+        ]
+    return value
+
+
+def _ci_normalize_profile_path_sequence(
+    value: object,
+    *,
+    repo_root: Path,
+    bundle_dir: Path,
+) -> object:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        return value
+    return [
+        _ci_normalize_profile_path_text(
+            item,
+            repo_root=repo_root,
+            bundle_dir=bundle_dir,
+        )
+        if isinstance(item, str)
+        else _ci_normalize_profile_telemetry_paths(
+            item,
+            repo_root=repo_root,
+            bundle_dir=bundle_dir,
+        )
+        for item in value
+    ]
+
+
+def _ci_normalize_profile_argv_sequence(
+    value: object,
+    *,
+    repo_root: Path,
+    bundle_dir: Path,
+) -> object:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        return value
+    normalized: list[object] = []
+    path_value_expected = False
+    for item in value:
+        if not isinstance(item, str):
+            normalized.append(item)
+            path_value_expected = False
+            continue
+        if path_value_expected:
+            normalized.append(
+                _ci_normalize_profile_path_text(
+                    item,
+                    repo_root=repo_root,
+                    bundle_dir=bundle_dir,
+                )
+            )
+            path_value_expected = False
+            continue
+        normalized.append(
+            _ci_normalize_profile_argv_text(
+                item,
+                repo_root=repo_root,
+                bundle_dir=bundle_dir,
+            )
+        )
+        path_value_expected = _ci_profile_argv_switch_expects_path_value(item)
+    return normalized
+
+
+def _ci_normalize_profile_argv_text(
+    value: str,
+    *,
+    repo_root: Path,
+    bundle_dir: Path,
+) -> str:
+    match = _CI_MSBUILD_BINLOG_ARG_RE.match(value)
+    if match is not None:
+        payload = _ci_rewrite_msbuild_binlog_payload_paths(
+            match.group("payload"),
+            lambda path: _ci_normalize_profile_path_text(
+                path,
+                repo_root=repo_root,
+                bundle_dir=bundle_dir,
+            ),
+        )
+        return f"{match.group('prefix')}{payload}"
+    assignment = _CI_PROFILE_ARGV_PATH_ASSIGNMENT_RE.match(value)
+    if assignment is not None:
+        return (
+            f"{assignment.group('switch')}{assignment.group('separator')}"
+            f"{_ci_normalize_profile_path_text(assignment.group('path'), repo_root=repo_root, bundle_dir=bundle_dir)}"
+        )
+    definition = _CI_PROFILE_ARGV_PATH_DEFINITION_RE.match(value)
+    if definition is not None:
+        return (
+            f"{definition.group('prefix')}"
+            f"{_ci_normalize_profile_path_text(definition.group('path'), repo_root=repo_root, bundle_dir=bundle_dir)}"
+        )
+    prefixed = _CI_PROFILE_ARGV_PATH_PREFIX_RE.match(value)
+    if prefixed is not None:
+        return (
+            f"{prefixed.group('prefix')}"
+            f"{_ci_normalize_profile_path_text(prefixed.group('path'), repo_root=repo_root, bundle_dir=bundle_dir)}"
+        )
+    standalone = _ci_normalize_profile_standalone_argv_path(
+        value,
+        repo_root=repo_root,
+        bundle_dir=bundle_dir,
+    )
+    return value if standalone is None else standalone
+
+
+def _ci_profile_argv_switch_expects_path_value(value: str) -> bool:
+    return value.lower() in _CI_PROFILE_ARGV_PATH_VALUE_SWITCHES
+
+
+def _ci_rewrite_msbuild_binlog_payload_paths(
+    value: str,
+    rewrite_path: Callable[[str], str | None],
+) -> str:
+    rewritten: list[str] = []
+    for index, item in enumerate(value.split(";")):
+        name, separator, property_value = item.partition("=")
+        if separator and name.lower() == "logfile":
+            rewritten_path = _ci_rewrite_msbuild_binlog_path_text(
+                property_value,
+                rewrite_path,
+            )
+            rewritten.append(f"{name}{separator}{rewritten_path}")
+            continue
+        if separator or not item:
+            rewritten.append(item)
+            continue
+        unquoted = _ci_trim_msbuild_binlog_path_quotes(item)
+        if index == 0 or _ci_msbuild_binlog_payload_item_looks_path_bearing(
+            unquoted,
+        ):
+            rewritten.append(
+                _ci_rewrite_msbuild_binlog_path_text(item, rewrite_path),
+            )
+        else:
+            rewritten.append(item)
+    return ";".join(rewritten)
+
+
+def _ci_rewrite_msbuild_binlog_path_text(
+    value: str,
+    rewrite_path: Callable[[str], str | None],
+) -> str:
+    quote = ""
+    path_text = value
+    if (
+        len(value) >= _CI_QUOTED_PROFILE_PATH_MIN_LENGTH
+        and value[0] == value[-1]
+        and value[0] in {"'", '"'}
+    ):
+        quote = value[0]
+        path_text = value[1:-1]
+    rewritten = rewrite_path(path_text)
+    if rewritten is None:
+        return value
+    return f"{quote}{rewritten}{quote}"
+
+
+def _ci_trim_msbuild_binlog_path_quotes(value: str) -> str:
+    if (
+        len(value) >= _CI_QUOTED_PROFILE_PATH_MIN_LENGTH
+        and value[0] == value[-1]
+        and value[0] in {"'", '"'}
+    ):
+        return value[1:-1]
+    return value
+
+
+def _ci_msbuild_binlog_payload_item_looks_path_bearing(value: str) -> bool:
+    if (
+        not value
+        or "://" in value
+        or any(character in value for character in "*?[]")
+    ):
+        return False
+    if value.startswith(("//", "\\\\")):
+        return True
+    if re.match(r"^[A-Za-z]:[\\/]", value):
+        return True
+    if value.startswith("/"):
+        remainder = value[1:]
+        slash_positions = [
+            position
+            for position in (remainder.find("/"), remainder.find("\\"))
+            if position != -1
+        ]
+        first_slash = min(slash_positions, default=-1)
+        option_marker = remainder.find(":")
+        return (
+            first_slash != -1
+            and (option_marker == -1 or option_marker > first_slash)
+        ) or value in _CI_PROFILE_POSIX_SINGLE_COMPONENT_ABSOLUTE_PATHS
+    return "/" in value or "\\" in value
+
+
+def _ci_normalize_profile_standalone_argv_path(
+    value: str,
+    *,
+    repo_root: Path,
+    bundle_dir: Path,
+) -> str | None:
+    if not value:
+        return None
+    path = Path(value)
+    if path.is_absolute():
+        for root in (repo_root, bundle_dir):
+            with suppress(OSError, ValueError):
+                return path.resolve().relative_to(root.resolve()).as_posix()
+        return None
+    if "\\" not in value and "/" not in value:
+        return None
+    if "://" in value or any(character in value for character in "*?[]"):
+        return None
+    return PurePosixPath(value.replace("\\", "/")).as_posix()
+
+
+def _ci_normalize_profile_path_text(
+    value: str,
+    *,
+    repo_root: Path,
+    bundle_dir: Path,
+) -> str:
+    if not value:
+        return value
+    path = Path(value)
+    if path.is_absolute():
+        for root in (repo_root, bundle_dir):
+            try:
+                return path.resolve().relative_to(root.resolve()).as_posix()
+            except (OSError, ValueError):
+                continue
+        return path.as_posix()
+    return PurePosixPath(value.replace("\\", "/")).as_posix()
+
+
 def _ci_validation_result_timing(
     validation_result: Mapping[str, object] | None,
 ) -> object:
@@ -22436,9 +23132,13 @@ def _ci_validation_command_timing(command: Mapping[str, object]) -> object:
 
 
 def _utc_timestamp_milliseconds(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat(timespec="milliseconds").replace(
-        "+00:00",
-        "Z",
+    return (
+        value.astimezone(UTC)
+        .isoformat(timespec="milliseconds")
+        .replace(
+            "+00:00",
+            "Z",
+        )
     )
 
 
@@ -23567,7 +24267,7 @@ def _ci_validation_evidence(
     if batch_bundle:
         category_result["category"] = category
         if category == "release-shaped-artifact" and outcome != "success":
-            category_result["detail"] = _ci_validation_detail(
+            detail = _ci_validation_detail(
                 plan,
                 work_group_id,
                 category,
@@ -23575,6 +24275,12 @@ def _ci_validation_evidence(
                 outcome=outcome,
                 fact_snapshot=fact_snapshot,
             )
+            if validation_result is not None:
+                _ci_add_release_shaped_profile_telemetry(
+                    detail,
+                    validation_result,
+                )
+            category_result["detail"] = detail
     else:
         category_result["detail"] = _ci_validation_detail(
             plan,
@@ -23609,6 +24315,10 @@ def _ci_validation_evidence(
             )
             if source_proof is not None:
                 detail.update(source_proof)
+            _ci_add_release_shaped_profile_telemetry(
+                detail,
+                validation_result,
+            )
             artifact_refs = _ci_release_shaped_observed_refs(release_results)
             if batch_bundle:
                 category_result["artifact-refs"] = artifact_refs
@@ -23621,6 +24331,19 @@ def _ci_validation_evidence(
         "category-result": category_result,
         "artifact-refs": artifact_refs,
     }
+
+
+def _ci_add_release_shaped_profile_telemetry(
+    detail: Json,
+    validation_result: Mapping[str, object],
+) -> None:
+    profile_telemetry = (
+        _ci_release_shaped_profile_telemetry_from_validation_result(
+            validation_result,
+        )
+    )
+    if profile_telemetry is not None:
+        detail["profile-telemetry"] = profile_telemetry
 
 
 def _ci_release_shaped_source_proof_from_validation_result(
@@ -23651,6 +24374,345 @@ def _ci_release_shaped_source_proof_from_validation_result(
         "evidence-source": "no-publish-validation",
         "source-proof": dict(source_proof),
     }
+
+
+def _ci_release_shaped_profile_telemetry_from_validation_result(
+    validation_result: Mapping[str, object],
+) -> Json | None:
+    commands = validation_result.get("commands")
+    if not isinstance(commands, Sequence) or isinstance(commands, str | bytes):
+        return None
+    if len(commands) != 1:
+        return None
+    command = commands[0]
+    if not isinstance(command, Mapping):
+        return None
+    telemetry = command.get("profile-telemetry")
+    return dict(telemetry) if isinstance(telemetry, Mapping) else None
+
+
+def _ci_attach_uploaded_release_profile_evidence(
+    validation_result: Json,
+    *,
+    result_path: Path,
+    repo_root: Path,
+) -> None:
+    commands = validation_result.get("commands")
+    if not isinstance(commands, list):
+        return
+    for command in commands:
+        if not isinstance(command, dict):
+            continue
+        telemetry = command.get("profile-telemetry")
+        if not isinstance(telemetry, dict):
+            continue
+        copied, path_aliases = _ci_copy_release_profile_evidence(
+            telemetry,
+            result_path=result_path,
+            repo_root=repo_root,
+        )
+        if copied:
+            _ci_add_uploaded_release_profile_aliases(telemetry, path_aliases)
+            telemetry["uploaded-evidence-path"] = (
+                _ci_upload_payload_relative_path(
+                    _ci_release_profile_evidence_dir_for_result(result_path),
+                    result_path=result_path,
+                )
+            )
+            telemetry["uploaded-evidence-files"] = copied
+
+
+def _ci_copy_release_profile_evidence(  # noqa: C901
+    telemetry: Mapping[str, object],
+    *,
+    result_path: Path,
+    repo_root: Path,
+) -> tuple[list[str], dict[str, str]]:
+    release_build = telemetry.get("release-build")
+    if not isinstance(release_build, Mapping):
+        return [], {}
+    bundle_dir_text = release_build.get("bundle-dir")
+    if not isinstance(bundle_dir_text, str) or not bundle_dir_text:
+        return [], {}
+    bundle_dir = Path(bundle_dir_text)
+    if not bundle_dir.is_absolute():
+        bundle_dir = repo_root / bundle_dir
+    if not bundle_dir.is_dir():
+        return [], {}
+    destination = _ci_release_profile_evidence_dir_for_result(result_path)
+    profile_root = _ci_release_build_profile_root_from_metadata(
+        release_build,
+        bundle_dir=bundle_dir,
+        repo_root=repo_root,
+    )
+    if destination.exists():
+        shutil.rmtree(destination)
+    copied: list[str] = []
+    path_aliases: dict[str, str] = {}
+    sources: list[tuple[Path, Path]] = [
+        (
+            bundle_dir / "release-build-profile-telemetry.json",
+            Path("release-build-profile-telemetry.json"),
+        ),
+    ]
+    if profile_root is not None:
+        try:
+            profile_target = profile_root.resolve().relative_to(
+                bundle_dir.resolve(),
+            )
+        except ValueError:
+            profile_target = Path("_profile") / profile_root.name
+        sources.append((profile_root, profile_target))
+    for source, relative_target in sources:
+        if source.is_file():
+            destination.mkdir(parents=True, exist_ok=True)
+            target = destination / relative_target
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+            uploaded_path = _ci_upload_payload_relative_path(
+                target,
+                result_path=result_path,
+            )
+            copied.append(uploaded_path)
+            _ci_add_release_profile_path_aliases(
+                path_aliases,
+                source,
+                uploaded_path,
+                repo_root=repo_root,
+                bundle_dir=bundle_dir,
+            )
+        elif source.is_dir():
+            target = destination / relative_target
+            shutil.copytree(source, target, dirs_exist_ok=True)
+            uploaded_dir = _ci_upload_payload_relative_path(
+                target,
+                result_path=result_path,
+            )
+            _ci_add_release_profile_path_aliases(
+                path_aliases,
+                source,
+                uploaded_dir,
+                repo_root=repo_root,
+                bundle_dir=bundle_dir,
+            )
+            for path in sorted(target.rglob("*")):
+                if not path.is_file():
+                    continue
+                uploaded_parent = _ci_upload_payload_relative_path(
+                    path.parent,
+                    result_path=result_path,
+                )
+                _ci_add_release_profile_path_aliases(
+                    path_aliases,
+                    source / path.relative_to(target).parent,
+                    uploaded_parent,
+                    repo_root=repo_root,
+                    bundle_dir=bundle_dir,
+                )
+                uploaded_path = _ci_upload_payload_relative_path(
+                    path,
+                    result_path=result_path,
+                )
+                copied.append(uploaded_path)
+                _ci_add_release_profile_path_aliases(
+                    path_aliases,
+                    source / path.relative_to(target),
+                    uploaded_path,
+                    repo_root=repo_root,
+                    bundle_dir=bundle_dir,
+                )
+    return copied, path_aliases
+
+
+def _ci_add_release_profile_path_aliases(
+    aliases: dict[str, str],
+    source: Path,
+    uploaded_path: str,
+    *,
+    repo_root: Path,
+    bundle_dir: Path,
+) -> None:
+    candidate_paths = [source]
+    with suppress(OSError):
+        candidate_paths.append(source.resolve())
+    for candidate in candidate_paths:
+        aliases[candidate.as_posix()] = uploaded_path
+        aliases[_ci_profile_relative_path(candidate, repo_root)] = uploaded_path
+        with suppress(OSError, ValueError):
+            aliases[
+                candidate.resolve().relative_to(bundle_dir.resolve()).as_posix()
+            ] = uploaded_path
+
+
+def _ci_add_uploaded_release_profile_aliases(  # noqa: C901
+    value: object,
+    path_aliases: Mapping[str, str],
+) -> None:
+    if isinstance(value, dict):
+        binlog_path = value.get("binlog-path")
+        if isinstance(binlog_path, str):
+            uploaded_binlog_path = _ci_uploaded_profile_path_alias(
+                binlog_path,
+                path_aliases,
+            )
+            if uploaded_binlog_path is not None:
+                value["binlog-uploaded-evidence-path"] = uploaded_binlog_path
+        binlog_paths = value.get("binlog-paths")
+        if isinstance(binlog_paths, Sequence) and not isinstance(
+            binlog_paths, str | bytes
+        ):
+            uploaded_binlog_paths = [
+                alias
+                for item in binlog_paths
+                if isinstance(item, str)
+                for alias in (
+                    _ci_uploaded_profile_path_alias(item, path_aliases),
+                )
+                if alias is not None
+            ]
+            if uploaded_binlog_paths:
+                value["binlog-uploaded-evidence-paths"] = uploaded_binlog_paths
+        argv = value.get("argv")
+        if isinstance(argv, Sequence) and not isinstance(argv, str | bytes):
+            uploaded_argv = _ci_uploaded_profile_argv_alias_sequence(
+                argv,
+                path_aliases,
+            )
+            if list(argv) != uploaded_argv:
+                value["uploaded-evidence-argv"] = uploaded_argv
+        for item in value.values():
+            _ci_add_uploaded_release_profile_aliases(item, path_aliases)
+    elif isinstance(value, list):
+        for item in value:
+            _ci_add_uploaded_release_profile_aliases(item, path_aliases)
+
+
+def _ci_uploaded_profile_argv_alias_sequence(
+    argv: Sequence[object],
+    path_aliases: Mapping[str, str],
+) -> list[object]:
+    uploaded_argv: list[object] = []
+    path_value_expected = False
+    for item in argv:
+        if not isinstance(item, str):
+            uploaded_argv.append(item)
+            path_value_expected = False
+            continue
+        if path_value_expected:
+            alias = _ci_uploaded_profile_path_alias(item, path_aliases)
+            uploaded_argv.append(item if alias is None else alias)
+            path_value_expected = False
+            continue
+        uploaded_argv.append(
+            _ci_uploaded_profile_argv_alias(item, path_aliases)
+        )
+        path_value_expected = _ci_profile_argv_switch_expects_path_value(item)
+    return uploaded_argv
+
+
+def _ci_uploaded_profile_argv_alias(
+    value: str,
+    path_aliases: Mapping[str, str],
+) -> str:
+    match = _CI_MSBUILD_BINLOG_ARG_RE.match(value)
+    if match is not None:
+        payload = _ci_rewrite_msbuild_binlog_payload_paths(
+            match.group("payload"),
+            lambda path: _ci_uploaded_profile_path_alias(
+                path,
+                path_aliases,
+            ),
+        )
+        return f"{match.group('prefix')}{payload}"
+    assignment = _CI_PROFILE_ARGV_PATH_ASSIGNMENT_RE.match(value)
+    if assignment is not None:
+        uploaded_path = _ci_uploaded_profile_path_alias(
+            assignment.group("path"),
+            path_aliases,
+        )
+        return (
+            value
+            if uploaded_path is None
+            else (
+                f"{assignment.group('switch')}"
+                f"{assignment.group('separator')}{uploaded_path}"
+            )
+        )
+    definition = _CI_PROFILE_ARGV_PATH_DEFINITION_RE.match(value)
+    if definition is not None:
+        uploaded_path = _ci_uploaded_profile_path_alias(
+            definition.group("path"),
+            path_aliases,
+        )
+        return (
+            value
+            if uploaded_path is None
+            else f"{definition.group('prefix')}{uploaded_path}"
+        )
+    prefixed = _CI_PROFILE_ARGV_PATH_PREFIX_RE.match(value)
+    if prefixed is not None:
+        uploaded_path = _ci_uploaded_profile_path_alias(
+            prefixed.group("path"),
+            path_aliases,
+        )
+        return (
+            value
+            if uploaded_path is None
+            else f"{prefixed.group('prefix')}{uploaded_path}"
+        )
+    uploaded_path = _ci_uploaded_profile_path_alias(value, path_aliases)
+    return value if uploaded_path is None else uploaded_path
+
+
+def _ci_uploaded_profile_path_alias(
+    value: str,
+    path_aliases: Mapping[str, str],
+) -> str | None:
+    normalized = PurePosixPath(value.replace("\\", "/")).as_posix()
+    return path_aliases.get(value) or path_aliases.get(normalized)
+
+
+def _ci_release_build_profile_root_from_metadata(
+    release_build: Mapping[str, object],
+    *,
+    bundle_dir: Path,
+    repo_root: Path,
+) -> Path | None:
+    profile_root = release_build.get("profile-root")
+    if isinstance(profile_root, str) and profile_root:
+        path = Path(profile_root)
+        if not path.is_absolute():
+            path = repo_root / path
+        if path.is_dir():
+            return path
+    executor = release_build.get("executor")
+    if isinstance(executor, Mapping):
+        executor_root = executor.get("profile-root")
+        if isinstance(executor_root, str) and executor_root:
+            path = Path(executor_root)
+            if not path.is_absolute():
+                path = repo_root / path
+            if path.is_dir():
+                return path
+    legacy_profile = bundle_dir / "_profile"
+    return legacy_profile if legacy_profile.is_dir() else None
+
+
+def _ci_release_profile_evidence_dir_for_result(result_path: Path) -> Path:
+    return result_path.with_name(f"{result_path.stem}-profile-evidence")
+
+
+def _ci_upload_payload_relative_path(
+    path: Path,
+    *,
+    result_path: Path,
+) -> str:
+    try:
+        return (
+            path.resolve().relative_to(result_path.parent.resolve()).as_posix()
+        )
+    except ValueError:
+        return path.name
 
 
 def _ci_capability_results(

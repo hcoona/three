@@ -150,7 +150,9 @@ function Invoke-CycloneDX {
         [Parameter(Mandatory)][string]$OutDir,
         [string]$TargetFramework,
         [string]$RuntimeIdentifier,
-        [switch]$DisablePackageRestore
+        [switch]$DisablePackageRestore,
+        [ref]$CommandArgv,
+        [ref]$ExitCode
     )
     # Ensure output directory exists
     if (-not (Test-Path -LiteralPath $OutDir)) {
@@ -179,15 +181,44 @@ function Invoke-CycloneDX {
     )
 
     $succeeded = $false
+    if ($ExitCode) {
+        $ExitCode.Value = $null
+    }
     foreach ($c in $cmds) {
         try {
+            if ($CommandArgv) {
+                $CommandArgv.Value = @($c.File) + @($c.Arguments)
+            }
+            if ($ExitCode) {
+                $ExitCode.Value = $null
+            }
             Write-Information "[CycloneDX] Running: $($c.File) $($c.Arguments -join ' ')" -InformationAction Continue
-            & $c.File @($c.Arguments) | Out-Null
-            $exit = $LASTEXITCODE
-            if ($exit -eq 0) { $succeeded = $true; break }
-            Write-Warning "Command exited with code $exit. Trying fallback if available..."
+            $previousNativePreference = $PSNativeCommandUseErrorActionPreference
+            try {
+                $PSNativeCommandUseErrorActionPreference = $false
+                & $c.File @($c.Arguments) | Out-Null
+                $lastExitCodeVariable = Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue
+                $exit = if ($lastExitCodeVariable -and $null -ne $lastExitCodeVariable.Value) {
+                    [int]$lastExitCodeVariable.Value
+                }
+                else {
+                    $null
+                }
+            }
+            finally {
+                $PSNativeCommandUseErrorActionPreference = $previousNativePreference
+            }
+            if ($ExitCode) {
+                $ExitCode.Value = $exit
+            }
+            if ($null -ne $exit -and $exit -eq 0) { $succeeded = $true; break }
+            $exitText = if ($null -ne $exit) { $exit } else { 'unknown' }
+            Write-Warning "Command exited with code $exitText. Trying fallback if available..."
         }
         catch {
+            if ($ExitCode) {
+                $ExitCode.Value = $null
+            }
             Write-Warning "Failed to run $($c.File): $($_.Exception.Message)"
         }
     }

@@ -11,6 +11,7 @@ import re
 from collections.abc import Iterator, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import PurePosixPath
 from typing import Literal, cast
 
 from three_workflow_release_contracts.ci_validation import (
@@ -72,6 +73,58 @@ from three_workflow_release_contracts.contracts import (
 _LOCAL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+_ABSOLUTE_PROFILE_PATH_RE = re.compile(r"^(?:/|[A-Za-z]:[\\/]|\\\\|//)")
+_PROFILE_MSBUILD_BINLOG_ARG_RE = re.compile(
+    r"(?i)^(?:/bl:|-bl:|/binaryLogger:|-binaryLogger:)(?P<payload>.+)$",
+)
+_PROFILE_ARGV_PATH_VALUE_SWITCHES = frozenset(
+    {
+        "--output",
+        "-o",
+        "-file",
+        "-msbuildbinlogdirectory",
+        "-outputroot",
+        "-telemetryoutputpath",
+        "/o",
+    }
+)
+_PROFILE_ARGV_PATH_ASSIGNMENT_RE = re.compile(
+    r"(?i)^"
+    r"(?P<switch>--output|-o|-file|-msbuildbinlogdirectory|"
+    r"-outputroot|-telemetryoutputpath|/o)"
+    r"(?P<separator>[:=])"
+    r"(?P<path>.+)$",
+)
+_PROFILE_ARGV_PATH_PREFIX_RE = re.compile(r"^(?P<prefix>@|/O)(?P<path>.+)$")
+_PROFILE_ARGV_PATH_DEFINITION_RE = re.compile(
+    r"(?i)^(?P<prefix>/DPublishDir=)(?P<path>.+)$",
+)
+_PROFILE_POSIX_SINGLE_COMPONENT_ABSOLUTE_PATHS = frozenset(
+    {
+        "/bin",
+        "/boot",
+        "/dev",
+        "/etc",
+        "/home",
+        "/lib",
+        "/lib64",
+        "/media",
+        "/mnt",
+        "/opt",
+        "/proc",
+        "/root",
+        "/run",
+        "/sbin",
+        "/srv",
+        "/sys",
+        "/" + "tmp",
+        "/usr",
+        "/var",
+        "/work",
+        "/workspace",
+    }
+)
+_QUOTED_PROFILE_PATH_MIN_LENGTH = 2
 _RUNNER_FAMILIES = frozenset({"windows", "ubuntu", "macos"})
 _ECOSYSTEMS = frozenset(
     {"dotnet", "python", "javascript", "typescript", "ruby"}
@@ -213,6 +266,55 @@ _ORCHESTRATOR_DEPENDENCY_SELECTION_KEYS = frozenset(
 _COMMAND_TIMING_KEYS = frozenset(
     {"index", "label", "capability", "outcome", "timing"}
 )
+_RELEASE_PROFILE_TELEMETRY_KEYS = frozenset(
+    {
+        "kind",
+        "schema-version",
+        "phases",
+        "release-build",
+        "uploaded-evidence-path",
+        "uploaded-evidence-files",
+    }
+)
+_RELEASE_PROFILE_TELEMETRY_OPTIONAL_KEYS = frozenset(
+    {"release-build", "uploaded-evidence-path", "uploaded-evidence-files"}
+)
+_RELEASE_BUILD_PROFILE_KEYS = frozenset(
+    {"bundle-dir", "profile-root", "executor", "powershell"}
+)
+_RELEASE_BUILD_PROFILE_OPTIONAL_KEYS = frozenset(
+    {"profile-root", "executor", "powershell"}
+)
+_EXECUTOR_PROFILE_KEYS = frozenset(
+    {"kind", "schema-version", "profile-root", "phases", "path"}
+)
+_POWERSHELL_PROFILE_KEYS = frozenset(
+    {"kind", "schema-version", "script", "phases", "path"}
+)
+_PROFILE_PHASE_KEYS = frozenset(
+    {
+        "phase",
+        "outcome",
+        "started-at",
+        "completed-at",
+        "duration-ms",
+        "cwd",
+        "artifact-ref",
+        "output-path",
+        "output-paths",
+        "argv",
+        "uploaded-evidence-argv",
+        "exit-code",
+        "binlog-path",
+        "binlog-exists",
+        "binlog-directory",
+        "binlog-paths",
+        "binlog-uploaded-evidence-path",
+        "binlog-uploaded-evidence-paths",
+        "error",
+    }
+)
+_PROFILE_PHASE_OUTCOMES = frozenset({"success", "failure", "skipped"})
 _SELECTOR_RESULT_KEYS = frozenset(
     {
         "work-group-id",
@@ -6622,10 +6724,7 @@ def _validate_bundle_orchestrator_step_admission(
         issues.append(
             ValidationIssue(
                 "$.orchestrator-step",
-                (
-                    "must be omitted unless writer uses orchestrator "
-                    "job context"
-                ),
+                ("must be omitted unless writer uses orchestrator job context"),
             )
         )
     if not has_orchestrator_step:
@@ -7760,6 +7859,7 @@ def _validate_release_shaped_batch_detail(  # noqa: PLR0913
             {
                 "artifact-obligation-results",
                 "evidence-source",
+                "profile-telemetry",
                 "source-proof",
             }
         ),
@@ -7782,6 +7882,12 @@ def _validate_release_shaped_batch_detail(  # noqa: PLR0913
         fact_snapshot=fact_snapshot,
         selector_result=selector_result,
     )
+    if "profile-telemetry" in value:
+        _validate_release_shaped_profile_telemetry(
+            value.get("profile-telemetry"),
+            f"{path}.profile-telemetry",
+            issues,
+        )
     if outcome != "success":
         for key in ("evidence-source", "source-proof"):
             if key in value:
@@ -7969,6 +8075,709 @@ def _validate_release_result_digests(  # noqa: C901,PLR0912,PLR0913,PLR0915
                     )
                 )
     return observed
+
+
+def _validate_release_shaped_profile_telemetry(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Mapping):
+        issues.append(ValidationIssue(path, "must be an object"))
+        return
+    _validate_root_keys_with_optional(
+        value,
+        _RELEASE_PROFILE_TELEMETRY_KEYS,
+        _RELEASE_PROFILE_TELEMETRY_OPTIONAL_KEYS,
+        path,
+        issues,
+    )
+    if value.get("kind") != "release-shaped-validation-profile-telemetry":
+        issues.append(
+            ValidationIssue(
+                f"{path}.kind",
+                "must be release-shaped-validation-profile-telemetry",
+            )
+        )
+    if value.get("schema-version") != 1:
+        issues.append(ValidationIssue(f"{path}.schema-version", "must be 1"))
+    _validate_profile_phase_sequence(
+        value.get("phases"),
+        f"{path}.phases",
+        issues,
+    )
+    if "release-build" in value:
+        _validate_release_build_profile_telemetry(
+            value.get("release-build"),
+            f"{path}.release-build",
+            issues,
+        )
+    if "uploaded-evidence-path" in value:
+        _validate_non_empty_string(
+            value.get("uploaded-evidence-path"),
+            f"{path}.uploaded-evidence-path",
+            issues,
+        )
+    if "uploaded-evidence-files" in value:
+        _validate_string_sequence(
+            value.get("uploaded-evidence-files"),
+            f"{path}.uploaded-evidence-files",
+            issues,
+        )
+    _validate_profile_uploaded_evidence_contract(value, path, issues)
+
+
+def _validate_release_build_profile_telemetry(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Mapping):
+        issues.append(ValidationIssue(path, "must be an object"))
+        return
+    _validate_root_keys_with_optional(
+        value,
+        _RELEASE_BUILD_PROFILE_KEYS,
+        _RELEASE_BUILD_PROFILE_OPTIONAL_KEYS,
+        path,
+        issues,
+    )
+    _validate_profile_path(
+        value.get("bundle-dir"),
+        f"{path}.bundle-dir",
+        issues,
+        allow_current=True,
+    )
+    if "profile-root" in value:
+        _validate_profile_path(
+            value.get("profile-root"),
+            f"{path}.profile-root",
+            issues,
+            allow_current=True,
+        )
+    if "executor" not in value and "powershell" not in value:
+        issues.append(
+            ValidationIssue(
+                path,
+                "must include executor or powershell telemetry",
+            )
+        )
+    if "executor" in value:
+        _validate_executor_profile_telemetry(
+            value.get("executor"),
+            f"{path}.executor",
+            issues,
+        )
+    if "powershell" in value:
+        powershell = value.get("powershell")
+        if not isinstance(powershell, Sequence) or isinstance(
+            powershell, str | bytes
+        ):
+            issues.append(
+                ValidationIssue(f"{path}.powershell", "must be an array")
+            )
+            return
+        if not powershell and "executor" not in value:
+            issues.append(
+                ValidationIssue(
+                    f"{path}.powershell",
+                    "must not be empty without executor telemetry",
+                )
+            )
+        for index, item in enumerate(powershell):
+            _validate_powershell_profile_telemetry(
+                item,
+                f"{path}.powershell[{index}]",
+                issues,
+            )
+
+
+def _validate_executor_profile_telemetry(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Mapping):
+        issues.append(ValidationIssue(path, "must be an object"))
+        return
+    _validate_root_keys(value, _EXECUTOR_PROFILE_KEYS, path, issues)
+    if value.get("kind") != "release-build-profile-telemetry":
+        issues.append(
+            ValidationIssue(
+                f"{path}.kind",
+                "must be release-build-profile-telemetry",
+            )
+        )
+    if value.get("schema-version") != 1:
+        issues.append(ValidationIssue(f"{path}.schema-version", "must be 1"))
+    _validate_profile_path(
+        value.get("profile-root"),
+        f"{path}.profile-root",
+        issues,
+        allow_current=True,
+    )
+    _validate_profile_path(
+        value.get("path"),
+        f"{path}.path",
+        issues,
+        allow_current=True,
+    )
+    _validate_profile_phase_sequence(
+        value.get("phases"),
+        f"{path}.phases",
+        issues,
+    )
+
+
+def _validate_powershell_profile_telemetry(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Mapping):
+        issues.append(ValidationIssue(path, "must be an object"))
+        return
+    _validate_root_keys(value, _POWERSHELL_PROFILE_KEYS, path, issues)
+    if value.get("kind") != "powershell-release-build-profile-telemetry":
+        issues.append(
+            ValidationIssue(
+                f"{path}.kind",
+                "must be powershell-release-build-profile-telemetry",
+            )
+        )
+    if value.get("schema-version") != 1:
+        issues.append(ValidationIssue(f"{path}.schema-version", "must be 1"))
+    _validate_profile_path(
+        value.get("script"),
+        f"{path}.script",
+        issues,
+        allow_current=True,
+    )
+    _validate_profile_path(
+        value.get("path"),
+        f"{path}.path",
+        issues,
+        allow_current=True,
+    )
+    _validate_profile_phase_sequence(
+        value.get("phases"),
+        f"{path}.phases",
+        issues,
+    )
+
+
+def _validate_profile_phase_sequence(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        issues.append(ValidationIssue(path, "must be an array"))
+        return
+    for index, item in enumerate(value):
+        _validate_profile_phase(item, f"{path}[{index}]", issues)
+
+
+def _validate_profile_phase(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Mapping):
+        issues.append(ValidationIssue(path, "must be an object"))
+        return
+    _validate_root_keys_with_optional(
+        value,
+        _PROFILE_PHASE_KEYS,
+        _PROFILE_PHASE_KEYS
+        - frozenset(
+            {"phase", "outcome", "started-at", "completed-at", "duration-ms"}
+        ),
+        path,
+        issues,
+    )
+    _validate_non_empty_string(value.get("phase"), f"{path}.phase", issues)
+    if value.get("outcome") not in _PROFILE_PHASE_OUTCOMES:
+        issues.append(ValidationIssue(f"{path}.outcome", "is not registered"))
+    _validate_timing(
+        {
+            "started-at": value.get("started-at"),
+            "completed-at": value.get("completed-at"),
+            "duration-ms": value.get("duration-ms"),
+        },
+        path,
+        issues,
+    )
+    _validate_profile_phase_path_fields(value, path, issues)
+    for key in (
+        "artifact-ref",
+        "binlog-uploaded-evidence-path",
+        "error",
+    ):
+        if key in value:
+            _validate_non_empty_string(value.get(key), f"{path}.{key}", issues)
+    _validate_profile_phase_sequence_fields(value, path, issues)
+    if "exit-code" in value:
+        exit_code = value.get("exit-code")
+        if not isinstance(exit_code, int) or isinstance(exit_code, bool):
+            issues.append(
+                ValidationIssue(f"{path}.exit-code", "must be an integer")
+            )
+    if "binlog-exists" in value and not isinstance(
+        value.get("binlog-exists"), bool
+    ):
+        issues.append(
+            ValidationIssue(f"{path}.binlog-exists", "must be a boolean")
+        )
+
+
+def _validate_profile_phase_sequence_fields(
+    value: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    for key in ("argv", "uploaded-evidence-argv"):
+        if key in value:
+            _validate_profile_argv_sequence(
+                value.get(key),
+                f"{path}.{key}",
+                issues,
+            )
+    for key in ("binlog-uploaded-evidence-paths",):
+        if key in value:
+            _validate_string_sequence(value.get(key), f"{path}.{key}", issues)
+
+
+def _validate_profile_phase_path_fields(
+    value: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    for key in (
+        "cwd",
+        "output-path",
+        "binlog-path",
+        "binlog-directory",
+    ):
+        if key in value:
+            _validate_profile_phase_path(
+                value.get(key),
+                f"{path}.{key}",
+                issues,
+            )
+    for key in ("output-paths", "binlog-paths"):
+        if key in value:
+            _validate_profile_phase_path_sequence(
+                value.get(key),
+                f"{path}.{key}",
+                issues,
+            )
+
+
+def _validate_profile_phase_path(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    _validate_profile_path(value, path, issues, allow_current=True)
+
+
+def _validate_profile_path(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    allow_current: bool = False,
+) -> None:
+    _validate_non_empty_string(value, path, issues)
+    _validate_normalized_relative_profile_path(
+        value,
+        path,
+        issues,
+        allow_current=allow_current,
+    )
+
+
+def _validate_profile_phase_path_sequence(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        issues.append(ValidationIssue(path, "must be an array"))
+        return
+    for index, item in enumerate(value):
+        _validate_profile_phase_path(item, f"{path}[{index}]", issues)
+
+
+def _validate_string_sequence(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        issues.append(ValidationIssue(path, "must be an array"))
+        return
+    for index, item in enumerate(value):
+        _validate_non_empty_string(item, f"{path}[{index}]", issues)
+
+
+def _validate_profile_argv_sequence(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        issues.append(ValidationIssue(path, "must be an array"))
+        return
+    path_value_expected = False
+    for index, item in enumerate(value):
+        item_path = f"{path}[{index}]"
+        _validate_non_empty_string(item, item_path, issues)
+        if not isinstance(item, str) or item == "":
+            path_value_expected = False
+            continue
+        if path_value_expected:
+            _validate_profile_path(item, item_path, issues, allow_current=True)
+            path_value_expected = False
+            continue
+        if index == 0 and _profile_argv_text_is_opaque_command(item):
+            path_value_expected = False
+            continue
+        _validate_profile_argv_text(item, item_path, issues)
+        path_value_expected = _profile_argv_switch_expects_path_value(item)
+
+
+def _validate_profile_argv_text(
+    value: str,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    match = _PROFILE_MSBUILD_BINLOG_ARG_RE.match(value)
+    if match is not None:
+        _validate_profile_msbuild_binlog_payload(
+            match.group("payload"),
+            path,
+            issues,
+        )
+        return
+    assignment = _PROFILE_ARGV_PATH_ASSIGNMENT_RE.match(value)
+    if assignment is not None:
+        _validate_profile_path(
+            assignment.group("path"),
+            path,
+            issues,
+            allow_current=True,
+        )
+        return
+    definition = _PROFILE_ARGV_PATH_DEFINITION_RE.match(value)
+    if definition is not None:
+        _validate_profile_path(
+            definition.group("path"),
+            path,
+            issues,
+            allow_current=True,
+        )
+        return
+    prefixed = _PROFILE_ARGV_PATH_PREFIX_RE.match(value)
+    if prefixed is not None:
+        _validate_profile_path(
+            prefixed.group("path"),
+            path,
+            issues,
+            allow_current=True,
+        )
+        return
+    if _profile_argv_text_looks_path_bearing(value):
+        _validate_profile_path(value, path, issues, allow_current=True)
+
+
+def _validate_profile_msbuild_binlog_payload(
+    value: str,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    for binlog_path in _iter_profile_msbuild_binlog_payload_paths(value):
+        _validate_profile_path(binlog_path, path, issues, allow_current=True)
+
+
+def _iter_profile_msbuild_binlog_payload_paths(value: str) -> Iterator[str]:
+    properties = value.split(";")
+    for index, item in enumerate(properties):
+        name, separator, property_value = item.partition("=")
+        if separator and name.lower() == "logfile":
+            yield _trim_msbuild_binlog_path_quotes(property_value)
+            continue
+        if separator or not item:
+            continue
+        unquoted = _trim_msbuild_binlog_path_quotes(item)
+        if index == 0 or _profile_argv_text_looks_path_bearing(unquoted):
+            yield unquoted
+
+
+def _trim_msbuild_binlog_path_quotes(value: str) -> str:
+    if (
+        len(value) >= _QUOTED_PROFILE_PATH_MIN_LENGTH
+        and value[0] == value[-1]
+        and value[0] in {"'", '"'}
+    ):
+        return value[1:-1]
+    return value
+
+
+def _profile_argv_switch_expects_path_value(value: str) -> bool:
+    return value.lower() in _PROFILE_ARGV_PATH_VALUE_SWITCHES
+
+
+def _profile_argv_text_is_opaque_command(value: str) -> bool:
+    return (
+        _PROFILE_MSBUILD_BINLOG_ARG_RE.match(value) is None
+        and _PROFILE_ARGV_PATH_ASSIGNMENT_RE.match(value) is None
+        and _PROFILE_ARGV_PATH_DEFINITION_RE.match(value) is None
+        and _PROFILE_ARGV_PATH_PREFIX_RE.match(value) is None
+        and not _profile_argv_switch_expects_path_value(value)
+    )
+
+
+def _profile_argv_text_looks_path_bearing(value: str) -> bool:
+    if (
+        not value
+        or "://" in value
+        or any(character in value for character in "*?[]")
+    ):
+        return False
+    if value.startswith(("//", "\\\\")):
+        return True
+    if re.match(r"^[A-Za-z]:[\\/]", value):
+        return True
+    if value.startswith("/"):
+        return _slash_prefixed_profile_argv_text_looks_path_bearing(
+            value,
+        ) or _single_component_posix_absolute_profile_path(value)
+    return "/" in value or "\\" in value
+
+
+def _single_component_posix_absolute_profile_path(value: str) -> bool:
+    return value in _PROFILE_POSIX_SINGLE_COMPONENT_ABSOLUTE_PATHS
+
+
+def _slash_prefixed_profile_argv_text_looks_path_bearing(value: str) -> bool:
+    remainder = value[1:]
+    slash_positions = [
+        position
+        for position in (remainder.find("/"), remainder.find("\\"))
+        if position != -1
+    ]
+    first_slash = min(slash_positions, default=-1)
+    option_marker = remainder.find(":")
+    return first_slash != -1 and (
+        option_marker == -1 or option_marker > first_slash
+    )
+
+
+def _validate_profile_uploaded_evidence_contract(
+    value: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    uploaded_root: str | None = None
+    if "uploaded-evidence-path" in value:
+        uploaded_root = _validate_normalized_relative_profile_path(
+            value.get("uploaded-evidence-path"),
+            f"{path}.uploaded-evidence-path",
+            issues,
+        )
+    uploaded_files = _validated_uploaded_evidence_files(
+        value.get("uploaded-evidence-files"),
+        f"{path}.uploaded-evidence-files",
+        issues,
+        uploaded_root=uploaded_root,
+        require_root="uploaded-evidence-files" in value
+        and "uploaded-evidence-path" not in value,
+    )
+    _validate_uploaded_binlog_references(
+        value,
+        path,
+        issues,
+        uploaded_files=uploaded_files,
+    )
+
+
+def _validated_uploaded_evidence_files(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    uploaded_root: str | None,
+    require_root: bool,
+) -> frozenset[str] | None:
+    if require_root:
+        issues.append(
+            ValidationIssue(
+                path.rsplit(".", maxsplit=1)[0] + ".uploaded-evidence-path",
+                "is required when uploaded evidence files are present",
+            )
+        )
+    if value is None:
+        return None
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        return None
+    uploaded_files: set[str] = set()
+    for index, item in enumerate(value):
+        item_path = f"{path}[{index}]"
+        normalized = _validate_normalized_relative_profile_path(
+            item,
+            item_path,
+            issues,
+        )
+        if normalized is None:
+            continue
+        uploaded_files.add(normalized)
+        if uploaded_root is not None and not _profile_path_is_under(
+            normalized,
+            uploaded_root,
+        ):
+            issues.append(
+                ValidationIssue(
+                    item_path,
+                    "must be under uploaded-evidence-path",
+                )
+            )
+    return frozenset(uploaded_files)
+
+
+def _validate_normalized_relative_profile_path(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    allow_current: bool = False,
+) -> str | None:
+    if not isinstance(value, str) or value == "":
+        return None
+    candidate = value.replace("\\", "/")
+    normalized = PurePosixPath(candidate).as_posix()
+    if (
+        candidate != value
+        or normalized != value
+        or (value == "." and not allow_current)
+        or _ABSOLUTE_PROFILE_PATH_RE.match(value) is not None
+        or ".." in PurePosixPath(value).parts
+    ):
+        issues.append(
+            ValidationIssue(path, "must be a normalized relative path")
+        )
+        return None
+    return value
+
+
+def _profile_path_is_under(child: str, parent: str) -> bool:
+    child_parts = PurePosixPath(child).parts
+    parent_parts = PurePosixPath(parent).parts
+    return (
+        len(child_parts) > len(parent_parts)
+        and child_parts[: len(parent_parts)] == parent_parts
+    )
+
+
+def _validate_uploaded_binlog_references(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    uploaded_files: frozenset[str] | None,
+) -> None:
+    if isinstance(value, Mapping):
+        single = value.get("binlog-uploaded-evidence-path")
+        if single is not None:
+            _validate_uploaded_binlog_reference(
+                single,
+                f"{path}.binlog-uploaded-evidence-path",
+                issues,
+                uploaded_files=uploaded_files,
+            )
+        multiple = value.get("binlog-uploaded-evidence-paths")
+        if isinstance(multiple, Sequence) and not isinstance(
+            multiple, str | bytes
+        ):
+            for index, item in enumerate(multiple):
+                _validate_uploaded_binlog_reference(
+                    item,
+                    f"{path}.binlog-uploaded-evidence-paths[{index}]",
+                    issues,
+                    uploaded_files=uploaded_files,
+                )
+        uploaded_argv = value.get("uploaded-evidence-argv")
+        if isinstance(uploaded_argv, Sequence) and not isinstance(
+            uploaded_argv,
+            str | bytes,
+        ):
+            _validate_uploaded_profile_argv_binlog_references(
+                uploaded_argv,
+                f"{path}.uploaded-evidence-argv",
+                issues,
+                uploaded_files=uploaded_files,
+            )
+        for key, item in value.items():
+            if key in {
+                "binlog-uploaded-evidence-path",
+                "binlog-uploaded-evidence-paths",
+            }:
+                continue
+            _validate_uploaded_binlog_references(
+                item,
+                f"{path}.{key}" if isinstance(key, str) else path,
+                issues,
+                uploaded_files=uploaded_files,
+            )
+    elif isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        for index, item in enumerate(value):
+            _validate_uploaded_binlog_references(
+                item,
+                f"{path}[{index}]",
+                issues,
+                uploaded_files=uploaded_files,
+            )
+
+
+def _validate_uploaded_profile_argv_binlog_references(
+    argv: Sequence[object],
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    uploaded_files: frozenset[str] | None,
+) -> None:
+    for index, item in enumerate(argv):
+        if not isinstance(item, str):
+            continue
+        match = _PROFILE_MSBUILD_BINLOG_ARG_RE.match(item)
+        if match is None:
+            continue
+        for binlog_path in _iter_profile_msbuild_binlog_payload_paths(
+            match.group("payload"),
+        ):
+            _validate_uploaded_binlog_reference(
+                binlog_path,
+                f"{path}[{index}]",
+                issues,
+                uploaded_files=uploaded_files,
+            )
+
+
+def _validate_uploaded_binlog_reference(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    uploaded_files: frozenset[str] | None,
+) -> None:
+    normalized = _validate_normalized_relative_profile_path(value, path, issues)
+    if normalized is None:
+        return
+    if uploaded_files is None or normalized not in uploaded_files:
+        issues.append(
+            ValidationIssue(path, "must be listed in uploaded-evidence-files")
+        )
 
 
 def _release_shaped_obligations_for_selector(

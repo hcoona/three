@@ -583,9 +583,1155 @@ def _validate_release_bundle(bundle: dict[str, object]) -> None:
     )
 
 
+def _valid_release_profile_telemetry() -> dict[str, object]:
+    return {
+        "kind": "release-shaped-validation-profile-telemetry",
+        "schema-version": 1,
+        "phases": [
+            {
+                "phase": "release-build-execute-build",
+                "outcome": "success",
+                "started-at": "2026-06-26T05:00:00.000Z",
+                "completed-at": "2026-06-26T05:00:01.000Z",
+                "duration-ms": 1000,
+                "cwd": ".three-ci-validation/work/validation-build",
+                "output-path": (
+                    ".three-ci-validation/work/validation-build/pkg.whl"
+                ),
+            }
+        ],
+        "release-build": {
+            "bundle-dir": ".three-ci-validation/work/validation-build",
+            "profile-root": (
+                ".three-ci-validation/work/validation-build/_profile/runs/run-1"
+            ),
+            "executor": {
+                "kind": "release-build-profile-telemetry",
+                "schema-version": 1,
+                "profile-root": (
+                    ".three-ci-validation/work/validation-build/"
+                    "_profile/runs/run-1"
+                ),
+                "path": (
+                    ".three-ci-validation/work/validation-build/"
+                    "release-build-profile-telemetry.json"
+                ),
+                "phases": [
+                    {
+                        "phase": "dotnet-pack",
+                        "outcome": "success",
+                        "started-at": "2026-06-26T05:00:00.000Z",
+                        "completed-at": "2026-06-26T05:00:01.000Z",
+                        "duration-ms": 1000,
+                        "argv": [
+                            "dotnet",
+                            "pack",
+                            (
+                                "/bl:.three-ci-validation/work/"
+                                "validation-build/_profile/runs/run-1/"
+                                "binlogs/0001-dotnet-pack.binlog"
+                            ),
+                        ],
+                        "uploaded-evidence-argv": [
+                            "dotnet",
+                            "pack",
+                            (
+                                "/bl:validation-result-profile-evidence/"
+                                "_profile/runs/run-1/binlogs/"
+                                "0001-dotnet-pack.binlog"
+                            ),
+                        ],
+                        "cwd": ".three-ci-validation/work/validation-build",
+                        "exit-code": 0,
+                        "output-paths": [
+                            ".three-ci-validation/work/validation-build/dist/pkg.whl"
+                        ],
+                        "binlog-path": (
+                            ".three-ci-validation/work/validation-build/"
+                            "_profile/runs/run-1/binlogs/"
+                            "0001-dotnet-pack.binlog"
+                        ),
+                        "binlog-exists": True,
+                        "binlog-uploaded-evidence-path": (
+                            "validation-result-profile-evidence/"
+                            "_profile/runs/run-1/binlogs/"
+                            "0001-dotnet-pack.binlog"
+                        ),
+                    }
+                ],
+            },
+        },
+        "uploaded-evidence-path": "validation-result-profile-evidence",
+        "uploaded-evidence-files": [
+            "validation-result-profile-evidence/release-build-profile-telemetry.json",
+            (
+                "validation-result-profile-evidence/_profile/runs/run-1/"
+                "binlogs/0001-dotnet-pack.binlog"
+            ),
+            (
+                "validation-result-profile-evidence/_profile/runs/run-1/"
+                "binlogs/0002-dotnet-pack.binlog"
+            ),
+            (
+                "validation-result-profile-evidence/_profile/runs/run-1/"
+                "binlogs/0003-dotnet-pack.binlog"
+            ),
+            (
+                "validation-result-profile-evidence/_profile/runs/run-1/"
+                "binlogs/0004-dotnet-pack.binlog"
+            ),
+        ],
+    }
+
+
+def _add_valid_powershell_profile_telemetry(
+    telemetry: dict[str, object],
+) -> None:
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    release_build["powershell"] = [
+        {
+            "kind": "powershell-release-build-profile-telemetry",
+            "schema-version": 1,
+            "script": (
+                "src/public/app/ImageOcclusionEditor/script/"
+                "Publish-ImageOcclusionEditor.ps1"
+            ),
+            "path": (
+                ".three-ci-validation/work/validation-build/"
+                "powershell-publish-profile-telemetry.json"
+            ),
+            "phases": [
+                {
+                    "phase": "publish",
+                    "outcome": "success",
+                    "started-at": "2026-06-26T05:00:00.000Z",
+                    "completed-at": "2026-06-26T05:00:01.000Z",
+                    "duration-ms": 1000,
+                    "argv": [
+                        "pwsh",
+                        "-File",
+                        (
+                            "src/public/app/ImageOcclusionEditor/script/"
+                            "Publish-ImageOcclusionEditor.ps1"
+                        ),
+                        "-OutputRoot",
+                        ".three-ci-validation/work/validation-build/out",
+                        (
+                            "-TelemetryOutputPath=.three-ci-validation/work/"
+                            "validation-build/_profile/publish.json"
+                        ),
+                        (
+                            "-MsBuildBinlogDirectory:.three-ci-validation/"
+                            "work/validation-build/_profile/binlogs"
+                        ),
+                    ],
+                    "uploaded-evidence-argv": [
+                        "pwsh",
+                        "-File",
+                        (
+                            "src/public/app/ImageOcclusionEditor/script/"
+                            "Publish-ImageOcclusionEditor.ps1"
+                        ),
+                        "-OutputRoot",
+                        "validation-result-profile-evidence/out",
+                        (
+                            "-TelemetryOutputPath=validation-result-"
+                            "profile-evidence/publish.json"
+                        ),
+                    ],
+                }
+            ],
+        }
+    ]
+
+
+def _valid_release_profile_telemetry_with_powershell() -> dict[str, object]:
+    telemetry = _valid_release_profile_telemetry()
+    _add_valid_powershell_profile_telemetry(telemetry)
+    return telemetry
+
+
+def _replace_nested_profile_telemetry_value(
+    telemetry: dict[str, object],
+    keys: Sequence[str | int],
+    value: object,
+    *,
+    with_powershell: bool = False,
+) -> dict[str, object]:
+    mutated = deepcopy(telemetry)
+    if with_powershell:
+        _add_valid_powershell_profile_telemetry(mutated)
+    container: object = mutated
+    for key in keys[:-1]:
+        if isinstance(key, int):
+            container = cast("list[object]", container)[key]
+        else:
+            container = cast("dict[str, object]", container)[key]
+    final_key = keys[-1]
+    if isinstance(final_key, int):
+        cast("list[object]", container)[final_key] = value
+    else:
+        cast("dict[str, object]", container)[final_key] = value
+    return mutated
+
+
+_INVALID_PROFILE_PATH_FORMS = (
+    pytest.param(
+        "posix-absolute",
+        "/home/runner/work/repo/profile-path",
+        id="posix-absolute",
+    ),
+    pytest.param(
+        "windows-drive",
+        "C:/work/repo/profile-path",
+        id="windows-drive",
+    ),
+    pytest.param(
+        "unc",
+        r"\\server\share\profile-path",
+        id="unc",
+    ),
+    pytest.param(
+        "parent-traversal",
+        "../profile-path",
+        id="parent-traversal",
+    ),
+)
+
+_INVALID_PROFILE_PATH_VALUES = (
+    pytest.param("/home/runner/work/repo/profile-path", id="posix-absolute"),
+    pytest.param("C:/work/repo/profile-path", id="windows-drive"),
+    pytest.param(r"\\server\share\profile-path", id="unc"),
+    pytest.param("../profile-path", id="parent-traversal"),
+)
+
+
+def _release_profile_phase(
+    telemetry: dict[str, object],
+    owner: str,
+) -> dict[str, object]:
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    if owner == "executor":
+        executor = cast("dict[str, object]", release_build["executor"])
+        phases = cast("list[dict[str, object]]", executor["phases"])
+        return phases[0]
+    if owner == "powershell":
+        powershell = cast(
+            "list[dict[str, object]]",
+            release_build["powershell"],
+        )
+        phases = cast("list[dict[str, object]]", powershell[0]["phases"])
+        return phases[0]
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    return phases[0]
+
+
+_NESTED_RELEASE_PHASE_PATH_CASES = (
+    pytest.param(
+        ("release-build", "executor", "phases", 0, "cwd"),
+        ".profile-telemetry.release-build.executor.phases[0].cwd",
+        "base",
+        "scalar",
+        id="executor-cwd",
+    ),
+    pytest.param(
+        ("release-build", "executor", "phases", 0, "output-path"),
+        ".profile-telemetry.release-build.executor.phases[0].output-path",
+        "base",
+        "scalar",
+        id="executor-output-path",
+    ),
+    pytest.param(
+        ("release-build", "executor", "phases", 0, "binlog-path"),
+        ".profile-telemetry.release-build.executor.phases[0].binlog-path",
+        "base",
+        "scalar",
+        id="executor-binlog-path",
+    ),
+    pytest.param(
+        ("release-build", "executor", "phases", 0, "binlog-directory"),
+        ".profile-telemetry.release-build.executor.phases[0].binlog-directory",
+        "base",
+        "scalar",
+        id="executor-binlog-directory",
+    ),
+    pytest.param(
+        ("release-build", "executor", "phases", 0, "output-paths"),
+        ".profile-telemetry.release-build.executor.phases[0].output-paths[0]",
+        "base",
+        "sequence",
+        id="executor-output-paths",
+    ),
+    pytest.param(
+        ("release-build", "executor", "phases", 0, "binlog-paths"),
+        ".profile-telemetry.release-build.executor.phases[0].binlog-paths[0]",
+        "base",
+        "sequence",
+        id="executor-binlog-paths",
+    ),
+    pytest.param(
+        (
+            "release-build",
+            "executor",
+            "phases",
+            0,
+            "binlog-uploaded-evidence-path",
+        ),
+        (
+            ".profile-telemetry.release-build.executor.phases[0]"
+            ".binlog-uploaded-evidence-path"
+        ),
+        "base",
+        "scalar",
+        id="executor-binlog-uploaded-evidence-path",
+    ),
+    pytest.param(
+        (
+            "release-build",
+            "executor",
+            "phases",
+            0,
+            "binlog-uploaded-evidence-paths",
+        ),
+        (
+            ".profile-telemetry.release-build.executor.phases[0]"
+            ".binlog-uploaded-evidence-paths[0]"
+        ),
+        "base",
+        "sequence",
+        id="executor-binlog-uploaded-evidence-paths",
+    ),
+    pytest.param(
+        ("release-build", "powershell", 0, "phases", 0, "cwd"),
+        ".profile-telemetry.release-build.powershell[0].phases[0].cwd",
+        "powershell",
+        "scalar",
+        id="powershell-cwd",
+    ),
+    pytest.param(
+        ("release-build", "powershell", 0, "phases", 0, "output-path"),
+        ".profile-telemetry.release-build.powershell[0].phases[0].output-path",
+        "powershell",
+        "scalar",
+        id="powershell-output-path",
+    ),
+    pytest.param(
+        ("release-build", "powershell", 0, "phases", 0, "binlog-path"),
+        ".profile-telemetry.release-build.powershell[0].phases[0].binlog-path",
+        "powershell",
+        "scalar",
+        id="powershell-binlog-path",
+    ),
+    pytest.param(
+        ("release-build", "powershell", 0, "phases", 0, "binlog-directory"),
+        (
+            ".profile-telemetry.release-build.powershell[0].phases[0]"
+            ".binlog-directory"
+        ),
+        "powershell",
+        "scalar",
+        id="powershell-binlog-directory",
+    ),
+    pytest.param(
+        ("release-build", "powershell", 0, "phases", 0, "output-paths"),
+        ".profile-telemetry.release-build.powershell[0].phases[0].output-paths[0]",
+        "powershell",
+        "sequence",
+        id="powershell-output-paths",
+    ),
+    pytest.param(
+        ("release-build", "powershell", 0, "phases", 0, "binlog-paths"),
+        ".profile-telemetry.release-build.powershell[0].phases[0].binlog-paths[0]",
+        "powershell",
+        "sequence",
+        id="powershell-binlog-paths",
+    ),
+    pytest.param(
+        (
+            "release-build",
+            "powershell",
+            0,
+            "phases",
+            0,
+            "binlog-uploaded-evidence-path",
+        ),
+        (
+            ".profile-telemetry.release-build.powershell[0].phases[0]"
+            ".binlog-uploaded-evidence-path"
+        ),
+        "powershell",
+        "scalar",
+        id="powershell-binlog-uploaded-evidence-path",
+    ),
+    pytest.param(
+        (
+            "release-build",
+            "powershell",
+            0,
+            "phases",
+            0,
+            "binlog-uploaded-evidence-paths",
+        ),
+        (
+            ".profile-telemetry.release-build.powershell[0].phases[0]"
+            ".binlog-uploaded-evidence-paths[0]"
+        ),
+        "powershell",
+        "sequence",
+        id="powershell-binlog-uploaded-evidence-paths",
+    ),
+)
+
+
 def test_release_shaped_batch_accepts_bound_source_proof() -> None:
     """Positive release-shaped batch evidence binds proof to bytes."""
     _validate_release_bundle(_release_batch_bundle())
+
+
+def test_release_shaped_batch_accepts_profile_telemetry() -> None:
+    """Release-shaped detail validates optional hosted profile telemetry."""
+    bundle = _release_batch_bundle()
+    _release_bundle_detail(bundle)["profile-telemetry"] = (
+        _valid_release_profile_telemetry()
+    )
+
+    _validate_release_bundle(bundle)
+
+
+def test_release_shaped_batch_accepts_profile_telemetry_path_argv_forms() -> (
+    None
+):
+    """Normalized path-bearing profile argv forms are accepted."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry_with_powershell()
+    executor_phase = _release_profile_phase(telemetry, "executor")
+    executor_phase["argv"] = [
+        *cast("list[str]", executor_phase["argv"]),
+        "--output=.three-ci-validation/work/validation-build/out",
+        "-o:.three-ci-validation/work/validation-build/out",
+        "@src/public/lib/three-workflow-release-contracts/pyproject.toml",
+        (
+            "/bl:LogFile=.three-ci-validation/work/validation-build/"
+            "_profile/runs/run-1/binlogs/0002-dotnet-pack.binlog;"
+            "ProjectImports=None"
+        ),
+        (
+            '/bl:LogFile=".three-ci-validation/work/validation-build/'
+            '_profile/runs/run-1/binlogs/0003-dotnet-pack.binlog";'
+            "ProjectImports=None"
+        ),
+        (
+            "/bl:ProjectImports=None;.three-ci-validation/work/"
+            "validation-build/_profile/runs/run-1/binlogs/"
+            "0004-dotnet-pack.binlog"
+        ),
+        "/binaryLogger:ProjectImports=None",
+        "src/public/lib/three-workflow-release-contracts/pyproject.toml",
+        "Configuration=Release",
+        "/p:Configuration=Release",
+    ]
+    executor_phase["uploaded-evidence-argv"] = [
+        *cast("list[str]", executor_phase["uploaded-evidence-argv"]),
+        (
+            "-binaryLogger:LogFile=validation-result-profile-evidence/"
+            "_profile/runs/run-1/binlogs/0002-dotnet-pack.binlog"
+        ),
+        (
+            '-binaryLogger:"validation-result-profile-evidence/'
+            '_profile/runs/run-1/binlogs/0003-dotnet-pack.binlog"'
+        ),
+        (
+            "-binaryLogger:ProjectImports=None;validation-result-"
+            "profile-evidence/_profile/runs/run-1/binlogs/"
+            "0004-dotnet-pack.binlog"
+        ),
+        "src/public/lib/three-workflow-release-contracts/pyproject.toml",
+    ]
+    powershell_phase = _release_profile_phase(telemetry, "powershell")
+    powershell_phase["argv"] = [
+        *cast("list[str]", powershell_phase["argv"]),
+        "/O.three-ci-validation/work/validation-build/installer-out",
+        "/DPublishDir=.three-ci-validation/work/validation-build/publish",
+        "src/public/app/ImageOcclusionEditor/ImageOcclusionEditor.csproj",
+    ]
+    powershell_phase["uploaded-evidence-argv"] = [
+        *cast("list[str]", powershell_phase["uploaded-evidence-argv"]),
+        "src/public/app/ImageOcclusionEditor/ImageOcclusionEditor.csproj",
+    ]
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    _validate_release_bundle(bundle)
+
+
+@pytest.mark.parametrize(
+    ("mutator", "expected_path"),
+    [
+        (
+            lambda _telemetry: "not-an-object",
+            ".profile-telemetry",
+        ),
+        (
+            lambda telemetry: {
+                **telemetry,
+                "phases": ["not-an-object"],
+            },
+            ".profile-telemetry.phases[0]",
+        ),
+        (
+            lambda telemetry: {
+                **telemetry,
+                "phases": [
+                    {
+                        "phase": "release-build-execute-build",
+                        "outcome": "blocked",
+                        "started-at": "2026-06-26T05:00:00Z",
+                        "completed-at": "2026-06-26T05:00:01.000Z",
+                        "duration-ms": -1,
+                    }
+                ],
+            },
+            ".profile-telemetry.phases[0].outcome",
+        ),
+        (
+            lambda telemetry: {
+                **telemetry,
+                "release-build": "not-an-object",
+            },
+            ".profile-telemetry.release-build",
+        ),
+        (
+            lambda telemetry: {
+                **telemetry,
+                "release-build": {
+                    "bundle-dir": ".three-ci-validation/work/validation-build",
+                    "executor": {
+                        "kind": "forged-profile-telemetry",
+                        "schema-version": 1,
+                        "profile-root": (
+                            ".three-ci-validation/work/validation-build/"
+                            "_profile/runs/run-1"
+                        ),
+                        "path": (
+                            ".three-ci-validation/work/validation-build/"
+                            "release-build-profile-telemetry.json"
+                        ),
+                        "phases": [],
+                    },
+                },
+            },
+            ".profile-telemetry.release-build.executor.kind",
+        ),
+        (
+            lambda telemetry: {
+                **telemetry,
+                "release-build": {
+                    "bundle-dir": ".three-ci-validation/work/validation-build",
+                    "executor": {
+                        "kind": "release-build-profile-telemetry",
+                        "schema-version": 1,
+                        "profile-root": (
+                            ".three-ci-validation/work/validation-build/"
+                            "_profile/runs/run-1"
+                        ),
+                        "path": (
+                            ".three-ci-validation/work/validation-build/"
+                            "release-build-profile-telemetry.json"
+                        ),
+                        "phases": [
+                            {
+                                "phase": "dotnet-pack",
+                                "outcome": "success",
+                                "started-at": "2026-06-26T05:00:00.000Z",
+                                "completed-at": "2026-06-26T05:00:01.000Z",
+                                "duration-ms": 1000,
+                                "argv": ["dotnet", 123],
+                            }
+                        ],
+                    },
+                },
+            },
+            ".profile-telemetry.release-build.executor.phases[0].argv[1]",
+        ),
+    ],
+)
+def test_release_shaped_batch_rejects_malformed_profile_telemetry(
+    mutator: Callable[[dict[str, object]], object],
+    expected_path: str,
+) -> None:
+    """Malformed optional release-shaped profile telemetry is rejected."""
+    bundle = _release_batch_bundle()
+    _release_bundle_detail(bundle)["profile-telemetry"] = mutator(
+        _valid_release_profile_telemetry()
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(expected_path in issue.path for issue in exc_info.value.issues)
+
+
+@pytest.mark.parametrize(
+    ("shape", "invalid_path"),
+    _INVALID_PROFILE_PATH_FORMS,
+)
+@pytest.mark.parametrize(
+    ("keys", "expected_path", "telemetry_shape"),
+    [
+        (
+            ("release-build", "bundle-dir"),
+            ".profile-telemetry.release-build.bundle-dir",
+            "base",
+        ),
+        (
+            ("release-build", "profile-root"),
+            ".profile-telemetry.release-build.profile-root",
+            "base",
+        ),
+        (
+            ("release-build", "executor", "profile-root"),
+            ".profile-telemetry.release-build.executor.profile-root",
+            "base",
+        ),
+        (
+            ("release-build", "executor", "path"),
+            ".profile-telemetry.release-build.executor.path",
+            "base",
+        ),
+        (
+            ("release-build", "powershell", 0, "script"),
+            ".profile-telemetry.release-build.powershell[0].script",
+            "powershell",
+        ),
+        (
+            ("release-build", "powershell", 0, "path"),
+            ".profile-telemetry.release-build.powershell[0].path",
+            "powershell",
+        ),
+    ],
+)
+def test_release_shaped_batch_rejects_invalid_profile_metadata_paths(
+    shape: str,
+    invalid_path: str,
+    keys: Sequence[str | int],
+    expected_path: str,
+    telemetry_shape: str,
+) -> None:
+    """Profile metadata path fields reject every non-portable path shape."""
+    del shape
+    bundle = _release_batch_bundle()
+    _release_bundle_detail(bundle)["profile-telemetry"] = (
+        _replace_nested_profile_telemetry_value(
+            _valid_release_profile_telemetry(),
+            keys,
+            invalid_path,
+            with_powershell=telemetry_shape == "powershell",
+        )
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(expected_path in issue.path for issue in exc_info.value.issues)
+
+
+@pytest.mark.parametrize(
+    ("shape", "invalid_path"),
+    _INVALID_PROFILE_PATH_FORMS,
+)
+@pytest.mark.parametrize(
+    ("keys", "expected_path", "value_shape"),
+    [
+        (
+            ("phases", 0, "cwd"),
+            ".profile-telemetry.phases[0].cwd",
+            "scalar",
+        ),
+        (
+            ("phases", 0, "output-path"),
+            ".profile-telemetry.phases[0].output-path",
+            "scalar",
+        ),
+        (
+            ("phases", 0, "binlog-path"),
+            ".profile-telemetry.phases[0].binlog-path",
+            "scalar",
+        ),
+        (
+            ("phases", 0, "binlog-directory"),
+            ".profile-telemetry.phases[0].binlog-directory",
+            "scalar",
+        ),
+        (
+            ("phases", 0, "binlog-uploaded-evidence-path"),
+            (".profile-telemetry.phases[0].binlog-uploaded-evidence-path"),
+            "scalar",
+        ),
+        (
+            ("uploaded-evidence-path",),
+            ".profile-telemetry.uploaded-evidence-path",
+            "scalar",
+        ),
+        (
+            ("phases", 0, "output-paths"),
+            ".profile-telemetry.phases[0].output-paths[0]",
+            "sequence",
+        ),
+        (
+            ("phases", 0, "binlog-paths"),
+            ".profile-telemetry.phases[0].binlog-paths[0]",
+            "sequence",
+        ),
+        (
+            ("phases", 0, "binlog-uploaded-evidence-paths"),
+            (".profile-telemetry.phases[0].binlog-uploaded-evidence-paths[0]"),
+            "sequence",
+        ),
+        (
+            ("uploaded-evidence-files",),
+            ".profile-telemetry.uploaded-evidence-files[0]",
+            "sequence",
+        ),
+    ],
+)
+def test_release_shaped_batch_rejects_invalid_profile_telemetry_paths(
+    shape: str,
+    invalid_path: str,
+    keys: Sequence[str | int],
+    expected_path: str,
+    value_shape: str,
+) -> None:
+    """Profile telemetry path fields reject every non-portable path shape."""
+    del shape
+    bundle = _release_batch_bundle()
+    value: object = (
+        [invalid_path] if value_shape == "sequence" else invalid_path
+    )
+    _release_bundle_detail(bundle)["profile-telemetry"] = (
+        _replace_nested_profile_telemetry_value(
+            _valid_release_profile_telemetry(),
+            keys,
+            value,
+        )
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(expected_path in issue.path for issue in exc_info.value.issues)
+
+
+@pytest.mark.parametrize("invalid_path", _INVALID_PROFILE_PATH_VALUES)
+@pytest.mark.parametrize(
+    ("keys", "expected_path", "telemetry_shape", "value_shape"),
+    _NESTED_RELEASE_PHASE_PATH_CASES,
+)
+def test_release_shaped_batch_rejects_invalid_nested_release_phase_paths(
+    invalid_path: str,
+    keys: Sequence[str | int],
+    expected_path: str,
+    telemetry_shape: str,
+    value_shape: str,
+) -> None:
+    """Nested release-build phase path fields reject non-portable paths."""
+    bundle = _release_batch_bundle()
+    value: object = (
+        [invalid_path] if value_shape == "sequence" else invalid_path
+    )
+    _release_bundle_detail(bundle)["profile-telemetry"] = (
+        _replace_nested_profile_telemetry_value(
+            _valid_release_profile_telemetry(),
+            keys,
+            value,
+            with_powershell=telemetry_shape == "powershell",
+        )
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(expected_path in issue.path for issue in exc_info.value.issues)
+
+
+@pytest.mark.parametrize(
+    ("owner", "phase_path"),
+    [
+        (
+            "executor",
+            ".profile-telemetry.release-build.executor.phases[0]",
+        ),
+        (
+            "powershell",
+            ".profile-telemetry.release-build.powershell[0].phases[0]",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "argv_key",
+    ["argv", "uploaded-evidence-argv"],
+)
+@pytest.mark.parametrize(
+    ("argv", "invalid_index"),
+    [
+        (
+            ["dotnet", "pack", "/bl:/home/runner/work/repo/build.binlog"],
+            2,
+        ),
+        (
+            ["dotnet", "pack", "/bl:../escape.binlog"],
+            2,
+        ),
+        (
+            ["dotnet", "pack", "/bl:LogFile=/home/build.binlog"],
+            2,
+        ),
+        (
+            ["dotnet", "pack", "/bl:LogFile=C:/work/build.binlog"],
+            2,
+        ),
+        (
+            ["dotnet", "pack", "/bl:LogFile=../build.binlog"],
+            2,
+        ),
+        (
+            ["dotnet", "pack", '/bl:LogFile="/home/build.binlog"'],
+            2,
+        ),
+        (
+            ["dotnet", "pack", '/bl:LogFile="../build.binlog"'],
+            2,
+        ),
+        (
+            ["dotnet", "pack", '/bl:"/home/build.binlog"'],
+            2,
+        ),
+        (
+            ["dotnet", "pack", '/bl:"../build.binlog"'],
+            2,
+        ),
+        (
+            ["dotnet", "pack", "/bl:ProjectImports=None;../escape.binlog"],
+            2,
+        ),
+        (
+            ["dotnet", "pack", "/bl:ProjectImports=None;/tmp"],
+            2,
+        ),
+        (
+            [
+                "dotnet",
+                "pack",
+                '-binaryLogger:ProjectImports=None;"/home/build.binlog"',
+            ],
+            2,
+        ),
+        (
+            ["dotnet", "pack", "../src/project.csproj"],
+            2,
+        ),
+        (
+            ["dotnet", "pack", "/home/runner/work/repo/project.csproj"],
+            2,
+        ),
+        (
+            ["dotnet", "pack", "/" + "tmp"],
+            2,
+        ),
+        (
+            ["dotnet", "pack", "--output=/home/build/out"],
+            2,
+        ),
+        (
+            ["dotnet", "pack", "--output=../escape/out"],
+            2,
+        ),
+        (
+            ["dotnet", "pack", "-o:/home/build/out"],
+            2,
+        ),
+        (
+            ["dotnet", "pack", "--output", "/home/build/out"],
+            3,
+        ),
+        (
+            ["dotnet", "pack", "-o", "../escape/out"],
+            3,
+        ),
+        (
+            ["dotnet", "pack", "@/home/build/args.rsp"],
+            2,
+        ),
+        (
+            ["dotnet", "pack", "@../args.rsp"],
+            2,
+        ),
+        (
+            ["pwsh", "-TelemetryOutputPath=C:/work/profile.json"],
+            1,
+        ),
+        (
+            ["pwsh", "-MsBuildBinlogDirectory=../profile/binlogs"],
+            1,
+        ),
+        (
+            ["dotnet", "pack", r"\\server\share\evidence.csproj"],
+            2,
+        ),
+        (
+            ["pwsh", "-OutputRoot", r"\\server\share\evidence"],
+            2,
+        ),
+        (
+            ["pwsh", "-File", "../script/Publish.ps1"],
+            2,
+        ),
+        (
+            ["ISCC.exe", "/O/home/build/installer"],
+            1,
+        ),
+        (
+            ["ISCC.exe", "/OC:/work/installer"],
+            1,
+        ),
+        (
+            ["ISCC.exe", r"/O\\server\share\installer"],
+            1,
+        ),
+        (
+            ["ISCC.exe", "/O../escape/installer"],
+            1,
+        ),
+        (
+            ["ISCC.exe", "/DPublishDir=/home/build/publish"],
+            1,
+        ),
+        (
+            ["ISCC.exe", "/DPublishDir=../publish"],
+            1,
+        ),
+    ],
+)
+def test_release_shaped_batch_rejects_invalid_profile_argv_paths(
+    owner: str,
+    phase_path: str,
+    argv_key: str,
+    argv: list[str],
+    invalid_index: int,
+) -> None:
+    """Executor and PowerShell profile argv path entries must stay relative."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    if owner == "powershell":
+        _add_valid_powershell_profile_telemetry(telemetry)
+    phase = _release_profile_phase(telemetry, owner)
+    phase[argv_key] = argv
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    expected_path = f"{phase_path}.{argv_key}[{invalid_index}]"
+    assert any(expected_path in issue.path for issue in exc_info.value.issues)
+
+
+@pytest.mark.parametrize(
+    "argv_key",
+    ["argv", "uploaded-evidence-argv"],
+)
+@pytest.mark.parametrize(
+    "executable",
+    [
+        "/usr/bin/dotnet",
+        "C:/Program Files/Inno Setup 6/ISCC.exe",
+    ],
+)
+def test_release_shaped_batch_accepts_absolute_profile_argv_executable(
+    argv_key: str,
+    executable: str,
+) -> None:
+    """External executable paths in argv[0] are opaque producer metadata."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    phase = _release_profile_phase(telemetry, "executor")
+    binlog_arg = (
+        "/bl:validation-result-profile-evidence/_profile/runs/run-1/"
+        "binlogs/0001-dotnet-pack.binlog"
+        if argv_key == "uploaded-evidence-argv"
+        else (
+            "/bl:.three-ci-validation/work/validation-build/_profile/"
+            "runs/run-1/binlogs/0001-dotnet-pack.binlog"
+        )
+    )
+    phase[argv_key] = [
+        executable,
+        "pack",
+        "src/public/lib/three-workflow-release-contracts/pyproject.toml",
+        binlog_arg,
+    ]
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    _validate_release_bundle(bundle)
+
+
+@pytest.mark.parametrize(
+    "argv_key",
+    ["argv", "uploaded-evidence-argv"],
+)
+@pytest.mark.parametrize(
+    ("argv", "invalid_index"),
+    [
+        (
+            ["/usr/bin/dotnet", "pack", "/home/build/project.csproj"],
+            2,
+        ),
+        (
+            ["C:/Program Files/Inno Setup 6/ISCC.exe", "/home/build/setup.iss"],
+            1,
+        ),
+        (
+            ["/usr/bin/dotnet", "pack", "/bl:/home/build.binlog"],
+            2,
+        ),
+        (
+            ["/usr/bin/pwsh", "-TelemetryOutputPath", "/home/profile.json"],
+            2,
+        ),
+    ],
+)
+def test_release_shaped_batch_rejects_later_absolute_profile_argv_paths(
+    argv_key: str,
+    argv: list[str],
+    invalid_index: int,
+) -> None:
+    """Opaque argv[0] does not permit later absolute path arguments."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    phase = _release_profile_phase(telemetry, "executor")
+    phase[argv_key] = argv
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    expected_path = (
+        ".profile-telemetry.release-build.executor.phases[0]"
+        f".{argv_key}[{invalid_index}]"
+    )
+    assert any(expected_path in issue.path for issue in exc_info.value.issues)
+
+
+@pytest.mark.parametrize(
+    ("mutator", "expected_path"),
+    [
+        (
+            lambda telemetry: {
+                **telemetry,
+                "uploaded-evidence-path": "C:/profile-evidence",
+            },
+            ".profile-telemetry.uploaded-evidence-path",
+        ),
+        (
+            lambda telemetry: {
+                **telemetry,
+                "uploaded-evidence-files": [
+                    "validation-result-profile-evidence/../escape.binlog",
+                ],
+            },
+            ".profile-telemetry.uploaded-evidence-files[0]",
+        ),
+        (
+            lambda telemetry: {
+                **telemetry,
+                "uploaded-evidence-files": [
+                    "other-profile-evidence/0001-dotnet-pack.binlog",
+                ],
+            },
+            ".profile-telemetry.uploaded-evidence-files[0]",
+        ),
+        (
+            lambda telemetry: _profile_telemetry_with_missing_uploaded_binlog(
+                telemetry,
+            ),
+            ".profile-telemetry.release-build.executor.phases[0].binlog-uploaded-evidence-path",
+        ),
+        (
+            (
+                lambda telemetry: (
+                    _profile_telemetry_with_local_uploaded_argv_binlog(
+                        telemetry,
+                    )
+                )
+            ),
+            ".profile-telemetry.release-build.executor.phases[0].uploaded-evidence-argv[2]",
+        ),
+    ],
+)
+def test_release_shaped_batch_rejects_invalid_uploaded_evidence_contract(
+    mutator: Callable[[dict[str, object]], object],
+    expected_path: str,
+) -> None:
+    """Uploaded profile evidence paths must be relative and self-contained."""
+    bundle = _release_batch_bundle()
+    _release_bundle_detail(bundle)["profile-telemetry"] = mutator(
+        _valid_release_profile_telemetry()
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(expected_path in issue.path for issue in exc_info.value.issues)
+
+
+def _profile_telemetry_with_missing_uploaded_binlog(
+    telemetry: dict[str, object],
+) -> dict[str, object]:
+    mutated = deepcopy(telemetry)
+    release_build = cast("dict[str, object]", mutated["release-build"])
+    executor = cast("dict[str, object]", release_build["executor"])
+    phases = cast("list[dict[str, object]]", executor["phases"])
+    phases[0]["binlog-uploaded-evidence-path"] = (
+        "validation-result-profile-evidence/_profile/runs/run-1/binlogs/"
+        "missing.binlog"
+    )
+    return mutated
+
+
+def _profile_telemetry_with_local_uploaded_argv_binlog(
+    telemetry: dict[str, object],
+) -> dict[str, object]:
+    mutated = deepcopy(telemetry)
+    release_build = cast("dict[str, object]", mutated["release-build"])
+    executor = cast("dict[str, object]", release_build["executor"])
+    phases = cast("list[dict[str, object]]", executor["phases"])
+    phases[0]["uploaded-evidence-argv"] = [
+        "dotnet",
+        "pack",
+        (
+            "/bl:.three-ci-validation/work/validation-build/_profile/"
+            "runs/run-1/binlogs/0001-dotnet-pack.binlog"
+        ),
+    ]
+    return mutated
+
+
+def test_release_shaped_batch_rejects_empty_powershell_telemetry_array() -> (
+    None
+):
+    """Empty PowerShell telemetry cannot satisfy release-build telemetry."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    telemetry["release-build"] = {
+        "bundle-dir": ".three-ci-validation/work/validation-build",
+        "powershell": [],
+    }
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.release-build.powershell" in issue.path
+        for issue in exc_info.value.issues
+    )
 
 
 def test_batch_evidence_bundle_accepts_selector_timing() -> None:
