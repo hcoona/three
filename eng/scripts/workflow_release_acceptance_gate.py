@@ -75,6 +75,52 @@ MANDATORY_TEST_NODEIDS = (
     "test_acceptance_gate_pins_r53_tag_permission_acceptance_regression",
     "tests/test_workflow_release_control.py::"
     "test_acceptance_gate_pins_r54_hook_trigger_surface_traceability",
+    "tests/test_workflow_release_control.py::"
+    "test_acceptance_gate_pins_r8_ci_fail_closed_mapping_regressions",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_object_mapping_ref_mismatch_blocks",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_unrelated_legacy_mapping_blocks",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_unrelated_malformed_generated_mapping_blocks",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_unrelated_malformed_generated_path_blocks",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_unrelated_generated_path_mismatched_bundle_blocks",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_expected_generated_source_missing_scope_blocks",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_identity_only_generated_mapping_blocks",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_generated_path_outside_scoped_bundle_blocks",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_generated_source_invalid_identity_blocks",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_generated_source_invalid_schema_blocks",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_stale_same_scope_request_mapping_rebuilds",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_legacy_mapping_to_materialized_path_blocks",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_empty_explicit_mapping_blocks",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_rejects_escaping_materialized_receipt_path",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_materialized_paths_are_scope_isolated",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_same_runner_work_groups_are_scope_isolated",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_release_shaped_materialization_groups_keep_runner_scope",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_materializes_same_runner_plan_mapping",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_does_not_reuse_cross_runner_mapping",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_does_not_reuse_cross_work_group_mapping",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_shaped_preserves_satisfied_supplemental_group",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_batch_aggregation_propagates_malformed_release_mapping_failure",
     "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
     "test_buddy_mixed_github_release_fails_closed_when_deactivated",
     "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"

@@ -3145,6 +3145,66 @@ def test_acceptance_gate_pins_r54_hook_trigger_surface_traceability() -> None:
     )
 
 
+def test_acceptance_gate_pins_r8_ci_fail_closed_mapping_regressions() -> None:
+    """Focused release acceptance must pin R8 CI mapping regressions."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_object_mapping_ref_mismatch_blocks",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_unrelated_legacy_mapping_blocks",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_unrelated_malformed_generated_mapping_blocks",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_unrelated_malformed_generated_path_blocks",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_unrelated_generated_path_mismatched_bundle_blocks",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_expected_generated_source_missing_scope_blocks",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_identity_only_generated_mapping_blocks",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_generated_path_outside_scoped_bundle_blocks",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_generated_source_invalid_identity_blocks",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_generated_source_invalid_schema_blocks",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_stale_same_scope_request_mapping_rebuilds",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_legacy_mapping_to_materialized_path_blocks",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_empty_explicit_mapping_blocks",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_rejects_escaping_materialized_receipt_path",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_materialized_paths_are_scope_isolated",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_same_runner_work_groups_are_scope_isolated",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_release_shaped_materialization_groups_keep_runner_scope",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_materializes_same_runner_plan_mapping",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_does_not_reuse_cross_runner_mapping",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_does_not_reuse_cross_work_group_mapping",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_preserves_satisfied_supplemental_group",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_batch_aggregation_propagates_malformed_release_mapping_failure",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
 def test_ci_acceptance_matrix_preserves_no_publish_boundaries() -> None:
     """CI acceptance rows validate no-publish boundaries, not release probes."""
     matrix = _ci_acceptance_matrix()
@@ -32332,6 +32392,898 @@ def test_ci_validation_release_shaped_no_publish_uses_mapping() -> None:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def test_ci_validation_release_shaped_object_mapping_ref_mismatch_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Object-form mappings reject artifact-ref values that conflict with keys."""
+    scratch = SCRATCH / "ci-validation-release-shaped-object-ref-mismatch"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        output = (
+            scratch
+            / ".three-ci-validation/work/validation-build/mismatched.bin"
+        )
+        output.parent.mkdir(parents=True)
+        output.write_bytes(b"mismatched object mapping bytes")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "artifacts": {
+                        artifact_refs[0]: {
+                            "artifact-ref": (
+                                "ci-validation/artifacts/python/example/"
+                                "other.whl"
+                            ),
+                            "path": output.relative_to(scratch).as_posix(),
+                        },
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
+
+        def fail_materialization(**_kwargs: object) -> None:
+            message = "mismatched object mappings must fail closed"
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fail_materialization,
+        )
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_unrelated_legacy_mapping_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy explicit mappings for other refs still fail closed."""
+    scratch = SCRATCH / "ci-validation-release-shaped-unrelated-legacy-mapping"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        output = (
+            scratch
+            / ".three-ci-validation/work/validation-build/other-output.bin"
+        )
+        output.parent.mkdir(parents=True)
+        output.write_bytes(b"unrelated explicit bytes")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "artifacts": {
+                        "ci-validation/artifacts/python/example/other.whl": (
+                            output.relative_to(scratch).as_posix()
+                        ),
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
+
+        def fail_materialization(**_kwargs: object) -> None:
+            message = (
+                "unrelated legacy explicit mappings must not materialize "
+                "missing refs"
+            )
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fail_materialization,
+        )
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("case", "generated_like_fields"),
+    [
+        ("work-group-only", {"work-group-id": "wg-release-other"}),
+        ("runner-family-only", {"runner-family": "ubuntu"}),
+        (
+            "missing-runner-family",
+            {
+                "source": "materialized-validation-build",
+                "work-group-id": "wg-release-other",
+            },
+        ),
+        (
+            "missing-work-group",
+            {
+                "source": "materialized-validation-build",
+                "runner-family": "ubuntu",
+            },
+        ),
+    ],
+)
+def test_ci_validation_release_shaped_unrelated_malformed_generated_mapping_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    generated_like_fields: Mapping[str, object],
+) -> None:
+    """Malformed generated-like mappings for other refs still fail closed."""
+    scratch = (
+        SCRATCH
+        / f"ci-validation-release-shaped-malformed-generated-{case}-mapping"
+    )
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        build_root = scratch / ".three-ci-validation/work/validation-build"
+        build_root.mkdir(parents=True)
+        (build_root / "a.whl").write_bytes(b"fallback would match")
+        output = build_root / "other-output.bin"
+        output.write_bytes(b"unrelated malformed generated-like bytes")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "schema-version": 1,
+                    "artifacts": [
+                        {
+                            "artifact-ref": (
+                                "ci-validation/artifacts/python/example/"
+                                "other.whl"
+                            ),
+                            "path": output.relative_to(scratch).as_posix(),
+                            **generated_like_fields,
+                        }
+                    ],
+                },
+            ),
+            encoding="utf-8",
+        )
+
+        def fail_materialization(**_kwargs: object) -> None:
+            message = (
+                "malformed generated-like mappings must not materialize "
+                "missing refs"
+            )
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fail_materialization,
+        )
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("case", "path_value"),
+    [
+        ("missing-path", None),
+        ("outside-repo-path", "../outside-output.bin"),
+    ],
+)
+def test_ci_validation_release_shaped_unrelated_malformed_generated_path_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    path_value: str | None,
+) -> None:
+    """Malformed generated path records for other refs still fail closed."""
+    scratch = (
+        SCRATCH / f"ci-validation-release-shaped-malformed-generated-{case}"
+    )
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        build_root = scratch / ".three-ci-validation/work/validation-build"
+        build_root.mkdir(parents=True)
+        (build_root / "a.whl").write_bytes(b"fallback would match")
+        generated_item: dict[str, object] = {
+            "artifact-ref": (
+                "ci-validation/artifacts/python/example/other.whl"
+            ),
+            "source": "materialized-validation-build",
+            "work-group-id": "wg-release-other",
+            "runner-family": "ubuntu",
+        }
+        if path_value is not None:
+            generated_item["path"] = path_value
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "schema-version": 1,
+                    "artifacts": [generated_item],
+                },
+            ),
+            encoding="utf-8",
+        )
+
+        def fail_materialization(**_kwargs: object) -> None:
+            message = (
+                "malformed generated path records must not materialize "
+                "missing refs"
+            )
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fail_materialization,
+        )
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_unrelated_generated_path_mismatched_bundle_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Generated records must bind path to their own bundle identity."""
+    scratch = (
+        SCRATCH
+        / "ci-validation-release-shaped-unrelated-generated-mismatched-bundle"
+    )
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        request_digest = "1" * 64
+        bundle_id = request_digest[:24]
+        other_bundle_id = "2" * 24
+        output = (
+            scratch
+            / ".three-ci-validation/work/validation-build/release-shaped/"
+            f"{other_bundle_id}/dist/other.whl"
+        )
+        output.parent.mkdir(parents=True)
+        output.write_bytes(b"unrelated generated bytes in another bundle")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "schema-version": 1,
+                    "artifacts": [
+                        {
+                            "artifact-ref": (
+                                "ci-validation/artifacts/python/example/"
+                                "other.whl"
+                            ),
+                            "path": output.relative_to(scratch).as_posix(),
+                            "source": "materialized-validation-build",
+                            "work-group-id": "wg-release-other",
+                            "runner-family": "ubuntu",
+                            "request-digest": request_digest,
+                            "bundle-id": bundle_id,
+                        }
+                    ],
+                },
+            ),
+            encoding="utf-8",
+        )
+
+        def fail_materialization(**_kwargs: object) -> None:
+            message = (
+                "internally inconsistent unrelated generated records must not "
+                "materialize missing refs"
+            )
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fail_materialization,
+        )
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_expected_generated_source_missing_scope_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Generated-source mappings need complete scope fields for expected refs."""
+    scratch = (
+        SCRATCH
+        / "ci-validation-release-shaped-expected-generated-missing-scope"
+    )
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        output = (
+            scratch
+            / ".three-ci-validation/work/validation-build/expected-output.bin"
+        )
+        output.parent.mkdir(parents=True)
+        output.write_bytes(b"generated source without scope")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "schema-version": 1,
+                    "artifacts": [
+                        {
+                            "artifact-ref": artifact_refs[0],
+                            "path": output.relative_to(scratch).as_posix(),
+                            "source": "materialized-validation-build",
+                        }
+                    ],
+                },
+            ),
+            encoding="utf-8",
+        )
+
+        def fail_materialization(**_kwargs: object) -> None:
+            message = (
+                "expected malformed generated records must not materialize "
+                "or pass as legacy mappings"
+            )
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fail_materialization,
+        )
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("case", "identity_fields"),
+    [
+        ("request-digest-only", {"request-digest": "0" * 64}),
+        ("bundle-id-only", {"bundle-id": "0" * 24}),
+        (
+            "identity-only",
+            {"request-digest": "0" * 64, "bundle-id": "0" * 24},
+        ),
+    ],
+)
+def test_ci_validation_release_shaped_identity_only_generated_mapping_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    identity_fields: Mapping[str, object],
+) -> None:
+    """Generated identity fields cannot masquerade as legacy mappings."""
+    scratch = (
+        SCRATCH / f"ci-validation-release-shaped-identity-only-generated-{case}"
+    )
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        output = (
+            scratch / ".three-ci-validation/work/validation-build/"
+            "identity-only-output.bin"
+        )
+        output.parent.mkdir(parents=True)
+        output.write_bytes(b"identity-only generated-like bytes")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "schema-version": 1,
+                    "artifacts": [
+                        {
+                            "artifact-ref": artifact_refs[0],
+                            "path": output.relative_to(scratch).as_posix(),
+                            **identity_fields,
+                        }
+                    ],
+                },
+            ),
+            encoding="utf-8",
+        )
+
+        def fail_materialization(**_kwargs: object) -> None:
+            message = (
+                "identity-only generated-like records must not materialize "
+                "or pass as legacy mappings"
+            )
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fail_materialization,
+        )
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("case", "identity_fields"),
+    [
+        ("missing-request-digest", {"bundle-id": "0" * 24}),
+        ("missing-bundle-id", {"request-digest": "0" * 64}),
+        (
+            "invalid-request-digest",
+            {"request-digest": "g" * 64, "bundle-id": "0" * 24},
+        ),
+        (
+            "invalid-bundle-id",
+            {"request-digest": "0" * 64, "bundle-id": "not-a-bundle-id"},
+        ),
+        (
+            "mismatched-bundle-id",
+            {"request-digest": "1" * 64, "bundle-id": "0" * 24},
+        ),
+    ],
+)
+def test_ci_validation_release_shaped_generated_source_invalid_identity_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    identity_fields: Mapping[str, object],
+) -> None:
+    """Generated-source mappings need complete request identity fields."""
+    scratch = (
+        SCRATCH
+        / f"ci-validation-release-shaped-generated-invalid-identity-{case}"
+    )
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        output = (
+            scratch
+            / ".three-ci-validation/work/validation-build/release-shaped/"
+            "identity-case/dist/a.whl"
+        )
+        output.parent.mkdir(parents=True)
+        output.write_bytes(b"generated source without valid identity")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "schema-version": 1,
+                    "artifacts": [
+                        {
+                            "artifact-ref": artifact_refs[0],
+                            "path": output.relative_to(scratch).as_posix(),
+                            "source": "materialized-validation-build",
+                            "work-group-id": "wg-release",
+                            "runner-family": "ubuntu",
+                            **identity_fields,
+                        }
+                    ],
+                },
+            ),
+            encoding="utf-8",
+        )
+
+        def fail_materialization(**_kwargs: object) -> None:
+            message = "generated records with invalid identity must fail closed"
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fail_materialization,
+        )
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_generated_source_invalid_schema_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Generated-source mappings require the generated mapping schema."""
+    scratch = SCRATCH / "ci-validation-release-shaped-generated-invalid-schema"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        request_digest = "0" * 64
+        bundle_id = request_digest[:24]
+        output = (
+            scratch
+            / ".three-ci-validation/work/validation-build/release-shaped/"
+            f"{bundle_id}/dist/a.whl"
+        )
+        output.parent.mkdir(parents=True)
+        output.write_bytes(b"generated source without valid schema")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "schema-version": 2,
+                    "artifacts": [
+                        {
+                            "artifact-ref": artifact_refs[0],
+                            "path": output.relative_to(scratch).as_posix(),
+                            "source": "materialized-validation-build",
+                            "work-group-id": "wg-release",
+                            "runner-family": "ubuntu",
+                            "request-digest": request_digest,
+                            "bundle-id": bundle_id,
+                        }
+                    ],
+                },
+            ),
+            encoding="utf-8",
+        )
+
+        def fail_materialization(**_kwargs: object) -> None:
+            message = "generated records with invalid schema must fail closed"
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fail_materialization,
+        )
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_generated_path_outside_scoped_bundle_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Matching-scope generated mappings must stay in release-shaped bundles."""
+    scratch = (
+        SCRATCH
+        / "ci-validation-release-shaped-generated-path-outside-scoped-bundle"
+    )
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        request_digest = "0" * 64
+        output = (
+            scratch
+            / ".three-ci-validation/work/validation-build/stale-output.bin"
+        )
+        output.parent.mkdir(parents=True)
+        output.write_bytes(b"matching scope but outside release-shaped bundle")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "schema-version": 1,
+                    "artifacts": [
+                        {
+                            "artifact-ref": artifact_refs[0],
+                            "path": output.relative_to(scratch).as_posix(),
+                            "source": "materialized-validation-build",
+                            "work-group-id": "wg-release",
+                            "runner-family": "ubuntu",
+                            "request-digest": request_digest,
+                            "bundle-id": request_digest[:24],
+                        }
+                    ],
+                },
+            ),
+            encoding="utf-8",
+        )
+
+        def fail_materialization(**_kwargs: object) -> None:
+            message = (
+                "matching-scope generated records outside scoped bundles "
+                "must fail closed"
+            )
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fail_materialization,
+        )
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_stale_same_scope_request_mapping_rebuilds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same-scope generated mappings must match the current build request."""
+    scratch = SCRATCH / "ci-validation-release-shaped-stale-request-mapping"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        stale_output = (
+            scratch
+            / ".three-ci-validation/work/validation-build/release-shaped/"
+            f"{'0' * 24}/dist/a.whl"
+        )
+        stale_bytes = b"stale same-scope generated bytes"
+        current_bytes = b"current same-scope generated bytes"
+        stale_output.parent.mkdir(parents=True)
+        stale_output.write_bytes(stale_bytes)
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "schema-version": 1,
+                    "artifacts": [
+                        {
+                            "artifact-ref": artifact_refs[0],
+                            "path": stale_output.relative_to(
+                                scratch,
+                            ).as_posix(),
+                            "source": "materialized-validation-build",
+                            "work-group-id": "wg-release",
+                            "runner-family": "ubuntu",
+                            "request-digest": "0" * 64,
+                            "bundle-id": "0" * 24,
+                        }
+                    ],
+                },
+            ),
+            encoding="utf-8",
+        )
+        build_requests = 0
+        executions = 0
+
+        def fake_build_request(
+            **_kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            nonlocal build_requests
+            build_requests += 1
+            return {"kind": "build-request"}, {"artifact/wheel": artifact_refs}
+
+        def fake_execute_build(
+            *,
+            request: Mapping[str, object],
+            repo_root: Path,
+            bundle_dir: Path,
+        ) -> dict[str, object]:
+            nonlocal executions
+            assert request["kind"] == "build-request"
+            assert repo_root == scratch
+            executions += 1
+            output = bundle_dir / "dist/a.whl"
+            output.parent.mkdir(parents=True)
+            output.write_bytes(current_bytes)
+            return {
+                "kind": "build-result",
+                "artifacts": {
+                    "artifact/wheel": {
+                        "bundle-relative-path": output.relative_to(
+                            bundle_dir,
+                        ).as_posix(),
+                    }
+                },
+            }
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fake_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fake_execute_build,
+        )
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "success"
+        assert build_requests == 1
+        assert executions == 1
+        assert (
+            _release_shaped_result_digests(result)[artifact_refs[0]]
+            == hashlib.sha256(current_bytes).hexdigest()
+        )
+        updated_mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
+        current_records = [
+            item
+            for item in cast(
+                "Sequence[Mapping[str, object]]",
+                updated_mapping["artifacts"],
+            )
+            if item["artifact-ref"] == artifact_refs[0]
+            and item.get("request-digest") != "0" * 64
+        ]
+        assert len(current_records) == 1
+        assert current_records[0]["bundle-id"] in current_records[0]["path"]
+        assert stale_output.read_bytes() == stale_bytes
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_legacy_mapping_to_materialized_path_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy path-only mappings do not trust generated build outputs."""
+    scratch = SCRATCH / "ci-validation-release-shaped-legacy-generated-path"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        output = (
+            scratch
+            / ".three-ci-validation/work/validation-build/release-shaped/"
+            "other-run/dist/a.whl"
+        )
+        output.parent.mkdir(parents=True)
+        output.write_bytes(b"legacy generated bytes")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "artifacts": {
+                        artifact_refs[0]: output.relative_to(
+                            scratch,
+                        ).as_posix(),
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
+
+        def fail_materialization(**_kwargs: object) -> None:
+            message = (
+                "path-only explicit mappings must fail closed without "
+                "materializing missing refs"
+            )
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fail_materialization,
+        )
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def test_ci_validation_release_shaped_materializes_missing_mapping(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -32659,6 +33611,69 @@ def test_ci_validation_release_shaped_materializes_missing_mapping(
         assert any(
             arg == f"/bl:{uploaded_binlog}" for arg in powershell_uploaded_argv
         )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_rejects_escaping_materialized_receipt_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Materialized build receipts cannot point outside their scoped bundle."""
+    scratch = SCRATCH / "ci-validation-release-shaped-escaping-receipt"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+
+        def fake_build_request(
+            **_kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            return {"kind": "build-request"}, {"artifact/wheel": artifact_refs}
+
+        def fake_execute_build(
+            *,
+            request: Mapping[str, object],
+            repo_root: Path,
+            bundle_dir: Path,
+        ) -> dict[str, object]:
+            assert request["kind"] == "build-request"
+            assert repo_root == scratch
+            escaping_output = bundle_dir.parent / "stale/dist/a.whl"
+            escaping_output.parent.mkdir(parents=True)
+            escaping_output.write_bytes(b"escaping receipt bytes")
+            return {
+                "kind": "build-result",
+                "artifacts": {
+                    "artifact/wheel": {
+                        "bundle-relative-path": ("../stale/dist/a.whl"),
+                    }
+                },
+            }
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fake_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fake_execute_build,
+        )
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "escapes scoped bundle" in result["commands"][0]["error"]
+        assert not (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        ).exists()
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -34975,9 +35990,9 @@ def test_ci_validation_materialization_blocks_ambiguous_legacy_match() -> None:
     assert refs == {}
 
 
-def test_ci_validation_release_shaped_no_publish_malformed_mapping_blocks() -> (
-    None
-):
+def test_ci_validation_release_shaped_no_publish_malformed_mapping_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Malformed explicit mapping blocks instead of heuristic fallback."""
     scratch = SCRATCH / "ci-validation-release-shaped-malformed-mapping"
     shutil.rmtree(scratch, ignore_errors=True)
@@ -34994,6 +36009,18 @@ def test_ci_validation_release_shaped_no_publish_malformed_mapping_blocks() -> (
             / ".three-ci-validation/work/validation-build-artifacts.json"
         )
         mapping_path.write_text("{not-json", encoding="utf-8")
+
+        def fail_materialization(**_kwargs: object) -> None:
+            message = (
+                "invalid explicit mappings must not trigger materialization"
+            )
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fail_materialization,
+        )
 
         result = _run_release_shaped_no_publish_validation(
             scratch=scratch,
@@ -35081,6 +36108,62 @@ def test_ci_validation_release_shaped_no_publish_unreadable_mapping_blocks(
             return original_read_text(path, *args, **kwargs)
 
         monkeypatch.setattr(Path, "read_text", deny_mapping_read)
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "blocking-failure"
+        assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("case", "mapping_payload"),
+    [
+        ("empty-dict", {}),
+        ("empty-list", []),
+    ],
+)
+def test_ci_validation_release_shaped_empty_explicit_mapping_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    mapping_payload: object,
+) -> None:
+    """Present empty explicit mappings fail closed instead of materializing."""
+    scratch = SCRATCH / f"ci-validation-release-shaped-{case}-mapping"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        build_root = scratch / ".three-ci-validation/work/validation-build"
+        build_root.mkdir(parents=True)
+        (build_root / "a.whl").write_bytes(b"fallback would match")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(mapping_payload),
+            encoding="utf-8",
+        )
+
+        def fail_materialization(**_kwargs: object) -> None:
+            message = (
+                "empty explicit mappings must not materialize missing refs"
+            )
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fail_materialization,
+        )
+
         result = _run_release_shaped_no_publish_validation(
             scratch=scratch,
             plan=plan,
@@ -35317,8 +36400,10 @@ def test_ci_validation_release_shaped_no_publish_blocks_invalid_descriptor_fact(
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def test_ci_validation_release_shaped_incomplete_mapping_blocks() -> None:
-    """Release-shaped no-publish fails closed on incomplete mapping."""
+def test_ci_validation_release_shaped_incomplete_mapping_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Release-shaped no-publish fails closed on incomplete explicit mapping."""
     scratch = SCRATCH / "ci-validation-release-shaped-output-unbound"
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True)
@@ -35350,6 +36435,18 @@ def test_ci_validation_release_shaped_incomplete_mapping_blocks() -> None:
             ),
             encoding="utf-8",
         )
+
+        def fail_materialization(**_kwargs: object) -> None:
+            message = (
+                "partial explicit mappings must not materialize missing refs"
+            )
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fail_materialization,
+        )
         result = _run_release_shaped_no_publish_validation(
             scratch=scratch,
             plan=plan,
@@ -35358,6 +36455,1231 @@ def test_ci_validation_release_shaped_incomplete_mapping_blocks() -> None:
 
         assert result["outcome"] == "blocking-failure"
         assert "artifact-shape-unconfirmed" in result["commands"][0]["error"]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_release_shaped_materialization_groups_keep_runner_scope() -> None:
+    """Variant expansion stays inside work-group and runner-family scope."""
+    seed_ref = "ci-validation/artifacts/python/example/a.whl"
+    same_work_group_ref = "ci-validation/artifacts/python/example/b.whl"
+    same_runner_other_group_ref = "ci-validation/artifacts/python/example/c.whl"
+    cross_runner_ref = "ci-validation/artifacts/python/example/windows.whl"
+    plan = _release_shaped_no_publish_plan([seed_ref])
+    work_groups = cast("list[dict[str, object]]", plan["work-groups"])
+    obligations = cast(
+        "list[dict[str, object]]",
+        plan["artifact-obligations"],
+    )
+    seed_obligation = obligations[0]
+
+    same_work_group_obligation = deepcopy(seed_obligation)
+    same_work_group_obligation["artifact-obligation-id"] = (
+        "artifact-python-example-wheel-b"
+    )
+    cast(
+        "dict[str, object]",
+        same_work_group_obligation["artifact"],
+    )["expected-artifact-refs"] = [same_work_group_ref]
+    obligations.append(same_work_group_obligation)
+
+    work_groups.append(
+        {
+            "work-group-id": "wg-release-other-ubuntu",
+            "kind": "release-shaped-artifact",
+            "runner-family": "ubuntu",
+            "coverage-target": {"type": "subject", "id": "python.example"},
+            "depends-on": [],
+        },
+    )
+    same_runner_other_group_obligation = deepcopy(seed_obligation)
+    same_runner_other_group_obligation["artifact-obligation-id"] = (
+        "artifact-python-example-wheel-c"
+    )
+    same_runner_other_group_obligation["work-group-id"] = (
+        "wg-release-other-ubuntu"
+    )
+    cast(
+        "dict[str, object]",
+        same_runner_other_group_obligation["artifact"],
+    )["expected-artifact-refs"] = [same_runner_other_group_ref]
+    obligations.append(same_runner_other_group_obligation)
+
+    work_groups.append(
+        {
+            "work-group-id": "wg-release-windows",
+            "kind": "release-shaped-artifact",
+            "runner-family": "windows",
+            "coverage-target": {"type": "subject", "id": "python.example"},
+            "depends-on": [],
+        },
+    )
+    cross_runner_obligation = deepcopy(seed_obligation)
+    cross_runner_obligation["artifact-obligation-id"] = (
+        "artifact-python-example-wheel-windows"
+    )
+    cross_runner_obligation["work-group-id"] = "wg-release-windows"
+    cast(
+        "dict[str, object]",
+        cross_runner_obligation["artifact"],
+    )["expected-artifact-refs"] = [cross_runner_ref]
+    obligations.append(cross_runner_obligation)
+
+    groups = control._ci_release_shaped_materialization_obligation_groups(
+        plan=plan,
+        seed_obligations=[seed_obligation],
+    )
+    refs_by_group = [
+        tuple(
+            ref
+            for obligation in group
+            for ref in control._ci_artifact_expected_refs(obligation)
+        )
+        for group in groups
+    ]
+
+    assert refs_by_group == [
+        (seed_ref, same_work_group_ref),
+        (same_runner_other_group_ref,),
+    ]
+
+
+def test_ci_validation_release_shaped_materializes_same_runner_plan_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Initial materialization records only same-runner artifact refs."""
+    scratch = SCRATCH / "ci-validation-release-shaped-same-runner-plan-mapping"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        first_ref = "ci-validation/artifacts/python/example/a.whl"
+        second_ref = "ci-validation/artifacts/python/other/b.whl"
+        windows_ref = "ci-validation/artifacts/python/windows/c.whl"
+        plan = _release_shaped_no_publish_plan([first_ref])
+        second_group = {
+            "work-group-id": "wg-release-other",
+            "kind": "release-shaped-artifact",
+            "runner-family": "ubuntu",
+            "coverage-target": {"type": "subject", "id": "python.other"},
+            "depends-on": [],
+        }
+        cast("list[dict[str, object]]", plan["work-groups"]).append(
+            second_group,
+        )
+        cast("list[dict[str, object]]", plan["artifact-obligations"]).append(
+            {
+                "artifact-obligation-id": "artifact-python-other-wheel",
+                "work-group-id": "wg-release-other",
+                "subject-id": "python.other",
+                "descriptor-path": "src/public/lib/other/three.release.yml",
+                "profile-coverage": ["wheel"],
+                "artifact": {
+                    "kind-family": "python",
+                    "concrete-kind": "wheel",
+                    "logical-artifact-role": "package",
+                    "variant-dimensions": {},
+                    "expected-artifact-refs": [second_ref],
+                },
+                "release-receipt": {
+                    "expected-family": "python",
+                    "logical-receipt-role": "build",
+                    "variant-dimensions": {},
+                },
+            },
+        )
+        cast("list[dict[str, object]]", plan["evidence-expectations"]).append(
+            {
+                "work-group-id": "wg-release-other",
+                "category": "release-shaped-artifact",
+                "planned-capabilities": None,
+            },
+        )
+        windows_group = {
+            "work-group-id": "wg-release-windows",
+            "kind": "release-shaped-artifact",
+            "runner-family": "windows",
+            "coverage-target": {"type": "subject", "id": "python.windows"},
+            "depends-on": [],
+        }
+        cast("list[dict[str, object]]", plan["work-groups"]).append(
+            windows_group,
+        )
+        cast("list[dict[str, object]]", plan["artifact-obligations"]).append(
+            {
+                "artifact-obligation-id": "artifact-python-windows-wheel",
+                "work-group-id": "wg-release-windows",
+                "subject-id": "python.windows",
+                "descriptor-path": ("src/public/lib/windows/three.release.yml"),
+                "profile-coverage": ["wheel"],
+                "artifact": {
+                    "kind-family": "python",
+                    "concrete-kind": "wheel",
+                    "logical-artifact-role": "package",
+                    "variant-dimensions": {},
+                    "expected-artifact-refs": [windows_ref],
+                },
+                "release-receipt": {
+                    "expected-family": "python",
+                    "logical-receipt-role": "build",
+                    "variant-dimensions": {},
+                },
+            },
+        )
+        cast("list[dict[str, object]]", plan["evidence-expectations"]).append(
+            {
+                "work-group-id": "wg-release-windows",
+                "category": "release-shaped-artifact",
+                "planned-capabilities": None,
+            },
+        )
+        first_matrix = _release_shaped_no_publish_matrix(plan)
+        second_matrix = {
+            **second_group,
+            "validation-commands": control._ci_validation_commands(
+                plan,
+                second_group,
+            ),
+            "no-publish": True,
+        }
+        windows_matrix = {
+            **windows_group,
+            "validation-commands": control._ci_validation_commands(
+                plan,
+                windows_group,
+            ),
+            "no-publish": True,
+        }
+        fact_snapshot = _release_shaped_no_publish_fact_snapshot()
+        descriptors = cast(
+            "list[dict[str, object]]",
+            cast(
+                "list[dict[str, object]]",
+                fact_snapshot["providers"],
+            )[0]["descriptors"],
+        )
+        descriptors.append(
+            {
+                "descriptor-path": "src/public/lib/other/three.release.yml",
+                "descriptor-identity": "descriptor-sha256:" + "f" * 64,
+                "owner-subject-id": "python.other",
+                "source": "ecosystem-provider",
+            },
+        )
+        descriptors.append(
+            {
+                "descriptor-path": "src/public/lib/windows/three.release.yml",
+                "descriptor-identity": "descriptor-sha256:" + "a" * 64,
+                "owner-subject-id": "python.windows",
+                "source": "ecosystem-provider",
+            },
+        )
+        build_calls: list[tuple[str, tuple[str, ...]]] = []
+        output_bytes = {
+            first_ref: b"first release-shaped artifact",
+            second_ref: b"second release-shaped artifact",
+            windows_ref: b"windows release-shaped artifact",
+        }
+
+        def fake_build_request(
+            *,
+            obligations: Sequence[Mapping[str, object]],
+            **_kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            obligation = obligations[0]
+            refs = tuple(
+                ref
+                for item in obligations
+                for ref in control._ci_artifact_expected_refs(item)
+            )
+            build_calls.append((str(obligation["work-group-id"]), refs))
+            return (
+                {
+                    "kind": "build-request",
+                    "refs": list(refs),
+                    "ordinal": len(build_calls),
+                },
+                {f"artifact/{len(build_calls)}": list(refs)},
+            )
+
+        def fake_execute_build(
+            *,
+            request: Mapping[str, object],
+            repo_root: Path,
+            bundle_dir: Path,
+        ) -> dict[str, object]:
+            assert repo_root == scratch
+            refs = cast("Sequence[str]", request["refs"])
+            assert len(refs) == 1
+            output = bundle_dir / "dist" / f"{request['ordinal']}.whl"
+            output.parent.mkdir(parents=True)
+            output.write_bytes(output_bytes[refs[0]])
+            return {
+                "kind": "build-result",
+                "artifacts": {
+                    f"artifact/{request['ordinal']}": {
+                        "bundle-relative-path": output.relative_to(
+                            bundle_dir,
+                        ).as_posix(),
+                    }
+                },
+            }
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fake_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fake_execute_build,
+        )
+
+        first_result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=first_matrix,
+            fact_snapshot=fact_snapshot,
+        )
+
+        mapping = json.loads(
+            (
+                scratch
+                / ".three-ci-validation/work/validation-build-artifacts.json"
+            ).read_text(encoding="utf-8"),
+        )
+        assert first_result["outcome"] == "success"
+        assert build_calls == [
+            ("wg-release", (first_ref,)),
+            ("wg-release-other", (second_ref,)),
+        ]
+        assert {
+            item["artifact-ref"]
+            for item in cast(
+                "Sequence[Mapping[str, object]]", mapping["artifacts"]
+            )
+        } == {first_ref, second_ref}
+        mapped_artifacts = cast(
+            "dict[str, Mapping[str, object]]",
+            {
+                item["artifact-ref"]: item
+                for item in cast(
+                    "Sequence[Mapping[str, object]]",
+                    mapping["artifacts"],
+                )
+            },
+        )
+        assert mapped_artifacts[first_ref]["work-group-id"] == "wg-release"
+        assert mapped_artifacts[first_ref]["runner-family"] == "ubuntu"
+        assert (
+            mapped_artifacts[second_ref]["work-group-id"] == "wg-release-other"
+        )
+        assert mapped_artifacts[second_ref]["runner-family"] == "ubuntu"
+        assert windows_ref not in mapped_artifacts
+
+        def second_reuse_build_request(
+            **_kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            return (
+                {
+                    "kind": "build-request",
+                    "refs": [second_ref],
+                    "ordinal": 2,
+                },
+                {"artifact/2": [second_ref]},
+            )
+
+        def fail_second_materialization(**_kwargs: object) -> None:
+            message = (
+                "same-runner generated mapping should satisfy later work groups"
+            )
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            second_reuse_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fail_second_materialization,
+        )
+        second_result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=second_matrix,
+            fact_snapshot=fact_snapshot,
+        )
+
+        assert second_result["outcome"] == "success"
+        digests = _release_shaped_result_digests(second_result)
+        assert (
+            digests[second_ref]
+            == hashlib.sha256(
+                output_bytes[second_ref],
+            ).hexdigest()
+        )
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fake_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fake_execute_build,
+        )
+        windows_result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=windows_matrix,
+            fact_snapshot=fact_snapshot,
+        )
+
+        assert windows_result["outcome"] == "success"
+        assert build_calls == [
+            ("wg-release", (first_ref,)),
+            ("wg-release-other", (second_ref,)),
+            ("wg-release-windows", (windows_ref,)),
+        ]
+        windows_digests = _release_shaped_result_digests(windows_result)
+        assert (
+            windows_digests[windows_ref]
+            == hashlib.sha256(
+                output_bytes[windows_ref],
+            ).hexdigest()
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_materialized_paths_are_scope_isolated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Different scopes with identical build requests get isolated bundles."""
+    scratch = SCRATCH / "ci-validation-release-shaped-scope-isolated-paths"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        first_ref = "ci-validation/artifacts/python/example/a.whl"
+        windows_ref = "ci-validation/artifacts/python/example/windows.whl"
+        plan = _release_shaped_no_publish_plan([first_ref])
+        windows_group = {
+            "work-group-id": "wg-release-windows",
+            "kind": "release-shaped-artifact",
+            "runner-family": "windows",
+            "coverage-target": {"type": "subject", "id": "python.example"},
+            "depends-on": [],
+        }
+        cast("list[dict[str, object]]", plan["work-groups"]).append(
+            windows_group,
+        )
+        artifact_obligations = cast(
+            "list[dict[str, object]]",
+            plan["artifact-obligations"],
+        )
+        windows_obligation = deepcopy(artifact_obligations[0])
+        windows_obligation["artifact-obligation-id"] = (
+            "artifact-python-example-wheel-windows"
+        )
+        windows_obligation["work-group-id"] = "wg-release-windows"
+        cast(
+            "dict[str, object]",
+            windows_obligation["artifact"],
+        )["expected-artifact-refs"] = [windows_ref]
+        artifact_obligations.append(windows_obligation)
+        cast("list[dict[str, object]]", plan["evidence-expectations"]).append(
+            {
+                "work-group-id": "wg-release-windows",
+                "category": "release-shaped-artifact",
+                "planned-capabilities": None,
+            },
+        )
+        first_matrix = _release_shaped_no_publish_matrix(plan)
+        windows_matrix = {
+            **windows_group,
+            "validation-commands": control._ci_validation_commands(
+                plan,
+                windows_group,
+            ),
+            "no-publish": True,
+        }
+        output_bytes = {
+            first_ref: b"ubuntu scoped artifact bytes",
+            windows_ref: b"windows scoped artifact bytes",
+        }
+        build_calls: list[tuple[str, tuple[str, ...]]] = []
+        bundle_dirs: list[Path] = []
+
+        def fake_build_request(
+            *,
+            obligations: Sequence[Mapping[str, object]],
+            **_kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            refs = tuple(
+                ref
+                for obligation in obligations
+                for ref in control._ci_artifact_expected_refs(obligation)
+            )
+            build_calls.append((str(obligations[0]["work-group-id"]), refs))
+            return {"kind": "build-request"}, {"artifact/wheel": list(refs)}
+
+        def fake_execute_build(
+            *,
+            request: Mapping[str, object],
+            repo_root: Path,
+            bundle_dir: Path,
+        ) -> dict[str, object]:
+            assert request["kind"] == "build-request"
+            assert repo_root == scratch
+            assert bundle_dir not in bundle_dirs
+            refs = build_calls[-1][1]
+            assert len(refs) == 1
+            output = bundle_dir / "dist/a.whl"
+            output.parent.mkdir(parents=True)
+            output.write_bytes(output_bytes[refs[0]])
+            bundle_dirs.append(bundle_dir)
+            return {
+                "kind": "build-result",
+                "artifacts": {
+                    "artifact/wheel": {
+                        "bundle-relative-path": output.relative_to(
+                            bundle_dir,
+                        ).as_posix(),
+                    }
+                },
+            }
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fake_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fake_execute_build,
+        )
+
+        first_result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=first_matrix,
+        )
+        windows_result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=windows_matrix,
+        )
+
+        assert first_result["outcome"] == "success"
+        assert windows_result["outcome"] == "success"
+        assert build_calls == [
+            ("wg-release", (first_ref,)),
+            ("wg-release-windows", (windows_ref,)),
+        ]
+        assert len(bundle_dirs) == 2
+        assert bundle_dirs[0] != bundle_dirs[1]
+        assert (
+            _release_shaped_result_digests(first_result)[first_ref]
+            == hashlib.sha256(output_bytes[first_ref]).hexdigest()
+        )
+        assert (
+            _release_shaped_result_digests(windows_result)[windows_ref]
+            == hashlib.sha256(output_bytes[windows_ref]).hexdigest()
+        )
+        mapping = json.loads(
+            (
+                scratch
+                / ".three-ci-validation/work/validation-build-artifacts.json"
+            ).read_text(encoding="utf-8"),
+        )
+        paths_by_ref = {
+            item["artifact-ref"]: item["path"]
+            for item in cast(
+                "Sequence[Mapping[str, object]]",
+                mapping["artifacts"],
+            )
+        }
+        assert paths_by_ref[first_ref] != paths_by_ref[windows_ref]
+
+        def first_reuse_build_request(
+            **_kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            return {"kind": "build-request"}, {"artifact/wheel": [first_ref]}
+
+        def fail_materialization(**_kwargs: object) -> None:
+            message = "same-scope generated mapping should remain reusable"
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            first_reuse_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fail_materialization,
+        )
+        first_reuse_result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=first_matrix,
+        )
+
+        assert first_reuse_result["outcome"] == "success"
+        assert (
+            _release_shaped_result_digests(first_reuse_result)[first_ref]
+            == hashlib.sha256(output_bytes[first_ref]).hexdigest()
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_same_runner_work_groups_are_scope_isolated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Generated mappings isolate same-runner work groups with same requests."""
+    scratch = SCRATCH / "ci-validation-release-shaped-same-runner-scope-paths"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_ref = "ci-validation/artifacts/python/example/a.whl"
+        plan = _release_shaped_no_publish_plan([artifact_ref])
+        other_group = {
+            "work-group-id": "wg-release-other",
+            "kind": "release-shaped-artifact",
+            "runner-family": "ubuntu",
+            "coverage-target": {"type": "subject", "id": "python.example"},
+            "depends-on": [],
+        }
+        cast("list[dict[str, object]]", plan["work-groups"]).append(
+            other_group,
+        )
+        artifact_obligations = cast(
+            "list[dict[str, object]]",
+            plan["artifact-obligations"],
+        )
+        other_obligation = deepcopy(artifact_obligations[0])
+        other_obligation["artifact-obligation-id"] = (
+            "artifact-python-example-wheel-other"
+        )
+        other_obligation["work-group-id"] = "wg-release-other"
+        artifact_obligations.append(other_obligation)
+        cast("list[dict[str, object]]", plan["evidence-expectations"]).append(
+            {
+                "work-group-id": "wg-release-other",
+                "category": "release-shaped-artifact",
+                "planned-capabilities": None,
+            },
+        )
+        first_matrix = _release_shaped_no_publish_matrix(plan)
+        other_matrix = {
+            **other_group,
+            "validation-commands": control._ci_validation_commands(
+                plan,
+                other_group,
+            ),
+            "no-publish": True,
+        }
+        scoped_bytes = {
+            "wg-release": b"first work group bytes",
+            "wg-release-other": b"second work group bytes",
+        }
+        build_calls: list[str] = []
+        bundle_dirs: list[Path] = []
+
+        def fake_build_request(
+            *,
+            obligations: Sequence[Mapping[str, object]],
+            **_kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            work_group_id = str(obligations[0]["work-group-id"])
+            refs = [
+                ref
+                for obligation in obligations
+                for ref in control._ci_artifact_expected_refs(obligation)
+            ]
+            build_calls.append(work_group_id)
+            return {"kind": "build-request"}, {"artifact/wheel": refs}
+
+        def fake_execute_build(
+            *,
+            request: Mapping[str, object],
+            repo_root: Path,
+            bundle_dir: Path,
+        ) -> dict[str, object]:
+            assert request == {"kind": "build-request"}
+            assert repo_root == scratch
+            assert bundle_dir not in bundle_dirs
+            work_group_id = build_calls[-1]
+            output = bundle_dir / "dist/a.whl"
+            output.parent.mkdir(parents=True)
+            output.write_bytes(scoped_bytes[work_group_id])
+            bundle_dirs.append(bundle_dir)
+            return {
+                "kind": "build-result",
+                "artifacts": {
+                    "artifact/wheel": {
+                        "bundle-relative-path": output.relative_to(
+                            bundle_dir,
+                        ).as_posix(),
+                    },
+                },
+            }
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fake_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fake_execute_build,
+        )
+
+        first_result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=first_matrix,
+        )
+
+        assert first_result["outcome"] == "success"
+        assert build_calls == ["wg-release", "wg-release-other"]
+        assert len(bundle_dirs) == 2
+        assert bundle_dirs[0] != bundle_dirs[1]
+        mapping = json.loads(
+            (
+                scratch
+                / ".three-ci-validation/work/validation-build-artifacts.json"
+            ).read_text(encoding="utf-8"),
+        )
+        mapped_records = [
+            item
+            for item in cast(
+                "Sequence[Mapping[str, object]]",
+                mapping["artifacts"],
+            )
+            if item["artifact-ref"] == artifact_ref
+        ]
+        assert {
+            (item["work-group-id"], item["runner-family"])
+            for item in mapped_records
+        } == {
+            ("wg-release", "ubuntu"),
+            ("wg-release-other", "ubuntu"),
+        }
+        paths_by_scope = {
+            str(item["work-group-id"]): scratch / str(item["path"])
+            for item in mapped_records
+        }
+        assert (
+            paths_by_scope["wg-release"] != paths_by_scope["wg-release-other"]
+        )
+        assert (
+            paths_by_scope["wg-release"].read_bytes()
+            == scoped_bytes["wg-release"]
+        )
+        assert (
+            paths_by_scope["wg-release-other"].read_bytes()
+            == scoped_bytes["wg-release-other"]
+        )
+
+        def reuse_build_request(
+            *,
+            obligations: Sequence[Mapping[str, object]],
+            **_kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            refs = [
+                ref
+                for obligation in obligations
+                for ref in control._ci_artifact_expected_refs(obligation)
+            ]
+            return {"kind": "build-request"}, {"artifact/wheel": refs}
+
+        def fail_materialization(**_kwargs: object) -> None:
+            message = "same-scope generated mappings should remain reusable"
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            reuse_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fail_materialization,
+        )
+        first_reuse_result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=first_matrix,
+        )
+        other_reuse_result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=other_matrix,
+        )
+
+        assert (
+            _release_shaped_result_digests(first_reuse_result)[artifact_ref]
+            == hashlib.sha256(scoped_bytes["wg-release"]).hexdigest()
+        )
+        assert (
+            _release_shaped_result_digests(other_reuse_result)[artifact_ref]
+            == hashlib.sha256(scoped_bytes["wg-release-other"]).hexdigest()
+        )
+        assert (
+            paths_by_scope["wg-release"].read_bytes()
+            == scoped_bytes["wg-release"]
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_preserves_satisfied_supplemental_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same-runner supplemental groups with generated mappings are skipped."""
+    scratch = (
+        SCRATCH / "ci-validation-release-shaped-satisfied-supplemental-group"
+    )
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_ref = "ci-validation/artifacts/python/example/a.whl"
+        plan = _release_shaped_no_publish_plan([artifact_ref])
+        other_group = {
+            "work-group-id": "wg-release-other",
+            "kind": "release-shaped-artifact",
+            "runner-family": "ubuntu",
+            "coverage-target": {"type": "subject", "id": "python.example"},
+            "depends-on": [],
+        }
+        cast("list[dict[str, object]]", plan["work-groups"]).append(
+            other_group,
+        )
+        artifact_obligations = cast(
+            "list[dict[str, object]]",
+            plan["artifact-obligations"],
+        )
+        other_obligation = deepcopy(artifact_obligations[0])
+        other_obligation["artifact-obligation-id"] = (
+            "artifact-python-example-wheel-other"
+        )
+        other_obligation["work-group-id"] = "wg-release-other"
+        artifact_obligations.append(other_obligation)
+        cast("list[dict[str, object]]", plan["evidence-expectations"]).append(
+            {
+                "work-group-id": "wg-release-other",
+                "category": "release-shaped-artifact",
+                "planned-capabilities": None,
+            },
+        )
+        first_matrix = _release_shaped_no_publish_matrix(plan)
+        other_matrix = {
+            **other_group,
+            "validation-commands": control._ci_validation_commands(
+                plan,
+                other_group,
+            ),
+            "no-publish": True,
+        }
+        current_bytes = b"new current work group bytes"
+        preexisting_other_bytes = b"preexisting supplemental work group bytes"
+        other_request_identity = (
+            control._ci_release_shaped_validation_build_request_identity(
+                request={"kind": "build-request"},
+                mapping_scope=("wg-release-other", "ubuntu"),
+                repo_root=scratch,
+            )
+        )
+        other_request_digest, other_bundle_id, other_bundle_dir = (
+            other_request_identity
+        )
+        other_output = other_bundle_dir / "dist/a.whl"
+        other_output.parent.mkdir(parents=True)
+        other_output.write_bytes(preexisting_other_bytes)
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.parent.mkdir(parents=True, exist_ok=True)
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "schema-version": 1,
+                    "artifacts": [
+                        {
+                            "artifact-ref": artifact_ref,
+                            "path": other_output.relative_to(
+                                scratch,
+                            ).as_posix(),
+                            "source": "materialized-validation-build",
+                            "work-group-id": "wg-release-other",
+                            "runner-family": "ubuntu",
+                            "request-digest": other_request_digest,
+                            "bundle-id": other_bundle_id,
+                        }
+                    ],
+                },
+            ),
+            encoding="utf-8",
+        )
+        build_calls: list[str] = []
+
+        def fake_build_request(
+            *,
+            obligations: Sequence[Mapping[str, object]],
+            **_kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            work_group_id = str(obligations[0]["work-group-id"])
+            refs = [
+                ref
+                for obligation in obligations
+                for ref in control._ci_artifact_expected_refs(obligation)
+            ]
+            build_calls.append(work_group_id)
+            return {"kind": "build-request"}, {"artifact/wheel": refs}
+
+        def fake_execute_build(
+            *,
+            request: Mapping[str, object],
+            repo_root: Path,
+            bundle_dir: Path,
+        ) -> dict[str, object]:
+            assert request == {"kind": "build-request"}
+            assert repo_root == scratch
+            assert build_calls[-1] == "wg-release"
+            output = bundle_dir / "dist/a.whl"
+            output.parent.mkdir(parents=True)
+            output.write_bytes(current_bytes)
+            return {
+                "kind": "build-result",
+                "artifacts": {
+                    "artifact/wheel": {
+                        "bundle-relative-path": output.relative_to(
+                            bundle_dir,
+                        ).as_posix(),
+                    },
+                },
+            }
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fake_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fake_execute_build,
+        )
+
+        first_result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=first_matrix,
+        )
+
+        assert first_result["outcome"] == "success"
+        assert build_calls == ["wg-release", "wg-release-other"]
+        assert other_output.read_bytes() == preexisting_other_bytes
+        assert (
+            _release_shaped_result_digests(first_result)[artifact_ref]
+            == hashlib.sha256(current_bytes).hexdigest()
+        )
+
+        def other_reuse_build_request(
+            **_kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            return {"kind": "build-request"}, {"artifact/wheel": [artifact_ref]}
+
+        def fail_materialization(**_kwargs: object) -> None:
+            message = "satisfied supplemental mapping should be reused"
+            raise AssertionError(message)
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            other_reuse_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fail_materialization,
+        )
+        other_result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=other_matrix,
+        )
+
+        assert other_result["outcome"] == "success"
+        assert (
+            _release_shaped_result_digests(other_result)[artifact_ref]
+            == hashlib.sha256(preexisting_other_bytes).hexdigest()
+        )
+        assert other_output.read_bytes() == preexisting_other_bytes
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_does_not_reuse_cross_runner_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Runner-family mismatch alone rejects generated mapping reuse."""
+    scratch = SCRATCH / "ci-validation-release-shaped-cross-runner-reuse"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_ref = "ci-validation/artifacts/python/example/a.whl"
+        plan = _release_shaped_no_publish_plan([artifact_ref])
+        cast(
+            "dict[str, object]",
+            cast("Sequence[object]", plan["work-groups"])[0],
+        )["runner-family"] = "windows"
+        matrix = _release_shaped_no_publish_matrix(plan)
+        ubuntu_request_digest, ubuntu_bundle_id, ubuntu_bundle_dir = (
+            control._ci_release_shaped_validation_build_request_identity(
+                request={"kind": "build-request"},
+                mapping_scope=("wg-release", "ubuntu"),
+                repo_root=scratch,
+            )
+        )
+        output = ubuntu_bundle_dir / "dist/a.whl"
+        output.parent.mkdir(parents=True)
+        ubuntu_bytes = b"ubuntu scoped bytes"
+        windows_bytes = b"windows scoped bytes"
+        output.write_bytes(ubuntu_bytes)
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "schema-version": 1,
+                    "artifacts": {
+                        artifact_ref: {
+                            "path": output.relative_to(scratch).as_posix(),
+                            "source": "materialized-validation-build",
+                            "work-group-id": "wg-release",
+                            "runner-family": "ubuntu",
+                            "request-digest": ubuntu_request_digest,
+                            "bundle-id": ubuntu_bundle_id,
+                        },
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
+
+        build_calls: list[tuple[str, ...]] = []
+
+        def fake_build_request(
+            *,
+            obligations: Sequence[Mapping[str, object]],
+            **_kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            refs = tuple(
+                ref
+                for obligation in obligations
+                for ref in control._ci_artifact_expected_refs(obligation)
+            )
+            build_calls.append(refs)
+            return {"kind": "build-request"}, {"artifact/wheel": list(refs)}
+
+        def fake_execute_build(
+            *,
+            request: Mapping[str, object],
+            repo_root: Path,
+            bundle_dir: Path,
+        ) -> dict[str, object]:
+            assert request["kind"] == "build-request"
+            assert repo_root == scratch
+            windows_output = bundle_dir / "dist/a.whl"
+            windows_output.parent.mkdir(parents=True)
+            windows_output.write_bytes(windows_bytes)
+            return {
+                "kind": "build-result",
+                "artifacts": {
+                    "artifact/wheel": {
+                        "bundle-relative-path": windows_output.relative_to(
+                            bundle_dir,
+                        ).as_posix(),
+                    }
+                },
+            }
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fake_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fake_execute_build,
+        )
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "success"
+        assert build_calls == [(artifact_ref,)]
+        assert (
+            _release_shaped_result_digests(result)[artifact_ref]
+            == hashlib.sha256(windows_bytes).hexdigest()
+        )
+        updated_mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
+        mapped_records = [
+            item
+            for item in cast(
+                "Sequence[Mapping[str, object]]",
+                updated_mapping["artifacts"],
+            )
+            if item["artifact-ref"] == artifact_ref
+        ]
+        assert {
+            (item["work-group-id"], item["runner-family"])
+            for item in mapped_records
+        } == {
+            ("wg-release", "ubuntu"),
+            ("wg-release", "windows"),
+        }
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_does_not_reuse_cross_work_group_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Work-group mismatch rejects generated mapping reuse on same runner."""
+    scratch = SCRATCH / "ci-validation-release-shaped-cross-work-group-reuse"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_ref = "ci-validation/artifacts/python/example/a.whl"
+        plan = _release_shaped_no_publish_plan([artifact_ref])
+        matrix = _release_shaped_no_publish_matrix(plan)
+        other_request_digest, other_bundle_id, other_bundle_dir = (
+            control._ci_release_shaped_validation_build_request_identity(
+                request={"kind": "build-request"},
+                mapping_scope=("wg-release-other", "ubuntu"),
+                repo_root=scratch,
+            )
+        )
+        output = other_bundle_dir / "dist/a.whl"
+        output.parent.mkdir(parents=True)
+        other_group_bytes = b"other work group scoped bytes"
+        current_group_bytes = b"current work group scoped bytes"
+        output.write_bytes(other_group_bytes)
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text(
+            json.dumps(
+                {
+                    "schema-version": 1,
+                    "artifacts": {
+                        artifact_ref: {
+                            "path": output.relative_to(scratch).as_posix(),
+                            "source": "materialized-validation-build",
+                            "work-group-id": "wg-release-other",
+                            "runner-family": "ubuntu",
+                            "request-digest": other_request_digest,
+                            "bundle-id": other_bundle_id,
+                        },
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
+
+        build_calls: list[tuple[str, ...]] = []
+
+        def fake_build_request(
+            *,
+            obligations: Sequence[Mapping[str, object]],
+            **_kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            refs = tuple(
+                ref
+                for obligation in obligations
+                for ref in control._ci_artifact_expected_refs(obligation)
+            )
+            build_calls.append(refs)
+            return {"kind": "build-request"}, {"artifact/wheel": list(refs)}
+
+        def fake_execute_build(
+            *,
+            request: Mapping[str, object],
+            repo_root: Path,
+            bundle_dir: Path,
+        ) -> dict[str, object]:
+            assert request["kind"] == "build-request"
+            assert repo_root == scratch
+            current_output = bundle_dir / "dist/a.whl"
+            current_output.parent.mkdir(parents=True)
+            current_output.write_bytes(current_group_bytes)
+            return {
+                "kind": "build-result",
+                "artifacts": {
+                    "artifact/wheel": {
+                        "bundle-relative-path": current_output.relative_to(
+                            bundle_dir,
+                        ).as_posix(),
+                    }
+                },
+            }
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fake_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fake_execute_build,
+        )
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        assert result["outcome"] == "success"
+        assert build_calls == [(artifact_ref,)]
+        assert (
+            _release_shaped_result_digests(result)[artifact_ref]
+            == hashlib.sha256(current_group_bytes).hexdigest()
+        )
+        updated_mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
+        mapped_records = [
+            item
+            for item in cast(
+                "Sequence[Mapping[str, object]]",
+                updated_mapping["artifacts"],
+            )
+            if item["artifact-ref"] == artifact_ref
+        ]
+        assert {
+            (item["work-group-id"], item["runner-family"])
+            for item in mapped_records
+        } == {
+            ("wg-release-other", "ubuntu"),
+            ("wg-release", "ubuntu"),
+        }
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -36430,6 +38752,62 @@ def _ci_descriptor_target_plan_context() -> tuple[
     )
 
 
+def _ci_release_shaped_batch_plan_context() -> tuple[
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+]:
+    fixtures = _validation_plan_contract_fixtures()
+    snapshot = fixtures.freeze_ci_validation_plan(
+        request=fixtures._normalized_request(),
+        plan_id=fixtures.PLAN_ID,
+        created_at=fixtures.CREATED_AT,
+        observed_commit_sha=fixtures.TREE_SHA,
+        verdict_intent="executable",
+        classification=fixtures._classification(),
+        subjects=[fixtures._descriptor_backed_subject()],
+        validation_obligations=[
+            fixtures._artifact_validation_obligation(),
+            fixtures._validation_obligation(),
+        ],
+        descriptor_obligations=[fixtures._descriptor_obligation()],
+        artifact_obligations=[fixtures._artifact_obligation()],
+        work_groups=[
+            fixtures._artifact_work_group(),
+            fixtures._descriptor_work_group(),
+            fixtures._ecosystem_gate_work_group(),
+        ],
+        evidence_expectations=[
+            fixtures._artifact_evidence_expectation(),
+            fixtures._descriptor_evidence_expectation(),
+            fixtures._evidence_expectation(),
+        ],
+        fact_snapshot_providers=[fixtures._descriptor_fact_provider()],
+    )
+    request = cast("dict[str, object]", fixtures._request())
+    materialization = (
+        batch_contracts.materialize_ci_validation_execution_batches(
+            plan=snapshot.plan,
+            request=request,
+            changed_files_snapshot=snapshot.changed_files_snapshot,
+            fact_snapshot=snapshot.fact_snapshot,
+            expected_run_id=fixtures.RUN_ID,
+            expected_run_attempt=fixtures.RUN_ATTEMPT,
+            created_at=fixtures.CREATED_AT,
+            execution_workflow="CI Validation",
+        )
+    )
+    return (
+        cast("dict[str, object]", snapshot.plan),
+        request,
+        cast("dict[str, object]", snapshot.changed_files_snapshot),
+        cast("dict[str, object]", snapshot.fact_snapshot),
+        cast("dict[str, object]", materialization.manifest),
+    )
+
+
 def _ci_batch_matrix_rows(
     plan: dict[str, object],
     manifest: dict[str, object],
@@ -36957,8 +39335,11 @@ def _aggregate_ci_batch_evidence(  # noqa: C901, PLR0912
         "aggregate-manifest-upload-id"
     ),
     aggregate_phase: str = "all",
+    authorizing_context: Mapping[str, object] | None = None,
 ) -> tuple[int, dict[str, object], dict[str, object]]:
-    context = batch_contracts.authorizing_context_kwargs()
+    context = (
+        authorizing_context or batch_contracts.authorizing_context_kwargs()
+    )
     plan_path = scratch / "aggregate-plan.json"
     request_path = scratch / "aggregate-request.json"
     changed_files_path = scratch / "aggregate-changed-files.json"
@@ -39810,6 +42191,211 @@ def test_ci_batch_aggregation_writes_manifest_and_summary() -> None:
                 "outcome"
             ]
             == "satisfied"
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_batch_aggregation_propagates_malformed_release_mapping_failure() -> (
+    None
+):
+    """Malformed scoped output mappings fail through batch and aggregate paths."""
+    scratch = _ci_batch_bundle_scratch(
+        "batch-aggregation-release-mapping-fail-closed",
+    )
+    try:
+        observed_root = scratch / "observed"
+        observed_root.mkdir()
+        (
+            plan,
+            request,
+            changed_files_snapshot,
+            fact_snapshot,
+            manifest,
+        ) = _ci_release_shaped_batch_plan_context()
+        context = {
+            "request": request,
+            "changed_files_snapshot": changed_files_snapshot,
+            "fact_snapshot": fact_snapshot,
+            "expected_run_id": batch_contracts.RUN_ID,
+            "expected_run_attempt": batch_contracts.RUN_ATTEMPT,
+        }
+        matrix_rows = cast(
+            "list[dict[str, object]]",
+            ci_validation_execution_batch_matrix(
+                manifest,
+                plan=plan,
+                request=request,
+                changed_files_snapshot=changed_files_snapshot,
+                fact_snapshot=fact_snapshot,
+                expected_run_id=batch_contracts.RUN_ID,
+                expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+            )["include"],
+        )
+        batches = {
+            cast("str", batch["batch-id"]): batch
+            for batch in cast("list[dict[str, object]]", manifest["batches"])
+        }
+        release_row = next(
+            row
+            for row in matrix_rows
+            if batches[
+                cast(
+                    "str",
+                    cast("dict[str, object]", row["identity-matrix"])[
+                        "batch-id"
+                    ],
+                )
+            ]["compatibility-profile"]["release-shaped-profile"]
+            is not None
+        )
+        release_batch_id = cast(
+            "str",
+            cast("dict[str, object]", release_row["identity-matrix"])[
+                "batch-id"
+            ],
+        )
+        release_batch = batches[release_batch_id]
+        release_selector = cast(
+            "list[dict[str, object]]",
+            release_batch["ordered-selectors"],
+        )[0]
+        fallback_output = (
+            scratch / ".three-ci-validation/work/validation-build/wheel.whl"
+        )
+        fallback_output.parent.mkdir(parents=True)
+        fallback_output.write_bytes(b"fallback bytes must not be used")
+        mapping_path = (
+            scratch
+            / ".three-ci-validation/work/validation-build-artifacts.json"
+        )
+        mapping_path.write_text("{not-json", encoding="utf-8")
+        plan_path = scratch / "validation-plan.json"
+        request_path = scratch / "ci-validation-request.json"
+        manifest_path = scratch / "execution-batch-manifest.json"
+        changed_files_path = scratch / "changed-files.json"
+        fact_snapshot_path = scratch / "fact-snapshot.json"
+        for path, document in (
+            (plan_path, plan),
+            (request_path, request),
+            (manifest_path, manifest),
+            (changed_files_path, changed_files_snapshot),
+            (fact_snapshot_path, fact_snapshot),
+        ):
+            path.write_text(json.dumps(document), encoding="utf-8")
+        result_dir = scratch / "release-validation-results"
+        batch_output_path = scratch / "release-batch-outputs.txt"
+
+        assert (
+            control._cmd_run_ci_validation_batch_commands(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    request=str(request_path),
+                    execution_batch_manifest=str(manifest_path),
+                    changed_files_snapshot=str(changed_files_path),
+                    fact_snapshot=str(fact_snapshot_path),
+                    matrix_row_json=json.dumps(
+                        release_row,
+                        separators=(",", ":"),
+                    ),
+                    result_out_dir=str(result_dir),
+                    dependency_bundle=[],
+                    observed_artifacts_dir=str(observed_root),
+                    expected_run_id=batch_contracts.RUN_ID,
+                    expected_run_attempt=batch_contracts.RUN_ATTEMPT,
+                    observed_commit_sha=batch_contracts.TREE_SHA,
+                    repo_root=str(scratch),
+                    github_output=str(batch_output_path),
+                )
+            )
+            == 0
+        )
+
+        release_result = json.loads(
+            (result_dir / "validation-result-000.json").read_text(
+                encoding="utf-8",
+            ),
+        )
+        assert release_result["outcome"] == "blocking-failure"
+        assert (
+            _github_outputs(batch_output_path)["validation_outcome"]
+            == "blocking-failure"
+        )
+        command = cast(
+            "Sequence[Mapping[str, object]]",
+            release_result["commands"],
+        )[0]
+        assert "artifact-shape-unconfirmed" in cast("str", command["error"])
+        release_bundle_scratch = scratch / "release-bundle"
+        release_bundle_scratch.mkdir()
+        release_bundle = _write_ci_batch_bundle(
+            release_bundle_scratch,
+            plan,
+            manifest,
+            release_row,
+            [release_result],
+            authorizing_context=context,
+        )
+        _stage_ci_batch_bundle_artifact(observed_root, release_bundle)
+
+        evidence_result, _aggregate_manifest, _evidence_summary = (
+            _aggregate_ci_batch_evidence(
+                scratch,
+                plan,
+                manifest,
+                observed_root,
+                aggregate_phase="evidence",
+                authorizing_context=context,
+            )
+        )
+        result, aggregate_manifest, summary = _aggregate_ci_batch_evidence(
+            scratch,
+            plan,
+            manifest,
+            observed_root,
+            aggregate_phase="summary",
+            aggregate_evidence_manifest_producer_verified=True,
+            authorizing_context=context,
+        )
+
+        assert evidence_result == 0
+        assert result == 1
+        release_slot = next(
+            slot
+            for slot in cast(
+                "Sequence[Mapping[str, object]]",
+                aggregate_manifest["batch-bundles"],
+            )
+            if slot["batch-id"] == release_batch_id
+        )
+        assert release_slot["slot-admissibility"] == "valid"
+        evidence_result_row = next(
+            row
+            for row in cast(
+                "Sequence[Mapping[str, object]]",
+                summary["evidence-results"],
+            )
+            if row["work-group-id"] == release_selector["work-group-id"]
+        )
+        assert evidence_result_row["outcome"] == "failed"
+        assert (
+            cast("Mapping[str, object]", summary["reason"])[
+                "blocking-validation-failure"
+            ]
+            is True
+        )
+        blocking_failures = [
+            failure
+            for failure in cast(
+                "Sequence[Mapping[str, object]]",
+                summary["failures"],
+            )
+            if failure["kind"] == "blocking-validation-failure"
+        ]
+        assert blocking_failures
+        assert (
+            blocking_failures[0]["work-group-id"]
+            == release_selector["work-group-id"]
         )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
