@@ -2,7 +2,14 @@
   "lspServers": {
     "csharp": {
       "command": "mise",
-      "args": ["exec", "--", "dotnet", "tool", "run", "csharp-ls"],
+      "args": [
+        "exec",
+        "--",
+        "dotnet",
+        "tool",
+        "run",
+        "csharp-ls"
+      ],
       "fileExtensions": {
         ".cs": "csharp"
       }
