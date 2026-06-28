@@ -39,6 +39,22 @@ dependencies:
       path: skills/microsoft-code-reference
       ref: caa3d670bf2814171dba4f7346ece5080964021e
   mcp:
+    - name: io.github.upstash/context7
+      registry: false
+      transport: stdio
+      command: mise
+      args:
+        - exec
+        - --
+        - pnpm
+        - dlx
+        - '@upstash/context7-mcp@1.0.30'
+      env:
+        CONTEXT7_API_KEY: '${input:CONTEXT7_API_KEY}'
+    - name: microsoft-learn
+      registry: false
+      transport: http
+      url: https://learn.microsoft.com/api/mcp
     - name: binlog
       registry: false
       transport: stdio
