@@ -42,6 +42,14 @@ MANDATORY_TEST_NODEIDS = (
     "tests/test_workflow_release_control.py::"
     "test_acceptance_gate_pins_r35_release_planner_regression",
     "tests/test_workflow_release_control.py::"
+    "test_acceptance_gate_pins_phase1_dotnet_metadata_cache_regression",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_plan_reuses_cached_dotnet_metadata_across_plan_misses",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_plan_recollects_invalid_cached_dotnet_metadata",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_release_plan_dotnet_metadata_cache_write_is_atomic",
+    "tests/test_workflow_release_control.py::"
     "test_acceptance_gate_pins_r36_dotnet_dist_boundary_regression",
     "tests/test_workflow_release_control.py::"
     "test_acceptance_gate_pins_r37_github_release_skip_satisfied_regressions",

@@ -63,7 +63,7 @@ from three_workflow_release_proof import (
 from tests import ci_validation_batch_fixtures as batch_contracts
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Mapping
+    from collections.abc import Callable, Iterable, Iterator
 
 REPO_ROOT = Path(__file__).parents[1]
 SCRIPT = REPO_ROOT / "eng/scripts/workflow_release_control.py"
@@ -2798,6 +2798,28 @@ def test_acceptance_gate_pins_r35_release_planner_regression() -> None:
     required_nodeids = {
         "src/public/lib/three-workflow-release-planner/tests/test_planner.py::"
         "test_github_release_mixed_siblings_keep_skip_satisfied",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
+def test_acceptance_gate_pins_phase1_dotnet_metadata_cache_regression() -> None:
+    """Focused release acceptance must pin release-planner .NET metadata cache."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_plan_reuses_cached_dotnet_metadata_across_plan_misses",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_plan_recollects_invalid_cached_dotnet_metadata",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_plan_dotnet_metadata_cache_write_is_atomic",
     }
     matrix_nodeids = set().union(
         _matrix_test_nodeids(_acceptance_matrix()),
@@ -33870,11 +33892,14 @@ def test_ci_validation_release_plan_records_planner_metadata_phases(
             assert catalog_document == {}
             return FakeSnapshot()
 
+        collect_calls: list[Mapping[str, object]] = []
+
         def fake_collect_dotnet_metadata(
             metadata_input: Mapping[str, object],
             repo_root: Path,
         ) -> dict[str, object]:
             assert repo_root == scratch
+            collect_calls.append(deepcopy(metadata_input))
             assert "dotnet.example" in cast(
                 "Mapping[str, object]",
                 metadata_input["projects"],
@@ -33939,7 +33964,9 @@ def test_ci_validation_release_plan_records_planner_metadata_phases(
             "release-planner-project-lookup",
             "release-planner-request-assembly",
             "release-planner-dotnet-metadata-input",
+            "release-planner-dotnet-metadata-cache-lookup",
             "release-planner-dotnet-metadata-collect",
+            "release-planner-dotnet-metadata-cache-write",
             "release-planner-plan-release",
             "release-planner-plan-contract-validation",
             "release-planner-cache-write",
@@ -33961,6 +33988,12 @@ def test_ci_validation_release_plan_records_planner_metadata_phases(
         metadata_phase = phases[7]
         assert metadata_phase["project-count"] == 1
         assert metadata_phase["ecosystem"] == "dotnet"
+        metadata_cache_phase = phases[8]
+        assert metadata_cache_phase["cache-hit"] is False
+        assert "release-planner-dotnet-metadata-cache" in cast(
+            "str",
+            metadata_cache_phase["cache-path"],
+        )
         issues: list[object] = []
         ci_validation_batch_contracts._validate_release_shaped_profile_telemetry(
             telemetry,
@@ -33980,12 +34013,549 @@ def test_ci_validation_release_plan_records_planner_metadata_phases(
         )
 
         assert cached_plan == {"kind": "release-plan"}
+        assert len(collect_calls) == 1
         assert [phase["phase"] for phase in cache_phases] == [
             "release-planner-cache-lookup",
             "release-planner-cache-restore",
             "release-planner-plan-contract-validation",
         ]
         assert cache_phases[0]["cache-hit"] is True
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+class _FakeReleasePlanDotnetProject:
+    ecosystem = "dotnet"
+
+
+class _FakeReleasePlanDotnetSnapshot:
+    def __init__(self, metadata_input: Mapping[str, object]) -> None:
+        self.metadata_input = deepcopy(metadata_input)
+        projects = cast(
+            "Mapping[str, object]",
+            self.metadata_input["projects"],
+        )
+        self.projects = {
+            project_id: _FakeReleasePlanDotnetProject()
+            for project_id in projects
+        }
+        self.target_instances = {"nuget/nuget-org": object()}
+
+    def dotnet_metadata_input(self, commit_sha: str) -> dict[str, object]:
+        assert commit_sha == self.metadata_input["commit-sha"]
+        return deepcopy(self.metadata_input)
+
+
+class _FakeReleasePlanResult:
+    def __init__(self, project_id: str, profile: str) -> None:
+        self.plan = {
+            "kind": "release-plan",
+            "project-id": project_id,
+            "profile": profile,
+        }
+
+
+def _fake_dotnet_metadata_input(
+    project_ids: Sequence[str],
+    *,
+    commit_sha: str = SHA_A,
+    package_requirements: Mapping[str, bool] | None = None,
+) -> dict[str, object]:
+    requirements = package_requirements or {}
+    return {
+        "api-version": "three.release.dotnet-planner-metadata-input/v1alpha1",
+        "kind": "dotnet-planner-metadata-input",
+        "commit-sha": commit_sha,
+        "projects": {
+            project_id: {
+                "descriptor-path": (
+                    f"src/public/lib/{project_id.replace('.', '-')}/"
+                    "three.release.yml"
+                ),
+                "primary-manifest-path": (
+                    f"src/public/lib/{project_id.replace('.', '-')}/"
+                    f"{project_id.replace('.', '-')}.csproj"
+                ),
+                "requires-package-id": requirements.get(project_id, True),
+            }
+            for project_id in project_ids
+        },
+    }
+
+
+def _fake_dotnet_metadata(
+    metadata_input: Mapping[str, object],
+    *,
+    commit_sha: str | None = None,
+) -> dict[str, object]:
+    projects = cast(
+        "Mapping[str, Mapping[str, object]]", metadata_input["projects"]
+    )
+    return {
+        "api-version": "three.release.dotnet-planner-metadata/v1alpha1",
+        "kind": "dotnet-planner-metadata",
+        "commit-sha": commit_sha or cast("str", metadata_input["commit-sha"]),
+        "projects": {
+            project_id: {
+                "descriptor-path": project["descriptor-path"],
+                "primary-manifest-path": project["primary-manifest-path"],
+                "resolved-version": "1.2.3",
+                **(
+                    {"package-id": project_id.replace(".", "-")}
+                    if project["requires-package-id"] is True
+                    else {}
+                ),
+            }
+            for project_id, project in projects.items()
+        },
+    }
+
+
+def _install_fake_release_plan_dotnet_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    scratch: Path,
+    snapshot: _FakeReleasePlanDotnetSnapshot,
+    collect_dotnet: object,
+    expected_dotnet_metadata: Mapping[str, object],
+) -> None:
+    descriptor_paths = tuple(
+        sorted(
+            cast(
+                "Mapping[str, object]",
+                snapshot.metadata_input["projects"],
+            )[project_id]["descriptor-path"]
+            for project_id in snapshot.projects
+        )
+    )
+
+    def fake_discover_tracked_authoring_files(repo_root: Path) -> set[str]:
+        assert repo_root == scratch
+        return {"eng/release/target-instances.yml", *descriptor_paths}
+
+    def fake_discover_authoring_descriptor_paths(
+        tracked_files: Iterable[str],
+    ) -> tuple[str, ...]:
+        assert set(descriptor_paths) <= set(tracked_files)
+        return descriptor_paths
+
+    def fake_load_authoring_documents(
+        repo_root: Path,
+        discovered_descriptor_paths: Iterable[str],
+    ) -> tuple[dict[str, object], dict[str, object]]:
+        assert repo_root == scratch
+        assert tuple(discovered_descriptor_paths) == descriptor_paths
+        return {}, {descriptor_path: {} for descriptor_path in descriptor_paths}
+
+    def fake_validate_authoring_documents(
+        descriptor_documents: Mapping[str, object],
+        catalog_document: object,
+        *,
+        tracked_files: Iterable[str],
+        catalog_path: str,
+        repo_root: Path,
+    ) -> _FakeReleasePlanDotnetSnapshot:
+        assert repo_root == scratch
+        assert catalog_path == "eng/release/target-instances.yml"
+        assert set(descriptor_documents) == set(descriptor_paths)
+        assert "eng/release/target-instances.yml" in tracked_files
+        assert catalog_document == {}
+        return snapshot
+
+    def fake_plan_release(
+        plan_snapshot: _FakeReleasePlanDotnetSnapshot,
+        inputs: PlannerInputs,
+    ) -> _FakeReleasePlanResult:
+        assert plan_snapshot is snapshot
+        assert inputs.dotnet_metadata == expected_dotnet_metadata
+        assert inputs.validation_build is True
+        project_id = cast(
+            "Sequence[str]", inputs.request["requested-project-ids"]
+        )[0]
+        return _FakeReleasePlanResult(
+            project_id, cast("str", inputs.request["profile"])
+        )
+
+    def fake_validate_contract(value: object, **kwargs: object) -> None:
+        if isinstance(value, Mapping) and value.get("kind") in {
+            "dotnet-planner-metadata",
+            "dotnet-planner-metadata-input",
+        }:
+            validate_contract(value, **kwargs)
+
+    monkeypatch.setattr(
+        control,
+        "discover_tracked_authoring_files",
+        fake_discover_tracked_authoring_files,
+    )
+    monkeypatch.setattr(
+        control,
+        "discover_authoring_descriptor_paths",
+        fake_discover_authoring_descriptor_paths,
+    )
+    monkeypatch.setattr(
+        control,
+        "load_authoring_documents",
+        fake_load_authoring_documents,
+    )
+    monkeypatch.setattr(
+        control,
+        "validate_authoring_documents",
+        fake_validate_authoring_documents,
+    )
+    monkeypatch.setattr(control, "collect_dotnet_metadata", collect_dotnet)
+    monkeypatch.setattr(control, "plan_release", fake_plan_release)
+    monkeypatch.setattr(control, "validate_contract", fake_validate_contract)
+
+
+def test_ci_validation_release_plan_reuses_cached_dotnet_metadata_across_plan_misses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Distinct project plan misses share one validated .NET metadata cache hit."""
+    scratch = SCRATCH / "ci-validation-release-plan-dotnet-metadata-cache-reuse"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        metadata_input = _fake_dotnet_metadata_input(
+            ("dotnet.cache.a", "dotnet.cache.b"),
+        )
+        collected_metadata = _fake_dotnet_metadata(metadata_input)
+        snapshot = _FakeReleasePlanDotnetSnapshot(metadata_input)
+        collect_calls: list[Mapping[str, object]] = []
+
+        def fake_collect_dotnet_metadata(
+            current_metadata_input: Mapping[str, object],
+            repo_root: Path,
+        ) -> dict[str, object]:
+            assert repo_root == scratch
+            collect_calls.append(deepcopy(current_metadata_input))
+            return deepcopy(collected_metadata)
+
+        _install_fake_release_plan_dotnet_pipeline(
+            monkeypatch,
+            scratch=scratch,
+            snapshot=snapshot,
+            collect_dotnet=fake_collect_dotnet_metadata,
+            expected_dotnet_metadata=collected_metadata,
+        )
+        first_phases: list[dict[str, object]] = []
+        second_phases: list[dict[str, object]] = []
+
+        first_plan = control._ci_validation_release_plan(
+            repo_root=scratch,
+            observed_commit_sha=SHA_A,
+            profile="nuget",
+            project_id="dotnet.cache.a",
+            descriptor_path=("src/public/lib/dotnet-cache-a/three.release.yml"),
+            profile_phases=first_phases,
+        )
+        second_plan = control._ci_validation_release_plan(
+            repo_root=scratch,
+            observed_commit_sha=SHA_A,
+            profile="nuget",
+            project_id="dotnet.cache.b",
+            descriptor_path=("src/public/lib/dotnet-cache-b/three.release.yml"),
+            profile_phases=second_phases,
+        )
+
+        assert first_plan["project-id"] == "dotnet.cache.a"
+        assert second_plan["project-id"] == "dotnet.cache.b"
+        assert collect_calls == [metadata_input]
+        first_names = [phase["phase"] for phase in first_phases]
+        second_names = [phase["phase"] for phase in second_phases]
+        assert "release-planner-dotnet-metadata-collect" in first_names
+        assert "release-planner-dotnet-metadata-cache-write" in first_names
+        assert "release-planner-dotnet-metadata-collect" not in second_names
+        assert "release-planner-dotnet-metadata-cache-write" not in second_names
+        first_lookup = next(
+            phase
+            for phase in first_phases
+            if phase["phase"] == "release-planner-dotnet-metadata-cache-lookup"
+        )
+        second_lookup = next(
+            phase
+            for phase in second_phases
+            if phase["phase"] == "release-planner-dotnet-metadata-cache-lookup"
+        )
+        assert first_lookup["cache-hit"] is False
+        assert second_lookup["cache-hit"] is True
+        assert any(
+            phase["phase"]
+            == "release-planner-dotnet-metadata-cache-contract-validation"
+            and phase["outcome"] == "success"
+            for phase in second_phases
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("case_name", "cached_metadata", "expected_failure_phase"),
+    [
+        (
+            "corrupt-cache",
+            None,
+            "release-planner-dotnet-metadata-cache-restore",
+        ),
+        (
+            "malformed-cached-metadata",
+            {"kind": "dotnet-planner-metadata"},
+            "release-planner-dotnet-metadata-cache-contract-validation",
+        ),
+        (
+            "wrong-input-sha",
+            _fake_dotnet_metadata(
+                _fake_dotnet_metadata_input(("dotnet.cache.invalid",)),
+                commit_sha=SHA_D,
+            ),
+            "release-planner-dotnet-metadata-cache-contract-validation",
+        ),
+        (
+            "wrong-path",
+            {
+                **_fake_dotnet_metadata(
+                    _fake_dotnet_metadata_input(("dotnet.cache.invalid",)),
+                ),
+                "projects": {
+                    "dotnet.cache.invalid": {
+                        **cast(
+                            "Mapping[str, object]",
+                            _fake_dotnet_metadata(
+                                _fake_dotnet_metadata_input(
+                                    ("dotnet.cache.invalid",)
+                                ),
+                            )["projects"]["dotnet.cache.invalid"],
+                        ),
+                        "descriptor-path": "src/public/lib/wrong/three.release.yml",
+                    }
+                },
+            },
+            "release-planner-dotnet-metadata-cache-contract-validation",
+        ),
+        (
+            "package-id-requirement-mismatch",
+            {
+                **_fake_dotnet_metadata(
+                    _fake_dotnet_metadata_input(
+                        ("dotnet.cache.invalid",),
+                        package_requirements={"dotnet.cache.invalid": False},
+                    ),
+                ),
+                "projects": {
+                    "dotnet.cache.invalid": {
+                        **cast(
+                            "Mapping[str, object]",
+                            _fake_dotnet_metadata(
+                                _fake_dotnet_metadata_input(
+                                    ("dotnet.cache.invalid",),
+                                    package_requirements={
+                                        "dotnet.cache.invalid": False
+                                    },
+                                ),
+                            )["projects"]["dotnet.cache.invalid"],
+                        ),
+                        "package-id": "Unexpected.PackageId",
+                    }
+                },
+            },
+            "release-planner-dotnet-metadata-cache-contract-validation",
+        ),
+    ],
+    ids=lambda value: value if isinstance(value, str) else None,
+)
+def test_ci_validation_release_plan_recollects_invalid_cached_dotnet_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    case_name: str,
+    cached_metadata: Mapping[str, object] | None,
+    expected_failure_phase: str,
+) -> None:
+    """Corrupt or mismatched .NET metadata cache entries are never reused."""
+    scratch = SCRATCH / f"ci-validation-release-plan-dotnet-cache-{case_name}"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        package_requirements = (
+            {"dotnet.cache.invalid": False}
+            if case_name == "package-id-requirement-mismatch"
+            else None
+        )
+        metadata_input = _fake_dotnet_metadata_input(
+            ("dotnet.cache.invalid",),
+            package_requirements=package_requirements,
+        )
+        collected_metadata = _fake_dotnet_metadata(metadata_input)
+        snapshot = _FakeReleasePlanDotnetSnapshot(metadata_input)
+        collect_calls: list[Mapping[str, object]] = []
+
+        def fake_collect_dotnet_metadata(
+            current_metadata_input: Mapping[str, object],
+            repo_root: Path,
+        ) -> dict[str, object]:
+            assert repo_root == scratch
+            collect_calls.append(deepcopy(current_metadata_input))
+            return deepcopy(collected_metadata)
+
+        _install_fake_release_plan_dotnet_pipeline(
+            monkeypatch,
+            scratch=scratch,
+            snapshot=snapshot,
+            collect_dotnet=fake_collect_dotnet_metadata,
+            expected_dotnet_metadata=collected_metadata,
+        )
+        cache_path = control._ci_dotnet_metadata_cache_path(
+            scratch,
+            metadata_input,
+        )
+        cache_path.parent.mkdir(parents=True)
+        if cached_metadata is None:
+            cache_path.write_text("{not-json", encoding="utf-8")
+        else:
+            control._write_json(cache_path, cached_metadata)
+        profile_phases: list[dict[str, object]] = []
+
+        plan = control._ci_validation_release_plan(
+            repo_root=scratch,
+            observed_commit_sha=SHA_A,
+            profile="nuget",
+            project_id="dotnet.cache.invalid",
+            descriptor_path=(
+                "src/public/lib/dotnet-cache-invalid/three.release.yml"
+            ),
+            profile_phases=profile_phases,
+        )
+
+        assert plan["project-id"] == "dotnet.cache.invalid"
+        assert collect_calls == [metadata_input]
+        assert control._read_json(cache_path) == collected_metadata
+        assert any(
+            phase["phase"] == expected_failure_phase
+            and phase["outcome"] == "failure"
+            for phase in profile_phases
+        )
+        assert any(
+            phase["phase"] == "release-planner-dotnet-metadata-collect"
+            and phase["outcome"] == "success"
+            for phase in profile_phases
+        )
+        assert any(
+            phase["phase"] == "release-planner-dotnet-metadata-cache-write"
+            and phase["outcome"] == "success"
+            for phase in profile_phases
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_plan_dotnet_metadata_cache_write_is_atomic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Release planning never exposes partial .NET metadata cache writes."""
+    scratch = SCRATCH / "ci-validation-release-plan-dotnet-cache-write-atomic"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        metadata_input = _fake_dotnet_metadata_input(("dotnet.cache.atomic",))
+        collected_metadata = _fake_dotnet_metadata(metadata_input)
+        snapshot = _FakeReleasePlanDotnetSnapshot(metadata_input)
+        collect_calls: list[Mapping[str, object]] = []
+
+        def fake_collect_dotnet_metadata(
+            current_metadata_input: Mapping[str, object],
+            repo_root: Path,
+        ) -> dict[str, object]:
+            assert repo_root == scratch
+            collect_calls.append(deepcopy(current_metadata_input))
+            return deepcopy(collected_metadata)
+
+        _install_fake_release_plan_dotnet_pipeline(
+            monkeypatch,
+            scratch=scratch,
+            snapshot=snapshot,
+            collect_dotnet=fake_collect_dotnet_metadata,
+            expected_dotnet_metadata=collected_metadata,
+        )
+        cache_path = control._ci_dotnet_metadata_cache_path(
+            scratch,
+            metadata_input,
+        )
+        original_replace = Path.replace
+        observed_temp_paths: list[Path] = []
+
+        def fail_metadata_cache_replace(
+            source: Path,
+            destination: Path,
+        ) -> Path:
+            if destination != cache_path:
+                return original_replace(source, destination)
+            observed_temp_paths.append(source)
+            assert source.is_file()
+            assert source.parent == cache_path.parent
+            assert source.name.startswith(f".{cache_path.name}.")
+            assert source.name.endswith(".tmp")
+            message = "metadata cache replace failed"
+            raise OSError(message)
+
+        monkeypatch.setattr(Path, "replace", fail_metadata_cache_replace)
+        profile_phases: list[dict[str, object]] = []
+
+        with pytest.raises(
+            ValueError,
+            match="metadata cache replace failed",
+        ):
+            control._ci_validation_release_plan(
+                repo_root=scratch,
+                observed_commit_sha=SHA_A,
+                profile="nuget",
+                project_id="dotnet.cache.atomic",
+                descriptor_path=(
+                    "src/public/lib/dotnet-cache-atomic/three.release.yml"
+                ),
+                profile_phases=profile_phases,
+            )
+
+        assert collect_calls == [metadata_input]
+        assert observed_temp_paths
+        assert not cache_path.exists()
+        assert not observed_temp_paths[0].exists()
+        write_failure = next(
+            phase
+            for phase in profile_phases
+            if phase["phase"] == "release-planner-dotnet-metadata-cache-write"
+        )
+        assert write_failure["outcome"] == "failure"
+        assert write_failure["cache-path"] == str(cache_path)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_dotnet_metadata_cache_write_is_atomic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Metadata cache writes do not expose partial target files on failure."""
+    scratch = SCRATCH / "ci-validation-release-plan-dotnet-cache-atomic-write"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        target = scratch / ".three-ci-validation/work/cache/result.json"
+        observed_temp_paths: list[Path] = []
+
+        def fail_replace(source: Path, destination: Path) -> None:
+            observed_temp_paths.append(source)
+            assert source.is_file()
+            assert destination == target
+            message = "replace failed"
+            raise OSError(message)
+
+        monkeypatch.setattr(Path, "replace", fail_replace)
+
+        with pytest.raises(OSError, match="replace failed"):
+            control._write_json_atomic(
+                target, {"kind": "dotnet-planner-metadata"}
+            )
+
+        assert observed_temp_paths
+        assert not target.exists()
+        assert not observed_temp_paths[0].exists()
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 

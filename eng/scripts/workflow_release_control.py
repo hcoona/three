@@ -410,6 +410,8 @@ _CI_VALIDATION_INVALID_PLAN_RETAINED_PROJECTION_DETAIL_MESSAGES = (
 _CI_VALIDATION_INVALID_PLAN_MISSING_PROJECTION_DETAIL_MESSAGES = (
     CI_VALIDATION_INVALID_PLAN_NO_AUTHORITY_PROJECTION_DETAIL_MESSAGES
 )
+_DOTNET_METADATA_CACHE_SCHEMA_VERSION = "v1"
+_DOTNET_METADATA_CACHE_COLLECTOR_IDENTITY = "three-workflow-release-metadata"
 
 
 def main() -> int:
@@ -7276,7 +7278,23 @@ def _ci_release_descriptor_project_id(
     return project_id if isinstance(project_id, str) and project_id else None
 
 
-def _ci_validation_release_plan(  # noqa: PLR0915
+def _ci_dotnet_metadata_cache_path(
+    repo_root: Path,
+    metadata_input: Mapping[str, object],
+) -> Path:
+    metadata_input_digest = canonical_json_digest(metadata_input)
+    return (
+        repo_root
+        / ".three-ci-validation"
+        / "work"
+        / "release-planner-dotnet-metadata-cache"
+        / _DOTNET_METADATA_CACHE_SCHEMA_VERSION
+        / _DOTNET_METADATA_CACHE_COLLECTOR_IDENTITY
+        / f"{metadata_input_digest}.json"
+    )
+
+
+def _ci_validation_release_plan(  # noqa: C901, PLR0912, PLR0915
     *,
     repo_root: Path,
     observed_commit_sha: str,
@@ -7551,27 +7569,161 @@ def _ci_validation_release_plan(  # noqa: PLR0915
                 if isinstance(metadata_projects, Mapping)
                 else None,
             )
-            metadata_collect_timing = _ci_timing_start()
-            failure_phase = "release-planner-dotnet-metadata-collect"
-            failure_timing = metadata_collect_timing
+            metadata_cache_path = _ci_dotnet_metadata_cache_path(
+                repo_root,
+                metadata_input,
+            )
+            metadata_cache_lookup_timing = _ci_timing_start()
+            failure_phase = "release-planner-dotnet-metadata-cache-lookup"
+            failure_timing = metadata_cache_lookup_timing
             failure_metadata = {
+                "cache_path": metadata_cache_path,
                 "descriptor_path": descriptor_path,
                 "project_id": project_id,
                 "profile": profile,
                 "ecosystem": project.ecosystem,
             }
-            dotnet_metadata = collect_dotnet_metadata(metadata_input, repo_root)
+            metadata_cache_path.parent.mkdir(parents=True, exist_ok=True)
+            metadata_cache_hit = metadata_cache_path.is_file()
             _ci_profile_phase_record(
                 profile_phases,
-                "release-planner-dotnet-metadata-collect",
-                metadata_collect_timing,
+                "release-planner-dotnet-metadata-cache-lookup",
+                metadata_cache_lookup_timing,
                 outcome="success",
                 cwd=repo_root,
+                cache_path=metadata_cache_path,
                 descriptor_path=descriptor_path,
                 project_id=project_id,
                 profile=profile,
                 ecosystem=project.ecosystem,
+                cache_hit=metadata_cache_hit,
             )
+            if metadata_cache_hit:
+                metadata_restore_timing = _ci_timing_start()
+                cached_metadata: Json | None = None
+                try:
+                    cached_metadata = _read_json(metadata_cache_path)
+                except (OSError, TypeError, ValueError) as exc:
+                    _ci_profile_phase_record(
+                        profile_phases,
+                        "release-planner-dotnet-metadata-cache-restore",
+                        metadata_restore_timing,
+                        outcome="failure",
+                        cwd=repo_root,
+                        cache_path=metadata_cache_path,
+                        descriptor_path=descriptor_path,
+                        project_id=project_id,
+                        profile=profile,
+                        ecosystem=project.ecosystem,
+                        cache_hit=True,
+                        error=str(exc),
+                    )
+                else:
+                    _ci_profile_phase_record(
+                        profile_phases,
+                        "release-planner-dotnet-metadata-cache-restore",
+                        metadata_restore_timing,
+                        outcome="success",
+                        cwd=repo_root,
+                        cache_path=metadata_cache_path,
+                        descriptor_path=descriptor_path,
+                        project_id=project_id,
+                        profile=profile,
+                        ecosystem=project.ecosystem,
+                        cache_hit=True,
+                    )
+                    metadata_validation_timing = _ci_timing_start()
+                    try:
+                        validate_contract(
+                            cached_metadata,
+                            metadata_input=metadata_input,
+                        )
+                    except (TypeError, ValueError) as exc:
+                        _ci_profile_phase_record(
+                            profile_phases,
+                            (
+                                "release-planner-dotnet-metadata-cache-"
+                                "contract-validation"
+                            ),
+                            metadata_validation_timing,
+                            outcome="failure",
+                            cwd=repo_root,
+                            cache_path=metadata_cache_path,
+                            descriptor_path=descriptor_path,
+                            project_id=project_id,
+                            profile=profile,
+                            ecosystem=project.ecosystem,
+                            cache_hit=True,
+                            error=str(exc),
+                        )
+                    else:
+                        _ci_profile_phase_record(
+                            profile_phases,
+                            (
+                                "release-planner-dotnet-metadata-cache-"
+                                "contract-validation"
+                            ),
+                            metadata_validation_timing,
+                            outcome="success",
+                            cwd=repo_root,
+                            cache_path=metadata_cache_path,
+                            descriptor_path=descriptor_path,
+                            project_id=project_id,
+                            profile=profile,
+                            ecosystem=project.ecosystem,
+                            cache_hit=True,
+                        )
+                        dotnet_metadata = cached_metadata
+            if dotnet_metadata is None:
+                metadata_collect_timing = _ci_timing_start()
+                failure_phase = "release-planner-dotnet-metadata-collect"
+                failure_timing = metadata_collect_timing
+                failure_metadata = {
+                    "cache_path": metadata_cache_path,
+                    "descriptor_path": descriptor_path,
+                    "project_id": project_id,
+                    "profile": profile,
+                    "ecosystem": project.ecosystem,
+                }
+                dotnet_metadata = collect_dotnet_metadata(
+                    metadata_input,
+                    repo_root,
+                )
+                _ci_profile_phase_record(
+                    profile_phases,
+                    "release-planner-dotnet-metadata-collect",
+                    metadata_collect_timing,
+                    outcome="success",
+                    cwd=repo_root,
+                    cache_path=metadata_cache_path,
+                    descriptor_path=descriptor_path,
+                    project_id=project_id,
+                    profile=profile,
+                    ecosystem=project.ecosystem,
+                )
+                metadata_cache_write_timing = _ci_timing_start()
+                failure_phase = "release-planner-dotnet-metadata-cache-write"
+                failure_timing = metadata_cache_write_timing
+                failure_metadata = {
+                    "cache_path": metadata_cache_path,
+                    "descriptor_path": descriptor_path,
+                    "project_id": project_id,
+                    "profile": profile,
+                    "ecosystem": project.ecosystem,
+                }
+                _write_json_atomic(metadata_cache_path, dotnet_metadata)
+                _ci_profile_phase_record(
+                    profile_phases,
+                    "release-planner-dotnet-metadata-cache-write",
+                    metadata_cache_write_timing,
+                    outcome="success",
+                    cwd=repo_root,
+                    cache_path=metadata_cache_path,
+                    descriptor_path=descriptor_path,
+                    project_id=project_id,
+                    profile=profile,
+                    ecosystem=project.ecosystem,
+                )
         plan_timing = _ci_timing_start()
         failure_phase = "release-planner-plan-release"
         failure_timing = plan_timing
@@ -27822,6 +27974,33 @@ def _write_json(path: Path, document: object) -> None:
         + "\n",
         encoding="utf-8",
     )
+
+
+def _write_json_atomic(path: Path, document: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = (
+        json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False)
+        + "\n"
+    )
+    temp_path: Path | None = None
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as handle:
+        temp_path = Path(handle.name)
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
+    try:
+        temp_path.replace(path)
+    except OSError:
+        with suppress(OSError):
+            temp_path.unlink()
+        raise
 
 
 def _write_outputs(path: str | None, values: Mapping[str, str]) -> None:
