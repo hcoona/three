@@ -595,6 +595,19 @@ def _valid_release_profile_telemetry() -> dict[str, object]:
                 "completed-at": "2026-06-26T05:00:01.000Z",
                 "duration-ms": 1000,
                 "cwd": ".three-ci-validation/work/validation-build",
+                "descriptor-path": "src/public/lib/example/three.release.yml",
+                "project-id": "python.example",
+                "profile": "wheel",
+                "ecosystem": "python",
+                "cache-hit": False,
+                "cache-path": (
+                    ".three-ci-validation/work/release-shaped-plans/plan.json"
+                ),
+                "project-count": 1,
+                "target-count": 1,
+                "obligation-count": 1,
+                "artifact-count": 1,
+                "build-id-count": 1,
                 "output-path": (
                     ".three-ci-validation/work/validation-build/pkg.whl"
                 ),
@@ -998,6 +1011,19 @@ def test_release_shaped_batch_accepts_profile_telemetry() -> None:
     _validate_release_bundle(bundle)
 
 
+def test_release_shaped_batch_accepts_node_profile_telemetry() -> None:
+    """Release-shaped profile phases accept node ecosystem telemetry."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    phase = _release_profile_phase(telemetry, "base")
+    phase["project-id"] = "node.example"
+    phase["profile"] = "npm-pack"
+    phase["ecosystem"] = "node"
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    _validate_release_bundle(bundle)
+
+
 def test_release_shaped_batch_accepts_profile_telemetry_path_argv_forms() -> (
     None
 ):
@@ -1098,6 +1124,104 @@ def test_release_shaped_batch_accepts_profile_telemetry_path_argv_forms() -> (
                 "release-build": "not-an-object",
             },
             ".profile-telemetry.release-build",
+        ),
+        (
+            lambda telemetry: {
+                **telemetry,
+                "phases": [
+                    {
+                        **cast("list[dict[str, object]]", telemetry["phases"])[
+                            0
+                        ],
+                        "cache-hit": "yes",
+                    }
+                ],
+            },
+            ".profile-telemetry.phases[0].cache-hit",
+        ),
+        (
+            lambda telemetry: {
+                **telemetry,
+                "phases": [
+                    {
+                        **cast("list[dict[str, object]]", telemetry["phases"])[
+                            0
+                        ],
+                        "ecosystem": "unregistered-ecosystem",
+                    }
+                ],
+            },
+            ".profile-telemetry.phases[0].ecosystem",
+        ),
+        (
+            lambda telemetry: {
+                **telemetry,
+                "phases": [
+                    {
+                        **cast("list[dict[str, object]]", telemetry["phases"])[
+                            0
+                        ],
+                        "artifact-count": -1,
+                    }
+                ],
+            },
+            ".profile-telemetry.phases[0].artifact-count",
+        ),
+        (
+            lambda telemetry: {
+                **telemetry,
+                "phases": [
+                    {
+                        **cast("list[dict[str, object]]", telemetry["phases"])[
+                            0
+                        ],
+                        "descriptor-count": -1,
+                    }
+                ],
+            },
+            ".profile-telemetry.phases[0].descriptor-count",
+        ),
+        (
+            lambda telemetry: {
+                **telemetry,
+                "phases": [
+                    {
+                        **cast("list[dict[str, object]]", telemetry["phases"])[
+                            0
+                        ],
+                        "descriptor-count": "1",
+                    }
+                ],
+            },
+            ".profile-telemetry.phases[0].descriptor-count",
+        ),
+        (
+            lambda telemetry: {
+                **telemetry,
+                "phases": [
+                    {
+                        **cast("list[dict[str, object]]", telemetry["phases"])[
+                            0
+                        ],
+                        "tracked-file-count": -1,
+                    }
+                ],
+            },
+            ".profile-telemetry.phases[0].tracked-file-count",
+        ),
+        (
+            lambda telemetry: {
+                **telemetry,
+                "phases": [
+                    {
+                        **cast("list[dict[str, object]]", telemetry["phases"])[
+                            0
+                        ],
+                        "tracked-file-count": "2",
+                    }
+                ],
+            },
+            ".profile-telemetry.phases[0].tracked-file-count",
         ),
         (
             lambda telemetry: {
@@ -1206,6 +1330,16 @@ def test_release_shaped_batch_rejects_malformed_profile_telemetry(
             ("release-build", "powershell", 0, "path"),
             ".profile-telemetry.release-build.powershell[0].path",
             "powershell",
+        ),
+        (
+            ("phases", 0, "descriptor-path"),
+            ".profile-telemetry.phases[0].descriptor-path",
+            "base",
+        ),
+        (
+            ("phases", 0, "cache-path"),
+            ".profile-telemetry.phases[0].cache-path",
+            "base",
         ),
     ],
 )

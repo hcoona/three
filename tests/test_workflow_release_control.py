@@ -32060,7 +32060,10 @@ def test_ci_validation_release_shaped_artifact_does_not_fabricate_success() -> (
         assert validation_result["outcome"] == "blocking-failure"
         command = validation_result["commands"][0]
         assert command["builtin"] == "release-shaped-artifact"
-        assert "artifact-shape-unconfirmed" in command["error"]
+        assert (
+            "release-shaped validation build descriptor is missing"
+            in (command["error"])
+        )
         failure_profile_telemetry = {
             "kind": "release-shaped-validation-profile-telemetry",
             "schema-version": 1,
@@ -32218,9 +32221,9 @@ def test_ci_batch_contract_allows_release_shaped_failure_profile_telemetry() -> 
     assert detail["profile-telemetry"] == profile_telemetry
 
 
-def test_ci_validation_release_shaped_no_publish_missing_mapping_blocks() -> (
-    None
-):
+def test_ci_validation_release_shaped_no_publish_missing_mapping_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Missing explicit mapping blocks recursive output discovery."""
     scratch = SCRATCH / "ci-validation-release-shaped-output-ref-binding"
     shutil.rmtree(scratch, ignore_errors=True)
@@ -32239,6 +32242,25 @@ def test_ci_validation_release_shaped_no_publish_missing_mapping_blocks() -> (
         a_bytes = b"contents for a"
         (build_root / "1/b.whl").write_bytes(b_bytes)
         (build_root / "2/a.whl").write_bytes(a_bytes)
+        descriptor_path = scratch / "src/public/lib/example/three.release.yml"
+        descriptor_path.parent.mkdir(parents=True)
+        descriptor_path.write_text(
+            "project:\n  id: python.example\n",
+            encoding="utf-8",
+        )
+
+        def unavailable_validation_build(
+            **kwargs: object,
+        ) -> None:
+            assert kwargs["repo_root"] == scratch
+            assert descriptor_path.is_file()
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            unavailable_validation_build,
+        )
+
         result = _run_release_shaped_no_publish_validation(
             scratch=scratch,
             plan=plan,
@@ -32637,6 +32659,1019 @@ def test_ci_validation_release_shaped_materializes_missing_mapping(
         assert any(
             arg == f"/bl:{uploaded_binlog}" for arg in powershell_uploaded_argv
         )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_build_request_records_pre_execute_phases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Build-request planning emits normalized pre-execute release telemetry."""
+    scratch = SCRATCH / "ci-validation-release-shaped-pre-execute-request"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch_descriptor = scratch / "src/public/lib/example/three.release.yml"
+    scratch_descriptor.parent.mkdir(parents=True)
+    scratch_descriptor.write_text(
+        "project:\n  id: python.example\n",
+        encoding="utf-8",
+    )
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        release_plan = {
+            "envelope": {
+                "plan-id": "plan-python-example",
+                "profile": "wheel",
+                "commit-sha": "b" * 40,
+                "projects": {
+                    "python.example": {
+                        "id": "python.example",
+                        "ecosystem": "python",
+                    }
+                },
+            },
+            "graph": {
+                "variants": {
+                    "variant/wheel": {
+                        "id": "variant/wheel",
+                        "project-id": "python.example",
+                        "dimensions": {},
+                        "artifact-ids": ["artifact/wheel"],
+                    }
+                },
+                "artifacts": {
+                    "artifact/wheel": {
+                        "role": "package",
+                        "kind-family": "python",
+                        "concrete-kind": "wheel",
+                    }
+                },
+                "target-instance-snapshots": {},
+                "publish-nodes": {},
+            },
+        }
+
+        def fake_release_plan(**_kwargs: object) -> Mapping[str, object]:
+            return release_plan
+
+        monkeypatch.setattr(
+            control,
+            "_ci_validation_release_plan",
+            fake_release_plan,
+        )
+        monkeypatch.setattr(control, "validate_contract", lambda _value: None)
+        profile_phases: list[dict[str, object]] = []
+
+        build = control._ci_no_publish_release_shaped_build_request(
+            plan=plan,
+            obligations=cast(
+                "Sequence[Mapping[str, object]]",
+                plan["artifact-obligations"],
+            ),
+            observed_commit_sha="b" * 40,
+            repo_root=scratch,
+            profile_phases=profile_phases,
+        )
+
+        assert build is not None
+        phase_names = {phase["phase"] for phase in profile_phases}
+        assert phase_names >= {
+            "release-build-request-shape-selection",
+            "release-build-request-descriptor-stat",
+            "release-build-request-descriptor-parse",
+            "release-build-request-release-plan",
+            "release-build-request-obligation-grouping",
+            "release-build-request-variant-selection",
+            "release-build-request-assembly",
+            "release-build-request-contract-validation",
+        }
+        telemetry = control._ci_release_shaped_profile_telemetry(
+            profile_phases,
+            release_build_telemetry=None,
+            repo_root=scratch,
+        )
+        phases = cast("Sequence[Mapping[str, object]]", telemetry["phases"])
+        descriptor_phases = [
+            phase
+            for phase in phases
+            if phase.get("phase") == "release-build-request-descriptor-parse"
+        ]
+        assert descriptor_phases
+        descriptor_path = cast("str", descriptor_phases[0]["descriptor-path"])
+        assert descriptor_path == "src/public/lib/example/three.release.yml"
+        assert not Path(descriptor_path).is_absolute()
+        assert descriptor_phases[0]["project-id"] == "python.example"
+        variant_phase = next(
+            phase
+            for phase in phases
+            if phase["phase"] == "release-build-request-variant-selection"
+        )
+        assert variant_phase["artifact-count"] == 1
+        assert variant_phase["build-id-count"] == 1
+        issues: list[object] = []
+        ci_validation_batch_contracts._validate_release_shaped_profile_telemetry(
+            telemetry,
+            "$.profile-telemetry",
+            issues,
+        )
+        assert not issues
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_plan_records_planner_metadata_phases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Release-plan creation distinguishes authoring, metadata, and cache work."""
+    scratch = SCRATCH / "ci-validation-release-shaped-pre-execute-planner"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+
+        class FakeProject:
+            ecosystem = "dotnet"
+
+        class FakeSnapshot:
+            def __init__(self) -> None:
+                self.projects = {"dotnet.example": FakeProject()}
+                self.target_instances = {"nuget/nuget-org": object()}
+
+            def dotnet_metadata_input(
+                self,
+                commit_sha: str,
+            ) -> dict[str, object]:
+                assert commit_sha == "b" * 40
+                return {
+                    "projects": {
+                        "dotnet.example": {
+                            "descriptor-path": (
+                                "src/public/lib/example/three.release.yml"
+                            )
+                        }
+                    }
+                }
+
+        class FakePlanResult:
+            def __init__(self) -> None:
+                self.plan = {"kind": "release-plan"}
+
+        def fake_discover_tracked_authoring_files(repo_root: Path) -> set[str]:
+            assert repo_root == scratch
+            return {
+                "eng/release/target-instances.yml",
+                "src/public/lib/example/three.release.yml",
+            }
+
+        def fake_discover_authoring_descriptor_paths(
+            tracked_files: Iterable[str],
+        ) -> tuple[str, ...]:
+            assert "src/public/lib/example/three.release.yml" in tracked_files
+            return ("src/public/lib/example/three.release.yml",)
+
+        def fake_load_authoring_documents(
+            repo_root: Path,
+            descriptor_paths: Iterable[str],
+        ) -> tuple[dict[str, object], dict[str, object]]:
+            assert repo_root == scratch
+            assert tuple(descriptor_paths) == (
+                "src/public/lib/example/three.release.yml",
+            )
+            return {}, {"src/public/lib/example/three.release.yml": {}}
+
+        def fake_validate_authoring_documents(
+            descriptor_documents: Mapping[str, object],
+            catalog_document: object,
+            *,
+            tracked_files: Iterable[str],
+            catalog_path: str,
+            repo_root: Path,
+        ) -> FakeSnapshot:
+            assert repo_root == scratch
+            assert catalog_path == "eng/release/target-instances.yml"
+            assert "src/public/lib/example/three.release.yml" in (
+                descriptor_documents
+            )
+            assert "eng/release/target-instances.yml" in tracked_files
+            assert catalog_document == {}
+            return FakeSnapshot()
+
+        def fake_collect_dotnet_metadata(
+            metadata_input: Mapping[str, object],
+            repo_root: Path,
+        ) -> dict[str, object]:
+            assert repo_root == scratch
+            assert "dotnet.example" in cast(
+                "Mapping[str, object]",
+                metadata_input["projects"],
+            )
+            return {"metadata": "collected"}
+
+        def fake_plan_release(
+            snapshot: FakeSnapshot,
+            inputs: PlannerInputs,
+        ) -> FakePlanResult:
+            assert isinstance(snapshot, FakeSnapshot)
+            assert inputs.dotnet_metadata == {"metadata": "collected"}
+            assert inputs.validation_build is True
+            return FakePlanResult()
+
+        monkeypatch.setattr(
+            control,
+            "discover_tracked_authoring_files",
+            fake_discover_tracked_authoring_files,
+        )
+        monkeypatch.setattr(
+            control,
+            "discover_authoring_descriptor_paths",
+            fake_discover_authoring_descriptor_paths,
+        )
+        monkeypatch.setattr(
+            control,
+            "load_authoring_documents",
+            fake_load_authoring_documents,
+        )
+        monkeypatch.setattr(
+            control,
+            "validate_authoring_documents",
+            fake_validate_authoring_documents,
+        )
+        monkeypatch.setattr(
+            control,
+            "collect_dotnet_metadata",
+            fake_collect_dotnet_metadata,
+        )
+        monkeypatch.setattr(control, "plan_release", fake_plan_release)
+        monkeypatch.setattr(control, "validate_contract", lambda _value: None)
+        profile_phases: list[dict[str, object]] = []
+
+        release_plan = control._ci_validation_release_plan(
+            repo_root=scratch,
+            observed_commit_sha="b" * 40,
+            profile="nuget",
+            project_id="dotnet.example",
+            descriptor_path="src/public/lib/example/three.release.yml",
+            profile_phases=profile_phases,
+        )
+
+        assert release_plan == {"kind": "release-plan"}
+        phase_names = [phase["phase"] for phase in profile_phases]
+        assert phase_names == [
+            "release-planner-cache-lookup",
+            "release-planner-authoring-tracked-file-scan",
+            "release-planner-authoring-descriptor-discovery",
+            "release-planner-authoring-descriptor-load-parse",
+            "release-planner-authoring-validation",
+            "release-planner-project-lookup",
+            "release-planner-request-assembly",
+            "release-planner-dotnet-metadata-input",
+            "release-planner-dotnet-metadata-collect",
+            "release-planner-plan-release",
+            "release-planner-plan-contract-validation",
+            "release-planner-cache-write",
+        ]
+        telemetry = control._ci_release_shaped_profile_telemetry(
+            profile_phases,
+            release_build_telemetry=None,
+            repo_root=scratch,
+        )
+        phases = cast("Sequence[Mapping[str, object]]", telemetry["phases"])
+        assert phases[0]["cache-hit"] is False
+        assert not Path(cast("str", phases[0]["cache-path"])).is_absolute()
+        assert phases[1]["tracked-file-count"] == 2
+        assert phases[2]["descriptor-count"] == 1
+        assert phases[3]["descriptor-count"] == 1
+        authoring_phase = phases[4]
+        assert authoring_phase["project-count"] == 1
+        assert authoring_phase["target-count"] == 1
+        metadata_phase = phases[7]
+        assert metadata_phase["project-count"] == 1
+        assert metadata_phase["ecosystem"] == "dotnet"
+        issues: list[object] = []
+        ci_validation_batch_contracts._validate_release_shaped_profile_telemetry(
+            telemetry,
+            "$.profile-telemetry",
+            issues,
+        )
+        assert not issues
+
+        cache_phases: list[dict[str, object]] = []
+        cached_plan = control._ci_validation_release_plan(
+            repo_root=scratch,
+            observed_commit_sha="b" * 40,
+            profile="nuget",
+            project_id="dotnet.example",
+            descriptor_path="src/public/lib/example/three.release.yml",
+            profile_phases=cache_phases,
+        )
+
+        assert cached_plan == {"kind": "release-plan"}
+        assert [phase["phase"] for phase in cache_phases] == [
+            "release-planner-cache-lookup",
+            "release-planner-cache-restore",
+            "release-planner-plan-contract-validation",
+        ]
+        assert cache_phases[0]["cache-hit"] is True
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _release_shaped_failure_command_profile_and_batch(
+    plan: Mapping[str, object],
+    result: Mapping[str, object],
+) -> tuple[
+    Mapping[str, object], Mapping[str, object], Sequence[Mapping[str, object]]
+]:
+    assert result["outcome"] == "blocking-failure"
+    command = cast(
+        "Mapping[str, object]",
+        cast("Sequence[object]", result["commands"])[0],
+    )
+    assert command["builtin"] == "release-shaped-artifact"
+    assert command["outcome"] == "blocking-failure"
+    profile_telemetry = cast(
+        "Mapping[str, object]",
+        command["profile-telemetry"],
+    )
+    phases = cast(
+        "Sequence[Mapping[str, object]]",
+        profile_telemetry["phases"],
+    )
+    issues: list[object] = []
+    ci_validation_batch_contracts._validate_release_shaped_profile_telemetry(
+        profile_telemetry,
+        "$.profile-telemetry",
+        issues,
+    )
+    assert not issues
+
+    batch_evidence = control._ci_validation_evidence(
+        plan,
+        "wg-release",
+        outcome="blocking-failure",
+        diagnostics=control._ci_validation_diagnostics(
+            plan,
+            "wg-release",
+            outcome="blocking-failure",
+        ),
+        validation_result=result,
+        batch_bundle=True,
+    )
+    category_result = cast(
+        "Mapping[str, object]",
+        batch_evidence["category-result"],
+    )
+    batch_detail = cast("Mapping[str, object]", category_result["detail"])
+    batch_issues: list[object] = []
+    ci_validation_batch_contracts._validate_release_shaped_batch_detail(
+        batch_detail,
+        "blocking-failure",
+        [],
+        "$.selector-results[0].evidence.category-result.detail",
+        batch_issues,
+        selector_result=category_result,
+        plan=plan,
+    )
+    assert not batch_issues
+    assert batch_detail["profile-telemetry"] == profile_telemetry
+    return command, profile_telemetry, phases
+
+
+def test_ci_validation_release_shaped_descriptor_parse_failure_keeps_profile() -> (
+    None
+):
+    """Descriptor parse failures still emit pre-execute profile telemetry."""
+    scratch = SCRATCH / "ci-validation-release-shaped-descriptor-parse-failure"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+        descriptor_path = scratch / "src/public/lib/example/three.release.yml"
+        descriptor_path.parent.mkdir(parents=True)
+        descriptor_path.write_text("project: [\n", encoding="utf-8")
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        command, _profile_telemetry, phases = (
+            _release_shaped_failure_command_profile_and_batch(plan, result)
+        )
+        assert "descriptor parse failed" in cast("str", command["error"])
+        assert "three.release.yml" in cast("str", command["error"])
+        assert any(
+            phase["phase"] == "release-build-request-descriptor-parse"
+            and phase["outcome"] == "failure"
+            and "descriptor parse failed" in cast("str", phase["error"])
+            and "three.release.yml" in cast("str", phase["error"])
+            for phase in phases
+        )
+        assert any(
+            phase["phase"] == "release-build-request"
+            and phase["outcome"] == "failure"
+            and "descriptor parse failed" in cast("str", phase["error"])
+            for phase in phases
+        )
+        assert not any(
+            phase["phase"] == "release-build-execute-build" for phase in phases
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_descriptor_read_failure_records_phase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Descriptor read failures reach command and batch profile telemetry."""
+    scratch = SCRATCH / "ci-validation-release-shaped-descriptor-read-failure"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan = _release_shaped_no_publish_plan(
+            ["ci-validation/artifacts/python/example/a.whl"],
+        )
+        matrix = _release_shaped_no_publish_matrix(plan)
+        descriptor_path = scratch / "src/public/lib/example/three.release.yml"
+        descriptor_path.parent.mkdir(parents=True)
+        descriptor_path.write_text(
+            "project:\n  id: python.example\n",
+            encoding="utf-8",
+        )
+
+        original_read_yaml = control._read_yaml
+
+        def fail_descriptor_read(path: Path) -> object:
+            if path == descriptor_path:
+                message = "permission denied"
+                raise OSError(message)
+            return original_read_yaml(path)
+
+        monkeypatch.setattr(control, "_read_yaml", fail_descriptor_read)
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        command, _profile_telemetry, phases = (
+            _release_shaped_failure_command_profile_and_batch(plan, result)
+        )
+        assert "permission denied" in cast("str", command["error"])
+        assert any(
+            phase["phase"] == "release-build-request-shape-selection"
+            and phase["outcome"] == "success"
+            for phase in phases
+        )
+        assert any(
+            phase["phase"] == "release-build-request-descriptor-stat"
+            and phase["outcome"] == "success"
+            for phase in phases
+        )
+        assert any(
+            phase["phase"] == "release-build-request-descriptor-parse"
+            and phase["outcome"] == "failure"
+            and "descriptor parse failed" in cast("str", phase["error"])
+            and "permission denied" in cast("str", phase["error"])
+            for phase in phases
+        )
+        assert any(
+            phase["phase"] == "release-build-request"
+            and phase["outcome"] == "failure"
+            and "permission denied" in cast("str", phase["error"])
+            for phase in phases
+        )
+        assert not any(
+            phase["phase"] == "release-build-execute-build" for phase in phases
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_descriptor_invalid_utf8_records_parse_phase() -> (
+    None
+):
+    """Descriptor UTF-8 decode failures are descriptor parse telemetry."""
+    scratch = SCRATCH / "ci-validation-release-shaped-descriptor-invalid-utf8"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan = _release_shaped_no_publish_plan(
+            ["ci-validation/artifacts/python/example/a.whl"],
+        )
+        matrix = _release_shaped_no_publish_matrix(plan)
+        descriptor_path = scratch / "src/public/lib/example/three.release.yml"
+        descriptor_path.parent.mkdir(parents=True)
+        descriptor_path.write_bytes(b"project:\n  id: python.example\n\x80")
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        command, _profile_telemetry, phases = (
+            _release_shaped_failure_command_profile_and_batch(plan, result)
+        )
+        assert "descriptor parse failed" in cast("str", command["error"])
+        assert "invalid start byte" in cast("str", command["error"])
+        assert any(
+            phase["phase"] == "release-build-request-descriptor-parse"
+            and phase["outcome"] == "failure"
+            and "descriptor parse failed" in cast("str", phase["error"])
+            and "invalid start byte" in cast("str", phase["error"])
+            for phase in phases
+        )
+        assert any(
+            phase["phase"] == "release-build-request"
+            and phase["outcome"] == "failure"
+            and "invalid start byte" in cast("str", phase["error"])
+            for phase in phases
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_plan_tracked_file_scan_failure_records_phase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tracked-file scan failures are reported through planner telemetry."""
+    scratch = SCRATCH / "ci-validation-release-plan-tracked-scan-failure"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+
+        def fail_tracked_scan(_repo_root: Path) -> set[str]:
+            raise subprocess.CalledProcessError(
+                128,
+                ["git", "ls-files"],
+                stderr="fatal: not a git repository",
+            )
+
+        monkeypatch.setattr(
+            control,
+            "discover_tracked_authoring_files",
+            fail_tracked_scan,
+        )
+        profile_phases: list[dict[str, object]] = []
+
+        with pytest.raises(
+            ValueError,
+            match="release-shaped validation build planning failed",
+        ):
+            control._ci_validation_release_plan(
+                repo_root=scratch,
+                observed_commit_sha="b" * 40,
+                profile="wheel",
+                project_id="python.example",
+                descriptor_path="src/public/lib/example/three.release.yml",
+                profile_phases=profile_phases,
+            )
+
+        assert [phase["phase"] for phase in profile_phases] == [
+            "release-planner-cache-lookup",
+            "release-planner-authoring-tracked-file-scan",
+        ]
+        failure = profile_phases[1]
+        assert failure["outcome"] == "failure"
+        assert "git" in cast("str", failure["error"])
+        assert (
+            failure["descriptor-path"]
+            == "src/public/lib/example/three.release.yml"
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_plan_cache_setup_failure_records_phase() -> None:
+    """Cache setup failures are reported as cache lookup telemetry."""
+    scratch = SCRATCH / "ci-validation-release-plan-cache-setup-failure"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        cache_parent = scratch / ".three-ci-validation/work"
+        cache_parent.mkdir(parents=True)
+        (cache_parent / "release-shaped-plans").write_text(
+            "not a directory",
+            encoding="utf-8",
+        )
+        profile_phases: list[dict[str, object]] = []
+
+        with pytest.raises(
+            ValueError,
+            match="release-shaped validation build planning failed",
+        ):
+            control._ci_validation_release_plan(
+                repo_root=scratch,
+                observed_commit_sha="b" * 40,
+                profile="wheel",
+                project_id="python.example",
+                descriptor_path="src/public/lib/example/three.release.yml",
+                profile_phases=profile_phases,
+            )
+
+        assert len(profile_phases) == 1
+        failure = profile_phases[0]
+        assert failure["phase"] == "release-planner-cache-lookup"
+        assert failure["outcome"] == "failure"
+        assert "release-shaped-plans" in cast("str", failure["cache-path"])
+        assert "File exists" in cast("str", failure["error"])
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_tracked_scan_failure_reaches_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tracked-file scan failures reach command and batch profile telemetry."""
+    scratch = SCRATCH / "ci-validation-release-shaped-tracked-scan-failure"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan = _release_shaped_no_publish_plan(
+            ["ci-validation/artifacts/python/example/a.whl"],
+        )
+        matrix = _release_shaped_no_publish_matrix(plan)
+        descriptor_path = scratch / "src/public/lib/example/three.release.yml"
+        descriptor_path.parent.mkdir(parents=True)
+        descriptor_path.write_text(
+            "project:\n  id: python.example\n",
+            encoding="utf-8",
+        )
+
+        def fail_tracked_scan(_repo_root: Path) -> set[str]:
+            raise subprocess.CalledProcessError(
+                128,
+                ["git", "ls-files"],
+                stderr="fatal: not a git repository",
+            )
+
+        monkeypatch.setattr(
+            control,
+            "discover_tracked_authoring_files",
+            fail_tracked_scan,
+        )
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        command, _profile_telemetry, phases = (
+            _release_shaped_failure_command_profile_and_batch(plan, result)
+        )
+        assert "release-shaped validation build planning failed" in cast(
+            "str",
+            command["error"],
+        )
+        phase_names = [phase["phase"] for phase in phases]
+        assert phase_names == [
+            "validation-build-output-mapping-initial",
+            "release-build-request-shape-selection",
+            "release-build-request-descriptor-stat",
+            "release-build-request-descriptor-parse",
+            "release-planner-cache-lookup",
+            "release-planner-authoring-tracked-file-scan",
+            "release-build-request-release-plan",
+            "release-build-request",
+        ]
+        assert phases[3]["project-id"] == "python.example"
+        assert phases[4]["cache-hit"] is False
+        failure = phases[5]
+        assert failure["outcome"] == "failure"
+        assert "git" in cast("str", failure["error"])
+        assert (
+            failure["descriptor-path"]
+            == "src/public/lib/example/three.release.yml"
+        )
+        assert phases[6]["outcome"] == "failure"
+        assert phases[6]["profile"] == "wheel"
+        assert phases[7]["outcome"] == "failure"
+        assert not any(
+            phase["phase"] == "release-build-execute-build" for phase in phases
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_cache_setup_failure_reaches_evidence() -> (
+    None
+):
+    """Planner cache setup failures reach command and batch profile telemetry."""
+    scratch = SCRATCH / "ci-validation-release-shaped-cache-setup-failure"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan = _release_shaped_no_publish_plan(
+            ["ci-validation/artifacts/python/example/a.whl"],
+        )
+        matrix = _release_shaped_no_publish_matrix(plan)
+        descriptor_path = scratch / "src/public/lib/example/three.release.yml"
+        descriptor_path.parent.mkdir(parents=True)
+        descriptor_path.write_text(
+            "project:\n  id: python.example\n",
+            encoding="utf-8",
+        )
+        cache_parent = scratch / ".three-ci-validation/work"
+        cache_parent.mkdir(parents=True)
+        (cache_parent / "release-shaped-plans").write_text(
+            "not a directory",
+            encoding="utf-8",
+        )
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        command, _profile_telemetry, phases = (
+            _release_shaped_failure_command_profile_and_batch(plan, result)
+        )
+        assert "release-shaped validation build planning failed" in cast(
+            "str",
+            command["error"],
+        )
+        phase_names = [phase["phase"] for phase in phases]
+        assert phase_names == [
+            "validation-build-output-mapping-initial",
+            "release-build-request-shape-selection",
+            "release-build-request-descriptor-stat",
+            "release-build-request-descriptor-parse",
+            "release-planner-cache-lookup",
+            "release-build-request-release-plan",
+            "release-build-request",
+        ]
+        assert phases[3]["project-id"] == "python.example"
+        failure = phases[4]
+        assert failure["outcome"] == "failure"
+        assert "release-shaped-plans" in cast("str", failure["cache-path"])
+        assert "File exists" in cast("str", failure["error"])
+        assert phases[5]["outcome"] == "failure"
+        assert phases[5]["profile"] == "wheel"
+        assert phases[6]["outcome"] == "failure"
+        assert not any(
+            phase["phase"] == "release-build-execute-build" for phase in phases
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_pre_execute_failure_keeps_profile() -> (
+    None
+):
+    """Pre-execute request failures still upload structured profile telemetry."""
+    scratch = SCRATCH / "ci-validation-release-shaped-pre-execute-failure"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        artifact_refs = ["ci-validation/artifacts/python/example/a.whl"]
+        plan = _release_shaped_no_publish_plan(artifact_refs)
+        matrix = _release_shaped_no_publish_matrix(plan)
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+        )
+
+        _command, _profile_telemetry, phases = (
+            _release_shaped_failure_command_profile_and_batch(plan, result)
+        )
+        assert any(
+            phase["phase"] == "release-build-request-shape-selection"
+            and phase["outcome"] == "success"
+            for phase in phases
+        )
+        assert any(
+            phase["phase"] == "release-build-request-descriptor-stat"
+            and phase["outcome"] == "failure"
+            and "descriptor is missing" in cast("str", phase["error"])
+            for phase in phases
+        )
+        assert any(
+            phase["phase"] == "release-build-request"
+            and phase["outcome"] == "failure"
+            and "descriptor is missing" in cast("str", phase["error"])
+            for phase in phases
+        )
+        assert not any(
+            phase["phase"] == "release-build-execute-build" for phase in phases
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_real_planner_profile_reaches_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Real release-shaped planning phases reach command and batch telemetry."""
+    if GIT is None:
+        pytest.skip("git is required for authoring discovery")
+    scratch = SCRATCH / "ci-validation-release-shaped-real-planner-profile"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        _copy_authoring_repo(scratch)
+        subprocess.run(
+            [GIT, "config", "user.email", "ci-validation@example.com"],
+            cwd=scratch,
+            check=True,
+        )
+        subprocess.run(
+            [GIT, "config", "user.name", "CI Validation"],
+            cwd=scratch,
+            check=True,
+        )
+        subprocess.run(
+            [GIT, "commit", "--quiet", "-m", "authoring fixture"],
+            cwd=scratch,
+            check=True,
+        )
+        observed_commit_sha = subprocess.check_output(
+            [GIT, "rev-parse", "HEAD"],
+            cwd=scratch,
+            text=True,
+        ).strip()
+        descriptor_path = "src/public/lib/nbgv-python/three.release.yml"
+        artifact_ref = (
+            "ci-validation/artifacts/python/nbgv-python/"
+            "nbgv_python-2.1.0.dev1-py3-none-any.whl"
+        )
+        plan = _release_shaped_no_publish_plan([artifact_ref])
+        cast("dict[str, object]", plan["validation-tree"])["commit-sha"] = (
+            observed_commit_sha
+        )
+        work_group = cast("dict[str, object]", plan["work-groups"][0])
+        work_group["coverage-target"] = {
+            "type": "subject",
+            "id": "python.nbgv-python",
+        }
+        obligation = cast("dict[str, object]", plan["artifact-obligations"][0])
+        obligation["subject-id"] = "python.nbgv-python"
+        obligation["descriptor-path"] = descriptor_path
+        obligation["profile-coverage"] = ["buddy"]
+        artifact = cast("dict[str, object]", obligation["artifact"])
+        artifact.update(
+            {
+                "kind-family": "package",
+                "concrete-kind": "wheel",
+                "logical-artifact-role": "primary-package",
+                "variant-dimensions": {},
+                "expected-artifact-refs": [artifact_ref],
+            }
+        )
+        matrix = _release_shaped_no_publish_matrix(plan)
+        output_bytes = b"real planner materialized wheel"
+
+        def fake_execute_build(
+            *,
+            request: Mapping[str, object],
+            repo_root: Path,
+            bundle_dir: Path,
+        ) -> dict[str, object]:
+            assert repo_root == scratch
+            request_artifacts = cast(
+                "Mapping[str, Mapping[str, object]]",
+                request["artifacts"],
+            )
+            wheel_artifact_id = next(
+                artifact_id
+                for artifact_id, build_artifact in request_artifacts.items()
+                if build_artifact.get("concrete-kind") == "wheel"
+            )
+            output = bundle_dir / "dist/package.whl"
+            output.parent.mkdir(parents=True)
+            output.write_bytes(output_bytes)
+            profile_root = bundle_dir / "_profile/runs/real-planner-run"
+            profile_root.mkdir(parents=True)
+            (bundle_dir / "release-build-profile-telemetry.json").write_text(
+                json.dumps(
+                    {
+                        "kind": "release-build-profile-telemetry",
+                        "schema-version": 1,
+                        "profile-root": profile_root.as_posix(),
+                        "phases": [
+                            {
+                                "phase": "python-build",
+                                "started-at": "2026-01-01T00:00:00.000Z",
+                                "completed-at": "2026-01-01T00:00:01.000Z",
+                                "duration-ms": 1000,
+                                "outcome": "success",
+                                "argv": ["python", "-m", "build"],
+                                "cwd": repo_root.as_posix(),
+                                "exit-code": 0,
+                                "output-paths": [output.as_posix()],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return {
+                "kind": "build-result",
+                "artifacts": {
+                    wheel_artifact_id: {
+                        "bundle-relative-path": "dist/package.whl",
+                    }
+                },
+            }
+
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fake_execute_build,
+        )
+        fact_snapshot = _release_shaped_no_publish_fact_snapshot(
+            descriptor_path,
+            owner_subject_id="python.nbgv-python",
+        )
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+            fact_snapshot=fact_snapshot,
+            observed_commit_sha=observed_commit_sha,
+        )
+
+        assert result["outcome"] == "success"
+        command = cast(
+            "Mapping[str, object]",
+            cast("Sequence[object]", result["commands"])[0],
+        )
+        profile_telemetry = cast(
+            "Mapping[str, object]",
+            command["profile-telemetry"],
+        )
+        phases = cast(
+            "Sequence[Mapping[str, object]]",
+            profile_telemetry["phases"],
+        )
+        phase_names = {phase["phase"] for phase in phases}
+        assert phase_names >= {
+            "release-build-request-shape-selection",
+            "release-build-request-descriptor-stat",
+            "release-build-request-descriptor-parse",
+            "release-planner-cache-lookup",
+            "release-planner-authoring-tracked-file-scan",
+            "release-planner-authoring-descriptor-discovery",
+            "release-planner-authoring-descriptor-load-parse",
+            "release-planner-authoring-validation",
+            "release-planner-plan-release",
+            "release-planner-plan-contract-validation",
+            "release-build-execute-build",
+            "artifact-digest-observation",
+        }
+        assert any(
+            phase["phase"] == "release-planner-authoring-validation"
+            and phase["project-count"] >= 1
+            for phase in phases
+        )
+        uploaded_files = cast(
+            "Sequence[str]",
+            profile_telemetry["uploaded-evidence-files"],
+        )
+        assert any(
+            path.endswith("release-build-profile-telemetry.json")
+            for path in uploaded_files
+        )
+        assert all((scratch / path).is_file() for path in uploaded_files)
+        assert _release_shaped_result_digests(result)[artifact_ref] == (
+            hashlib.sha256(output_bytes).hexdigest()
+        )
+
+        batch_evidence = control._ci_validation_evidence(
+            plan,
+            "wg-release",
+            outcome="success",
+            diagnostics=[],
+            validation_result=result,
+            fact_snapshot=fact_snapshot,
+            batch_bundle=True,
+        )
+        batch_detail = cast(
+            "Mapping[str, object]",
+            cast(
+                "Mapping[str, object]",
+                batch_evidence["category-result"],
+            )["detail"],
+        )
+        batch_profile = cast(
+            "Mapping[str, object]",
+            batch_detail["profile-telemetry"],
+        )
+        assert {
+            phase["phase"]
+            for phase in cast(
+                "Sequence[Mapping[str, object]]",
+                batch_profile["phases"],
+            )
+        } >= phase_names
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -34473,6 +35508,7 @@ def _release_shaped_no_publish_fact_snapshot(
     descriptor_path: str = "src/public/lib/example/three.release.yml",
     *,
     descriptor_identity: str = "descriptor-sha256:" + "d" * 64,
+    owner_subject_id: str = "python.example",
 ) -> dict[str, object]:
     return {
         "providers": [
@@ -34482,7 +35518,7 @@ def _release_shaped_no_publish_fact_snapshot(
                     {
                         "descriptor-path": descriptor_path,
                         "descriptor-identity": descriptor_identity,
-                        "owner-subject-id": "python.example",
+                        "owner-subject-id": owner_subject_id,
                         "source": "ecosystem-provider",
                     }
                 ],
@@ -34498,6 +35534,7 @@ def _run_release_shaped_no_publish_validation(
     matrix: Mapping[str, object],
     fact_snapshot: Mapping[str, object] | None = None,
     omit_fact_snapshot: bool = False,
+    observed_commit_sha: str = "b" * 40,
 ) -> dict[str, object]:
     plan_path = scratch / "validation-plan.json"
     fact_snapshot_path = scratch / "fact-snapshot.json"
@@ -34521,7 +35558,7 @@ def _run_release_shaped_no_publish_validation(
                 else "",
                 assignments="",
                 observed_artifacts_dir="",
-                observed_commit_sha="b" * 40,
+                observed_commit_sha=observed_commit_sha,
                 repo_root=str(scratch),
                 result_out=str(result_path),
                 github_output=None,

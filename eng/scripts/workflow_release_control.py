@@ -52,7 +52,9 @@ _CI_PROFILE_PATH_KEYS = frozenset(
         "binlog-path",
         "binlog-uploaded-evidence-path",
         "bundle-dir",
+        "cache-path",
         "cwd",
+        "descriptor-path",
         "output-path",
         "path",
         "profile-root",
@@ -153,7 +155,11 @@ for _WORKSPACE_SRC in (
 from three_workflow_release_authoring import (  # noqa: E402
     CATALOG_PATH,
     AuthoringValidationError,
+    discover_authoring_descriptor_paths,
+    discover_tracked_authoring_files,
+    load_authoring_documents,
     validate_authoring,
+    validate_authoring_documents,
     validate_project_descriptor_document,
     validate_target_catalog_document,
 )
@@ -6155,7 +6161,7 @@ def _ci_no_publish_release_shaped_artifact_evidence(
     )
     validation_build_bundle_dir: Path | None = None
     if output_by_ref is None or not set(expected_refs).issubset(output_by_ref):
-        if mapping_present and output_by_ref is None:
+        if mapping_present:
             return None
         validation_build_bundle_dir = (
             _ci_materialize_no_publish_release_shaped_artifacts(
@@ -6303,15 +6309,52 @@ def _ci_materialize_no_publish_release_shaped_artifacts(
     repo_root: Path,
     profile_phases: list[Json] | None = None,
 ) -> Path | None:
-    build = _ci_no_publish_release_shaped_build_request(
-        plan=plan,
-        obligations=obligations,
-        observed_commit_sha=observed_commit_sha,
-        repo_root=repo_root,
-    )
+    request_timing = _ci_timing_start()
+    try:
+        build = _ci_no_publish_release_shaped_build_request(
+            plan=plan,
+            obligations=obligations,
+            observed_commit_sha=observed_commit_sha,
+            repo_root=repo_root,
+            profile_phases=profile_phases,
+        )
+    except ValueError as exc:
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-build-request",
+            request_timing,
+            outcome="failure",
+            cwd=repo_root,
+            error=str(exc),
+        )
+        raise _CiReleaseShapedBuildError(
+            str(exc),
+            _ci_release_shaped_profile_telemetry(
+                profile_phases,
+                release_build_telemetry=None,
+                repo_root=repo_root,
+            ),
+        ) from exc
     if build is None:
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-build-request",
+            request_timing,
+            outcome="skipped",
+            cwd=repo_root,
+            obligation_count=len(obligations),
+        )
         return None
+    _ci_profile_phase_record(
+        profile_phases,
+        "release-build-request",
+        request_timing,
+        outcome="success",
+        cwd=repo_root,
+        obligation_count=len(obligations),
+    )
     request, artifact_refs_by_build_id = build
+    prep_timing = _ci_timing_start()
     request_digest = hashlib.sha256(
         json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()[:24]
@@ -6322,6 +6365,18 @@ def _ci_materialize_no_publish_release_shaped_artifacts(
         / "validation-build"
         / "release-shaped"
         / request_digest
+    )
+    _ci_profile_phase_record(
+        profile_phases,
+        "release-build-materialization-prep",
+        prep_timing,
+        outcome="success",
+        cwd=repo_root,
+        output_path=bundle_dir,
+        artifact_count=sum(
+            len(refs) for refs in artifact_refs_by_build_id.values()
+        ),
+        build_id_count=len(artifact_refs_by_build_id),
     )
     execute_timing = _ci_timing_start()
     try:
@@ -6415,64 +6470,309 @@ def _ci_materialize_no_publish_release_shaped_artifacts(
     return bundle_dir
 
 
-def _ci_no_publish_release_shaped_build_request(  # noqa: PLR0911
+def _ci_no_publish_release_shaped_build_request(  # noqa: C901, PLR0915
     *,
     plan: Mapping[str, object],
     obligations: Sequence[Mapping[str, object]],
     observed_commit_sha: str,
     repo_root: Path,
+    profile_phases: list[Json] | None = None,
 ) -> tuple[Json, dict[str, list[str]]] | None:
+    selection_timing = _ci_timing_start()
     if not obligations:
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-build-request-shape-selection",
+            selection_timing,
+            outcome="skipped",
+            cwd=repo_root,
+            obligation_count=0,
+        )
         return None
     profile = _ci_single_release_profile(obligations)
     descriptor_path = str(obligations[0].get("descriptor-path") or "")
     if not profile or not descriptor_path:
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-build-request-shape-selection",
+            selection_timing,
+            outcome="skipped",
+            cwd=repo_root,
+            descriptor_path=descriptor_path or None,
+            obligation_count=len(obligations),
+            profile=profile,
+        )
         return None
     if any(
         str(item.get("descriptor-path") or "") != descriptor_path
         for item in obligations
     ):
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-build-request-shape-selection",
+            selection_timing,
+            outcome="skipped",
+            cwd=repo_root,
+            descriptor_path=descriptor_path,
+            obligation_count=len(obligations),
+            profile=profile,
+            error="release-shaped obligations do not share one descriptor",
+        )
         return None
+    _ci_profile_phase_record(
+        profile_phases,
+        "release-build-request-shape-selection",
+        selection_timing,
+        outcome="success",
+        cwd=repo_root,
+        descriptor_path=descriptor_path,
+        obligation_count=len(obligations),
+        profile=profile,
+    )
+    descriptor_stat_timing = _ci_timing_start()
     descriptor_file = repo_root / descriptor_path
     if not descriptor_file.is_file():
-        return None
-    project_id = _ci_release_descriptor_project_id(repo_root, descriptor_path)
+        msg = (
+            "release-shaped validation build descriptor is missing: "
+            f"{descriptor_path}"
+        )
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-build-request-descriptor-stat",
+            descriptor_stat_timing,
+            outcome="failure",
+            cwd=repo_root,
+            descriptor_path=descriptor_path,
+            error=msg,
+        )
+        raise ValueError(msg)
+    _ci_profile_phase_record(
+        profile_phases,
+        "release-build-request-descriptor-stat",
+        descriptor_stat_timing,
+        outcome="success",
+        cwd=repo_root,
+        descriptor_path=descriptor_path,
+    )
+    descriptor_parse_timing = _ci_timing_start()
+    try:
+        project_id = _ci_release_descriptor_project_id(
+            repo_root,
+            descriptor_path,
+        )
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        msg = (
+            "release-shaped validation build descriptor parse failed: "
+            f"{descriptor_path}: {exc}"
+        )
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-build-request-descriptor-parse",
+            descriptor_parse_timing,
+            outcome="failure",
+            cwd=repo_root,
+            descriptor_path=descriptor_path,
+            error=msg,
+        )
+        raise ValueError(msg) from exc
     if not project_id:
-        return None
-    release_plan = _ci_validation_release_plan(
-        repo_root=repo_root,
-        observed_commit_sha=observed_commit_sha,
-        profile=profile,
+        msg = (
+            "release-shaped validation build descriptor project id is "
+            f"unavailable: {descriptor_path}"
+        )
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-build-request-descriptor-parse",
+            descriptor_parse_timing,
+            outcome="failure",
+            cwd=repo_root,
+            descriptor_path=descriptor_path,
+            error=msg,
+        )
+        raise ValueError(msg)
+    _ci_profile_phase_record(
+        profile_phases,
+        "release-build-request-descriptor-parse",
+        descriptor_parse_timing,
+        outcome="success",
+        cwd=repo_root,
+        descriptor_path=descriptor_path,
         project_id=project_id,
     )
-    variant, artifact_refs_by_build_id = (
-        _ci_release_plan_variant_for_obligations(
-            release_plan=release_plan,
+    release_plan_timing = _ci_timing_start()
+    try:
+        release_plan = _ci_validation_release_plan(
+            repo_root=repo_root,
+            observed_commit_sha=observed_commit_sha,
+            profile=profile,
             project_id=project_id,
-            obligations=_ci_variant_release_shaped_obligations(
-                plan=plan,
-                descriptor_path=descriptor_path,
-                profile=profile,
-                seed_obligations=obligations,
-            ),
+            descriptor_path=descriptor_path,
+            profile_phases=profile_phases,
         )
+    except ValueError as exc:
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-build-request-release-plan",
+            release_plan_timing,
+            outcome="failure",
+            cwd=repo_root,
+            descriptor_path=descriptor_path,
+            project_id=project_id,
+            profile=profile,
+            error=str(exc),
+        )
+        raise
+    _ci_profile_phase_record(
+        profile_phases,
+        "release-build-request-release-plan",
+        release_plan_timing,
+        outcome="success",
+        cwd=repo_root,
+        descriptor_path=descriptor_path,
+        project_id=project_id,
+        profile=profile,
     )
+    grouping_timing = _ci_timing_start()
+    grouped_obligations = _ci_variant_release_shaped_obligations(
+        plan=plan,
+        descriptor_path=descriptor_path,
+        profile=profile,
+        seed_obligations=obligations,
+    )
+    _ci_profile_phase_record(
+        profile_phases,
+        "release-build-request-obligation-grouping",
+        grouping_timing,
+        outcome="success",
+        cwd=repo_root,
+        descriptor_path=descriptor_path,
+        obligation_count=len(grouped_obligations),
+        profile=profile,
+    )
+    variant_timing = _ci_timing_start()
+    try:
+        variant, artifact_refs_by_build_id = (
+            _ci_release_plan_variant_for_obligations(
+                release_plan=release_plan,
+                project_id=project_id,
+                obligations=grouped_obligations,
+            )
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-build-request-variant-selection",
+            variant_timing,
+            outcome="failure",
+            cwd=repo_root,
+            descriptor_path=descriptor_path,
+            project_id=project_id,
+            profile=profile,
+            obligation_count=len(grouped_obligations),
+            error=str(exc),
+        )
+        msg = f"release-shaped validation build request planning failed: {exc}"
+        raise ValueError(msg) from exc
     if variant is None or not artifact_refs_by_build_id:
-        return None
-    envelope = _mapping(release_plan["envelope"], "envelope")
-    request = {
-        "api-version": "three.release.build-request/v1alpha1",
-        "kind": "build-request",
-        "plan-id": envelope["plan-id"],
-        "profile": envelope["profile"],
-        "commit-sha": envelope["commit-sha"],
-        "project": _mapping(envelope["projects"], "envelope.projects")[
-            project_id
-        ],
-        "variant": variant,
-        "artifacts": _build_request_artifacts(release_plan, variant),
-    }
-    validate_contract(request)
+        msg = (
+            "release-shaped validation build request variant selection "
+            "found no matching planned artifact"
+        )
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-build-request-variant-selection",
+            variant_timing,
+            outcome="failure",
+            cwd=repo_root,
+            descriptor_path=descriptor_path,
+            project_id=project_id,
+            profile=profile,
+            obligation_count=len(grouped_obligations),
+            error=msg,
+        )
+        raise ValueError(msg)
+    _ci_profile_phase_record(
+        profile_phases,
+        "release-build-request-variant-selection",
+        variant_timing,
+        outcome="success",
+        cwd=repo_root,
+        descriptor_path=descriptor_path,
+        project_id=project_id,
+        profile=profile,
+        artifact_count=sum(
+            len(refs) for refs in artifact_refs_by_build_id.values()
+        ),
+        build_id_count=len(artifact_refs_by_build_id),
+        obligation_count=len(grouped_obligations),
+    )
+    assembly_timing = _ci_timing_start()
+    try:
+        envelope = _mapping(release_plan["envelope"], "envelope")
+        request = {
+            "api-version": "three.release.build-request/v1alpha1",
+            "kind": "build-request",
+            "plan-id": envelope["plan-id"],
+            "profile": envelope["profile"],
+            "commit-sha": envelope["commit-sha"],
+            "project": _mapping(envelope["projects"], "envelope.projects")[
+                project_id
+            ],
+            "variant": variant,
+            "artifacts": _build_request_artifacts(release_plan, variant),
+        }
+    except (KeyError, TypeError, ValueError) as exc:
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-build-request-assembly",
+            assembly_timing,
+            outcome="failure",
+            cwd=repo_root,
+            descriptor_path=descriptor_path,
+            project_id=project_id,
+            profile=profile,
+            error=str(exc),
+        )
+        msg = f"release-shaped validation build request assembly failed: {exc}"
+        raise ValueError(msg) from exc
+    artifacts = cast("Sequence[object]", request.get("artifacts", []))
+    _ci_profile_phase_record(
+        profile_phases,
+        "release-build-request-assembly",
+        assembly_timing,
+        outcome="success",
+        cwd=repo_root,
+        descriptor_path=descriptor_path,
+        project_id=project_id,
+        profile=profile,
+        artifact_count=len(artifacts),
+    )
+    contract_timing = _ci_timing_start()
+    try:
+        validate_contract(request)
+    except ValueError as exc:
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-build-request-contract-validation",
+            contract_timing,
+            outcome="failure",
+            cwd=repo_root,
+            descriptor_path=descriptor_path,
+            project_id=project_id,
+            profile=profile,
+            error=str(exc),
+        )
+        raise
+    _ci_profile_phase_record(
+        profile_phases,
+        "release-build-request-contract-validation",
+        contract_timing,
+        outcome="success",
+        cwd=repo_root,
+        descriptor_path=descriptor_path,
+        project_id=project_id,
+        profile=profile,
+    )
     return request, artifact_refs_by_build_id
 
 
@@ -6505,17 +6805,19 @@ def _ci_release_descriptor_project_id(
     return project_id if isinstance(project_id, str) and project_id else None
 
 
-def _ci_validation_release_plan(
+def _ci_validation_release_plan(  # noqa: PLR0915
     *,
     repo_root: Path,
     observed_commit_sha: str,
     profile: str,
     project_id: str,
+    descriptor_path: str | None = None,
+    profile_phases: list[Json] | None = None,
 ) -> Json:
+    cache_timing = _ci_timing_start()
     cache_dir = (
         repo_root / ".three-ci-validation" / "work" / "release-shaped-plans"
     )
-    cache_dir.mkdir(parents=True, exist_ok=True)
     cache_key = hashlib.sha256(
         json.dumps(
             {
@@ -6528,13 +6830,210 @@ def _ci_validation_release_plan(
         ).encode()
     ).hexdigest()[:24]
     cache_path = cache_dir / f"{cache_key}.json"
-    if cache_path.is_file():
-        cached = _read_json(cache_path)
-        validate_contract(cached)
-        return cached
     try:
-        snapshot = validate_authoring(repo_root)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_hit = cache_path.is_file()
+    except OSError as exc:
+        msg = f"release-shaped validation build planning failed: {exc}"
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-planner-cache-lookup",
+            cache_timing,
+            outcome="failure",
+            cwd=repo_root,
+            cache_path=cache_path,
+            descriptor_path=descriptor_path,
+            project_id=project_id,
+            profile=profile,
+            error=msg,
+        )
+        raise ValueError(msg) from exc
+    _ci_profile_phase_record(
+        profile_phases,
+        "release-planner-cache-lookup",
+        cache_timing,
+        outcome="success",
+        cwd=repo_root,
+        cache_path=cache_path,
+        descriptor_path=descriptor_path,
+        project_id=project_id,
+        profile=profile,
+        cache_hit=cache_hit,
+    )
+    if cache_hit:
+        restore_timing = _ci_timing_start()
+        try:
+            cached = _read_json(cache_path)
+        except (OSError, TypeError, ValueError) as exc:
+            msg = f"release-shaped validation build planning failed: {exc}"
+            _ci_profile_phase_record(
+                profile_phases,
+                "release-planner-cache-restore",
+                restore_timing,
+                outcome="failure",
+                cwd=repo_root,
+                cache_path=cache_path,
+                descriptor_path=descriptor_path,
+                project_id=project_id,
+                profile=profile,
+                cache_hit=True,
+                error=msg,
+            )
+            raise ValueError(msg) from exc
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-planner-cache-restore",
+            restore_timing,
+            outcome="success",
+            cwd=repo_root,
+            cache_path=cache_path,
+            descriptor_path=descriptor_path,
+            project_id=project_id,
+            profile=profile,
+            cache_hit=True,
+        )
+        contract_timing = _ci_timing_start()
+        try:
+            validate_contract(cached)
+        except ValueError as exc:
+            _ci_profile_phase_record(
+                profile_phases,
+                "release-planner-plan-contract-validation",
+                contract_timing,
+                outcome="failure",
+                cwd=repo_root,
+                cache_path=cache_path,
+                descriptor_path=descriptor_path,
+                project_id=project_id,
+                profile=profile,
+                cache_hit=True,
+                error=str(exc),
+            )
+            raise
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-planner-plan-contract-validation",
+            contract_timing,
+            outcome="success",
+            cwd=repo_root,
+            cache_path=cache_path,
+            descriptor_path=descriptor_path,
+            project_id=project_id,
+            profile=profile,
+            cache_hit=True,
+        )
+        return cached
+    failure_phase = "release-planner-authoring-tracked-file-scan"
+    failure_timing = _ci_timing_start()
+    failure_metadata: Json = {"descriptor_path": descriptor_path}
+    try:
+        tracked_timing = _ci_timing_start()
+        failure_phase = "release-planner-authoring-tracked-file-scan"
+        failure_timing = tracked_timing
+        failure_metadata = {"descriptor_path": descriptor_path}
+        tracked_files = discover_tracked_authoring_files(repo_root)
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-planner-authoring-tracked-file-scan",
+            tracked_timing,
+            outcome="success",
+            cwd=repo_root,
+            descriptor_path=descriptor_path,
+            tracked_file_count=len(tracked_files),
+        )
+        discovery_timing = _ci_timing_start()
+        failure_phase = "release-planner-authoring-descriptor-discovery"
+        failure_timing = discovery_timing
+        failure_metadata = {
+            "descriptor_path": descriptor_path,
+            "tracked_file_count": len(tracked_files),
+        }
+        descriptor_paths = discover_authoring_descriptor_paths(tracked_files)
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-planner-authoring-descriptor-discovery",
+            discovery_timing,
+            outcome="success",
+            cwd=repo_root,
+            descriptor_path=descriptor_path,
+            tracked_file_count=len(tracked_files),
+            descriptor_count=len(descriptor_paths),
+        )
+        load_timing = _ci_timing_start()
+        failure_phase = "release-planner-authoring-descriptor-load-parse"
+        failure_timing = load_timing
+        failure_metadata = {
+            "descriptor_path": descriptor_path,
+            "descriptor_count": len(descriptor_paths),
+        }
+        catalog_doc, descriptor_docs = load_authoring_documents(
+            repo_root,
+            descriptor_paths,
+        )
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-planner-authoring-descriptor-load-parse",
+            load_timing,
+            outcome="success",
+            cwd=repo_root,
+            descriptor_path=descriptor_path,
+            descriptor_count=len(descriptor_docs),
+        )
+        validation_timing = _ci_timing_start()
+        failure_phase = "release-planner-authoring-validation"
+        failure_timing = validation_timing
+        failure_metadata = {
+            "descriptor_path": descriptor_path,
+            "descriptor_count": len(descriptor_docs),
+            "tracked_file_count": len(tracked_files),
+        }
+        snapshot = validate_authoring_documents(
+            descriptor_docs,
+            catalog_doc,
+            tracked_files=tracked_files,
+            catalog_path=CATALOG_PATH,
+            repo_root=repo_root,
+        )
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-planner-authoring-validation",
+            validation_timing,
+            outcome="success",
+            cwd=repo_root,
+            descriptor_path=descriptor_path,
+            descriptor_count=len(descriptor_docs),
+            project_count=len(snapshot.projects),
+            target_count=len(snapshot.target_instances),
+        )
+        project_lookup_timing = _ci_timing_start()
+        failure_phase = "release-planner-project-lookup"
+        failure_timing = project_lookup_timing
+        failure_metadata = {
+            "descriptor_path": descriptor_path,
+            "project_id": project_id,
+            "profile": profile,
+        }
         project = snapshot.projects[project_id]
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-planner-project-lookup",
+            project_lookup_timing,
+            outcome="success",
+            cwd=repo_root,
+            descriptor_path=descriptor_path,
+            project_id=project_id,
+            profile=profile,
+            ecosystem=project.ecosystem,
+        )
+        request_timing = _ci_timing_start()
+        failure_phase = "release-planner-request-assembly"
+        failure_timing = request_timing
+        failure_metadata = {
+            "descriptor_path": descriptor_path,
+            "project_id": project_id,
+            "profile": profile,
+            "ecosystem": project.ecosystem,
+        }
         request = {
             "api-version": "three.release.planner-request/v1alpha1",
             "kind": "planner-request",
@@ -6543,10 +7042,74 @@ def _ci_validation_release_plan(
             "request-flags": {"force": False},
             "requested-project-ids": [project_id],
         }
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-planner-request-assembly",
+            request_timing,
+            outcome="success",
+            cwd=repo_root,
+            descriptor_path=descriptor_path,
+            project_id=project_id,
+            profile=profile,
+            ecosystem=project.ecosystem,
+        )
         dotnet_metadata = None
         if project.ecosystem == "dotnet":
+            metadata_input_timing = _ci_timing_start()
+            failure_phase = "release-planner-dotnet-metadata-input"
+            failure_timing = metadata_input_timing
+            failure_metadata = {
+                "descriptor_path": descriptor_path,
+                "project_id": project_id,
+                "profile": profile,
+                "ecosystem": project.ecosystem,
+            }
             metadata_input = snapshot.dotnet_metadata_input(observed_commit_sha)
+            metadata_projects = metadata_input.get("projects", {})
+            _ci_profile_phase_record(
+                profile_phases,
+                "release-planner-dotnet-metadata-input",
+                metadata_input_timing,
+                outcome="success",
+                cwd=repo_root,
+                descriptor_path=descriptor_path,
+                project_id=project_id,
+                profile=profile,
+                ecosystem=project.ecosystem,
+                project_count=len(metadata_projects)
+                if isinstance(metadata_projects, Mapping)
+                else None,
+            )
+            metadata_collect_timing = _ci_timing_start()
+            failure_phase = "release-planner-dotnet-metadata-collect"
+            failure_timing = metadata_collect_timing
+            failure_metadata = {
+                "descriptor_path": descriptor_path,
+                "project_id": project_id,
+                "profile": profile,
+                "ecosystem": project.ecosystem,
+            }
             dotnet_metadata = collect_dotnet_metadata(metadata_input, repo_root)
+            _ci_profile_phase_record(
+                profile_phases,
+                "release-planner-dotnet-metadata-collect",
+                metadata_collect_timing,
+                outcome="success",
+                cwd=repo_root,
+                descriptor_path=descriptor_path,
+                project_id=project_id,
+                profile=profile,
+                ecosystem=project.ecosystem,
+            )
+        plan_timing = _ci_timing_start()
+        failure_phase = "release-planner-plan-release"
+        failure_timing = plan_timing
+        failure_metadata = {
+            "descriptor_path": descriptor_path,
+            "project_id": project_id,
+            "profile": profile,
+            "ecosystem": project.ecosystem,
+        }
         result = plan_release(
             snapshot,
             PlannerInputs(
@@ -6557,11 +7120,90 @@ def _ci_validation_release_plan(
                 dotnet_metadata=dotnet_metadata,
             ),
         )
-    except (KeyError, TypeError, ValueError) as exc:
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-planner-plan-release",
+            plan_timing,
+            outcome="success",
+            cwd=repo_root,
+            descriptor_path=descriptor_path,
+            project_id=project_id,
+            profile=profile,
+            ecosystem=project.ecosystem,
+        )
+    except (
+        KeyError,
+        OSError,
+        subprocess.CalledProcessError,
+        TypeError,
+        ValueError,
+    ) as exc:
         msg = f"release-shaped validation build planning failed: {exc}"
+        _ci_profile_phase_record(
+            profile_phases,
+            failure_phase,
+            failure_timing,
+            outcome="failure",
+            cwd=repo_root,
+            error=msg,
+            **failure_metadata,
+        )
         raise ValueError(msg) from exc
-    validate_contract(result.plan)
-    _write_json(cache_path, result.plan)
+    contract_timing = _ci_timing_start()
+    try:
+        validate_contract(result.plan)
+    except ValueError as exc:
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-planner-plan-contract-validation",
+            contract_timing,
+            outcome="failure",
+            cwd=repo_root,
+            descriptor_path=descriptor_path,
+            project_id=project_id,
+            profile=profile,
+            error=str(exc),
+        )
+        raise
+    _ci_profile_phase_record(
+        profile_phases,
+        "release-planner-plan-contract-validation",
+        contract_timing,
+        outcome="success",
+        cwd=repo_root,
+        descriptor_path=descriptor_path,
+        project_id=project_id,
+        profile=profile,
+    )
+    write_timing = _ci_timing_start()
+    try:
+        _write_json(cache_path, result.plan)
+    except OSError as exc:
+        msg = f"release-shaped validation build planning failed: {exc}"
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-planner-cache-write",
+            write_timing,
+            outcome="failure",
+            cwd=repo_root,
+            cache_path=cache_path,
+            descriptor_path=descriptor_path,
+            project_id=project_id,
+            profile=profile,
+            error=msg,
+        )
+        raise ValueError(msg) from exc
+    _ci_profile_phase_record(
+        profile_phases,
+        "release-planner-cache-write",
+        write_timing,
+        outcome="success",
+        cwd=repo_root,
+        cache_path=cache_path,
+        descriptor_path=descriptor_path,
+        project_id=project_id,
+        profile=profile,
+    )
     return result.plan
 
 
@@ -22770,6 +23412,7 @@ def _ci_profile_phase_record(
     artifact_ref: str | None = None,
     output_path: Path | None = None,
     error: str | None = None,
+    **metadata: object,
 ) -> None:
     if phases is None:
         return
@@ -22786,6 +23429,14 @@ def _ci_profile_phase_record(
         record["output-path"] = output_path.as_posix()
     if error is not None:
         record["error"] = error
+    for key, value in metadata.items():
+        if value is None:
+            continue
+        normalized_key = key.replace("_", "-")
+        if isinstance(value, Path):
+            record[normalized_key] = value.as_posix()
+        else:
+            record[normalized_key] = value
     phases.append(record)
 
 
@@ -22817,7 +23468,14 @@ def _ci_normalize_top_level_profile_phase_paths(
     repo_root: Path,
 ) -> Json:
     normalized: Json = dict(phase)
-    for key in ("cwd", "output-path", "binlog-path", "binlog-directory"):
+    for key in (
+        "cwd",
+        "output-path",
+        "binlog-path",
+        "binlog-directory",
+        "cache-path",
+        "descriptor-path",
+    ):
         value = normalized.get(key)
         if isinstance(value, str):
             normalized[key] = _ci_normalize_top_level_profile_phase_path(

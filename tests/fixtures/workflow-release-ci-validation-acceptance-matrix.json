@@ -3144,6 +3144,10 @@
           },
           {
             "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_release_shaped_no_publish_missing_mapping_blocks"
+          },
+          {
+            "type": "test",
             "value": "tests/test_workflow_release_control.py::test_ci_validation_release_shaped_incomplete_mapping_blocks"
           },
           {
@@ -3270,6 +3274,50 @@
           },
           {
             "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_release_plan_records_planner_metadata_phases"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_release_plan_tracked_file_scan_failure_records_phase"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_release_plan_cache_setup_failure_records_phase"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_release_shaped_build_request_records_pre_execute_phases"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_release_shaped_pre_execute_failure_keeps_profile"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_release_shaped_descriptor_parse_failure_keeps_profile"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_release_shaped_descriptor_read_failure_records_phase"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_release_shaped_descriptor_invalid_utf8_records_parse_phase"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_release_shaped_tracked_scan_failure_reaches_evidence"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_release_shaped_cache_setup_failure_reaches_evidence"
+          },
+          {
+            "type": "test",
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_release_shaped_real_planner_profile_reaches_batch"
+          },
+          {
+            "type": "test",
             "value": "tests/test_workflow_release_control.py::test_ci_validation_release_shaped_profile_and_timing_coexist"
           },
           {
@@ -3287,6 +3335,14 @@
           {
             "type": "test",
             "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_release_shaped_batch_accepts_profile_telemetry_with_timing"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_release_shaped_batch_accepts_node_profile_telemetry"
+          },
+          {
+            "type": "test",
+            "value": "src/public/lib/three-workflow-release-contracts/tests/test_ci_validation_batches.py::test_release_shaped_batch_rejects_malformed_profile_telemetry"
           },
           {
             "type": "test",

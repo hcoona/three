@@ -127,7 +127,7 @@ _PROFILE_POSIX_SINGLE_COMPONENT_ABSOLUTE_PATHS = frozenset(
 _QUOTED_PROFILE_PATH_MIN_LENGTH = 2
 _RUNNER_FAMILIES = frozenset({"windows", "ubuntu", "macos"})
 _ECOSYSTEMS = frozenset(
-    {"dotnet", "python", "javascript", "typescript", "ruby"}
+    {"dotnet", "python", "javascript", "typescript", "node", "ruby"}
 )
 _MODES = frozenset({"pull_request", "push", "scheduled_full"})
 _SUMMARY_MODES = _MODES | frozenset({"unknown"})
@@ -311,7 +311,20 @@ _PROFILE_PHASE_KEYS = frozenset(
         "binlog-paths",
         "binlog-uploaded-evidence-path",
         "binlog-uploaded-evidence-paths",
+        "build-id-count",
+        "cache-hit",
+        "cache-path",
+        "descriptor-count",
+        "descriptor-path",
+        "ecosystem",
         "error",
+        "artifact-count",
+        "obligation-count",
+        "profile",
+        "project-count",
+        "project-id",
+        "target-count",
+        "tracked-file-count",
     }
 )
 _PROFILE_PHASE_OUTCOMES = frozenset({"success", "failure", "skipped"})
@@ -8313,10 +8326,19 @@ def _validate_profile_phase(
         "artifact-ref",
         "binlog-uploaded-evidence-path",
         "error",
+        "profile",
+        "project-id",
     ):
         if key in value:
             _validate_non_empty_string(value.get(key), f"{path}.{key}", issues)
+    if "ecosystem" in value:
+        _validate_profile_phase_ecosystem(
+            value.get("ecosystem"),
+            f"{path}.ecosystem",
+            issues,
+        )
     _validate_profile_phase_sequence_fields(value, path, issues)
+    _validate_profile_phase_metadata_fields(value, path, issues)
     if "exit-code" in value:
         exit_code = value.get("exit-code")
         if not isinstance(exit_code, int) or isinstance(exit_code, bool):
@@ -8329,6 +8351,38 @@ def _validate_profile_phase(
         issues.append(
             ValidationIssue(f"{path}.binlog-exists", "must be a boolean")
         )
+
+
+def _validate_profile_phase_ecosystem(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, str) or value == "":
+        issues.append(ValidationIssue(path, "must be a string"))
+        return
+    if value not in _ECOSYSTEMS:
+        issues.append(ValidationIssue(path, "is not registered"))
+
+
+def _validate_profile_phase_metadata_fields(
+    value: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if "cache-hit" in value and not isinstance(value.get("cache-hit"), bool):
+        issues.append(ValidationIssue(f"{path}.cache-hit", "must be a boolean"))
+    for key in (
+        "artifact-count",
+        "build-id-count",
+        "descriptor-count",
+        "obligation-count",
+        "project-count",
+        "target-count",
+        "tracked-file-count",
+    ):
+        if key in value:
+            _validate_non_negative_int(value.get(key), f"{path}.{key}", issues)
 
 
 def _validate_profile_phase_sequence_fields(
@@ -8358,6 +8412,8 @@ def _validate_profile_phase_path_fields(
         "output-path",
         "binlog-path",
         "binlog-directory",
+        "cache-path",
+        "descriptor-path",
     ):
         if key in value:
             _validate_profile_phase_path(

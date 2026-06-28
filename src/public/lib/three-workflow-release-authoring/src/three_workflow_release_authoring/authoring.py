@@ -635,19 +635,15 @@ def validate_authoring(
     """Discover and validate checked-in release descriptors and catalog."""
     root = Path(repo_root)
     tracked = (
-        set(tracked_files) if tracked_files is not None else _git_files(root)
+        set(tracked_files)
+        if tracked_files is not None
+        else discover_tracked_authoring_files(root)
     )
-    catalog_doc = _load_yaml_file(
-        root / CATALOG_PATH, "CATALOG_SCHEMA_INVALID", CATALOG_PATH
+    descriptor_paths = discover_authoring_descriptor_paths(tracked)
+    catalog_doc, descriptor_docs = load_authoring_documents(
+        root,
+        descriptor_paths,
     )
-    descriptor_paths = sorted(
-        path for path in tracked if PurePosixPath(path).name == DESCRIPTOR_NAME
-    )
-    descriptor_docs = {
-        path: _load_yaml_file(root / path, "DESC_SCHEMA_INVALID", path)
-        for path in descriptor_paths
-        if path.startswith("src/")
-    }
     return validate_authoring_documents(
         descriptor_docs,
         catalog_doc,
@@ -655,6 +651,45 @@ def validate_authoring(
         catalog_path=CATALOG_PATH,
         repo_root=root,
     )
+
+
+def discover_tracked_authoring_files(repo_root: Path | str = ".") -> set[str]:
+    """Discover checked-in authoring candidate paths."""
+    return _git_files(Path(repo_root))
+
+
+def discover_authoring_descriptor_paths(
+    tracked_files: Iterable[str],
+) -> tuple[str, ...]:
+    """Return tracked release descriptor paths in deterministic order."""
+    return tuple(
+        sorted(
+            path
+            for path in tracked_files
+            if PurePosixPath(path).name == DESCRIPTOR_NAME
+        )
+    )
+
+
+def load_authoring_documents(
+    repo_root: Path | str,
+    descriptor_paths: Iterable[str],
+    *,
+    catalog_path: str = CATALOG_PATH,
+) -> tuple[object, dict[str, object]]:
+    """Load YAML authoring documents for later validation."""
+    root = Path(repo_root)
+    catalog_doc = _load_yaml_file(
+        root / catalog_path,
+        "CATALOG_SCHEMA_INVALID",
+        catalog_path,
+    )
+    descriptor_docs = {
+        path: _load_yaml_file(root / path, "DESC_SCHEMA_INVALID", path)
+        for path in descriptor_paths
+        if path.startswith("src/")
+    }
+    return catalog_doc, descriptor_docs
 
 
 def validate_authoring_documents(
