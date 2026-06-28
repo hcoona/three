@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-06-28T17:16:43.284708+00:00'
+generated_at: '2026-06-28T17:28:39.085027+00:00'
 apm_version: 0.22.0
 dependencies:
 - repo_url: dotnet/skills
@@ -637,3 +637,18 @@ mcp_configs:
     - --yes
     registry: false
     command: mise
+lsp_servers:
+- csharp
+lsp_configs:
+  csharp:
+    name: csharp
+    command: mise
+    args:
+    - exec
+    - --
+    - dotnet
+    - tool
+    - run
+    - csharp-ls
+    extensionToLanguage:
+      .cs: csharp
