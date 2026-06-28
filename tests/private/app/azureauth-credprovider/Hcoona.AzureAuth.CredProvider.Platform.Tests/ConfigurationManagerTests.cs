@@ -3197,9 +3197,33 @@ public sealed class ConfigurationManagerTests
         AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
     }
 
+    public static TheoryData<string> CancelledReservedPhase4DPhysicalTargetPaths
+    {
+        get
+        {
+            var data = new TheoryData<string>();
+            if (IsWindows)
+            {
+                data.Add(@"C:\config\reserved-cancelled\.azureauth-credprovider.fs.lock\..\target");
+                data.Add(
+                    @"C:\config\reserved-cancelled\.azureauth-credprovider.lifecycle-locks\.."
+                        + @"\target"
+                );
+            }
+            else
+            {
+                data.Add("/config/reserved-cancelled/.azureauth-credprovider.fs.lock/../target");
+                data.Add(
+                    "/config/reserved-cancelled/.azureauth-credprovider.lifecycle-locks/../target"
+                );
+            }
+
+            return data;
+        }
+    }
+
     [Theory]
-    [InlineData("config/reserved-cancelled/.azureauth-credprovider.fs.lock/../target")]
-    [InlineData("config/reserved-cancelled/.azureauth-credprovider.lifecycle-locks/../target")]
+    [MemberData(nameof(CancelledReservedPhase4DPhysicalTargetPaths))]
     public async Task
         ValidatePlanAndNoFilesystemDryRunAllowCancelledReservedPhase4DPhysicalSegments(
         string targetPath
@@ -3501,6 +3525,109 @@ public sealed class ConfigurationManagerTests
             exception.Message,
             StringComparison.Ordinal
         );
+    }
+
+    [Theory]
+    [InlineData(@".\user.gitconfig")]
+    [InlineData(@"config\..\user.gitconfig")]
+    [InlineData(@"config\user.gitconfig")]
+    [InlineData("config/user.gitconfig")]
+    [InlineData("../user.gitconfig")]
+    public async Task ValidatePlanAndDryRunRejectPathShapedGitConfigPhysicalPath(
+        string targetPath
+    )
+    {
+        var manager = new ConfigurationManager();
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+
+        ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
+
+        Assert.False(result.IsValid);
+        Assert.NotNull(result.Violation);
+        Assert.Contains("fully qualified target paths", result.Violation, StringComparison.Ordinal);
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(
+            "fully qualified target paths",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public async Task ValidatePlanAndDryRunAllowLogicalGitConfigPhysicalName()
+    {
+        var manager = new ConfigurationManager();
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            "user.gitconfig"
+        );
+
+        ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
+
+        Assert.True(result.IsValid);
+        Assert.Null(result.Violation);
+        ConfigurationPlanResult dryRun = await manager.DryRunAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+        Assert.Equal(ConfigurationPlanState.Planned, dryRun.State);
+        ConfigurationOwnershipManifestEntry dryRunEntry = Assert.Single(
+            dryRun.OwnershipManifest!.Entries
+        );
+        Assert.Equal("user.gitconfig", dryRunEntry.TargetPathOrName);
+    }
+
+    [Theory]
+    [InlineData("foo; echo HACKED")]
+    [InlineData("foo&&echo HACKED")]
+    [InlineData("foo|echo HACKED")]
+    [InlineData("foo`echo HACKED`")]
+    [InlineData("foo$(echo HACKED)")]
+    [InlineData("!git-credential-manager-core")]
+    [InlineData("foo bar")]
+    [InlineData("./helper")]
+    [InlineData("../helper")]
+    [InlineData("subdir/helper")]
+    [InlineData("C:helper.exe")]
+    public async Task ValidatePlanAndNoFilesystemDryRunRejectUnsafeGitConfigCredentialHelperValues(
+        string helperValue
+    )
+    {
+        var manager = new ConfigurationManager();
+        string targetPath = Path.Combine(
+            Path.GetTempPath(),
+            "azureauth-credprovider-tests",
+            "credential-helper-validation.gitconfig"
+        );
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        );
+        plan = plan with
+        {
+            Changes =
+            [
+                plan.Changes[0] with
+                {
+                    Value = helperValue,
+                },
+            ],
+        };
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
+        Assert.Contains("credential.helper", validationResult.Violation, StringComparison.Ordinal);
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains("credential.helper", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -8430,6 +8557,166 @@ public sealed class ConfigurationManagerTests
         Assert.False(fileSystem.FileExists(manifestPath));
         Assert.False(fileSystem.FileExists(outerTargetPath));
         Assert.False(fileSystem.FileExists(reentryTargetPath));
+    }
+
+    [Fact]
+    public async Task
+        PhysicalTargetAdoptionRecognizesParenthesizedGitConfigHelperEscapedHash()
+    {
+        const string targetPath = "/config/phase4d-parenthesized-adoption.gitconfig";
+        string helperValue = CreateParenthesizedGitConfigHelperValue();
+        ConfigurationChangePlan plan = CreateGitConfigCredentialHelperPlan(
+            targetPath,
+            helperValue
+        );
+        ConfigurationOwnershipManifest plannedManifest = await CreateDryRunManifestAsync(plan);
+        ConfigurationOwnershipManifestEntry plannedEntry = Assert.Single(plannedManifest.Entries);
+        Assert.Equal(
+            HashMetadata(
+                GitConfigPhysicalTargetWriter.EscapeCredentialHelperPathForShell(helperValue)
+            )["sha256:".Length..],
+            plannedEntry.PlannedValueSha256
+        );
+        ConfigurationChange change = CreatePhysicalTargetChange(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        ) with
+        {
+            Key = "credential.helper",
+            Value = helperValue,
+        };
+        MethodInfo adoptedMethod = typeof(ConfigurationManager).GetMethod(
+            "AffectedPhysicalTargetChangeIsAdoptedByCurrentManifest",
+            BindingFlags.NonPublic | BindingFlags.Static
+        )!;
+
+        bool adopted = (bool)adoptedMethod.Invoke(
+            null,
+            new object?[] { change, new[] { plannedEntry } }
+        )!;
+
+        Assert.True(adopted);
+    }
+
+    [Fact]
+    public async Task
+        PhysicalTargetAdoptionRecognizesParenthesizedGitConfigHelperRawHash()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string targetPath = "/config/phase4d-parenthesized-adoption.gitconfig";
+        string helperValue = CreateParenthesizedGitConfigHelperValue();
+        ConfigurationChangePlan plan = CreateGitConfigCredentialHelperPlan(
+            targetPath,
+            helperValue
+        );
+        ConfigurationOwnershipManifest preparedManifest = await CreateDryRunManifestAsync(plan);
+        ConfigurationOwnershipManifestEntry preparedEntry = Assert.Single(
+            preparedManifest.Entries
+        );
+        ConfigurationOwnershipManifestEntry rawHashPreparedEntry = preparedEntry with
+        {
+            PlannedValueSha256 = HashMetadata(helperValue)["sha256:".Length..],
+        };
+        ConfigurationOwnershipManifest rawHashManifest = preparedManifest with
+        {
+            Entries = [rawHashPreparedEntry],
+        };
+        ConfigurationChange change = CreatePhysicalTargetChange(
+            ConfigurationTargetKind.GitConfig,
+            targetPath
+        ) with
+        {
+            Key = "credential.helper",
+            Value = helperValue,
+        };
+        MethodInfo adoptedMethod = typeof(ConfigurationManager).GetMethod(
+            "AffectedPhysicalTargetChangeIsAdoptedByCurrentManifest",
+            BindingFlags.NonPublic | BindingFlags.Static
+        )!;
+        bool adopted = (bool)adoptedMethod.Invoke(
+            null,
+            new object?[] { change, new[] { rawHashPreparedEntry } }
+        )!;
+        Assert.True(adopted);
+
+        MethodInfo preparedMethod = typeof(ConfigurationManager).GetMethod(
+            "PreparedPhysicalTargetEntryIsAdoptedByCurrentManifest",
+            BindingFlags.NonPublic | BindingFlags.Static
+        )!;
+        bool preparedAdopted = (bool)preparedMethod.Invoke(
+            null,
+            new object?[] { fileSystem, change, preparedEntry, rawHashManifest }
+        )!;
+        Assert.True(preparedAdopted);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyRollbackPreservesParenthesizedGitConfigHelperAfterDispatchFailure()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/phase4d-parenthesized-rollback-manifest.json";
+        const string targetPath = "/config/phase4d-parenthesized-rollback.gitconfig";
+        const string originalHelperValue = "owned-helper";
+        string updatedHelperValue = CreateParenthesizedGitConfigHelperValue();
+        string originalGitConfig = CreateGitConfigCredentialHelperContents(originalHelperValue);
+        string expectedUpdatedGitConfig = CreateGitConfigCredentialHelperContents(
+            GitConfigPhysicalTargetWriter.EscapeCredentialHelperPathForShell(
+                updatedHelperValue
+            )
+        );
+        fileSystem.AtomicWriteAllText(targetPath, originalGitConfig);
+        ConfigurationChangePlan originalPlan = CreateGitConfigCredentialHelperPlan(
+            targetPath,
+            originalHelperValue
+        );
+        string existingManifestJson = await CreateDryRunManifestJsonAsync(originalPlan);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        int manifestWriteCount = 0;
+        ConfigurationChangePlan basePlan = CreateGitConfigCredentialHelperPlan(
+            targetPath,
+            updatedHelperValue
+        );
+        ConfigurationChangePlan plan = basePlan with
+        {
+            Manifest = basePlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+        ConfigurationOwnershipManifest preparedFinalManifest = await CreateDryRunManifestAsync(
+            plan
+        );
+        string mutatedFinalManifestJson = RawOwnershipManifestJson(
+            preparedFinalManifest with
+            {
+                PlanId = "mutated-final-manifest",
+            }
+        );
+        fileSystem.AfterRecord = (call, fs) =>
+        {
+            if (
+                string.Equals(
+                    call.Operation,
+                    nameof(IFileSystem.AtomicWriteAllText),
+                    StringComparison.Ordinal
+                )
+                && string.Equals(call.Path, manifestPath, StringComparison.Ordinal)
+                && ++manifestWriteCount == 2
+            )
+            {
+                fs.AtomicWriteAllText(manifestPath, mutatedFinalManifestJson);
+            }
+        };
+        var dispatcher = new ConfigurationPhysicalTargetWriterDispatcher(fileSystem);
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("before-state hash", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(expectedUpdatedGitConfig, fileSystem.ReadAllText(targetPath));
     }
 
     [Fact]
@@ -17892,6 +18179,9 @@ public sealed class ConfigurationManagerTests
             ],
         };
 
+    private static string CreateParenthesizedGitConfigHelperValue() =>
+        "//helper.example/azureauth(x86)/git-credential-helper";
+
     private static ConfigurationChange CreatePhysicalTargetChange(
         ConfigurationTargetKind targetKind,
         string targetPath
@@ -18032,13 +18322,21 @@ public sealed class ConfigurationManagerTests
         return "sha256:" + Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    private static string CreateGitConfigCredentialHelperContents(string helperValue) =>
-        string.Join(
+    private static string CreateGitConfigCredentialHelperContents(string helperValue)
+    {
+        string renderedHelperValue = helperValue
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal);
+        return string.Join(
             '\n',
             "[credential]",
-            string.Create(CultureInfo.InvariantCulture, $"\thelper = \"{helperValue}\""),
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"\thelper = \"{renderedHelperValue}\""
+            ),
             string.Empty
         );
+    }
 
     private static string CreateSystemFileSystemTestDirectory()
     {

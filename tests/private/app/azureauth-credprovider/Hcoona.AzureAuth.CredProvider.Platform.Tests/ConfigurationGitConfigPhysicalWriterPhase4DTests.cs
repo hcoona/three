@@ -271,28 +271,35 @@ public sealed class ConfigurationGitConfigPhysicalWriterPhase4DTests
     }
 
     [Fact]
-    public async Task ApplyQuotesGitConfigValuesSoCommentsWhitespaceAndQuotesRemainLiteral()
+    public async Task ApplyAcceptsKnownSafeGitConfigHelperValue()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
-        const string manifestPath = "/state/gitconfig-quoted-values-manifest.json";
+        const string manifestPath = "/state/gitconfig-safe-helper-manifest.json";
         const string targetPath = "/config/user.gitconfig";
+        string expectedGitConfig = string.Join(
+            '\n',
+            "[credential]",
+            "\thelper = \"hcoona-azureauth\"",
+            string.Empty
+        );
         var manager = CreateManager(fileSystem, manifestPath);
         ConfigurationChangePlan plan = CreateGitConfigPlan(
             CreateGitConfigChange(
                 ConfigurationChangeOperation.Set,
                 targetPath,
                 "credential.helper",
-                "helper with spaces # not-a-comment \\ \"quoted\""
+                "hcoona-azureauth"
             )
         );
 
-        await manager.ApplyAsync(plan, TestContext.Current.CancellationToken);
-
-        Assert.Contains(
-            "helper = \"helper with spaces # not-a-comment \\\\ \\\"quoted\\\"\"",
-            fileSystem.ReadAllText(targetPath),
-            StringComparison.Ordinal
+        ConfigurationPlanResult result = await manager.ApplyAsync(
+            plan,
+            TestContext.Current.CancellationToken
         );
+
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Equal(expectedGitConfig, fileSystem.ReadAllText(targetPath));
+        Assert.True(fileSystem.FileExists(manifestPath));
     }
 
     [Theory]
@@ -671,7 +678,54 @@ public sealed class ConfigurationGitConfigPhysicalWriterPhase4DTests
 
     [Theory]
     [InlineData(ConfigurationChangeOperation.Set, "secret-helper", true, "non-secret values")]
-    [InlineData(ConfigurationChangeOperation.Set, "bad\u0001value", false, "printable values")]
+    [InlineData(
+        ConfigurationChangeOperation.Set,
+        "bad\u0001value",
+        false,
+        "simple helper name or fully qualified path"
+    )]
+    [InlineData(
+        ConfigurationChangeOperation.Set,
+        "./helper",
+        false,
+        "simple helper name or fully qualified path"
+    )]
+    [InlineData(
+        ConfigurationChangeOperation.Set,
+        "../helper",
+        false,
+        "simple helper name or fully qualified path"
+    )]
+    [InlineData(
+        ConfigurationChangeOperation.Set,
+        "subdir/helper",
+        false,
+        "simple helper name or fully qualified path"
+    )]
+    [InlineData(
+        ConfigurationChangeOperation.Set,
+        "C:helper.exe",
+        false,
+        "simple helper name or fully qualified path"
+    )]
+    [InlineData(
+        ConfigurationChangeOperation.Set,
+        @"C:\Program Files\Git\mingw64\libexec\git-credential-manager.exe",
+        false,
+        "simple helper name or fully qualified path"
+    )]
+    [InlineData(
+        ConfigurationChangeOperation.Set,
+        "manager(core)",
+        false,
+        "simple helper name or fully qualified path"
+    )]
+    [InlineData(
+        ConfigurationChangeOperation.Set,
+        "./helper(core)",
+        false,
+        "simple helper name or fully qualified path"
+    )]
     [InlineData(ConfigurationChangeOperation.RemoveAdapter, null, false, "remove-adapter")]
     public async Task ValidatePlanAndNoFilesystemDryRunRejectUnsupportedStaticGitConfigInputs(
         ConfigurationChangeOperation operation,
@@ -713,10 +767,15 @@ public sealed class ConfigurationGitConfigPhysicalWriterPhase4DTests
     public async Task NoFilesystemDryRunCanonicalizesGitConfigKeyBeforeReturningManifest()
     {
         var manager = new ConfigurationManager();
+        string targetPath = Path.Combine(
+            Path.GetTempPath(),
+            "azureauth-credprovider-tests",
+            "user.gitconfig"
+        );
         ConfigurationChangePlan plan = CreateGitConfigPlan(
             CreateGitConfigChange(
                 ConfigurationChangeOperation.Set,
-                "user.gitconfig",
+                targetPath,
                 "credential \"https://dev.azure.com\".useHttpPath",
                 "true"
             )
@@ -829,7 +888,12 @@ public sealed class ConfigurationGitConfigPhysicalWriterPhase4DTests
     [Theory]
     [InlineData(ConfigurationChangeOperation.RemoveAdapter, null, false, "remove-adapter")]
     [InlineData(ConfigurationChangeOperation.Set, "secret-helper", true, "non-secret values")]
-    [InlineData(ConfigurationChangeOperation.Set, "bad\u0001value", false, "printable values")]
+    [InlineData(
+        ConfigurationChangeOperation.Set,
+        "bad\u0001value",
+        false,
+        "simple helper name or fully qualified path"
+    )]
     public async Task ApplyOrRemoveRejectsUnsupportedStaticGitConfigWriterInputsBeforePreclaim(
         ConfigurationChangeOperation operation,
         string? value,
@@ -1345,6 +1409,53 @@ public sealed class ConfigurationGitConfigPhysicalWriterPhase4DTests
             result.OwnershipManifest!.Entries,
             entry => Assert.Equal("credential.helper", entry.Key),
             entry => Assert.Equal("credential.https://dev.azure.com.useHttpPath", entry.Key)
+        );
+    }
+
+    [Fact]
+    public async Task ApplyAcceptsFullyQualifiedHelperPathWithParentheses()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/gitconfig-helper-parentheses-manifest.json";
+        const string targetPath = "/config/user.gitconfig";
+        const string helperValue = "/usr/local/bin/git-credential-manager(v1)";
+        string renderedHelperValue = helperValue
+            .Replace("(", "\\(", StringComparison.Ordinal)
+            .Replace(")", "\\)", StringComparison.Ordinal);
+        string expectedGitConfig = string.Join(
+            '\n',
+            "[credential]",
+            $"\thelper = \"{renderedHelperValue.Replace("\\", "\\\\", StringComparison.Ordinal)}\"",
+            string.Empty
+        );
+        var manager = CreateManager(fileSystem, manifestPath);
+        ConfigurationChangePlan plan = CreateGitConfigPlan(
+            CreateGitConfigChange(
+                ConfigurationChangeOperation.Set,
+                targetPath,
+                "credential.helper",
+                helperValue
+            )
+        );
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+        Assert.True(validationResult.IsValid);
+        Assert.Null(validationResult.Violation);
+
+        ConfigurationPlanResult result = await manager.ApplyAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Equal(expectedGitConfig, fileSystem.ReadAllText(targetPath));
+        ConfigurationOwnershipManifestEntry entry = Assert.Single(
+            result.OwnershipManifest!.Entries
+        );
+        Assert.Equal("credential.helper", entry.Key);
+        Assert.Equal(
+            Sha256Hex(Encoding.UTF8.GetBytes(renderedHelperValue)),
+            entry.PlannedValueSha256
         );
     }
 

@@ -115,9 +115,7 @@ internal static class ConfigurationPlanProjector
             PreserveDeclarationsAndComments = change.PreserveDeclarationsAndComments,
             HasPlannedValue = hasPlannedValue,
             IsSecretValue = isSecretValue,
-            PlannedValueSha256 = hasPlannedValue && !isSecretValue
-                ? ComputeSha256(change.Value!)
-                : null,
+            PlannedValueSha256 = GetPlannedValueSha256(change, hasPlannedValue, isSecretValue),
             PreviousOwnedEntryMetadata = change.PreviousOwnedEntryMetadata,
         };
     }
@@ -141,11 +139,41 @@ internal static class ConfigurationPlanProjector
             PreserveDeclarationsAndComments = change.PreserveDeclarationsAndComments,
             HasPlannedValue = hasPlannedValue,
             IsSecretValue = isSecretValue,
-            PlannedValueSha256 = hasPlannedValue && !isSecretValue
-                ? ComputeSha256(change.Value!)
-                : null,
+            PlannedValueSha256 = GetPlannedValueSha256(change, hasPlannedValue, isSecretValue),
             PreviousOwnedEntryMetadata = change.PreviousOwnedEntryMetadata,
         };
+    }
+
+    private static string? GetPlannedValueSha256(
+        ConfigurationChange change,
+        bool hasPlannedValue,
+        bool isSecretValue
+    )
+    {
+        if (!hasPlannedValue || isSecretValue)
+        {
+            return null;
+        }
+
+        return ComputeSha256(GetPlannedValueForHash(change));
+    }
+
+    internal static string GetPlannedValueForHash(ConfigurationChange change)
+    {
+        if (
+            change.TargetKind == ConfigurationTargetKind.GitConfig
+            && GitConfigPhysicalTargetWriter.TryCanonicalizeSupportedConfigurationKey(
+                change.Key,
+                out string canonicalKey
+            )
+            && string.Equals(canonicalKey, "credential.helper", StringComparison.Ordinal)
+            && change.Value is not null
+        )
+        {
+            return GitConfigPhysicalTargetWriter.EscapeCredentialHelperPathForShell(change.Value);
+        }
+
+        return change.Value!;
     }
 
     private static string ComputeSha256(string value)

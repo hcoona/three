@@ -1093,6 +1093,15 @@ public sealed class ConfigurationManager : IConfigurationManager
             throw new ArgumentException(violation, nameof(plan));
         }
 
+        violation = GetGitConfigStaticWriterPlanningValidationViolation(
+            plan,
+            GetRejectSecretGitConfigValueWritesBeforeManifestPreclaim()
+        );
+        if (violation is not null)
+        {
+            throw new ArgumentException(violation, nameof(plan));
+        }
+
         violation = GetProjectionValidationViolation(plan);
         if (violation is not null)
         {
@@ -1123,6 +1132,19 @@ public sealed class ConfigurationManager : IConfigurationManager
         if (violation is not null)
         {
             return violation;
+        }
+
+        if (fileSystem is null)
+        {
+            violation = GetGitConfigPhysicalTargetEntriesPathViolation(
+                manifest
+                    .Entries.Where(entry => entry.TargetKind == ConfigurationTargetKind.GitConfig),
+                LooksLikeRelativePhysicalPath
+            );
+            if (violation is not null)
+            {
+                return violation;
+            }
         }
 
         Func<string, bool> isPathFullyQualified = fileSystem is null
@@ -1964,6 +1986,15 @@ public sealed class ConfigurationManager : IConfigurationManager
             return;
         }
 
+        string? gitConfigPathViolation = GetGitConfigPhysicalTargetEntriesPathViolation(
+            manifest.Entries.Where(entry => entry.TargetKind == ConfigurationTargetKind.GitConfig),
+            LooksLikeRelativePhysicalPath
+        );
+        if (gitConfigPathViolation is not null)
+        {
+            throw new InvalidOperationException(gitConfigPathViolation);
+        }
+
         ValidateGitConfigManifestEntriesAreVerifiableNonSecretValueWrites(
             manifest.Entries.Where(entry => IsValueWritingOperation(entry.Operation))
         );
@@ -1998,6 +2029,37 @@ public sealed class ConfigurationManager : IConfigurationManager
             ? "Configuration ownership manifest conflict: Npmrc physical target entries must "
                 + "use fully qualified target paths."
             : null;
+    }
+
+    private static string? GetGitConfigPhysicalTargetEntriesPathViolation(
+        IEnumerable<ConfigurationOwnershipManifestEntry> entries,
+        Func<string, bool> looksLikeRelativePhysicalPath
+    )
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        ArgumentNullException.ThrowIfNull(looksLikeRelativePhysicalPath);
+
+        return entries.Any(entry => looksLikeRelativePhysicalPath(entry.TargetPathOrName))
+            ? "Configuration ownership manifest conflict: Git config physical target entries "
+                + "must use fully qualified target paths."
+            : null;
+    }
+
+    private static bool LooksLikeRelativePhysicalPath(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+
+        if (Path.IsPathFullyQualified(path))
+        {
+            return false;
+        }
+
+        if (path.Length >= 2 && char.IsLetter(path[0]) && path[1] == ':')
+        {
+            return true;
+        }
+
+        return path is "." or ".." || path.Contains('/') || path.Contains('\\');
     }
 
     private static string? GetNpmrcRetainedOwnershipProofViolation(
@@ -6442,12 +6504,25 @@ public sealed class ConfigurationManager : IConfigurationManager
                 AffectedPhysicalTargetChangeIsAdoptedByCurrentManifest(change, currentPathEntries)
             )
             && preparedPathEntries.All(preparedEntry =>
-                PreparedPhysicalTargetEntryIsAdoptedByCurrentManifest(
+            {
+                ConfigurationChange? matchingChange = affectedChanges.FirstOrDefault(change =>
+                    string.Equals(
+                        CanonicalizePhysicalTargetManifestKey(change.TargetKind, change.Key),
+                        CanonicalizePhysicalTargetManifestKey(
+                            preparedEntry.TargetKind,
+                            preparedEntry.Key
+                        ),
+                        StringComparison.Ordinal
+                    )
+                );
+
+                return PreparedPhysicalTargetEntryIsAdoptedByCurrentManifest(
                     fileSystem,
+                    matchingChange,
                     preparedEntry,
                     currentManifest
-                )
-            );
+                );
+            });
     }
 
     private static bool CurrentFinalManifestAdoptsPreparedPhysicalTargetRemovals(
@@ -6598,16 +6673,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             return matchingCurrentEntry.IsSecretValue;
         }
 
-        if (change.Value is null)
-        {
-            return false;
-        }
-
-        return string.Equals(
-            matchingCurrentEntry.PlannedValueSha256,
-            ComputeSha256(Encoding.UTF8.GetBytes(change.Value)),
-            StringComparison.Ordinal
-        );
+        return PlannedValueSha256MatchesChange(change, matchingCurrentEntry.PlannedValueSha256);
     }
 
     private static ConfigurationOwnershipManifest? TryReadFinalOwnershipManifest(
@@ -6797,6 +6863,7 @@ public sealed class ConfigurationManager : IConfigurationManager
 
     private static bool PreparedPhysicalTargetEntryIsAdoptedByCurrentManifest(
         IFileSystem fileSystem,
+        ConfigurationChange? change,
         ConfigurationOwnershipManifestEntry preparedEntry,
         ConfigurationOwnershipManifest currentManifest
     )
@@ -6833,11 +6900,73 @@ public sealed class ConfigurationManager : IConfigurationManager
             )
             && (preparedEntry.IsSecretValue
                 ? currentEntry.IsSecretValue
-                : string.Equals(
-                    currentEntry.PlannedValueSha256,
-                    preparedEntry.PlannedValueSha256,
-                    StringComparison.Ordinal
-                ))
+                : change is null
+                    ? string.Equals(
+                        currentEntry.PlannedValueSha256,
+                        preparedEntry.PlannedValueSha256,
+                        StringComparison.Ordinal
+                    )
+                    : PlannedValueSha256MatchesChange(change, preparedEntry.PlannedValueSha256)
+                        && PlannedValueSha256MatchesChange(
+                            change,
+                            currentEntry.PlannedValueSha256
+                        ))
+        );
+    }
+
+    private static bool PlannedValueSha256MatchesChange(
+        ConfigurationChange change,
+        string? plannedValueSha256
+    )
+    {
+        if (
+            change.TargetKind == ConfigurationTargetKind.GitConfig
+            && string.Equals(
+                CanonicalizePhysicalTargetManifestKey(change.TargetKind, change.Key),
+                "credential.helper",
+                StringComparison.Ordinal
+            )
+            && change.Value is not null
+        )
+        {
+            return CredentialHelperPlannedValueSha256Matches(plannedValueSha256, change.Value);
+        }
+
+        if (change.Value is null)
+        {
+            return false;
+        }
+
+        return string.Equals(
+            plannedValueSha256,
+            ComputeSha256(ConfigurationPlanProjector.GetPlannedValueForHash(change)),
+            StringComparison.Ordinal
+        );
+    }
+
+    private static bool CredentialHelperPlannedValueSha256Matches(
+        string? plannedValueSha256,
+        string helperValue
+    )
+    {
+        if (string.IsNullOrWhiteSpace(plannedValueSha256))
+        {
+            return false;
+        }
+
+        string rawPlannedValueSha256 = ComputeSha256(helperValue);
+        if (string.Equals(plannedValueSha256, rawPlannedValueSha256, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        string escapedPlannedValueSha256 = ComputeSha256(
+            GitConfigPhysicalTargetWriter.EscapeCredentialHelperPathForShell(helperValue)
+        );
+        return string.Equals(
+            plannedValueSha256,
+            escapedPlannedValueSha256,
+            StringComparison.Ordinal
         );
     }
 
@@ -7727,7 +7856,7 @@ public sealed class ConfigurationManager : IConfigurationManager
 
     private static string? GetExpectedCurrentHashAfterMutation(ConfigurationChange change) =>
         IsValueWritingOperation(change.Operation)
-            ? ComputeSha256(Encoding.UTF8.GetBytes(change.Value!))
+            ? ComputeSha256(ConfigurationPlanProjector.GetPlannedValueForHash(change))
             : null;
 
     private static bool IsPathUnderDirectory(string directoryPath, string candidatePath)

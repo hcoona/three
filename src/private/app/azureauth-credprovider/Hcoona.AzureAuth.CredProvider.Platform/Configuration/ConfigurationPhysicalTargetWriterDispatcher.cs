@@ -239,6 +239,9 @@ internal sealed class GitConfigPhysicalTargetWriter(IFileSystem fileSystem)
     private const string DevAzureComHost = "dev.azure.com";
     private const string HelperVariableName = "helper";
     private const string UseHttpPathVariableName = "useHttpPath";
+    private const string UnsafeCredentialHelperValueMessage =
+        "The Git config physical writer supports credential.helper only as a simple helper "
+            + "name or fully qualified path without shell syntax.";
     private const string DevAzureComUseHttpPathCanonicalConfigurationKey =
         "credential.https://dev.azure.com.useHttpPath";
     private static readonly string DevAzureComUseHttpPathCanonicalTrueSha256 =
@@ -564,7 +567,7 @@ internal sealed class GitConfigPhysicalTargetWriter(IFileSystem fileSystem)
             ThrowIfValueCannotBeWritten(change.Value);
             GitConfigEntryLocation[] existingEntries = document.FindEntries(change.Key).ToArray();
             ValidateApplyExistingEntries(change, existingEntries);
-            string renderedLine = RenderEntryLine(change.Key.VariableName, change.Value);
+            string renderedLine = RenderEntryLine(change.Key, change.Value);
             if (existingEntries.Length == 1)
             {
                 lines[existingEntries[0].LineIndex] = renderedLine;
@@ -813,13 +816,9 @@ internal sealed class GitConfigPhysicalTargetWriter(IFileSystem fileSystem)
             )
             && change.Operation != ConfigurationChangeOperation.Remove
             && change.Value is not null
-            && change.Value.StartsWith('!')
         )
         {
-            throw new NotSupportedException(
-                "The Git config physical writer supports credential.helper only with installed "
-                    + "helper entries, not shell snippet helpers."
-            );
+            ThrowIfUnsafeCredentialHelperValue(change.Value);
         }
     }
 
@@ -1321,10 +1320,80 @@ internal sealed class GitConfigPhysicalTargetWriter(IFileSystem fileSystem)
         }
     }
 
-    private static string RenderEntryLine(string variableName, string value) =>
+    private static void ThrowIfUnsafeCredentialHelperValue(string value)
+    {
+        if (value.Length == 0)
+        {
+            return;
+        }
+
+        if (value.StartsWith('!'))
+        {
+            throw new NotSupportedException(
+                "The Git config physical writer supports credential.helper only with installed "
+                    + "helper entries, not shell snippet helpers."
+            );
+        }
+
+        bool isFullyQualifiedPath = Path.IsPathFullyQualified(value);
+        if (
+            value.Any(character =>
+                character is '(' or ')'
+                    ? !isFullyQualifiedPath
+                    : !IsSafeCredentialHelperCharacter(character)
+            )
+        )
+        {
+            throw new NotSupportedException(UnsafeCredentialHelperValueMessage);
+        }
+
+        if (
+            value.Length >= 2
+            && char.IsLetter(value[0])
+            && value[1] == ':'
+            && !Path.IsPathFullyQualified(value)
+        )
+        {
+            throw new NotSupportedException(UnsafeCredentialHelperValueMessage);
+        }
+
+        if (HasCredentialHelperPathSeparator(value) && !Path.IsPathFullyQualified(value))
+        {
+            throw new NotSupportedException(UnsafeCredentialHelperValueMessage);
+        }
+    }
+
+    private static bool HasCredentialHelperPathSeparator(string value) =>
+        value.Contains(Path.DirectorySeparatorChar)
+        || value.Contains(Path.AltDirectorySeparatorChar);
+
+    private static bool IsSafeCredentialHelperCharacter(char character) =>
+        character is >= '0' and <= '9'
+        or >= 'A' and <= 'Z'
+        or >= 'a' and <= 'z'
+        or '.' or '_' or '-' or '/' or ':' or '\\';
+
+    internal static string EscapeCredentialHelperPathForShell(string value)
+    {
+        if (!Path.IsPathFullyQualified(value) || (!value.Contains('(') && !value.Contains(')')))
+        {
+            return value;
+        }
+
+        return value
+            .Replace("(", "\\(", StringComparison.Ordinal)
+            .Replace(")", "\\)", StringComparison.Ordinal);
+    }
+
+    private static string RenderGitConfigValue(GitConfigKey key, string value) =>
+        IsSupportedGlobalCredentialHelperKey(key)
+            ? EscapeCredentialHelperPathForShell(value)
+            : value;
+
+    private static string RenderEntryLine(GitConfigKey key, string value) =>
         string.Create(
             CultureInfo.InvariantCulture,
-            $"\t{variableName} = {QuoteValue(value)}"
+            $"\t{key.VariableName} = {QuoteValue(RenderGitConfigValue(key, value))}"
         );
 
     private static string QuoteValue(string value)
