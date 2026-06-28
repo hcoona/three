@@ -4,9 +4,12 @@
   "tools": {
     "nbgv": {
       "version": "3.9.50",
-      "commands": [
-        "nbgv"
-      ],
+      "commands": ["nbgv"],
+      "rollForward": false
+    },
+    "csharp-ls": {
+      "version": "0.25.0",
+      "commands": ["csharp-ls"],
       "rollForward": false
     }
   }

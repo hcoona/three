@@ -904,3 +904,7 @@ _version.py
 # Qidian novel downloader PoC artifacts
 .browser-profile/
 novel_output.md
+
+
+# APM dependencies
+apm_modules/

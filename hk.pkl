@@ -16,6 +16,14 @@ display_skip_reasons =
   )
 warnings = List("missing-profiles")
 
+local apm_generated_output_list =
+  List(
+    ".agents/**",
+    ".vscode/mcp.json",
+    "apm.lock.yaml",
+    "**/apm.lock.yaml",
+  )
+
 local general_exclude_list =
   List(
     ".pre-commit-config.yaml",
@@ -32,7 +40,7 @@ local general_exclude_list =
     "**/.specify/**",
     "**/specs/**/*.md",
     "**/generated/**",
-  )
+  ) + apm_generated_output_list
 
 local general_linters = new Mapping<String, Step> {
   ["typos"] = (Steps.typos) {
@@ -113,12 +121,14 @@ local yaml_linters = new Mapping<String, Step> {
 local toml_linters = new Mapping<String, Step> {
   ["toml-taplo-check"] {
     profiles = List("small")
+    exclude = general_exclude_list
     glob = "**/*.toml"
     check = "python eng/scripts/hk_exec.py pnpm exec -- taplo check -- {{files}}"
   }
 
   ["toml-taplo-format"] {
     profiles = List("small")
+    exclude = general_exclude_list
     glob = "**/*.toml"
     stage = "<JOB_FILES>"
     check = "python eng/scripts/hk_exec.py pnpm exec -- taplo format --check -- {{files}}"
@@ -131,6 +141,7 @@ local toml_linters = new Mapping<String, Step> {
 local docker_linters = new Mapping<String, Step> {
   ["hadolint"] {
     profiles = List("small")
+    exclude = general_exclude_list
     glob = List("Dockerfile", "*.Dockerfile", "Dockerfile.*")
     check = "python eng/scripts/hk_exec.py hadolint -- {{files}}"
   }
@@ -190,6 +201,7 @@ local pwsh_linters = new Mapping<String, Step> {
 local dotnet_linters = new Mapping<String, Step> {
   ["csharpier"] = (Steps.csharpier) {
     profiles = List("medium")
+    exclude = general_exclude_list
     prefix = "dotnet tool run"
   }
 
@@ -205,6 +217,7 @@ local javascript_typescript_linters = new Mapping<String, Step> {
 
   ["biome"] {
     profiles = List("small")
+    exclude = general_exclude_list
     glob = javascript_typescript_files
     stage = javascript_typescript_files
     check =
@@ -221,6 +234,7 @@ local python_linters = new Mapping<String, Step> {
 
   ["ruff"] {
     profiles = List("small")
+    exclude = general_exclude_list
     glob = all_python_files
     stage = all_python_files
     check = "python eng/scripts/hk_exec.py uv run ruff check --force-exclude -- {{files}}"
@@ -229,6 +243,7 @@ local python_linters = new Mapping<String, Step> {
 
   ["ruff_format"] = (Builtins.ruff_format) {
     profiles = List("small")
+    exclude = general_exclude_list
     glob = all_python_files
     stage = all_python_files
     check =
