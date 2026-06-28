@@ -382,13 +382,15 @@ public static class ConfigurationOwnershipManifestPolicy
     private static bool IsIntrinsicallySecretNpmCompatibleAuthEntry(
         ConfigurationOwnershipManifestEntry entry
     ) =>
-        RequiresValue(entry.Operation)
-        && (
-            (entry.TargetKind == ConfigurationTargetKind.Npmrc && IsNpmAuthTokenKey(entry.Key))
-            || (
-                entry.TargetKind == ConfigurationTargetKind.Yarnrc
-                && IsYarnNpmAuthTokenKey(entry.Key)
-            )
+        (
+            entry.TargetKind == ConfigurationTargetKind.Npmrc
+            && entry.HasPlannedValue
+            && IsNpmAuthTokenKey(entry.Key)
+        )
+        || (
+            RequiresValue(entry.Operation)
+            && entry.TargetKind == ConfigurationTargetKind.Yarnrc
+            && IsYarnNpmAuthTokenKey(entry.Key)
         );
 
     private static bool IsNpmAuthTokenKey(string? key) =>

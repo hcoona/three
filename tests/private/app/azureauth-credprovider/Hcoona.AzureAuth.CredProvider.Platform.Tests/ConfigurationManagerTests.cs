@@ -4723,6 +4723,39 @@ public sealed class ConfigurationManagerTests
         );
     }
 
+    [Theory]
+    [InlineData("_authToken")]
+    [InlineData("//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken")]
+    public void OwnershipManifestPolicyRejectsNonSecretNpmrcAuthTokenEntries(string key)
+    {
+        const string canonicalSelector =
+            "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken";
+        ConfigurationOwnershipManifest manifest = CreateValidOwnershipManifest() with
+        {
+            EntrySelector = canonicalSelector,
+            ResourceIdentity = CreateNpmResourceIdentity(),
+            Entries =
+            [
+                CreateValidOwnershipEntry() with
+                {
+                    TargetKind = ConfigurationTargetKind.Npmrc,
+                    TargetPathOrName = "user npmrc",
+                    Key = key,
+                    IsSecretValue = false,
+                },
+            ],
+        };
+        string json = RawOwnershipManifestJson(manifest);
+
+        Assert.False(ConfigurationOwnershipManifestPolicy.IsValid(manifest));
+        string? violation = ConfigurationOwnershipManifestPolicy.GetViolation(manifest);
+        Assert.NotNull(violation);
+        Assert.Contains("marked as secret", violation, StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>(() =>
+            ConfigurationOwnershipManifestSerializer.Deserialize(json)
+        );
+    }
+
     [Fact]
     public void CreatePhysicalTargetOwnershipProofsRejectsInvalidNpmrcSecretAuthTokenManifest()
     {
@@ -5938,6 +5971,21 @@ public sealed class ConfigurationManagerTests
         Assert.Equal(ConfigurationTargetKind.Npmrc, entry.TargetKind);
         Assert.Equal(CanonicalNpmrcSecretAuthTokenSelector, entry.Key);
         Assert.True(entry.IsSecretValue);
+        string manifestJson = fileSystem.ReadAllText(manifestPath);
+        Assert.Equal(
+            ConfigurationOwnershipManifestSerializer.Serialize(appliedManifest),
+            manifestJson
+        );
+        Assert.DoesNotContain(secretValue, manifestJson, StringComparison.Ordinal);
+        AssertObjectGraphDoesNotContainSecret(appliedManifest, secretValue);
+        Assert.DoesNotContain(secretValue, appliedManifest.ToString(), StringComparison.Ordinal);
+        AssertObjectGraphDoesNotContainSecret(result, secretValue);
+        Assert.DoesNotContain(secretValue, result.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            secretValue,
+            JsonSerializer.Serialize(result, CreateTestSerializerOptions()),
+            StringComparison.Ordinal
+        );
     }
 
     [Theory]
