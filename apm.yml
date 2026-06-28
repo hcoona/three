@@ -1,0 +1,54 @@
+name: short
+version: 1.0.0
+description: APM configuration for shared agent skills.
+targets:
+- copilot
+dependencies:
+  apm:
+  - git: https://github.com/dotnet/skills.git
+    path: plugins/dotnet
+    ref: 691cd472a108927024b575e4599d273bca62c60c
+  - git: https://github.com/dotnet/skills.git
+    path: plugins/dotnet-diag
+    ref: 691cd472a108927024b575e4599d273bca62c60c
+  - git: https://github.com/dotnet/skills.git
+    path: plugins/dotnet-msbuild
+    ref: 691cd472a108927024b575e4599d273bca62c60c
+  - git: https://github.com/dotnet/skills.git
+    path: plugins/dotnet-nuget
+    ref: 691cd472a108927024b575e4599d273bca62c60c
+  - git: https://github.com/dotnet/skills.git
+    path: plugins/dotnet-upgrade
+    ref: 691cd472a108927024b575e4599d273bca62c60c
+  - git: https://github.com/dotnet/skills.git
+    path: plugins/dotnet-ai
+    ref: 691cd472a108927024b575e4599d273bca62c60c
+  - git: https://github.com/dotnet/skills.git
+    path: plugins/dotnet-test
+    ref: 691cd472a108927024b575e4599d273bca62c60c
+  - git: https://github.com/dotnet/skills.git
+    path: plugins/dotnet-test-migration
+    ref: 691cd472a108927024b575e4599d273bca62c60c
+  - git: https://github.com/mattpocock/skills.git
+    path: skills/productivity/grill-me
+    ref: 5d78bd0903420f97c791f834201e550c765699f8
+  - git: https://github.com/microsoftdocs/mcp.git
+    path: skills/microsoft-docs
+    ref: caa3d670bf2814171dba4f7346ece5080964021e
+  - git: https://github.com/microsoftdocs/mcp.git
+    path: skills/microsoft-code-reference
+    ref: caa3d670bf2814171dba4f7346ece5080964021e
+  mcp:
+  - name: binlog
+    registry: false
+    transport: stdio
+    command: mise
+    args:
+    - exec
+    - --
+    - dotnet
+    - dnx
+    - Microsoft.AITools.BinlogMcp
+    - --yes
+includes: auto
+scripts: {}
