@@ -173,17 +173,44 @@ checksum = "sha256:8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e7
 url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.zip"
 url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056944"
 
-[[tools."github:koalaman/shellcheck"]]
-version = "0.11.0"
-backend = "github:koalaman/shellcheck"
+[[tools."github:microsoft/apm"]]
+version = "0.22.0"
+backend = "github:microsoft/apm"
 
-[tools."github:koalaman/shellcheck".options]
-asset_pattern = "shellcheck-*.zip"
+[tools."github:microsoft/apm"."platforms.linux-arm64"]
+checksum = "sha256:557feb48401d5e6cd7f6bdba4b6c975a234f444bc511188725d01b04d3e1a2d8"
+url = "https://github.com/microsoft/apm/releases/download/v0.22.0/apm-linux-arm64.tar.gz"
+url_api = "https://api.github.com/repos/microsoft/apm/releases/assets/458426728"
 
-[tools."github:koalaman/shellcheck"."platforms.windows-x64"]
-checksum = "sha256:8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e"
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.zip"
-url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056944"
+[tools."github:microsoft/apm"."platforms.linux-arm64-musl"]
+checksum = "sha256:557feb48401d5e6cd7f6bdba4b6c975a234f444bc511188725d01b04d3e1a2d8"
+url = "https://github.com/microsoft/apm/releases/download/v0.22.0/apm-linux-arm64.tar.gz"
+url_api = "https://api.github.com/repos/microsoft/apm/releases/assets/458426728"
+
+[tools."github:microsoft/apm"."platforms.linux-x64"]
+checksum = "sha256:1e52967b78f7dbc980f75dbd5dcf69ee21b6f1a8da6832a323719f7fd5996f49"
+url = "https://github.com/microsoft/apm/releases/download/v0.22.0/apm-linux-x86_64.tar.gz"
+url_api = "https://api.github.com/repos/microsoft/apm/releases/assets/458426733"
+
+[tools."github:microsoft/apm"."platforms.linux-x64-musl"]
+checksum = "sha256:1e52967b78f7dbc980f75dbd5dcf69ee21b6f1a8da6832a323719f7fd5996f49"
+url = "https://github.com/microsoft/apm/releases/download/v0.22.0/apm-linux-x86_64.tar.gz"
+url_api = "https://api.github.com/repos/microsoft/apm/releases/assets/458426733"
+
+[tools."github:microsoft/apm"."platforms.macos-arm64"]
+checksum = "sha256:d1417e7d0d3fc4746392403670a55847364aa7db918f6c374bff6cce95759665"
+url = "https://github.com/microsoft/apm/releases/download/v0.22.0/apm-darwin-arm64.tar.gz"
+url_api = "https://api.github.com/repos/microsoft/apm/releases/assets/458426730"
+
+[tools."github:microsoft/apm"."platforms.macos-x64"]
+checksum = "sha256:87f1e8f870bc6bf1d77a755d315e238975c7815b6ff96070c148fb96ad2c547d"
+url = "https://github.com/microsoft/apm/releases/download/v0.22.0/apm-darwin-x86_64.tar.gz"
+url_api = "https://api.github.com/repos/microsoft/apm/releases/assets/458426729"
+
+[tools."github:microsoft/apm"."platforms.windows-x64"]
+checksum = "sha256:ab6327d9035324fe726677a258dceb25041d333854e436aec7c88e4c3cc62824"
+url = "https://github.com/microsoft/apm/releases/download/v0.22.0/apm-windows-x86_64.zip"
+url_api = "https://api.github.com/repos/microsoft/apm/releases/assets/458426732"
 
 [[tools.go]]
 version = "1.26.1"
@@ -260,30 +287,6 @@ url = "https://github.com/jdx/hk/releases/download/v1.38.0/hk-aarch64-apple-darw
 [tools.hk."platforms.windows-x64"]
 checksum = "sha256:3850e253ebe3b13b6932e951606eafe56801031c663437d656a49dc0ab9fdbf4"
 url = "https://github.com/jdx/hk/releases/download/v1.38.0/hk-x86_64-pc-windows-msvc.zip"
-
-[[tools.java]]
-version = "25.0.2"
-backend = "core:java"
-
-[tools.java."platforms.linux-arm64"]
-checksum = "sha256:671208d205e70c9805da45a483f670d49dd64654990a7b7223ccffb2abb070dd"
-url = "https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_linux-aarch64_bin.tar.gz"
-
-[tools.java."platforms.linux-x64"]
-checksum = "sha256:555ce0821e4fe175ea50d54518cd6fbece9663c1998de529bc6ce429534457df"
-url = "https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_linux-x64_bin.tar.gz"
-
-[tools.java."platforms.macos-arm64"]
-checksum = "sha256:7581b0d1752cd5acbf39e286c03f07b6cd6c205b562eb2fe753ff0253cf4c1bf"
-url = "https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_macos-aarch64_bin.tar.gz"
-
-[tools.java."platforms.macos-x64"]
-checksum = "sha256:4ec2f4bc47b057fdf9cda07af27fae8f3605e90fa963d4240d63baeb46ede460"
-url = "https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_macos-x64_bin.tar.gz"
-
-[tools.java."platforms.windows-x64"]
-checksum = "sha256:74784a0c07258f32d36e9224dd79187c566d831c30d47dc06888d4212087331d"
-url = "https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_windows-x64_bin.zip"
 
 [[tools.java]]
 version = "25.0.2"
@@ -514,43 +517,6 @@ url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15
 [tools.ripgrep."platforms.windows-x64"]
 checksum = "sha256:124510b94b6baa3380d051fdf4650eaa80a302c876d611e9dba0b2e18d87493a"
 url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-pc-windows-msvc.zip"
-
-[[tools.ruby]]
-version = "3.3.10"
-backend = "core:ruby"
-
-[tools.ruby."platforms.linux-arm64"]
-checksum = "sha256:982d8df48b923561ceb0a8c64df5f403328cead310ad4a4bfbdac3d2b254cd1c"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.arm64_linux.tar.gz"
-provenance = "github-attestations"
-
-[tools.ruby."platforms.linux-arm64-musl"]
-checksum = "sha256:982d8df48b923561ceb0a8c64df5f403328cead310ad4a4bfbdac3d2b254cd1c"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.arm64_linux.tar.gz"
-provenance = "github-attestations"
-
-[tools.ruby."platforms.linux-x64"]
-checksum = "sha256:0050e0ed55f1c2b98cd488008d36d7ccfddab86ba3f165f13e76a2398b6116d2"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.x86_64_linux.tar.gz"
-provenance = "github-attestations"
-
-[tools.ruby."platforms.linux-x64-musl"]
-checksum = "sha256:0050e0ed55f1c2b98cd488008d36d7ccfddab86ba3f165f13e76a2398b6116d2"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.x86_64_linux.tar.gz"
-provenance = "github-attestations"
-
-[tools.ruby."platforms.macos-arm64"]
-checksum = "sha256:4c2de8c0ea3ba222578bd5d5f9b6a4d88bef23050c79e1347b63252bcdf64584"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.macos.tar.gz"
-provenance = "github-attestations"
-
-[tools.ruby."platforms.macos-x64"]
-checksum = "sha256:b555baa467a306cfc8e6c6ed24d0d27b27e9a1bed1d91d95509859eac6b0e928"
-url = "https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.10.tar.gz"
-
-[tools.ruby."platforms.windows-x64"]
-checksum = "sha256:80203102617b216dc0bcdcc8c21cc3889aa3fde7f15860e2e22ee5487480f694"
-url = "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-3.3.10-1/rubyinstaller-3.3.10-1-x64.7z"
 
 [[tools.ruby]]
 version = "3.3.10"
