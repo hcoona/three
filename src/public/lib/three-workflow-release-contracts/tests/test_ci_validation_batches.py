@@ -1011,6 +1011,19 @@ def test_release_shaped_batch_accepts_profile_telemetry() -> None:
     _validate_release_bundle(bundle)
 
 
+def test_release_shaped_batch_accepts_profile_identity_metadata() -> None:
+    """Generated validation-build identity metadata is valid."""
+    request_digest = "0123456789abcdef" * 4
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    phase = _release_profile_phase(telemetry, "base")
+    phase["request-digest"] = request_digest
+    phase["bundle-id"] = request_digest[:24]
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    _validate_release_bundle(bundle)
+
+
 def test_release_shaped_batch_accepts_node_profile_telemetry() -> None:
     """Release-shaped profile phases accept node ecosystem telemetry."""
     bundle = _release_batch_bundle()
@@ -1287,6 +1300,47 @@ def test_release_shaped_batch_rejects_malformed_profile_telemetry(
     _release_bundle_detail(bundle)["profile-telemetry"] = mutator(
         _valid_release_profile_telemetry()
     )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(expected_path in issue.path for issue in exc_info.value.issues)
+
+
+@pytest.mark.parametrize(
+    ("metadata", "expected_path"),
+    [
+        (
+            {"request-digest": "A" * 64, "bundle-id": "a" * 24},
+            ".profile-telemetry.phases[0].request-digest",
+        ),
+        (
+            {"request-digest": "a" * 64, "bundle-id": "not-a-bundle-id"},
+            ".profile-telemetry.phases[0].bundle-id",
+        ),
+        (
+            {"request-digest": "a" * 64, "bundle-id": "b" * 24},
+            ".profile-telemetry.phases[0].bundle-id",
+        ),
+        (
+            {"bundle-id": "a" * 24},
+            ".profile-telemetry.phases[0].request-digest",
+        ),
+        (
+            {"request-digest": "a" * 64},
+            ".profile-telemetry.phases[0].bundle-id",
+        ),
+    ],
+)
+def test_release_shaped_batch_rejects_malformed_profile_identity_metadata(
+    metadata: Mapping[str, object],
+    expected_path: str,
+) -> None:
+    """Generated validation-build profile identity metadata is bounded."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    _release_profile_phase(telemetry, "base").update(metadata)
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
 
     with pytest.raises(ContractValidationError) as exc_info:
         _validate_release_bundle(bundle)

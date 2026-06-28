@@ -72,6 +72,7 @@ from three_workflow_release_contracts.contracts import (
 
 _LOCAL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+_GENERATED_VALIDATION_BUILD_BUNDLE_ID_RE = re.compile(r"^[0-9a-f]{24}$")
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _ABSOLUTE_PROFILE_PATH_RE = re.compile(r"^(?:/|[A-Za-z]:[\\/]|\\\\|//)")
 _PROFILE_MSBUILD_BINLOG_ARG_RE = re.compile(
@@ -304,6 +305,8 @@ _PROFILE_PHASE_KEYS = frozenset(
         "output-paths",
         "argv",
         "uploaded-evidence-argv",
+        "request-digest",
+        "bundle-id",
         "exit-code",
         "binlog-path",
         "binlog-exists",
@@ -8337,6 +8340,7 @@ def _validate_profile_phase(
             f"{path}.ecosystem",
             issues,
         )
+    _validate_profile_phase_identity_metadata(value, path, issues)
     _validate_profile_phase_sequence_fields(value, path, issues)
     _validate_profile_phase_metadata_fields(value, path, issues)
     if "exit-code" in value:
@@ -8363,6 +8367,42 @@ def _validate_profile_phase_ecosystem(
         return
     if value not in _ECOSYSTEMS:
         issues.append(ValidationIssue(path, "is not registered"))
+
+
+def _validate_profile_phase_identity_metadata(
+    value: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    has_request_digest = "request-digest" in value
+    has_bundle_id = "bundle-id" in value
+    if not has_request_digest and not has_bundle_id:
+        return
+    request_digest = value.get("request-digest")
+    bundle_id = value.get("bundle-id")
+    _validate_digest(request_digest, f"{path}.request-digest", issues)
+    if (
+        not isinstance(bundle_id, str)
+        or _GENERATED_VALIDATION_BUILD_BUNDLE_ID_RE.fullmatch(bundle_id) is None
+    ):
+        issues.append(
+            ValidationIssue(
+                f"{path}.bundle-id",
+                "must be a generated validation-build bundle id",
+            )
+        )
+        return
+    if (
+        isinstance(request_digest, str)
+        and _DIGEST_RE.fullmatch(request_digest) is not None
+        and bundle_id != request_digest[:24]
+    ):
+        issues.append(
+            ValidationIssue(
+                f"{path}.bundle-id",
+                "must match request-digest prefix",
+            )
+        )
 
 
 def _validate_profile_phase_metadata_fields(
