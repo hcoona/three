@@ -63,6 +63,7 @@ internal static class ConfigurationPlanProjector
             OwnerProductId = plan.OwnerProductId,
             Scope = plan.Scope,
             EntrySelector = plan.Manifest.EntrySelector,
+            ResourceIdentity = plan.Manifest.ResourceIdentity,
             ProductVersion = plan.Manifest.ProductVersion,
             PreviousOwnedEntryHash = plan.Manifest.PreviousOwnedEntryHash,
             ContainsCredentialMaterial = plan.ContainsCredentialMaterial,
@@ -100,7 +101,9 @@ internal static class ConfigurationPlanProjector
     )
     {
         bool hasPlannedValue = change.Value is not null;
-        bool isSecretValue = change.IsSecretValue;
+        bool isSecretValue = change.TargetKind == ConfigurationTargetKind.Npmrc
+            ? hasPlannedValue && change.IsSecretValue
+            : change.IsSecretValue;
         return new ConfigurationPlannedChange
         {
             Sequence = sequence,
@@ -125,7 +128,9 @@ internal static class ConfigurationPlanProjector
     )
     {
         bool hasPlannedValue = change.Value is not null;
-        bool isSecretValue = change.IsSecretValue;
+        bool isSecretValue = change.TargetKind == ConfigurationTargetKind.Npmrc
+            ? hasPlannedValue && change.IsSecretValue
+            : change.IsSecretValue;
         return new ConfigurationOwnershipManifestEntry
         {
             Sequence = sequence,

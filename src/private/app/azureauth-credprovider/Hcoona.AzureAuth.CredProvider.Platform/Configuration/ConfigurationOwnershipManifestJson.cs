@@ -6,10 +6,12 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 
 [JsonSerializable(typeof(ConfigurationOwnershipManifest))]
 [JsonSerializable(typeof(ConfigurationOwnershipManifestEntry))]
+[JsonSerializable(typeof(CanonicalResourceIdentity))]
 [JsonSerializable(typeof(ConfigurationDryRunPlan))]
 [JsonSerializable(typeof(ConfigurationPlanResult))]
 [JsonSerializable(typeof(ConfigurationPlannedChange))]
 [JsonSerializable(typeof(ConfigurationPlannedOperation))]
+[JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(IReadOnlyList<ConfigurationOwnershipManifestEntry>))]
 [JsonSerializable(typeof(ConfigurationOwnershipManifestEntry[]))]
 [JsonSerializable(typeof(IReadOnlyList<ConfigurationPlannedChange>))]

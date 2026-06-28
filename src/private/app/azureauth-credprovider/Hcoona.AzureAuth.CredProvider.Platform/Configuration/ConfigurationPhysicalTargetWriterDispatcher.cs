@@ -42,6 +42,7 @@ internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
     IConfigurationPhysicalTargetRetainedOwnershipProofValidator
 {
     private readonly GitConfigPhysicalTargetWriter gitConfigWriter = new(fileSystem);
+    private readonly NpmrcPhysicalTargetWriter npmrcWriter = new(fileSystem);
     private readonly NuGetPluginLayoutPhysicalTargetWriter nuGetPluginLayoutWriter =
         new(fileSystem);
     private readonly PythonKeyringPhysicalTargetWriter pythonKeyringWriter = new(fileSystem);
@@ -60,6 +61,9 @@ internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
         {
             case ConfigurationTargetKind.GitConfig:
                 gitConfigWriter.Write(request, cancellationToken);
+                break;
+            case ConfigurationTargetKind.Npmrc:
+                npmrcWriter.Write(request, cancellationToken);
                 break;
             case ConfigurationTargetKind.NuGetPluginLayout:
                 nuGetPluginLayoutWriter.Write(request, cancellationToken);
@@ -91,6 +95,9 @@ internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
             case ConfigurationTargetKind.GitConfig:
                 gitConfigWriter.Validate(request, cancellationToken);
                 break;
+            case ConfigurationTargetKind.Npmrc:
+                npmrcWriter.Validate(request, cancellationToken);
+                break;
             case ConfigurationTargetKind.NuGetPluginLayout:
                 nuGetPluginLayoutWriter.Validate(request, cancellationToken);
                 break;
@@ -114,6 +121,7 @@ internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
         ArgumentNullException.ThrowIfNull(ownershipProofs);
         cancellationToken.ThrowIfCancellationRequested();
         gitConfigWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
+        npmrcWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
         nuGetPluginLayoutWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
         pythonKeyringWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
     }
@@ -176,6 +184,8 @@ internal sealed record ConfigurationPhysicalTargetWriterRequest
     public IReadOnlyList<ConfigurationChange> Changes { get; }
 
     public IReadOnlyList<ConfigurationPhysicalTargetOwnershipProof> OwnershipProofs { get; }
+
+    public CanonicalResourceIdentity? ResourceIdentity { get; init; }
 
     public IReadOnlyList<ConfigurationPhysicalTargetFileMutation> CompletedFileMutations =>
         completedFileMutations;

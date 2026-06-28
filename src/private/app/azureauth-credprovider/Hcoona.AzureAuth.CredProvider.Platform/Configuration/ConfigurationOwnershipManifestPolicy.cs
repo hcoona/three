@@ -83,7 +83,7 @@ public static class ConfigurationOwnershipManifestPolicy
                     + "be contiguous and start at 1.";
             }
 
-            string? entryViolation = GetEntryViolation(entry);
+            string? entryViolation = GetEntryViolation(manifest, entry);
             if (entryViolation is not null)
             {
                 return entryViolation;
@@ -108,7 +108,10 @@ public static class ConfigurationOwnershipManifestPolicy
                 or ConfigurationScope.CiTemporary
                 or ConfigurationScope.Global;
 
-    private static string? GetEntryViolation(ConfigurationOwnershipManifestEntry entry)
+    private static string? GetEntryViolation(
+        ConfigurationOwnershipManifest manifest,
+        ConfigurationOwnershipManifestEntry entry
+    )
     {
         if (!HasKnownEntryEnums(entry))
         {
@@ -152,6 +155,15 @@ public static class ConfigurationOwnershipManifestPolicy
                 + "entries must be marked as secret.";
         }
 
+        if (entry.TargetKind == ConfigurationTargetKind.Npmrc)
+        {
+            string? npmrcViolation = GetNpmrcEntryViolation(manifest, entry);
+            if (npmrcViolation is not null)
+            {
+                return npmrcViolation;
+            }
+        }
+
         if (RequiresValue(entry.Operation) && !entry.HasPlannedValue)
         {
             return "Protocol violation: value-writing configuration ownership manifest entries "
@@ -192,6 +204,145 @@ public static class ConfigurationOwnershipManifestPolicy
 
         return null;
     }
+
+    private static string? GetNpmrcEntryViolation(
+        ConfigurationOwnershipManifest manifest,
+        ConfigurationOwnershipManifestEntry entry
+    )
+    {
+        string? operationViolation = GetNpmrcOperationViolation(entry.Operation);
+        if (operationViolation is not null)
+        {
+            return operationViolation;
+        }
+
+        string? keyViolation = GetNpmrcKeyViolation(entry.Key);
+        if (keyViolation is not null)
+        {
+            return keyViolation;
+        }
+
+        if (entry.IsSecretValue && !IsNpmAuthTokenKey(entry.Key))
+        {
+            return "Protocol violation: Npmrc secret entries are only supported for auth token "
+                + "keys.";
+        }
+
+        if (
+            entry.IsSecretValue
+            && IsNpmAuthTokenKey(entry.Key)
+        )
+        {
+            return GetNpmrcSecretAuthTokenSelectorViolation(manifest, entry.Key);
+        }
+
+        return null;
+    }
+
+    private static string? GetNpmrcSecretAuthTokenSelectorViolation(
+        ConfigurationOwnershipManifest manifest,
+        string selector
+    )
+    {
+        if (manifest.ResourceIdentity is null)
+        {
+            return "Protocol violation: Npmrc secret auth token entries require a canonical "
+                + "registry identity.";
+        }
+
+        string? resourceViolation = CanonicalResourceIdentityPolicy.GetViolation(
+            manifest.ResourceIdentity
+        );
+        if (resourceViolation is not null)
+        {
+            return resourceViolation;
+        }
+
+        if (
+            !CanonicalResourceIdentityPolicy.IsServiceEndpointCompatibleWithEcosystem(
+                manifest.ResourceIdentity.ServiceEndpoint,
+                CredentialEcosystem.Npm
+            )
+        )
+        {
+            return "Protocol violation: Npmrc secret auth token entries require a canonical "
+                + "npm registry identity.";
+        }
+
+        NpmCompatibleAuthSelectors selectors = NpmCompatibleAuthSelectorPolicy.Create(
+            manifest.ResourceIdentity
+        );
+        if (
+            !string.Equals(
+                manifest.EntrySelector,
+                selectors.NpmAuthTokenKey,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return "Protocol violation: Npmrc secret auth token manifest selectors must match "
+                + "the canonical registry identity.";
+        }
+
+        if (!string.Equals(selector, selectors.NpmAuthTokenKey, StringComparison.Ordinal))
+        {
+            return "Protocol violation: Npmrc secret auth token keys must match the canonical "
+                + "registry identity.";
+        }
+
+        return null;
+    }
+
+    private static string? GetNpmrcOperationViolation(ConfigurationChangeOperation operation) =>
+        operation switch
+        {
+            ConfigurationChangeOperation.EnsureFile =>
+                "Protocol violation: Npmrc ensure-file manifest entries are unsupported.",
+            ConfigurationChangeOperation.InstallAdapter =>
+                "Protocol violation: Npmrc install-adapter manifest entries are unsupported.",
+            ConfigurationChangeOperation.RemoveAdapter =>
+                "Protocol violation: Npmrc remove-adapter manifest entries are unsupported.",
+            _ => null,
+        };
+
+    private static string? GetNpmrcKeyViolation(string key)
+    {
+        if (HasLeadingOrTrailingWhiteSpace(key))
+        {
+            return "Protocol violation: Npmrc keys must not have surrounding whitespace.";
+        }
+
+        if (ContainsLineBreak(key))
+        {
+            return "Protocol violation: Npmrc keys must not contain CR or LF.";
+        }
+
+        if (key.Any(character => character < ' ' || character == '\u007f'))
+        {
+            return "Protocol violation: Npmrc keys must not contain control characters.";
+        }
+
+        if (key.Contains('='))
+        {
+            return "Protocol violation: Npmrc keys must not contain '='.";
+        }
+
+        if (IsQuoted(key))
+        {
+            return "Protocol violation: Npmrc keys must not be quoted.";
+        }
+
+        if (key.Contains('#') || key.Contains(';'))
+        {
+            return "Protocol violation: Npmrc keys must not contain comment markers.";
+        }
+
+        return null;
+    }
+
+    private static bool IsQuoted(string value) =>
+        value.Length > 1
+        && ((value[0] == '\'' && value[^1] == '\'') || (value[0] == '"' && value[^1] == '"'));
 
     private static bool HasKnownEntryEnums(ConfigurationOwnershipManifestEntry entry) =>
         entry.Operation
@@ -262,6 +413,9 @@ public static class ConfigurationOwnershipManifestPolicy
             string.Equals(key, "npmAuthIdent", StringComparison.Ordinal)
             || key.EndsWith(".npmAuthIdent", StringComparison.Ordinal)
         );
+
+    private static bool HasLeadingOrTrailingWhiteSpace(string value) =>
+        !string.Equals(value, value.Trim(), StringComparison.Ordinal);
 
     private static bool IsLowercaseSha256Hex(string? value) =>
         value is { Length: 64 } && value.All(IsLowercaseHex);

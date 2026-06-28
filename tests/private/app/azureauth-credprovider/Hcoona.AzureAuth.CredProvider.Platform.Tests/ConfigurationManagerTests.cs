@@ -18,6 +18,10 @@ public sealed class ConfigurationManagerTests
     private const string PhysicalTargetManifestPreclaimMetadataKey =
         "hcoona.azureAuthCredProvider.physicalTargetManifestState";
     private const string PhysicalTargetManifestPreclaimMetadataValue = "prepared";
+    private const string CanonicalNpmrcSecretAuthTokenSelector =
+        "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken";
+    private const string MismatchedNpmrcSecretAuthTokenSelector =
+        "//pkgs.dev.azure.com/org/_packaging/otherfeed/npm/registry/:_authToken";
 
     private static readonly ConfigurationTargetKind[] NonPhase4DPhysicalTargetKindValues =
     [
@@ -49,6 +53,29 @@ public sealed class ConfigurationManagerTests
             ConfigurationTargetKind.Npmrc,
             ConfigurationTargetKind.Yarnrc,
         ];
+
+    public static TheoryData<CanonicalResourceIdentity, string, string, string>
+        InvalidNpmrcSecretApplyCases
+    {
+        get
+        {
+            return new TheoryData<CanonicalResourceIdentity, string, string, string>
+            {
+                {
+                    CreateGitResourceIdentity(),
+                    CanonicalNpmrcSecretAuthTokenSelector,
+                    CanonicalNpmrcSecretAuthTokenSelector,
+                    "canonical npm registry identity"
+                },
+                {
+                    CreateNpmResourceIdentity(),
+                    MismatchedNpmrcSecretAuthTokenSelector,
+                    CanonicalNpmrcSecretAuthTokenSelector,
+                    "manifest selectors must match"
+                },
+            };
+        }
+    }
 
     private static string CreateNuGetPluginLayoutTargetRoot(string? userName = null)
     {
@@ -1027,7 +1054,7 @@ public sealed class ConfigurationManagerTests
         Assert.False(validationResult.IsValid);
         Assert.NotNull(validationResult.Violation);
         Assert.Contains(
-            "mixing 4D physical configuration targets",
+            "currently supports dispatching only one 4D physical target kind per plan",
             validationResult.Violation,
             StringComparison.Ordinal
         );
@@ -1039,7 +1066,7 @@ public sealed class ConfigurationManagerTests
         Assert.False(acceptResult.IsValid);
         Assert.NotNull(acceptResult.Violation);
         Assert.Contains(
-            "mixing 4D physical configuration targets",
+            "currently supports dispatching only one 4D physical target kind per plan",
             acceptResult.Violation,
             StringComparison.Ordinal
         );
@@ -1052,7 +1079,7 @@ public sealed class ConfigurationManagerTests
             await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
         );
         Assert.Contains(
-            "mixing 4D physical configuration targets",
+            "currently supports dispatching only one 4D physical target kind per plan",
             exception.Message,
             StringComparison.Ordinal
         );
@@ -1854,6 +1881,16 @@ public sealed class ConfigurationManagerTests
             ],
         };
         string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        string existingTargetContents = string.Join(
+            Environment.NewLine,
+            "[credential]",
+            "\tregistry = planned-value",
+            string.Empty
+        );
+        fileSystem.AtomicWriteAllText(
+            targetPath,
+            existingTargetContents
+        );
         fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
         fileSystem.Calls.Clear();
         var manager = new ConfigurationManager(fileSystem, manifestPath);
@@ -1870,13 +1907,244 @@ public sealed class ConfigurationManagerTests
         );
 
         Assert.Contains(
-            "registered retained-proof validator",
+            "physical target entries must not share the same physical target "
+                + "path with entries of another target kind",
             exception.Message,
             StringComparison.Ordinal
         );
         Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
-        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.Equal(existingTargetContents, fileSystem.ReadAllText(targetPath));
         AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedPhase4DDryRunRejectsDuplicateNpmrcRetainedProofsBeforeProjectionMerge()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/duplicate-npmrc-retained-proofs-manifest.json";
+        const string gitTargetPath = "/config/duplicate-npmrc-retained-proofs.gitconfig";
+        const string npmrcTargetPath = "/config/duplicate-npmrc-retained-proofs/.npmrc";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.GitConfig,
+            gitTargetPath
+        );
+        ConfigurationOwnershipManifest gitPlannedManifest = await CreateDryRunManifestAsync(plan);
+        ConfigurationOwnershipManifest npmrcPlannedManifest = await CreateDryRunManifestAsync(
+            CreatePhysicalTargetPlan(ConfigurationTargetKind.Npmrc, npmrcTargetPath)
+        );
+        ConfigurationOwnershipManifestEntry npmrcPlannedEntry = Assert.Single(
+            npmrcPlannedManifest.Entries
+        );
+        ConfigurationOwnershipManifest existingManifest = gitPlannedManifest with
+        {
+            PlanId = "previous-duplicate-npmrc-retained-proofs-plan",
+            ChangeSetId = "previous-duplicate-npmrc-retained-proofs-changeset",
+            Entries =
+            [
+                npmrcPlannedEntry,
+                npmrcPlannedEntry with
+                {
+                    Sequence = 2,
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan planWithManifestHash = plan with
+        {
+            Manifest = plan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.DryRunAsync(planWithManifestHash, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "unique per canonical physical key",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(gitTargetPath));
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+
+        fileSystem.Calls.Clear();
+
+        var applyException = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.ApplyAsync(planWithManifestHash, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "unique per canonical physical key",
+            applyException.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Empty(dispatcher.Requests);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.False(fileSystem.FileExists(gitTargetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyRejectsMismatchedNpmrcRetainedProofSelectorBeforeMutation()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/mismatched-npmrc-retained-proof-manifest.json";
+        const string targetPath = "/config/mismatched-npmrc-retained-proof/.npmrc";
+        const string preexistingTargetContents = "registry=https://preexisting.example/\n";
+        const string secretValue = "secret-token";
+        fileSystem.AtomicWriteAllText(targetPath, preexistingTargetContents);
+        fileSystem.Calls.Clear();
+
+        ConfigurationChangePlan plan = CreateNpmrcSecretPhysicalTargetPlan(
+            targetPath,
+            CreateNpmResourceIdentity(),
+            CanonicalNpmrcSecretAuthTokenSelector,
+            CanonicalNpmrcSecretAuthTokenSelector,
+            secretValue
+        );
+        ConfigurationOwnershipManifest existingManifest = await CreateDryRunManifestAsync(plan);
+        ConfigurationOwnershipManifest malformedExistingManifest = existingManifest with
+        {
+            PlanId = "previous-mismatched-npmrc-retained-proof-plan",
+            ChangeSetId = "previous-mismatched-npmrc-retained-proof-changeset",
+            EntrySelector = MismatchedNpmrcSecretAuthTokenSelector,
+        };
+        string existingManifestJson = RawOwnershipManifestJson(malformedExistingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan planWithManifestHash = plan with
+        {
+            Manifest = plan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.ApplyAsync(planWithManifestHash, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "manifest selectors must match",
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.Empty(dispatcher.Requests);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.Equal(preexistingTargetContents, fileSystem.ReadAllText(targetPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedPhase4DDryRunRejectsStaleNpmrcRetainedProofBeforeProjectionMerge()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/stale-npmrc-retained-proof-manifest.json";
+        const string gitTargetPath = "/config/stale-npmrc-retained-proof/.gitconfig";
+        const string npmrcTargetPath = "/config/stale-npmrc-retained-proof/.npmrc";
+        const string plannedHelperValue = "planned-value";
+        const string staleNpmrcValue = "https://stale.example/";
+        string gitConfigContents = CreateGitConfigCredentialHelperContents(plannedHelperValue);
+        string staleNpmrcContents = string.Join(
+            Environment.NewLine,
+            $"registry={staleNpmrcValue}",
+            string.Empty
+        );
+        fileSystem.AtomicWriteAllText(gitTargetPath, gitConfigContents);
+        fileSystem.AtomicWriteAllText(npmrcTargetPath, staleNpmrcContents);
+
+        ConfigurationChangePlan gitPlan = CreateGitConfigCredentialHelperPlan(
+            gitTargetPath,
+            plannedHelperValue
+        );
+        ConfigurationOwnershipManifest gitManifest = await CreateDryRunManifestAsync(gitPlan);
+        ConfigurationOwnershipManifestEntry gitEntry = Assert.Single(gitManifest.Entries);
+        ConfigurationChangePlan npmrcPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            npmrcTargetPath
+        ) with
+        {
+            Changes =
+            [
+                CreateNpmrcFileChange(npmrcTargetPath),
+            ],
+        };
+        ConfigurationOwnershipManifest npmrcManifest = await CreateDryRunManifestAsync(npmrcPlan);
+        ConfigurationOwnershipManifestEntry npmrcEntry = Assert.Single(npmrcManifest.Entries);
+        ConfigurationOwnershipManifest existingManifest = gitManifest with
+        {
+            PlanId = "previous-stale-npmrc-retained-proof-plan",
+            ChangeSetId = "previous-stale-npmrc-retained-proof-changeset",
+            ContainsCredentialMaterial =
+                gitManifest.ContainsCredentialMaterial || npmrcEntry.IsSecretValue,
+            Entries =
+            [
+                gitEntry,
+                npmrcEntry with
+                {
+                    Sequence = 2,
+                },
+            ],
+        };
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = gitPlan with
+        {
+            Manifest = gitPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+        };
+
+        var dryRunException = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "Npmrc retained ownership proof does not match the current file contents",
+            dryRunException.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.Equal(gitConfigContents, fileSystem.ReadAllText(gitTargetPath));
+        Assert.Equal(staleNpmrcContents, fileSystem.ReadAllText(npmrcTargetPath));
+        Assert.Empty(dispatcher.Requests);
+        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
+
+        fileSystem.Calls.Clear();
+
+        var applyException = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Equal(dryRunException.Message, applyException.Message);
+        Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
+        Assert.Equal(gitConfigContents, fileSystem.ReadAllText(gitTargetPath));
+        Assert.Equal(staleNpmrcContents, fileSystem.ReadAllText(npmrcTargetPath));
+        Assert.Empty(dispatcher.Requests);
+        Assert.DoesNotContain(
+            fileSystem.Calls,
+            call =>
+                call.Operation
+                    is nameof(IFileSystem.WriteAllText)
+                        or nameof(IFileSystem.AtomicWriteAllText)
+                        or nameof(IFileSystem.AtomicWriteAllBytes)
+                        or nameof(IFileSystem.DeleteFile)
+                        or nameof(IFileSystem.DeleteDirectory)
+        );
     }
 
     [Fact]
@@ -3211,6 +3479,71 @@ public sealed class ConfigurationManagerTests
     }
 
     [Fact]
+    public async Task ValidatePlanAndDryRunRejectRelativeNpmrcPhysicalPath()
+    {
+        var manager = new ConfigurationManager();
+        const string targetPath = "config/npm-relative/.npmrc";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            targetPath
+        );
+
+        ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
+
+        Assert.False(result.IsValid);
+        Assert.NotNull(result.Violation);
+        Assert.Contains("fully qualified target paths", result.Violation, StringComparison.Ordinal);
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(
+            "fully qualified target paths",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedValidatePlanDryRunAndApplyRejectRelativeNpmrcPhysicalPath()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var manager = new ConfigurationManager(
+            fileSystem,
+            "/state/filesystem-backed-relative-npmrc-manifest.json"
+        );
+        const string targetPath = "config/filesystem-backed-relative-npmrc/.npmrc";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            targetPath
+        );
+
+        ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
+
+        Assert.False(result.IsValid);
+        Assert.NotNull(result.Violation);
+        Assert.Contains("fully qualified target paths", result.Violation, StringComparison.Ordinal);
+
+        var dryRunException = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(
+            "fully qualified target paths",
+            dryRunException.Message,
+            StringComparison.Ordinal
+        );
+
+        var applyException = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(
+            "fully qualified target paths",
+            applyException.Message,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
     public async Task ValidatePlanAndDryRunRejectRelativeNpmrcAndYarnrcSamePhysicalPath()
     {
         var manager = new ConfigurationManager();
@@ -3294,14 +3627,21 @@ public sealed class ConfigurationManagerTests
 
         ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
 
-        Assert.True(result.IsValid, result.Violation);
-        Assert.Null(result.Violation);
-        ConfigurationPlanResult dryRun = await manager.DryRunAsync(
-            plan,
-            TestContext.Current.CancellationToken
+        Assert.False(result.IsValid);
+        Assert.NotNull(result.Violation);
+        Assert.Contains(
+            "does not support mixing 4D physical configuration targets with other target kinds",
+            result.Violation,
+            StringComparison.Ordinal
         );
-        Assert.Equal(ConfigurationPlanState.Planned, dryRun.State);
-        Assert.Equal(2, dryRun.PlannedOperations.Count);
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(
+            "does not support mixing 4D physical configuration targets with other target kinds",
+            exception.Message,
+            StringComparison.Ordinal
+        );
     }
 
     [Theory]
@@ -3438,14 +3778,21 @@ public sealed class ConfigurationManagerTests
 
         ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
 
-        Assert.True(result.IsValid);
-        Assert.Null(result.Violation);
-        ConfigurationPlanResult dryRun = await manager.DryRunAsync(
-            plan,
-            TestContext.Current.CancellationToken
+        Assert.False(result.IsValid);
+        Assert.NotNull(result.Violation);
+        Assert.Contains(
+            "does not support mixing 4D physical configuration targets with other target kinds",
+            result.Violation,
+            StringComparison.Ordinal
         );
-        Assert.Equal(ConfigurationPlanState.Planned, dryRun.State);
-        Assert.Equal(2, dryRun.PlannedOperations.Count);
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(
+            "does not support mixing 4D physical configuration targets with other target kinds",
+            exception.Message,
+            StringComparison.Ordinal
+        );
     }
 
     [Fact]
@@ -3479,6 +3826,80 @@ public sealed class ConfigurationManagerTests
         );
         Assert.Equal(ConfigurationPlanState.Planned, dryRun.State);
         Assert.Equal(2, dryRun.PlannedOperations.Count);
+    }
+
+    [Fact]
+    public async Task
+        ValidatePlanAndDryRunRejectNpmrcMixedValueWritingAndRemoveBatchesAtSamePhysicalPath()
+    {
+        var manager = new ConfigurationManager();
+        const string targetPath = "/config/npm-mixed-set-remove/.npmrc";
+        const string expectedViolation =
+            "Protocol violation: Npmrc physical writer does not support mixed value-writing "
+            + "and remove batches.";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            targetPath
+        ) with
+        {
+            Changes =
+            [
+                CreateNpmrcFileChange(targetPath),
+                CreateNpmrcFileChange(targetPath) with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-npmrc-entry",
+                },
+            ],
+        };
+
+        ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
+
+        Assert.False(result.IsValid);
+        Assert.Equal(expectedViolation, result.Violation);
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+        Assert.Contains(expectedViolation, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ValidatePlanAndDryRunRejectDuplicateNpmrcCanonicalKeysAtSamePhysicalPath()
+    {
+        var manager = new ConfigurationManager();
+        const string targetPath = "/config/npm-duplicate-key/.npmrc";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            targetPath
+        ) with
+        {
+            Changes =
+            [
+                CreateNpmrcFileChange(targetPath),
+                CreateNpmrcFileChange(targetPath),
+            ],
+        };
+
+        ConfigurationPlanValidationResult result = manager.ValidatePlan(plan);
+
+        Assert.False(result.IsValid);
+        Assert.NotNull(result.Violation);
+        Assert.Contains(
+            "only one change per canonical key",
+            result.Violation,
+            StringComparison.Ordinal
+        );
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "only one change per canonical key",
+            exception.Message,
+            StringComparison.Ordinal
+        );
     }
 
     [Theory]
@@ -3939,25 +4360,34 @@ public sealed class ConfigurationManagerTests
     {
         var manager = new ConfigurationManager();
         const string secret = "azdops_pat_secret_for_manifest_tests";
+        const string secretAuthTokenKey =
+            "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken";
         ConfigurationChangePlan plan = ConfigurationChangePlanPolicy.Create(
             "plan-secret",
             "changeset-secret",
             "azureauth-credprovider",
             ConfigurationScope.User,
-            CreateManifest(),
+            CreateManifest() with
+            {
+                EntrySelector = secretAuthTokenKey,
+                ResourceIdentity = CreateNpmResourceIdentity(),
+            },
             [
                 new ConfigurationChange
                 {
                     Operation = ConfigurationChangeOperation.Set,
                     TargetKind = ConfigurationTargetKind.Npmrc,
-                    TargetPathOrName = "user npmrc",
-                    Key = "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken",
+                    TargetPathOrName = "//server/share/config/user/.npmrc",
+                    Key = secretAuthTokenKey,
                     Value = secret,
                     RequiresOwnershipRecord = true,
                     IsSecretValue = true,
                 },
             ]
-        );
+        ) with
+        {
+            ContainsCredentialMaterial = true,
+        };
 
         ConfigurationPlanResult result = await manager.DryRunAsync(
             plan,
@@ -4015,27 +4445,35 @@ public sealed class ConfigurationManagerTests
     public async Task OwnershipManifestSerializesAndRoundTripsWithoutSecrets()
     {
         const string secret = "secret-value-that-must-not-be-serialized";
+        const string secretAuthTokenKey =
+            "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken";
         ConfigurationChangePlan plan = ConfigurationChangePlanPolicy.Create(
             "plan-secret-serialization",
             "changeset-secret-serialization",
             "azureauth-credprovider",
             ConfigurationScope.User,
-            CreateManifest(),
+            CreateManifest() with
+            {
+                EntrySelector = secretAuthTokenKey,
+                ResourceIdentity = CreateNpmResourceIdentity(),
+            },
             [
                 new ConfigurationChange
                 {
                     Operation = ConfigurationChangeOperation.Set,
                     TargetKind = ConfigurationTargetKind.Npmrc,
-                    TargetPathOrName = "user npmrc",
-                    Key =
-                        "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken",
+                    TargetPathOrName = "//server/share/config/user/.npmrc",
+                    Key = secretAuthTokenKey,
                     Value = secret,
                     RequiresOwnershipRecord = true,
                     IsSecretValue = true,
                     PreviousOwnedEntryMetadata = "previous-metadata",
                 },
             ]
-        );
+        ) with
+        {
+            ContainsCredentialMaterial = true,
+        };
         var manager = new ConfigurationManager();
         ConfigurationPlanResult result = await manager.DryRunAsync(
             plan,
@@ -4207,6 +4645,171 @@ public sealed class ConfigurationManagerTests
         string json = RawOwnershipManifestJson(manifest);
 
         Assert.False(ConfigurationOwnershipManifestPolicy.IsValid(manifest));
+        Assert.Throws<ArgumentException>(() =>
+            ConfigurationOwnershipManifestSerializer.Deserialize(json)
+        );
+    }
+
+    [Theory]
+    [InlineData("_authToken")]
+    [InlineData("//evil.example/org/_packaging/feed/npm/registry/:_authToken")]
+    [InlineData("//pkgs.dev.azure.com/org/_packaging/feed/npm/:_authToken")]
+    public void OwnershipManifestPolicyRejectsNpmrcSecretAuthTokenSelectorMismatch(string key)
+    {
+        const string canonicalSelector =
+            "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken";
+        ConfigurationOwnershipManifest manifest = CreateValidOwnershipManifest() with
+        {
+            ContainsCredentialMaterial = true,
+            ResourceIdentity = CreateNpmResourceIdentity(),
+            EntrySelector = canonicalSelector,
+            Entries =
+            [
+                CreateValidOwnershipEntry() with
+                {
+                    TargetKind = ConfigurationTargetKind.Npmrc,
+                    TargetPathOrName = "user npmrc",
+                    Key = key,
+                    IsSecretValue = true,
+                    PlannedValueSha256 = null,
+                },
+            ],
+        };
+        string json = RawOwnershipManifestJson(manifest);
+
+        Assert.False(ConfigurationOwnershipManifestPolicy.IsValid(manifest));
+        string? violation = ConfigurationOwnershipManifestPolicy.GetViolation(manifest);
+        Assert.NotNull(violation);
+        Assert.Contains("canonical registry identity", violation, StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>(() =>
+            ConfigurationOwnershipManifestSerializer.Deserialize(json)
+        );
+    }
+
+    [Fact]
+    public void OwnershipManifestPolicyRejectsNpmrcSecretAuthTokenManifestSelectorMismatch()
+    {
+        const string mismatchedEntrySelector =
+            "//pkgs.dev.azure.com/org/_packaging/otherfeed/npm/registry/:_authToken";
+        ConfigurationOwnershipManifest manifest = CreateValidOwnershipManifest() with
+        {
+            ContainsCredentialMaterial = true,
+            ResourceIdentity = CreateNpmResourceIdentity(),
+            EntrySelector = mismatchedEntrySelector,
+            Entries =
+            [
+                CreateValidOwnershipEntry() with
+                {
+                    TargetKind = ConfigurationTargetKind.Npmrc,
+                    TargetPathOrName = "user npmrc",
+                    Key = "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken",
+                    IsSecretValue = true,
+                    PlannedValueSha256 = null,
+                },
+            ],
+        };
+        string json = RawOwnershipManifestJson(manifest);
+
+        Assert.False(ConfigurationOwnershipManifestPolicy.IsValid(manifest));
+        string? violation = ConfigurationOwnershipManifestPolicy.GetViolation(manifest);
+        Assert.NotNull(violation);
+        Assert.Contains(
+            "manifest selectors must match",
+            violation,
+            StringComparison.Ordinal
+        );
+        Assert.Throws<ArgumentException>(() =>
+            ConfigurationOwnershipManifestSerializer.Deserialize(json)
+        );
+    }
+
+    [Fact]
+    public void CreatePhysicalTargetOwnershipProofsRejectsInvalidNpmrcSecretAuthTokenManifest()
+    {
+        const string canonicalSelector =
+            "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken";
+        ConfigurationOwnershipManifest manifest = CreateValidOwnershipManifest() with
+        {
+            ContainsCredentialMaterial = true,
+            EntrySelector = canonicalSelector,
+            ResourceIdentity = null,
+            Entries =
+            [
+                CreateValidOwnershipEntry() with
+                {
+                    TargetKind = ConfigurationTargetKind.Npmrc,
+                    TargetPathOrName = "/config/secret-npmrc/.npmrc",
+                    Key = canonicalSelector,
+                    IsSecretValue = true,
+                    PlannedValueSha256 = null,
+                },
+            ],
+        };
+
+        Assert.False(ConfigurationOwnershipManifestPolicy.IsValid(manifest));
+
+        MethodInfo createPhysicalTargetOwnershipProofs = typeof(ConfigurationManager).GetMethod(
+            "CreatePhysicalTargetOwnershipProofs",
+            BindingFlags.NonPublic | BindingFlags.Static
+        )!;
+        TargetInvocationException exception = Assert.Throws<TargetInvocationException>(() =>
+            createPhysicalTargetOwnershipProofs.Invoke(null, new object?[] { manifest })
+        );
+
+        Assert.IsType<ArgumentException>(exception.InnerException);
+        Assert.Contains(
+            "canonical registry identity",
+            exception.InnerException!.Message,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Theory]
+    [InlineData(ConfigurationChangeOperation.EnsureFile)]
+    [InlineData(ConfigurationChangeOperation.InstallAdapter)]
+    [InlineData(ConfigurationChangeOperation.RemoveAdapter)]
+    public void OwnershipManifestPolicyRejectsUnsupportedNpmrcOperations(
+        ConfigurationChangeOperation operation
+    )
+    {
+        ConfigurationOwnershipManifest manifest = CreateValidOwnershipManifest() with
+        {
+            EntrySelector = "registry",
+            Entries =
+            [
+                CreateValidOwnershipEntry() with
+                {
+                    Operation = operation,
+                    TargetKind = ConfigurationTargetKind.Npmrc,
+                    TargetPathOrName = "user .npmrc",
+                    Key = "registry",
+                    HasPlannedValue = false,
+                    IsSecretValue = false,
+                    PlannedValueSha256 = null,
+                    PreviousOwnedEntryMetadata = operation
+                        == ConfigurationChangeOperation.RemoveAdapter
+                        ? "previous-npmrc-metadata"
+                        : null,
+                },
+            ],
+        };
+        string json = RawOwnershipManifestJson(manifest);
+
+        Assert.False(ConfigurationOwnershipManifestPolicy.IsValid(manifest));
+        string? violation = ConfigurationOwnershipManifestPolicy.GetViolation(manifest);
+        Assert.NotNull(violation);
+        Assert.Contains("unsupported", violation, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            operation switch
+            {
+                ConfigurationChangeOperation.EnsureFile => "ensure-file",
+                ConfigurationChangeOperation.InstallAdapter => "install-adapter",
+                ConfigurationChangeOperation.RemoveAdapter => "remove-adapter",
+                _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null),
+            },
+            violation,
+            StringComparison.OrdinalIgnoreCase
+        );
         Assert.Throws<ArgumentException>(() =>
             ConfigurationOwnershipManifestSerializer.Deserialize(json)
         );
@@ -4589,7 +5192,8 @@ public sealed class ConfigurationManagerTests
         );
 
         Assert.Contains(
-            "registered retained-proof validator",
+            "physical target entries must not share the same physical target "
+                + "path with entries of another target kind",
             exception.Message,
             StringComparison.Ordinal
         );
@@ -4691,13 +5295,23 @@ public sealed class ConfigurationManagerTests
             await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
         );
 
-        Assert.Contains(
-            "registered retained-proof validator",
-            exception.Message,
-            StringComparison.Ordinal
-        );
+        if (unsupportedTargetKind == ConfigurationTargetKind.Npmrc)
+        {
+            Assert.Contains(
+                "Npmrc retained ownership proof does not match any existing file",
+                exception.Message,
+                StringComparison.Ordinal
+            );
+        }
+        else
+        {
+            Assert.Contains(
+                "registered retained-proof validator",
+                exception.Message,
+                StringComparison.Ordinal
+            );
+        }
         Assert.Empty(dispatcher.Requests);
-        AssertNoFilesystemMutationOrLockCalls(fileSystem.Calls);
         Assert.False(fileSystem.FileExists(targetPath));
         Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
     }
@@ -4744,11 +5358,22 @@ public sealed class ConfigurationManagerTests
             await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
         );
 
-        Assert.Contains(
-            "registered retained-proof validator",
-            exception.Message,
-            StringComparison.Ordinal
-        );
+        if (unsupportedTargetKind == ConfigurationTargetKind.Npmrc)
+        {
+            Assert.Contains(
+                "Npmrc retained ownership proof does not match any existing file",
+                exception.Message,
+                StringComparison.Ordinal
+            );
+        }
+        else
+        {
+            Assert.Contains(
+                "registered retained-proof validator",
+                exception.Message,
+                StringComparison.Ordinal
+            );
+        }
         Assert.Equal(genericValue, fileSystem.ReadAllText(genericTargetPath));
         Assert.Equal(existingManifestJson, fileSystem.ReadAllText(manifestPath));
         Assert.DoesNotContain(
@@ -5089,6 +5714,1192 @@ public sealed class ConfigurationManagerTests
         );
         Assert.True(fileSystem.FileExists(targetPath));
         Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedApplyDispatchesSingleNpmrcPhysicalTarget()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/npmrc-apply-manifest.json";
+        const string targetPath = "/config/npmrc-dispatch/.npmrc";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            targetPath
+        );
+
+        ConfigurationPlanResult result = await manager.ApplyAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        string expectedContents = string.Join(
+            Environment.NewLine,
+            "physical-target=planned-value",
+            string.Empty
+        );
+        ConfigurationPhysicalTargetWriterRequest request = Assert.Single(dispatcher.Requests);
+        ConfigurationPhysicalTargetFileMutation mutation = Assert.Single(
+            request.CompletedFileMutations
+        );
+        ConfigurationOwnershipManifest appliedManifest =
+            Assert.IsType<ConfigurationOwnershipManifest>(
+                result.OwnershipManifest
+            );
+
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Equal(ConfigurationPlanOperation.Apply, request.PlanOperation);
+        Assert.Equal(ConfigurationTargetKind.Npmrc, request.TargetKind);
+        Assert.Equal(ConfigurationChangeOperation.Set, request.ChangeOperation);
+        Assert.Equal(targetPath, request.Change.TargetPathOrName);
+        Assert.Equal("physical-target", request.Change.Key);
+        Assert.Empty(request.OwnershipProofs);
+        Assert.Equal(targetPath, mutation.Path);
+        Assert.False(mutation.PreviouslyExisted);
+        Assert.Null(mutation.PreviousContentsBytes);
+        Assert.True(mutation.RequiresRollback);
+        Assert.Equal(
+            HashMetadata(expectedContents)["sha256:".Length..],
+            mutation.ExpectedCurrentSha256Hash
+        );
+        Assert.True(fileSystem.FileExists(targetPath));
+        Assert.Equal(expectedContents, fileSystem.ReadAllText(targetPath));
+        Assert.True(fileSystem.FileExists(manifestPath));
+        Assert.True(ConfigurationOwnershipManifestPolicy.IsValid(appliedManifest));
+        Assert.Equal(plan.Manifest.EntrySelector, appliedManifest.EntrySelector);
+        Assert.Equal(
+            RawOwnershipManifestJson(appliedManifest),
+            fileSystem.ReadAllText(manifestPath)
+        );
+        ConfigurationOwnershipManifestEntry entry = Assert.Single(appliedManifest.Entries);
+        Assert.Equal(ConfigurationTargetKind.Npmrc, entry.TargetKind);
+        Assert.Equal(targetPath, entry.TargetPathOrName);
+        Assert.Equal("physical-target", entry.Key);
+    }
+
+    [Fact]
+    public async Task FilesystemBackedApplyWritesNpmrcMultiChangeBatch()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/npmrc-apply-multi-change-manifest.json";
+        const string targetPath = "/config/npmrc-apply-multi-change/.npmrc";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            targetPath
+        ) with
+        {
+            Changes =
+            [
+                CreateNpmrcFileChange(targetPath),
+                CreateNpmrcFileChange(targetPath) with
+                {
+                    Key = "always-auth",
+                    Value = "true",
+                },
+            ],
+        };
+
+        ConfigurationPlanResult result = await manager.ApplyAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        string expectedContents = string.Join(
+            Environment.NewLine,
+            "registry=https://registry.npmjs.org/",
+            "always-auth=true",
+            string.Empty
+        );
+        ConfigurationPhysicalTargetWriterRequest request = Assert.Single(dispatcher.Requests);
+        ConfigurationPhysicalTargetFileMutation mutation = Assert.Single(
+            request.CompletedFileMutations
+        );
+        ConfigurationOwnershipManifest appliedManifest =
+            Assert.IsType<ConfigurationOwnershipManifest>(result.OwnershipManifest);
+
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Equal(ConfigurationPlanOperation.Apply, request.PlanOperation);
+        Assert.Equal(ConfigurationTargetKind.Npmrc, request.TargetKind);
+        Assert.Collection(
+            request.Changes,
+            change =>
+            {
+                Assert.Equal(ConfigurationChangeOperation.Set, change.Operation);
+                Assert.Equal("registry", change.Key);
+                Assert.Equal("https://registry.npmjs.org/", change.Value);
+            },
+            change =>
+            {
+                Assert.Equal(ConfigurationChangeOperation.Set, change.Operation);
+                Assert.Equal("always-auth", change.Key);
+                Assert.Equal("true", change.Value);
+            }
+        );
+        Assert.Empty(request.OwnershipProofs);
+        Assert.Equal(targetPath, mutation.Path);
+        Assert.False(mutation.PreviouslyExisted);
+        Assert.Null(mutation.PreviousContentsBytes);
+        Assert.True(mutation.RequiresRollback);
+        Assert.Null(mutation.PreviousUnixFileMode);
+        Assert.Equal(
+            HashMetadata(expectedContents)["sha256:".Length..],
+            mutation.ExpectedCurrentSha256Hash
+        );
+        Assert.Equal(expectedContents, fileSystem.ReadAllText(targetPath));
+        Assert.Equal(
+            RawOwnershipManifestJson(appliedManifest),
+            fileSystem.ReadAllText(manifestPath)
+        );
+        Assert.Equal(plan.PlanId, appliedManifest.PlanId);
+        Assert.Equal(plan.ChangeSetId, appliedManifest.ChangeSetId);
+        Assert.Equal(plan.Manifest.EntrySelector, appliedManifest.EntrySelector);
+        Assert.Collection(
+            appliedManifest.Entries,
+            entry =>
+            {
+                Assert.Equal(1, entry.Sequence);
+                Assert.Equal(ConfigurationTargetKind.Npmrc, entry.TargetKind);
+                Assert.Equal("registry", entry.Key);
+                Assert.Equal(
+                    HashMetadata("https://registry.npmjs.org/")["sha256:".Length..],
+                    entry.PlannedValueSha256
+                );
+            },
+            entry =>
+            {
+                Assert.Equal(2, entry.Sequence);
+                Assert.Equal(ConfigurationTargetKind.Npmrc, entry.TargetKind);
+                Assert.Equal("always-auth", entry.Key);
+                Assert.Equal(HashMetadata("true")["sha256:".Length..], entry.PlannedValueSha256);
+            }
+        );
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyWritesNpmrcSecretWithCanonicalIdentityAndSelector()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/npmrc-secret-apply-manifest.json";
+        const string targetPath = "/config/npmrc-secret-apply/.npmrc";
+        const string secretValue = "secret-token";
+        CanonicalResourceIdentity resourceIdentity = CreateNpmResourceIdentity();
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreateNpmrcSecretPhysicalTargetPlan(
+            targetPath,
+            resourceIdentity,
+            CanonicalNpmrcSecretAuthTokenSelector,
+            CanonicalNpmrcSecretAuthTokenSelector,
+            secretValue
+        );
+
+        ConfigurationPlanResult result = await manager.ApplyAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        string expectedContents = string.Join(
+            Environment.NewLine,
+            $"{CanonicalNpmrcSecretAuthTokenSelector}={secretValue}",
+            string.Empty
+        );
+        ConfigurationPhysicalTargetWriterRequest request = Assert.Single(dispatcher.Requests);
+        ConfigurationPhysicalTargetFileMutation mutation = Assert.Single(
+            request.CompletedFileMutations
+        );
+        ConfigurationOwnershipManifest appliedManifest = Assert.IsType<
+            ConfigurationOwnershipManifest>(result.OwnershipManifest);
+
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Equal(ConfigurationPlanOperation.Apply, request.PlanOperation);
+        Assert.Equal(ConfigurationTargetKind.Npmrc, request.TargetKind);
+        Assert.Equal(ConfigurationChangeOperation.Set, request.ChangeOperation);
+        Assert.Equal(targetPath, request.Change.TargetPathOrName);
+        Assert.Equal(CanonicalNpmrcSecretAuthTokenSelector, request.Change.Key);
+        Assert.True(request.Change.IsSecretValue);
+        Assert.Equal(resourceIdentity, request.ResourceIdentity);
+        Assert.Empty(request.OwnershipProofs);
+        Assert.Equal(targetPath, mutation.Path);
+        Assert.False(mutation.PreviouslyExisted);
+        Assert.Null(mutation.PreviousContentsBytes);
+        Assert.True(mutation.RequiresRollback);
+        Assert.Null(mutation.PreviousUnixFileMode);
+        Assert.True(fileSystem.FileExists(targetPath));
+        Assert.Equal(expectedContents, fileSystem.ReadAllText(targetPath));
+        Assert.True(fileSystem.FileExists(manifestPath));
+        Assert.True(ConfigurationOwnershipManifestPolicy.IsValid(appliedManifest));
+        Assert.Equal(resourceIdentity, appliedManifest.ResourceIdentity);
+        Assert.Equal(CanonicalNpmrcSecretAuthTokenSelector, appliedManifest.EntrySelector);
+        ConfigurationOwnershipManifestEntry entry = Assert.Single(appliedManifest.Entries);
+        Assert.Equal(ConfigurationTargetKind.Npmrc, entry.TargetKind);
+        Assert.Equal(CanonicalNpmrcSecretAuthTokenSelector, entry.Key);
+        Assert.True(entry.IsSecretValue);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidNpmrcSecretApplyCases))]
+    public async Task FilesystemBackedApplyRejectsInvalidNpmrcSecretPhysicalTargetBeforeMutation(
+        CanonicalResourceIdentity resourceIdentity,
+        string entrySelector,
+        string changeKey,
+        string expectedMessageFragment
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/npmrc-secret-invalid-apply-manifest.json";
+        const string targetPath = "/config/npmrc-secret-invalid-apply/.npmrc";
+        const string secretValue = "secret-token";
+        const string preexistingTargetContents = "registry=https://preexisting.example/\n";
+        fileSystem.AtomicWriteAllText(targetPath, preexistingTargetContents);
+        fileSystem.Calls.Clear();
+
+        ConfigurationChangePlan plan = CreateNpmrcSecretPhysicalTargetPlan(
+            targetPath,
+            CreateNpmResourceIdentity(),
+            CanonicalNpmrcSecretAuthTokenSelector,
+            CanonicalNpmrcSecretAuthTokenSelector,
+            secretValue
+        );
+        plan = plan with
+        {
+            Manifest = plan.Manifest with
+            {
+                ResourceIdentity = resourceIdentity,
+                EntrySelector = entrySelector,
+            },
+            Changes = [plan.Changes[0] with { Key = changeKey }],
+        };
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            expectedMessageFragment,
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.Empty(dispatcher.Requests);
+        Assert.Equal(preexistingTargetContents, fileSystem.ReadAllText(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedApplyRejectsDuplicateNpmrcCanonicalKeysWithoutMutation()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/npmrc-duplicate-key-manifest.json";
+        const string targetPath = "/config/npmrc-duplicate-key/.npmrc";
+        const UnixFileMode permissiveMode =
+            UnixFileMode.UserRead
+            | UnixFileMode.UserWrite
+            | UnixFileMode.GroupRead
+            | UnixFileMode.GroupWrite
+            | UnixFileMode.OtherRead
+            | UnixFileMode.OtherWrite;
+        string existingContents = string.Join(
+            Environment.NewLine,
+            "registry=https://registry.npmjs.org/",
+            string.Empty
+        );
+
+        fileSystem.AtomicWriteAllText(targetPath, existingContents);
+        fileSystem.SetUnixFileMode(targetPath, permissiveMode);
+        fileSystem.Calls.Clear();
+
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            targetPath
+        ) with
+        {
+            Changes =
+            [
+                CreateNpmrcFileChange(targetPath),
+                CreateNpmrcFileChange(targetPath),
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains(
+            "only one change per canonical key",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Empty(dispatcher.Requests);
+        Assert.Equal(existingContents, fileSystem.ReadAllText(targetPath));
+        Assert.Equal(permissiveMode, fileSystem.GetUnixFileMode(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedRemoveDispatchesSingleNpmrcPhysicalTarget()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/npmrc-remove-manifest.json";
+        const string targetPath = "/config/npmrc-dispatch/.npmrc";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan applyPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            targetPath
+        );
+
+        await manager.ApplyAsync(applyPlan, TestContext.Current.CancellationToken);
+        string appliedContents = fileSystem.ReadAllText(targetPath);
+        string manifestBeforeRemove = fileSystem.ReadAllText(manifestPath);
+        dispatcher.Requests.Clear();
+        ConfigurationChangePlan removePlan = applyPlan with
+        {
+            Manifest = applyPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(manifestBeforeRemove),
+            },
+            Changes =
+            [
+                applyPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+
+        ConfigurationPlanResult result = await manager.RemoveAsync(
+            removePlan,
+            TestContext.Current.CancellationToken
+        );
+
+        string expectedCurrentHash = HashMetadata(string.Empty)["sha256:".Length..];
+        ConfigurationPhysicalTargetWriterRequest request = Assert.Single(dispatcher.Requests);
+        ConfigurationPhysicalTargetOwnershipProof proof = Assert.Single(request.OwnershipProofs);
+        ConfigurationPhysicalTargetFileMutation mutation = Assert.Single(
+            request.CompletedFileMutations
+        );
+
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Equal(ConfigurationPlanOperation.Remove, request.PlanOperation);
+        Assert.Equal(ConfigurationTargetKind.Npmrc, request.TargetKind);
+        Assert.Equal(ConfigurationChangeOperation.Remove, request.ChangeOperation);
+        Assert.Equal(targetPath, request.Change.TargetPathOrName);
+        Assert.Equal("physical-target", request.Change.Key);
+        Assert.Equal(targetPath, proof.TargetPathOrName);
+        Assert.Equal("physical-target", proof.Key);
+        Assert.Equal(
+            HashMetadata(applyPlan.Changes[0].Value!)["sha256:".Length..],
+            proof.PlannedValueSha256
+        );
+        Assert.Equal(targetPath, mutation.Path);
+        Assert.True(mutation.PreviouslyExisted);
+        Assert.Equal(Encoding.UTF8.GetBytes(appliedContents), mutation.PreviousContentsBytes);
+        Assert.Equal(expectedCurrentHash, mutation.ExpectedCurrentSha256Hash);
+        Assert.True(mutation.RequiresRollback);
+        Assert.True(fileSystem.FileExists(targetPath));
+        Assert.Equal(string.Empty, fileSystem.ReadAllText(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.Null(result.OwnershipManifest);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedRemoveUsesOwnershipProofsForSecretNpmrcAuthTokenWithoutResourceIdentity()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/npmrc-secret-remove-manifest.json";
+        const string targetPath = "/config/npmrc-secret-remove/.npmrc";
+        const string secretSelector =
+            "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken";
+        const string secretValue = "secret-token";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan setPlan = ConfigurationChangePlanPolicy.Create(
+            "plan-npmrc-secret-remove",
+            "changeset-npmrc-secret-remove",
+            "azureauth-credprovider",
+            ConfigurationScope.User,
+            new ConfigurationManifestMetadata
+            {
+                ManifestId = "manifest-npmrc-secret-remove",
+                OwnerProductId = "azureauth-credprovider",
+                EntrySelector = secretSelector,
+                ResourceIdentity = CreateNpmResourceIdentity(),
+                ProductVersion = "0.0.0-test",
+            },
+            [
+                new ConfigurationChange
+                {
+                    Operation = ConfigurationChangeOperation.Set,
+                    TargetKind = ConfigurationTargetKind.Npmrc,
+                    TargetPathOrName = targetPath,
+                    Key = secretSelector,
+                    Value = secretValue,
+                    RequiresOwnershipRecord = true,
+                    IsSecretValue = true,
+                    PreserveDeclarationsAndComments = true,
+                },
+            ]
+        );
+        ConfigurationOwnershipManifest existingManifest = await CreateDryRunManifestAsync(setPlan);
+        string existingManifestJson = RawOwnershipManifestJson(existingManifest);
+        fileSystem.AtomicWriteAllText(targetPath, $"{secretSelector}={secretValue}\n");
+        fileSystem.AtomicWriteAllText(manifestPath, existingManifestJson);
+        fileSystem.Calls.Clear();
+
+        ConfigurationChangePlan removePlan = ConfigurationChangePlanPolicy.Create(
+            setPlan.PlanId,
+            setPlan.ChangeSetId,
+            setPlan.OwnerProductId,
+            setPlan.Scope,
+            setPlan.Manifest with
+            {
+                ResourceIdentity = null,
+                PreviousOwnedEntryHash = HashMetadata(existingManifestJson),
+            },
+            [
+                setPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    IsSecretValue = true,
+                    PreviousOwnedEntryMetadata = "previous-npmrc-secret-remove-entry",
+                },
+            ]
+        );
+
+        ConfigurationPlannedOperation[] plannedOperations =
+            ConfigurationPlanProjector.CreatePlannedOperations(removePlan);
+        ConfigurationOwnershipManifest projectedManifest =
+            ConfigurationPlanProjector.CreateOwnershipManifest(removePlan, plannedOperations);
+        ConfigurationOwnershipManifestEntry projectedEntry = Assert.Single(
+            projectedManifest.Entries
+        );
+
+        Assert.True(ConfigurationChangePlanPolicy.IsValid(removePlan));
+        Assert.True(ConfigurationOwnershipManifestPolicy.IsValid(projectedManifest));
+        Assert.Null(projectedManifest.ResourceIdentity);
+        Assert.False(projectedEntry.IsSecretValue);
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(removePlan);
+        Assert.True(validationResult.IsValid);
+        Assert.Null(validationResult.Violation);
+
+        ConfigurationPlanResult dryRunResult = await manager.DryRunAsync(
+            removePlan,
+            TestContext.Current.CancellationToken
+        );
+        Assert.Equal(ConfigurationPlanState.Planned, dryRunResult.State);
+        Assert.False(Assert.Single(dryRunResult.Plan.Changes).IsSecretValue);
+        Assert.Empty(dispatcher.Requests);
+
+        ConfigurationPlanResult removeResult = await manager.RemoveAsync(
+            removePlan,
+            TestContext.Current.CancellationToken
+        );
+        ConfigurationPhysicalTargetWriterRequest request = Assert.Single(dispatcher.Requests);
+        ConfigurationPhysicalTargetOwnershipProof proof = Assert.Single(request.OwnershipProofs);
+
+        Assert.Equal(ConfigurationPlanState.Applied, removeResult.State);
+        Assert.False(Assert.Single(removeResult.Plan.Changes).IsSecretValue);
+        Assert.Null(removeResult.OwnershipManifest);
+        Assert.Equal(ConfigurationPlanOperation.Remove, request.PlanOperation);
+        Assert.Equal(ConfigurationTargetKind.Npmrc, request.TargetKind);
+        Assert.Equal(ConfigurationChangeOperation.Remove, request.ChangeOperation);
+        Assert.False(request.Change.IsSecretValue);
+        Assert.Null(request.ResourceIdentity);
+        Assert.Equal(targetPath, proof.TargetPathOrName);
+        Assert.Equal(secretSelector, proof.Key);
+        Assert.Null(proof.PlannedValueSha256);
+        Assert.Equal(string.Empty, fileSystem.ReadAllText(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedRemoveClearsNpmrcMultiChangeBatch()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/npmrc-remove-multi-change-manifest.json";
+        const string targetPath = "/config/npmrc-remove-multi-change/.npmrc";
+        var setupDispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var setupManager = new ConfigurationManager(fileSystem, manifestPath, setupDispatcher);
+        ConfigurationChangePlan applyPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            targetPath
+        ) with
+        {
+            Changes =
+            [
+                CreateNpmrcFileChange(targetPath),
+                CreateNpmrcFileChange(targetPath) with
+                {
+                    Key = "always-auth",
+                    Value = "true",
+                },
+            ],
+        };
+
+        await setupManager.ApplyAsync(applyPlan, TestContext.Current.CancellationToken);
+        string originalContents = fileSystem.ReadAllText(targetPath);
+        string originalManifestJson = fileSystem.ReadAllText(manifestPath);
+        UnixFileMode originalUnixFileMode = fileSystem.GetUnixFileMode(targetPath);
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan removePlan = applyPlan with
+        {
+            Manifest = applyPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(originalManifestJson),
+            },
+            Changes =
+            [
+                applyPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+                applyPlan.Changes[1] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+
+        ConfigurationPlanResult result = await manager.RemoveAsync(
+            removePlan,
+            TestContext.Current.CancellationToken
+        );
+
+        string expectedCurrentHash = HashMetadata(string.Empty)["sha256:".Length..];
+        ConfigurationPhysicalTargetWriterRequest request = Assert.Single(dispatcher.Requests);
+        ConfigurationPhysicalTargetFileMutation mutation = Assert.Single(
+            request.CompletedFileMutations
+        );
+
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Equal(ConfigurationPlanOperation.Remove, request.PlanOperation);
+        Assert.Equal(ConfigurationTargetKind.Npmrc, request.TargetKind);
+        Assert.Collection(
+            request.Changes,
+            change =>
+            {
+                Assert.Equal(ConfigurationChangeOperation.Remove, change.Operation);
+                Assert.Equal("registry", change.Key);
+                Assert.Null(change.Value);
+                Assert.Equal("previous-physical-target-entry", change.PreviousOwnedEntryMetadata);
+            },
+            change =>
+            {
+                Assert.Equal(ConfigurationChangeOperation.Remove, change.Operation);
+                Assert.Equal("always-auth", change.Key);
+                Assert.Null(change.Value);
+                Assert.Equal("previous-physical-target-entry", change.PreviousOwnedEntryMetadata);
+            }
+        );
+        Assert.Collection(
+            request.OwnershipProofs,
+            proof =>
+            {
+                Assert.Equal(ConfigurationTargetKind.Npmrc, proof.TargetKind);
+                Assert.Equal(targetPath, proof.TargetPathOrName);
+                Assert.Equal("registry", proof.Key);
+                Assert.Equal(
+                    HashMetadata("https://registry.npmjs.org/")["sha256:".Length..],
+                    proof.PlannedValueSha256
+                );
+            },
+            proof =>
+            {
+                Assert.Equal(ConfigurationTargetKind.Npmrc, proof.TargetKind);
+                Assert.Equal(targetPath, proof.TargetPathOrName);
+                Assert.Equal("always-auth", proof.Key);
+                Assert.Equal(HashMetadata("true")["sha256:".Length..], proof.PlannedValueSha256);
+            }
+        );
+        Assert.Equal(targetPath, mutation.Path);
+        Assert.True(mutation.PreviouslyExisted);
+        Assert.Equal(Encoding.UTF8.GetBytes(originalContents), mutation.PreviousContentsBytes);
+        Assert.Equal(expectedCurrentHash, mutation.ExpectedCurrentSha256Hash);
+        Assert.True(mutation.RequiresRollback);
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Null(mutation.PreviousUnixFileMode);
+        }
+        else
+        {
+            Assert.Equal(originalUnixFileMode, mutation.PreviousUnixFileMode);
+        }
+        Assert.True(fileSystem.FileExists(targetPath));
+        Assert.Equal(string.Empty, fileSystem.ReadAllText(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+        Assert.Null(result.OwnershipManifest);
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedRemoveRollsBackNpmrcMutationWhenDispatcherThrowsAfterPreremoval()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/npmrc-remove-rollback-manifest.json";
+        const string targetPath = "/config/npmrc-remove-rollback/.npmrc";
+        var setupDispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var setupManager = new ConfigurationManager(fileSystem, manifestPath, setupDispatcher);
+        ConfigurationChangePlan applyPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            targetPath
+        );
+
+        await setupManager.ApplyAsync(applyPlan, TestContext.Current.CancellationToken);
+        string targetBeforeRemove = fileSystem.ReadAllText(targetPath);
+        string manifestBeforeRemove = fileSystem.ReadAllText(manifestPath);
+        UnixFileMode? modeBeforeRemove = OperatingSystem.IsWindows()
+            ? null
+            : fileSystem.GetUnixFileMode(targetPath);
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher(
+            async (request, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await new ConfigurationPhysicalTargetWriterDispatcher(fileSystem).Dispatch(
+                    request,
+                    cancellationToken
+                );
+                throw new IOException("Injected Npmrc remove dispatch failure after preremoval.");
+            }
+        );
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan removePlan = applyPlan with
+        {
+            Manifest = applyPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(manifestBeforeRemove),
+            },
+            Changes =
+            [
+                applyPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<IOException>(async () =>
+            await manager.RemoveAsync(removePlan, TestContext.Current.CancellationToken)
+        );
+
+        string expectedCurrentHash = HashMetadata(string.Empty)["sha256:".Length..];
+        ConfigurationPhysicalTargetWriterRequest request = Assert.Single(dispatcher.Requests);
+        ConfigurationPhysicalTargetFileMutation mutation = Assert.Single(
+            request.CompletedFileMutations
+        );
+
+        Assert.Contains(
+            "dispatch failure after preremoval",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(ConfigurationPlanOperation.Remove, request.PlanOperation);
+        Assert.Equal(ConfigurationTargetKind.Npmrc, request.TargetKind);
+        Assert.Equal(ConfigurationChangeOperation.Remove, request.ChangeOperation);
+        Assert.Equal(targetPath, request.Change.TargetPathOrName);
+        Assert.Equal("physical-target", request.Change.Key);
+        Assert.Equal(targetPath, mutation.Path);
+        Assert.True(mutation.PreviouslyExisted);
+        Assert.Equal(Encoding.UTF8.GetBytes(targetBeforeRemove), mutation.PreviousContentsBytes);
+        Assert.True(mutation.RequiresRollback);
+        Assert.Equal(expectedCurrentHash, mutation.ExpectedCurrentSha256Hash);
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Null(mutation.PreviousUnixFileMode);
+        }
+        else
+        {
+            Assert.Equal(modeBeforeRemove, mutation.PreviousUnixFileMode);
+            Assert.Equal(modeBeforeRemove, fileSystem.GetUnixFileMode(targetPath));
+        }
+        Assert.True(fileSystem.FileExists(targetPath));
+        Assert.Equal(targetBeforeRemove, fileSystem.ReadAllText(targetPath));
+        Assert.True(fileSystem.FileExists(manifestPath));
+        Assert.Equal(manifestBeforeRemove, fileSystem.ReadAllText(manifestPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedRemoveRollsBackNpmrcMultiChangeMutationAfterDurableWrite()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/npmrc-remove-multi-change-rollback-manifest.json";
+        const string targetPath = "/config/npmrc-remove-multi-change-rollback/.npmrc";
+        var setupDispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var setupManager = new ConfigurationManager(fileSystem, manifestPath, setupDispatcher);
+        ConfigurationChangePlan applyPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            targetPath
+        ) with
+        {
+            Changes =
+            [
+                CreateNpmrcFileChange(targetPath),
+                CreateNpmrcFileChange(targetPath) with
+                {
+                    Key = "always-auth",
+                    Value = "true",
+                },
+            ],
+        };
+
+        await setupManager.ApplyAsync(applyPlan, TestContext.Current.CancellationToken);
+        string originalContents = fileSystem.ReadAllText(targetPath);
+        string originalManifestJson = fileSystem.ReadAllText(manifestPath);
+        UnixFileMode originalUnixFileMode = fileSystem.GetUnixFileMode(targetPath);
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan removePlan = applyPlan with
+        {
+            Manifest = applyPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(originalManifestJson),
+            },
+            Changes =
+            [
+                applyPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+                applyPlan.Changes[1] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = "previous-physical-target-entry",
+                },
+            ],
+        };
+        bool injectedFailure = false;
+        string? durableTargetContents = null;
+        fileSystem.AfterRecord = (call, fs) =>
+        {
+            if (
+                injectedFailure
+                || !string.Equals(
+                    call.Operation,
+                    nameof(IFileSystem.AtomicWriteAllText),
+                    StringComparison.Ordinal
+                )
+                || !string.Equals(call.Path, targetPath, StringComparison.Ordinal)
+                || !string.Equals(call.Value, string.Empty, StringComparison.Ordinal)
+            )
+            {
+                return;
+            }
+
+            injectedFailure = true;
+            durableTargetContents = call.Value;
+            fs.AtomicWriteAllText(targetPath, call.Value!);
+            fs.FailNextCall(
+                new FileMutationException(
+                    "Injected durable Npmrc remove failure.",
+                    mutationMayHaveReachedDurableState: true,
+                    new IOException("durable Npmrc remove failure")
+                )
+            );
+        };
+
+        var exception = await Assert.ThrowsAsync<FileMutationException>(async () =>
+            await manager.RemoveAsync(removePlan, TestContext.Current.CancellationToken)
+        );
+        fileSystem.AfterRecord = null;
+
+        ConfigurationPhysicalTargetWriterRequest request = Assert.Single(dispatcher.Requests);
+        ConfigurationPhysicalTargetFileMutation mutation = Assert.Single(
+            request.CompletedFileMutations
+        );
+
+        Assert.Contains(
+            "durable Npmrc remove failure",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.True(injectedFailure);
+        Assert.Equal(string.Empty, durableTargetContents);
+        Assert.Equal(ConfigurationPlanOperation.Remove, request.PlanOperation);
+        Assert.Equal(ConfigurationTargetKind.Npmrc, request.TargetKind);
+        Assert.Collection(
+            request.Changes,
+            change =>
+            {
+                Assert.Equal(ConfigurationChangeOperation.Remove, change.Operation);
+                Assert.Equal("registry", change.Key);
+                Assert.Null(change.Value);
+                Assert.Equal("previous-physical-target-entry", change.PreviousOwnedEntryMetadata);
+            },
+            change =>
+            {
+                Assert.Equal(ConfigurationChangeOperation.Remove, change.Operation);
+                Assert.Equal("always-auth", change.Key);
+                Assert.Null(change.Value);
+                Assert.Equal("previous-physical-target-entry", change.PreviousOwnedEntryMetadata);
+            }
+        );
+        Assert.Collection(
+            request.OwnershipProofs,
+            proof =>
+            {
+                Assert.Equal(ConfigurationTargetKind.Npmrc, proof.TargetKind);
+                Assert.Equal(targetPath, proof.TargetPathOrName);
+                Assert.Equal("registry", proof.Key);
+                Assert.Equal(
+                    HashMetadata("https://registry.npmjs.org/")["sha256:".Length..],
+                    proof.PlannedValueSha256
+                );
+            },
+            proof =>
+            {
+                Assert.Equal(ConfigurationTargetKind.Npmrc, proof.TargetKind);
+                Assert.Equal(targetPath, proof.TargetPathOrName);
+                Assert.Equal("always-auth", proof.Key);
+                Assert.Equal(HashMetadata("true")["sha256:".Length..], proof.PlannedValueSha256);
+            }
+        );
+        Assert.Equal(targetPath, mutation.Path);
+        Assert.True(mutation.PreviouslyExisted);
+        Assert.Equal(Encoding.UTF8.GetBytes(originalContents), mutation.PreviousContentsBytes);
+        Assert.Equal(originalUnixFileMode, mutation.PreviousUnixFileMode);
+        Assert.True(mutation.RequiresRollback);
+        Assert.Equal(
+            HashMetadata(string.Empty)["sha256:".Length..],
+            mutation.ExpectedCurrentSha256Hash
+        );
+        Assert.True(fileSystem.FileExists(targetPath));
+        Assert.Equal(originalContents, fileSystem.ReadAllText(targetPath));
+        Assert.Equal(originalUnixFileMode, fileSystem.GetUnixFileMode(targetPath));
+        Assert.True(fileSystem.FileExists(manifestPath));
+        Assert.Equal(originalManifestJson, fileSystem.ReadAllText(manifestPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedApplyRollsBackNpmrcMutationWhenDispatcherThrowsAfterWrite()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/npmrc-rollback-manifest.json";
+        const string targetPath = "/config/npmrc-rollback/.npmrc";
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher(
+            async (request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await new ConfigurationPhysicalTargetWriterDispatcher(fileSystem).Dispatch(
+                request,
+                cancellationToken
+            );
+            throw new IOException("Injected Npmrc apply dispatch failure.");
+        });
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            targetPath
+        );
+
+        var exception = await Assert.ThrowsAsync<IOException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        string expectedContents = string.Join(
+            Environment.NewLine,
+            "physical-target=planned-value",
+            string.Empty
+        );
+        ConfigurationPhysicalTargetWriterRequest request = Assert.Single(dispatcher.Requests);
+        ConfigurationPhysicalTargetFileMutation mutation = Assert.Single(
+            request.CompletedFileMutations
+        );
+
+        Assert.Contains("dispatch failure", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(ConfigurationPlanOperation.Apply, request.PlanOperation);
+        Assert.Equal(ConfigurationTargetKind.Npmrc, request.TargetKind);
+        Assert.Equal(ConfigurationChangeOperation.Set, request.ChangeOperation);
+        Assert.Equal(targetPath, mutation.Path);
+        Assert.False(mutation.PreviouslyExisted);
+        Assert.Null(mutation.PreviousContentsBytes);
+        Assert.True(mutation.RequiresRollback);
+        Assert.Null(mutation.PreviousUnixFileMode);
+        Assert.Equal(
+            HashMetadata(expectedContents)["sha256:".Length..],
+            mutation.ExpectedCurrentSha256Hash
+        );
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyLeavesAdoptedNpmrcSnapshotIntactAfterManifestFailure()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/npmrc-adopted-snapshot-rollback-manifest.json";
+        const string targetPath = "/config/npmrc-adopted-snapshot/.npmrc";
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            targetPath
+        );
+        string expectedContents = string.Join(
+            Environment.NewLine,
+            "physical-target=planned-value",
+            string.Empty
+        );
+        string adoptedManifestJson = await CreateDryRunManifestJsonAsync(plan);
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher(
+            async (request, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await new ConfigurationPhysicalTargetWriterDispatcher(fileSystem).Dispatch(
+                    request,
+                    cancellationToken
+                );
+                fileSystem.AtomicWriteAllText(manifestPath, adoptedManifestJson);
+                throw new IOException(
+                    "Injected Npmrc apply dispatch failure after adopted final manifest write."
+                );
+            }
+        );
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+
+        var exception = await Assert.ThrowsAsync<IOException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("dispatch failure", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dispatcher.Requests);
+        Assert.True(fileSystem.FileExists(targetPath));
+        Assert.Equal(expectedContents, fileSystem.ReadAllText(targetPath));
+        Assert.True(fileSystem.FileExists(manifestPath));
+        Assert.Equal(adoptedManifestJson, fileSystem.ReadAllText(manifestPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyRollsBackNpmrcMultiChangeMutationAfterDurableWrite()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/npmrc-apply-multi-change-rollback-manifest.json";
+        const string targetPath = "/config/npmrc-apply-multi-change-rollback/.npmrc";
+        var dispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            targetPath
+        ) with
+        {
+            Changes =
+            [
+                CreateNpmrcFileChange(targetPath),
+                CreateNpmrcFileChange(targetPath) with
+                {
+                    Key = "always-auth",
+                    Value = "true",
+                },
+            ],
+        };
+        string expectedDurableContents = string.Join(
+            Environment.NewLine,
+            "registry=https://registry.npmjs.org/",
+            "always-auth=true",
+            string.Empty
+        );
+        bool injectedFailure = false;
+        string? durableTargetContents = null;
+        fileSystem.AfterRecord = (call, fs) =>
+        {
+            if (
+                injectedFailure
+                || !string.Equals(
+                    call.Operation,
+                    nameof(IFileSystem.AtomicWriteAllText),
+                    StringComparison.Ordinal
+                )
+                || !string.Equals(call.Path, targetPath, StringComparison.Ordinal)
+                || !string.Equals(call.Value, expectedDurableContents, StringComparison.Ordinal)
+            )
+            {
+                return;
+            }
+
+            injectedFailure = true;
+            durableTargetContents = call.Value;
+            fs.AtomicWriteAllText(targetPath, call.Value!);
+            fs.FailNextCall(
+                new FileMutationException(
+                    "Injected durable Npmrc apply failure.",
+                    mutationMayHaveReachedDurableState: true,
+                    new IOException("durable Npmrc apply failure")
+                )
+            );
+        };
+
+        var exception = await Assert.ThrowsAsync<FileMutationException>(async () =>
+            await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+        fileSystem.AfterRecord = null;
+
+        ConfigurationPhysicalTargetWriterRequest request = Assert.Single(dispatcher.Requests);
+        ConfigurationPhysicalTargetFileMutation mutation = Assert.Single(
+            request.CompletedFileMutations
+        );
+
+        Assert.Contains("durable Npmrc apply failure", exception.Message, StringComparison.Ordinal);
+        Assert.True(injectedFailure);
+        Assert.Equal(expectedDurableContents, durableTargetContents);
+        Assert.Equal(ConfigurationPlanOperation.Apply, request.PlanOperation);
+        Assert.Equal(ConfigurationTargetKind.Npmrc, request.TargetKind);
+        Assert.Collection(
+            request.Changes,
+            change =>
+            {
+                Assert.Equal(ConfigurationChangeOperation.Set, change.Operation);
+                Assert.Equal("registry", change.Key);
+                Assert.Equal("https://registry.npmjs.org/", change.Value);
+            },
+            change =>
+            {
+                Assert.Equal(ConfigurationChangeOperation.Set, change.Operation);
+                Assert.Equal("always-auth", change.Key);
+                Assert.Equal("true", change.Value);
+            }
+        );
+        Assert.Empty(request.OwnershipProofs);
+        Assert.Equal(targetPath, mutation.Path);
+        Assert.False(mutation.PreviouslyExisted);
+        Assert.Null(mutation.PreviousContentsBytes);
+        Assert.Null(mutation.PreviousUnixFileMode);
+        Assert.True(mutation.RequiresRollback);
+        Assert.Equal(
+            HashMetadata(expectedDurableContents)["sha256:".Length..],
+            mutation.ExpectedCurrentSha256Hash
+        );
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task
+        FilesystemBackedApplyRollsBackUpdatedNpmrcMutationWhenDispatcherThrowsAfterWrite()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/npmrc-update-rollback-manifest.json";
+        const string targetPath = "/config/npmrc-update-rollback/.npmrc";
+        const string updatedValue = "https://new.example/";
+        const UnixFileMode permissiveMode =
+            UnixFileMode.UserRead
+            | UnixFileMode.UserWrite
+            | UnixFileMode.GroupRead
+            | UnixFileMode.GroupWrite
+            | UnixFileMode.OtherRead
+            | UnixFileMode.OtherWrite;
+        var setupDispatcher = new RecordingPhysicalTargetWriterDispatcher(fileSystem);
+        var setupManager = new ConfigurationManager(fileSystem, manifestPath, setupDispatcher);
+        ConfigurationChangePlan applyPlan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Npmrc,
+            targetPath
+        ) with
+        {
+            Changes =
+            [
+                CreateNpmrcFileChange(targetPath),
+            ],
+        };
+
+        await setupManager.ApplyAsync(applyPlan, TestContext.Current.CancellationToken);
+        string originalContents = fileSystem.ReadAllText(targetPath);
+        string originalManifest = fileSystem.ReadAllText(manifestPath);
+        fileSystem.SetUnixFileMode(targetPath, permissiveMode);
+        fileSystem.Calls.Clear();
+
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher(
+            async (request, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await new ConfigurationPhysicalTargetWriterDispatcher(fileSystem).Dispatch(
+                    request,
+                    cancellationToken
+                );
+                throw new IOException("Injected Npmrc update dispatch failure after write.");
+            }
+        );
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan updatePlan = applyPlan with
+        {
+            Manifest = applyPlan.Manifest with
+            {
+                PreviousOwnedEntryHash = HashMetadata(originalManifest),
+            },
+            Changes =
+            [
+                applyPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Update,
+                    Value = updatedValue,
+                    PreviousOwnedEntryMetadata = HashMetadata(originalContents),
+                },
+            ],
+        };
+
+        var exception = await Assert.ThrowsAsync<IOException>(async () =>
+            await manager.ApplyAsync(updatePlan, TestContext.Current.CancellationToken)
+        );
+
+        ConfigurationPhysicalTargetWriterRequest request = Assert.Single(dispatcher.Requests);
+        ConfigurationPhysicalTargetFileMutation mutation = Assert.Single(
+            request.CompletedFileMutations
+        );
+
+        Assert.Contains("update dispatch failure", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(ConfigurationPlanOperation.Apply, request.PlanOperation);
+        Assert.Equal(ConfigurationTargetKind.Npmrc, request.TargetKind);
+        Assert.Equal(ConfigurationChangeOperation.Update, request.ChangeOperation);
+        Assert.Equal(targetPath, request.Change.TargetPathOrName);
+        Assert.Equal("registry", request.Change.Key);
+        Assert.Equal(updatedValue, request.Change.Value);
+        Assert.Equal(targetPath, mutation.Path);
+        Assert.True(mutation.PreviouslyExisted);
+        Assert.Equal(Encoding.UTF8.GetBytes(originalContents), mutation.PreviousContentsBytes);
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Null(mutation.PreviousUnixFileMode);
+        }
+        else
+        {
+            Assert.Equal(permissiveMode, mutation.PreviousUnixFileMode);
+        }
+
+        Assert.True(mutation.RequiresRollback);
+        Assert.Equal(
+            HashMetadata(
+                string.Join(
+                    Environment.NewLine,
+                    "registry=https://new.example/",
+                    string.Empty
+                )
+            )["sha256:".Length..],
+            mutation.ExpectedCurrentSha256Hash
+        );
+        Assert.True(fileSystem.FileExists(targetPath));
+        Assert.Equal(originalContents, fileSystem.ReadAllText(targetPath));
+        Assert.Equal(permissiveMode, fileSystem.GetUnixFileMode(targetPath));
+        Assert.True(fileSystem.FileExists(manifestPath));
+        Assert.Equal(originalManifest, fileSystem.ReadAllText(manifestPath));
     }
 
     [Theory]
@@ -7984,7 +9795,11 @@ public sealed class ConfigurationManagerTests
             await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
         );
 
-        Assert.Contains("mixing 4D physical", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            "currently supports dispatching only one 4D physical target kind per plan",
+            exception.Message,
+            StringComparison.Ordinal
+        );
         Assert.Empty(dispatcher.Requests);
         Assert.False(fileSystem.FileExists(gitTargetPath));
         Assert.False(fileSystem.FileExists(npmrcTargetPath));
@@ -8031,7 +9846,11 @@ public sealed class ConfigurationManagerTests
             await manager.RemoveAsync(plan, TestContext.Current.CancellationToken)
         );
 
-        Assert.Contains("mixing 4D physical", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            "currently supports dispatching only one 4D physical target kind per plan",
+            exception.Message,
+            StringComparison.Ordinal
+        );
         Assert.Empty(dispatcher.Requests);
         Assert.False(fileSystem.FileExists(gitTargetPath));
         Assert.False(fileSystem.FileExists(npmrcTargetPath));
@@ -15337,6 +17156,23 @@ public sealed class ConfigurationManagerTests
             ProductVersion = "0.0.0-test",
         };
 
+    private static CanonicalResourceIdentity CreateNpmResourceIdentity() =>
+        CanonicalResourceIdentity.Create(
+            "pkgs.dev.azure.com",
+            "org",
+            new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry"),
+            feed: "feed"
+        );
+
+    private static CanonicalResourceIdentity CreateGitResourceIdentity() =>
+        CanonicalResourceIdentity.Create(
+            "dev.azure.com",
+            "org",
+            new Uri("https://dev.azure.com/org/proj/_git/repo"),
+            project: "proj",
+            repository: "repo"
+        );
+
     private static ConfigurationChangePlan CreateGenericFilePlan(
         ConfigurationChangeOperation operation,
         string targetPath,
@@ -15955,6 +17791,42 @@ public sealed class ConfigurationManagerTests
                 },
             ]
         );
+
+    private static ConfigurationChangePlan CreateNpmrcSecretPhysicalTargetPlan(
+        string targetPath,
+        CanonicalResourceIdentity resourceIdentity,
+        string entrySelector,
+        string changeKey,
+        string secretValue
+    ) =>
+        ConfigurationChangePlanPolicy.Create(
+            "plan-npmrc-secret-physical-target",
+            "changeset-npmrc-secret-physical-target",
+            "azureauth-credprovider",
+            ConfigurationScope.User,
+            CreateManifest() with
+            {
+                ManifestId = "manifest-npmrc-secret-physical-target",
+                EntrySelector = entrySelector,
+                ResourceIdentity = resourceIdentity,
+            },
+            [
+                new ConfigurationChange
+                {
+                    Operation = ConfigurationChangeOperation.Set,
+                    TargetKind = ConfigurationTargetKind.Npmrc,
+                    TargetPathOrName = targetPath,
+                    Key = changeKey,
+                    Value = secretValue,
+                    RequiresOwnershipRecord = true,
+                    IsSecretValue = true,
+                    PreserveDeclarationsAndComments = true,
+                },
+            ]
+        ) with
+        {
+            ContainsCredentialMaterial = true,
+        };
 
     private static ConfigurationChangePlan CreateGitConfigCredentialHelperPlan(
         string targetPath,
@@ -17457,6 +19329,7 @@ public sealed class ConfigurationManagerTests
 [JsonSerializable(typeof(ConfigurationPlannedChange))]
 [JsonSerializable(typeof(ConfigurationPlanResult))]
 [JsonSerializable(typeof(ConfigurationOwnershipManifest))]
+[JsonSerializable(typeof(CanonicalResourceIdentity))]
 [JsonSourceGenerationOptions(
     JsonSerializerDefaults.Web,
     WriteIndented = false,

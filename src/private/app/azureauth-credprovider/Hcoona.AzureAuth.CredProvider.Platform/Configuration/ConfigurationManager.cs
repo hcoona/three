@@ -134,6 +134,7 @@ public sealed class ConfigurationManager : IConfigurationManager
         {
             EnsureNoReservedInternalNonCiPhysicalTargetPaths(plan);
             EnsurePhysicalTargetDryRunDispatchPlanShapeSupported(fileSystem, plan);
+            EnsureProjectedOwnershipManifestValid(plan);
         }
 
         ConfigurationChangePlan projectedPlan = containsProjectionOnlyPhysicalTarget
@@ -340,7 +341,10 @@ public sealed class ConfigurationManager : IConfigurationManager
                     plan.Changes[0].TargetKind,
                     plan.Changes,
                     preparation.OwnershipProofs
-                );
+                )
+                {
+                    ResourceIdentity = plan.Manifest.ResourceIdentity,
+                };
                 ValidatePhysicalTargetDispatchBeforeManifestPreclaim(
                     plan,
                     operation,
@@ -628,7 +632,10 @@ public sealed class ConfigurationManager : IConfigurationManager
                 plan.Changes[0].TargetKind,
                 plan.Changes,
                 ownershipProofs
-            ),
+            )
+            {
+                ResourceIdentity = plan.Manifest.ResourceIdentity,
+            },
             cancellationToken
         );
 
@@ -944,9 +951,9 @@ public sealed class ConfigurationManager : IConfigurationManager
         EnsurePhysicalTargetDispatchPlanShapeSupported(fileSystem, plan, operation);
     }
 
-    private static void EnsureProjectedOwnershipManifestValid(ConfigurationChangePlan plan)
+    private void EnsureProjectedOwnershipManifestValid(ConfigurationChangePlan plan)
     {
-        string? violation = GetProjectionValidationViolation(plan);
+        string? violation = GetProjectionValidationViolation(plan, fileSystem);
         if (violation is not null)
         {
             throw new ArgumentException(violation, nameof(plan));
@@ -981,15 +988,16 @@ public sealed class ConfigurationManager : IConfigurationManager
             violation ??= GetOwnershipManifestPathCollisionWithPhysicalTargetsViolation(plan);
             violation ??= GetFilesystemBackedPhysicalTargetKindSamePathConflictViolation(plan);
             violation ??= GetReservedInternalPlanningPhysicalTargetPathViolation(plan);
+            violation ??= GetNpmrcStaticWriterPlanningValidationViolation(plan, fileSystem);
             violation ??= GetPhase4DPhysicalScaffoldPlanningViolation(fileSystem, plan);
             violation ??= GetGitConfigStaticWriterPlanningValidationViolation(
                 plan,
                 GetRejectSecretGitConfigValueWritesBeforeManifestPreclaim()
             );
-            return violation ?? GetProjectionValidationViolation(plan);
+            return violation ?? GetProjectionValidationViolation(plan, fileSystem);
         }
 
-        violation = GetProjectionValidationViolation(plan);
+        violation = GetProjectionValidationViolation(plan, fileSystem);
         violation ??= GetAdditionalPlanningValidationViolation(
             plan,
             includeCiTemporaryFileReservedPaths: true
@@ -1078,6 +1086,18 @@ public sealed class ConfigurationManager : IConfigurationManager
         {
             throw new ArgumentException(violation, nameof(plan));
         }
+
+        violation = GetNpmrcStaticWriterPlanningValidationViolation(plan);
+        if (violation is not null)
+        {
+            throw new ArgumentException(violation, nameof(plan));
+        }
+
+        violation = GetProjectionValidationViolation(plan);
+        if (violation is not null)
+        {
+            throw new ArgumentException(violation, nameof(plan));
+        }
     }
 
     private static string? GetContractValidationViolation(ConfigurationChangePlan plan) =>
@@ -1090,13 +1110,28 @@ public sealed class ConfigurationManager : IConfigurationManager
             ? "Configuration manifest metadata uses a reserved physical target preclaim key."
             : null;
 
-    private static string? GetProjectionValidationViolation(ConfigurationChangePlan plan)
+    private static string? GetProjectionValidationViolation(
+        ConfigurationChangePlan plan,
+        IFileSystem? fileSystem = null
+    )
     {
         ConfigurationPlannedOperation[] plannedOperations =
             ConfigurationPlanProjector.CreatePlannedOperations(plan);
         ConfigurationOwnershipManifest manifest =
             ConfigurationPlanProjector.CreateOwnershipManifest(plan, plannedOperations);
-        return ConfigurationOwnershipManifestPolicy.GetViolation(manifest);
+        string? violation = ConfigurationOwnershipManifestPolicy.GetViolation(manifest);
+        if (violation is not null)
+        {
+            return violation;
+        }
+
+        Func<string, bool> isPathFullyQualified = fileSystem is null
+            ? Path.IsPathFullyQualified
+            : fileSystem.IsPathFullyQualified;
+        return GetNpmrcPhysicalTargetEntriesPathViolation(
+            manifest.Entries.Where(entry => entry.TargetKind == ConfigurationTargetKind.Npmrc),
+            isPathFullyQualified
+        );
     }
 
     private static string? GetPlanningValidationViolation(
@@ -1145,6 +1180,12 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
 
         violation = GetLexicalReservedInternalPlanningPhysicalTargetPathViolation(plan);
+        if (violation is not null)
+        {
+            return violation;
+        }
+
+        violation = GetNpmrcStaticWriterPlanningValidationViolation(plan);
         if (violation is not null)
         {
             return violation;
@@ -1644,6 +1685,7 @@ public sealed class ConfigurationManager : IConfigurationManager
         if (
             !plan.Changes.Any(change =>
                 change.TargetKind is ConfigurationTargetKind.GitConfig
+                    or ConfigurationTargetKind.Npmrc
                     or ConfigurationTargetKind.NuGetPluginLayout
             )
         )
@@ -1661,6 +1703,7 @@ public sealed class ConfigurationManager : IConfigurationManager
     {
         if (
             change.TargetKind is ConfigurationTargetKind.GitConfig
+                or ConfigurationTargetKind.Npmrc
                 or ConfigurationTargetKind.NuGetPluginLayout
         )
         {
@@ -1674,7 +1717,10 @@ public sealed class ConfigurationManager : IConfigurationManager
 
             if (change.TargetKind != ConfigurationTargetKind.GitConfig)
             {
-                return canonicalizedChange;
+                return change.TargetKind == ConfigurationTargetKind.Npmrc
+                    && !IsValueWritingOperation(change.Operation)
+                    ? canonicalizedChange with { IsSecretValue = false }
+                    : canonicalizedChange;
             }
 
             return canonicalizedChange with
@@ -1703,6 +1749,7 @@ public sealed class ConfigurationManager : IConfigurationManager
         if (
             !plan.Changes.Any(change =>
                 change.TargetKind is ConfigurationTargetKind.GitConfig
+                    or ConfigurationTargetKind.Npmrc
                     or ConfigurationTargetKind.NuGetPluginLayout
             )
         )
@@ -1723,6 +1770,7 @@ public sealed class ConfigurationManager : IConfigurationManager
         if (
             change.TargetKind
                 is not ConfigurationTargetKind.GitConfig
+                and not ConfigurationTargetKind.Npmrc
                 and not ConfigurationTargetKind.NuGetPluginLayout
         )
         {
@@ -1731,12 +1779,17 @@ public sealed class ConfigurationManager : IConfigurationManager
 
         ConfigurationChange canonicalizedChange = change with
         {
-            TargetPathOrName = CreatePlanningPhysicalPathIdentity(change),
+            TargetPathOrName = change.TargetKind == ConfigurationTargetKind.Npmrc
+                ? CreateNoFilesystemPhysicalPathIdentity(change.TargetPathOrName)
+                : CreatePlanningPhysicalPathIdentity(change),
         };
 
         if (change.TargetKind != ConfigurationTargetKind.GitConfig)
         {
-            return canonicalizedChange;
+            return change.TargetKind == ConfigurationTargetKind.Npmrc
+                && !IsValueWritingOperation(change.Operation)
+                ? canonicalizedChange with { IsSecretValue = false }
+                : canonicalizedChange;
         }
 
         return canonicalizedChange with
@@ -1808,6 +1861,100 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
     }
 
+    private static string? GetNpmrcStaticWriterPlanningValidationViolation(
+        ConfigurationChangePlan plan,
+        IFileSystem? fileSystem = null
+    )
+    {
+        foreach (
+            ConfigurationChange change in plan.Changes.Where(change =>
+                change.TargetKind == ConfigurationTargetKind.Npmrc
+            )
+        )
+        {
+            string? violation = NpmrcPhysicalTargetWriter.GetPlanningValidationViolation(
+                change,
+                plan.Manifest.ResourceIdentity
+            );
+            if (violation is not null)
+            {
+                return violation;
+            }
+        }
+
+        string? batchViolation = GetNpmrcMixedOperationBatchViolation(plan);
+        if (batchViolation is not null)
+        {
+            return batchViolation;
+        }
+
+        return GetNpmrcPhysicalTargetRequestShapeViolation(plan, fileSystem);
+    }
+
+    private static string? GetNpmrcMixedOperationBatchViolation(ConfigurationChangePlan plan)
+    {
+        ConfigurationChange[] npmrcChanges = plan
+            .Changes.Where(change => change.TargetKind == ConfigurationTargetKind.Npmrc)
+            .ToArray();
+        if (npmrcChanges.Length <= 1)
+        {
+            return null;
+        }
+
+        bool hasValueWritingChanges = npmrcChanges.Any(change =>
+            IsValueWritingOperation(change.Operation)
+        );
+        bool hasRemoveChanges = npmrcChanges.Any(
+            change => change.Operation == ConfigurationChangeOperation.Remove
+        );
+        return hasValueWritingChanges && hasRemoveChanges
+            ? "Protocol violation: Npmrc physical writer does not support mixed value-writing "
+                + "and remove batches."
+            : null;
+    }
+
+    private static string? GetNpmrcPhysicalTargetRequestShapeViolation(
+        ConfigurationChangePlan plan,
+        IFileSystem? fileSystem = null
+    )
+    {
+        ConfigurationChange[] npmrcChanges = plan
+            .Changes.Where(change => change.TargetKind == ConfigurationTargetKind.Npmrc)
+            .ToArray();
+        if (npmrcChanges.Length <= 1)
+        {
+            return null;
+        }
+
+        string firstPath = CreateDispatchPhysicalPathIdentity(fileSystem, npmrcChanges[0]);
+        if (
+            npmrcChanges
+                .Skip(1)
+                .Any(change =>
+                    !ConfigurationPathIdentityComparer.Instance.Equals(
+                        CreateDispatchPhysicalPathIdentity(fileSystem, change),
+                        firstPath
+                    )
+                )
+        )
+        {
+            return "Protocol violation: Npmrc physical writer supports only one normalized "
+                + "physical file path per plan.";
+        }
+
+        if (
+            npmrcChanges
+                .GroupBy(change => change.Key, StringComparer.Ordinal)
+                .Any(group => group.Count() > 1)
+        )
+        {
+            return "Protocol violation: Npmrc physical writer supports only one change per "
+                + "canonical key.";
+        }
+
+        return null;
+    }
+
     private static void ValidateProjectedPhysicalTargetManifestForReturn(
         ConfigurationOwnershipManifest? manifest
     )
@@ -1829,6 +1976,56 @@ public sealed class ConfigurationManager : IConfigurationManager
         ValidateNuGetPluginLayoutManifestEntriesAreVerifiableNonSecretValueWrites(
             manifest.Entries.Where(entry => IsValueWritingOperation(entry.Operation))
         );
+        string? npmrcPathViolation = GetNpmrcPhysicalTargetEntriesPathViolation(
+            manifest.Entries.Where(entry => entry.TargetKind == ConfigurationTargetKind.Npmrc),
+            Path.IsPathFullyQualified
+        );
+        if (npmrcPathViolation is not null)
+        {
+            throw new InvalidOperationException(npmrcPathViolation);
+        }
+    }
+
+    private static string? GetNpmrcPhysicalTargetEntriesPathViolation(
+        IEnumerable<ConfigurationOwnershipManifestEntry> entries,
+        Func<string, bool> isPathFullyQualified
+    )
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        ArgumentNullException.ThrowIfNull(isPathFullyQualified);
+
+        return entries.Any(entry => !isPathFullyQualified(entry.TargetPathOrName))
+            ? "Configuration ownership manifest conflict: Npmrc physical target entries must "
+                + "use fully qualified target paths."
+            : null;
+    }
+
+    private static string? GetNpmrcRetainedOwnershipProofViolation(
+        IFileSystem fileSystem,
+        ConfigurationOwnershipManifest? manifest
+    )
+    {
+        ArgumentNullException.ThrowIfNull(fileSystem);
+
+        if (manifest is null)
+        {
+            return null;
+        }
+
+        return manifest
+            .Entries.Where(entry => entry.TargetKind == ConfigurationTargetKind.Npmrc)
+            .Select(entry =>
+                CreateEntryKey(
+                    ConfigurationTargetKind.Npmrc,
+                    CreatePhysicalPathIdentity(fileSystem, entry.TargetPathOrName),
+                    CanonicalizePhysicalTargetManifestKey(entry.TargetKind, entry.Key)
+                )
+            )
+            .GroupBy(key => key, GetEntryMergeKeyComparer())
+            .Any(group => group.Count() > 1)
+            ? "Configuration ownership manifest conflict: Npmrc retained ownership proofs must "
+                + "be unique per canonical physical key."
+            : null;
     }
 
     private static ConfigurationOwnershipManifest CanonicalizePhysicalTargetManifestForWrite(
@@ -1861,16 +2058,27 @@ public sealed class ConfigurationManager : IConfigurationManager
         ConfigurationOwnershipManifestEntry entry
     )
     {
-        if (entry.TargetKind != ConfigurationTargetKind.GitConfig)
+        if (
+            entry.TargetKind != ConfigurationTargetKind.GitConfig
+            && entry.TargetKind != ConfigurationTargetKind.Npmrc
+        )
         {
             return entry;
         }
 
-        return entry with
+        ConfigurationOwnershipManifestEntry canonicalizedEntry = entry with
         {
             TargetPathOrName = CreatePhysicalPathIdentity(fileSystem, entry.TargetPathOrName),
-            Key = GitConfigPhysicalTargetWriter.CanonicalizeSupportedConfigurationKey(entry.Key),
         };
+
+        return entry.TargetKind == ConfigurationTargetKind.GitConfig
+            ? canonicalizedEntry with
+            {
+                Key = GitConfigPhysicalTargetWriter.CanonicalizeSupportedConfigurationKey(
+                    entry.Key
+                ),
+            }
+            : canonicalizedEntry;
     }
 
     private ConfigurationOwnershipManifest? Execute(
@@ -2260,6 +2468,12 @@ public sealed class ConfigurationManager : IConfigurationManager
             ConfigurationOwnershipManifest? baseManifest = manifestSnapshot.Existed
                 ? ConfigurationOwnershipManifestSerializer.Deserialize(manifestSnapshot.Contents!)
                 : null;
+            string? npmrcRetainedOwnershipProofViolation =
+                GetNpmrcRetainedOwnershipProofViolation(dryRunFileSystem, baseManifest);
+            if (npmrcRetainedOwnershipProofViolation is not null)
+            {
+                throw new InvalidOperationException(npmrcRetainedOwnershipProofViolation);
+            }
             ValidateGitConfigRetainedUseHttpPathOwnershipProofs(
                 dryRunFileSystem,
                 baseManifest,
@@ -2345,6 +2559,12 @@ public sealed class ConfigurationManager : IConfigurationManager
         ConfigurationOwnershipManifest? baseManifest = manifestSnapshot.Existed
             ? ConfigurationOwnershipManifestSerializer.Deserialize(manifestSnapshot.Contents!)
             : null;
+        string? npmrcRetainedOwnershipProofViolation =
+            GetNpmrcRetainedOwnershipProofViolation(dryRunFileSystem, baseManifest);
+        if (npmrcRetainedOwnershipProofViolation is not null)
+        {
+            throw new InvalidOperationException(npmrcRetainedOwnershipProofViolation);
+        }
         ValidateProjectionOnlyPhysicalTargetDryRunPhysicalState(
             dryRunFileSystem,
             plan,
@@ -2354,6 +2574,17 @@ public sealed class ConfigurationManager : IConfigurationManager
             baseManifest,
             cancellationToken
         );
+        ConfigurationPhysicalTargetOwnershipProof[] nonActiveRetainedOwnershipProofs =
+            CreatePhysicalTargetOwnershipProofs(baseManifest)
+                .Where(proof => proof.TargetKind != plan.Changes[0].TargetKind)
+                .ToArray();
+        if (nonActiveRetainedOwnershipProofs.Length > 0)
+        {
+            ValidateRetainedOwnershipProofsBeforePhysicalTargetManifestCommit(
+                nonActiveRetainedOwnershipProofs,
+                cancellationToken
+            );
+        }
         if (hasRemoveChanges)
         {
             baseManifest = CreateRemainingManifestAfterRemove(
@@ -2409,7 +2640,10 @@ public sealed class ConfigurationManager : IConfigurationManager
                     plan.Changes[0].TargetKind,
                     plan.Changes,
                     CreatePhysicalTargetOwnershipProofs(existingManifest)
-                ),
+                )
+                {
+                    ResourceIdentity = plan.Manifest.ResourceIdentity,
+                },
                 cancellationToken
             );
     }
@@ -2957,6 +3191,19 @@ public sealed class ConfigurationManager : IConfigurationManager
         ConfigurationOwnershipManifest manifest
     )
     {
+        if (
+            manifest.Entries.Any(entry =>
+                entry.TargetKind == ConfigurationTargetKind.CiTemporaryFile
+                && !fileSystem.IsPathFullyQualified(entry.TargetPathOrName)
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "Configuration ownership manifest conflict: CI temporary file entries must use "
+                    + "fully qualified target paths."
+            );
+        }
+
         if (
             manifest
                 .Entries.Where(entry =>
@@ -3557,6 +3804,11 @@ public sealed class ConfigurationManager : IConfigurationManager
             .Select(change => CreatePhysicalPathIdentity(fileSystem, change.TargetPathOrName))
             .Distinct(GetPathIdentityComparer())
             .ToArray();
+        string[] expectedNpmrcTargetPaths = plan
+            .Changes.Where(change => change.TargetKind == ConfigurationTargetKind.Npmrc)
+            .Select(change => CreatePhysicalPathIdentity(fileSystem, change.TargetPathOrName))
+            .Distinct(ConfigurationPathIdentityComparer.Instance)
+            .ToArray();
         string[] expectedNuGetPluginLayoutTargetRootPaths = plan
             .Changes.Where(change =>
                 change.TargetKind == ConfigurationTargetKind.NuGetPluginLayout
@@ -3575,6 +3827,10 @@ public sealed class ConfigurationManager : IConfigurationManager
         var expectedGitConfigTargetPathSet = new HashSet<string>(
             expectedGitConfigTargetPaths,
             GetPathIdentityComparer()
+        );
+        var expectedNpmrcTargetPathSet = new HashSet<string>(
+            expectedNpmrcTargetPaths,
+            ConfigurationPathIdentityComparer.Instance
         );
         var expectedNuGetPluginLayoutTargetRootPathSet = new HashSet<string>(
             expectedNuGetPluginLayoutTargetRootPaths,
@@ -3629,6 +3885,18 @@ public sealed class ConfigurationManager : IConfigurationManager
                     reportedMutationException ??= new InvalidOperationException(
                         "Configuration physical target writer reported a completed file mutation "
                             + "for an unrelated Git config target path."
+                    );
+                    continue;
+                }
+            }
+
+            if (expectedNpmrcTargetPaths.Length > 0)
+            {
+                if (!expectedNpmrcTargetPathSet.Contains(normalizedMutationPath))
+                {
+                    reportedMutationException ??= new InvalidOperationException(
+                        "Configuration physical target writer reported a completed file mutation "
+                            + "for an unrelated Npmrc target path."
                     );
                     continue;
                 }
@@ -3730,6 +3998,17 @@ public sealed class ConfigurationManager : IConfigurationManager
                 throw new InvalidOperationException(
                     "Configuration physical target writer did not report a completed file "
                         + "mutation or observation for every Git config target path."
+                );
+            }
+        }
+
+        foreach (string expectedPath in expectedNpmrcTargetPaths)
+        {
+            if (!mutationsByNormalizedPath.ContainsKey(expectedPath))
+            {
+                throw new InvalidOperationException(
+                    "Configuration physical target writer did not report a completed file "
+                        + "mutation or observation for every Npmrc target path."
                 );
             }
         }
@@ -3917,9 +4196,12 @@ public sealed class ConfigurationManager : IConfigurationManager
             return [];
         }
 
+        ConfigurationOwnershipManifestPolicy.EnsureValid(existingManifest);
+
         return existingManifest
             .Entries.Where(entry =>
                 entry.TargetKind is ConfigurationTargetKind.GitConfig
+                    or ConfigurationTargetKind.Npmrc
                     or ConfigurationTargetKind.NuGetPluginLayout
                     or ConfigurationTargetKind.PythonKeyringBackend
                     or ConfigurationTargetKind.KeyringShim
@@ -4215,13 +4497,24 @@ public sealed class ConfigurationManager : IConfigurationManager
         {
             bool supportedGitConfigBatch =
                 plan.Changes.All(change => change.TargetKind == ConfigurationTargetKind.GitConfig)
-                && AllChangesTargetSameNormalizedPhysicalPath(fileSystem, plan.Changes);
-            if (!supportedGitConfigBatch)
+                && AllChangesTargetSameNormalizedPhysicalPath(
+                    fileSystem,
+                    plan.Changes,
+                    GetPathIdentityComparer()
+                );
+            bool supportedNpmrcBatch =
+                plan.Changes.All(change => change.TargetKind == ConfigurationTargetKind.Npmrc)
+                && AllChangesTargetSameNormalizedPhysicalPath(
+                    fileSystem,
+                    plan.Changes,
+                    ConfigurationPathIdentityComparer.Instance
+                );
+            if (!supportedGitConfigBatch && !supportedNpmrcBatch)
             {
                 throw new NotSupportedException(
                     $"Configuration {operationDescription} currently supports dispatching only "
-                        + "one 4D physical target change per plan, except for GitConfig batches "
-                        + "that target the same normalized physical path."
+                        + "one 4D physical target change per plan, except for GitConfig or Npmrc "
+                        + "batches that target the same normalized physical path."
                 );
             }
         }
@@ -4349,17 +4642,17 @@ public sealed class ConfigurationManager : IConfigurationManager
 
     private static bool AllChangesTargetSameNormalizedPhysicalPath(
         IFileSystem? fileSystem,
-        IReadOnlyList<ConfigurationChange> changes
+        IReadOnlyList<ConfigurationChange> changes,
+        IEqualityComparer<string> pathIdentityComparer
     )
     {
         string firstPath = CreateDispatchPhysicalPathIdentity(fileSystem, changes[0]);
         return changes
             .Skip(1)
             .All(change =>
-                string.Equals(
+                pathIdentityComparer.Equals(
                     CreateDispatchPhysicalPathIdentity(fileSystem, change),
-                    firstPath,
-                    GetPathIdentityComparison()
+                    firstPath
                 )
             );
     }
@@ -4423,7 +4716,7 @@ public sealed class ConfigurationManager : IConfigurationManager
         throw new NotSupportedException(
             $"Configuration {operationDescription} has no registered writer for this 4D "
                 + "physical configuration target kind. Phase 4D.2 currently supports only "
-                + "GitConfig, NuGetPluginLayout, PythonKeyringBackend, and KeyringShim "
+                + "GitConfig, Npmrc, NuGetPluginLayout, PythonKeyringBackend, and KeyringShim "
                 + "physical targets."
         );
     }
@@ -4524,6 +4817,7 @@ public sealed class ConfigurationManager : IConfigurationManager
         ValidateFileSnapshotIsRegularFile(manifestSnapshot, "configuration ownership manifest");
         ConfigurationOwnershipManifest existingManifest =
             ConfigurationOwnershipManifestSerializer.Deserialize(manifestSnapshot.Contents!);
+        ConfigurationOwnershipManifestPolicy.EnsureValid(existingManifest);
         if (ContainsPhysicalTargetManifestPreclaimMetadataKey(existingManifest))
         {
             throw new InvalidOperationException(
@@ -4645,6 +4939,15 @@ public sealed class ConfigurationManager : IConfigurationManager
             );
         }
 
+        string? npmrcPathViolation = GetNpmrcPhysicalTargetEntriesPathViolation(
+            nonCiPhysicalEntries.Where(entry => entry.TargetKind == ConfigurationTargetKind.Npmrc),
+            fileSystem.IsPathFullyQualified
+        );
+        if (npmrcPathViolation is not null)
+        {
+            throw new InvalidOperationException(npmrcPathViolation);
+        }
+
         ValidateGitConfigManifestEntriesAreVerifiableNonSecretValueWrites(nonCiPhysicalEntries);
         ValidateGitConfigUseHttpPathManifestEntriesRetainCanonicalTrue(nonCiPhysicalEntries);
         ValidatePythonKeyringManifestEntriesAreVerifiableNonSecretValueWrites(
@@ -4717,6 +5020,7 @@ public sealed class ConfigurationManager : IConfigurationManager
     ) =>
         targetKind is
             ConfigurationTargetKind.GitConfig
+                or ConfigurationTargetKind.Npmrc
                 or ConfigurationTargetKind.NuGetPluginLayout
                 or ConfigurationTargetKind.PythonKeyringBackend
                 or ConfigurationTargetKind.KeyringShim;
@@ -5906,7 +6210,7 @@ public sealed class ConfigurationManager : IConfigurationManager
                 if (!manifestMatchesPreparedSnapshot)
                 {
                     if (
-                        CurrentManifestAdoptsPreparedGitConfigEntriesForPhysicalSnapshot(
+                        CurrentManifestAdoptsPreparedPhysicalTargetEntriesForPhysicalSnapshot(
                             fileSystem,
                             manifestPath,
                             plan,
@@ -5929,7 +6233,7 @@ public sealed class ConfigurationManager : IConfigurationManager
                     );
                     if (
                         !manifestMatchesPreparedSnapshot
-                        && CurrentManifestAdoptsPreparedGitConfigEntriesForPhysicalSnapshot(
+                        && CurrentManifestAdoptsPreparedPhysicalTargetEntriesForPhysicalSnapshot(
                             fileSystem,
                             manifestPath,
                             plan,
@@ -6066,7 +6370,7 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
     }
 
-    private static bool CurrentManifestAdoptsPreparedGitConfigEntriesForPhysicalSnapshot(
+    private static bool CurrentManifestAdoptsPreparedPhysicalTargetEntriesForPhysicalSnapshot(
         IFileSystem fileSystem,
         string manifestPath,
         ConfigurationChangePlan plan,
@@ -6081,7 +6385,7 @@ public sealed class ConfigurationManager : IConfigurationManager
 
         if (preparedOwnershipManifest is null)
         {
-            return CurrentFinalManifestAdoptsPreparedGitConfigRemovals(
+            return CurrentFinalManifestAdoptsPreparedPhysicalTargetRemovals(
                 fileSystem,
                 manifestPath,
                 plan,
@@ -6104,7 +6408,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             return false;
         }
 
-        ConfigurationChange[] affectedChanges = GetGitConfigChangesAffectedByPhysicalSnapshot(
+        ConfigurationChange[] affectedChanges = GetPhysicalTargetChangesAffectedByPhysicalSnapshot(
             fileSystem,
             plan,
             physicalSnapshot
@@ -6116,7 +6420,7 @@ public sealed class ConfigurationManager : IConfigurationManager
 
         ConfigurationOwnershipManifestEntry[] currentPathEntries = currentManifest
             .Entries.Where(entry =>
-                entry.TargetKind == ConfigurationTargetKind.GitConfig
+                IsRollbackAdoptablePhysicalTargetKind(entry.TargetKind)
                 && PhysicalTargetManifestEntryMatchesSnapshot(
                     fileSystem,
                     entry,
@@ -6126,7 +6430,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             .ToArray();
         ConfigurationOwnershipManifestEntry[] preparedPathEntries = preparedOwnershipManifest
             .Entries.Where(entry =>
-                entry.TargetKind == ConfigurationTargetKind.GitConfig
+                IsRollbackAdoptablePhysicalTargetKind(entry.TargetKind)
                 && PhysicalTargetManifestEntryMatchesSnapshot(
                     fileSystem,
                     entry,
@@ -6135,10 +6439,10 @@ public sealed class ConfigurationManager : IConfigurationManager
             )
             .ToArray();
         return affectedChanges.All(change =>
-                AffectedGitConfigChangeIsAdoptedByCurrentManifest(change, currentPathEntries)
+                AffectedPhysicalTargetChangeIsAdoptedByCurrentManifest(change, currentPathEntries)
             )
             && preparedPathEntries.All(preparedEntry =>
-                PreparedGitConfigEntryIsAdoptedByCurrentManifest(
+                PreparedPhysicalTargetEntryIsAdoptedByCurrentManifest(
                     fileSystem,
                     preparedEntry,
                     currentManifest
@@ -6146,14 +6450,14 @@ public sealed class ConfigurationManager : IConfigurationManager
             );
     }
 
-    private static bool CurrentFinalManifestAdoptsPreparedGitConfigRemovals(
+    private static bool CurrentFinalManifestAdoptsPreparedPhysicalTargetRemovals(
         IFileSystem fileSystem,
         string manifestPath,
         ConfigurationChangePlan plan,
         FileRollbackSnapshot physicalSnapshot
     )
     {
-        ConfigurationChange[] affectedChanges = GetGitConfigChangesAffectedByPhysicalSnapshot(
+        ConfigurationChange[] affectedChanges = GetPhysicalTargetChangesAffectedByPhysicalSnapshot(
             fileSystem,
             plan,
             physicalSnapshot
@@ -6189,7 +6493,7 @@ public sealed class ConfigurationManager : IConfigurationManager
 
         ConfigurationOwnershipManifestEntry[] currentPathEntries = currentManifest
             .Entries.Where(entry =>
-                entry.TargetKind == ConfigurationTargetKind.GitConfig
+                IsRollbackAdoptablePhysicalTargetKind(entry.TargetKind)
                 && PhysicalTargetManifestEntryMatchesSnapshot(
                     fileSystem,
                     entry,
@@ -6198,18 +6502,23 @@ public sealed class ConfigurationManager : IConfigurationManager
             )
             .ToArray();
         return affectedChanges.All(change =>
-            AffectedGitConfigChangeIsAdoptedByCurrentManifest(change, currentPathEntries)
+            AffectedPhysicalTargetChangeIsAdoptedByCurrentManifest(change, currentPathEntries)
         );
     }
 
-    private static ConfigurationChange[] GetGitConfigChangesAffectedByPhysicalSnapshot(
+    private static bool IsRollbackAdoptablePhysicalTargetKind(
+        ConfigurationTargetKind targetKind
+    ) =>
+        targetKind is ConfigurationTargetKind.GitConfig or ConfigurationTargetKind.Npmrc;
+
+    private static ConfigurationChange[] GetPhysicalTargetChangesAffectedByPhysicalSnapshot(
         IFileSystem fileSystem,
         ConfigurationChangePlan plan,
         FileRollbackSnapshot physicalSnapshot
     ) =>
         plan
             .Changes.Where(change =>
-                change.TargetKind == ConfigurationTargetKind.GitConfig
+                IsRollbackAdoptablePhysicalTargetKind(change.TargetKind)
                 && string.Equals(
                     CreatePhysicalPathIdentity(fileSystem, change.TargetPathOrName),
                     CreatePhysicalPathIdentity(fileSystem, physicalSnapshot.Path),
@@ -6258,7 +6567,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             StringComparison.Ordinal
         );
 
-    private static bool AffectedGitConfigChangeIsAdoptedByCurrentManifest(
+    private static bool AffectedPhysicalTargetChangeIsAdoptedByCurrentManifest(
         ConfigurationChange change,
         IReadOnlyList<ConfigurationOwnershipManifestEntry> currentPathEntries
     )
@@ -6278,13 +6587,24 @@ public sealed class ConfigurationManager : IConfigurationManager
             return matchingCurrentEntries.Length == 0;
         }
 
-        if (matchingCurrentEntries.Length != 1 || change.Value is null)
+        if (matchingCurrentEntries.Length != 1)
+        {
+            return false;
+        }
+
+        ConfigurationOwnershipManifestEntry matchingCurrentEntry = matchingCurrentEntries[0];
+        if (change.TargetKind == ConfigurationTargetKind.Npmrc && change.IsSecretValue)
+        {
+            return matchingCurrentEntry.IsSecretValue;
+        }
+
+        if (change.Value is null)
         {
             return false;
         }
 
         return string.Equals(
-            matchingCurrentEntries[0].PlannedValueSha256,
+            matchingCurrentEntry.PlannedValueSha256,
             ComputeSha256(Encoding.UTF8.GetBytes(change.Value)),
             StringComparison.Ordinal
         );
@@ -6475,13 +6795,18 @@ public sealed class ConfigurationManager : IConfigurationManager
             GetPathIdentityComparison()
         );
 
-    private static bool PreparedGitConfigEntryIsAdoptedByCurrentManifest(
+    private static bool PreparedPhysicalTargetEntryIsAdoptedByCurrentManifest(
         IFileSystem fileSystem,
         ConfigurationOwnershipManifestEntry preparedEntry,
         ConfigurationOwnershipManifest currentManifest
     )
     {
-        if (string.IsNullOrWhiteSpace(preparedEntry.PlannedValueSha256))
+        if (
+            !IsRollbackAdoptablePhysicalTargetKind(preparedEntry.TargetKind)
+            || (!preparedEntry.IsSecretValue
+                && string.IsNullOrWhiteSpace(preparedEntry.PlannedValueSha256)
+            )
+        )
         {
             return false;
         }
@@ -6495,7 +6820,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             preparedEntry.Key
         );
         return currentManifest.Entries.Any(currentEntry =>
-            currentEntry.TargetKind == ConfigurationTargetKind.GitConfig
+            IsRollbackAdoptablePhysicalTargetKind(currentEntry.TargetKind)
             && string.Equals(
                 CreatePhysicalPathIdentity(fileSystem, currentEntry.TargetPathOrName),
                 preparedTargetPath,
@@ -6506,11 +6831,13 @@ public sealed class ConfigurationManager : IConfigurationManager
                 preparedKey,
                 StringComparison.Ordinal
             )
-            && string.Equals(
-                currentEntry.PlannedValueSha256,
-                preparedEntry.PlannedValueSha256,
-                StringComparison.Ordinal
-            )
+            && (preparedEntry.IsSecretValue
+                ? currentEntry.IsSecretValue
+                : string.Equals(
+                    currentEntry.PlannedValueSha256,
+                    preparedEntry.PlannedValueSha256,
+                    StringComparison.Ordinal
+                ))
         );
     }
 
@@ -7484,6 +7811,11 @@ public sealed class ConfigurationManager : IConfigurationManager
                 Path.TrimEndingDirectorySeparator(change.TargetPathOrName)
             );
 
+    private static string CreateNoFilesystemPhysicalPathIdentity(string targetPathOrName) =>
+        NormalizePhysicalTargetConfigurationPathSegments(
+            Path.TrimEndingDirectorySeparator(targetPathOrName)
+        );
+
     private static string CreatePhysicalPathIdentity(
         IFileSystem fileSystem,
         string targetPathOrName
@@ -7503,7 +7835,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
 
-    private sealed class ConfigurationPathIdentityComparer : IEqualityComparer<string>
+    internal sealed class ConfigurationPathIdentityComparer : IEqualityComparer<string>
     {
         public static readonly ConfigurationPathIdentityComparer Instance = new();
 
@@ -8038,6 +8370,7 @@ public sealed class ConfigurationManager : IConfigurationManager
     private static bool IsProjectionOnlyPhysicalTarget(ConfigurationTargetKind targetKind) =>
         targetKind
             is ConfigurationTargetKind.GitConfig
+                or ConfigurationTargetKind.Npmrc
                 or ConfigurationTargetKind.NuGetPluginLayout
                 or ConfigurationTargetKind.PythonKeyringBackend
                 or ConfigurationTargetKind.KeyringShim;
@@ -8046,6 +8379,7 @@ public sealed class ConfigurationManager : IConfigurationManager
         ConfigurationTargetKind targetKind
     ) =>
         targetKind is ConfigurationTargetKind.GitConfig
+            or ConfigurationTargetKind.Npmrc
             or ConfigurationTargetKind.NuGetPluginLayout
             or ConfigurationTargetKind.PythonKeyringBackend
             or ConfigurationTargetKind.KeyringShim;
@@ -8308,6 +8642,8 @@ public sealed record ConfigurationOwnershipManifest
 
     public required ConfigurationScope Scope { get; init; }
     public required string EntrySelector { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CanonicalResourceIdentity? ResourceIdentity { get; init; }
     public string? ProductVersion { get; init; }
     public string? PreviousOwnedEntryHash { get; init; }
     public bool ContainsCredentialMaterial { get; init; }

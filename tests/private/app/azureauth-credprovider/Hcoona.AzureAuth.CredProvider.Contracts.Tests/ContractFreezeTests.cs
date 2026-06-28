@@ -3482,6 +3482,197 @@ public sealed class ContractFreezeTests
     }
 
     [Theory]
+    [InlineData("_authToken")]
+    [InlineData("//evil.example/org/_packaging/feed/npm/registry/:_authToken")]
+    [InlineData("//pkgs.dev.azure.com/org/_packaging/feed/npm/:_authToken")]
+    public void
+        ConfigurationChangePlanPolicyRejectsNpmrcSecretAuthTokenKeysThatDoNotMatchCanonicalSelector(
+        string key
+    )
+    {
+        const string canonicalSelector =
+            "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken";
+        ConfigurationChange change = CreateConfigurationChange(
+            ConfigurationChangeOperation.Create
+        ) with
+        {
+            Key = key,
+        };
+        ConfigurationChangePlan plan = CreateValidConfigurationPlan() with
+        {
+            ContainsCredentialMaterial = true,
+            Manifest = CreateManifest("npm-secret-selector") with
+            {
+                EntrySelector = canonicalSelector,
+                ResourceIdentity = CreateNpmResourceIdentity(),
+            },
+            Changes = [change],
+        };
+
+        Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
+        string? violation = ConfigurationChangePlanPolicy.GetViolation(plan);
+        Assert.NotNull(violation);
+        Assert.Contains("canonical registry identity", violation, StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>(() => ConfigurationChangePlanPolicy.EnsureValid(plan));
+    }
+
+    [Theory]
+    [InlineData("reg#istry")]
+    [InlineData("reg;istry")]
+    public void ConfigurationChangePlanPolicyRejectsNpmrcKeysContainingCommentMarkers(
+        string key
+    )
+    {
+        ConfigurationChange change = CreateConfigurationChange(
+            ConfigurationChangeOperation.Create
+        ) with
+        {
+            Key = key,
+            Value = "planned-value",
+            IsSecretValue = false,
+        };
+        ConfigurationChangePlan plan = CreateValidConfigurationPlan() with
+        {
+            Changes = [change],
+        };
+
+        Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
+        Assert.Contains(
+            "comment markers",
+            ConfigurationChangePlanPolicy.GetViolation(plan),
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.Throws<ArgumentException>(() => ConfigurationChangePlanPolicy.EnsureValid(plan));
+    }
+
+    [Theory]
+    [InlineData("\"registry\"")]
+    [InlineData("'registry'")]
+    public void ConfigurationChangePlanPolicyRejectsQuotedNpmrcKeys(string key)
+    {
+        ConfigurationChange change = CreateConfigurationChange(
+            ConfigurationChangeOperation.Create
+        ) with
+        {
+            Key = key,
+            Value = "planned-value",
+            IsSecretValue = false,
+        };
+        ConfigurationChangePlan plan = CreateValidConfigurationPlan() with
+        {
+            Changes = [change],
+        };
+
+        Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
+        Assert.Contains(
+            "quoted",
+            ConfigurationChangePlanPolicy.GetViolation(plan),
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.Throws<ArgumentException>(() => ConfigurationChangePlanPolicy.EnsureValid(plan));
+    }
+
+    [Theory]
+    [InlineData("\"planned-value\"")]
+    [InlineData("'planned-value'")]
+    public void ConfigurationChangePlanPolicyRejectsQuotedNpmrcValues(string value)
+    {
+        ConfigurationChange change = CreateConfigurationChange(
+            ConfigurationChangeOperation.Create
+        ) with
+        {
+            Key = "registry",
+            Value = value,
+            IsSecretValue = false,
+        };
+        ConfigurationChangePlan plan = CreateValidConfigurationPlan() with
+        {
+            Changes = [change],
+        };
+
+        Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
+        Assert.Contains(
+            "quoted",
+            ConfigurationChangePlanPolicy.GetViolation(plan),
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.Throws<ArgumentException>(() => ConfigurationChangePlanPolicy.EnsureValid(plan));
+    }
+
+    [Theory]
+    [InlineData("//evil.example/org/_packaging/feed/npm/registry/:_authToken")]
+    [InlineData("//pkgs.dev.azure.com/org/_packaging/feed/npm/:_authToken")]
+    public void
+        ConfigurationChangePlanPolicyRejectsCiTemporaryNpmrcSecretAuthTokenSelectorMismatch(
+            string key
+        )
+    {
+        const string canonicalSelector =
+            "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken";
+        const string npmrcPath = "/agent/_temp/azureauth-credprovider/.npmrc";
+        ConfigurationChangePlan plan = CreateValidConfigurationPlan() with
+        {
+            Scope = ConfigurationScope.CiTemporary,
+            DeclarationPreservation =
+                ConfigurationDeclarationPreservation.CopyHiddenDeclarationsToTemporaryConfig,
+            TemporaryContainer = CreateNpmrcFileContainer(npmrcPath),
+            ContainsCredentialMaterial = true,
+            Manifest = CreateManifest("npm-ci-secret-selector") with
+            {
+                EntrySelector = canonicalSelector,
+                ResourceIdentity = CreateNpmResourceIdentity(),
+            },
+            Changes =
+            [
+                CreateConfigurationChange(ConfigurationChangeOperation.Create) with
+                {
+                    TargetPathOrName = npmrcPath,
+                    Key = key,
+                },
+            ],
+        };
+
+        Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
+        string? violation = ConfigurationChangePlanPolicy.GetViolation(plan);
+        Assert.NotNull(violation);
+        Assert.Contains("canonical registry identity", violation, StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>(() => ConfigurationChangePlanPolicy.EnsureValid(plan));
+    }
+
+    [Fact]
+    public void
+        ConfigurationChangePlanPolicyAcceptsCiTemporaryNpmrcSecretAuthTokenCanonicalSelector()
+    {
+        const string canonicalSelector =
+            "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken";
+        const string npmrcPath = "/agent/_temp/azureauth-credprovider/.npmrc";
+        ConfigurationChangePlan plan = CreateValidConfigurationPlan() with
+        {
+            Scope = ConfigurationScope.CiTemporary,
+            DeclarationPreservation =
+                ConfigurationDeclarationPreservation.CopyHiddenDeclarationsToTemporaryConfig,
+            TemporaryContainer = CreateNpmrcFileContainer(npmrcPath),
+            ContainsCredentialMaterial = true,
+            Manifest = CreateManifest("npm-ci-secret-selector") with
+            {
+                EntrySelector = canonicalSelector,
+                ResourceIdentity = CreateNpmResourceIdentity(),
+            },
+            Changes =
+            [
+                CreateConfigurationChange(ConfigurationChangeOperation.Create) with
+                {
+                    TargetPathOrName = npmrcPath,
+                    Key = canonicalSelector,
+                },
+            ],
+        };
+
+        Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
+        Assert.Null(ConfigurationChangePlanPolicy.GetViolation(plan));
+    }
+
+    [Theory]
     [InlineData(ConfigurationChangeOperation.Set, "npmAuthIdent")]
     [InlineData(
         ConfigurationChangeOperation.Set,
@@ -3596,41 +3787,43 @@ public sealed class ContractFreezeTests
     [Fact]
     public void ConfigurationChangePlanPolicyAllowsNullValuesForRemoveStyleAndNonValueChanges()
     {
+        ConfigurationChange CreateNonValueChange(
+            ConfigurationChangeOperation changeOperation,
+            string? value
+        ) =>
+            changeOperation switch
+            {
+                ConfigurationChangeOperation.Remove => CreateConfigurationChange(changeOperation)
+                    with
+                {
+                    Key = "registry",
+                    Value = value,
+                    IsSecretValue = false,
+                    PreviousOwnedEntryMetadata = "owner=azureauth-credprovider;selector=npm",
+                },
+                _ => CreateConfigurationChange(changeOperation)
+                    with
+                {
+                    TargetKind = ConfigurationTargetKind.GitConfig,
+                    TargetPathOrName = "user .gitconfig",
+                    Key = "credential.helper",
+                    Value = value,
+                    IsSecretValue = false,
+                    PreviousOwnedEntryMetadata = changeOperation
+                            is ConfigurationChangeOperation.RemoveAdapter
+                            ? "owner=azureauth-credprovider;selector=git"
+                            : null,
+                },
+            };
+
         ConfigurationChangePlan plan = CreateValidConfigurationPlan() with
         {
             Changes =
             [
-                CreateConfigurationChange(ConfigurationChangeOperation.Remove) with
-                {
-                    Value = null,
-                    IsSecretValue = false,
-                    PreviousOwnedEntryMetadata = "owner=azureauth-credprovider;selector=npm",
-                },
-                CreateConfigurationChange(ConfigurationChangeOperation.RemoveAdapter) with
-                {
-                    TargetKind = ConfigurationTargetKind.NuGetPluginLayout,
-                    TargetPathOrName =
-                        @"C:\Users\runneradmin\.nuget\plugins\azureauth-credprovider",
-                    Key = "nuget-plugin-layout",
-                    Value = null,
-                    IsSecretValue = false,
-                    PreviousOwnedEntryMetadata =
-                        "owner=azureauth-credprovider;selector=nuget-plugin-layout",
-                },
-                CreateConfigurationChange(ConfigurationChangeOperation.EnsureFile) with
-                {
-                    Value = null,
-                    IsSecretValue = false,
-                },
-                CreateConfigurationChange(ConfigurationChangeOperation.InstallAdapter) with
-                {
-                    TargetKind = ConfigurationTargetKind.NuGetPluginLayout,
-                    TargetPathOrName =
-                        @"C:\Users\runneradmin\.nuget\plugins\azureauth-credprovider",
-                    Key = "nuget-plugin-layout",
-                    Value = null,
-                    IsSecretValue = false,
-                },
+                CreateNonValueChange(ConfigurationChangeOperation.Remove, null),
+                CreateNonValueChange(ConfigurationChangeOperation.RemoveAdapter, null),
+                CreateNonValueChange(ConfigurationChangeOperation.EnsureFile, null),
+                CreateNonValueChange(ConfigurationChangeOperation.InstallAdapter, null),
             ],
         };
 
@@ -3646,21 +3839,78 @@ public sealed class ContractFreezeTests
         ConfigurationChangeOperation operation
     )
     {
-        ConfigurationChange change = CreateConfigurationChange(operation) with
-        {
-            IsSecretValue = false,
-            PreviousOwnedEntryMetadata = operation
-                is ConfigurationChangeOperation.Remove
-                    or ConfigurationChangeOperation.RemoveAdapter
-                ? "owner=azureauth-credprovider;selector=npm"
-                : null,
-        };
+        ConfigurationChange CreateNonValueChange(
+            ConfigurationChangeOperation changeOperation,
+            string value
+        ) =>
+            changeOperation switch
+            {
+                ConfigurationChangeOperation.Remove => CreateConfigurationChange(changeOperation)
+                    with
+                {
+                    Key = "registry",
+                    Value = value,
+                    IsSecretValue = false,
+                    PreviousOwnedEntryMetadata = "owner=azureauth-credprovider;selector=npm",
+                },
+                _ => CreateConfigurationChange(changeOperation)
+                    with
+                {
+                    TargetKind = ConfigurationTargetKind.GitConfig,
+                    TargetPathOrName = "user .gitconfig",
+                    Key = "credential.helper",
+                    Value = value,
+                    IsSecretValue = false,
+                    PreviousOwnedEntryMetadata = changeOperation
+                            is ConfigurationChangeOperation.RemoveAdapter
+                            ? "owner=azureauth-credprovider;selector=git"
+                            : null,
+                },
+            };
+
+        ConfigurationChange change = CreateNonValueChange(operation, "helper-value");
         ConfigurationChangePlan plan = CreateValidConfigurationPlan() with { Changes = [change] };
 
         Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
         Assert.Contains(
             "must not carry a value",
             ConfigurationChangePlanPolicy.GetViolation(plan),
+            StringComparison.OrdinalIgnoreCase
+        );
+        Assert.Throws<ArgumentException>(() => ConfigurationChangePlanPolicy.EnsureValid(plan));
+    }
+
+    [Theory]
+    [InlineData(ConfigurationChangeOperation.EnsureFile)]
+    [InlineData(ConfigurationChangeOperation.InstallAdapter)]
+    [InlineData(ConfigurationChangeOperation.RemoveAdapter)]
+    public void ConfigurationChangePlanPolicyRejectsUnsupportedNpmrcOperations(
+        ConfigurationChangeOperation operation
+    )
+    {
+        ConfigurationChange change = CreateConfigurationChange(operation) with
+        {
+            Value = null,
+            IsSecretValue = false,
+            PreviousOwnedEntryMetadata = operation == ConfigurationChangeOperation.RemoveAdapter
+                ? "owner=azureauth-credprovider;selector=npm"
+                : null,
+        };
+        ConfigurationChangePlan plan = CreateValidConfigurationPlan() with { Changes = [change] };
+
+        Assert.False(ConfigurationChangePlanPolicy.IsValid(plan));
+        string? violation = ConfigurationChangePlanPolicy.GetViolation(plan);
+        Assert.NotNull(violation);
+        Assert.Contains("unsupported", violation, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            operation switch
+            {
+                ConfigurationChangeOperation.EnsureFile => "ensure-file",
+                ConfigurationChangeOperation.InstallAdapter => "install-adapter",
+                ConfigurationChangeOperation.RemoveAdapter => "remove-adapter",
+                _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null),
+            },
+            violation,
             StringComparison.OrdinalIgnoreCase
         );
         Assert.Throws<ArgumentException>(() => ConfigurationChangePlanPolicy.EnsureValid(plan));
@@ -9239,6 +9489,8 @@ public sealed class ContractFreezeTests
     public void ContractJsonRoundTripsResultConfigurationAndDoctorContracts()
     {
         var options = ContractJson.CreateSerializerOptions();
+        const string canonicalSelector =
+            "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken";
         var result = new CredentialResult
         {
             Status = CredentialResultStatus.ProtocolViolation,
@@ -9256,7 +9508,11 @@ public sealed class ContractFreezeTests
             ChangeSetId = "changeset-json",
             OwnerProductId = "azureauth-credprovider",
             Scope = ConfigurationScope.Global,
-            Manifest = CreateManifest("json"),
+            Manifest = CreateManifest("json") with
+            {
+                EntrySelector = canonicalSelector,
+                ResourceIdentity = CreateNpmResourceIdentity(),
+            },
             ContainsCredentialMaterial = true,
             Changes =
             [
@@ -9354,7 +9610,13 @@ public sealed class ContractFreezeTests
                 ChangeSetId = "changeset-json-all-roots",
                 OwnerProductId = "azureauth-credprovider",
                 Scope = ConfigurationScope.CiTemporary,
-                Manifest = CreateManifest("json-all-roots"),
+                Manifest = CreateManifest("json-all-roots")
+                with
+                {
+                    EntrySelector =
+                        "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken",
+                    ResourceIdentity = CreateNpmResourceIdentity(),
+                },
                 ContainsCredentialMaterial = true,
                 TemporaryContainer = CreateNpmrcFileContainer(
                     @"C:\agent\_temp\azureauth-credprovider\.npmrc"
@@ -9706,6 +9968,14 @@ public sealed class ContractFreezeTests
             ProductVersion = "1.0.0",
         };
 
+    private static CanonicalResourceIdentity CreateNpmResourceIdentity() =>
+        CanonicalResourceIdentity.Create(
+            "pkgs.dev.azure.com",
+            "org",
+            new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry"),
+            feed: "feed"
+        );
+
     private static ConfigurationChangePlan CreateValidConfigurationPlan() =>
         new()
         {
@@ -9713,7 +9983,12 @@ public sealed class ContractFreezeTests
             ChangeSetId = "changeset-valid-configuration",
             OwnerProductId = "azureauth-credprovider",
             Scope = ConfigurationScope.User,
-            Manifest = CreateManifest("valid-configuration"),
+            Manifest = CreateManifest("valid-configuration")
+            with
+            {
+                EntrySelector = "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken",
+                ResourceIdentity = CreateNpmResourceIdentity(),
+            },
             Changes =
             [
                 CreateConfigurationChange(ConfigurationChangeOperation.Create) with

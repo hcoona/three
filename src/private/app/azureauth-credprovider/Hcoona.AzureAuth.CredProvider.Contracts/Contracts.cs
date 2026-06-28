@@ -1662,6 +1662,12 @@ public static class ConfigurationChangePlanPolicy
             }
         }
 
+        string? npmrcSelectorViolation = GetNpmrcSecretAuthTokenSelectorViolation(plan);
+        if (npmrcSelectorViolation is not null)
+        {
+            return npmrcSelectorViolation;
+        }
+
         string? ciTemporaryTargetViolation = GetCiTemporaryTargetViolation(plan);
         if (ciTemporaryTargetViolation is not null)
         {
@@ -2091,6 +2097,15 @@ public static class ConfigurationChangePlanPolicy
             return "Protocol violation: npm-compatible auth values must be marked as secret.";
         }
 
+        if (change.TargetKind == ConfigurationTargetKind.Npmrc)
+        {
+            string? npmrcViolation = GetNpmrcChangeViolation(change);
+            if (npmrcViolation is not null)
+            {
+                return npmrcViolation;
+            }
+        }
+
         if (
             (
                 change.Operation
@@ -2158,6 +2173,189 @@ public static class ConfigurationChangePlanPolicy
     private static bool ContainsLineBreak(string value) =>
         value.Contains('\r', StringComparison.Ordinal)
         || value.Contains('\n', StringComparison.Ordinal);
+
+    private static string? GetNpmrcChangeViolation(ConfigurationChange change)
+    {
+        string? operationViolation = GetNpmrcOperationViolation(change.Operation);
+        if (operationViolation is not null)
+        {
+            return operationViolation;
+        }
+
+        string? keyViolation = GetNpmrcKeyViolation(change.Key);
+        if (keyViolation is not null)
+        {
+            return keyViolation;
+        }
+
+        if (RequiresValue(change.Operation))
+        {
+            string? valueViolation = GetNpmrcValueViolation(change.Value!);
+            if (valueViolation is not null)
+            {
+                return valueViolation;
+            }
+
+            if (change.IsSecretValue && !IsNpmAuthTokenKey(change.Key))
+            {
+                return "Protocol violation: Npmrc secret values are only supported for auth token "
+                    + "keys.";
+            }
+        }
+
+        return null;
+    }
+
+    private static string? GetNpmrcOperationViolation(ConfigurationChangeOperation operation) =>
+        operation switch
+        {
+            ConfigurationChangeOperation.EnsureFile =>
+                "Protocol violation: Npmrc ensure-file changes are unsupported.",
+            ConfigurationChangeOperation.InstallAdapter =>
+                "Protocol violation: Npmrc install-adapter changes are unsupported.",
+            ConfigurationChangeOperation.RemoveAdapter =>
+                "Protocol violation: Npmrc remove-adapter changes are unsupported.",
+            _ => null,
+        };
+
+    private static string? GetNpmrcSecretAuthTokenSelectorViolation(
+        ConfigurationChangePlan plan
+    )
+    {
+        ConfigurationChange[] npmrcSecretAuthTokenChanges = plan
+            .Changes.Where(change =>
+                change.TargetKind == ConfigurationTargetKind.Npmrc
+                && change.IsSecretValue
+                && IsNpmAuthTokenKey(change.Key)
+                && RequiresValue(change.Operation)
+            )
+            .ToArray();
+        if (npmrcSecretAuthTokenChanges.Length == 0)
+        {
+            return null;
+        }
+
+        if (plan.Manifest.ResourceIdentity is null)
+        {
+            return "Protocol violation: Npmrc secret auth token entries require a canonical "
+                + "registry identity.";
+        }
+
+        string? resourceViolation = CanonicalResourceIdentityPolicy.GetViolation(
+            plan.Manifest.ResourceIdentity
+        );
+        if (resourceViolation is not null)
+        {
+            return resourceViolation;
+        }
+
+        if (
+            !CanonicalResourceIdentityPolicy.IsServiceEndpointCompatibleWithEcosystem(
+                plan.Manifest.ResourceIdentity.ServiceEndpoint,
+                CredentialEcosystem.Npm
+            )
+        )
+        {
+            return "Protocol violation: Npmrc secret auth token entries require a canonical "
+                + "npm registry identity.";
+        }
+
+        NpmCompatibleAuthSelectors selectors = NpmCompatibleAuthSelectorPolicy.Create(
+            plan.Manifest.ResourceIdentity
+        );
+        if (
+            !string.Equals(
+                plan.Manifest.EntrySelector,
+                selectors.NpmAuthTokenKey,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return "Protocol violation: Npmrc secret auth token manifest selectors must match "
+                + "the canonical registry identity.";
+        }
+
+        if (
+            npmrcSecretAuthTokenChanges.Any(change =>
+                !string.Equals(change.Key, selectors.NpmAuthTokenKey, StringComparison.Ordinal)
+            )
+        )
+        {
+            return "Protocol violation: Npmrc secret auth token keys must match the canonical "
+                + "registry identity.";
+        }
+
+        return null;
+    }
+
+    private static string? GetNpmrcKeyViolation(string key)
+    {
+        if (HasLeadingOrTrailingWhiteSpace(key))
+        {
+            return "Protocol violation: Npmrc keys must not have surrounding whitespace.";
+        }
+
+        if (ContainsLineBreak(key))
+        {
+            return "Protocol violation: Npmrc keys must not contain CR or LF.";
+        }
+
+        if (key.Any(character => character < ' ' || character == '\u007f'))
+        {
+            return "Protocol violation: Npmrc keys must not contain control characters.";
+        }
+
+        if (key.Contains('='))
+        {
+            return "Protocol violation: Npmrc keys must not contain '='.";
+        }
+
+        if (IsQuoted(key))
+        {
+            return "Protocol violation: Npmrc keys must not be quoted.";
+        }
+
+        if (key.Contains('#') || key.Contains(';'))
+        {
+            return "Protocol violation: Npmrc keys must not contain comment markers.";
+        }
+
+        return null;
+    }
+
+    private static string? GetNpmrcValueViolation(string value)
+    {
+        if (HasLeadingOrTrailingWhiteSpace(value))
+        {
+            return "Protocol violation: Npmrc values must not have surrounding whitespace.";
+        }
+
+        if (ContainsLineBreak(value))
+        {
+            return "Protocol violation: Npmrc values must not contain CR or LF.";
+        }
+
+        if (value.Any(character => character < ' ' || character == '\u007f'))
+        {
+            return "Protocol violation: Npmrc values must not contain control characters.";
+        }
+
+        if (IsQuoted(value))
+        {
+            return "Protocol violation: Npmrc values must not be quoted.";
+        }
+
+        if (value.Contains(';') || value.Contains('#'))
+        {
+            return "Protocol violation: Npmrc values must not contain comment markers.";
+        }
+
+        return null;
+    }
+
+    private static bool IsQuoted(string value) =>
+        value.Length > 1
+        && ((value[0] == '\'' && value[^1] == '\'') || (value[0] == '"' && value[^1] == '"'));
 
     private static string? GetCiTemporaryTargetViolation(ConfigurationChangePlan plan)
     {
@@ -2471,6 +2669,8 @@ public sealed record ConfigurationManifestMetadata
 
     [JsonRequired]
     public required string EntrySelector { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CanonicalResourceIdentity? ResourceIdentity { get; init; }
     public string? ProductVersion { get; init; }
     public string? PreviousOwnedEntryHash { get; init; }
     public IReadOnlyDictionary<string, string> SafeMetadata { get; init; } = ContractMetadata.Empty;
