@@ -438,7 +438,14 @@
         "Nerdbank.GitVersioning",
         "System.IO.Hashing"
       ],
-      "groupName": "MSBuild and Repository Build Tooling"
+      "groupName": "MSBuild and Repository Build Tooling",
+      "postUpgradeTasks": {
+        "commands": [
+          "pwsh -NoLogo -NoProfile -NonInteractive -File eng/scripts/Update-RenovateGlobalJsonArtifacts.ps1"
+        ],
+        "fileFilters": ["mise.lock", "global.pkl", "global.json", "**/packages.lock.json"],
+        "executionMode": "branch"
+      }
     },
     {
       "description": "Update Nerdbank.GitVersioning packages and tools together.",
