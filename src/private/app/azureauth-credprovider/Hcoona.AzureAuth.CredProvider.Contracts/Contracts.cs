@@ -169,6 +169,17 @@ public static class CanonicalResourceIdentityPolicy
         }
 
         if (
+            ContainsControlCharacters(resource.Organization)
+            || ContainsControlCharacters(resource.Project)
+            || ContainsControlCharacters(resource.Feed)
+            || ContainsControlCharacters(resource.Repository)
+        )
+        {
+            return "Protocol violation: canonical identity components must not contain control "
+                + "characters.";
+        }
+
+        if (
             IsReservedIdentityComponent(resource.Organization)
             || IsReservedIdentityComponent(resource.Project)
             || IsReservedIdentityComponent(resource.Feed)
@@ -346,6 +357,11 @@ public static class CanonicalResourceIdentityPolicy
     private static string DecodePathSegmentOrThrow(string segment)
     {
         string decoded = Uri.UnescapeDataString(segment);
+        if (ContainsControlCharacters(decoded))
+        {
+            throw new UriFormatException("Path segment must not contain control characters.");
+        }
+
         if (
             decoded.Contains('/', StringComparison.Ordinal)
             || decoded.Contains('\\', StringComparison.Ordinal)
@@ -601,6 +617,9 @@ public static class CanonicalResourceIdentityPolicy
 
     private static bool HasLeadingOrTrailingWhiteSpace(string? value) =>
         value is not null && !string.Equals(value, value.Trim(), StringComparison.Ordinal);
+
+    private static bool ContainsControlCharacters(string? value) =>
+        value is not null && value.Any(char.IsControl);
 
     private static bool IsSupportedAzureDevOpsHost(string host)
     {
@@ -1080,6 +1099,8 @@ public static class CacheKeySchema
         string? project = DecodeOptionalPartitionComponent(parts[ProjectPartIndex]);
         string? feed = DecodeOptionalPartitionComponent(parts[FeedPartIndex]);
         string? repository = DecodeOptionalPartitionComponent(parts[RepositoryPartIndex]);
+        string account = DecodeRequiredPartitionComponent(parts[AccountPartIndex]);
+        string tenant = DecodeRequiredPartitionComponent(parts[TenantPartIndex]);
         string audience = DecodeRequiredPartitionComponent(parts[AudiencePartIndex]);
         string credentialKind = DecodeRequiredPartitionComponent(parts[CredentialKindPartIndex]);
 
@@ -1104,6 +1125,19 @@ public static class CacheKeySchema
         {
             return "Protocol violation: cache-key resource identity partitions must match "
                 + "supported canonical resource rules.";
+        }
+
+        if (
+            ContainsControlCharacter(organization)
+            || ContainsControlCharacter(project)
+            || ContainsControlCharacter(feed)
+            || ContainsControlCharacter(repository)
+            || ContainsControlCharacter(account)
+            || ContainsControlCharacter(tenant)
+        )
+        {
+            return "Protocol violation: cache-key resource identity, account, and tenant "
+                + "partitions must not contain control characters.";
         }
 
         if (
@@ -1290,6 +1324,9 @@ public static class CacheKeySchema
     private static bool ContainsPathSeparator(string? component) =>
         component?.Contains('/', StringComparison.Ordinal) == true
         || component?.Contains('\\', StringComparison.Ordinal) == true;
+
+    private static bool ContainsControlCharacter(string? component) =>
+        component?.Any(char.IsControl) == true;
 
     private static bool TryDecodePartitionComponent(string value, out string decoded)
     {
@@ -4085,6 +4122,7 @@ public static class KeyringHelperV2
         string? legacyHostOrganization = TryGetLegacyPackagingOrganization(host);
         if (
             !string.Equals(host, "pkgs.dev.azure.com", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(host, "dev.azure.com", StringComparison.OrdinalIgnoreCase)
             && legacyHostOrganization is null
         )
         {
@@ -4092,35 +4130,46 @@ public static class KeyringHelperV2
                 + "Artifacts host.";
         }
 
-        if (IsReservedIdentityComponent(legacyHostOrganization))
+        string? endpointViolation = CanonicalResourceIdentityPolicy.GetServiceEndpointViolation(
+            service
+        );
+        if (endpointViolation is not null)
         {
-            return "Protocol violation: keyring helper service identity components must not use "
-                + "reserved resource marker names.";
+            return TranslateKeyringServiceViolation(endpointViolation);
         }
 
-        string[] segments;
-        try
-        {
-            segments = GetPathSegments(service);
-        }
-        catch (UriFormatException)
-        {
-            return "Protocol violation: keyring helper service path must be a well-formed Azure "
-                + "Artifacts Python feed endpoint.";
-        }
-
-        if (!HasPythonFeedEndpointShape(segments, legacyHostOrganization is not null))
+        if (
+            !CanonicalResourceIdentityPolicy.IsServiceEndpointCompatibleWithEcosystem(
+                service,
+                CredentialEcosystem.Python
+            )
+        )
         {
             return "Protocol violation: keyring helper service path must be an Azure Artifacts "
                 + "Python feed endpoint ending in _packaging/{feed}/pypi/simple.";
         }
 
-        if (legacyHostOrganization is not null && string.IsNullOrWhiteSpace(legacyHostOrganization))
+        return null;
+    }
+
+    private static string TranslateKeyringServiceViolation(string violation)
+    {
+        if (
+            violation.Contains(
+                "well-formed supported Azure DevOps service URI",
+                StringComparison.Ordinal
+            )
+        )
         {
-            return "Protocol violation: keyring helper service organization is required.";
+            return "Protocol violation: keyring helper service path must be a well-formed Azure "
+                + "Artifacts Python feed endpoint.";
         }
 
-        return null;
+        return violation.Replace(
+            "service endpoint",
+            "keyring helper service",
+            StringComparison.Ordinal
+        );
     }
 
     private static bool HasPythonFeedEndpointShape(string[] segments, bool legacyOrganizationInHost)
@@ -4183,6 +4232,11 @@ public static class KeyringHelperV2
     private static string DecodePathSegmentOrThrow(string segment)
     {
         string decoded = Uri.UnescapeDataString(segment);
+        if (decoded.Any(char.IsControl))
+        {
+            throw new UriFormatException("Path segment must not contain control characters.");
+        }
+
         if (
             decoded.Contains('/', StringComparison.Ordinal)
             || decoded.Contains('\\', StringComparison.Ordinal)
@@ -4206,21 +4260,35 @@ public static class KeyringHelperV2
     private static string? TryGetLegacyPackagingOrganization(string host)
     {
         const string packagingSuffix = ".pkgs.visualstudio.com";
+        const string suffix = ".visualstudio.com";
 
         if (
-            !host.EndsWith(packagingSuffix, StringComparison.OrdinalIgnoreCase)
-            || host.Length <= packagingSuffix.Length
+            host.EndsWith(packagingSuffix, StringComparison.OrdinalIgnoreCase)
+            && host.Length > packagingSuffix.Length
         )
         {
-            return null;
+            string organization = host[..^packagingSuffix.Length];
+            return
+                !string.IsNullOrWhiteSpace(organization)
+                && !organization.Contains('.', StringComparison.Ordinal)
+                ? organization
+                : null;
         }
 
-        string organization = host[..^packagingSuffix.Length];
-        return
-            !string.IsNullOrWhiteSpace(organization)
-            && !organization.Contains('.', StringComparison.Ordinal)
-            ? organization
-            : null;
+        if (
+            host.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+            && host.Length > suffix.Length
+        )
+        {
+            string organization = host[..^suffix.Length];
+            return
+                !string.IsNullOrWhiteSpace(organization)
+                && !organization.Contains('.', StringComparison.Ordinal)
+                ? organization
+                : null;
+        }
+
+        return null;
     }
 }
 
@@ -4393,6 +4461,7 @@ internal static class ServiceIdentityContract
 {
     public static bool IsCanonical(string? value) =>
         !string.IsNullOrWhiteSpace(value)
+        && !value.Any(char.IsControl)
         && string.Equals(value, value.Trim(), StringComparison.Ordinal)
         && string.Equals(value, value.ToLowerInvariant(), StringComparison.Ordinal);
 }

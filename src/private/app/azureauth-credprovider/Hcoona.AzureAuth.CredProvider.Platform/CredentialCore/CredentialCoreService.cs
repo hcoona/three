@@ -1,0 +1,487 @@
+using System.Diagnostics.CodeAnalysis;
+using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
+
+namespace Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
+
+public sealed class CredentialCoreService
+{
+    private const string AzureDevOpsUsername = "AzureDevOps";
+    private const string SuccessCode = "CredentialIssued";
+    private const string FatalCode = "CredentialCoreFailure";
+    private const string OperationNotSupportedCode = "OperationNotSupported";
+    private const string ProtocolViolationCode = "ProtocolViolation";
+
+    private readonly DiagnosticRouter? _diagnosticRouter;
+    private readonly IIdentityProvider _identityProvider;
+
+    public CredentialCoreService()
+        : this(new DeterministicFakeIdentityProvider())
+    { }
+
+    public CredentialCoreService(
+        IIdentityProvider identityProvider,
+        DiagnosticRouter? diagnosticRouter = null)
+    {
+        ArgumentNullException.ThrowIfNull(identityProvider);
+
+        _identityProvider = identityProvider;
+        _diagnosticRouter = diagnosticRouter;
+    }
+
+    public CredentialResult Execute(CredentialRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        CorrelationId correlationId = CorrelationId.New();
+
+        if (TryGetProtocolViolation(request, out string? protocolViolation))
+        {
+            return CreateFailureResult(
+                request,
+                correlationId,
+                CredentialResultStatus.ProtocolViolation,
+                CredentialErrorKind.ProtocolViolation,
+                ProtocolViolationCode,
+                protocolViolation);
+        }
+
+        if (request.Operation != CredentialOperation.Get)
+        {
+            return CreateFailureResult(
+                request,
+                correlationId,
+                CredentialResultStatus.CredentialUnavailable,
+                CredentialErrorKind.CredentialUnavailable,
+                OperationNotSupportedCode,
+                "Credential core scaffold only supports get operations.");
+        }
+
+        IdentityFlowState flowState = IdentityFlowPolicy.GetMvpState(request.IdentityFlow);
+        if (flowState != IdentityFlowState.AcceptedMvp)
+        {
+            return flowState switch
+            {
+                IdentityFlowState.Deferred => CreateFailureResult(
+                    request,
+                    correlationId,
+                    CredentialResultStatus.FlowDeferred,
+                    CredentialErrorKind.FlowDeferred,
+                    "FlowDeferred",
+                    "Requested identity flow is deferred by the MVP scaffold.",
+                    flowState),
+                IdentityFlowState.Disabled => CreateFailureResult(
+                    request,
+                    correlationId,
+                    CredentialResultStatus.FlowDisabled,
+                    CredentialErrorKind.FlowDisabled,
+                    "FlowDisabled",
+                    "Requested identity flow is disabled by the MVP scaffold.",
+                    flowState),
+                _ => CreateFailureResult(
+                    request,
+                    correlationId,
+                    CredentialResultStatus.UnsupportedFlow,
+                    CredentialErrorKind.UnsupportedFlow,
+                    "UnsupportedFlow",
+                    "Requested identity flow is not supported by the MVP scaffold.",
+                    flowState),
+            };
+        }
+
+        if (!IdentityFlowPolicy.IsAcceptedMvpRequest(request))
+        {
+            if (IsInteractionBlockedRequest(request))
+            {
+                return CreateFailureResult(
+                    request,
+                    correlationId,
+                    CredentialResultStatus.InteractionBlocked,
+                    CredentialErrorKind.InteractionBlocked,
+                    "InteractionBlocked",
+                    "Credential request requires interaction, but interaction is blocked by "
+                        + "policy.",
+                    flowState);
+            }
+
+            return CreateFailureResult(
+                request,
+                correlationId,
+                CredentialResultStatus.FlowDisabled,
+                CredentialErrorKind.FlowDisabled,
+                "FlowDisabled",
+                "Credential request is disabled by the current MVP policy.",
+                flowState);
+        }
+
+        try
+        {
+            IdentityMaterial identity = NormalizeAndEnsureValid(
+                _identityProvider.GetIdentity(request)
+            );
+
+            CacheKey cacheKey = CacheKeySchema.Create(request, identity.Account, identity.Tenant);
+            CredentialResult result = CreateSuccessResult(
+                request,
+                correlationId,
+                identity,
+                cacheKey
+            );
+
+            WriteSafeDiagnostic(
+                DiagnosticSeverity.Information,
+                correlationId,
+                "Credential request succeeded.",
+                new Dictionary<string, string?>
+                {
+                    ["code"] = SuccessCode,
+                    ["status"] = result.Status.ToString(),
+                    ["ecosystem"] = request.Ecosystem.ToString(),
+                    ["credentialKind"] = request.CredentialKind.ToString(),
+                    ["identityFlow"] = request.IdentityFlow.ToString(),
+                });
+
+            return result;
+        }
+        catch (Exception)
+        {
+            return CreateFailureResult(
+                request,
+                correlationId,
+                CredentialResultStatus.Fatal,
+                CredentialErrorKind.Fatal,
+                FatalCode,
+                "Credential core execution failed.");
+        }
+    }
+
+    private static CredentialResult CreateSuccessResult(
+        CredentialRequest request,
+        CorrelationId correlationId,
+        IdentityMaterial identity,
+        CacheKey cacheKey)
+    {
+        var result = new CredentialResult
+        {
+            Status = CredentialResultStatus.Success,
+            ExpiresAt = identity.ExpiresAt,
+            Account = identity.Account,
+            Tenant = identity.Tenant,
+            CacheKey = cacheKey,
+            DiagnosticsCorrelationId = correlationId.ToString(),
+        };
+
+        return request.CredentialKind switch
+        {
+            CredentialKind.BearerToken or CredentialKind.NpmAuthToken => result with
+            {
+                BearerToken = identity.AccessToken,
+            },
+            CredentialKind.BasicPassword
+                when request.Ecosystem == CredentialEcosystem.Python
+                    => result with
+            {
+                Username = AzureDevOpsUsername,
+                Password = identity.Secret,
+            },
+            CredentialKind.BasicPassword
+            or CredentialKind.NuGetPluginCredential
+            or CredentialKind.PatCompatibility => result with
+            {
+                Username = AzureDevOpsUsername,
+                Password = identity.Secret,
+            },
+            _ => throw new InvalidOperationException(
+                "Credential kind is not supported by the credential core scaffold."),
+        };
+    }
+
+    private CredentialResult CreateFailureResult(
+        CredentialRequest request,
+        CorrelationId correlationId,
+        CredentialResultStatus status,
+        CredentialErrorKind errorKind,
+        string code,
+        string safeMessage,
+        IdentityFlowState? flowState = null)
+    {
+        Dictionary<string, string> safeDetails = CreateSafeDetails(request, status, flowState);
+
+        WriteSafeDiagnostic(
+            status == CredentialResultStatus.Fatal
+                ? DiagnosticSeverity.Error
+                : DiagnosticSeverity.Warning,
+            correlationId,
+            safeMessage,
+            CreateDiagnosticProperties(code, request, status, flowState));
+
+        return new CredentialResult
+        {
+            Status = status,
+            DiagnosticsCorrelationId = correlationId.ToString(),
+            Error = new CredentialError
+            {
+                Kind = errorKind,
+                Code = code,
+                SafeMessage = safeMessage,
+                SafeDetails = safeDetails,
+            },
+        };
+    }
+
+    private void WriteSafeDiagnostic(
+        DiagnosticSeverity severity,
+        CorrelationId correlationId,
+        string message,
+        IReadOnlyDictionary<string, string?> properties)
+    {
+        if (_diagnosticRouter is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _diagnosticRouter.Route(
+                new DiagnosticEvent(
+                    severity,
+                    DiagnosticChannel.Diagnostic,
+                    message,
+                    correlationId,
+                    properties,
+                    isSafeDiagnosticEnvelope: true));
+        }
+        catch (Exception)
+        {
+            // Credential core diagnostics are best-effort and must not alter the returned result.
+        }
+    }
+
+    private static Dictionary<string, string> CreateSafeDetails(
+        CredentialRequest request,
+        CredentialResultStatus status,
+        IdentityFlowState? flowState)
+    {
+        var safeDetails = new Dictionary<string, string>
+        {
+            ["status"] = status.ToString(),
+            ["operation"] = request.Operation.ToString(),
+            ["ecosystem"] = request.Ecosystem.ToString(),
+            ["credentialKind"] = request.CredentialKind.ToString(),
+            ["identityFlow"] = request.IdentityFlow.ToString(),
+        };
+
+        if (flowState is not null)
+        {
+            safeDetails["flowState"] = flowState.Value.ToString();
+        }
+
+        return safeDetails;
+    }
+
+    private static Dictionary<string, string?> CreateDiagnosticProperties(
+        string code,
+        CredentialRequest request,
+        CredentialResultStatus status,
+        IdentityFlowState? flowState)
+    {
+        var properties = new Dictionary<string, string?>
+        {
+            ["code"] = code,
+            ["status"] = status.ToString(),
+            ["operation"] = request.Operation.ToString(),
+            ["ecosystem"] = request.Ecosystem.ToString(),
+            ["credentialKind"] = request.CredentialKind.ToString(),
+            ["identityFlow"] = request.IdentityFlow.ToString(),
+        };
+
+        if (flowState is not null)
+        {
+            properties["flowState"] = flowState.Value.ToString();
+        }
+
+        return properties;
+    }
+
+    private static IdentityMaterial NormalizeAndEnsureValid(IdentityMaterial identity)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
+
+        if (string.IsNullOrWhiteSpace(identity.Account)
+            || string.IsNullOrWhiteSpace(identity.Tenant)
+            || string.IsNullOrWhiteSpace(identity.Secret)
+            || string.IsNullOrWhiteSpace(identity.AccessToken)
+            || identity.ExpiresAt == default)
+        {
+            throw new InvalidOperationException(
+                "Identity provider returned incomplete credential core material.");
+        }
+
+        if (ContainsAdapterProtocolLineBreak(identity.Account)
+            || ContainsAdapterProtocolLineBreak(identity.Tenant)
+            || ContainsAdapterProtocolLineBreak(identity.Secret)
+            || ContainsAdapterProtocolLineBreak(identity.AccessToken))
+        {
+            throw new InvalidOperationException(
+                "Identity provider returned protocol-incompatible credential core material.");
+        }
+
+        return identity with
+        {
+            Account = CanonicalizeIdentityPartition(identity.Account),
+            Tenant = CanonicalizeIdentityPartition(identity.Tenant),
+        };
+    }
+
+    private static string CanonicalizeIdentityPartition(string value) =>
+        value.Trim().ToLowerInvariant();
+
+    private static bool ContainsControlCharacters(string? value) =>
+        value is not null && value.Any(char.IsControl);
+
+    private static bool ContainsAdapterProtocolLineBreak(string value) =>
+        value.AsSpan().IndexOfAny('\r', '\n') >= 0;
+
+    private static bool IsInteractionBlockedRequest(CredentialRequest request) =>
+        request.IdentityFlow is IdentityFlow.InteractiveBrowser or IdentityFlow.DeviceCode
+        && request.InteractivePolicy == InteractivePolicy.Never
+        && IdentityFlowPolicy.IsAcceptedMvpRequest(
+            request with
+            {
+                InteractivePolicy = InteractivePolicy.HostToolAllows,
+            });
+
+    private static bool TryGetProtocolViolation(
+        CredentialRequest request,
+        [NotNullWhen(true)]
+        out string? protocolViolation)
+    {
+        if (request.ContractMajor != ContractVersions.CredentialContractMajor)
+        {
+            protocolViolation = "Protocol violation: credential request contract major must be 1.";
+            return true;
+        }
+
+        if (!HasSpecifiedDefinedRequiredRequestEnums(request))
+        {
+            protocolViolation =
+                "Protocol violation: credential request contains an unspecified or unknown "
+                + "required enum value.";
+            return true;
+        }
+
+        if (request.Resource is null)
+        {
+            protocolViolation = "Protocol violation: canonical resource identity is required.";
+            return true;
+        }
+
+        if (!ServiceIdentityContract.IsCanonical(request.ServiceIdentity))
+        {
+            protocolViolation =
+                "Protocol violation: service identity must use canonical lower-case form.";
+            return true;
+        }
+
+        if (ContainsControlCharacters(request.AccountHint))
+        {
+            protocolViolation =
+                "Protocol violation: account hint must not contain control characters.";
+            return true;
+        }
+
+        if (ContainsControlCharacters(request.TenantHint))
+        {
+            protocolViolation =
+                "Protocol violation: tenant hint must not contain control characters.";
+            return true;
+        }
+
+        protocolViolation = CanonicalResourceIdentityPolicy.GetViolation(request.Resource);
+        if (protocolViolation is not null)
+        {
+            return true;
+        }
+
+        if (!IsResourceShapeAllowed(request))
+        {
+            protocolViolation =
+                "Protocol violation: credential request resource shape must match the selected "
+                + "ecosystem, audience, and credential kind.";
+            return true;
+        }
+
+        if (!IsFlowCredentialShapeAllowed(request))
+        {
+            protocolViolation = request.IdentityFlow == IdentityFlow.AzurePipelinesSystemAccessToken
+                && request.Ecosystem == CredentialEcosystem.Git
+                ? "Protocol violation: Azure Pipelines system access token git requests must use "
+                    + "bearer-token credentials."
+                : "Protocol violation: PAT compatibility requests must pair the patCompatibility "
+                    + "flow and credential kind.";
+            return true;
+        }
+
+        protocolViolation = null;
+        return false;
+    }
+
+    private static bool HasSpecifiedDefinedRequiredRequestEnums(CredentialRequest request) =>
+        IsSpecifiedDefinedEnum(request.Ecosystem)
+        && IsSpecifiedDefinedEnum(request.Operation)
+        && IsSpecifiedDefinedEnum(request.RequestedAudience)
+        && IsSpecifiedDefinedEnum(request.CredentialKind)
+        && IsSpecifiedDefinedEnum(request.IdentityFlow)
+        && IsSpecifiedDefinedEnum(request.InteractivePolicy)
+        && IsSpecifiedDefinedEnum(request.CachePolicy);
+
+    private static bool IsSpecifiedDefinedEnum<TEnum>(TEnum value)
+        where TEnum : struct, Enum
+    {
+        return Enum.IsDefined(value)
+            && !EqualityComparer<TEnum>.Default.Equals(value, default);
+    }
+
+    private static bool IsResourceShapeAllowed(CredentialRequest request) =>
+        request.Ecosystem switch
+        {
+            CredentialEcosystem.Git => string.IsNullOrWhiteSpace(request.Resource.Feed)
+                && request.RequestedAudience == TokenAudience.AzureDevOps
+                && request.CredentialKind
+                    is CredentialKind.BasicPassword
+                        or CredentialKind.BearerToken
+                        or CredentialKind.PatCompatibility
+                && CanonicalResourceIdentityPolicy.IsServiceEndpointCompatibleWithEcosystem(
+                    request.Resource.ServiceEndpoint,
+                    request.Ecosystem),
+            CredentialEcosystem.NuGet => IsPackageResourceShapeAllowed(
+                request,
+                CredentialKind.NuGetPluginCredential),
+            CredentialEcosystem.Python => IsPackageResourceShapeAllowed(
+                request,
+                CredentialKind.BasicPassword),
+            CredentialEcosystem.Npm or CredentialEcosystem.Pnpm or CredentialEcosystem.Yarn =>
+                IsPackageResourceShapeAllowed(request, CredentialKind.NpmAuthToken),
+            _ => false,
+        };
+
+    private static bool IsPackageResourceShapeAllowed(
+        CredentialRequest request,
+        CredentialKind expectedCredentialKind) =>
+        !string.IsNullOrWhiteSpace(request.Resource.Feed)
+        && string.IsNullOrWhiteSpace(request.Resource.Repository)
+        && request.RequestedAudience == TokenAudience.AzureArtifacts
+        && request.CredentialKind == expectedCredentialKind
+        && CanonicalResourceIdentityPolicy.IsServiceEndpointCompatibleWithEcosystem(
+            request.Resource.ServiceEndpoint,
+            request.Ecosystem);
+
+    private static bool IsFlowCredentialShapeAllowed(CredentialRequest request) =>
+        (request.IdentityFlow != IdentityFlow.PatCompatibility
+            || request.CredentialKind == CredentialKind.PatCompatibility)
+        && (request.IdentityFlow == IdentityFlow.PatCompatibility
+            || request.CredentialKind != CredentialKind.PatCompatibility)
+        && (request.IdentityFlow != IdentityFlow.AzurePipelinesSystemAccessToken
+            || request.Ecosystem != CredentialEcosystem.Git
+            || request.CredentialKind == CredentialKind.BearerToken);
+}

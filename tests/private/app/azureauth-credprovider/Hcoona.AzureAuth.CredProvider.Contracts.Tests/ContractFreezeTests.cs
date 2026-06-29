@@ -366,6 +366,63 @@ public sealed class ContractFreezeTests
     }
 
     [Theory]
+    [MemberData(nameof(CacheKeyResourcePartitionsWithControlCharacters))]
+    public void CacheKeySchemaRejectsControlCharactersInsideResourcePartitions(CacheKey cacheKey)
+    {
+        string violation = Assert.IsType<string>(CacheKeySchema.GetViolation(cacheKey));
+
+        Assert.Contains("control", violation, StringComparison.OrdinalIgnoreCase);
+        Assert.False(CacheKeySchema.IsValid(cacheKey));
+        Assert.Throws<ArgumentException>(() => CacheKeySchema.EnsureValid(cacheKey));
+
+        AdapterHostResult mapped = AdapterHostResultMapper.Map(
+            AdapterProtocol.GitCredentialHelper,
+            new CredentialResult
+            {
+                Status = CredentialResultStatus.Success,
+                Username = "AzureDevOps",
+                Password = "generated-password",
+                CacheKey = cacheKey,
+                DiagnosticsCorrelationId = "corr-cache-key-control-character",
+            }
+        );
+
+        Assert.Equal(AdapterHostExitCode.ConfigurationError, mapped.ExitCode);
+        Assert.False(mapped.WriteProtocolStdout);
+        Assert.True(mapped.WriteDiagnosticStderr);
+        Assert.Equal("UnsupportedCacheKeySchemaMajor", mapped.SafeDiagnosticCode);
+    }
+
+    [Theory]
+    [MemberData(nameof(CacheKeyAccountAndTenantPartitionsWithControlCharacters))]
+    public void CacheKeySchemaRejectsControlCharactersInsideAccountAndTenantPartitions(
+        CacheKey cacheKey)
+    {
+        string violation = Assert.IsType<string>(CacheKeySchema.GetViolation(cacheKey));
+
+        Assert.Contains("control", violation, StringComparison.OrdinalIgnoreCase);
+        Assert.False(CacheKeySchema.IsValid(cacheKey));
+        Assert.Throws<ArgumentException>(() => CacheKeySchema.EnsureValid(cacheKey));
+
+        AdapterHostResult mapped = AdapterHostResultMapper.Map(
+            AdapterProtocol.GitCredentialHelper,
+            new CredentialResult
+            {
+                Status = CredentialResultStatus.Success,
+                Username = "AzureDevOps",
+                Password = "generated-password",
+                CacheKey = cacheKey,
+                DiagnosticsCorrelationId = "corr-cache-key-account-tenant-control-character",
+            }
+        );
+
+        Assert.Equal(AdapterHostExitCode.ConfigurationError, mapped.ExitCode);
+        Assert.False(mapped.WriteProtocolStdout);
+        Assert.True(mapped.WriteDiagnosticStderr);
+        Assert.Equal("UnsupportedCacheKeySchemaMajor", mapped.SafeDiagnosticCode);
+    }
+
+    [Theory]
     [MemberData(nameof(NonCanonicalCacheKeyPartitionAliases))]
     public void CacheKeySchemaRejectsNonCanonicalDecodedPartitionAliases(
         string requestKind,
@@ -493,6 +550,42 @@ public sealed class ContractFreezeTests
         Assert.Throws<ArgumentException>(() =>
             CacheKeySchema.Create(mixedCaseRequest, "user@example.com", "tenant-1")
         );
+    }
+
+    [Theory]
+    [InlineData("default\u001B")]
+    [InlineData("default\u009F")]
+    public void ServiceIdentityRejectsControlCharactersBeforeCacheKeyCreation(
+        string serviceIdentity)
+    {
+        CredentialRequest request = CreateRequest(
+            IdentityFlow.InteractiveBrowser,
+            CredentialKind.BasicPassword
+        ) with
+        {
+            ServiceIdentity = serviceIdentity,
+        };
+
+        Assert.False(ServiceIdentityContract.IsCanonical(serviceIdentity));
+        Assert.False(IdentityFlowPolicy.IsAcceptedMvpRequest(request));
+        Assert.Throws<ArgumentException>(() =>
+            CacheKeySchema.Create(request, "user@example.com", "tenant-1")
+        );
+
+        CacheKey validCacheKey = CacheKeySchema.Create(
+            CreateRequest(IdentityFlow.InteractiveBrowser, CredentialKind.BasicPassword),
+            "user@example.com",
+            "tenant-1"
+        );
+        string[] parts = validCacheKey.Value.Split('|');
+        parts[7] = EncodeCacheKeyPart(serviceIdentity);
+        var invalidCacheKey = new CacheKey { Value = string.Join('|', parts) };
+
+        string violation = Assert.IsType<string>(CacheKeySchema.GetViolation(invalidCacheKey));
+
+        Assert.Contains("service identity", violation, StringComparison.OrdinalIgnoreCase);
+        Assert.False(CacheKeySchema.IsValid(invalidCacheKey));
+        Assert.Throws<ArgumentException>(() => CacheKeySchema.EnsureValid(invalidCacheKey));
     }
 
     [Fact]
@@ -690,6 +783,30 @@ public sealed class ContractFreezeTests
         Assert.NotEmpty(fieldName);
     }
 
+    [Theory]
+    [MemberData(nameof(CanonicalResourceIdentityFieldsWithControlCharacters))]
+    public void
+        CanonicalResourceIdentityRejectsControlCharactersInCanonicalFieldsBeforeEndpointComparison(
+            string fieldName,
+            CredentialRequest request
+        )
+    {
+        string violation = Assert.IsType<string>(
+            CanonicalResourceIdentityPolicy.GetViolation(request.Resource)
+        );
+
+        Assert.Contains("control", violation, StringComparison.OrdinalIgnoreCase);
+        Assert.False(CanonicalResourceIdentityPolicy.IsValid(request.Resource));
+        Assert.Throws<ArgumentException>(() =>
+            CanonicalResourceIdentityPolicy.EnsureValid(request.Resource)
+        );
+        Assert.False(IdentityFlowPolicy.IsAcceptedMvpRequest(request));
+        Assert.Throws<ArgumentException>(() =>
+            CacheKeySchema.Create(request, "user@example.com", "tenant-1")
+        );
+        Assert.NotEmpty(fieldName);
+    }
+
     [Fact]
     public void CanonicalResourceIdentityFactoryRejectsPaddedCanonicalInputsBeforeCanonicalization()
     {
@@ -811,6 +928,89 @@ public sealed class ContractFreezeTests
         var serviceEndpoint = new Uri(endpoint);
 
         Assert.False(CanonicalResourceIdentityPolicy.IsSupportedServiceEndpoint(serviceEndpoint));
+        Assert.Throws<ArgumentException>(() =>
+            CanonicalResourceIdentity.Create(
+                host,
+                "org",
+                serviceEndpoint,
+                project: project,
+                feed: feed,
+                repository: repository
+            )
+        );
+    }
+
+    [Theory]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org%0Aother/_packaging/feed/pypi/simple/",
+        "pkgs.dev.azure.com",
+        null,
+        "feed",
+        null
+    )]
+    [InlineData(
+        "https://dev.azure.com/org/project%0Dother/_packaging/feed/pypi/simple/",
+        "dev.azure.com",
+        "project\rother",
+        "feed",
+        null
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/feed%09other/pypi/simple/",
+        "pkgs.dev.azure.com",
+        null,
+        "feed\tother",
+        null
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/feed%C2%85other/pypi/simple/",
+        "pkgs.dev.azure.com",
+        null,
+        "feed\u0085other",
+        null
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org%1Bother/_packaging/feed/pypi/simple/",
+        "pkgs.dev.azure.com",
+        null,
+        "feed",
+        null
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/feed%7Fother/pypi/simple/",
+        "pkgs.dev.azure.com",
+        null,
+        "feed\u007Fother",
+        null
+    )]
+    [InlineData(
+        "https://dev.azure.com/org/project/_git/repo%C2%9Fother",
+        "dev.azure.com",
+        "project",
+        null,
+        "repo\u009Fother"
+    )]
+    [InlineData(
+        "https://dev.azure.com/org/project/_git/repo%0Aother",
+        "dev.azure.com",
+        "project",
+        null,
+        "repo\nother"
+    )]
+    public void CanonicalResourceIdentityRejectsControlCharactersInsideEndpointIdentityComponents(
+        string endpoint,
+        string host,
+        string? project,
+        string? feed,
+        string? repository
+    )
+    {
+        var serviceEndpoint = new Uri(endpoint);
+
+        Assert.False(CanonicalResourceIdentityPolicy.IsSupportedServiceEndpoint(serviceEndpoint));
+        Assert.NotNull(
+            CanonicalResourceIdentityPolicy.GetServiceEndpointViolation(serviceEndpoint)
+        );
         Assert.Throws<ArgumentException>(() =>
             CanonicalResourceIdentity.Create(
                 host,
@@ -6445,12 +6645,21 @@ public sealed class ContractFreezeTests
     }
 
     [Theory]
+    [InlineData("https://dev.azure.com/org/_packaging/feed/pypi/simple")]
+    [InlineData("https://dev.azure.com/org/proj/_packaging/feed/pypi/simple/")]
     [InlineData("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple")]
     [InlineData("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/")]
     [InlineData("https://pkgs.dev.azure.com/org/proj/_packaging/feed/pypi/simple")]
     [InlineData("https://org.pkgs.visualstudio.com/_packaging/feed/pypi/simple")]
     [InlineData("https://org.pkgs.visualstudio.com/proj/_packaging/feed/pypi/simple/")]
     [InlineData("https://org.pkgs.visualstudio.com/DefaultCollection/_packaging/feed/pypi/simple/")]
+    [InlineData("https://org.visualstudio.com/_packaging/feed/pypi/simple")]
+    [InlineData("https://org.visualstudio.com/project/_packaging/feed/pypi/simple/")]
+    [InlineData("https://org.visualstudio.com/DefaultCollection/_packaging/feed/pypi/simple/")]
+    [InlineData(
+        "https://org.visualstudio.com/DefaultCollection/project/_packaging/feed/"
+            + "pypi/simple/"
+    )]
     public void KeyringHelperV2AcceptsOnlyAzureArtifactsPythonFeedServiceUris(string service)
     {
         var request = new KeyringHelperRequest
@@ -6465,6 +6674,37 @@ public sealed class ContractFreezeTests
         Assert.Equal(KeyringHelperV2.CommandName, arguments[0]);
         Assert.Contains("--service", arguments);
         Assert.Contains(request.Service.AbsoluteUri, arguments);
+    }
+
+    [Theory]
+    [InlineData("https://dev.azure.com/org/_packaging/feed/pypi/simple")]
+    [InlineData("https://dev.azure.com/org/project/_packaging/feed/pypi/simple/")]
+    public void KeyringHelperV2SerializesSuccessfulCredentialsForDevAzureComPythonFeedServiceUris(
+        string service
+    )
+    {
+        var request = new KeyringHelperRequest
+        {
+            Command = KeyringHelperV2.CommandName,
+            Service = new Uri(service),
+            Mode = KeyringHelperMode.Credentials,
+        };
+        var success = new CredentialResult
+        {
+            Status = CredentialResultStatus.Success,
+            Username = "AzureDevOps",
+            Password = "generated-password",
+            DiagnosticsCorrelationId = "corr-keyring-dev-azure-python-service",
+        };
+
+        IReadOnlyList<string> arguments = KeyringHelperV2.BuildArguments(request);
+        KeyringHelperResponse response = KeyringHelperV2.ToResponse(request, success);
+
+        Assert.Contains("--service", arguments);
+        Assert.Contains(request.Service.AbsoluteUri, arguments);
+        Assert.Equal(AdapterHostExitCode.Success, response.ExitCode);
+        Assert.Equal("AzureDevOps\ngenerated-password\n", response.Stdout);
+        Assert.Equal(string.Empty, response.Stderr);
     }
 
     [Theory]
@@ -6642,11 +6882,17 @@ public sealed class ContractFreezeTests
     [InlineData("https://pkgs.dev.azure.com/org/_packaging/feed/maven/v1")]
     [InlineData("https://pkgs.dev.azure.com/org/_git/repo")]
     [InlineData("https://dev.azure.com/org/proj/_git/repo")]
-    [InlineData("https://dev.azure.com/org/proj/_packaging/feed/pypi/simple/")]
     [InlineData("https://pkgs.dev.azure.com/org/_packaging//pypi/simple/")]
     [InlineData("https://pkgs.dev.azure.com/org%2Fother/_packaging/feed/pypi/simple/")]
     [InlineData("https://pkgs.dev.azure.com/org/project%2Fother/_packaging/feed/pypi/simple/")]
     [InlineData("https://pkgs.dev.azure.com/org/_packaging/feed%2Fother/pypi/simple/")]
+    [InlineData("https://pkgs.dev.azure.com/org%0Aother/_packaging/feed/pypi/simple/")]
+    [InlineData("https://pkgs.dev.azure.com/org/project%0Dother/_packaging/feed/pypi/simple/")]
+    [InlineData("https://pkgs.dev.azure.com/org/_packaging/feed%09other/pypi/simple/")]
+    [InlineData("https://pkgs.dev.azure.com/org/_packaging/feed%C2%85other/pypi/simple/")]
+    [InlineData("https://pkgs.dev.azure.com/org%1Bother/_packaging/feed/pypi/simple/")]
+    [InlineData("https://pkgs.dev.azure.com/org/project%C2%9Fother/_packaging/feed/pypi/simple/")]
+    [InlineData("https://pkgs.dev.azure.com/org/_packaging/feed%7Fother/pypi/simple/")]
     [InlineData(
         "https://org.pkgs.visualstudio.com/DefaultCollection/_packaging/feed%5Cother/pypi/simple/"
     )]
@@ -10198,6 +10444,78 @@ public sealed class ContractFreezeTests
         ];
     }
 
+    public static TheoryData<CacheKey> CacheKeyResourcePartitionsWithControlCharacters()
+    {
+        string git = CacheKeySchema
+            .Create(
+                CreateRequest(IdentityFlow.InteractiveBrowser, CredentialKind.BasicPassword),
+                "user@example.com",
+                "tenant-1"
+            )
+            .Value;
+        string[] gitParts = git.Split('|');
+        CredentialRequest projectPackageRequest = CreatePackageRequest(
+            CredentialEcosystem.NuGet,
+            CredentialKind.NuGetPluginCredential
+        ) with
+        {
+            Resource = CanonicalResourceIdentity.Create(
+                "dev.azure.com",
+                "org",
+                new Uri("https://dev.azure.com/org/proj/_packaging/feed/nuget/v3/index.json"),
+                project: "proj",
+                feed: "feed"
+            ),
+        };
+        string package = CacheKeySchema
+            .Create(projectPackageRequest, "user@example.com", "tenant-1")
+            .Value;
+        string[] packageParts = package.Split('|');
+
+        CacheKey WithPart(string[] parts, int index, string value)
+        {
+            string[] copy = (string[])parts.Clone();
+            copy[index] = EncodeCacheKeyPart(value);
+            return new CacheKey { Value = string.Join('|', copy) };
+        }
+
+        return
+        [
+            WithPart(gitParts, 3, "org\nother"),
+            WithPart(gitParts, 3, "org\u001Bother"),
+            WithPart(packageParts, 4, "proj\rother"),
+            WithPart(packageParts, 4, "proj\u009Fother"),
+            WithPart(packageParts, 5, "feed\tother"),
+            WithPart(packageParts, 5, "feed\u0085other"),
+            WithPart(packageParts, 5, "feed\u007Fother"),
+        ];
+    }
+
+    public static TheoryData<CacheKey> CacheKeyAccountAndTenantPartitionsWithControlCharacters()
+    {
+        string git = CacheKeySchema
+            .Create(
+                CreateRequest(IdentityFlow.InteractiveBrowser, CredentialKind.BasicPassword),
+                "user@example.com",
+                "tenant-1"
+            )
+            .Value;
+        string[] gitParts = git.Split('|');
+
+        CacheKey WithPart(int index, string value)
+        {
+            string[] copy = (string[])gitParts.Clone();
+            copy[index] = EncodeCacheKeyPart(value);
+            return new CacheKey { Value = string.Join('|', copy) };
+        }
+
+        return
+        [
+            WithPart(8, "user\u0001@contoso.com"),
+            WithPart(9, "tenant\u0085one"),
+        ];
+    }
+
     public static TheoryData<string, CredentialRequest> PaddedCanonicalResourceIdentityFields()
     {
         CredentialRequest gitRequest = CreateRequest(
@@ -10244,6 +10562,79 @@ public sealed class ContractFreezeTests
                 packageRequest with
                 {
                     Resource = packageRequest.Resource with { Feed = " feed " },
+                }
+            },
+        };
+    }
+
+    public static TheoryData<string, CredentialRequest>
+        CanonicalResourceIdentityFieldsWithControlCharacters()
+    {
+        CredentialRequest gitRequest = CreateRequest(
+            IdentityFlow.InteractiveBrowser,
+            CredentialKind.BasicPassword
+        );
+        CredentialRequest packageRequest = CreatePackageRequest(
+            CredentialEcosystem.NuGet,
+            CredentialKind.NuGetPluginCredential
+        );
+
+        return new TheoryData<string, CredentialRequest>
+        {
+            {
+                "organization",
+                gitRequest with
+                {
+                    Resource = gitRequest.Resource with { Organization = "or\ng" },
+                }
+            },
+            {
+                "organization-esc",
+                gitRequest with
+                {
+                    Resource = gitRequest.Resource with { Organization = "or\u001Bg" },
+                }
+            },
+            {
+                "project",
+                gitRequest with
+                {
+                    Resource = gitRequest.Resource with { Project = "pr\roj" },
+                }
+            },
+            {
+                "project-c1",
+                gitRequest with
+                {
+                    Resource = gitRequest.Resource with { Project = "pr\u009Foj" },
+                }
+            },
+            {
+                "repository",
+                gitRequest with
+                {
+                    Resource = gitRequest.Resource with { Repository = "re\ttpo" },
+                }
+            },
+            {
+                "repository-del",
+                gitRequest with
+                {
+                    Resource = gitRequest.Resource with { Repository = "re\u007Fpo" },
+                }
+            },
+            {
+                "feed",
+                packageRequest with
+                {
+                    Resource = packageRequest.Resource with { Feed = "fe\ted" },
+                }
+            },
+            {
+                "feed-c1",
+                packageRequest with
+                {
+                    Resource = packageRequest.Resource with { Feed = "fe\u0085ed" },
                 }
             },
         };

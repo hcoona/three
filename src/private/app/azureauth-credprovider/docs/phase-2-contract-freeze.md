@@ -305,10 +305,15 @@ protocol violations; they fail closed with exit `64`, empty stdout, and redacted
 stderr instead of being treated as password mode or leaking credentials through
 argv. The service URI is keyring-specific and narrower than canonical resource
 identity validation: it must be an Azure Artifacts Python feed endpoint on
-`pkgs.dev.azure.com` or `{org}.pkgs.visualstudio.com`, with non-empty
-organization and feed components, optional non-empty project component, and a
-path ending exactly in `_packaging/{feed}/pypi/simple` with at most one terminal
-slash. The frozen legacy accepted shape includes
+`dev.azure.com`, `pkgs.dev.azure.com`, `{org}.visualstudio.com`, or
+`{org}.pkgs.visualstudio.com`. Modern hosts require a non-empty organization
+path segment; legacy `visualstudio.com` hosts carry the organization in the
+hostname. Supported shapes require a non-empty feed component, an optional
+non-empty project component, and a path ending exactly in
+`_packaging/{feed}/pypi/simple` with at most one terminal slash. Frozen legacy
+accepted shapes include
+`https://{org}.visualstudio.com/DefaultCollection/{project}/_packaging/{feed}/pypi/simple/`
+and
 `https://{org}.pkgs.visualstudio.com/DefaultCollection/_packaging/{feed}/pypi/simple/`.
 Org-only, Git, npm, NuGet, feed-root, and other canonical Azure DevOps endpoint
 shapes are rejected before helper argv construction or response stdout mapping.
