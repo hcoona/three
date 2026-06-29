@@ -12,10 +12,13 @@ public sealed class CredentialCoreService
     private const string FatalCode = "CredentialCoreFailure";
     private const string OperationNotSupportedCode = "OperationNotSupported";
     private const string ProtocolViolationCode = "ProtocolViolation";
+    private const string TokenExchangeFailedCode = "TokenExchangeFailed";
+    private const string TokenExchangeUnavailableCode = "TokenExchangeUnavailable";
 
     private readonly DiagnosticRouter? _diagnosticRouter;
     private readonly IDerivedCredentialCache _derivedCredentialCache;
     private readonly IIdentityProvider _identityProvider;
+    private readonly ITokenExchange _tokenExchange;
 
     public CredentialCoreService()
         : this(new DeterministicFakeIdentityProvider())
@@ -25,6 +28,14 @@ public sealed class CredentialCoreService
         IIdentityProvider identityProvider,
         DiagnosticRouter? diagnosticRouter = null,
         IDerivedCredentialCache? derivedCredentialCache = null)
+        : this(identityProvider, diagnosticRouter, derivedCredentialCache, tokenExchange: null)
+    { }
+
+    internal CredentialCoreService(
+        IIdentityProvider identityProvider,
+        DiagnosticRouter? diagnosticRouter,
+        IDerivedCredentialCache? derivedCredentialCache,
+        ITokenExchange? tokenExchange)
     {
         ArgumentNullException.ThrowIfNull(identityProvider);
 
@@ -32,6 +43,7 @@ public sealed class CredentialCoreService
         _diagnosticRouter = diagnosticRouter;
         _derivedCredentialCache =
             derivedCredentialCache ?? new NoPersistentDerivedCredentialCache();
+        _tokenExchange = tokenExchange ?? new DeterministicLocalTokenExchange();
     }
 
     public CredentialResult Execute(CredentialRequest request)
@@ -137,11 +149,42 @@ public sealed class CredentialCoreService
             );
 
             CacheKey cacheKey = CacheKeySchema.Create(request, identity.Account, identity.Tenant);
+            TokenExchangeResult exchangeResult = NormalizeTokenExchangeResult(
+                _tokenExchange.Exchange(request, identity, cacheKey));
+
+            if (exchangeResult.Status == TokenExchangeStatus.Unavailable)
+            {
+                return CreateFailureResult(
+                    request,
+                    correlationId,
+                    CredentialResultStatus.CredentialUnavailable,
+                    CredentialErrorKind.CredentialUnavailable,
+                    TokenExchangeUnavailableCode,
+                    "Credential token exchange is unavailable.");
+            }
+
+            if (exchangeResult.Status != TokenExchangeStatus.Success)
+            {
+                return CreateFailureResult(
+                    request,
+                    correlationId,
+                    CredentialResultStatus.Fatal,
+                    CredentialErrorKind.Fatal,
+                    TokenExchangeFailedCode,
+                    "Credential token exchange failed.");
+            }
+
+            TokenExchangeMaterial exchangeMaterial = NormalizeAndEnsureValid(
+                exchangeResult.Material
+                    ?? throw new InvalidOperationException(
+                        "Token exchange returned incomplete credential output material."),
+                request.CredentialKind);
             CredentialResult result = CreateSuccessResult(
                 request,
                 correlationId,
                 identity,
-                cacheKey
+                cacheKey,
+                exchangeMaterial
             );
 
             WriteSafeDiagnostic(
@@ -209,46 +252,22 @@ public sealed class CredentialCoreService
         CredentialRequest request,
         CorrelationId correlationId,
         IdentityMaterial identity,
-        CacheKey cacheKey)
+        CacheKey cacheKey,
+        TokenExchangeMaterial exchangeMaterial)
     {
-        var result = new CredentialResult
+        _ = request;
+
+        return new CredentialResult
         {
             Status = CredentialResultStatus.Success,
+            Username = exchangeMaterial.Username,
+            Password = exchangeMaterial.Password,
+            BearerToken = exchangeMaterial.BearerToken,
             ExpiresAt = identity.ExpiresAt,
             Account = identity.Account,
             Tenant = identity.Tenant,
             CacheKey = cacheKey,
             DiagnosticsCorrelationId = correlationId.ToString(),
-        };
-
-        return request.CredentialKind switch
-        {
-            CredentialKind.BearerToken or CredentialKind.NpmAuthToken => result with
-            {
-                BearerToken = identity.AccessToken
-                    ?? throw new InvalidOperationException(
-                        "Identity provider returned incomplete credential core material."),
-            },
-            CredentialKind.BasicPassword
-                when request.Ecosystem == CredentialEcosystem.Python
-                    => result with
-            {
-                Username = AzureDevOpsUsername,
-                Password = identity.Secret
-                    ?? throw new InvalidOperationException(
-                        "Identity provider returned incomplete credential core material."),
-            },
-            CredentialKind.BasicPassword
-            or CredentialKind.NuGetPluginCredential
-            or CredentialKind.PatCompatibility => result with
-            {
-                Username = AzureDevOpsUsername,
-                Password = identity.Secret
-                    ?? throw new InvalidOperationException(
-                        "Identity provider returned incomplete credential core material."),
-            },
-            _ => throw new InvalidOperationException(
-                "Credential kind is not supported by the credential core scaffold."),
         };
     }
 
@@ -434,6 +453,52 @@ public sealed class CredentialCoreService
             Tenant = CanonicalizeIdentityPartition(identity.Tenant),
         };
     }
+
+    private static TokenExchangeMaterial NormalizeAndEnsureValid(
+        TokenExchangeMaterial material,
+        CredentialKind credentialKind)
+    {
+        ArgumentNullException.ThrowIfNull(material);
+
+        bool requiresSecret = RequiresSecret(credentialKind);
+        bool requiresAccessToken = RequiresAccessToken(credentialKind);
+
+        if ((requiresSecret
+                && (string.IsNullOrWhiteSpace(material.Username)
+                    || string.IsNullOrWhiteSpace(material.Password)))
+            || (requiresAccessToken && string.IsNullOrWhiteSpace(material.BearerToken))
+            || (!requiresSecret
+                && (material.Username is not null || material.Password is not null))
+            || (!requiresAccessToken && material.BearerToken is not null))
+        {
+            throw new InvalidOperationException(
+                "Token exchange returned incomplete credential output material.");
+        }
+
+        if (ContainsAdapterProtocolLineBreak(material.Username)
+            || ContainsAdapterProtocolLineBreak(material.Password)
+            || ContainsAdapterProtocolLineBreak(material.BearerToken))
+        {
+            throw new InvalidOperationException(
+                "Token exchange returned protocol-incompatible credential output material.");
+        }
+
+        return material with
+        {
+            Username = requiresSecret ? AzureDevOpsUsername : null,
+            Password = requiresSecret ? material.Password : null,
+            BearerToken = requiresAccessToken ? material.BearerToken : null,
+        };
+    }
+
+    private static TokenExchangeResult NormalizeTokenExchangeResult(TokenExchangeResult result) =>
+        result.Status switch
+        {
+            TokenExchangeStatus.Success when result.Material is not null => result,
+            TokenExchangeStatus.Unavailable => TokenExchangeResult.Unavailable,
+            TokenExchangeStatus.Failed => TokenExchangeResult.Failed,
+            _ => TokenExchangeResult.Failed,
+        };
 
     private static string CanonicalizeIdentityPartition(string value) =>
         value.Trim().ToLowerInvariant();

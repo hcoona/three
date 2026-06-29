@@ -151,6 +151,239 @@ public sealed class CredentialCoreServiceTests
     }
 
     [Theory]
+    [MemberData(nameof(AcceptedTokenExchangeRequests))]
+    public void ExecuteAcceptedRequestInvokesTokenExchangeExactlyOnceAndPreservesResultShape(
+        CredentialRequest request)
+    {
+        var provider = new DeterministicFakeIdentityProvider();
+        IdentityMaterial expectedIdentity = new DeterministicFakeIdentityProvider().GetIdentity(
+            request
+        );
+        var tokenExchange = new CountingTokenExchange(
+            (exchangeRequest, identity, cacheKey) =>
+                new DeterministicLocalTokenExchange().Exchange(
+                    exchangeRequest,
+                    identity,
+                    cacheKey
+                ));
+        var service = new CredentialCoreService(provider, null, null, tokenExchange);
+
+        CredentialResult result = service.Execute(request);
+
+        Assert.Equal(CredentialResultStatus.Success, result.Status);
+        Assert.Equal(1, provider.InvocationCount);
+        Assert.Equal(1, tokenExchange.InvocationCount);
+        Assert.Equal(expectedIdentity.Account, result.Account);
+        Assert.Equal(expectedIdentity.Tenant, result.Tenant);
+        Assert.Equal(expectedIdentity.ExpiresAt, result.ExpiresAt);
+        Assert.Equal(
+            CacheKeySchema.Create(request, expectedIdentity.Account, expectedIdentity.Tenant).Value,
+            Assert.IsType<CacheKey>(result.CacheKey).Value);
+        Assert.Null(result.Error);
+
+        if (
+            request.CredentialKind
+            is CredentialKind.BearerToken or CredentialKind.NpmAuthToken
+        )
+        {
+            Assert.Equal(
+                Assert.IsType<string>(expectedIdentity.AccessToken),
+                Assert.IsType<string>(result.BearerToken));
+            Assert.Null(result.Username);
+            Assert.Null(result.Password);
+            return;
+        }
+
+        Assert.Equal("AzureDevOps", result.Username);
+        Assert.Equal(
+            Assert.IsType<string>(expectedIdentity.Secret),
+            Assert.IsType<string>(result.Password));
+        Assert.Null(result.BearerToken);
+    }
+
+    [Theory]
+    [MemberData(nameof(PasswordShapedTokenExchangeRequests))]
+    public void ExecutePasswordShapedRequestCanonicalizesInjectedTokenExchangeUsernameInvariant(
+        CredentialRequest request)
+    {
+        const string injectedUsername = "NotAzureDevOps";
+        const string exchangedPassword = "custom-exchanged-password";
+        IdentityMaterial identity = CreateIdentityMaterial(
+            secret: "provider-secret",
+            accessToken: "unused-provider-token");
+        var provider = new StaticIdentityProvider(identity);
+        var tokenExchange = new CountingTokenExchange(
+            (_, _, _) =>
+                TokenExchangeResult.Success(
+                    new TokenExchangeMaterial
+                    {
+                        Username = injectedUsername,
+                        Password = exchangedPassword,
+                    }));
+        var service = new CredentialCoreService(provider, null, null, tokenExchange);
+
+        CredentialResult result = service.Execute(request);
+
+        Assert.Equal(CredentialResultStatus.Success, result.Status);
+        Assert.Equal(1, provider.InvocationCount);
+        Assert.Equal(1, tokenExchange.InvocationCount);
+        Assert.Equal(identity.Account, result.Account);
+        Assert.Equal(identity.Tenant, result.Tenant);
+        Assert.Equal(identity.ExpiresAt, result.ExpiresAt);
+        Assert.Equal("AzureDevOps", result.Username);
+        Assert.NotEqual(injectedUsername, result.Username);
+        Assert.Equal(exchangedPassword, Assert.IsType<string>(result.Password));
+        Assert.Null(result.BearerToken);
+        Assert.Null(result.Error);
+    }
+
+    [Theory]
+    [MemberData(nameof(BlockedTokenExchangeRequests))]
+    public void ExecuteBlockedRequestDoesNotInvokeTokenExchange(CredentialRequest request)
+    {
+        var provider = new DeterministicFakeIdentityProvider();
+        var tokenExchange = new CountingTokenExchange(
+            (_, _, _) => throw new InvalidOperationException("token exchange should not run"));
+        var service = new CredentialCoreService(provider, null, null, tokenExchange);
+
+        CredentialResult result = service.Execute(request);
+
+        Assert.NotEqual(CredentialResultStatus.Success, result.Status);
+        Assert.Equal(0, provider.InvocationCount);
+        Assert.Equal(0, tokenExchange.InvocationCount);
+    }
+
+    [Fact]
+    public void ExecuteInvalidProviderMaterialDoesNotInvokeTokenExchange()
+    {
+        var provider = new StaticIdentityProvider(CreateIdentityMaterial(secret: null));
+        var tokenExchange = new CountingTokenExchange(
+            (_, _, _) => throw new InvalidOperationException("token exchange should not run"));
+        var service = new CredentialCoreService(provider, null, null, tokenExchange);
+
+        CredentialResult result = service.Execute(CreateGitRequest());
+
+        Assert.Equal(CredentialResultStatus.Fatal, result.Status);
+        Assert.Equal(1, provider.InvocationCount);
+        Assert.Equal(0, tokenExchange.InvocationCount);
+    }
+
+    [Fact]
+    public void ExecuteTokenExchangeUnavailableFailsClosedWithoutLeakingIdentityMaterial()
+    {
+        IdentityMaterial identity = CreateIdentityMaterial(
+            account: "safe-account@example.com",
+            tenant: "safe-tenant",
+            secret: "safe-secret-value",
+            accessToken: "safe-bearer-value");
+        var provider = new StaticIdentityProvider(identity);
+        var tokenExchange = new CountingTokenExchange((_, _, _) => TokenExchangeResult.Unavailable);
+        var service = new CredentialCoreService(provider, null, null, tokenExchange);
+
+        CredentialResult result = service.Execute(CreateGitRequest());
+
+        Assert.Equal(CredentialResultStatus.CredentialUnavailable, result.Status);
+        Assert.Equal(1, provider.InvocationCount);
+        Assert.Equal(1, tokenExchange.InvocationCount);
+        AssertClosedFailureResult(result, identity);
+
+        CredentialError error = Assert.IsType<CredentialError>(result.Error);
+        Assert.Equal(CredentialErrorKind.CredentialUnavailable, error.Kind);
+        Assert.Equal("TokenExchangeUnavailable", error.Code);
+        Assert.Equal("Credential token exchange is unavailable.", error.SafeMessage);
+    }
+
+    [Fact]
+    public void ExecuteTokenExchangeFailureFailsClosedWithoutLeakingIdentityMaterial()
+    {
+        IdentityMaterial identity = CreateIdentityMaterial(
+            account: "safe-account@example.com",
+            tenant: "safe-tenant",
+            secret: "safe-secret-value",
+            accessToken: "safe-bearer-value");
+        var provider = new StaticIdentityProvider(identity);
+        var tokenExchange = new CountingTokenExchange((_, _, _) => TokenExchangeResult.Failed);
+        var service = new CredentialCoreService(provider, null, null, tokenExchange);
+
+        CredentialResult result = service.Execute(CreateGitRequest());
+
+        Assert.Equal(CredentialResultStatus.Fatal, result.Status);
+        Assert.Equal(1, provider.InvocationCount);
+        Assert.Equal(1, tokenExchange.InvocationCount);
+        AssertClosedFailureResult(result, identity);
+
+        CredentialError error = Assert.IsType<CredentialError>(result.Error);
+        Assert.Equal(CredentialErrorKind.Fatal, error.Kind);
+        Assert.Equal("TokenExchangeFailed", error.Code);
+        Assert.Equal("Credential token exchange failed.", error.SafeMessage);
+    }
+
+    [Fact]
+    public void ExecuteTokenExchangeExceptionFailsClosedWithoutLeakingIdentityMaterial()
+    {
+        IdentityMaterial identity = CreateIdentityMaterial(
+            account: "safe-account@example.com",
+            tenant: "safe-tenant",
+            secret: "safe-secret-value",
+            accessToken: "safe-bearer-value");
+        var provider = new StaticIdentityProvider(identity);
+        var tokenExchange = new CountingTokenExchange(
+            (_, _, _) => throw new InvalidOperationException("safe-secret-value"));
+        var service = new CredentialCoreService(provider, null, null, tokenExchange);
+
+        CredentialResult result = service.Execute(CreateGitRequest());
+
+        Assert.Equal(CredentialResultStatus.Fatal, result.Status);
+        Assert.Equal(1, provider.InvocationCount);
+        Assert.Equal(1, tokenExchange.InvocationCount);
+        AssertClosedFailureResult(result, identity);
+
+        CredentialError error = Assert.IsType<CredentialError>(result.Error);
+        Assert.Equal(CredentialErrorKind.Fatal, error.Kind);
+        Assert.Equal("CredentialCoreFailure", error.Code);
+        Assert.Equal("Credential core execution failed.", error.SafeMessage);
+    }
+
+    [Theory]
+    [MemberData(nameof(MalformedTokenExchangeSuccessOutputs))]
+    public void ExecuteMalformedTokenExchangeSuccessOutputFailsClosedWithoutLeakingMaterial(
+        CredentialRequest request,
+        bool returnSuccessWithNullMaterial,
+        string? username,
+        string? password,
+        string? bearerToken,
+        string[] rawExchangeValues)
+    {
+        IdentityMaterial identity = CreateIdentityMaterial(
+            account: "safe-account@example.com",
+            tenant: "safe-tenant",
+            secret: "safe-secret-value",
+            accessToken: "safe-bearer-value");
+        var provider = new StaticIdentityProvider(identity);
+        TokenExchangeResult exchangeResult = returnSuccessWithNullMaterial
+            ? new TokenExchangeResult(TokenExchangeStatus.Success, null)
+            : TokenExchangeResult.Success(
+                new TokenExchangeMaterial
+                {
+                    Username = username,
+                    Password = password,
+                    BearerToken = bearerToken,
+                });
+        var tokenExchange = new CountingTokenExchange((_, _, _) => exchangeResult);
+        var service = new CredentialCoreService(provider, null, null, tokenExchange);
+
+        CredentialResult result = service.Execute(request);
+
+        Assert.Equal(CredentialResultStatus.Fatal, result.Status);
+        Assert.Equal(1, provider.InvocationCount);
+        Assert.Equal(1, tokenExchange.InvocationCount);
+        AssertClosedFailureResult(result, identity, rawExchangeValues);
+
+        CredentialError error = Assert.IsType<CredentialError>(result.Error);
+        Assert.Equal(CredentialErrorKind.Fatal, error.Kind);
+    }
+
+    [Theory]
     [MemberData(nameof(ProviderMaterialWithUnusedProtocolLineBreaksScenarios))]
     public void ExecuteIgnoresUnusedProviderMaterialWithProtocolLineBreaks(
         CredentialRequest request,
@@ -1017,6 +1250,125 @@ public sealed class CredentialCoreServiceTests
                 },
             };
 
+    public static TheoryData<CredentialRequest> AcceptedTokenExchangeRequests() =>
+        new()
+        {
+            { CreateGitRequest() },
+            { CreateGitRequest(kind: CredentialKind.BearerToken) },
+            {
+                CreateGitRequest(
+                    flow: IdentityFlow.PatCompatibility,
+                    kind: CredentialKind.PatCompatibility)
+            },
+            {
+                CreatePackageRequest(CredentialEcosystem.Npm, CredentialKind.NpmAuthToken)
+            },
+            {
+                CreatePackageRequest(
+                    CredentialEcosystem.NuGet,
+                    CredentialKind.NuGetPluginCredential)
+            },
+        };
+
+    public static TheoryData<CredentialRequest> PasswordShapedTokenExchangeRequests() =>
+        new()
+        {
+            { CreateGitRequest() },
+            {
+                    CreateGitRequest(
+                        flow: IdentityFlow.PatCompatibility,
+                        kind: CredentialKind.PatCompatibility)
+            },
+            {
+                    CreatePackageRequest(
+                        CredentialEcosystem.NuGet,
+                        CredentialKind.NuGetPluginCredential)
+            },
+        };
+
+    public static TheoryData<CredentialRequest, bool, string?, string?, string?, string[]>
+        MalformedTokenExchangeSuccessOutputs() =>
+            new()
+            {
+                    {
+                        CreateGitRequest(),
+                        true,
+                        null,
+                        null,
+                        null,
+                        []
+                    },
+                    {
+                        CreateGitRequest(),
+                        false,
+                        null,
+                        "malformed-exchange-password",
+                        null,
+                        ["malformed-exchange-password"]
+                    },
+                    {
+                        CreateGitRequest(kind: CredentialKind.BearerToken),
+                        false,
+                        null,
+                        null,
+                        null,
+                        []
+                    },
+                    {
+                        CreateGitRequest(),
+                        false,
+                        "AzureDevOps",
+                        "malformed-exchange-password",
+                        "forbidden-bearer-token",
+                        ["malformed-exchange-password", "forbidden-bearer-token"]
+                    },
+                    {
+                        CreateGitRequest(kind: CredentialKind.BearerToken),
+                        false,
+                        "AzureDevOps",
+                        "forbidden-password",
+                        "valid-bearer-token",
+                        ["forbidden-password", "valid-bearer-token"]
+                    },
+                    {
+                        CreateGitRequest(),
+                        false,
+                        "Azure\r\nDevOps",
+                        "safe-password",
+                        null,
+                        ["Azure\r\nDevOps", "safe-password"]
+                    },
+                    {
+                        CreateGitRequest(kind: CredentialKind.BearerToken),
+                        false,
+                        null,
+                        null,
+                        "unsafe\r\ntoken",
+                        ["unsafe\r\ntoken"]
+                    },
+            };
+
+    public static TheoryData<CredentialRequest> BlockedTokenExchangeRequests() =>
+        new()
+        {
+            {
+                CreateGitRequest() with
+                {
+                    ServiceIdentity = "Default",
+                }
+            },
+            {
+                CreateGitRequest(
+                    flow: IdentityFlow.DeviceCode,
+                    kind: CredentialKind.BasicPassword,
+                    interactivePolicy: InteractivePolicy.Never)
+            },
+            {
+                CreateGitRequest(
+                    cachePolicy: CachePolicyMode.FuturePersistentCacheRequested)
+            },
+        };
+
     public static TheoryData<CredentialRequest, IdentityMaterial>
         ProviderMaterialWithUnusedProtocolLineBreaksScenarios() =>
             new()
@@ -1347,6 +1699,40 @@ public sealed class CredentialCoreServiceTests
             },
         };
 
+    private static CredentialRequest CreatePackageRequest(
+        CredentialEcosystem ecosystem,
+        CredentialKind kind) =>
+        new()
+        {
+            Ecosystem = ecosystem,
+            Operation = CredentialOperation.Get,
+            Resource = CanonicalResourceIdentity.Create(
+                "pkgs.dev.azure.com",
+                "org",
+                ecosystem switch
+                {
+                    CredentialEcosystem.NuGet => new Uri(
+                        "https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json"
+                    ),
+                    CredentialEcosystem.Python => new Uri(
+                        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple"
+                    ),
+                    _ => new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/npm"),
+                },
+                feed: "feed"),
+            ServiceIdentity = "default",
+            RequestedAudience = TokenAudience.AzureArtifacts,
+            CredentialKind = kind,
+            IdentityFlow = IdentityFlow.DeviceCode,
+            InteractivePolicy = InteractivePolicy.UserAllowed,
+            CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
+            CiContext = new CiContext
+            {
+                ExplicitCiMode = false,
+                AllowsPersistentWrites = false,
+            },
+        };
+
     private static CredentialRequest CreateProjectScopedPythonRequest(
         string feed,
         string project = "project",
@@ -1400,6 +1786,47 @@ public sealed class CredentialCoreServiceTests
             SecretRedactor.Empty
         );
 
+    private static void AssertClosedFailureResult(
+        CredentialResult result,
+        IdentityMaterial identity,
+        params string?[] additionalRawValues)
+    {
+        Assert.Null(result.Account);
+        Assert.Null(result.Tenant);
+        Assert.Null(result.CacheKey);
+        Assert.Null(result.Username);
+        Assert.Null(result.Password);
+        Assert.Null(result.BearerToken);
+
+        CredentialError error = Assert.IsType<CredentialError>(result.Error);
+        List<string> rawIdentityValues =
+        [
+            identity.Account,
+            identity.Tenant,
+            Assert.IsType<string>(identity.Secret),
+            Assert.IsType<string>(identity.AccessToken),
+        ];
+
+        foreach (string? rawValue in additionalRawValues)
+        {
+            if (!string.IsNullOrEmpty(rawValue))
+            {
+                rawIdentityValues.Add(rawValue);
+            }
+        }
+
+        foreach (string rawIdentityValue in rawIdentityValues)
+        {
+            Assert.DoesNotContain(rawIdentityValue, error.SafeMessage, StringComparison.Ordinal);
+
+            foreach ((string key, string value) in error.SafeDetails)
+            {
+                Assert.DoesNotContain(rawIdentityValue, key, StringComparison.Ordinal);
+                Assert.DoesNotContain(rawIdentityValue, value, StringComparison.Ordinal);
+            }
+        }
+    }
+
     private sealed class RecordingDiagnosticSink : IDiagnosticSink
     {
         public List<DiagnosticEvent> Events { get; } = [];
@@ -1424,10 +1851,35 @@ public sealed class CredentialCoreServiceTests
     {
         private readonly IdentityMaterial _identity = identity;
 
+        public int InvocationCount { get; private set; }
+
         public IdentityMaterial GetIdentity(CredentialRequest request)
         {
             ArgumentNullException.ThrowIfNull(request);
+            InvocationCount++;
             return _identity;
+        }
+    }
+
+    private sealed class CountingTokenExchange(
+        Func<CredentialRequest, IdentityMaterial, CacheKey, TokenExchangeResult> exchange)
+        : ITokenExchange
+    {
+        private readonly Func<CredentialRequest, IdentityMaterial, CacheKey, TokenExchangeResult>
+            _exchange = exchange;
+
+        public int InvocationCount { get; private set; }
+
+        public TokenExchangeResult Exchange(
+            CredentialRequest request,
+            IdentityMaterial identity,
+            CacheKey cacheKey)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            ArgumentNullException.ThrowIfNull(identity);
+            ArgumentNullException.ThrowIfNull(cacheKey);
+            InvocationCount++;
+            return _exchange(request, identity, cacheKey);
         }
     }
 

@@ -63,6 +63,32 @@ public sealed class CacheBoundaryToStringTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void TokenExchangeMaterialToStringRedactsPasswordAndBearerToken()
+    {
+        var material = new TokenExchangeMaterial
+        {
+            Username = "AzureDevOps",
+            Password = "safe-password",
+            BearerToken = "safe-bearer-token",
+        };
+
+        string text = material.ToString();
+
+        Assert.Equal(
+            "TokenExchangeMaterial { Username = AzureDevOps, Password = <redacted>, "
+                + "BearerToken = <redacted> }",
+            text);
+        Assert.DoesNotContain(
+            Assert.IsType<string>(material.Password),
+            text,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            Assert.IsType<string>(material.BearerToken),
+            text,
+            StringComparison.Ordinal);
+    }
+
     private static IdentityMaterial CreateIdentityMaterial() =>
         new()
         {
