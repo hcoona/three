@@ -1157,7 +1157,7 @@ def test_release_shaped_batch_rejects_foreign_scoped_profile_phase() -> None:
     """Scoped non-execute profile phases must match the validated selector."""
     bundle = _release_batch_bundle()
     telemetry = _valid_release_profile_telemetry()
-    foreign_phase = {
+    foreign_phase: dict[str, object] = {
         "phase": "validation-build-artifact-mapping-record",
         "work-group-id": "wg-foreign",
         "runner-family": "linux",
@@ -3377,7 +3377,7 @@ def _release_profile_uploaded_build(
 
 
 def _release_profile_execute_phase_for_build(
-    telemetry: Mapping[str, object],
+    telemetry: dict[str, object],
     release_build: Mapping[str, object],
 ) -> dict[str, object]:
     phase = deepcopy(_release_profile_phase(telemetry, "base"))
