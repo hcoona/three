@@ -628,6 +628,144 @@ public sealed class CredentialCoreServiceTests
         }
     }
 
+    [Theory]
+    [InlineData(CachePolicyMode.NoCache)]
+    [InlineData(CachePolicyMode.ProductPersistentCacheDisabled)]
+    [InlineData(CachePolicyMode.NonPersistentCi)]
+    public void ExecuteAcceptedMvpRequestDoesNotTouchPersistentDerivedCredentialCacheByDefault(
+        CachePolicyMode cachePolicy)
+    {
+        var provider = new DeterministicFakeIdentityProvider();
+        var derivedCredentialCache = new NoPersistentDerivedCredentialCache();
+        var service = new CredentialCoreService(
+            provider,
+            derivedCredentialCache: derivedCredentialCache);
+        CredentialRequest request = CreateGitRequest(cachePolicy: cachePolicy);
+
+        CredentialResult result = service.Execute(request);
+
+        Assert.Equal(CredentialResultStatus.Success, result.Status);
+        Assert.Equal(1, provider.InvocationCount);
+        Assert.Equal(0, derivedCredentialCache.PersistentAvailabilityCheckCount);
+        Assert.Equal(0, derivedCredentialCache.PersistentReadCount);
+        Assert.Equal(0, derivedCredentialCache.PersistentWriteCount);
+    }
+
+    [Fact]
+    public void ExecutePersistentCacheRequestUsesDefaultNoPersistentCacheAndFailsClosed()
+    {
+        var provider = new DeterministicFakeIdentityProvider();
+        var service = new CredentialCoreService(provider);
+        CredentialRequest request = CreateGitRequest(
+            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested);
+
+        CredentialResult result = service.Execute(request);
+
+        Assert.Equal(CredentialResultStatus.CacheUnavailable, result.Status);
+        Assert.Equal(0, provider.InvocationCount);
+
+        CredentialError error = Assert.IsType<CredentialError>(result.Error);
+        Assert.Equal(CredentialErrorKind.CacheUnavailable, error.Kind);
+        Assert.Equal("CacheUnavailable", error.Code);
+    }
+
+    [Theory]
+    [InlineData(DerivedCredentialCacheAvailabilityStatus.Unavailable)]
+    [InlineData(DerivedCredentialCacheAvailabilityStatus.Denied)]
+    [InlineData(DerivedCredentialCacheAvailabilityStatus.Unsupported)]
+    [InlineData(DerivedCredentialCacheAvailabilityStatus.VerificationFailed)]
+    public void ExecutePersistentCacheRequestFailsClosedWithoutLeakingCredentialMaterial(
+        DerivedCredentialCacheAvailabilityStatus availabilityStatus)
+    {
+        const string fakeSecret = "fake-secret-should-not-leak";
+        const string fakeToken = "fake-token-should-not-leak";
+        var provider = new DeterministicFakeIdentityProvider();
+        var derivedCredentialCache = new ReportingDerivedCredentialCache(
+            new DerivedCredentialCacheAvailability(availabilityStatus));
+        var diagnosticText = new StringWriter();
+        var recordingSink = new RecordingDiagnosticSink();
+        var router = new DiagnosticRouter(
+            [new TextWriterDiagnosticSink(diagnosticText), recordingSink],
+            new SecretRedactor([fakeSecret, fakeToken]));
+        var service = new CredentialCoreService(
+            provider,
+            router,
+            derivedCredentialCache);
+        CredentialRequest request = CreateGitRequest(
+            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested);
+
+        CredentialResult result = service.Execute(request);
+
+        Assert.Equal(CredentialResultStatus.CacheUnavailable, result.Status);
+        Assert.Equal(0, provider.InvocationCount);
+        Assert.Equal(1, derivedCredentialCache.PersistentAvailabilityCheckCount);
+        Assert.Equal(0, derivedCredentialCache.PersistentReadCount);
+        Assert.Equal(0, derivedCredentialCache.PersistentWriteCount);
+        Assert.Null(result.Account);
+        Assert.Null(result.Tenant);
+        Assert.Null(result.CacheKey);
+        Assert.Null(result.Username);
+        Assert.Null(result.Password);
+        Assert.Null(result.BearerToken);
+
+        CredentialError error = Assert.IsType<CredentialError>(result.Error);
+        Assert.Equal(CredentialErrorKind.CacheUnavailable, error.Kind);
+        Assert.Equal("CacheUnavailable", error.Code);
+        Assert.Equal(
+            "Persistent derived credential cache is unavailable.",
+            error.SafeMessage);
+        Assert.Equal(
+            CachePolicyMode.FuturePersistentCacheRequested.ToString(),
+            error.SafeDetails["cachePolicy"]);
+        Assert.Equal(availabilityStatus.ToString(), error.SafeDetails["cacheAvailability"]);
+
+        foreach (string fakeCredentialMaterial in new[] { fakeSecret, fakeToken })
+        {
+            Assert.DoesNotContain(
+                fakeCredentialMaterial,
+                error.SafeMessage,
+                StringComparison.Ordinal);
+
+            foreach ((string key, string value) in error.SafeDetails)
+            {
+                Assert.DoesNotContain(fakeCredentialMaterial, key, StringComparison.Ordinal);
+                Assert.DoesNotContain(fakeCredentialMaterial, value, StringComparison.Ordinal);
+            }
+        }
+
+        string emittedText = diagnosticText.ToString();
+
+        foreach (string fakeCredentialMaterial in new[] { fakeSecret, fakeToken })
+        {
+            Assert.DoesNotContain(
+                fakeCredentialMaterial,
+                emittedText,
+                StringComparison.Ordinal);
+        }
+
+        Assert.NotEmpty(recordingSink.Events);
+
+        foreach (DiagnosticEvent diagnosticEvent in recordingSink.Events)
+        {
+            foreach (string fakeCredentialMaterial in new[] { fakeSecret, fakeToken })
+            {
+                Assert.DoesNotContain(
+                    fakeCredentialMaterial,
+                    diagnosticEvent.Message,
+                    StringComparison.Ordinal);
+
+                foreach ((string key, string? value) in diagnosticEvent.Properties)
+                {
+                    Assert.DoesNotContain(fakeCredentialMaterial, key, StringComparison.Ordinal);
+                    Assert.DoesNotContain(
+                        fakeCredentialMaterial,
+                        value ?? string.Empty,
+                        StringComparison.Ordinal);
+                }
+            }
+        }
+    }
+
     [Fact]
     public void ExecuteRejectedRequestIgnoresDiagnosticSinkFailures()
     {
@@ -1274,6 +1412,48 @@ public sealed class CredentialCoreServiceTests
         {
             ArgumentNullException.ThrowIfNull(request);
             return _identity;
+        }
+    }
+
+    private sealed class ReportingDerivedCredentialCache(
+        DerivedCredentialCacheAvailability availability) : IDerivedCredentialCache
+    {
+        private readonly DerivedCredentialCacheAvailability _availability = availability;
+
+        public int PersistentAvailabilityCheckCount { get; private set; }
+
+        public int PersistentReadCount { get; private set; }
+
+        public int PersistentWriteCount { get; private set; }
+
+        public DerivedCredentialCacheAvailability GetPersistentAvailability(
+            CredentialRequest request)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            PersistentAvailabilityCheckCount++;
+            return _availability;
+        }
+
+        public DerivedCredentialCacheReadResult TryReadPersistent(
+            CredentialRequest request,
+            CacheKey cacheKey)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            ArgumentNullException.ThrowIfNull(cacheKey);
+            PersistentReadCount++;
+            return DerivedCredentialCacheReadResult.Miss;
+        }
+
+        public DerivedCredentialCacheWriteResult TryWritePersistent(
+            CredentialRequest request,
+            CacheKey cacheKey,
+            IdentityMaterial identity)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            ArgumentNullException.ThrowIfNull(cacheKey);
+            ArgumentNullException.ThrowIfNull(identity);
+            PersistentWriteCount++;
+            return DerivedCredentialCacheWriteResult.Written;
         }
     }
 }

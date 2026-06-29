@@ -7,12 +7,14 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 public sealed class CredentialCoreService
 {
     private const string AzureDevOpsUsername = "AzureDevOps";
+    private const string CacheUnavailableCode = "CacheUnavailable";
     private const string SuccessCode = "CredentialIssued";
     private const string FatalCode = "CredentialCoreFailure";
     private const string OperationNotSupportedCode = "OperationNotSupported";
     private const string ProtocolViolationCode = "ProtocolViolation";
 
     private readonly DiagnosticRouter? _diagnosticRouter;
+    private readonly IDerivedCredentialCache _derivedCredentialCache;
     private readonly IIdentityProvider _identityProvider;
 
     public CredentialCoreService()
@@ -21,12 +23,15 @@ public sealed class CredentialCoreService
 
     public CredentialCoreService(
         IIdentityProvider identityProvider,
-        DiagnosticRouter? diagnosticRouter = null)
+        DiagnosticRouter? diagnosticRouter = null,
+        IDerivedCredentialCache? derivedCredentialCache = null)
     {
         ArgumentNullException.ThrowIfNull(identityProvider);
 
         _identityProvider = identityProvider;
         _diagnosticRouter = diagnosticRouter;
+        _derivedCredentialCache =
+            derivedCredentialCache ?? new NoPersistentDerivedCredentialCache();
     }
 
     public CredentialResult Execute(CredentialRequest request)
@@ -87,6 +92,16 @@ public sealed class CredentialCoreService
                     "Requested identity flow is not supported by the MVP scaffold.",
                     flowState),
             };
+        }
+
+        if (
+            TryGetPersistentCacheFailureResult(
+                request,
+                correlationId,
+                out CredentialResult? cacheFailureResult)
+        )
+        {
+            return cacheFailureResult;
         }
 
         if (!IdentityFlowPolicy.IsAcceptedMvpRequest(request))
@@ -156,6 +171,40 @@ public sealed class CredentialCoreService
         }
     }
 
+    private bool TryGetPersistentCacheFailureResult(
+        CredentialRequest request,
+        CorrelationId correlationId,
+        [NotNullWhen(true)]
+        out CredentialResult? result)
+    {
+        if (!RequiresPersistentDerivedCredentialCache(request))
+        {
+            result = null;
+            return false;
+        }
+
+        DerivedCredentialCacheAvailabilityStatus availabilityStatus;
+
+        try
+        {
+            availabilityStatus = NormalizeCacheAvailabilityStatus(
+                _derivedCredentialCache.GetPersistentAvailability(request));
+        }
+        catch (Exception)
+        {
+            availabilityStatus = DerivedCredentialCacheAvailabilityStatus.Unavailable;
+        }
+
+        if (availabilityStatus == DerivedCredentialCacheAvailabilityStatus.Available)
+        {
+            result = null;
+            return false;
+        }
+
+        result = CreateCacheUnavailableResult(request, correlationId, availabilityStatus);
+        return true;
+    }
+
     private static CredentialResult CreateSuccessResult(
         CredentialRequest request,
         CorrelationId correlationId,
@@ -200,6 +249,47 @@ public sealed class CredentialCoreService
             },
             _ => throw new InvalidOperationException(
                 "Credential kind is not supported by the credential core scaffold."),
+        };
+    }
+
+    private CredentialResult CreateCacheUnavailableResult(
+        CredentialRequest request,
+        CorrelationId correlationId,
+        DerivedCredentialCacheAvailabilityStatus availabilityStatus)
+    {
+        const string safeMessage = "Persistent derived credential cache is unavailable.";
+        Dictionary<string, string> safeDetails = CreateSafeDetails(
+            request,
+            CredentialResultStatus.CacheUnavailable,
+            flowState: null);
+        safeDetails["cachePolicy"] = request.CachePolicy.ToString();
+        safeDetails["cacheAvailability"] = availabilityStatus.ToString();
+
+        Dictionary<string, string?> properties = CreateDiagnosticProperties(
+            CacheUnavailableCode,
+            request,
+            CredentialResultStatus.CacheUnavailable,
+            flowState: null);
+        properties["cachePolicy"] = request.CachePolicy.ToString();
+        properties["cacheAvailability"] = availabilityStatus.ToString();
+
+        WriteSafeDiagnostic(
+            DiagnosticSeverity.Warning,
+            correlationId,
+            safeMessage,
+            properties);
+
+        return new CredentialResult
+        {
+            Status = CredentialResultStatus.CacheUnavailable,
+            DiagnosticsCorrelationId = correlationId.ToString(),
+            Error = new CredentialError
+            {
+                Kind = CredentialErrorKind.CacheUnavailable,
+                Code = CacheUnavailableCode,
+                SafeMessage = safeMessage,
+                SafeDetails = safeDetails,
+            },
         };
     }
 
@@ -362,6 +452,31 @@ public sealed class CredentialCoreService
 
     private static bool ContainsAdapterProtocolLineBreak(string? value) =>
         value is not null && value.AsSpan().IndexOfAny('\r', '\n') >= 0;
+
+    private static bool RequiresPersistentDerivedCredentialCache(CredentialRequest request) =>
+        request.CachePolicy == CachePolicyMode.FuturePersistentCacheRequested
+        && IdentityFlowPolicy.IsAcceptedMvpRequest(
+            request with
+            {
+                CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
+            });
+
+    private static DerivedCredentialCacheAvailabilityStatus NormalizeCacheAvailabilityStatus(
+        DerivedCredentialCacheAvailability availability) =>
+        availability.Status switch
+        {
+            DerivedCredentialCacheAvailabilityStatus.Available =>
+                DerivedCredentialCacheAvailabilityStatus.Available,
+            DerivedCredentialCacheAvailabilityStatus.Unavailable =>
+                DerivedCredentialCacheAvailabilityStatus.Unavailable,
+            DerivedCredentialCacheAvailabilityStatus.Denied =>
+                DerivedCredentialCacheAvailabilityStatus.Denied,
+            DerivedCredentialCacheAvailabilityStatus.Unsupported =>
+                DerivedCredentialCacheAvailabilityStatus.Unsupported,
+            DerivedCredentialCacheAvailabilityStatus.VerificationFailed =>
+                DerivedCredentialCacheAvailabilityStatus.VerificationFailed,
+            _ => DerivedCredentialCacheAvailabilityStatus.VerificationFailed,
+        };
 
     private static bool IsInteractionBlockedRequest(CredentialRequest request) =>
         request.IdentityFlow is IdentityFlow.InteractiveBrowser or IdentityFlow.DeviceCode
