@@ -425,7 +425,14 @@
       "matchFileNames": ["src/public/lib/Directory.Packages.props"],
       "matchPackageNames": ["System.Memory", "System.Runtime.CompilerServices.Unsafe"],
       "rangeStrategy": "bump",
-      "groupName": "MSBuild and Repository Build Tooling"
+      "groupName": "MSBuild and Repository Build Tooling",
+      "postUpgradeTasks": {
+        "commands": [
+          "pwsh -NoLogo -NoProfile -NonInteractive -File eng/scripts/Update-RenovateGlobalJsonArtifacts.ps1"
+        ],
+        "fileFilters": ["mise.lock", "global.pkl", "global.json", "**/packages.lock.json"],
+        "executionMode": "branch"
+      }
     },
     {
       "description": "Group MSBuild and repository build tooling.",
