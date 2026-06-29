@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Reflection;
 using System.Text;
 using Hcoona.AzureAuth.CredProvider.Platform.Processes;
 using Xunit;
@@ -8,6 +7,8 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 
 public sealed class SystemProcessRunnerTests
 {
+    private const int ConfigurationErrorExitCode = 64;
+
     [Fact]
     public async Task RunAsyncPassesArgumentsEnvironmentWorkingDirectoryAndStandardInput()
     {
@@ -188,6 +189,61 @@ public sealed class SystemProcessRunnerTests
     }
 
     [Fact]
+    public async Task RunAsyncRejectsMalformedHelperInvocationWhenHelperModeIsEnabled()
+    {
+        var runner = new SystemProcessRunner();
+        var helperNonce = ProcessTestApp.CreateHelperNonce();
+
+        var result = await runner.RunAsync(
+            new ProcessStartSpec(
+                TestAppHostPath(),
+                [ProcessTestApp.HelperSwitch, ProcessTestApp.HelperNonceSwitch, helperNonce],
+                environment: ProcessTestApp.CreateHelperEnvironment(
+                    helperNonce,
+                    environmentMode: ProcessEnvironmentMode.ExplicitOnly
+                ),
+                environmentMode: ProcessEnvironmentMode.ExplicitOnly),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(ConfigurationErrorExitCode, result.ExitCode);
+        Assert.Equal(string.Empty, result.StandardOutput);
+        AssertExactNormalizedStderr(result, "Malformed process helper invocation.\n");
+    }
+
+    [Fact]
+    public async Task RunAsyncRejectsUnknownHelperCommandWhenHelperModeIsEnabled()
+    {
+        var runner = new SystemProcessRunner();
+        var helperNonce = ProcessTestApp.CreateHelperNonce();
+
+        var result = await runner.RunAsync(
+            new ProcessStartSpec(
+                TestAppHostPath(),
+                [
+                    ProcessTestApp.HelperSwitch,
+                    ProcessTestApp.HelperNonceSwitch,
+                    helperNonce,
+                    "unknown-command",
+                ],
+                environment: ProcessTestApp.CreateHelperEnvironment(
+                    helperNonce,
+                    environmentMode: ProcessEnvironmentMode.ExplicitOnly
+                ),
+                environmentMode: ProcessEnvironmentMode.ExplicitOnly),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(ConfigurationErrorExitCode, result.ExitCode);
+        Assert.Equal(string.Empty, result.StandardOutput);
+        AssertExactNormalizedStderr(
+            result,
+            "Unknown process helper command 'unknown-command'.\n");
+    }
+
+    [Fact]
     public async Task RunAsyncKillsProcessTreeAndThrowsWhenCanceled()
     {
         var pidFile = Path.Combine(CreateTestDirectory("process tree"), "child.pid");
@@ -319,76 +375,28 @@ public sealed class SystemProcessRunnerTests
         Func<CancellationToken, ValueTask>? preStartValidation = null
     )
     {
-        var helperAssembly = Assembly.GetExecutingAssembly().Location;
-        var allArguments = new List<string> { helperAssembly, "--process-helper", command };
-
-        if (arguments is not null)
-        {
-            allArguments.AddRange(arguments);
-        }
-
-        var allEnvironment = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            ["AZUREAUTH_PROCESS_HELPER"] = "1",
-        };
-
-        if (environment is not null)
-        {
-            foreach (var variable in environment)
-            {
-                allEnvironment.Add(variable.Key, variable.Value);
-            }
-        }
+        var helperNonce = ProcessTestApp.CreateHelperNonce();
+        var allArguments = ProcessTestApp.CreateHelperArguments(helperNonce, command, arguments);
 
         return new ProcessStartSpec(
-            DotnetHostPath(environmentMode),
+            ProcessTestApp.AppHostPath(),
             allArguments,
             workingDirectory,
-            allEnvironment,
+            ProcessTestApp.CreateHelperEnvironment(helperNonce, environment, environmentMode),
             standardInput,
             environmentMode,
             preStartValidation
         );
     }
 
-    private static string DotnetHostPath(ProcessEnvironmentMode environmentMode)
+    private static string TestAppHostPath()
     {
-        var dotnetHostPath = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
-        if (!string.IsNullOrWhiteSpace(dotnetHostPath))
-        {
-            return dotnetHostPath;
-        }
-
-        return environmentMode == ProcessEnvironmentMode.ExplicitOnly
-            ? ResolveExecutableFromPath("dotnet") ?? "dotnet"
-            : "dotnet";
+        return ProcessTestApp.AppHostPath();
     }
 
-    private static string? ResolveExecutableFromPath(string fileName)
+    private static void AssertExactNormalizedStderr(ProcessResult result, string expectedStderr)
     {
-        var path = Environment.GetEnvironmentVariable("PATH");
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return null;
-        }
-
-        foreach (
-            var directory in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-        )
-        {
-            var candidatePath = Path.Combine(directory, fileName);
-            if (File.Exists(candidatePath))
-            {
-                return candidatePath;
-            }
-
-            if (OperatingSystem.IsWindows() && File.Exists(candidatePath + ".exe"))
-            {
-                return candidatePath + ".exe";
-            }
-        }
-
-        return null;
+        Assert.Equal(expectedStderr, ProcessTestApp.NormalizeNewlines(result.StandardError));
     }
 
     private static string ShellQuote(string value)

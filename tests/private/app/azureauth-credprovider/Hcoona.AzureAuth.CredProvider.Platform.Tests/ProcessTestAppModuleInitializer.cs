@@ -6,59 +6,64 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 
 internal static class ProcessTestAppModuleInitializer
 {
-    private const string HelperEnabledVariable = "AZUREAUTH_PROCESS_HELPER";
-    private const string HelperEnabledValue = "1";
+    private const int HelperDispatchFailureExitCode = 64;
 
     [ModuleInitializer]
     public static void Initialize()
     {
+        var args = Environment.GetCommandLineArgs().Skip(1).ToArray();
         if (
-            !string.Equals(
-                Environment.GetEnvironmentVariable(HelperEnabledVariable),
-                HelperEnabledValue,
-                StringComparison.Ordinal
+            !ProcessTestApp.TryGetHelperDispatchArguments(
+                args,
+                Environment.GetEnvironmentVariable,
+                out var helperArguments
             )
         )
         {
             return;
         }
 
-        var args = Environment.GetCommandLineArgs().Skip(1).ToArray();
-        if (
-            args.Length < 2
-            || !string.Equals(args[0], "--process-helper", StringComparison.Ordinal)
-        )
+        if (helperArguments.Length < 1)
         {
+            ExitHelperDispatchFailure("Malformed process helper invocation.");
             return;
         }
 
-        switch (args[1])
+        switch (helperArguments[0])
         {
             case "inspect":
-                Inspect(args.Skip(2).ToArray());
+                Inspect(helperArguments.Skip(1).ToArray());
                 break;
             case "exit":
-                Exit(args.Skip(2).ToArray());
+                Exit(helperArguments.Skip(1).ToArray());
                 break;
             case "sleep":
                 Thread.Sleep(TimeSpan.FromSeconds(30));
                 Environment.Exit(0);
                 break;
             case "read-env":
-                ReadEnvironment(args.Skip(2).ToArray());
+                ReadEnvironment(helperArguments.Skip(1).ToArray());
                 break;
             case "read-env-list":
-                ReadEnvironmentList(args.Skip(2).ToArray());
+                ReadEnvironmentList(helperArguments.Skip(1).ToArray());
                 break;
             case "spawn-child-and-sleep":
-                SpawnChildAndSleep(args.Skip(2).ToArray());
+                SpawnChildAndSleep(helperArguments.Skip(1).ToArray());
                 break;
             case "write-marker":
-                WriteMarker(args.Skip(2).ToArray());
+                WriteMarker(helperArguments.Skip(1).ToArray());
                 break;
             case "utf8-roundtrip":
                 Utf8Roundtrip();
                 break;
+            case "adapter-host-proof":
+                AdapterHostProofProcess.Run(helperArguments.Skip(1).ToArray());
+                break;
+            default:
+                ExitHelperDispatchFailure(
+                    $"Unknown process helper command '{helperArguments[0]}'."
+                );
+                return;
         }
     }
 
@@ -110,15 +115,26 @@ internal static class ProcessTestAppModuleInitializer
 
     private static void SpawnChildAndSleep(string[] args)
     {
+        var childHelperNonce = ProcessTestApp.CreateHelperNonce();
+        var childStartInfo = new ProcessStartInfo
+        {
+            FileName = Environment.ProcessPath
+                ?? throw new InvalidOperationException(
+                    "Process helper requires a resolved apphost path."),
+            UseShellExecute = false,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        }.WithArguments(ProcessTestApp.CreateHelperArguments(childHelperNonce, "sleep"));
+        foreach (var variable in ProcessTestApp.CreateHelperEnvironment(childHelperNonce))
+        {
+            childStartInfo.Environment[variable.Key] = variable.Value
+                ?? throw new InvalidOperationException(
+                    $"Process helper environment '{variable.Key}' cannot be null.");
+        }
+
         using var child = Process.Start(
-            new ProcessStartInfo
-            {
-                FileName = Environment.ProcessPath ?? "dotnet",
-                UseShellExecute = false,
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            }.WithArguments([Environment.GetCommandLineArgs()[0], "--process-helper", "sleep"])
+            childStartInfo
         );
 
         if (child is null)
@@ -156,6 +172,13 @@ internal static class ProcessTestAppModuleInitializer
     {
         stream.Write(Encoding.UTF8.GetBytes(value));
         stream.Flush();
+    }
+
+    private static void ExitHelperDispatchFailure(string message)
+    {
+        Console.Error.WriteLine(message);
+        Console.Error.Flush();
+        Environment.Exit(HelperDispatchFailureExitCode);
     }
 
     private static string Encode(string value)
