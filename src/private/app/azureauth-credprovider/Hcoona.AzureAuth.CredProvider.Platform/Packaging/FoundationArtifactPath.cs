@@ -61,7 +61,7 @@ public static class FoundationArtifactPath
         string[] segments = path.Split('/');
         foreach (string segment in segments)
         {
-            if (!IsSafeSegment(segment))
+            if (!IsSafeWindowsPathSegment(segment))
             {
                 throw new ArgumentException(
                     $"Artifact path '{path}' contains an unsafe path segment.",
@@ -81,7 +81,7 @@ public static class FoundationArtifactPath
             );
         }
 
-        if (!IsSafeSegment(rid) || rid.Contains("..", StringComparison.Ordinal))
+        if (!IsSafeWindowsPathSegment(rid) || rid.Contains("..", StringComparison.Ordinal))
         {
             throw new ArgumentException(
                 "Target RID must be an explicit safe path segment.",
@@ -101,7 +101,7 @@ public static class FoundationArtifactPath
         }
     }
 
-    private static bool IsSafeSegment(string segment)
+    internal static bool IsSafeWindowsPathSegment(string segment)
     {
         return segment.Length != 0
             && segment is not ("." or "..")
@@ -144,7 +144,10 @@ public static class FoundationArtifactPath
 
     private static bool IsWindowsReservedDeviceName(string segment)
     {
-        string nameWithoutExtension = segment.Split('.')[0];
+        int extensionSeparatorIndex = segment.IndexOf('.');
+        string nameWithoutExtension = extensionSeparatorIndex >= 0
+            ? segment[..extensionSeparatorIndex].TrimEnd(' ')
+            : segment;
         return WindowsReservedDeviceNames.Contains(
             nameWithoutExtension,
             StringComparer.OrdinalIgnoreCase

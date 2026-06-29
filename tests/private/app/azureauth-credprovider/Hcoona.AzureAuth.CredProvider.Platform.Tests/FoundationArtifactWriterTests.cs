@@ -72,6 +72,8 @@ public sealed class FoundationArtifactWriterTests
     [InlineData("Platform/con.dll")]
     [InlineData("Platform/AUX.txt")]
     [InlineData("x/COM1.txt")]
+    [InlineData("Platform/NUL .exe")]
+    [InlineData("x/COM1 .txt")]
     [InlineData("x/COM¹.txt")]
     [InlineData("x/lpt²")]
     [InlineData("x/lpt9")]
