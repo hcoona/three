@@ -10,7 +10,8 @@ public sealed class DiagnosticEvent
         string message,
         CorrelationId? correlationId = null,
         IReadOnlyDictionary<string, string?>? properties = null,
-        DateTimeOffset? timestamp = null)
+        DateTimeOffset? timestamp = null,
+        bool isSafeDiagnosticEnvelope = false)
     {
         ArgumentNullException.ThrowIfNull(message);
 
@@ -19,6 +20,7 @@ public sealed class DiagnosticEvent
         Message = message;
         CorrelationId = correlationId;
         Timestamp = timestamp ?? DateTimeOffset.UtcNow;
+        IsSafeDiagnosticEnvelope = isSafeDiagnosticEnvelope;
         Properties = CopyProperties(properties);
     }
 
@@ -33,6 +35,10 @@ public sealed class DiagnosticEvent
     public IReadOnlyDictionary<string, string?> Properties { get; }
 
     public DateTimeOffset Timestamp { get; }
+
+    public bool IsSafeDiagnosticEnvelope { get; }
+
+    internal bool AllowCodeSpecificFallback { get; init; }
 
     private static ReadOnlyDictionary<string, string?> CopyProperties(
         IReadOnlyDictionary<string, string?>? properties)

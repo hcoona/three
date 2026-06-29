@@ -4,6 +4,9 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
 
 public sealed class DiagnosticRouter
 {
+    private const string SafeDiagnosticCodePropertyName =
+        SafeDiagnosticEnvelopeSanitizer.CodePropertyName;
+
     private readonly IDiagnosticSink[] _diagnosticSinks;
     private readonly IDiagnosticSink[] _humanStdoutSinks;
     private readonly SecretRedactor _redactor;
@@ -40,10 +43,17 @@ public sealed class DiagnosticRouter
             return;
         }
 
+        string? trustedPreRedactionSafeDiagnosticCode =
+            TryGetTrustedPreRedactionSafeDiagnosticCode(diagnosticEvent);
         var redactedEvent = Redact(diagnosticEvent);
+        var routedEvent = diagnosticEvent.IsSafeDiagnosticEnvelope
+            ? SanitizeSafeDiagnosticEnvelope(
+                redactedEvent,
+                trustedPreRedactionSafeDiagnosticCode)
+            : redactedEvent;
         foreach (var sink in sinks)
         {
-            sink.Write(redactedEvent);
+            sink.Write(routedEvent);
         }
     }
 
@@ -63,7 +73,9 @@ public sealed class DiagnosticRouter
     private DiagnosticEvent Redact(DiagnosticEvent diagnosticEvent)
     {
         var message = _redactor.Redact(diagnosticEvent.Message) ?? string.Empty;
-        var properties = RedactProperties(diagnosticEvent.Properties);
+        var properties = RedactProperties(
+            diagnosticEvent.Properties,
+            diagnosticEvent.IsSafeDiagnosticEnvelope);
 
         if (string.Equals(message, diagnosticEvent.Message, StringComparison.Ordinal) &&
             ReferenceEquals(properties, diagnosticEvent.Properties))
@@ -77,11 +89,16 @@ public sealed class DiagnosticRouter
             message,
             diagnosticEvent.CorrelationId,
             properties,
-            diagnosticEvent.Timestamp);
+            diagnosticEvent.Timestamp,
+            diagnosticEvent.IsSafeDiagnosticEnvelope)
+        {
+            AllowCodeSpecificFallback = diagnosticEvent.AllowCodeSpecificFallback,
+        };
     }
 
     private IReadOnlyDictionary<string, string?> RedactProperties(
-        IReadOnlyDictionary<string, string?> properties)
+        IReadOnlyDictionary<string, string?> properties,
+        bool preserveSafeDiagnosticCodePropertyName)
     {
         if (properties.Count == 0)
         {
@@ -92,7 +109,21 @@ public sealed class DiagnosticRouter
         var changed = false;
         foreach (var property in properties)
         {
-            var redactedKey = _redactor.Redact(property.Key) ?? string.Empty;
+            bool preserveCanonicalSafeDiagnosticCodePropertyName =
+                preserveSafeDiagnosticCodePropertyName
+                && IsCanonicalSafeDiagnosticCodePropertyKey(property.Key);
+            var redactedKey = preserveCanonicalSafeDiagnosticCodePropertyName
+                ? SafeDiagnosticCodePropertyName
+                : _redactor.Redact(property.Key) ?? string.Empty;
+
+            if (preserveSafeDiagnosticCodePropertyName
+                && !preserveCanonicalSafeDiagnosticCodePropertyName
+                && IsReservedSafeDiagnosticPropertyKey(redactedKey))
+            {
+                changed = true;
+                continue;
+            }
+
             var redactedValue = _redactor.Redact(property.Value);
 
             changed |=
@@ -102,5 +133,171 @@ public sealed class DiagnosticRouter
         }
 
         return changed ? redacted : properties;
+    }
+
+    private static bool IsCanonicalSafeDiagnosticCodePropertyKey(string key)
+    {
+        return SafeDiagnosticEnvelopeSanitizer.IsCanonicalCodePropertyKey(key);
+    }
+
+    private static string? TryGetTrustedPreRedactionSafeDiagnosticCode(
+        DiagnosticEvent diagnosticEvent)
+    {
+        return diagnosticEvent.IsSafeDiagnosticEnvelope
+               && diagnosticEvent.AllowCodeSpecificFallback
+            ? TryGetCanonicalSafeDiagnosticCode(diagnosticEvent.Properties)
+            : null;
+    }
+
+    private static DiagnosticEvent SanitizeSafeDiagnosticEnvelope(
+        DiagnosticEvent diagnosticEvent,
+        string? trustedPreRedactionSafeDiagnosticCode)
+    {
+        IReadOnlyDictionary<string, string?> properties =
+            SanitizeSafeDiagnosticEnvelopeProperties(diagnosticEvent.Properties);
+        string message = RestoreSafeDiagnosticEnvelopeMessage(
+            SafeDiagnosticEnvelopeSanitizer.SanitizeMessage(diagnosticEvent.Message),
+            properties,
+            trustedPreRedactionSafeDiagnosticCode,
+            diagnosticEvent.AllowCodeSpecificFallback);
+
+        if (string.Equals(message, diagnosticEvent.Message, StringComparison.Ordinal) &&
+            ReferenceEquals(properties, diagnosticEvent.Properties))
+        {
+            return diagnosticEvent;
+        }
+
+        return new DiagnosticEvent(
+            diagnosticEvent.Severity,
+            diagnosticEvent.Channel,
+            message,
+            diagnosticEvent.CorrelationId,
+            properties,
+            diagnosticEvent.Timestamp,
+            isSafeDiagnosticEnvelope: true)
+        {
+            AllowCodeSpecificFallback = diagnosticEvent.AllowCodeSpecificFallback,
+        };
+    }
+
+    private static string RestoreSafeDiagnosticEnvelopeMessage(
+        string message,
+        IReadOnlyDictionary<string, string?> properties,
+        string? trustedPreRedactionSafeDiagnosticCode,
+        bool allowCodeSpecificFallback)
+    {
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            return message;
+        }
+
+        return SafeDiagnosticMessageFallback.Create(
+            ResolveSafeDiagnosticFallbackCode(
+                properties,
+                trustedPreRedactionSafeDiagnosticCode,
+                allowCodeSpecificFallback),
+            safeMessage: null,
+            allowCodeSpecificFallback);
+    }
+
+    private static string? ResolveSafeDiagnosticFallbackCode(
+        IReadOnlyDictionary<string, string?> properties,
+        string? trustedPreRedactionSafeDiagnosticCode,
+        bool allowCodeSpecificFallback)
+    {
+        return allowCodeSpecificFallback
+               && !string.IsNullOrWhiteSpace(trustedPreRedactionSafeDiagnosticCode)
+            ? trustedPreRedactionSafeDiagnosticCode
+            : TryGetCanonicalSafeDiagnosticCode(properties);
+    }
+
+    private static string? TryGetCanonicalSafeDiagnosticCode(
+        IReadOnlyDictionary<string, string?> properties)
+    {
+        return properties.TryGetValue(SafeDiagnosticCodePropertyName, out string? safeCode)
+            ? safeCode
+            : null;
+    }
+
+    private static IReadOnlyDictionary<string, string?> SanitizeSafeDiagnosticEnvelopeProperties(
+        IReadOnlyDictionary<string, string?> redactedProperties)
+    {
+        if (redactedProperties.Count == 0)
+        {
+            return redactedProperties;
+        }
+
+        var sanitized = new Dictionary<string, string?>(
+            redactedProperties.Count,
+            StringComparer.Ordinal);
+        foreach (KeyValuePair<string, string?> property in redactedProperties)
+        {
+            if (IsCanonicalSafeDiagnosticCodePropertyKey(property.Key))
+            {
+                string? sanitizedCode = SafeDiagnosticEnvelopeSanitizer.SanitizeCode(
+                    property.Value);
+                if (!string.IsNullOrEmpty(sanitizedCode))
+                {
+                    sanitized[SafeDiagnosticCodePropertyName] = sanitizedCode;
+                }
+
+                continue;
+            }
+
+            string sanitizedKey = SafeDiagnosticEnvelopeSanitizer.SanitizePropertyKey(
+                property.Key);
+            if (string.IsNullOrEmpty(sanitizedKey)
+                || IsReservedSafeDiagnosticPropertyKey(sanitizedKey))
+            {
+                continue;
+            }
+
+            sanitized[sanitizedKey] = SafeDiagnosticEnvelopeSanitizer.SanitizePropertyValue(
+                property.Value);
+        }
+
+        return DictionaryContentsEqual(redactedProperties, sanitized)
+            ? redactedProperties
+            : sanitized;
+    }
+
+    private static bool DictionaryContentsEqual(
+        IReadOnlyDictionary<string, string?> first,
+        IReadOnlyDictionary<string, string?> second)
+    {
+        if (ReferenceEquals(first, second))
+        {
+            return true;
+        }
+
+        if (first.Count != second.Count)
+        {
+            return false;
+        }
+
+        using IEnumerator<KeyValuePair<string, string?>> firstEnumerator = first.GetEnumerator();
+        using IEnumerator<KeyValuePair<string, string?>> secondEnumerator = second.GetEnumerator();
+        while (firstEnumerator.MoveNext())
+        {
+            if (!secondEnumerator.MoveNext())
+            {
+                return false;
+            }
+
+            KeyValuePair<string, string?> firstPair = firstEnumerator.Current;
+            KeyValuePair<string, string?> secondPair = secondEnumerator.Current;
+            if (!string.Equals(firstPair.Key, secondPair.Key, StringComparison.Ordinal) ||
+                !string.Equals(firstPair.Value, secondPair.Value, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return !secondEnumerator.MoveNext();
+    }
+
+    private static bool IsReservedSafeDiagnosticPropertyKey(string key)
+    {
+        return SafeDiagnosticEnvelopeSanitizer.IsReservedPropertyKey(key);
     }
 }
