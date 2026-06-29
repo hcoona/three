@@ -63,7 +63,7 @@ public sealed class CredentialCoreServiceTests
         Assert.Equal(expectedIdentity.ExpiresAt, result.ExpiresAt);
 
         string password = Assert.IsType<string>(result.Password);
-        Assert.Equal(expectedIdentity.Secret, password);
+        Assert.Equal(Assert.IsType<string>(expectedIdentity.Secret), password);
         Assert.Null(result.BearerToken);
         Assert.Null(result.Error);
         Assert.True(CorrelationId.TryParse(result.DiagnosticsCorrelationId, out _));
@@ -104,19 +104,107 @@ public sealed class CredentialCoreServiceTests
             cacheKey.Value);
     }
 
+    [Fact]
+    public void ExecuteBearerTokenRequestAllowsCustomBearerOnlyProviderMaterial()
+    {
+        IdentityMaterial identity = CreateIdentityMaterial(
+            secret: null,
+            accessToken: "custom-bearer-token");
+        var service = new CredentialCoreService(new StaticIdentityProvider(identity));
+        CredentialRequest request = CreateGitRequest(kind: CredentialKind.BearerToken);
+
+        CredentialResult result = service.Execute(request);
+
+        Assert.Equal(CredentialResultStatus.Success, result.Status);
+        Assert.Equal(identity.Account, result.Account);
+        Assert.Equal(identity.Tenant, result.Tenant);
+        Assert.Equal(identity.ExpiresAt, result.ExpiresAt);
+        Assert.Equal(
+            Assert.IsType<string>(identity.AccessToken),
+            Assert.IsType<string>(result.BearerToken));
+        Assert.Null(result.Username);
+        Assert.Null(result.Password);
+        Assert.Null(result.Error);
+    }
+
+    [Fact]
+    public void ExecuteBasicPasswordRequestAllowsCustomPasswordOnlyProviderMaterial()
+    {
+        IdentityMaterial identity = CreateIdentityMaterial(
+            secret: "custom-password-secret",
+            accessToken: null);
+        var service = new CredentialCoreService(new StaticIdentityProvider(identity));
+        CredentialRequest request = CreateGitRequest();
+
+        CredentialResult result = service.Execute(request);
+
+        Assert.Equal(CredentialResultStatus.Success, result.Status);
+        Assert.Equal(identity.Account, result.Account);
+        Assert.Equal(identity.Tenant, result.Tenant);
+        Assert.Equal(identity.ExpiresAt, result.ExpiresAt);
+        Assert.Equal("AzureDevOps", result.Username);
+        Assert.Equal(
+            Assert.IsType<string>(identity.Secret),
+            Assert.IsType<string>(result.Password));
+        Assert.Null(result.BearerToken);
+        Assert.Null(result.Error);
+    }
+
+    [Theory]
+    [MemberData(nameof(ProviderMaterialWithUnusedProtocolLineBreaksScenarios))]
+    public void ExecuteIgnoresUnusedProviderMaterialWithProtocolLineBreaks(
+        CredentialRequest request,
+        IdentityMaterial identity)
+    {
+        var service = new CredentialCoreService(new StaticIdentityProvider(identity));
+
+        CredentialResult result = service.Execute(request);
+
+        Assert.Equal(CredentialResultStatus.Success, result.Status);
+        Assert.Equal(identity.Account, result.Account);
+        Assert.Equal(identity.Tenant, result.Tenant);
+        Assert.Equal(identity.ExpiresAt, result.ExpiresAt);
+        Assert.Null(result.Error);
+
+        if (request.CredentialKind == CredentialKind.BearerToken)
+        {
+            Assert.Equal(
+                Assert.IsType<string>(identity.AccessToken),
+                Assert.IsType<string>(result.BearerToken));
+            Assert.Null(result.Username);
+            Assert.Null(result.Password);
+            return;
+        }
+
+        Assert.Equal("AzureDevOps", result.Username);
+        Assert.Equal(
+            Assert.IsType<string>(identity.Secret),
+            Assert.IsType<string>(result.Password));
+        Assert.Null(result.BearerToken);
+    }
+
     [Theory]
     [MemberData(nameof(UnsafeProviderMaterialScenarios))]
     public void ExecuteRejectsProviderMaterialWithProtocolLineBreaksWithoutLeakingMaterial(
         CredentialRequest request,
         IdentityMaterial identity)
     {
-        string[] rawProviderValues =
+        List<string> rawProviderValues =
         [
             identity.Account,
             identity.Tenant,
-            identity.Secret,
-            identity.AccessToken,
         ];
+
+        if (identity.Secret is not null)
+        {
+            rawProviderValues.Add(identity.Secret);
+        }
+
+        if (identity.AccessToken is not null)
+        {
+            rawProviderValues.Add(identity.AccessToken);
+        }
+
         var diagnosticText = new StringWriter();
         var recordingSink = new RecordingDiagnosticSink();
         var router = new DiagnosticRouter(
@@ -184,6 +272,30 @@ public sealed class CredentialCoreServiceTests
                 }
             }
         }
+    }
+
+    [Theory]
+    [MemberData(nameof(IncompleteProviderMaterialScenarios))]
+    public void ExecuteRejectsProviderMaterialWithMissingEmptyOrWhitespaceRequiredMaterial(
+        CredentialRequest request,
+        IdentityMaterial identity)
+    {
+        var service = new CredentialCoreService(new StaticIdentityProvider(identity));
+
+        CredentialResult result = service.Execute(request);
+
+        Assert.Equal(CredentialResultStatus.Fatal, result.Status);
+        Assert.Null(result.Account);
+        Assert.Null(result.Tenant);
+        Assert.Null(result.CacheKey);
+        Assert.Null(result.Username);
+        Assert.Null(result.Password);
+        Assert.Null(result.BearerToken);
+
+        CredentialError error = Assert.IsType<CredentialError>(result.Error);
+        Assert.Equal(CredentialErrorKind.Fatal, error.Kind);
+        Assert.Equal("CredentialCoreFailure", error.Code);
+        Assert.Equal("Credential core execution failed.", error.SafeMessage);
     }
 
     [Fact]
@@ -460,28 +572,34 @@ public sealed class CredentialCoreServiceTests
         var recordingSink = new RecordingDiagnosticSink();
         var router = new DiagnosticRouter(
             [new TextWriterDiagnosticSink(diagnosticText), recordingSink],
-            new SecretRedactor([probeIdentity.Secret, probeIdentity.AccessToken]));
+            new SecretRedactor(
+                [
+                    Assert.IsType<string>(probeIdentity.Secret),
+                    Assert.IsType<string>(probeIdentity.AccessToken),
+                ]));
         var service = new CredentialCoreService(new DeterministicFakeIdentityProvider(), router);
 
         CredentialResult result = service.Execute(request);
 
+        string probeSecret = Assert.IsType<string>(probeIdentity.Secret);
+        string probeAccessToken = Assert.IsType<string>(probeIdentity.AccessToken);
         string emittedText = diagnosticText.ToString();
         Assert.Equal(CredentialResultStatus.Success, result.Status);
         Assert.NotEmpty(recordingSink.Events);
-        Assert.Equal(probeIdentity.AccessToken, result.BearerToken);
-        Assert.DoesNotContain(probeIdentity.Secret, emittedText, StringComparison.Ordinal);
-        Assert.DoesNotContain(probeIdentity.AccessToken, emittedText, StringComparison.Ordinal);
+        Assert.Equal(probeAccessToken, Assert.IsType<string>(result.BearerToken));
+        Assert.DoesNotContain(probeSecret, emittedText, StringComparison.Ordinal);
+        Assert.DoesNotContain(probeAccessToken, emittedText, StringComparison.Ordinal);
         Assert.DoesNotContain(SecretRedactor.DefaultMask, emittedText, StringComparison.Ordinal);
 
         foreach (DiagnosticEvent diagnosticEvent in recordingSink.Events)
         {
             Assert.DoesNotContain(
-                probeIdentity.Secret,
+                probeSecret,
                 diagnosticEvent.Message,
                 StringComparison.Ordinal
             );
             Assert.DoesNotContain(
-                probeIdentity.AccessToken,
+                probeAccessToken,
                 diagnosticEvent.Message,
                 StringComparison.Ordinal);
             Assert.DoesNotContain(
@@ -491,15 +609,15 @@ public sealed class CredentialCoreServiceTests
 
             foreach ((string key, string? value) in diagnosticEvent.Properties)
             {
-                Assert.DoesNotContain(probeIdentity.Secret, key, StringComparison.Ordinal);
-                Assert.DoesNotContain(probeIdentity.AccessToken, key, StringComparison.Ordinal);
+                Assert.DoesNotContain(probeSecret, key, StringComparison.Ordinal);
+                Assert.DoesNotContain(probeAccessToken, key, StringComparison.Ordinal);
                 Assert.DoesNotContain(SecretRedactor.DefaultMask, key, StringComparison.Ordinal);
                 Assert.DoesNotContain(
-                    probeIdentity.Secret,
+                    probeSecret,
                     value ?? string.Empty,
                     StringComparison.Ordinal);
                 Assert.DoesNotContain(
-                    probeIdentity.AccessToken,
+                    probeAccessToken,
                     value ?? string.Empty,
                     StringComparison.Ordinal);
                 Assert.DoesNotContain(
@@ -746,26 +864,70 @@ public sealed class CredentialCoreServiceTests
             };
 
     public static TheoryData<CredentialRequest, IdentityMaterial>
+        ProviderMaterialWithUnusedProtocolLineBreaksScenarios() =>
+            new()
+            {
+                {
+                    CreateGitRequest(),
+                    CreateIdentityMaterial(accessToken: "unused\r\ntoken")
+                },
+                {
+                    CreateGitRequest(kind: CredentialKind.BearerToken),
+                    CreateIdentityMaterial(secret: "unused\r\nsecret")
+                },
+            };
+
+    public static TheoryData<CredentialRequest, IdentityMaterial>
         UnsafeProviderMaterialScenarios() =>
             new()
             {
+                {
+                    CreateGitRequest(),
+                    CreateIdentityMaterial(secret: "unsafe\r\nsecret")
+                },
+                {
+                    CreateGitRequest(kind: CredentialKind.BearerToken),
+                    CreateIdentityMaterial(accessToken: "unsafe\r\ntoken")
+                },
+                {
+                    CreateGitRequest(),
+                    CreateIdentityMaterial(account: "unsafe\r\naccount")
+                },
+                {
+                    CreateGitRequest(),
+                    CreateIdentityMaterial(tenant: "unsafe\r\ntenant")
+                },
+            };
+
+    public static TheoryData<CredentialRequest, IdentityMaterial>
+        IncompleteProviderMaterialScenarios() =>
+            new()
             {
-                CreateGitRequest(),
-                CreateIdentityMaterial(accessToken: "unsafe\r\ntoken")
-            },
-            {
-                CreateGitRequest(kind: CredentialKind.BearerToken),
-                CreateIdentityMaterial(secret: "unsafe\r\nsecret")
-            },
-            {
-                CreateGitRequest(),
-                CreateIdentityMaterial(account: "unsafe\r\naccount")
-            },
-            {
-                CreateGitRequest(),
-                CreateIdentityMaterial(tenant: "unsafe\r\ntenant")
-            },
-        };
+                {
+                    CreateGitRequest(),
+                    CreateIdentityMaterial(secret: null)
+                },
+                {
+                    CreateGitRequest(),
+                    CreateIdentityMaterial(secret: string.Empty)
+                },
+                {
+                    CreateGitRequest(),
+                    CreateIdentityMaterial(secret: " \t ")
+                },
+                {
+                    CreateGitRequest(kind: CredentialKind.BearerToken),
+                    CreateIdentityMaterial(accessToken: null)
+                },
+                {
+                    CreateGitRequest(kind: CredentialKind.BearerToken),
+                    CreateIdentityMaterial(accessToken: string.Empty)
+                },
+                {
+                    CreateGitRequest(kind: CredentialKind.BearerToken),
+                    CreateIdentityMaterial(accessToken: " \t ")
+                },
+            };
 
     public static TheoryData<CredentialRequest>
         RequestsWithControlCharactersInAccountOrTenantHints() =>
@@ -1067,8 +1229,8 @@ public sealed class CredentialCoreServiceTests
     private static IdentityMaterial CreateIdentityMaterial(
         string account = "user@example.com",
         string tenant = "tenant-1",
-        string secret = "safe-secret",
-        string accessToken = "safe-token") =>
+        string? secret = "safe-secret",
+        string? accessToken = "safe-token") =>
         new()
         {
             Account = account,

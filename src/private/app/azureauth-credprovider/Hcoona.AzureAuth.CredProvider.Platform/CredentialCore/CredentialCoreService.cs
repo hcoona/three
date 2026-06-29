@@ -117,7 +117,8 @@ public sealed class CredentialCoreService
         try
         {
             IdentityMaterial identity = NormalizeAndEnsureValid(
-                _identityProvider.GetIdentity(request)
+                _identityProvider.GetIdentity(request),
+                request.CredentialKind
             );
 
             CacheKey cacheKey = CacheKeySchema.Create(request, identity.Account, identity.Tenant);
@@ -175,21 +176,27 @@ public sealed class CredentialCoreService
         {
             CredentialKind.BearerToken or CredentialKind.NpmAuthToken => result with
             {
-                BearerToken = identity.AccessToken,
+                BearerToken = identity.AccessToken
+                    ?? throw new InvalidOperationException(
+                        "Identity provider returned incomplete credential core material."),
             },
             CredentialKind.BasicPassword
                 when request.Ecosystem == CredentialEcosystem.Python
                     => result with
             {
                 Username = AzureDevOpsUsername,
-                Password = identity.Secret,
+                Password = identity.Secret
+                    ?? throw new InvalidOperationException(
+                        "Identity provider returned incomplete credential core material."),
             },
             CredentialKind.BasicPassword
             or CredentialKind.NuGetPluginCredential
             or CredentialKind.PatCompatibility => result with
             {
                 Username = AzureDevOpsUsername,
-                Password = identity.Secret,
+                Password = identity.Secret
+                    ?? throw new InvalidOperationException(
+                        "Identity provider returned incomplete credential core material."),
             },
             _ => throw new InvalidOperationException(
                 "Credential kind is not supported by the credential core scaffold."),
@@ -303,14 +310,17 @@ public sealed class CredentialCoreService
         return properties;
     }
 
-    private static IdentityMaterial NormalizeAndEnsureValid(IdentityMaterial identity)
+    private static IdentityMaterial NormalizeAndEnsureValid(
+        IdentityMaterial identity,
+        CredentialKind credentialKind)
     {
         ArgumentNullException.ThrowIfNull(identity);
 
         if (string.IsNullOrWhiteSpace(identity.Account)
             || string.IsNullOrWhiteSpace(identity.Tenant)
-            || string.IsNullOrWhiteSpace(identity.Secret)
-            || string.IsNullOrWhiteSpace(identity.AccessToken)
+            || (RequiresSecret(credentialKind) && string.IsNullOrWhiteSpace(identity.Secret))
+            || (RequiresAccessToken(credentialKind)
+                && string.IsNullOrWhiteSpace(identity.AccessToken))
             || identity.ExpiresAt == default)
         {
             throw new InvalidOperationException(
@@ -319,8 +329,10 @@ public sealed class CredentialCoreService
 
         if (ContainsAdapterProtocolLineBreak(identity.Account)
             || ContainsAdapterProtocolLineBreak(identity.Tenant)
-            || ContainsAdapterProtocolLineBreak(identity.Secret)
-            || ContainsAdapterProtocolLineBreak(identity.AccessToken))
+            || (RequiresSecret(credentialKind)
+                && ContainsAdapterProtocolLineBreak(identity.Secret))
+            || (RequiresAccessToken(credentialKind)
+                && ContainsAdapterProtocolLineBreak(identity.AccessToken)))
         {
             throw new InvalidOperationException(
                 "Identity provider returned protocol-incompatible credential core material.");
@@ -336,11 +348,20 @@ public sealed class CredentialCoreService
     private static string CanonicalizeIdentityPartition(string value) =>
         value.Trim().ToLowerInvariant();
 
+    private static bool RequiresSecret(CredentialKind credentialKind) =>
+        credentialKind
+            is CredentialKind.BasicPassword
+                or CredentialKind.NuGetPluginCredential
+                or CredentialKind.PatCompatibility;
+
+    private static bool RequiresAccessToken(CredentialKind credentialKind) =>
+        credentialKind is CredentialKind.BearerToken or CredentialKind.NpmAuthToken;
+
     private static bool ContainsControlCharacters(string? value) =>
         value is not null && value.Any(char.IsControl);
 
-    private static bool ContainsAdapterProtocolLineBreak(string value) =>
-        value.AsSpan().IndexOfAny('\r', '\n') >= 0;
+    private static bool ContainsAdapterProtocolLineBreak(string? value) =>
+        value is not null && value.AsSpan().IndexOfAny('\r', '\n') >= 0;
 
     private static bool IsInteractionBlockedRequest(CredentialRequest request) =>
         request.IdentityFlow is IdentityFlow.InteractiveBrowser or IdentityFlow.DeviceCode
