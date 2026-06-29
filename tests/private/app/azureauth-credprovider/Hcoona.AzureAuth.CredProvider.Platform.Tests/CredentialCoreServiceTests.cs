@@ -686,7 +686,7 @@ public sealed class CredentialCoreServiceTests
         var recordingSink = new RecordingDiagnosticSink();
         var router = new DiagnosticRouter(
             [new TextWriterDiagnosticSink(diagnosticText), recordingSink],
-            new SecretRedactor([fakeSecret, fakeToken]));
+            SecretRedactor.Empty);
         var service = new CredentialCoreService(
             provider,
             router,
@@ -743,10 +743,17 @@ public sealed class CredentialCoreServiceTests
                 StringComparison.Ordinal);
         }
 
+        Assert.DoesNotContain(SecretRedactor.DefaultMask, emittedText, StringComparison.Ordinal);
+
         Assert.NotEmpty(recordingSink.Events);
 
         foreach (DiagnosticEvent diagnosticEvent in recordingSink.Events)
         {
+            Assert.DoesNotContain(
+                SecretRedactor.DefaultMask,
+                diagnosticEvent.Message,
+                StringComparison.Ordinal);
+
             foreach (string fakeCredentialMaterial in new[] { fakeSecret, fakeToken })
             {
                 Assert.DoesNotContain(
@@ -762,6 +769,15 @@ public sealed class CredentialCoreServiceTests
                         value ?? string.Empty,
                         StringComparison.Ordinal);
                 }
+            }
+
+            foreach ((string key, string? value) in diagnosticEvent.Properties)
+            {
+                Assert.DoesNotContain(SecretRedactor.DefaultMask, key, StringComparison.Ordinal);
+                Assert.DoesNotContain(
+                    SecretRedactor.DefaultMask,
+                    value ?? string.Empty,
+                    StringComparison.Ordinal);
             }
         }
     }
