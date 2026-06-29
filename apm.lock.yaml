@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-06-28T18:44:06.564454+00:00'
+generated_at: '2026-06-28T23:34:42.662216+00:00'
 apm_version: 0.22.0
 dependencies:
 - repo_url: dotnet/skills
@@ -624,6 +624,8 @@ dependencies:
   content_hash: sha256:0acd8d2629937e021d605fd1426e641295909e13bab47cad1153793f5564e85e
 mcp_servers:
 - binlog
+- io.github.upstash/context7
+- microsoft-learn
 mcp_configs:
   binlog:
     name: binlog
@@ -637,6 +639,24 @@ mcp_configs:
     - --yes
     registry: false
     command: mise
+  io.github.upstash/context7:
+    name: io.github.upstash/context7
+    transport: stdio
+    env:
+      CONTEXT7_API_KEY: ${input:CONTEXT7_API_KEY}
+    args:
+    - exec
+    - --
+    - pnpm
+    - dlx
+    - '@upstash/context7-mcp@1.0.30'
+    registry: false
+    command: mise
+  microsoft-learn:
+    name: microsoft-learn
+    transport: http
+    registry: false
+    url: https://learn.microsoft.com/api/mcp
 lsp_servers:
 - csharp
 lsp_configs:
