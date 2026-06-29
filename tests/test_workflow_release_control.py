@@ -2833,6 +2833,186 @@ def test_acceptance_gate_pins_phase1_dotnet_metadata_cache_regression() -> None:
     )
 
 
+def test_acceptance_gate_pins_slow_release_evidence_regressions() -> None:
+    """Focused release acceptance must pin slow release evidence fixes."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_profile_evidence_uploads_slowest_release_builds",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_profile_evidence_rewrites_relative_multibuild_binlogs",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_profile_evidence_syncs_equal_singular_plural",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_profile_evidence_upload_preserves_release_build_mismatch",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_profile_evidence_upload_rejects_out_of_bundle_root",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_e2e_uploads_slowest_materialized_builds",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_slowest_release_build_ordering_is_deterministic",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_slowest_release_build_deduplicates_output_path",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_slowest_release_build_default_limit_keeps_top_five",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_unbound_release_build_profile",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_foreign_profile_selector",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_foreign_selector_without_build",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_invalid_profile_identity_values",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_cross_wired_uploaded_binlog",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_cross_wired_top_level_binlog",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_unowned_top_level_binlog",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_single_builds_cross_wire",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_singular_build_cross_wire",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_singular_build_plural_scope",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_mismatched_release_build_plural",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_duplicate_foreign_execute_phase",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_foreign_profile_root",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_bare_foreign_profile_roots",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_bare_profile_roots",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_unidentified_execute_no_build",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_current_directory_profile_root",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_unidentified_outputless_execute",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_outputless_identified_execute",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_forged_bundle_path_shape",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_bundle_dir_basename_mismatch",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_foreign_build_identity",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_missing_generated_builds",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_generated_proof_without_builds",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_accepts_declared_proof_without_builds",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_accepts_gem_validation_build_source",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_arbitrary_byte_source_path",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_generated_bundle_root_byte_source",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_invalid_release_shaped_byte_source_root",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_noncanonical_byte_source_path",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_invalid_byte_source_path",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_extra_generated_build_identity",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_duplicate_bundle_generated_identity",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_declared_stray_generated_builds",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_foreign_scoped_profile_phase",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_bundle_profile_root",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_profile_evidence_upload_rejects_bundle_profile_root",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_profile_evidence_upload_scopes_single_plural_build",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_admission_checks_byte_source_root",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_profile_evidence_scrubs_nested_plural_sidecar",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_admission_binds_byte_source_output",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_accepts_unscoped_allowlist_profile_phase",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_unscoped_profile_phase",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_unobserved_byte_source_path",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_missing_byte_source_observation",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_conflicting_byte_source_observation",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_non_success_byte_source_observation",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_partial_duplicate_byte_source_observation",
+        "src/public/lib/three-workflow-release-contracts/tests/"
+        "test_ci_validation_batches.py::"
+        "test_release_shaped_batch_rejects_foreign_byte_source_observation",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_admission_requires_byte_source_observations",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_release_shaped_no_publish_uses_mapping",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
 def test_acceptance_gate_pins_r36_dotnet_dist_boundary_regression() -> None:
     """Focused release acceptance must pin R36 .NET dist boundary fixes."""
     required_nodeids = {
@@ -23608,6 +23788,14 @@ def test_windows_orchestrator_step_emits_timing_evidence(  # noqa: C901
                     "started-at": "2026-06-26T05:00:00.000Z",
                     "completed-at": "2026-06-26T05:00:01.000Z",
                     "duration-ms": 1000,
+                    "request-digest": "0" * 64,
+                    "bundle-id": "0" * 24,
+                    "output-path": (
+                        ".three-ci-validation/work/validation-build/"
+                        f"release-shaped/{'0' * 24}"
+                    ),
+                    "work-group-id": selector["work-group-id"],
+                    "runner-family": "ubuntu",
                 }
             ],
             "uploaded-evidence-path": "validation-result-000-profile-evidence",
@@ -32157,6 +32345,12 @@ def test_ci_validation_release_shaped_artifact_does_not_fabricate_success() -> (
                     "completed-at": "2026-01-01T00:00:01.000Z",
                     "duration-ms": 1000,
                     "error": "simulated build failure",
+                    "request-digest": "0" * 64,
+                    "bundle-id": "0" * 24,
+                    "output-path": (
+                        ".three-ci-validation/work/validation-build/"
+                        f"release-shaped/{'0' * 24}"
+                    ),
                 }
             ],
         }
@@ -32263,6 +32457,14 @@ def test_ci_batch_contract_allows_release_shaped_failure_profile_telemetry() -> 
                 "started-at": "2026-01-01T00:00:00.000Z",
                 "completed-at": "2026-01-01T00:00:01.000Z",
                 "duration-ms": 1000,
+                "request-digest": "0" * 64,
+                "bundle-id": "0" * 24,
+                "work-group-id": "wg-release",
+                "runner-family": "ubuntu",
+                "output-path": (
+                    ".three-ci-validation/work/validation-build/"
+                    f"release-shaped/{'0' * 24}"
+                ),
             }
         ],
     }
@@ -32410,6 +32612,38 @@ def test_ci_validation_release_shaped_no_publish_uses_mapping() -> None:
         digests = _release_shaped_result_digests(result)
         assert digests[artifact_refs[0]] == hashlib.sha256(a_bytes).hexdigest()
         assert digests[artifact_refs[1]] == hashlib.sha256(b_bytes).hexdigest()
+        command = cast(
+            "Mapping[str, object]",
+            cast("Sequence[object]", result["commands"])[0],
+        )
+        source_proof = cast("Mapping[str, object]", command["source-proof"])
+        assert "generated-builds" not in source_proof
+        detail = {
+            "evidence-source": command["evidence-source"],
+            "source-proof": source_proof,
+            "artifact-obligation-results": command[
+                "artifact-obligation-results"
+            ],
+            "profile-telemetry": command["profile-telemetry"],
+        }
+        issues: list[object] = []
+        ci_validation_batch_contracts._validate_release_shaped_batch_detail(
+            detail,
+            "success",
+            artifact_refs,
+            "$.selector-results[0].evidence.category-result.detail",
+            issues,
+            selector_result={
+                "work-group-id": matrix["work-group-id"],
+                "coverage-target": matrix["coverage-target"],
+                "runner-family": matrix["runner-family"],
+                "validation-tree": plan["validation-tree"],
+                "diagnostics": [],
+            },
+            plan=plan,
+            fact_snapshot=_release_shaped_no_publish_fact_snapshot(),
+        )
+        assert not issues
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -33322,7 +33556,11 @@ def test_ci_validation_release_shaped_materializes_missing_mapping(
         def fake_build_request(
             **_kwargs: object,
         ) -> tuple[dict[str, object], dict[str, list[str]]]:
-            return {"kind": "build-request"}, {"artifact/wheel": artifact_refs}
+            return {
+                "kind": "build-request",
+                "profile": "wheel",
+                "project": {"id": "python.example"},
+            }, {"artifact/wheel": artifact_refs}
 
         def fake_execute_build(
             *,
@@ -33473,6 +33711,23 @@ def test_ci_validation_release_shaped_materializes_missing_mapping(
             "validation-build-artifact-mapping-record",
             "artifact-digest-observation",
         }
+        execute_phase = next(
+            phase
+            for phase in top_level_phases
+            if phase["phase"] == "release-build-execute-build"
+        )
+        assert execute_phase["work-group-id"] == "wg-release"
+        assert execute_phase["runner-family"] == "ubuntu"
+        assert execute_phase["project-id"] == "python.example"
+        assert execute_phase["profile"] == "wheel"
+        assert execute_phase["descriptor-path"] == (
+            "src/public/lib/example/three.release.yml"
+        )
+        request_digest = cast("str", execute_phase["request-digest"])
+        assert re.fullmatch(r"[0-9a-f]{64}", request_digest) is not None
+        assert execute_phase["bundle-id"] == request_digest[:24]
+        assert execute_phase["artifact-count"] == 1
+        assert execute_phase["build-id-count"] == 1
         for phase in top_level_phases:
             for key in (
                 "cwd",
@@ -33943,6 +34198,10 @@ def test_ci_validation_release_plan_records_planner_metadata_phases(
         monkeypatch.setattr(control, "plan_release", fake_plan_release)
         monkeypatch.setattr(control, "validate_contract", lambda _value: None)
         profile_phases: list[dict[str, object]] = []
+        profile_scope_metadata = {
+            "work_group_id": "release-shaped-dotnet-example",
+            "runner_family": "windows",
+        }
 
         release_plan = control._ci_validation_release_plan(
             repo_root=scratch,
@@ -33951,6 +34210,7 @@ def test_ci_validation_release_plan_records_planner_metadata_phases(
             project_id="dotnet.example",
             descriptor_path="src/public/lib/example/three.release.yml",
             profile_phases=profile_phases,
+            profile_scope_metadata=profile_scope_metadata,
         )
 
         assert release_plan == {"kind": "release-plan"}
@@ -34010,6 +34270,7 @@ def test_ci_validation_release_plan_records_planner_metadata_phases(
             project_id="dotnet.example",
             descriptor_path="src/public/lib/example/three.release.yml",
             profile_phases=cache_phases,
+            profile_scope_metadata=profile_scope_metadata,
         )
 
         assert cached_plan == {"kind": "release-plan"}
@@ -35343,6 +35604,1158 @@ def test_ci_validation_release_shaped_profile_and_timing_coexist(
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def test_ci_validation_profile_evidence_uploads_slowest_release_builds() -> (
+    None
+):
+    """Profile evidence upload keeps the slowest execute-build profiles."""
+    scratch = SCRATCH / "ci-validation-profile-evidence-slowest-builds"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        bundle_root = (
+            scratch
+            / ".three-ci-validation/work/validation-build/release-shaped"
+        )
+        build_specs = [
+            ("1" * 24, "ImageOcclusionEditor", 12_000),
+            ("2" * 24, "vscode-copilot-telegram-hook", 8_000),
+            ("3" * 24, "small-helper", 1_500),
+            ("4" * 24, "hcoona-release-smoke-inno", 6_000),
+        ]
+        phases: list[dict[str, object]] = []
+        for bundle_id, project_id, duration_ms in build_specs:
+            bundle_dir = bundle_root / bundle_id
+            profile_root = bundle_dir / "_profile/runs/profile-run"
+            binlog = profile_root / "binlogs/build.binlog"
+            binlog.parent.mkdir(parents=True)
+            binlog.write_bytes(project_id.encode())
+            (bundle_dir / "release-build-profile-telemetry.json").write_text(
+                json.dumps(
+                    {
+                        "kind": "release-build-profile-telemetry",
+                        "schema-version": 1,
+                        "profile-root": profile_root.as_posix(),
+                        "phases": [
+                            {
+                                "phase": "dotnet-pack",
+                                "started-at": "2026-01-01T00:00:00.000Z",
+                                "completed-at": "2026-01-01T00:00:01.000Z",
+                                "duration-ms": 1000,
+                                "outcome": "success",
+                                "argv": [
+                                    "dotnet",
+                                    "pack",
+                                    f"/bl:{binlog.as_posix()}",
+                                ],
+                                "cwd": scratch.as_posix(),
+                                "exit-code": 0,
+                                "binlog-directory": binlog.parent.as_posix(),
+                                "binlog-path": binlog.as_posix(),
+                                "binlog-paths": [binlog.as_posix()],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            request_digest = bundle_id + ("0" * 40)
+            phases.append(
+                {
+                    "phase": "release-build-execute-build",
+                    "outcome": "success",
+                    "started-at": "2026-01-01T00:00:00.000Z",
+                    "completed-at": (
+                        f"2026-01-01T00:00:{duration_ms // 1000:02d}."
+                        f"{duration_ms % 1000:03d}Z"
+                    ),
+                    "duration-ms": duration_ms,
+                    "cwd": scratch.as_posix(),
+                    "output-path": bundle_dir.as_posix(),
+                    "request-digest": request_digest,
+                    "bundle-id": bundle_id,
+                    "work-group-id": "wg-release",
+                    "runner-family": "windows",
+                    "project-id": project_id,
+                    "profile": "nuget",
+                    "descriptor-path": (
+                        f"src/public/app/{project_id}/three.release.yml"
+                    ),
+                    "artifact-count": 1,
+                    "build-id-count": 1,
+                }
+            )
+
+        release_builds = control._ci_slowest_release_build_profile_telemetries(
+            phases,
+            repo_root=scratch,
+            limit=2,
+        )
+        telemetry = control._ci_release_shaped_profile_telemetry(
+            phases,
+            release_build_telemetry=None,
+            release_build_telemetries=release_builds,
+            repo_root=scratch,
+        )
+
+        release_build_entries = cast(
+            "Sequence[Mapping[str, object]]",
+            telemetry["release-builds"],
+        )
+        assert [
+            PurePosixPath(cast("str", item["bundle-dir"])).name
+            for item in release_build_entries
+        ] == ["1" * 24, "2" * 24]
+        issues: list[object] = []
+        ci_validation_batch_contracts._validate_release_shaped_profile_telemetry(
+            telemetry,
+            "$.profile-telemetry",
+            issues,
+        )
+        assert not issues
+
+        validation_result: dict[str, object] = {
+            "commands": [{"profile-telemetry": telemetry}]
+        }
+        result_path = scratch / "validation-result.json"
+        control._ci_attach_uploaded_release_profile_evidence(
+            validation_result,
+            result_path=result_path,
+            repo_root=scratch,
+        )
+
+        uploaded_telemetry = cast(
+            "Mapping[str, object]",
+            cast(
+                "Mapping[str, object]",
+                cast("Sequence[object]", validation_result["commands"])[0],
+            )["profile-telemetry"],
+        )
+        uploaded_files = cast(
+            "Sequence[str]",
+            uploaded_telemetry["uploaded-evidence-files"],
+        )
+        assert uploaded_telemetry["uploaded-evidence-path"] == (
+            "validation-result-profile-evidence"
+        )
+        assert any(
+            f"release-builds/{'1' * 24}/" in path
+            and path.endswith("build.binlog")
+            for path in uploaded_files
+        )
+        assert any(
+            f"release-builds/{'2' * 24}/" in path
+            and path.endswith("build.binlog")
+            for path in uploaded_files
+        )
+        assert not any(
+            f"release-builds/{'3' * 24}/" in path for path in uploaded_files
+        )
+        assert not any(
+            f"release-builds/{'4' * 24}/" in path for path in uploaded_files
+        )
+        assert all((scratch / path).is_file() for path in uploaded_files)
+        upload_root = scratch / "validation-result-profile-evidence"
+        actual_uploaded_files = sorted(
+            path.relative_to(scratch).as_posix()
+            for path in upload_root.rglob("*")
+            if path.is_file()
+        )
+        assert actual_uploaded_files == sorted(uploaded_files)
+        release_build_dirs = sorted(
+            path.name
+            for path in (upload_root / "release-builds").iterdir()
+            if path.is_dir()
+        )
+        assert release_build_dirs == ["1" * 24, "2" * 24]
+        uploaded_release_builds = cast(
+            "Sequence[Mapping[str, object]]",
+            uploaded_telemetry["release-builds"],
+        )
+        first_executor_phase = cast(
+            "Mapping[str, object]",
+            cast(
+                "Sequence[object]",
+                cast(
+                    "Mapping[str, object]",
+                    uploaded_release_builds[0]["executor"],
+                )["phases"],
+            )[0],
+        )
+        first_uploaded_binlog = cast(
+            "str",
+            first_executor_phase["binlog-uploaded-evidence-path"],
+        )
+        assert f"release-builds/{'1' * 24}/" in first_uploaded_binlog
+        assert first_uploaded_binlog in uploaded_files
+        second_executor_phase = cast(
+            "Mapping[str, object]",
+            cast(
+                "Sequence[object]",
+                cast(
+                    "Mapping[str, object]",
+                    uploaded_release_builds[1]["executor"],
+                )["phases"],
+            )[0],
+        )
+        second_uploaded_binlog = cast(
+            "str",
+            second_executor_phase["binlog-uploaded-evidence-path"],
+        )
+        assert f"release-builds/{'2' * 24}/" in second_uploaded_binlog
+        assert second_uploaded_binlog in uploaded_files
+        assert first_uploaded_binlog != second_uploaded_binlog
+        issues = []
+        ci_validation_batch_contracts._validate_release_shaped_profile_telemetry(
+            uploaded_telemetry,
+            "$.profile-telemetry",
+            issues,
+        )
+        assert not issues
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_profile_evidence_rewrites_relative_multibuild_binlogs() -> (
+    None
+):
+    """Per-build alias maps rewrite bundle-relative binlogs without cross-wire."""
+    scratch = SCRATCH / "ci-validation-profile-evidence-relative-binlogs"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        phases: list[dict[str, object]] = []
+        for index, bundle_id in enumerate(("a" * 24, "b" * 24), start=1):
+            bundle_dir = (
+                scratch
+                / ".three-ci-validation/work/validation-build/release-shaped"
+                / bundle_id
+            )
+            binlog_relative = "_profile/runs/profile-run/binlogs/build.binlog"
+            binlog = bundle_dir / binlog_relative
+            binlog.parent.mkdir(parents=True)
+            binlog.write_bytes(f"binlog-{index}".encode())
+            (bundle_dir / "release-build-profile-telemetry.json").write_text(
+                json.dumps(
+                    {
+                        "kind": "release-build-profile-telemetry",
+                        "schema-version": 1,
+                        "profile-root": "_profile/runs/profile-run",
+                        "phases": [
+                            {
+                                "phase": "dotnet-pack",
+                                "started-at": "2026-01-01T00:00:00.000Z",
+                                "completed-at": "2026-01-01T00:00:01.000Z",
+                                "duration-ms": 1000,
+                                "outcome": "success",
+                                "argv": [
+                                    "dotnet",
+                                    "pack",
+                                    f"/bl:{binlog_relative}",
+                                ],
+                                "cwd": ".",
+                                "exit-code": 0,
+                                "binlog-path": binlog_relative,
+                                "binlog-paths": [binlog_relative],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            phases.append(
+                _release_execute_build_phase_for_capture(
+                    scratch,
+                    bundle_id=bundle_id,
+                    duration_ms=(index + 1) * 1_000,
+                    write_profile=False,
+                )
+            )
+
+        release_builds = control._ci_slowest_release_build_profile_telemetries(
+            phases,
+            repo_root=scratch,
+            limit=2,
+        )
+        telemetry = control._ci_release_shaped_profile_telemetry(
+            phases,
+            release_build_telemetry=None,
+            release_build_telemetries=release_builds,
+            repo_root=scratch,
+        )
+        validation_result: dict[str, object] = {
+            "commands": [{"profile-telemetry": telemetry}]
+        }
+        control._ci_attach_uploaded_release_profile_evidence(
+            validation_result,
+            result_path=scratch / "validation-result.json",
+            repo_root=scratch,
+        )
+
+        uploaded = cast(
+            "Mapping[str, object]",
+            cast(
+                "Mapping[str, object]",
+                cast("Sequence[object]", validation_result["commands"])[0],
+            )["profile-telemetry"],
+        )
+        uploaded_files = cast(
+            "Sequence[str]", uploaded["uploaded-evidence-files"]
+        )
+        uploaded_builds = cast(
+            "Sequence[Mapping[str, object]]",
+            uploaded["release-builds"],
+        )
+        issues = []
+        ci_validation_batch_contracts._validate_release_shaped_profile_telemetry(
+            uploaded,
+            "$.profile-telemetry",
+            issues,
+        )
+        assert not issues
+        uploaded_binlogs: list[str] = []
+        for release_build in uploaded_builds:
+            bundle_dir = cast("str", release_build["bundle-dir"])
+            bundle_id = PurePosixPath(
+                bundle_dir,
+            ).name
+            assert cast("str", release_build["profile-root"]).startswith(
+                f"{bundle_dir}/",
+            )
+            executor = cast("Mapping[str, object]", release_build["executor"])
+            assert cast("str", executor["profile-root"]).startswith(
+                f"{bundle_dir}/",
+            )
+            uploaded_prefix = f"validation-result-profile-evidence/release-builds/{bundle_id}/"
+            executor_phase = cast(
+                "Mapping[str, object]",
+                cast(
+                    "Sequence[object]",
+                    executor["phases"],
+                )[0],
+            )
+            uploaded_binlog = cast(
+                "str",
+                executor_phase["binlog-uploaded-evidence-path"],
+            )
+            uploaded_binlogs.append(uploaded_binlog)
+            assert uploaded_binlog.startswith(uploaded_prefix)
+            assert executor_phase["binlog-uploaded-evidence-paths"] == [
+                uploaded_binlog
+            ]
+            assert (
+                cast("Sequence[str]", executor_phase["uploaded-evidence-argv"])[
+                    -1
+                ]
+                == f"/bl:{uploaded_binlog}"
+            )
+            assert cast(
+                "Sequence[str]", executor_phase["uploaded-evidence-argv"]
+            )[-1].startswith(f"/bl:{uploaded_prefix}")
+            assert uploaded_binlog in uploaded_files
+        assert uploaded_binlogs[0] != uploaded_binlogs[1]
+        assert all((scratch / path).is_file() for path in uploaded_files)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_profile_evidence_syncs_equal_singular_plural() -> None:
+    """Upload keeps equal but distinct singular/plural release builds aligned."""
+    scratch = SCRATCH / "ci-validation-profile-evidence-singular-plural-sync"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        phases = [
+            _release_execute_build_phase_for_capture(
+                scratch,
+                bundle_id="e" * 24,
+                duration_ms=2_000,
+            ),
+            _release_execute_build_phase_for_capture(
+                scratch,
+                bundle_id="f" * 24,
+                duration_ms=1_000,
+            ),
+        ]
+        release_builds = control._ci_slowest_release_build_profile_telemetries(
+            phases,
+            repo_root=scratch,
+            limit=2,
+        )
+        telemetry = control._ci_release_shaped_profile_telemetry(
+            phases,
+            release_build_telemetry=None,
+            release_build_telemetries=release_builds,
+            repo_root=scratch,
+        )
+        telemetry["release-build"] = deepcopy(release_builds[0])
+        validation_result: dict[str, object] = {
+            "commands": [{"profile-telemetry": telemetry}]
+        }
+
+        control._ci_attach_uploaded_release_profile_evidence(
+            validation_result,
+            result_path=scratch / "validation-result.json",
+            repo_root=scratch,
+        )
+
+        uploaded = cast(
+            "Mapping[str, object]",
+            cast(
+                "Mapping[str, object]",
+                cast("Sequence[object]", validation_result["commands"])[0],
+            )["profile-telemetry"],
+        )
+        uploaded_builds = cast("Sequence[object]", uploaded["release-builds"])
+        assert uploaded["release-build"] == uploaded_builds[0]
+        issues = []
+        ci_validation_batch_contracts._validate_release_shaped_profile_telemetry(
+            uploaded,
+            "$.profile-telemetry",
+            issues,
+        )
+        assert not issues
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_profile_evidence_upload_preserves_release_build_mismatch() -> (
+    None
+):
+    """Upload staging must not mask release-build/release-builds mismatch."""
+    scratch = SCRATCH / "ci-validation-profile-evidence-build-mismatch"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        phases = [
+            _release_execute_build_phase_for_capture(
+                scratch,
+                bundle_id="c" * 24,
+                duration_ms=2_000,
+            )
+        ]
+        release_builds = control._ci_slowest_release_build_profile_telemetries(
+            phases,
+            repo_root=scratch,
+            limit=1,
+        )
+        telemetry = control._ci_release_shaped_profile_telemetry(
+            phases,
+            release_build_telemetry=None,
+            release_build_telemetries=release_builds,
+            repo_root=scratch,
+        )
+        mismatched_release_build = deepcopy(release_builds[0])
+        mismatched_release_build["profile-root"] = (
+            ".three-ci-validation/work/validation-build/release-shaped/"
+            f"{'c' * 24}/_profile/runs/mismatched"
+        )
+        telemetry["release-builds"] = release_builds
+        telemetry["release-build"] = mismatched_release_build
+        validation_result: dict[str, object] = {
+            "commands": [{"profile-telemetry": telemetry}]
+        }
+
+        control._ci_attach_uploaded_release_profile_evidence(
+            validation_result,
+            result_path=scratch / "validation-result.json",
+            repo_root=scratch,
+        )
+
+        uploaded = cast(
+            "Mapping[str, object]",
+            cast(
+                "Mapping[str, object]",
+                cast("Sequence[object]", validation_result["commands"])[0],
+            )["profile-telemetry"],
+        )
+        assert uploaded["release-build"] == mismatched_release_build
+        assert (
+            uploaded["release-build"]
+            != cast(
+                "Sequence[object]",
+                uploaded["release-builds"],
+            )[0]
+        )
+        assert "uploaded-evidence-files" not in uploaded
+        assert any(
+            phase.get("phase") == "profile-evidence-upload"
+            and "release-builds[0]" in cast("str", phase.get("error", ""))
+            for phase in cast(
+                "Sequence[Mapping[str, object]]", uploaded["phases"]
+            )
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_profile_evidence_upload_scopes_single_plural_build() -> (
+    None
+):
+    """A one-entry release-builds list stages evidence under release-builds."""
+    scratch = SCRATCH / "ci-validation-profile-evidence-single-plural-build"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        bundle_id = "d" * 24
+        phase = _release_execute_build_phase_for_capture(
+            scratch,
+            bundle_id=bundle_id,
+            duration_ms=2_000,
+        )
+        release_builds = control._ci_slowest_release_build_profile_telemetries(
+            [phase],
+            repo_root=scratch,
+            limit=1,
+        )
+        bundle_dir = (
+            scratch
+            / ".three-ci-validation/work/validation-build/release-shaped"
+            / bundle_id
+        )
+        binlog = bundle_dir / "_profile/runs/profile-run/binlogs/build.binlog"
+        binlog_relative = binlog.relative_to(scratch).as_posix()
+        executor = cast("dict[str, object]", release_builds[0]["executor"])
+        executor["phases"] = [
+            {
+                "phase": "dotnet-pack",
+                "started-at": "2026-01-01T00:00:00.000Z",
+                "completed-at": "2026-01-01T00:00:01.000Z",
+                "duration-ms": 1000,
+                "outcome": "success",
+                "argv": ["dotnet", "pack", f"/bl:{binlog_relative}"],
+                "cwd": ".",
+                "exit-code": 0,
+                "binlog-path": binlog_relative,
+            }
+        ]
+        telemetry = control._ci_release_shaped_profile_telemetry(
+            [phase],
+            release_build_telemetry=None,
+            release_build_telemetries=release_builds,
+            repo_root=scratch,
+        )
+        telemetry.pop("release-build")
+        telemetry["release-builds"] = release_builds
+        validation_result: dict[str, object] = {
+            "commands": [{"profile-telemetry": telemetry}]
+        }
+
+        control._ci_attach_uploaded_release_profile_evidence(
+            validation_result,
+            result_path=scratch / "validation-result.json",
+            repo_root=scratch,
+        )
+
+        uploaded = cast(
+            "Mapping[str, object]",
+            cast(
+                "Mapping[str, object]",
+                cast("Sequence[object]", validation_result["commands"])[0],
+            )["profile-telemetry"],
+        )
+        uploaded_files = cast(
+            "Sequence[str]", uploaded["uploaded-evidence-files"]
+        )
+        uploaded_prefix = (
+            f"validation-result-profile-evidence/release-builds/{bundle_id}/"
+        )
+        assert any(path.startswith(uploaded_prefix) for path in uploaded_files)
+        assert all((scratch / path).is_file() for path in uploaded_files)
+        uploaded_build = cast(
+            "Mapping[str, object]",
+            cast("Sequence[object]", uploaded["release-builds"])[0],
+        )
+        executor = cast("Mapping[str, object]", uploaded_build["executor"])
+        executor_phase = cast(
+            "Mapping[str, object]",
+            cast("Sequence[object]", executor["phases"])[0],
+        )
+        assert cast(
+            "str",
+            executor_phase["binlog-uploaded-evidence-path"],
+        ).startswith(uploaded_prefix)
+        issues: list[object] = []
+        ci_validation_batch_contracts._validate_release_shaped_profile_telemetry(
+            uploaded,
+            "$.profile-telemetry",
+            issues,
+        )
+        assert not issues
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_profile_evidence_scrubs_nested_plural_sidecar() -> None:
+    """Staging reconciliation scrubs stale claims from plural sidecars."""
+    scratch = SCRATCH / "ci-validation-profile-evidence-nested-sidecar-scrub"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        upload_root = scratch / "validation-result-profile-evidence"
+        sidecar = (
+            upload_root
+            / "release-builds"
+            / ("e" * 24)
+            / "release-build-profile-telemetry.json"
+        )
+        sidecar.parent.mkdir(parents=True)
+        sidecar.write_text(
+            json.dumps(
+                {
+                    "kind": "release-build-profile-telemetry",
+                    "schema-version": 1,
+                    "profile-root": (
+                        f"validation-result-profile-evidence/release-builds/"
+                        f"{'e' * 24}/_profile/runs/profile-run"
+                    ),
+                    "phases": [
+                        {
+                            "phase": "dotnet-pack",
+                            "outcome": "success",
+                            "started-at": "2026-01-01T00:00:00.000Z",
+                            "completed-at": "2026-01-01T00:00:01.000Z",
+                            "duration-ms": 1000,
+                            "binlog-uploaded-evidence-path": (
+                                "validation-result-profile-evidence/"
+                                f"release-builds/{'e' * 24}/_profile/runs/"
+                                "profile-run/binlogs/missing.binlog"
+                            ),
+                            "uploaded-evidence-argv": [
+                                "dotnet",
+                                "pack",
+                                (
+                                    "/bl:validation-result-profile-evidence/"
+                                    f"release-builds/{'e' * 24}/_profile/"
+                                    "runs/profile-run/binlogs/missing.binlog"
+                                ),
+                            ],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        unrelated_sidecar = (
+            upload_root
+            / "_profile"
+            / "runs"
+            / "copied"
+            / "release-build-profile-telemetry.json"
+        )
+        unrelated_sidecar.parent.mkdir(parents=True)
+        unrelated_sidecar.write_text(
+            json.dumps(
+                {
+                    "kind": "release-build-profile-telemetry",
+                    "schema-version": 1,
+                    "profile-root": (
+                        "validation-result-profile-evidence/_profile/runs/"
+                        "copied"
+                    ),
+                    "phases": [
+                        {
+                            "phase": "dotnet-pack",
+                            "outcome": "success",
+                            "started-at": "2026-01-01T00:00:00.000Z",
+                            "completed-at": "2026-01-01T00:00:01.000Z",
+                            "duration-ms": 1000,
+                            "binlog-uploaded-evidence-path": (
+                                "validation-result-profile-evidence/_profile/"
+                                "runs/copied/binlogs/unrelated-missing.binlog"
+                            ),
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        result_path = scratch / "validation-result.json"
+        result_path.write_text(
+            json.dumps(
+                {
+                    "commands": [
+                        {
+                            "profile-telemetry": {
+                                "kind": (
+                                    "release-shaped-validation-profile-telemetry"
+                                ),
+                                "schema-version": 1,
+                                "phases": [],
+                                "uploaded-evidence-path": (
+                                    "validation-result-profile-evidence"
+                                ),
+                            }
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        control._ci_reconcile_staged_release_profile_evidence_claims(
+            result_path,
+            upload_root,
+            control._ci_timing_start(),
+        )
+
+        scrubbed_sidecar = json.loads(sidecar.read_text(encoding="utf-8"))
+        sidecar_phase = cast(
+            "Mapping[str, object]",
+            cast("Sequence[object]", scrubbed_sidecar["phases"])[0],
+        )
+        assert "binlog-uploaded-evidence-path" not in sidecar_phase
+        assert "uploaded-evidence-argv" not in sidecar_phase
+        unrelated = json.loads(unrelated_sidecar.read_text(encoding="utf-8"))
+        unrelated_phase = cast(
+            "Mapping[str, object]",
+            cast("Sequence[object]", unrelated["phases"])[0],
+        )
+        assert "binlog-uploaded-evidence-path" in unrelated_phase
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        telemetry = cast(
+            "Mapping[str, object]",
+            cast("Mapping[str, object]", result["commands"][0])[
+                "profile-telemetry"
+            ],
+        )
+        upload_failures = [
+            phase
+            for phase in cast(
+                "Sequence[Mapping[str, object]]", telemetry["phases"]
+            )
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        assert len(upload_failures) == 1
+        assert "missing claimed path" in cast(
+            "str", upload_failures[0]["error"]
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_release_shaped_e2e_uploads_slowest_materialized_builds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No-publish evidence excludes supplemental foreign materialization."""
+    scratch = SCRATCH / "ci-validation-release-shaped-e2e-slowest-builds"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        primary_ref = "ci-validation/artifacts/python/project-0/a.whl"
+        plan = _release_shaped_no_publish_plan([primary_ref])
+        work_groups = cast("list[dict[str, object]]", plan["work-groups"])
+        obligations = cast(
+            "list[dict[str, object]]", plan["artifact-obligations"]
+        )
+        primary_obligation = obligations[0]
+        primary_obligation["subject-id"] = "python.project-0"
+        primary_obligation["descriptor-path"] = (
+            "src/public/lib/project-0/three.release.yml"
+        )
+        durations_by_project = {"python.project-0": 1_000}
+        for index in range(1, 7):
+            work_group_id = f"wg-release-{index}"
+            project_id = f"python.project-{index}"
+            work_groups.append(
+                {
+                    "work-group-id": work_group_id,
+                    "kind": "release-shaped-artifact",
+                    "runner-family": "ubuntu",
+                    "coverage-target": {"type": "subject", "id": project_id},
+                    "depends-on": [],
+                }
+            )
+            obligation = deepcopy(primary_obligation)
+            obligation["artifact-obligation-id"] = (
+                f"artifact-python-project-{index}-wheel"
+            )
+            obligation["work-group-id"] = work_group_id
+            obligation["subject-id"] = project_id
+            obligation["descriptor-path"] = (
+                f"src/public/lib/project-{index}/three.release.yml"
+            )
+            artifact = cast("dict[str, object]", obligation["artifact"])
+            artifact["expected-artifact-refs"] = [
+                f"ci-validation/artifacts/python/project-{index}/a.whl"
+            ]
+            obligations.append(obligation)
+            durations_by_project[project_id] = (index + 1) * 1_000
+        matrix = _release_shaped_no_publish_matrix(plan)
+
+        def fake_build_request(
+            **kwargs: object,
+        ) -> tuple[dict[str, object], dict[str, list[str]]]:
+            group_obligations = cast(
+                "Sequence[Mapping[str, object]]",
+                kwargs["obligations"],
+            )
+            obligation = group_obligations[0]
+            project_id = cast("str", obligation["subject-id"])
+            refs = [
+                ref
+                for item in group_obligations
+                for ref in control._ci_artifact_expected_refs(item)
+            ]
+            artifact_id = f"artifact/{project_id}"
+            return {
+                "kind": "build-request",
+                "profile": "wheel",
+                "project": {"id": project_id},
+                "artifacts": {artifact_id: {"concrete-kind": "wheel"}},
+            }, {artifact_id: refs}
+
+        def fake_execute_build(
+            *,
+            request: Mapping[str, object],
+            repo_root: Path,
+            bundle_dir: Path,
+        ) -> dict[str, object]:
+            project = cast("Mapping[str, object]", request["project"])
+            project_id = cast("str", project["id"])
+            output = bundle_dir / "dist/a.whl"
+            output.parent.mkdir(parents=True)
+            output.write_bytes(project_id.encode())
+            profile_root = bundle_dir / "_profile/runs/profile-run"
+            binlog = profile_root / "binlogs/build.binlog"
+            binlog.parent.mkdir(parents=True)
+            binlog.write_bytes(project_id.encode())
+            (bundle_dir / "release-build-profile-telemetry.json").write_text(
+                json.dumps(
+                    {
+                        "kind": "release-build-profile-telemetry",
+                        "schema-version": 1,
+                        "profile-root": profile_root.as_posix(),
+                        "phases": [
+                            {
+                                "phase": "dotnet-pack",
+                                "started-at": "2026-01-01T00:00:00.000Z",
+                                "completed-at": "2026-01-01T00:00:01.000Z",
+                                "duration-ms": 1000,
+                                "outcome": "success",
+                                "argv": [
+                                    "dotnet",
+                                    "pack",
+                                    f"/bl:{binlog.as_posix()}",
+                                ],
+                                "cwd": repo_root.as_posix(),
+                                "exit-code": 0,
+                                "binlog-path": binlog.as_posix(),
+                                "binlog-paths": [binlog.as_posix()],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            artifact_id = next(
+                iter(cast("Mapping[str, object]", request["artifacts"]))
+            )
+            return {
+                "kind": "build-result",
+                "artifacts": {
+                    artifact_id: {
+                        "bundle-relative-path": "dist/a.whl",
+                    }
+                },
+            }
+
+        original_profile_phase_record = control._ci_profile_phase_record
+
+        def fake_profile_phase_record(
+            phases: list[dict[str, object]] | None,
+            phase: str,
+            start: tuple[datetime, int],
+            **kwargs: object,
+        ) -> None:
+            original_profile_phase_record(phases, phase, start, **kwargs)
+            if phases is None or phase != "release-build-execute-build":
+                return
+            project_id = kwargs.get("project_id")
+            duration_ms = durations_by_project.get(cast("str", project_id))
+            if duration_ms is None:
+                return
+            record = phases[-1]
+            record["started-at"] = "2026-01-01T00:00:00.000Z"
+            record["completed-at"] = (
+                f"2026-01-01T00:00:{duration_ms // 1000:02d}."
+                f"{duration_ms % 1000:03d}Z"
+            )
+            record["duration-ms"] = duration_ms
+
+        monkeypatch.setattr(
+            control,
+            "_ci_no_publish_release_shaped_build_request",
+            fake_build_request,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_execute_no_publish_release_shaped_build",
+            fake_execute_build,
+        )
+        monkeypatch.setattr(
+            control,
+            "_ci_profile_phase_record",
+            fake_profile_phase_record,
+        )
+
+        result = _run_release_shaped_no_publish_validation(
+            scratch=scratch,
+            plan=plan,
+            matrix=matrix,
+            fact_snapshot=_release_shaped_no_publish_fact_snapshot(
+                "src/public/lib/project-0/three.release.yml",
+                owner_subject_id="python.project-0",
+            ),
+        )
+
+        assert result["outcome"] == "success"
+        command = cast(
+            "Mapping[str, object]",
+            cast("Sequence[object]", result["commands"])[0],
+        )
+        source_proof = cast("Mapping[str, object]", command["source-proof"])
+        generated_builds = cast(
+            "Sequence[Mapping[str, object]]",
+            source_proof["generated-builds"],
+        )
+        profile_telemetry = cast(
+            "Mapping[str, object]",
+            command["profile-telemetry"],
+        )
+        execute_phase_identities = {
+            (
+                cast("str", phase["request-digest"]),
+                cast("str", phase["bundle-id"]),
+            )
+            for phase in cast(
+                "Sequence[Mapping[str, object]]",
+                profile_telemetry["phases"],
+            )
+            if phase.get("phase") == "release-build-execute-build"
+        }
+        assert len(execute_phase_identities) == 1
+        assert {
+            (
+                cast("str", item["request-digest"]),
+                cast("str", item["bundle-id"]),
+            )
+            for item in generated_builds
+        } == execute_phase_identities
+        assert all(
+            phase.get("work-group-id") in {None, "wg-release"}
+            for phase in cast(
+                "Sequence[Mapping[str, object]]",
+                profile_telemetry["phases"],
+            )
+        )
+        assert not any(
+            str(phase.get("project-id", "")).startswith("python.project-")
+            and phase.get("project-id") != "python.project-0"
+            for phase in cast(
+                "Sequence[Mapping[str, object]]",
+                profile_telemetry["phases"],
+            )
+        )
+        assert all(
+            phase.get("work-group-id") == "wg-release"
+            for phase in cast(
+                "Sequence[Mapping[str, object]]",
+                profile_telemetry["phases"],
+            )
+            if phase.get("phase") == "validation-build-artifact-mapping-record"
+        )
+        release_build = cast(
+            "Mapping[str, object]",
+            profile_telemetry["release-build"],
+        )
+        assert release_build["work-group-id"] == "wg-release"
+        assert "release-builds" not in profile_telemetry
+        uploaded_files = cast(
+            "Sequence[str]",
+            profile_telemetry["uploaded-evidence-files"],
+        )
+        uploaded_binlog_payloads = [
+            (scratch / path).read_bytes()
+            for path in uploaded_files
+            if path.endswith("build.binlog")
+        ]
+        assert uploaded_binlog_payloads == [b"python.project-0"]
+        issues: list[object] = []
+        ci_validation_batch_contracts._validate_release_shaped_profile_telemetry(
+            profile_telemetry,
+            "$.profile-telemetry",
+            issues,
+        )
+        assert not issues
+        detail = {
+            "evidence-source": command["evidence-source"],
+            "source-proof": source_proof,
+            "artifact-obligation-results": command[
+                "artifact-obligation-results"
+            ],
+            "profile-telemetry": profile_telemetry,
+        }
+        batch_issues: list[object] = []
+        ci_validation_batch_contracts._validate_release_shaped_batch_detail(
+            detail,
+            "success",
+            [primary_ref],
+            "$.selector-results[0].evidence.category-result.detail",
+            batch_issues,
+            selector_result={
+                "work-group-id": "wg-release",
+                "coverage-target": matrix["coverage-target"],
+                "runner-family": matrix["runner-family"],
+                "validation-tree": plan["validation-tree"],
+                "diagnostics": [],
+            },
+            plan=plan,
+            fact_snapshot=_release_shaped_no_publish_fact_snapshot(
+                "src/public/lib/project-0/three.release.yml",
+                owner_subject_id="python.project-0",
+            ),
+        )
+        assert not batch_issues
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_slowest_release_build_ordering_is_deterministic() -> (
+    None
+):
+    """Equal-duration release-build captures use stable bundle-id ordering."""
+    scratch = SCRATCH / "ci-validation-slowest-build-equal-duration"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        phases = [
+            _release_execute_build_phase_for_capture(
+                scratch,
+                bundle_id=bundle_id,
+                duration_ms=5_000,
+            )
+            for bundle_id in ("b" * 24, "a" * 24, "c" * 24)
+        ]
+
+        release_builds = control._ci_slowest_release_build_profile_telemetries(
+            phases,
+            repo_root=scratch,
+            limit=3,
+        )
+
+        assert [
+            PurePosixPath(cast("str", item["bundle-dir"])).name
+            for item in release_builds
+        ] == ["a" * 24, "b" * 24, "c" * 24]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_slowest_release_build_deduplicates_output_path() -> None:
+    """Repeated execute-build phases for one bundle only capture one profile."""
+    scratch = SCRATCH / "ci-validation-slowest-build-duplicate-output"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        phase = _release_execute_build_phase_for_capture(
+            scratch,
+            bundle_id="d" * 24,
+            duration_ms=5_000,
+        )
+        duplicate_phase = dict(phase)
+        duplicate_phase["duration-ms"] = 10_000
+
+        release_builds = control._ci_slowest_release_build_profile_telemetries(
+            [phase, duplicate_phase],
+            repo_root=scratch,
+            limit=5,
+        )
+
+        assert len(release_builds) == 1
+        assert PurePosixPath(
+            cast("str", release_builds[0]["bundle-dir"])
+        ).name == ("d" * 24)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_slowest_release_build_default_limit_keeps_top_five() -> (
+    None
+):
+    """Default slow release-build evidence capture is capped at five builds."""
+    scratch = SCRATCH / "ci-validation-slowest-build-default-limit"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        phases = [
+            _release_execute_build_phase_for_capture(
+                scratch,
+                bundle_id=f"{index:024x}",
+                duration_ms=index * 1_000,
+            )
+            for index in range(1, 7)
+        ]
+
+        release_builds = control._ci_slowest_release_build_profile_telemetries(
+            phases,
+            repo_root=scratch,
+        )
+
+        assert [
+            PurePosixPath(cast("str", item["bundle-dir"])).name
+            for item in release_builds
+        ] == [f"{index:024x}" for index in range(6, 1, -1)]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _release_execute_build_phase_for_capture(
+    scratch: Path,
+    *,
+    bundle_id: str,
+    duration_ms: int,
+    write_profile: bool = True,
+) -> dict[str, object]:
+    bundle_dir = (
+        scratch
+        / ".three-ci-validation/work/validation-build/release-shaped"
+        / bundle_id
+    )
+    profile_root = bundle_dir / "_profile/runs/profile-run"
+    binlog = profile_root / "binlogs/build.binlog"
+    binlog.parent.mkdir(parents=True, exist_ok=True)
+    binlog.write_bytes(bundle_id.encode())
+    if write_profile:
+        (bundle_dir / "release-build-profile-telemetry.json").write_text(
+            json.dumps(
+                {
+                    "kind": "release-build-profile-telemetry",
+                    "schema-version": 1,
+                    "profile-root": profile_root.as_posix(),
+                    "phases": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+    request_digest = bundle_id + ("0" * 40)
+    return {
+        "phase": "release-build-execute-build",
+        "outcome": "success",
+        "started-at": "2026-01-01T00:00:00.000Z",
+        "completed-at": (
+            f"2026-01-01T00:00:{duration_ms // 1000:02d}."
+            f"{duration_ms % 1000:03d}Z"
+        ),
+        "duration-ms": duration_ms,
+        "cwd": scratch.as_posix(),
+        "output-path": bundle_dir.as_posix(),
+        "request-digest": request_digest,
+        "bundle-id": bundle_id,
+        "work-group-id": "wg-release",
+        "runner-family": "windows",
+    }
+
+
 def test_ci_validation_profile_evidence_upload_skips_symlinks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -35764,6 +37177,176 @@ def test_ci_validation_profile_evidence_upload_reports_non_directory_root(
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def test_ci_validation_profile_evidence_upload_rejects_out_of_bundle_root() -> (
+    None
+):
+    """Profile evidence upload refuses roots outside the matched bundle."""
+    scratch = SCRATCH / "ci-validation-profile-evidence-out-of-bundle-root"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        bundle_id = "a" * 24
+        bundle_dir = (
+            scratch
+            / ".three-ci-validation/work/validation-build/release-shaped"
+            / bundle_id
+        )
+        profile_root = scratch / "foreign-profile-root"
+        binlog = profile_root / "binlogs/build.binlog"
+        binlog.parent.mkdir(parents=True)
+        binlog.write_bytes(b"foreign binlog")
+        bundle_dir.mkdir(parents=True)
+        (bundle_dir / "release-build-profile-telemetry.json").write_text(
+            json.dumps(
+                {
+                    "kind": "release-build-profile-telemetry",
+                    "schema-version": 1,
+                    "profile-root": "foreign-profile-root",
+                    "phases": [
+                        {
+                            "phase": "dotnet-pack",
+                            "started-at": "2026-01-01T00:00:00.000Z",
+                            "completed-at": "2026-01-01T00:00:01.000Z",
+                            "duration-ms": 1000,
+                            "outcome": "success",
+                            "argv": [
+                                "dotnet",
+                                "pack",
+                                f"/bl:{binlog.as_posix()}",
+                            ],
+                            "cwd": scratch.as_posix(),
+                            "exit-code": 0,
+                            "binlog-path": binlog.as_posix(),
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        phase = _release_execute_build_phase_for_capture(
+            scratch,
+            bundle_id=bundle_id,
+            duration_ms=2_000,
+            write_profile=False,
+        )
+        release_builds = control._ci_slowest_release_build_profile_telemetries(
+            [phase],
+            repo_root=scratch,
+            limit=1,
+        )
+        telemetry = control._ci_release_shaped_profile_telemetry(
+            [phase],
+            release_build_telemetry=None,
+            release_build_telemetries=release_builds,
+            repo_root=scratch,
+        )
+        validation_result: dict[str, object] = {
+            "commands": [{"profile-telemetry": telemetry}]
+        }
+
+        control._ci_attach_uploaded_release_profile_evidence(
+            validation_result,
+            result_path=scratch / "validation-result.json",
+            repo_root=scratch,
+        )
+
+        uploaded = cast(
+            "Mapping[str, object]",
+            cast(
+                "Mapping[str, object]",
+                cast("Sequence[object]", validation_result["commands"])[0],
+            )["profile-telemetry"],
+        )
+        assert "uploaded-evidence-path" not in uploaded
+        assert "uploaded-evidence-files" not in uploaded
+        upload_failures = [
+            phase
+            for phase in cast(
+                "Sequence[Mapping[str, object]]", uploaded["phases"]
+            )
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        assert len(upload_failures) == 1
+        assert upload_failures[0]["outcome"] == "failure"
+        assert "outside bundle dir" in cast("str", upload_failures[0]["error"])
+        assert not (
+            scratch / "validation-result-profile-evidence/foreign-profile-root/"
+            "binlogs/build.binlog"
+        ).exists()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize("root_owner", ["release-build", "executor"])
+def test_ci_validation_profile_evidence_upload_rejects_bundle_profile_root(
+    root_owner: str,
+) -> None:
+    """Profile evidence upload refuses roots equal to the matched bundle."""
+    scratch = SCRATCH / "ci-validation-profile-evidence-bundle-root"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        bundle_id = "b" * 24
+        phase = _release_execute_build_phase_for_capture(
+            scratch,
+            bundle_id=bundle_id,
+            duration_ms=2_000,
+        )
+        release_builds = control._ci_slowest_release_build_profile_telemetries(
+            [phase],
+            repo_root=scratch,
+            limit=1,
+        )
+        release_build = deepcopy(release_builds[0])
+        bundle_dir = cast("str", release_build["bundle-dir"])
+        if root_owner == "executor":
+            release_build.pop("profile-root", None)
+            executor = cast("dict[str, object]", release_build["executor"])
+            executor["profile-root"] = bundle_dir
+        else:
+            release_build["profile-root"] = bundle_dir
+        telemetry = control._ci_release_shaped_profile_telemetry(
+            [phase],
+            release_build_telemetry=release_build,
+            repo_root=scratch,
+        )
+        validation_result: dict[str, object] = {
+            "commands": [{"profile-telemetry": telemetry}]
+        }
+
+        control._ci_attach_uploaded_release_profile_evidence(
+            validation_result,
+            result_path=scratch / "validation-result.json",
+            repo_root=scratch,
+        )
+
+        uploaded = cast(
+            "Mapping[str, object]",
+            cast(
+                "Mapping[str, object]",
+                cast("Sequence[object]", validation_result["commands"])[0],
+            )["profile-telemetry"],
+        )
+        assert "uploaded-evidence-path" not in uploaded
+        assert "uploaded-evidence-files" not in uploaded
+        upload_failures = [
+            phase
+            for phase in cast(
+                "Sequence[Mapping[str, object]]", uploaded["phases"]
+            )
+            if phase["phase"] == "profile-evidence-upload"
+        ]
+        assert len(upload_failures) == 1
+        assert upload_failures[0]["outcome"] == "failure"
+        assert "not below bundle dir" in cast(
+            "str", upload_failures[0]["error"]
+        )
+        upload_root = scratch / "validation-result-profile-evidence"
+        assert not upload_root.exists() or not any(upload_root.rglob("*"))
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def test_ci_batch_writer_serializes_release_shaped_profile_and_timing() -> None:
     """Serialized release-shaped batch evidence keeps timing and profiles."""
     scratch = _ci_batch_bundle_scratch("batch-release-profile-timing")
@@ -35832,6 +37415,14 @@ def test_ci_batch_writer_serializes_release_shaped_profile_and_timing() -> None:
                     "started-at": "2026-06-26T05:00:00.000Z",
                     "completed-at": "2026-06-26T05:00:01.000Z",
                     "duration-ms": 1000,
+                    "request-digest": "0" * 64,
+                    "bundle-id": "0" * 24,
+                    "output-path": (
+                        ".three-ci-validation/work/validation-build/"
+                        f"release-shaped/{'0' * 24}"
+                    ),
+                    "work-group-id": selector["work-group-id"],
+                    "runner-family": "ubuntu",
                 }
             ],
             "uploaded-evidence-path": "validation-result-000-profile-evidence",
@@ -35902,6 +37493,12 @@ def test_ci_batch_writer_serializes_release_shaped_profile_and_timing() -> None:
                 "work-group-id": selector["work-group-id"],
                 "coverage-target": slot["coverage-target"],
                 "observed-commit-sha": batch_contracts.TREE_SHA,
+                "generated-builds": [
+                    {
+                        "request-digest": "0" * 64,
+                        "bundle-id": "0" * 24,
+                    }
+                ],
                 "artifact-digests": [
                     {
                         "artifact-ref": artifact_ref,
@@ -35988,6 +37585,352 @@ def test_ci_batch_writer_serializes_release_shaped_profile_and_timing() -> None:
         )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+@pytest.mark.parametrize(
+    ("byte_source_path", "expected"),
+    [
+        (".three-ci-validation/work/validation-build/pkg.whl", True),
+        (".three-ci-validation/work/validation-build.gem", True),
+        ("README.md", False),
+    ],
+)
+def test_ci_validation_release_shaped_admission_checks_byte_source_root(
+    byte_source_path: str,
+    expected: bool,
+) -> None:
+    """Admission rejects source proofs outside validation-build outputs."""
+    artifact_ref = "ci-validation/artifacts/python/example/a.whl"
+    digest = "a" * 64
+    coverage_target = {"type": "subject", "id": "python.example"}
+    result = {
+        "artifact-obligation-results": [
+            {
+                "artifact": {
+                    "observed": {
+                        "digests": [
+                            {
+                                "artifact-ref": artifact_ref,
+                                "algorithm": "sha256",
+                                "digest": digest,
+                            }
+                        ]
+                    }
+                }
+            }
+        ]
+    }
+    source_proof = {
+        "kind": "no-publish-validation-result",
+        "work-group-id": "wg-release",
+        "coverage-target": coverage_target,
+        "observed-commit-sha": "a" * 40,
+        "artifact-digests": [
+            {
+                "artifact-ref": artifact_ref,
+                "algorithm": "sha256",
+                "digest": digest,
+                "byte-source": {
+                    "kind": "validation-build-output",
+                    "path": byte_source_path,
+                    "size": 1,
+                },
+            }
+        ],
+    }
+    artifact_results = result["artifact-obligation-results"]
+    detail = {
+        "source-proof": source_proof,
+        "artifact-obligation-results": artifact_results,
+    }
+    profile_telemetry = {
+        "kind": "release-shaped-validation-profile-telemetry",
+        "schema-version": 1,
+        "phases": [
+            {
+                "phase": "artifact-digest-observation",
+                "outcome": "success",
+                "started-at": "2026-01-01T00:00:00.000Z",
+                "completed-at": "2026-01-01T00:00:01.000Z",
+                "duration-ms": 1000,
+                "artifact-ref": artifact_ref,
+                "output-path": byte_source_path,
+            }
+        ],
+    }
+    validation_result = {
+        "outcome": "success",
+        "work-group-id": "wg-release",
+        "kind": "release-shaped-artifact",
+        "coverage-target": coverage_target,
+        "observed-commit-sha": "a" * 40,
+        "commands": [
+            {
+                "outcome": "success",
+                "evidence-source": "no-publish-validation",
+                "source-proof": source_proof,
+                "artifact-obligation-results": artifact_results,
+                "profile-telemetry": profile_telemetry,
+            }
+        ],
+    }
+
+    assert (
+        control._ci_no_publish_release_shaped_source_proof_is_admissible(
+            {
+                "work-group-id": "wg-release",
+                "coverage-target": coverage_target,
+                "execution-tree": {"observed-commit-sha": "a" * 40},
+            },
+            detail,
+            source_validation_result=validation_result,
+        )
+        is expected
+    )
+
+
+def test_ci_validation_release_shaped_admission_binds_byte_source_output() -> (
+    None
+):
+    """Admission rejects source proofs that point at another output path."""
+    artifact_ref = "ci-validation/artifacts/python/example/a.whl"
+    digest = "a" * 64
+    coverage_target = {"type": "subject", "id": "python.example"}
+    artifact_results = [
+        {
+            "artifact": {
+                "observed": {
+                    "digests": [
+                        {
+                            "artifact-ref": artifact_ref,
+                            "algorithm": "sha256",
+                            "digest": digest,
+                        }
+                    ]
+                }
+            }
+        }
+    ]
+    source_proof = {
+        "kind": "no-publish-validation-result",
+        "work-group-id": "wg-release",
+        "coverage-target": coverage_target,
+        "observed-commit-sha": "a" * 40,
+        "artifact-digests": [
+            {
+                "artifact-ref": artifact_ref,
+                "algorithm": "sha256",
+                "digest": digest,
+                "byte-source": {
+                    "kind": "validation-build-output",
+                    "path": (
+                        ".three-ci-validation/work/validation-build/"
+                        "unrelated/pkg.whl"
+                    ),
+                    "size": 1,
+                },
+            }
+        ],
+    }
+    profile_telemetry = {
+        "kind": "release-shaped-validation-profile-telemetry",
+        "schema-version": 1,
+        "phases": [
+            {
+                "phase": "artifact-digest-observation",
+                "outcome": "success",
+                "started-at": "2026-01-01T00:00:00.000Z",
+                "completed-at": "2026-01-01T00:00:01.000Z",
+                "duration-ms": 1000,
+                "artifact-ref": artifact_ref,
+                "output-path": (
+                    ".three-ci-validation/work/validation-build/"
+                    "release-shaped/aaaaaaaaaaaaaaaaaaaaaaaa/dist/pkg.whl"
+                ),
+            }
+        ],
+    }
+    detail = {
+        "source-proof": source_proof,
+        "artifact-obligation-results": artifact_results,
+    }
+    validation_result = {
+        "outcome": "success",
+        "work-group-id": "wg-release",
+        "kind": "release-shaped-artifact",
+        "coverage-target": coverage_target,
+        "observed-commit-sha": "a" * 40,
+        "commands": [
+            {
+                "outcome": "success",
+                "evidence-source": "no-publish-validation",
+                "source-proof": source_proof,
+                "artifact-obligation-results": artifact_results,
+                "profile-telemetry": profile_telemetry,
+            }
+        ],
+    }
+
+    assert not control._ci_no_publish_release_shaped_source_proof_is_admissible(
+        {
+            "work-group-id": "wg-release",
+            "coverage-target": coverage_target,
+            "execution-tree": {"observed-commit-sha": "a" * 40},
+        },
+        detail,
+        source_validation_result=validation_result,
+    )
+
+
+@pytest.mark.parametrize(
+    "telemetry_case",
+    [
+        "missing",
+        "conflicting",
+        "partial",
+        "partial-duplicate",
+        "failure",
+        "skipped",
+        "foreign",
+        "foreign-failure",
+        "foreign-skipped",
+    ],
+)
+def test_ci_validation_release_shaped_admission_requires_byte_source_observations(
+    telemetry_case: str,
+) -> None:
+    """Admission requires complete, non-conflicting byte-source observations."""
+    coverage_target = {"type": "subject", "id": "python.example"}
+    refs = ["ci-validation/artifacts/python/example/a.whl"]
+    if telemetry_case == "partial":
+        refs.append("ci-validation/artifacts/python/example/b.whl")
+    output_by_ref = {
+        ref: (
+            ".three-ci-validation/work/validation-build/"
+            f"release-shaped/{index:024x}/dist/pkg.whl"
+        )
+        for index, ref in enumerate(refs, start=1)
+    }
+    digest_by_ref = {ref: f"{index:064x}" for index, ref in enumerate(refs, 1)}
+    artifact_results = [
+        {
+            "artifact": {
+                "observed": {
+                    "digests": [
+                        {
+                            "artifact-ref": ref,
+                            "algorithm": "sha256",
+                            "digest": digest_by_ref[ref],
+                        }
+                        for ref in refs
+                    ]
+                }
+            }
+        }
+    ]
+    source_proof = {
+        "kind": "no-publish-validation-result",
+        "work-group-id": "wg-release",
+        "coverage-target": coverage_target,
+        "observed-commit-sha": "a" * 40,
+        "artifact-digests": [
+            {
+                "artifact-ref": ref,
+                "algorithm": "sha256",
+                "digest": digest_by_ref[ref],
+                "byte-source": {
+                    "kind": "validation-build-output",
+                    "path": output_by_ref[ref],
+                    "size": 1,
+                },
+            }
+            for ref in refs
+        ],
+    }
+    command: dict[str, object] = {
+        "outcome": "success",
+        "evidence-source": "no-publish-validation",
+        "source-proof": source_proof,
+        "artifact-obligation-results": artifact_results,
+    }
+    if telemetry_case != "missing":
+        observed_refs = refs[:1] if telemetry_case == "partial" else refs
+        phases: list[dict[str, object]] = [
+            {
+                "phase": "artifact-digest-observation",
+                "outcome": "success",
+                "started-at": "2026-01-01T00:00:00.000Z",
+                "completed-at": "2026-01-01T00:00:01.000Z",
+                "duration-ms": 1000,
+                "artifact-ref": ref,
+                "output-path": output_by_ref[ref],
+            }
+            for ref in observed_refs
+        ]
+        if telemetry_case == "conflicting":
+            phases.append(
+                {
+                    **phases[0],
+                    "output-path": (
+                        ".three-ci-validation/work/validation-build/"
+                        "conflicting/pkg.whl"
+                    ),
+                }
+            )
+        elif telemetry_case == "partial-duplicate":
+            duplicate = dict(phases[0])
+            duplicate.pop("output-path")
+            phases.append(duplicate)
+        elif telemetry_case in {"failure", "skipped"}:
+            phases[0]["outcome"] = telemetry_case
+        elif telemetry_case.startswith("foreign"):
+            foreign_outcome = {
+                "foreign": "success",
+                "foreign-failure": "failure",
+                "foreign-skipped": "skipped",
+            }[telemetry_case]
+            phases.append(
+                {
+                    "phase": "artifact-digest-observation",
+                    "outcome": foreign_outcome,
+                    "started-at": "2026-01-01T00:00:00.000Z",
+                    "completed-at": "2026-01-01T00:00:01.000Z",
+                    "duration-ms": 1000,
+                    "artifact-ref": (
+                        "ci-validation/artifacts/python/example/foreign.whl"
+                    ),
+                    "output-path": (
+                        ".three-ci-validation/work/validation-build/foreign.whl"
+                    ),
+                }
+            )
+        command["profile-telemetry"] = {
+            "kind": "release-shaped-validation-profile-telemetry",
+            "schema-version": 1,
+            "phases": phases,
+        }
+    detail = {
+        "source-proof": source_proof,
+        "artifact-obligation-results": artifact_results,
+    }
+    validation_result = {
+        "outcome": "success",
+        "work-group-id": "wg-release",
+        "kind": "release-shaped-artifact",
+        "coverage-target": coverage_target,
+        "observed-commit-sha": "a" * 40,
+        "commands": [command],
+    }
+
+    assert not control._ci_no_publish_release_shaped_source_proof_is_admissible(
+        {
+            "work-group-id": "wg-release",
+            "coverage-target": coverage_target,
+            "execution-tree": {"observed-commit-sha": "a" * 40},
+        },
+        detail,
+        source_validation_result=validation_result,
+    )
 
 
 def test_ci_validation_profile_copy_failure_preserves_timing_result(

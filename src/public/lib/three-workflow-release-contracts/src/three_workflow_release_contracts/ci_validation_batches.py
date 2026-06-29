@@ -273,18 +273,41 @@ _RELEASE_PROFILE_TELEMETRY_KEYS = frozenset(
         "schema-version",
         "phases",
         "release-build",
+        "release-builds",
         "uploaded-evidence-path",
         "uploaded-evidence-files",
     }
 )
 _RELEASE_PROFILE_TELEMETRY_OPTIONAL_KEYS = frozenset(
-    {"release-build", "uploaded-evidence-path", "uploaded-evidence-files"}
+    {
+        "release-build",
+        "release-builds",
+        "uploaded-evidence-path",
+        "uploaded-evidence-files",
+    }
 )
 _RELEASE_BUILD_PROFILE_KEYS = frozenset(
-    {"bundle-dir", "profile-root", "executor", "powershell"}
+    {
+        "bundle-dir",
+        "profile-root",
+        "executor",
+        "powershell",
+        "request-digest",
+        "bundle-id",
+        "work-group-id",
+        "runner-family",
+    }
 )
 _RELEASE_BUILD_PROFILE_OPTIONAL_KEYS = frozenset(
-    {"profile-root", "executor", "powershell"}
+    {
+        "profile-root",
+        "executor",
+        "powershell",
+        "request-digest",
+        "bundle-id",
+        "work-group-id",
+        "runner-family",
+    }
 )
 _EXECUTOR_PROFILE_KEYS = frozenset(
     {"kind", "schema-version", "profile-root", "phases", "path"}
@@ -328,9 +351,21 @@ _PROFILE_PHASE_KEYS = frozenset(
         "project-id",
         "target-count",
         "tracked-file-count",
+        "runner-family",
+        "work-group-id",
     }
 )
 _PROFILE_PHASE_OUTCOMES = frozenset({"success", "failure", "skipped"})
+_UNSCOPED_RELEASE_SHAPED_PROFILE_PHASES = frozenset(
+    {
+        "artifact-digest-observation",
+        "profile-evidence-upload",
+        "validation-build-artifact-mapping-record",
+        "validation-build-output-mapping-after-materialization",
+        "validation-build-output-mapping-current-request",
+        "validation-build-output-mapping-initial",
+    }
+)
 _SELECTOR_RESULT_KEYS = frozenset(
     {
         "work-group-id",
@@ -7898,13 +7933,14 @@ def _validate_release_shaped_batch_detail(  # noqa: PLR0913
         fact_snapshot=fact_snapshot,
         selector_result=selector_result,
     )
-    if "profile-telemetry" in value:
-        _validate_release_shaped_profile_telemetry(
-            value.get("profile-telemetry"),
-            f"{path}.profile-telemetry",
-            issues,
-        )
     if outcome != "success":
+        if "profile-telemetry" in value:
+            _validate_release_shaped_profile_telemetry(
+                value.get("profile-telemetry"),
+                f"{path}.profile-telemetry",
+                issues,
+                selector_result=selector_result,
+            )
         for key in ("evidence-source", "source-proof"):
             if key in value:
                 issues.append(
@@ -7916,17 +7952,71 @@ def _validate_release_shaped_batch_detail(  # noqa: PLR0913
                 )
         return
     if source == "no-publish-validation":
+        source_proof = value.get("source-proof")
+        profile_telemetry_path = f"{path}.profile-telemetry"
+        observed_byte_sources: Mapping[str, str] | None = None
+        observed_byte_source_refs: frozenset[str] | None = None
+        observed_byte_source_result = (
+            _profile_telemetry_artifact_observation_paths(
+                value.get("profile-telemetry"),
+                profile_telemetry_path,
+                issues,
+            )
+            if "profile-telemetry" in value
+            else None
+        )
+        if observed_byte_source_result is not None:
+            observed_byte_sources, observed_byte_source_refs = (
+                observed_byte_source_result
+            )
         _validate_no_publish_source_proof(
-            value.get("source-proof"),
+            source_proof,
             artifact_refs,
             f"{path}.source-proof",
             issues,
             selector_result=selector_result,
             observed_digests=observed_digests,
+            observed_byte_sources=observed_byte_sources,
+            observed_byte_source_refs=observed_byte_source_refs,
+        )
+        generated_build_identities = _source_proof_generated_build_identities(
+            source_proof,
+        )
+        generated_bundle_ids = _source_proof_generated_byte_source_bundle_ids(
+            source_proof,
+        )
+        execute_build_identities = _profile_telemetry_execute_build_identities(
+            value.get("profile-telemetry"),
+        )
+        if (generated_bundle_ids or execute_build_identities) and not (
+            generated_build_identities
+        ):
+            issues.append(
+                ValidationIssue(
+                    f"{path}.source-proof.generated-builds",
+                    "is required when source proof or profile telemetry "
+                    "contains generated validation-build identities",
+                )
+            )
+        _validate_source_proof_generated_build_identity_binding(
+            generated_build_identities,
+            generated_bundle_ids,
+            execute_build_identities,
+            f"{path}.source-proof.generated-builds",
+            issues,
         )
     else:
+        generated_build_identities = frozenset()
         issues.append(
             ValidationIssue(f"{path}.evidence-source", "is not registered")
+        )
+    if "profile-telemetry" in value:
+        _validate_release_shaped_profile_telemetry(
+            value.get("profile-telemetry"),
+            f"{path}.profile-telemetry",
+            issues,
+            selector_result=selector_result,
+            generated_build_identities=generated_build_identities,
         )
 
 
@@ -8097,6 +8187,9 @@ def _validate_release_shaped_profile_telemetry(
     value: object,
     path: str,
     issues: list[ValidationIssue],
+    *,
+    selector_result: Mapping[str, object] | None = None,
+    generated_build_identities: frozenset[tuple[str, str]] = frozenset(),
 ) -> None:
     if not isinstance(value, Mapping):
         issues.append(ValidationIssue(path, "must be an object"))
@@ -8128,6 +8221,12 @@ def _validate_release_shaped_profile_telemetry(
             f"{path}.release-build",
             issues,
         )
+    if "release-builds" in value:
+        _validate_release_build_profile_telemetry_sequence(
+            value.get("release-builds"),
+            f"{path}.release-builds",
+            issues,
+        )
     if "uploaded-evidence-path" in value:
         _validate_non_empty_string(
             value.get("uploaded-evidence-path"),
@@ -8140,7 +8239,578 @@ def _validate_release_shaped_profile_telemetry(
             f"{path}.uploaded-evidence-files",
             issues,
         )
+    _validate_release_build_profile_bindings(
+        value,
+        path,
+        issues,
+        selector_result=selector_result,
+        generated_build_identities=generated_build_identities,
+    )
     _validate_profile_uploaded_evidence_contract(value, path, issues)
+
+
+def _profile_telemetry_contains_release_build_identity(value: object) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    if "release-build" in value or "release-builds" in value:
+        return True
+    phases = value.get("phases")
+    if not isinstance(phases, Sequence) or isinstance(phases, str | bytes):
+        return False
+    return any(
+        isinstance(phase, Mapping)
+        and phase.get("phase") == "release-build-execute-build"
+        for phase in phases
+    )
+
+
+def _profile_telemetry_execute_build_identities(
+    value: object,
+) -> frozenset[tuple[str, str]]:
+    if not isinstance(value, Mapping):
+        return frozenset()
+    phases = value.get("phases")
+    if not isinstance(phases, Sequence) or isinstance(phases, str | bytes):
+        return frozenset()
+    identities: set[tuple[str, str]] = set()
+    for phase in phases:
+        if not (
+            isinstance(phase, Mapping)
+            and phase.get("phase") == "release-build-execute-build"
+        ):
+            continue
+        request_digest = phase.get("request-digest")
+        bundle_id = phase.get("bundle-id")
+        if isinstance(request_digest, str) and isinstance(bundle_id, str):
+            identities.add((request_digest, bundle_id))
+    return frozenset(identities)
+
+
+def _profile_telemetry_artifact_observation_paths(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> tuple[Mapping[str, str], frozenset[str]] | None:
+    if not isinstance(value, Mapping):
+        return None
+    phases = value.get("phases")
+    if not isinstance(phases, Sequence) or isinstance(phases, str | bytes):
+        return None
+    observed: dict[str, str] = {}
+    seen_observation_refs: set[str] = set()
+    for index, phase in enumerate(phases):
+        if not (
+            isinstance(phase, Mapping)
+            and phase.get("phase") == "artifact-digest-observation"
+        ):
+            continue
+        phase_path = f"{path}.phases[{index}]"
+        artifact_ref = phase.get("artifact-ref")
+        output_path = phase.get("output-path")
+        if not isinstance(artifact_ref, str) or not artifact_ref:
+            issues.append(
+                ValidationIssue(
+                    f"{phase_path}.artifact-ref",
+                    "is required",
+                )
+            )
+            continue
+        if artifact_ref in seen_observation_refs:
+            issues.append(
+                ValidationIssue(
+                    f"{phase_path}.artifact-ref",
+                    "must have exactly one artifact digest observation",
+                )
+            )
+            continue
+        seen_observation_refs.add(artifact_ref)
+        if not isinstance(output_path, str) or not output_path:
+            issues.append(
+                ValidationIssue(
+                    f"{phase_path}.output-path",
+                    "is required",
+                )
+            )
+            continue
+        if phase.get("outcome") != "success":
+            issues.append(
+                ValidationIssue(
+                    f"{phase_path}.outcome",
+                    "must be success",
+                )
+            )
+            continue
+        observed[artifact_ref] = output_path
+    return observed, frozenset(seen_observation_refs)
+
+
+def _validate_release_build_profile_telemetry_sequence(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        issues.append(ValidationIssue(path, "must be an array"))
+        return
+    if not value:
+        issues.append(ValidationIssue(path, "must not be empty"))
+        return
+    for index, item in enumerate(value):
+        _validate_release_build_profile_telemetry(
+            item,
+            f"{path}[{index}]",
+            issues,
+        )
+
+
+def _validate_release_build_profile_bindings(
+    value: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    selector_result: Mapping[str, object] | None,
+    generated_build_identities: frozenset[tuple[str, str]],
+) -> None:
+    release_builds = _release_build_profile_binding_entries(value, path)
+    execute_phases = _release_build_execute_phase_entries(value, path)
+    _validate_scoped_profile_phases_match_selector(
+        value,
+        path,
+        issues,
+        selector_result=selector_result,
+    )
+    _validate_release_build_execute_phase_output_paths(execute_phases, issues)
+    _validate_execute_phases_match_selector(
+        execute_phases,
+        issues,
+        selector_result=selector_result,
+    )
+    _validate_execute_phases_match_generated_builds(
+        execute_phases,
+        issues,
+        generated_build_identities=generated_build_identities,
+    )
+    if (
+        "release-build" in value
+        and "release-builds" in value
+        and isinstance(value.get("release-build"), Mapping)
+        and isinstance(value.get("release-builds"), Sequence)
+        and not isinstance(value.get("release-builds"), str | bytes)
+    ):
+        sequence = cast("Sequence[object]", value.get("release-builds"))
+        if sequence and value.get("release-build") != sequence[0]:
+            issues.append(
+                ValidationIssue(
+                    f"{path}.release-build",
+                    "must match release-builds[0]",
+                )
+            )
+    if not release_builds:
+        return
+    execute_phase_lookup = _release_build_execute_phase_lookup(execute_phases)
+    binding_context = (selector_result, generated_build_identities)
+    for build_path, release_build in release_builds:
+        _validate_release_build_profile_binding(
+            release_build,
+            build_path,
+            execute_phase_lookup,
+            issues,
+            binding_context,
+        )
+
+
+def _validate_scoped_profile_phases_match_selector(
+    value: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    selector_result: Mapping[str, object] | None,
+) -> None:
+    phases = value.get("phases")
+    if not isinstance(phases, Sequence) or isinstance(phases, str | bytes):
+        return
+    for index, phase in enumerate(phases):
+        if not isinstance(phase, Mapping):
+            continue
+        phase_path = f"{path}.phases[{index}]"
+        phase_name = phase.get("phase")
+        phase_allows_missing_scope = (
+            isinstance(phase_name, str)
+            and phase_name in _UNSCOPED_RELEASE_SHAPED_PROFILE_PHASES
+        )
+        for key in ("work-group-id", "runner-family"):
+            if key not in phase:
+                if not phase_allows_missing_scope:
+                    issues.append(
+                        ValidationIssue(f"{phase_path}.{key}", "is required")
+                    )
+                continue
+            if selector_result is None:
+                continue
+            expected = selector_result.get(key)
+            actual = phase.get(key)
+            if isinstance(expected, str) and actual != expected:
+                issues.append(
+                    ValidationIssue(
+                        f"{phase_path}.{key}",
+                        "must match selector",
+                    )
+                )
+
+
+def _release_build_profile_binding_entries(
+    value: Mapping[str, object],
+    path: str,
+) -> list[tuple[str, Mapping[str, object]]]:
+    release_builds = value.get("release-builds")
+    if isinstance(release_builds, Sequence) and not isinstance(
+        release_builds,
+        str | bytes,
+    ):
+        return [
+            (f"{path}.release-builds[{index}]", item)
+            for index, item in enumerate(release_builds)
+            if isinstance(item, Mapping)
+        ]
+    release_build = value.get("release-build")
+    if isinstance(release_build, Mapping):
+        return [(f"{path}.release-build", release_build)]
+    return []
+
+
+def _release_build_execute_phase_entries(
+    value: Mapping[str, object],
+    path: str,
+) -> list[tuple[str, Mapping[str, object]]]:
+    phases = value.get("phases")
+    if not isinstance(phases, Sequence) or isinstance(phases, str | bytes):
+        return []
+    execute_phases: list[tuple[str, Mapping[str, object]]] = []
+    for index, phase in enumerate(phases):
+        if not (
+            isinstance(phase, Mapping)
+            and phase.get("phase") == "release-build-execute-build"
+        ):
+            continue
+        execute_phases.append((f"{path}.phases[{index}]", phase))
+    return execute_phases
+
+
+def _release_build_execute_phase_lookup(
+    execute_phases: Sequence[tuple[str, Mapping[str, object]]],
+) -> dict[str, tuple[str, Mapping[str, object]]]:
+    lookup: dict[str, tuple[str, Mapping[str, object]]] = {}
+    for phase_path, phase in execute_phases:
+        output_path = phase.get("output-path")
+        if isinstance(output_path, str) and output_path:
+            lookup.setdefault(output_path, (phase_path, phase))
+    return lookup
+
+
+def _validate_release_build_execute_phase_output_paths(
+    execute_phases: Sequence[tuple[str, Mapping[str, object]]],
+    issues: list[ValidationIssue],
+) -> None:
+    seen: dict[str, str] = {}
+    for phase_path, phase in execute_phases:
+        _validate_execute_build_phase_required_identity(
+            phase,
+            phase_path,
+            issues,
+        )
+        output_path = phase.get("output-path")
+        if not isinstance(output_path, str) or not output_path:
+            issues.append(
+                ValidationIssue(f"{phase_path}.output-path", "is required")
+            )
+            continue
+        _validate_generated_bundle_path_matches_id(
+            output_path,
+            f"{phase_path}.output-path",
+            phase.get("bundle-id"),
+            issues,
+        )
+        previous_path = seen.setdefault(output_path, phase_path)
+        if previous_path != phase_path:
+            issues.append(
+                ValidationIssue(
+                    f"{phase_path}.output-path",
+                    "must be unique across release-build-execute-build phases",
+                )
+            )
+
+
+def _validate_execute_build_phase_required_identity(
+    phase: Mapping[str, object],
+    phase_path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    for key in ("request-digest", "bundle-id"):
+        if not isinstance(phase.get(key), str) or not phase.get(key):
+            issues.append(ValidationIssue(f"{phase_path}.{key}", "is required"))
+
+
+def _validate_release_build_profile_binding(
+    release_build: Mapping[str, object],
+    build_path: str,
+    execute_phases: Mapping[str, tuple[str, Mapping[str, object]]],
+    issues: list[ValidationIssue],
+    binding_context: tuple[
+        Mapping[str, object] | None,
+        frozenset[tuple[str, str]],
+    ],
+) -> None:
+    selector_result, generated_build_identities = binding_context
+    bundle_dir = release_build.get("bundle-dir")
+    if not isinstance(bundle_dir, str) or not bundle_dir:
+        return
+    match = execute_phases.get(bundle_dir)
+    if match is None:
+        issues.append(
+            ValidationIssue(
+                f"{build_path}.bundle-dir",
+                "must match a release-build-execute-build output-path",
+            )
+        )
+        return
+    phase_path, phase = match
+    for key in (
+        "request-digest",
+        "bundle-id",
+        "work-group-id",
+        "runner-family",
+    ):
+        _validate_release_build_profile_binding_field(
+            release_build,
+            build_path,
+            (phase_path, phase),
+            key,
+            issues,
+        )
+    _validate_release_build_matches_selector(
+        release_build,
+        build_path,
+        issues,
+        selector_result=selector_result,
+    )
+    _validate_profile_identity_matches_generated_builds(
+        release_build,
+        build_path,
+        issues,
+        generated_build_identities=generated_build_identities,
+    )
+    _validate_generated_bundle_path_matches_id(
+        bundle_dir,
+        f"{build_path}.bundle-dir",
+        release_build.get("bundle-id"),
+        issues,
+    )
+    _validate_release_build_profile_roots_under_bundle(
+        release_build,
+        build_path,
+        bundle_dir,
+        issues,
+    )
+
+
+def _validate_release_build_profile_binding_field(
+    release_build: Mapping[str, object],
+    build_path: str,
+    execute_phase: tuple[str, Mapping[str, object]],
+    key: str,
+    issues: list[ValidationIssue],
+) -> None:
+    phase_path, phase = execute_phase
+    build_value = release_build.get(key)
+    phase_value = phase.get(key)
+    if not isinstance(build_value, str) or not build_value:
+        issues.append(ValidationIssue(f"{build_path}.{key}", "is required"))
+        return
+    if not isinstance(phase_value, str) or not phase_value:
+        issues.append(ValidationIssue(f"{phase_path}.{key}", "is required"))
+        return
+    if build_value != phase_value:
+        issues.append(
+            ValidationIssue(
+                f"{build_path}.{key}",
+                f"must match {phase_path}.{key}",
+            )
+        )
+
+
+def _validate_generated_bundle_path_matches_id(
+    path_value: object,
+    path: str,
+    bundle_id: object,
+    issues: list[ValidationIssue],
+) -> None:
+    if not (
+        isinstance(path_value, str)
+        and path_value
+        and isinstance(bundle_id, str)
+        and _GENERATED_VALIDATION_BUILD_BUNDLE_ID_RE.fullmatch(bundle_id)
+    ):
+        return
+    expected = (
+        f".three-ci-validation/work/validation-build/release-shaped/{bundle_id}"
+    )
+    if PurePosixPath(path_value.replace("\\", "/")).as_posix() != expected:
+        issues.append(
+            ValidationIssue(
+                path,
+                "must match generated release-shaped bundle path for bundle-id",
+            )
+        )
+
+
+def _validate_release_build_profile_roots_under_bundle(
+    release_build: Mapping[str, object],
+    build_path: str,
+    bundle_dir: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if "profile-root" in release_build:
+        _validate_profile_root_under_bundle(
+            release_build.get("profile-root"),
+            f"{build_path}.profile-root",
+            bundle_dir,
+            issues,
+        )
+    executor = release_build.get("executor")
+    if isinstance(executor, Mapping):
+        _validate_profile_root_under_bundle(
+            executor.get("profile-root"),
+            f"{build_path}.executor.profile-root",
+            bundle_dir,
+            issues,
+        )
+
+
+def _validate_profile_root_under_bundle(
+    profile_root: object,
+    path: str,
+    bundle_dir: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(profile_root, str) or not profile_root:
+        return
+    normalized_root = _normalized_relative_profile_path(profile_root)
+    normalized_bundle = _normalized_relative_profile_path(bundle_dir)
+    if normalized_root is None or normalized_bundle is None:
+        return
+    if normalized_root == "." and normalized_bundle != ".":
+        issues.append(ValidationIssue(path, "must be under bundle-dir"))
+        return
+    root_path = PurePosixPath(normalized_root)
+    bundle_path = PurePosixPath(normalized_bundle)
+    bundle_profile_path = bundle_path / "_profile"
+    if root_path == bundle_path:
+        issues.append(
+            ValidationIssue(path, "must be under bundle-dir/_profile")
+        )
+        return
+    if _profile_path_is_at_or_under(root_path, bundle_profile_path):
+        return
+    if root_path.parts[:1] == bundle_path.parts[:1]:
+        issues.append(
+            ValidationIssue(path, "must be under bundle-dir/_profile")
+        )
+        return
+    if root_path.parts:
+        issues.append(ValidationIssue(path, "must be under bundle-dir"))
+
+
+def _validate_execute_phases_match_selector(
+    execute_phases: Sequence[tuple[str, Mapping[str, object]]],
+    issues: list[ValidationIssue],
+    *,
+    selector_result: Mapping[str, object] | None,
+) -> None:
+    if selector_result is None:
+        return
+    for phase_path, phase in execute_phases:
+        _validate_profile_identity_matches_selector(
+            phase,
+            phase_path,
+            issues,
+            selector_result=selector_result,
+        )
+
+
+def _validate_execute_phases_match_generated_builds(
+    execute_phases: Sequence[tuple[str, Mapping[str, object]]],
+    issues: list[ValidationIssue],
+    *,
+    generated_build_identities: frozenset[tuple[str, str]],
+) -> None:
+    for phase_path, phase in execute_phases:
+        _validate_profile_identity_matches_generated_builds(
+            phase,
+            phase_path,
+            issues,
+            generated_build_identities=generated_build_identities,
+        )
+
+
+def _validate_release_build_matches_selector(
+    release_build: Mapping[str, object],
+    build_path: str,
+    issues: list[ValidationIssue],
+    *,
+    selector_result: Mapping[str, object] | None,
+) -> None:
+    if selector_result is None:
+        return
+    _validate_profile_identity_matches_selector(
+        release_build,
+        build_path,
+        issues,
+        selector_result=selector_result,
+    )
+
+
+def _validate_profile_identity_matches_generated_builds(
+    value: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    generated_build_identities: frozenset[tuple[str, str]],
+) -> None:
+    if not generated_build_identities:
+        return
+    request_digest = value.get("request-digest")
+    bundle_id = value.get("bundle-id")
+    if not (isinstance(request_digest, str) and isinstance(bundle_id, str)):
+        return
+    if (request_digest, bundle_id) not in generated_build_identities:
+        issues.append(
+            ValidationIssue(
+                f"{path}.request-digest",
+                "must match source-proof generated build identity",
+            )
+        )
+        issues.append(
+            ValidationIssue(
+                f"{path}.bundle-id",
+                "must match source-proof generated build identity",
+            )
+        )
+
+
+def _validate_profile_identity_matches_selector(
+    value: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    selector_result: Mapping[str, object],
+) -> None:
+    for key in ("work-group-id", "runner-family"):
+        expected = selector_result.get(key)
+        actual = value.get(key)
+        if isinstance(expected, str) and actual != expected:
+            issues.append(
+                ValidationIssue(f"{path}.{key}", "must match selector")
+            )
 
 
 def _validate_release_build_profile_telemetry(
@@ -8184,28 +8854,59 @@ def _validate_release_build_profile_telemetry(
             f"{path}.executor",
             issues,
         )
+    _validate_release_build_profile_identity_fields(value, path, issues)
     if "powershell" in value:
-        powershell = value.get("powershell")
-        if not isinstance(powershell, Sequence) or isinstance(
-            powershell, str | bytes
-        ):
-            issues.append(
-                ValidationIssue(f"{path}.powershell", "must be an array")
+        _validate_powershell_profile_telemetry_sequence(
+            value.get("powershell"),
+            f"{path}.powershell",
+            executor_present="executor" in value,
+            issues=issues,
+        )
+
+
+def _validate_release_build_profile_identity_fields(
+    value: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    _validate_profile_phase_identity_metadata(value, path, issues)
+    if "work-group-id" in value:
+        _validate_local_id(
+            value.get("work-group-id"),
+            f"{path}.work-group-id",
+            issues,
+        )
+    if "runner-family" in value and value.get("runner-family") not in (
+        _RUNNER_FAMILIES
+    ):
+        issues.append(
+            ValidationIssue(f"{path}.runner-family", "is not registered")
+        )
+
+
+def _validate_powershell_profile_telemetry_sequence(
+    value: object,
+    path: str,
+    *,
+    executor_present: bool,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        issues.append(ValidationIssue(path, "must be an array"))
+        return
+    if not value and not executor_present:
+        issues.append(
+            ValidationIssue(
+                path,
+                "must not be empty without executor telemetry",
             )
-            return
-        if not powershell and "executor" not in value:
-            issues.append(
-                ValidationIssue(
-                    f"{path}.powershell",
-                    "must not be empty without executor telemetry",
-                )
-            )
-        for index, item in enumerate(powershell):
-            _validate_powershell_profile_telemetry(
-                item,
-                f"{path}.powershell[{index}]",
-                issues,
-            )
+        )
+    for index, item in enumerate(value):
+        _validate_powershell_profile_telemetry(
+            item,
+            f"{path}[{index}]",
+            issues,
+        )
 
 
 def _validate_executor_profile_telemetry(
@@ -8334,6 +9035,7 @@ def _validate_profile_phase(
     ):
         if key in value:
             _validate_non_empty_string(value.get(key), f"{path}.{key}", issues)
+    _validate_profile_phase_selector_identity_fields(value, path, issues)
     if "ecosystem" in value:
         _validate_profile_phase_ecosystem(
             value.get("ecosystem"),
@@ -8354,6 +9056,25 @@ def _validate_profile_phase(
     ):
         issues.append(
             ValidationIssue(f"{path}.binlog-exists", "must be a boolean")
+        )
+
+
+def _validate_profile_phase_selector_identity_fields(
+    value: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if "work-group-id" in value:
+        _validate_local_id(
+            value.get("work-group-id"),
+            f"{path}.work-group-id",
+            issues,
+        )
+    if "runner-family" in value and value.get("runner-family") not in (
+        _RUNNER_FAMILIES
+    ):
+        issues.append(
+            ValidationIssue(f"{path}.runner-family", "is not registered")
         )
 
 
@@ -8697,6 +9418,12 @@ def _validate_profile_uploaded_evidence_contract(
         issues,
         uploaded_files=uploaded_files,
     )
+    _validate_release_build_uploaded_binlog_scopes(
+        value,
+        path,
+        issues,
+        uploaded_root=uploaded_root,
+    )
 
 
 def _validated_uploaded_evidence_files(
@@ -8751,20 +9478,28 @@ def _validate_normalized_relative_profile_path(
 ) -> str | None:
     if not isinstance(value, str) or value == "":
         return None
+    normalized = _normalized_relative_profile_path(value)
+    if normalized is None or (normalized == "." and not allow_current):
+        issues.append(
+            ValidationIssue(path, "must be a normalized relative path")
+        )
+        return None
+    return normalized
+
+
+def _normalized_relative_profile_path(value: object) -> str | None:
+    if not isinstance(value, str) or value == "":
+        return None
     candidate = value.replace("\\", "/")
     normalized = PurePosixPath(candidate).as_posix()
     if (
         candidate != value
         or normalized != value
-        or (value == "." and not allow_current)
         or _ABSOLUTE_PROFILE_PATH_RE.match(value) is not None
         or ".." in PurePosixPath(value).parts
     ):
-        issues.append(
-            ValidationIssue(path, "must be a normalized relative path")
-        )
         return None
-    return value
+    return normalized
 
 
 def _profile_path_is_under(child: str, parent: str) -> bool:
@@ -8772,6 +9507,18 @@ def _profile_path_is_under(child: str, parent: str) -> bool:
     parent_parts = PurePosixPath(parent).parts
     return (
         len(child_parts) > len(parent_parts)
+        and child_parts[: len(parent_parts)] == parent_parts
+    )
+
+
+def _profile_path_is_at_or_under(
+    child: PurePosixPath,
+    parent: PurePosixPath,
+) -> bool:
+    child_parts = child.parts
+    parent_parts = parent.parts
+    return (
+        len(child_parts) >= len(parent_parts)
         and child_parts[: len(parent_parts)] == parent_parts
     )
 
@@ -8873,6 +9620,356 @@ def _validate_uploaded_binlog_reference(
     if uploaded_files is None or normalized not in uploaded_files:
         issues.append(
             ValidationIssue(path, "must be listed in uploaded-evidence-files")
+        )
+
+
+def _validate_release_build_uploaded_binlog_scopes(
+    value: Mapping[str, object],
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    uploaded_root: str | None,
+) -> None:
+    if uploaded_root is None:
+        return
+    release_builds = value.get("release-builds")
+    has_release_builds = (
+        isinstance(release_builds, Sequence)
+        and not isinstance(release_builds, str | bytes)
+        and len(release_builds) > 0
+    )
+    scopes_by_output_path: dict[str, str] = {}
+    if has_release_builds:
+        for index, release_build in enumerate(
+            cast("Sequence[object]", release_builds),
+        ):
+            if not isinstance(release_build, Mapping):
+                continue
+            uploaded_scope = _release_build_uploaded_evidence_scope(
+                release_build,
+                index=index,
+                uploaded_root=uploaded_root,
+            )
+            bundle_dir = release_build.get("bundle-dir")
+            if isinstance(bundle_dir, str) and bundle_dir:
+                scopes_by_output_path.setdefault(bundle_dir, uploaded_scope)
+            _validate_uploaded_binlog_reference_scope(
+                release_build,
+                f"{path}.release-builds[{index}]",
+                issues,
+                uploaded_scope=uploaded_scope,
+            )
+    _validate_execute_phase_uploaded_binlog_scopes(
+        value.get("phases"),
+        f"{path}.phases",
+        issues,
+        scopes_by_output_path=scopes_by_output_path,
+        uploaded_root=uploaded_root,
+    )
+    if not has_release_builds:
+        release_build = value.get("release-build")
+        if isinstance(release_build, Mapping):
+            _validate_singular_uploaded_binlog_reference_scope(
+                release_build,
+                f"{path}.release-build",
+                issues,
+                uploaded_root=uploaded_root,
+            )
+        return
+    release_build = value.get("release-build")
+    first = cast("Sequence[object]", release_builds)[0]
+    if isinstance(release_build, Mapping) and release_build == first:
+        uploaded_scope = _release_build_uploaded_evidence_scope(
+            release_build,
+            index=0,
+            uploaded_root=uploaded_root,
+        )
+        _validate_uploaded_binlog_reference_scope(
+            release_build,
+            f"{path}.release-build",
+            issues,
+            uploaded_scope=uploaded_scope,
+        )
+
+
+def _validate_singular_uploaded_binlog_reference_scope(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    uploaded_root: str,
+) -> None:
+    if isinstance(value, Mapping):
+        single = value.get("binlog-uploaded-evidence-path")
+        if single is not None:
+            _validate_single_release_builds_subtree_reference_scope(
+                single,
+                f"{path}.binlog-uploaded-evidence-path",
+                issues,
+                uploaded_root=uploaded_root,
+            )
+        multiple = value.get("binlog-uploaded-evidence-paths")
+        if isinstance(multiple, Sequence) and not isinstance(
+            multiple,
+            str | bytes,
+        ):
+            for index, item in enumerate(multiple):
+                _validate_single_release_builds_subtree_reference_scope(
+                    item,
+                    f"{path}.binlog-uploaded-evidence-paths[{index}]",
+                    issues,
+                    uploaded_root=uploaded_root,
+                )
+        uploaded_argv = value.get("uploaded-evidence-argv")
+        if isinstance(uploaded_argv, Sequence) and not isinstance(
+            uploaded_argv,
+            str | bytes,
+        ):
+            _validate_singular_uploaded_argv_binlog_reference_scope(
+                uploaded_argv,
+                f"{path}.uploaded-evidence-argv",
+                issues,
+                uploaded_root=uploaded_root,
+            )
+        for key, item in value.items():
+            if key in {
+                "binlog-uploaded-evidence-path",
+                "binlog-uploaded-evidence-paths",
+            }:
+                continue
+            _validate_singular_uploaded_binlog_reference_scope(
+                item,
+                f"{path}.{key}" if isinstance(key, str) else path,
+                issues,
+                uploaded_root=uploaded_root,
+            )
+    elif isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        for index, item in enumerate(value):
+            _validate_singular_uploaded_binlog_reference_scope(
+                item,
+                f"{path}[{index}]",
+                issues,
+                uploaded_root=uploaded_root,
+            )
+
+
+def _validate_singular_uploaded_argv_binlog_reference_scope(
+    argv: Sequence[object],
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    uploaded_root: str,
+) -> None:
+    for index, item in enumerate(argv):
+        if not isinstance(item, str):
+            continue
+        match = _PROFILE_MSBUILD_BINLOG_ARG_RE.match(item)
+        if match is None:
+            continue
+        for binlog_path in _iter_profile_msbuild_binlog_payload_paths(
+            match.group("payload"),
+        ):
+            _validate_single_release_builds_subtree_reference_scope(
+                binlog_path,
+                f"{path}[{index}]",
+                issues,
+                uploaded_root=uploaded_root,
+            )
+
+
+def _validate_single_release_builds_subtree_reference_scope(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    uploaded_root: str,
+) -> None:
+    normalized = _normalized_relative_profile_path(value)
+    if normalized is None:
+        return
+    release_builds_root = f"{uploaded_root}/release-builds"
+    if not _profile_path_is_under(normalized, release_builds_root):
+        return
+    issues.append(
+        ValidationIssue(
+            path,
+            "must not use release-builds uploaded evidence subtree without "
+            "release-builds",
+        )
+    )
+
+
+def _validate_execute_phase_uploaded_binlog_scopes(
+    phases: object,
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    scopes_by_output_path: Mapping[str, str],
+    uploaded_root: str,
+) -> None:
+    if not isinstance(phases, Sequence) or isinstance(phases, str | bytes):
+        return
+    for index, phase in enumerate(phases):
+        if not (
+            isinstance(phase, Mapping)
+            and phase.get("phase") == "release-build-execute-build"
+        ):
+            continue
+        output_path = phase.get("output-path")
+        if not isinstance(output_path, str):
+            continue
+        uploaded_scope = scopes_by_output_path.get(
+            output_path,
+        ) or _execute_phase_uploaded_evidence_scope(
+            phase,
+            uploaded_root=uploaded_root,
+        )
+        if uploaded_scope is None:
+            continue
+        _validate_uploaded_binlog_reference_scope(
+            phase,
+            f"{path}[{index}]",
+            issues,
+            uploaded_scope=uploaded_scope,
+        )
+
+
+def _execute_phase_uploaded_evidence_scope(
+    phase: Mapping[str, object],
+    *,
+    uploaded_root: str,
+) -> str | None:
+    bundle_id = phase.get("bundle-id")
+    output_path = phase.get("output-path")
+    if not (
+        isinstance(bundle_id, str)
+        and _GENERATED_VALIDATION_BUILD_BUNDLE_ID_RE.fullmatch(bundle_id)
+        and isinstance(output_path, str)
+        and output_path
+    ):
+        return None
+    expected = (
+        f".three-ci-validation/work/validation-build/release-shaped/{bundle_id}"
+    )
+    if PurePosixPath(output_path.replace("\\", "/")).as_posix() != expected:
+        return None
+    return f"{uploaded_root}/release-builds/{bundle_id}"
+
+
+def _release_build_uploaded_evidence_scope(
+    release_build: Mapping[str, object],
+    *,
+    index: int,
+    uploaded_root: str,
+) -> str:
+    bundle_dir = release_build.get("bundle-dir")
+    if isinstance(bundle_dir, str) and bundle_dir:
+        bundle_id = PurePosixPath(bundle_dir.replace("\\", "/")).name
+        if _GENERATED_VALIDATION_BUILD_BUNDLE_ID_RE.fullmatch(bundle_id):
+            return f"{uploaded_root}/release-builds/{bundle_id}"
+    return f"{uploaded_root}/release-builds/build-{index:03d}"
+
+
+def _validate_uploaded_binlog_reference_scope(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    uploaded_scope: str,
+) -> None:
+    if isinstance(value, Mapping):
+        single = value.get("binlog-uploaded-evidence-path")
+        if single is not None:
+            _validate_single_uploaded_binlog_reference_scope(
+                single,
+                f"{path}.binlog-uploaded-evidence-path",
+                issues,
+                uploaded_scope=uploaded_scope,
+            )
+        multiple = value.get("binlog-uploaded-evidence-paths")
+        if isinstance(multiple, Sequence) and not isinstance(
+            multiple, str | bytes
+        ):
+            for index, item in enumerate(multiple):
+                _validate_single_uploaded_binlog_reference_scope(
+                    item,
+                    f"{path}.binlog-uploaded-evidence-paths[{index}]",
+                    issues,
+                    uploaded_scope=uploaded_scope,
+                )
+        uploaded_argv = value.get("uploaded-evidence-argv")
+        if isinstance(uploaded_argv, Sequence) and not isinstance(
+            uploaded_argv,
+            str | bytes,
+        ):
+            _validate_uploaded_argv_binlog_reference_scope(
+                uploaded_argv,
+                f"{path}.uploaded-evidence-argv",
+                issues,
+                uploaded_scope=uploaded_scope,
+            )
+        for key, item in value.items():
+            if key in {
+                "binlog-uploaded-evidence-path",
+                "binlog-uploaded-evidence-paths",
+            }:
+                continue
+            _validate_uploaded_binlog_reference_scope(
+                item,
+                f"{path}.{key}" if isinstance(key, str) else path,
+                issues,
+                uploaded_scope=uploaded_scope,
+            )
+    elif isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        for index, item in enumerate(value):
+            _validate_uploaded_binlog_reference_scope(
+                item,
+                f"{path}[{index}]",
+                issues,
+                uploaded_scope=uploaded_scope,
+            )
+
+
+def _validate_uploaded_argv_binlog_reference_scope(
+    argv: Sequence[object],
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    uploaded_scope: str,
+) -> None:
+    for index, item in enumerate(argv):
+        if not isinstance(item, str):
+            continue
+        match = _PROFILE_MSBUILD_BINLOG_ARG_RE.match(item)
+        if match is None:
+            continue
+        for binlog_path in _iter_profile_msbuild_binlog_payload_paths(
+            match.group("payload"),
+        ):
+            _validate_single_uploaded_binlog_reference_scope(
+                binlog_path,
+                f"{path}[{index}]",
+                issues,
+                uploaded_scope=uploaded_scope,
+            )
+
+
+def _validate_single_uploaded_binlog_reference_scope(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+    *,
+    uploaded_scope: str,
+) -> None:
+    normalized = _normalized_relative_profile_path(value)
+    if normalized is None:
+        return
+    if not _profile_path_is_under(normalized, uploaded_scope):
+        issues.append(
+            ValidationIssue(
+                path,
+                "must be under owning release-build uploaded evidence subtree",
+            )
         )
 
 
@@ -9091,7 +10188,7 @@ def _descriptor_fact(
     return None
 
 
-def _validate_no_publish_source_proof(  # noqa: C901, PLR0912, PLR0913
+def _validate_no_publish_source_proof(  # noqa: C901, PLR0912, PLR0913, PLR0915
     value: object,
     artifact_refs: Sequence[str],
     path: str,
@@ -9099,6 +10196,8 @@ def _validate_no_publish_source_proof(  # noqa: C901, PLR0912, PLR0913
     *,
     selector_result: Mapping[str, object] | None = None,
     observed_digests: Mapping[str, str] | None = None,
+    observed_byte_sources: Mapping[str, str] | None = None,
+    observed_byte_source_refs: frozenset[str] | None = None,
 ) -> None:
     if not isinstance(value, Mapping):
         issues.append(ValidationIssue(path, "must be an object"))
@@ -9112,6 +10211,7 @@ def _validate_no_publish_source_proof(  # noqa: C901, PLR0912, PLR0913
                 "coverage-target",
                 "observed-commit-sha",
                 "artifact-digests",
+                "generated-builds",
             }
         ),
         path,
@@ -9217,8 +10317,35 @@ def _validate_no_publish_source_proof(  # noqa: C901, PLR0912, PLR0913
                 )
             )
         _validate_non_empty_string(
-            byte_source.get("path"), f"{item_path}.byte-source.path", issues
+            byte_source.get("path"),
+            f"{item_path}.byte-source.path",
+            issues,
         )
+        _validate_normalized_relative_profile_path(
+            byte_source.get("path"),
+            f"{item_path}.byte-source.path",
+            issues,
+        )
+        _validate_validation_build_byte_source_path(
+            byte_source.get("path"),
+            f"{item_path}.byte-source.path",
+            issues,
+        )
+        if isinstance(artifact_ref, str) and observed_byte_sources is not None:
+            if artifact_ref not in observed_byte_sources:
+                issues.append(
+                    ValidationIssue(
+                        f"{item_path}.byte-source.path",
+                        "must have observed validation-build output path",
+                    )
+                )
+            elif byte_source.get("path") != observed_byte_sources[artifact_ref]:
+                issues.append(
+                    ValidationIssue(
+                        f"{item_path}.byte-source.path",
+                        "must match observed validation-build output path",
+                    )
+                )
         size = byte_source.get("size")
         if not isinstance(size, int) or isinstance(size, bool) or size < 0:
             issues.append(
@@ -9227,6 +10354,16 @@ def _validate_no_publish_source_proof(  # noqa: C901, PLR0912, PLR0913
                     "must be a non-negative integer",
                 )
             )
+    if (
+        observed_byte_source_refs is not None
+        and observed_byte_source_refs != seen
+    ):
+        issues.append(
+            ValidationIssue(
+                f"{path}.artifact-digests",
+                "must match observed artifact digest refs exactly",
+            )
+        )
     if seen != set(artifact_refs):
         issues.append(
             ValidationIssue(
@@ -9234,6 +10371,239 @@ def _validate_no_publish_source_proof(  # noqa: C901, PLR0912, PLR0913
                 "must cover release-shaped artifact refs exactly",
             )
         )
+    if "generated-builds" in value:
+        _validate_source_proof_generated_builds(
+            value.get("generated-builds"),
+            f"{path}.generated-builds",
+            issues,
+        )
+
+
+def _validate_source_proof_generated_builds(
+    value: object,
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes):
+        issues.append(ValidationIssue(path, "must be an array"))
+        return
+    if not value:
+        issues.append(ValidationIssue(path, "must not be empty"))
+        return
+    seen: set[tuple[str, str]] = set()
+    seen_bundle_ids: set[str] = set()
+    for index, item in enumerate(value):
+        item_path = f"{path}[{index}]"
+        if not isinstance(item, Mapping):
+            issues.append(ValidationIssue(item_path, "must be an object"))
+            continue
+        _validate_allowed_keys(
+            item,
+            frozenset({"request-digest", "bundle-id"}),
+            item_path,
+            issues,
+        )
+        request_digest = item.get("request-digest")
+        bundle_id = item.get("bundle-id")
+        _validate_digest(request_digest, f"{item_path}.request-digest", issues)
+        if (
+            not isinstance(bundle_id, str)
+            or _GENERATED_VALIDATION_BUILD_BUNDLE_ID_RE.fullmatch(bundle_id)
+            is None
+        ):
+            issues.append(
+                ValidationIssue(f"{item_path}.bundle-id", "is not registered")
+            )
+            continue
+        if isinstance(request_digest, str):
+            identity = (request_digest, bundle_id)
+            if identity in seen:
+                issues.append(ValidationIssue(path, "must be unique"))
+            seen.add(identity)
+            if bundle_id in seen_bundle_ids:
+                issues.append(
+                    ValidationIssue(
+                        path,
+                        "must have one identity per bundle-id",
+                    )
+                )
+            seen_bundle_ids.add(bundle_id)
+            if bundle_id != request_digest[:24]:
+                issues.append(
+                    ValidationIssue(
+                        f"{item_path}.bundle-id",
+                        "must match request-digest prefix",
+                    )
+                )
+
+
+def _source_proof_generated_byte_source_bundle_ids(
+    source_proof: object,
+) -> frozenset[str]:
+    if not isinstance(source_proof, Mapping):
+        return frozenset()
+    artifact_digests = source_proof.get("artifact-digests")
+    if not isinstance(artifact_digests, Sequence) or isinstance(
+        artifact_digests,
+        str | bytes,
+    ):
+        return frozenset()
+    bundle_ids: set[str] = set()
+    for item in artifact_digests:
+        if not isinstance(item, Mapping):
+            continue
+        byte_source = item.get("byte-source")
+        if not isinstance(byte_source, Mapping):
+            continue
+        path = byte_source.get("path")
+        bundle_id = _generated_validation_build_byte_source_bundle_id(path)
+        if bundle_id is not None:
+            bundle_ids.add(bundle_id)
+    return frozenset(bundle_ids)
+
+
+def _generated_validation_build_byte_source_bundle_id(
+    path: object,
+) -> str | None:
+    normalized = _normalized_relative_profile_path(path)
+    if normalized is None:
+        return None
+    parts = PurePosixPath(normalized).parts
+    prefix = (
+        ".three-ci-validation",
+        "work",
+        "validation-build",
+        "release-shaped",
+    )
+    if len(parts) <= len(prefix) or parts[: len(prefix)] != prefix:
+        return None
+    bundle_id = parts[len(prefix)]
+    if _GENERATED_VALIDATION_BUILD_BUNDLE_ID_RE.fullmatch(bundle_id) is None:
+        return None
+    return bundle_id
+
+
+def _validate_validation_build_byte_source_path(  # noqa: PLR0911
+    path: object,
+    issue_path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    normalized = _normalized_relative_profile_path(path)
+    if normalized is None:
+        return
+    if normalized == ".three-ci-validation/work/validation-build.gem":
+        return
+    parts = PurePosixPath(normalized).parts
+    validation_build_root = (
+        ".three-ci-validation",
+        "work",
+        "validation-build",
+    )
+    if (
+        len(parts) <= len(validation_build_root)
+        or parts[: len(validation_build_root)] != validation_build_root
+    ):
+        issues.append(
+            ValidationIssue(
+                issue_path,
+                "must be under validation-build output root",
+            )
+        )
+        return
+    generated_root = (*validation_build_root, "release-shaped")
+    if parts[: len(generated_root)] != generated_root:
+        return
+    if len(parts) == len(generated_root):
+        issues.append(
+            ValidationIssue(
+                issue_path,
+                "must identify a generated release-shaped bundle path",
+            )
+        )
+        return
+    if len(parts) < len(generated_root):
+        return
+    bundle_id = parts[len(generated_root)]
+    if _GENERATED_VALIDATION_BUILD_BUNDLE_ID_RE.fullmatch(bundle_id) is None:
+        issues.append(
+            ValidationIssue(
+                issue_path,
+                "must include a valid generated release-shaped bundle id",
+            )
+        )
+        return
+    if len(parts) == len(generated_root) + 1:
+        issues.append(
+            ValidationIssue(
+                issue_path,
+                "must identify a file below generated release-shaped "
+                "bundle path",
+            )
+        )
+
+
+def _validate_source_proof_generated_build_identity_binding(
+    generated_build_identities: frozenset[tuple[str, str]],
+    generated_bundle_ids: frozenset[str],
+    execute_build_identities: frozenset[tuple[str, str]],
+    path: str,
+    issues: list[ValidationIssue],
+) -> None:
+    if not generated_build_identities:
+        return
+    if not generated_bundle_ids and not execute_build_identities:
+        issues.append(
+            ValidationIssue(
+                path,
+                "must match generated validation-build byte-source bundles or "
+                "profile telemetry execute-build identities",
+            )
+        )
+        return
+    generated_identity_bundle_ids = frozenset(
+        bundle_id for _request_digest, bundle_id in generated_build_identities
+    )
+    if (
+        generated_bundle_ids
+        and generated_identity_bundle_ids != generated_bundle_ids
+    ):
+        issues.append(
+            ValidationIssue(
+                path,
+                "must match generated validation-build byte-source bundles",
+            )
+        )
+    if execute_build_identities and (
+        generated_build_identities != execute_build_identities
+    ):
+        issues.append(
+            ValidationIssue(
+                path,
+                "must match profile telemetry execute-build identities",
+            )
+        )
+
+
+def _source_proof_generated_build_identities(
+    source_proof: object,
+) -> frozenset[tuple[str, str]]:
+    if not isinstance(source_proof, Mapping):
+        return frozenset()
+    generated_builds = source_proof.get("generated-builds")
+    if not isinstance(generated_builds, Sequence) or isinstance(
+        generated_builds,
+        str | bytes,
+    ):
+        return frozenset()
+    identities: set[tuple[str, str]] = set()
+    for item in generated_builds:
+        if not isinstance(item, Mapping):
+            continue
+        request_digest = item.get("request-digest")
+        bundle_id = item.get("bundle-id")
+        if isinstance(request_digest, str) and isinstance(bundle_id, str):
+            identities.add((request_digest, bundle_id))
+    return frozenset(identities)
 
 
 def _validate_optional_artifact_refs(

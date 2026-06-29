@@ -439,6 +439,8 @@ def _release_batch_bundle() -> dict[str, object]:
         ],
     )[0]
     digest = "a" * 64
+    request_digest = "0123456789abcdef" * 4
+    bundle_id = request_digest[:24]
     result = {
         "artifact-obligation-id": obligation["artifact-obligation-id"],
         "descriptor": {
@@ -481,6 +483,12 @@ def _release_batch_bundle() -> dict[str, object]:
             "work-group-id": selector["work-group-id"],
             "coverage-target": slot["coverage-target"],
             "observed-commit-sha": TREE_SHA,
+            "generated-builds": [
+                {
+                    "request-digest": request_digest,
+                    "bundle-id": bundle_id,
+                }
+            ],
             "artifact-digests": [
                 {
                     "artifact-ref": artifact_ref,
@@ -489,7 +497,8 @@ def _release_batch_bundle() -> dict[str, object]:
                     "byte-source": {
                         "kind": "validation-build-output",
                         "path": (
-                            ".three-ci-validation/work/validation-build/pkg.whl"
+                            ".three-ci-validation/work/validation-build/"
+                            f"release-shaped/{bundle_id}/dist/pkg.whl"
                         ),
                         "size": 1,
                     },
@@ -584,6 +593,11 @@ def _validate_release_bundle(bundle: dict[str, object]) -> None:
 
 
 def _valid_release_profile_telemetry() -> dict[str, object]:
+    request_digest = "0123456789abcdef" * 4
+    bundle_id = request_digest[:24]
+    bundle_dir = (
+        f".three-ci-validation/work/validation-build/release-shaped/{bundle_id}"
+    )
     return {
         "kind": "release-shaped-validation-profile-telemetry",
         "schema-version": 1,
@@ -594,11 +608,15 @@ def _valid_release_profile_telemetry() -> dict[str, object]:
                 "started-at": "2026-06-26T05:00:00.000Z",
                 "completed-at": "2026-06-26T05:00:01.000Z",
                 "duration-ms": 1000,
-                "cwd": ".three-ci-validation/work/validation-build",
+                "cwd": bundle_dir,
                 "descriptor-path": "src/public/lib/example/three.release.yml",
                 "project-id": "python.example",
                 "profile": "wheel",
                 "ecosystem": "python",
+                "request-digest": request_digest,
+                "bundle-id": bundle_id,
+                "work-group-id": "wg-artifact",
+                "runner-family": "ubuntu",
                 "cache-hit": False,
                 "cache-path": (
                     ".three-ci-validation/work/release-shaped-plans/plan.json"
@@ -608,27 +626,32 @@ def _valid_release_profile_telemetry() -> dict[str, object]:
                 "obligation-count": 1,
                 "artifact-count": 1,
                 "build-id-count": 1,
-                "output-path": (
-                    ".three-ci-validation/work/validation-build/pkg.whl"
+                "output-path": bundle_dir,
+            },
+            {
+                "phase": "artifact-digest-observation",
+                "outcome": "success",
+                "started-at": "2026-06-26T05:00:01.000Z",
+                "completed-at": "2026-06-26T05:00:02.000Z",
+                "duration-ms": 1000,
+                "artifact-ref": (
+                    "ci-validation/artifacts/python/example/wheel.whl"
                 ),
-            }
+                "output-path": f"{bundle_dir}/dist/pkg.whl",
+            },
         ],
         "release-build": {
-            "bundle-dir": ".three-ci-validation/work/validation-build",
-            "profile-root": (
-                ".three-ci-validation/work/validation-build/_profile/runs/run-1"
-            ),
+            "bundle-dir": bundle_dir,
+            "request-digest": request_digest,
+            "bundle-id": bundle_id,
+            "work-group-id": "wg-artifact",
+            "runner-family": "ubuntu",
+            "profile-root": (f"{bundle_dir}/_profile/runs/run-1"),
             "executor": {
                 "kind": "release-build-profile-telemetry",
                 "schema-version": 1,
-                "profile-root": (
-                    ".three-ci-validation/work/validation-build/"
-                    "_profile/runs/run-1"
-                ),
-                "path": (
-                    ".three-ci-validation/work/validation-build/"
-                    "release-build-profile-telemetry.json"
-                ),
+                "profile-root": (f"{bundle_dir}/_profile/runs/run-1"),
+                "path": (f"{bundle_dir}/release-build-profile-telemetry.json"),
                 "phases": [
                     {
                         "phase": "dotnet-pack",
@@ -654,14 +677,11 @@ def _valid_release_profile_telemetry() -> dict[str, object]:
                                 "0001-dotnet-pack.binlog"
                             ),
                         ],
-                        "cwd": ".three-ci-validation/work/validation-build",
+                        "cwd": bundle_dir,
                         "exit-code": 0,
-                        "output-paths": [
-                            ".three-ci-validation/work/validation-build/dist/pkg.whl"
-                        ],
+                        "output-paths": [f"{bundle_dir}/dist/pkg.whl"],
                         "binlog-path": (
-                            ".three-ci-validation/work/validation-build/"
-                            "_profile/runs/run-1/binlogs/"
+                            f"{bundle_dir}/_profile/runs/run-1/binlogs/"
                             "0001-dotnet-pack.binlog"
                         ),
                         "binlog-exists": True,
@@ -1009,6 +1029,1123 @@ def test_release_shaped_batch_accepts_profile_telemetry() -> None:
     )
 
     _validate_release_bundle(bundle)
+
+
+def test_release_shaped_batch_rejects_mismatched_release_build_plural() -> None:
+    """Singular release-build metadata must mirror release-builds[0]."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    plural_build = deepcopy(telemetry["release-build"])
+    cast("dict[str, object]", plural_build)["profile-root"] = (
+        ".three-ci-validation/work/validation-build/_profile/runs/other-run"
+    )
+    telemetry["release-builds"] = [plural_build]
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.release-build" in issue.path
+        and "release-builds[0]" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("mutator", "expected_path"),
+    [
+        (
+            lambda telemetry: cast(
+                "dict[str, object]",
+                _release_profile_phase(telemetry, "base"),
+            ).pop("request-digest"),
+            ".profile-telemetry.phases[0].request-digest",
+        ),
+        (
+            lambda telemetry: cast(
+                "dict[str, object]",
+                telemetry["release-build"],
+            ).pop("work-group-id"),
+            ".profile-telemetry.release-build.work-group-id",
+        ),
+        (
+            lambda telemetry: cast(
+                "dict[str, object]",
+                telemetry["release-build"],
+            ).__setitem__(
+                "bundle-dir",
+                ".three-ci-validation/work/validation-build/stale",
+            ),
+            ".profile-telemetry.release-build.bundle-dir",
+        ),
+        (
+            lambda telemetry: cast(
+                "dict[str, object]",
+                telemetry["release-build"],
+            ).__setitem__("runner-family", "windows"),
+            ".profile-telemetry.release-build.runner-family",
+        ),
+        (
+            lambda telemetry: cast(
+                "dict[str, object]",
+                telemetry["release-build"],
+            ).__setitem__("bundle-id", "f" * 24),
+            ".profile-telemetry.release-build.bundle-id",
+        ),
+    ],
+)
+def test_release_shaped_batch_rejects_unbound_release_build_profile(
+    mutator: Callable[[dict[str, object]], object],
+    expected_path: str,
+) -> None:
+    """Captured release-build profiles must bind to execute-build identity."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    mutator(telemetry)
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(expected_path in issue.path for issue in exc_info.value.issues)
+
+
+def test_release_shaped_batch_rejects_foreign_profile_selector() -> None:
+    """Internally consistent profile telemetry must still match selector."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    _release_profile_phase(telemetry, "base")["work-group-id"] = "wg-foreign"
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    release_build["work-group-id"] = "wg-foreign"
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[0].work-group-id" in issue.path
+        and "selector" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-build.work-group-id" in issue.path
+        and "selector" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_foreign_selector_without_build() -> None:
+    """Execute-build phases bind to selector even without release-build data."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    _release_profile_phase(telemetry, "base")["work-group-id"] = "wg-foreign"
+    telemetry.pop("release-build")
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[0].work-group-id" in issue.path
+        and "selector" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_foreign_scoped_profile_phase() -> None:
+    """Scoped non-execute profile phases must match the validated selector."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    foreign_phase = {
+        "phase": "validation-build-artifact-mapping-record",
+        "work-group-id": "wg-foreign",
+        "runner-family": "linux",
+        "outcome": "success",
+        "started-at": "2025-01-01T00:00:00.000Z",
+        "completed-at": "2025-01-01T00:00:01.000Z",
+        "duration-ms": 1000,
+    }
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    phases.append(foreign_phase)
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[2].work-group-id" in issue.path
+        and "selector" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.phases[2].runner-family" in issue.path
+        and "selector" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    "phase_name",
+    ["release-build-request", "unexpected-unscoped-phase"],
+)
+def test_release_shaped_batch_rejects_unscoped_profile_phase(
+    phase_name: str,
+) -> None:
+    """Scope-sensitive profile phases must declare selector identity."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    phases.append(
+        {
+            "phase": phase_name,
+            "outcome": "success",
+            "started-at": "2025-01-01T00:00:00.000Z",
+            "completed-at": "2025-01-01T00:00:01.000Z",
+            "duration-ms": 1000,
+        }
+    )
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[2].work-group-id" in issue.path
+        and issue.message == "is required"
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.phases[2].runner-family" in issue.path
+        and issue.message == "is required"
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    "phase_name",
+    sorted(
+        ci_validation_batches._UNSCOPED_RELEASE_SHAPED_PROFILE_PHASES,  # noqa: SLF001
+    ),
+)
+def test_release_shaped_batch_accepts_unscoped_allowlist_profile_phase(
+    phase_name: str,
+) -> None:
+    """Explicitly allowlisted profile phases may omit selector scope."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    if phase_name != "artifact-digest-observation":
+        phases.append(
+            {
+                "phase": phase_name,
+                "outcome": "success",
+                "started-at": "2025-01-01T00:00:00.000Z",
+                "completed-at": "2025-01-01T00:00:01.000Z",
+                "duration-ms": 1000,
+            }
+        )
+    assert all(
+        "work-group-id" not in phase and "runner-family" not in phase
+        for phase in phases
+        if phase.get("phase") == phase_name
+    )
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    _validate_release_bundle(bundle)
+
+
+def test_release_shaped_batch_rejects_duplicate_foreign_execute_phase() -> None:
+    """Duplicate execute output paths cannot hide foreign selector identity."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    foreign_phase = deepcopy(_release_profile_phase(telemetry, "base"))
+    foreign_phase["work-group-id"] = "wg-foreign"
+    telemetry["phases"] = [
+        foreign_phase,
+        _release_profile_phase(telemetry, "base"),
+    ]
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[0].work-group-id" in issue.path
+        and "selector" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.phases[1].output-path" in issue.path
+        and "unique" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "expected_message"),
+    [
+        ("work-group-id", "../foreign", "must be path-safe"),
+        ("runner-family", "solaris", "is not registered"),
+    ],
+)
+def test_release_shaped_batch_rejects_invalid_profile_identity_values(
+    key: str,
+    value: str,
+    expected_message: str,
+) -> None:
+    """Execute and release-build identity values are syntactically bounded."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    _release_profile_phase(telemetry, "base")[key] = value
+    cast("dict[str, object]", telemetry["release-build"])[key] = value
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[0]." + key in issue.path
+        and issue.message == expected_message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-build." + key in issue.path
+        and issue.message == expected_message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    "root_owner",
+    ["release-build", "executor"],
+)
+def test_release_shaped_batch_rejects_foreign_profile_root(
+    root_owner: str,
+) -> None:
+    """Release-build profile roots must stay under their matched bundle."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    foreign_root = (
+        ".three-ci-validation/work/validation-build/release-shaped/"
+        f"{'f' * 24}/_profile/runs/run-1"
+    )
+    if root_owner == "executor":
+        executor = cast("dict[str, object]", release_build["executor"])
+        executor["profile-root"] = foreign_root
+        expected_path = ".profile-telemetry.release-build.executor.profile-root"
+    else:
+        release_build["profile-root"] = foreign_root
+        expected_path = ".profile-telemetry.release-build.profile-root"
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        expected_path in issue.path and "bundle-dir" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    "root_owner",
+    ["release-build", "executor"],
+)
+def test_release_shaped_batch_rejects_bundle_profile_root(
+    root_owner: str,
+) -> None:
+    """Release-build profile roots must be below their matched bundle."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    bundle_dir = cast("str", release_build["bundle-dir"])
+    if root_owner == "executor":
+        executor = cast("dict[str, object]", release_build["executor"])
+        executor["profile-root"] = bundle_dir
+        expected_path = ".profile-telemetry.release-build.executor.profile-root"
+    else:
+        release_build["profile-root"] = bundle_dir
+        expected_path = ".profile-telemetry.release-build.profile-root"
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        expected_path in issue.path and "bundle-dir/_profile" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_bare_foreign_profile_roots() -> None:
+    """Bare repo-relative profile roots are not accepted as bundle roots."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    release_build["profile-root"] = "foreign-profile-root"
+    executor = cast("dict[str, object]", release_build["executor"])
+    executor["profile-root"] = "foreign-profile-root"
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.release-build.profile-root" in issue.path
+        and "bundle-dir" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-build.executor.profile-root" in issue.path
+        and "bundle-dir" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_bare_profile_roots() -> None:
+    """Bare _profile roots are not accepted as bundle-root metadata."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    release_build["profile-root"] = "_profile/runs/run-1"
+    executor = cast("dict[str, object]", release_build["executor"])
+    executor["profile-root"] = "_profile/runs/run-1"
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.release-build.profile-root" in issue.path
+        and "bundle-dir" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-build.executor.profile-root" in issue.path
+        and "bundle-dir" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    "root_owner",
+    ["release-build", "executor"],
+)
+def test_release_shaped_batch_rejects_current_directory_profile_root(
+    root_owner: str,
+) -> None:
+    """Current-directory profile roots are not accepted as bundle roots."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    if root_owner == "executor":
+        executor = cast("dict[str, object]", release_build["executor"])
+        executor["profile-root"] = "."
+        expected_path = ".profile-telemetry.release-build.executor.profile-root"
+    else:
+        release_build["profile-root"] = "."
+        expected_path = ".profile-telemetry.release-build.profile-root"
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        expected_path in issue.path and "bundle-dir" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_unidentified_execute_no_build() -> None:
+    """Execute-build phases require identity even without sidecar evidence."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    phase = _release_profile_phase(telemetry, "base")
+    phase.pop("request-digest")
+    phase.pop("bundle-id")
+    telemetry.pop("release-build")
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[0].request-digest" in issue.path
+        and issue.message == "is required"
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.phases[0].bundle-id" in issue.path
+        and issue.message == "is required"
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_unidentified_outputless_execute() -> None:
+    """Execute-build identity is required even before output-path binding."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    phase = _release_profile_phase(telemetry, "base")
+    phase.pop("request-digest")
+    phase.pop("bundle-id")
+    phase.pop("output-path")
+    telemetry.pop("release-build")
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[0].request-digest" in issue.path
+        and issue.message == "is required"
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.phases[0].bundle-id" in issue.path
+        and issue.message == "is required"
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_outputless_identified_execute() -> None:
+    """Execute-build phases require output-path."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    phase = _release_profile_phase(telemetry, "base")
+    phase.pop("output-path")
+    telemetry.pop("release-build")
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[0].output-path" in issue.path
+        and issue.message == "is required"
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_bundle_dir_basename_mismatch() -> None:
+    """Generated bundle paths must be bound to the validated bundle id."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    wrong_bundle_dir = (
+        f".three-ci-validation/work/validation-build/release-shaped/{'f' * 24}"
+    )
+    _release_profile_phase(telemetry, "base")["output-path"] = wrong_bundle_dir
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    release_build["bundle-dir"] = wrong_bundle_dir
+    release_build["profile-root"] = f"{wrong_bundle_dir}/_profile/runs/run-1"
+    executor = cast("dict[str, object]", release_build["executor"])
+    executor["profile-root"] = f"{wrong_bundle_dir}/_profile/runs/run-1"
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[0].output-path" in issue.path
+        and "bundle-id" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-build.bundle-dir" in issue.path
+        and "bundle-id" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_forged_bundle_path_shape() -> None:
+    """Generated bundle paths must use the controlled release-shaped root."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    bundle_id = cast(
+        "str",
+        _release_profile_phase(telemetry, "base")["bundle-id"],
+    )
+    wrong_bundle_dir = f"tmp/release-shaped/{bundle_id}"
+    _release_profile_phase(telemetry, "base")["output-path"] = wrong_bundle_dir
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    release_build["bundle-dir"] = wrong_bundle_dir
+    release_build["profile-root"] = f"{wrong_bundle_dir}/_profile/runs/run-1"
+    executor = cast("dict[str, object]", release_build["executor"])
+    executor["profile-root"] = f"{wrong_bundle_dir}/_profile/runs/run-1"
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[0].output-path" in issue.path
+        and "release-shaped bundle path" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-build.bundle-dir" in issue.path
+        and "release-shaped bundle path" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_foreign_build_identity() -> None:
+    """Profile identities must match the current source-proof build identity."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    foreign_digest = "f" * 64
+    foreign_bundle_id = foreign_digest[:24]
+    foreign_bundle_dir = (
+        ".three-ci-validation/work/validation-build/release-shaped/"
+        f"{foreign_bundle_id}"
+    )
+    phase = _release_profile_phase(telemetry, "base")
+    phase["request-digest"] = foreign_digest
+    phase["bundle-id"] = foreign_bundle_id
+    phase["output-path"] = foreign_bundle_dir
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    release_build["request-digest"] = foreign_digest
+    release_build["bundle-id"] = foreign_bundle_id
+    release_build["bundle-dir"] = foreign_bundle_dir
+    release_build["profile-root"] = f"{foreign_bundle_dir}/_profile/runs/run-1"
+    executor = cast("dict[str, object]", release_build["executor"])
+    executor["profile-root"] = f"{foreign_bundle_dir}/_profile/runs/run-1"
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[0].request-digest" in issue.path
+        and "source-proof generated build identity" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-build.request-digest" in issue.path
+        and "source-proof generated build identity" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_missing_generated_builds() -> None:
+    """Profile identities require source-proof generated-builds."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    detail = _release_bundle_detail(bundle)
+    source_proof = cast("dict[str, object]", detail["source-proof"])
+    source_proof.pop("generated-builds")
+    detail["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".detail.source-proof.generated-builds" in issue.path
+        and "generated validation-build identities" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_generated_proof_without_builds() -> None:
+    """Generated byte-source paths require generated-build identities."""
+    bundle = _release_batch_bundle()
+    detail = _release_bundle_detail(bundle)
+    source_proof = cast("dict[str, object]", detail["source-proof"])
+    source_proof.pop("generated-builds")
+    detail.pop("profile-telemetry", None)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".detail.source-proof.generated-builds" in issue.path
+        and "generated validation-build identities" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_accepts_declared_proof_without_builds() -> None:
+    """Declared byte-source paths do not require generated-build identities."""
+    bundle = _release_batch_bundle()
+    detail = _release_bundle_detail(bundle)
+    source_proof = cast("dict[str, object]", detail["source-proof"])
+    source_proof.pop("generated-builds")
+    digests = cast("list[dict[str, object]]", source_proof["artifact-digests"])
+    byte_source = cast("dict[str, object]", digests[0]["byte-source"])
+    byte_source["path"] = ".three-ci-validation/work/validation-build/pkg.whl"
+    detail.pop("profile-telemetry", None)
+
+    _validate_release_bundle(bundle)
+
+
+def test_release_shaped_batch_accepts_gem_validation_build_source() -> None:
+    """Legacy validation-build.gem output root remains accepted."""
+    bundle = _release_batch_bundle()
+    detail = _release_bundle_detail(bundle)
+    source_proof = cast("dict[str, object]", detail["source-proof"])
+    source_proof.pop("generated-builds")
+    digests = cast("list[dict[str, object]]", source_proof["artifact-digests"])
+    byte_source = cast("dict[str, object]", digests[0]["byte-source"])
+    byte_source["path"] = ".three-ci-validation/work/validation-build.gem"
+    detail.pop("profile-telemetry", None)
+
+    _validate_release_bundle(bundle)
+
+
+def test_release_shaped_batch_rejects_arbitrary_byte_source_path() -> None:
+    """Byte-source paths must come from validation-build output roots."""
+    bundle = _release_batch_bundle()
+    detail = _release_bundle_detail(bundle)
+    source_proof = cast("dict[str, object]", detail["source-proof"])
+    source_proof.pop("generated-builds")
+    digests = cast("list[dict[str, object]]", source_proof["artifact-digests"])
+    byte_source = cast("dict[str, object]", digests[0]["byte-source"])
+    byte_source["path"] = "README.md"
+    detail.pop("profile-telemetry", None)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".detail.source-proof.artifact-digests[0].byte-source.path"
+        in issue.path
+        and "validation-build output root" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_unobserved_byte_source_path() -> None:
+    """Source-proof byte-sources must match observed validation-build output."""
+    bundle = _release_batch_bundle()
+    detail = _release_bundle_detail(bundle)
+    source_proof = cast("dict[str, object]", detail["source-proof"])
+    digests = cast("list[dict[str, object]]", source_proof["artifact-digests"])
+    artifact_ref = cast("str", digests[0]["artifact-ref"])
+    byte_source = cast("dict[str, object]", digests[0]["byte-source"])
+    byte_source["path"] = (
+        ".three-ci-validation/work/validation-build/unrelated/pkg.whl"
+    )
+    telemetry = _valid_release_profile_telemetry()
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    phases.append(
+        {
+            "phase": "artifact-digest-observation",
+            "outcome": "success",
+            "started-at": "2025-01-01T00:00:00Z",
+            "completed-at": "2025-01-01T00:00:01Z",
+            "duration-ms": 1000,
+            "artifact-ref": artifact_ref,
+            "output-path": (
+                ".three-ci-validation/work/validation-build/release-shaped/"
+                "0123456789abcdef01234567/dist/pkg.whl"
+            ),
+        }
+    )
+    detail["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".detail.source-proof.artifact-digests[0].byte-source.path"
+        in issue.path
+        and "observed validation-build output path" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_missing_byte_source_observation() -> None:
+    """Profile telemetry must observe every source-proof byte-source."""
+    bundle = _release_batch_bundle()
+    detail = _release_bundle_detail(bundle)
+    telemetry = _valid_release_profile_telemetry()
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    telemetry["phases"] = [
+        phase
+        for phase in phases
+        if phase.get("phase") != "artifact-digest-observation"
+    ]
+    detail["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".detail.source-proof.artifact-digests[0].byte-source.path"
+        in issue.path
+        and "observed validation-build output path" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_conflicting_byte_source_observation() -> (
+    None
+):
+    """Duplicate artifact observations cannot bypass byte-source binding."""
+    bundle = _release_batch_bundle()
+    detail = _release_bundle_detail(bundle)
+    source_proof = cast("dict[str, object]", detail["source-proof"])
+    digests = cast("list[dict[str, object]]", source_proof["artifact-digests"])
+    artifact_ref = cast("str", digests[0]["artifact-ref"])
+    byte_source = cast("dict[str, object]", digests[0]["byte-source"])
+    byte_source["path"] = (
+        ".three-ci-validation/work/validation-build/unrelated/pkg.whl"
+    )
+    telemetry = _valid_release_profile_telemetry()
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    phases.append(
+        {
+            "phase": "artifact-digest-observation",
+            "outcome": "success",
+            "started-at": "2025-01-01T00:00:00Z",
+            "completed-at": "2025-01-01T00:00:01Z",
+            "duration-ms": 1000,
+            "artifact-ref": artifact_ref,
+            "output-path": (
+                ".three-ci-validation/work/validation-build/other/pkg.whl"
+            ),
+        }
+    )
+    detail["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[2].artifact-ref" in issue.path
+        and "exactly one artifact digest observation" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".detail.source-proof.artifact-digests[0].byte-source.path"
+        in issue.path
+        and "observed validation-build output path" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize("outcome", ["failure", "skipped"])
+def test_release_shaped_batch_rejects_non_success_byte_source_observation(
+    outcome: str,
+) -> None:
+    """Only successful artifact observations bind source-proof byte-sources."""
+    bundle = _release_batch_bundle()
+    detail = _release_bundle_detail(bundle)
+    telemetry = _valid_release_profile_telemetry()
+    observation = cast("list[dict[str, object]]", telemetry["phases"])[1]
+    assert observation["phase"] == "artifact-digest-observation"
+    observation["outcome"] = outcome
+    detail["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".detail.source-proof.artifact-digests[0].byte-source.path"
+        in issue.path
+        and "observed validation-build output path" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_partial_duplicate_byte_source_observation() -> (  # noqa: E501
+    None
+):
+    """Malformed duplicate observations cannot bypass duplicate checks."""
+    bundle = _release_batch_bundle()
+    detail = _release_bundle_detail(bundle)
+    telemetry = _valid_release_profile_telemetry()
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    phases.append(
+        {
+            "phase": "artifact-digest-observation",
+            "outcome": "success",
+            "started-at": "2025-01-01T00:00:00.000Z",
+            "completed-at": "2025-01-01T00:00:01.000Z",
+            "duration-ms": 1000,
+            "artifact-ref": phases[1]["artifact-ref"],
+        }
+    )
+    detail["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[2].artifact-ref" in issue.path
+        and "exactly one artifact digest observation" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize("outcome", ["success", "failure", "skipped"])
+def test_release_shaped_batch_rejects_foreign_byte_source_observation(
+    outcome: str,
+) -> None:
+    """Observed artifact refs must exactly match current source-proof refs."""
+    bundle = _release_batch_bundle()
+    detail = _release_bundle_detail(bundle)
+    telemetry = _valid_release_profile_telemetry()
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    phases.append(
+        {
+            "phase": "artifact-digest-observation",
+            "outcome": outcome,
+            "started-at": "2025-01-01T00:00:00.000Z",
+            "completed-at": "2025-01-01T00:00:01.000Z",
+            "duration-ms": 1000,
+            "artifact-ref": (
+                "ci-validation/artifacts/python/example/foreign.whl"
+            ),
+            "output-path": (
+                ".three-ci-validation/work/validation-build/foreign.whl"
+            ),
+        }
+    )
+    detail["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".detail.source-proof.artifact-digests" in issue.path
+        and "observed artifact digest refs exactly" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_generated_bundle_root_byte_source() -> (
+    None
+):
+    """Generated byte-sources must identify files below the bundle root."""
+    bundle = _release_batch_bundle()
+    detail = _release_bundle_detail(bundle)
+    source_proof = cast("dict[str, object]", detail["source-proof"])
+    source_proof.pop("generated-builds")
+    digests = cast("list[dict[str, object]]", source_proof["artifact-digests"])
+    byte_source = cast("dict[str, object]", digests[0]["byte-source"])
+    byte_source["path"] = (
+        ".three-ci-validation/work/validation-build/release-shaped/"
+        "0123456789abcdef01234567"
+    )
+    detail.pop("profile-telemetry", None)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".detail.source-proof.artifact-digests[0].byte-source.path"
+        in issue.path
+        and "below generated release-shaped bundle path" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".detail.source-proof.generated-builds" in issue.path
+        and "generated validation-build identities" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("path_value", "expected_message"),
+    [
+        (
+            ".three-ci-validation/work/validation-build/release-shaped",
+            "generated release-shaped bundle path",
+        ),
+        (
+            ".three-ci-validation/work/validation-build/release-shaped/"
+            "not-a-valid-bundle/dist/pkg.whl",
+            "valid generated release-shaped bundle id",
+        ),
+    ],
+)
+def test_release_shaped_batch_rejects_invalid_release_shaped_byte_source_root(
+    path_value: str,
+    expected_message: str,
+) -> None:
+    """Generated byte-source paths must identify a valid bundle file."""
+    bundle = _release_batch_bundle()
+    detail = _release_bundle_detail(bundle)
+    source_proof = cast("dict[str, object]", detail["source-proof"])
+    source_proof.pop("generated-builds")
+    digests = cast("list[dict[str, object]]", source_proof["artifact-digests"])
+    byte_source = cast("dict[str, object]", digests[0]["byte-source"])
+    byte_source["path"] = path_value
+    detail.pop("profile-telemetry", None)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".detail.source-proof.artifact-digests[0].byte-source.path"
+        in issue.path
+        and expected_message in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    "path_value",
+    [
+        "./.three-ci-validation/work/validation-build/release-shaped/"
+        "0123456789abcdef01234567/dist/pkg.whl",
+        "/abs/.three-ci-validation/work/validation-build/release-shaped/"
+        "0123456789abcdef01234567/dist/pkg.whl",
+        ".three-ci-validation\\work\\validation-build\\release-shaped\\"
+        "0123456789abcdef01234567\\dist\\pkg.whl",
+        ".three-ci-validation/work/validation-build/release-shaped/"
+        "0123456789abcdef01234567/../0123456789abcdef01234567/dist/pkg.whl",
+    ],
+)
+def test_release_shaped_batch_rejects_noncanonical_byte_source_path(
+    path_value: str,
+) -> None:
+    """Byte-source paths must be normalized relative paths."""
+    bundle = _release_batch_bundle()
+    detail = _release_bundle_detail(bundle)
+    source_proof = cast("dict[str, object]", detail["source-proof"])
+    source_proof.pop("generated-builds")
+    digests = cast("list[dict[str, object]]", source_proof["artifact-digests"])
+    byte_source = cast("dict[str, object]", digests[0]["byte-source"])
+    byte_source["path"] = path_value
+    detail.pop("profile-telemetry", None)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".detail.source-proof.artifact-digests[0].byte-source.path"
+        in issue.path
+        and "normalized relative path" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize("path_value", [None, "", 123])
+def test_release_shaped_batch_rejects_invalid_byte_source_path(
+    path_value: object,
+) -> None:
+    """Byte-source path is required and must be a string."""
+    bundle = _release_batch_bundle()
+    detail = _release_bundle_detail(bundle)
+    source_proof = cast("dict[str, object]", detail["source-proof"])
+    digests = cast("list[dict[str, object]]", source_proof["artifact-digests"])
+    byte_source = cast("dict[str, object]", digests[0]["byte-source"])
+    if path_value is None:
+        byte_source.pop("path")
+    else:
+        byte_source["path"] = path_value
+    detail.pop("profile-telemetry", None)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".detail.source-proof.artifact-digests[0].byte-source.path"
+        in issue.path
+        and issue.message == "must be a string"
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_extra_generated_build_identity() -> None:
+    """Source-proof generated-build identities must not self-authorize."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    foreign_digest = "f" * 64
+    foreign_bundle_id = foreign_digest[:24]
+    foreign_bundle_dir = (
+        ".three-ci-validation/work/validation-build/release-shaped/"
+        f"{foreign_bundle_id}"
+    )
+    phase = _release_profile_phase(telemetry, "base")
+    phase["request-digest"] = foreign_digest
+    phase["bundle-id"] = foreign_bundle_id
+    phase["output-path"] = foreign_bundle_dir
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    release_build["request-digest"] = foreign_digest
+    release_build["bundle-id"] = foreign_bundle_id
+    release_build["bundle-dir"] = foreign_bundle_dir
+    release_build["profile-root"] = f"{foreign_bundle_dir}/_profile/runs/run-1"
+    executor = cast("dict[str, object]", release_build["executor"])
+    executor["profile-root"] = f"{foreign_bundle_dir}/_profile/runs/run-1"
+    detail = _release_bundle_detail(bundle)
+    source_proof = cast("dict[str, object]", detail["source-proof"])
+    generated_builds = cast(
+        "list[dict[str, object]]",
+        source_proof["generated-builds"],
+    )
+    generated_builds.append(
+        {
+            "request-digest": foreign_digest,
+            "bundle-id": foreign_bundle_id,
+        }
+    )
+    detail["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".detail.source-proof.generated-builds" in issue.path
+        and "byte-source bundles" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".detail.source-proof.generated-builds" in issue.path
+        and "execute-build identities" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_duplicate_bundle_generated_identity() -> (
+    None
+):
+    """Generated-build identities are one-to-one with bundle ids."""
+    bundle = _release_batch_bundle()
+    detail = _release_bundle_detail(bundle)
+    source_proof = cast("dict[str, object]", detail["source-proof"])
+    generated_builds = cast(
+        "list[dict[str, object]]",
+        source_proof["generated-builds"],
+    )
+    generated_builds.append(
+        {
+            "request-digest": "0123456789abcdef01234567" + ("f" * 40),
+            "bundle-id": "0123456789abcdef01234567",
+        }
+    )
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".detail.source-proof.generated-builds" in issue.path
+        and "one identity per bundle-id" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_declared_stray_generated_builds() -> None:
+    """Declared output evidence rejects stray generated-build identities."""
+    bundle = _release_batch_bundle()
+    detail = _release_bundle_detail(bundle)
+    source_proof = cast("dict[str, object]", detail["source-proof"])
+    digests = cast("list[dict[str, object]]", source_proof["artifact-digests"])
+    byte_source = cast("dict[str, object]", digests[0]["byte-source"])
+    byte_source["path"] = ".three-ci-validation/work/validation-build/pkg.whl"
+    detail.pop("profile-telemetry", None)
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".detail.source-proof.generated-builds" in issue.path
+        and "byte-source bundles or profile telemetry" in issue.message
+        for issue in exc_info.value.issues
+    )
 
 
 def test_release_shaped_batch_accepts_profile_identity_metadata() -> None:
@@ -1867,6 +3004,399 @@ def test_release_shaped_batch_rejects_invalid_uploaded_evidence_contract(
         _validate_release_bundle(bundle)
 
     assert any(expected_path in issue.path for issue in exc_info.value.issues)
+
+
+def test_release_shaped_batch_rejects_cross_wired_uploaded_binlog() -> None:
+    """Multi-build binlog evidence must stay under the owning build subtree."""
+    bundle = _release_batch_bundle()
+    telemetry = _multi_release_profile_with_uploaded_binlogs()
+    release_builds = cast(
+        "list[dict[str, object]]",
+        telemetry["release-builds"],
+    )
+    first_phase = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", release_builds[0]["executor"])["phases"],
+    )[0]
+    second_phase = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", release_builds[1]["executor"])["phases"],
+    )[0]
+    first_phase["binlog-uploaded-evidence-path"] = second_phase[
+        "binlog-uploaded-evidence-path"
+    ]
+    first_phase["binlog-uploaded-evidence-paths"] = [
+        second_phase["binlog-uploaded-evidence-path"],
+    ]
+    first_phase["uploaded-evidence-argv"] = [
+        "dotnet",
+        "pack",
+        f"/bl:{second_phase['binlog-uploaded-evidence-path']}",
+    ]
+    telemetry["release-build"] = deepcopy(release_builds[0])
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.release-builds[0].executor.phases[0]."
+        "binlog-uploaded-evidence-path"
+        in issue.path
+        and "owning release-build" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-builds[0].executor.phases[0]."
+        "binlog-uploaded-evidence-paths[0]"
+        in issue.path
+        and "owning release-build" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-builds[0].executor.phases[0]."
+        "uploaded-evidence-argv[2]"
+        in issue.path
+        and "owning release-build" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-build.executor.phases[0]."
+        "binlog-uploaded-evidence-path"
+        in issue.path
+        and "owning release-build" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-build.executor.phases[0]."
+        "binlog-uploaded-evidence-paths[0]"
+        in issue.path
+        and "owning release-build" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-build.executor.phases[0]."
+        "uploaded-evidence-argv[2]"
+        in issue.path
+        and "owning release-build" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_single_builds_cross_wire() -> None:
+    """Single-entry release-builds still scope nested uploaded binlogs."""
+    bundle = _release_batch_bundle()
+    telemetry = _multi_release_profile_with_uploaded_binlogs()
+    release_builds = cast(
+        "list[dict[str, object]]",
+        telemetry["release-builds"],
+    )
+    first_build = deepcopy(release_builds[0])
+    second_phase = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", release_builds[1]["executor"])["phases"],
+    )[0]
+    first_phase = cast(
+        "list[dict[str, object]]",
+        cast("dict[str, object]", first_build["executor"])["phases"],
+    )[0]
+    first_phase["binlog-uploaded-evidence-path"] = second_phase[
+        "binlog-uploaded-evidence-path"
+    ]
+    first_phase["uploaded-evidence-argv"] = [
+        "dotnet",
+        "pack",
+        f"/bl:{second_phase['binlog-uploaded-evidence-path']}",
+    ]
+    telemetry["release-build"] = deepcopy(first_build)
+    telemetry["release-builds"] = [first_build]
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    telemetry["phases"] = [phases[0]]
+    _set_source_proof_generated_builds_from_profile(bundle, telemetry)
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.release-builds[0].executor.phases[0]."
+        "binlog-uploaded-evidence-path"
+        in issue.path
+        and "owning release-build" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-builds[0].executor.phases[0]."
+        "uploaded-evidence-argv[2]"
+        in issue.path
+        and "owning release-build" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_singular_build_cross_wire() -> None:
+    """Singular release-build rejects foreign release-builds subtree claims."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    foreign_path = _release_profile_uploaded_binlog_path("f" * 24)
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    executor = cast("dict[str, object]", release_build["executor"])
+    phase = cast("list[dict[str, object]]", executor["phases"])[0]
+    phase["binlog-uploaded-evidence-path"] = foreign_path
+    phase["binlog-uploaded-evidence-paths"] = [foreign_path]
+    phase["uploaded-evidence-argv"] = ["dotnet", "pack", f"/bl:{foreign_path}"]
+    uploaded_files = cast("list[str]", telemetry["uploaded-evidence-files"])
+    uploaded_files.append(foreign_path)
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.release-build.executor.phases[0]."
+        "binlog-uploaded-evidence-path"
+        in issue.path
+        and "must not use release-builds" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-build.executor.phases[0]."
+        "binlog-uploaded-evidence-paths[0]"
+        in issue.path
+        and "must not use release-builds" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-build.executor.phases[0]."
+        "uploaded-evidence-argv[2]"
+        in issue.path
+        and "must not use release-builds" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_singular_build_plural_scope() -> None:
+    """Singular release-build cannot claim release-builds subtree evidence."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    bundle_id = cast("str", release_build["bundle-id"])
+    plural_path = _release_profile_uploaded_binlog_path(bundle_id)
+    executor = cast("dict[str, object]", release_build["executor"])
+    phase = cast("list[dict[str, object]]", executor["phases"])[0]
+    phase["binlog-uploaded-evidence-path"] = plural_path
+    phase["binlog-uploaded-evidence-paths"] = [plural_path]
+    phase["uploaded-evidence-argv"] = ["dotnet", "pack", f"/bl:{plural_path}"]
+    uploaded_files = cast("list[str]", telemetry["uploaded-evidence-files"])
+    uploaded_files.append(plural_path)
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.release-build.executor.phases[0]."
+        "binlog-uploaded-evidence-path"
+        in issue.path
+        and "must not use release-builds" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-build.executor.phases[0]."
+        "binlog-uploaded-evidence-paths[0]"
+        in issue.path
+        and "must not use release-builds" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-build.executor.phases[0]."
+        "uploaded-evidence-argv[2]"
+        in issue.path
+        and "must not use release-builds" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_cross_wired_top_level_binlog() -> None:
+    """Top-level execute-build binlog evidence is scoped to its own build."""
+    bundle = _release_batch_bundle()
+    telemetry = _multi_release_profile_with_uploaded_binlogs()
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    second_path = _release_profile_uploaded_binlog_path("f" * 24)
+    phases[0]["binlog-uploaded-evidence-path"] = second_path
+    phases[0]["binlog-uploaded-evidence-paths"] = [second_path]
+    phases[0]["uploaded-evidence-argv"] = [
+        "dotnet",
+        "pack",
+        f"/bl:{second_path}",
+    ]
+    _set_source_proof_generated_builds_from_profile(bundle, telemetry)
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[0].binlog-uploaded-evidence-path"
+        in issue.path
+        and "owning release-build" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.phases[0].binlog-uploaded-evidence-paths[0]"
+        in issue.path
+        and "owning release-build" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.phases[0].uploaded-evidence-argv[2]" in issue.path
+        and "owning release-build" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_rejects_unowned_top_level_binlog() -> None:
+    """Sidecar-less execute-build binlog evidence still uses owning scope."""
+    bundle = _release_batch_bundle()
+    telemetry = _multi_release_profile_with_uploaded_binlogs()
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    second_path = _release_profile_uploaded_binlog_path("f" * 24)
+    phases[0]["binlog-uploaded-evidence-path"] = second_path
+    phases[0]["binlog-uploaded-evidence-paths"] = [second_path]
+    phases[0]["uploaded-evidence-argv"] = [
+        "dotnet",
+        "pack",
+        f"/bl:{second_path}",
+    ]
+    _set_source_proof_generated_builds_from_profile(bundle, telemetry)
+    telemetry.pop("release-build", None)
+    telemetry.pop("release-builds", None)
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[0].binlog-uploaded-evidence-path"
+        in issue.path
+        and "owning release-build" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.phases[0].uploaded-evidence-argv[2]" in issue.path
+        and "owning release-build" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def _set_source_proof_generated_builds_from_profile(
+    bundle: dict[str, object],
+    telemetry: Mapping[str, object],
+) -> None:
+    detail = _release_bundle_detail(bundle)
+    source_proof = cast("dict[str, object]", detail["source-proof"])
+    source_proof["generated-builds"] = [
+        {
+            "request-digest": phase["request-digest"],
+            "bundle-id": phase["bundle-id"],
+        }
+        for phase in cast("list[dict[str, object]]", telemetry["phases"])
+        if phase.get("phase") == "release-build-execute-build"
+    ]
+
+
+def _multi_release_profile_with_uploaded_binlogs() -> dict[str, object]:
+    telemetry = _valid_release_profile_telemetry()
+    first_digest = cast(
+        "str", _release_profile_phase(telemetry, "base")["request-digest"]
+    )
+    second_digest = "f" * 64
+    first_build = _release_profile_uploaded_build(
+        telemetry,
+        request_digest=first_digest,
+        bundle_id=first_digest[:24],
+    )
+    second_build = _release_profile_uploaded_build(
+        telemetry,
+        request_digest=second_digest,
+        bundle_id=second_digest[:24],
+    )
+    telemetry["phases"] = [
+        _release_profile_execute_phase_for_build(telemetry, first_build),
+        _release_profile_execute_phase_for_build(telemetry, second_build),
+    ]
+    telemetry["release-build"] = deepcopy(first_build)
+    telemetry["release-builds"] = [first_build, second_build]
+    telemetry["uploaded-evidence-files"] = [
+        _release_profile_uploaded_binlog_path(first_digest[:24]),
+        _release_profile_uploaded_binlog_path(second_digest[:24]),
+        (
+            "validation-result-profile-evidence/release-builds/"
+            f"{first_digest[:24]}/release-build-profile-telemetry.json"
+        ),
+        (
+            "validation-result-profile-evidence/release-builds/"
+            f"{second_digest[:24]}/release-build-profile-telemetry.json"
+        ),
+    ]
+    return telemetry
+
+
+def _release_profile_uploaded_build(
+    telemetry: Mapping[str, object],
+    *,
+    request_digest: str,
+    bundle_id: str,
+) -> dict[str, object]:
+    release_build = deepcopy(
+        cast("dict[str, object]", telemetry["release-build"])
+    )
+    bundle_dir = (
+        f".three-ci-validation/work/validation-build/release-shaped/{bundle_id}"
+    )
+    binlog_path = _release_profile_uploaded_binlog_path(bundle_id)
+    release_build.update(
+        {
+            "bundle-dir": bundle_dir,
+            "request-digest": request_digest,
+            "bundle-id": bundle_id,
+            "profile-root": f"{bundle_dir}/_profile/runs/run-1",
+        }
+    )
+    executor = cast("dict[str, object]", release_build["executor"])
+    executor["profile-root"] = f"{bundle_dir}/_profile/runs/run-1"
+    phases = cast("list[dict[str, object]]", executor["phases"])
+    phases[0]["binlog-uploaded-evidence-path"] = binlog_path
+    phases[0]["binlog-uploaded-evidence-paths"] = [binlog_path]
+    phases[0]["uploaded-evidence-argv"] = [
+        "dotnet",
+        "pack",
+        f"/bl:{binlog_path}",
+    ]
+    return release_build
+
+
+def _release_profile_execute_phase_for_build(
+    telemetry: Mapping[str, object],
+    release_build: Mapping[str, object],
+) -> dict[str, object]:
+    phase = deepcopy(_release_profile_phase(telemetry, "base"))
+    for key in (
+        "request-digest",
+        "bundle-id",
+        "work-group-id",
+        "runner-family",
+    ):
+        phase[key] = release_build[key]
+    phase["output-path"] = release_build["bundle-dir"]
+    return phase
+
+
+def _release_profile_uploaded_binlog_path(bundle_id: str) -> str:
+    return (
+        "validation-result-profile-evidence/release-builds/"
+        f"{bundle_id}/_profile/runs/run-1/binlogs/build.binlog"
+    )
 
 
 def _profile_telemetry_with_missing_uploaded_binlog(
