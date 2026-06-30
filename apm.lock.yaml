@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-06-28T23:34:42.662216+00:00'
+generated_at: '2026-06-30T01:26:59.434873+00:00'
 apm_version: 0.22.0
 dependencies:
 - repo_url: dotnet/skills
@@ -33,7 +33,7 @@ dependencies:
     .agents/skills/nuget-trusted-publishing/references/package-types.md: sha256:f413d6ee9fc24c5b886dfcb0f7063b2bfa16bd8e6a5c938ca103ffd001b4f3b6
     .agents/skills/nuget-trusted-publishing/references/publish-workflow.md: sha256:632b8e8db22115237ce305ddbca00a41d3cbb10869f1cdc3116e329a35ab70df
     .agents/skills/setup-local-sdk/SKILL.md: sha256:6b4904db9ae950da582f85dc2f4cf2adf586776d84ce805a273edb4045f1a74e
-  content_hash: sha256:e78a7288a8a46fe190aad7cbe74fc9cfcebf682f7a60d6297d05ba204acac560
+  content_hash: sha256:7247d7dfebd178e574f4ba56d80ac78e3511e7ccd6d7bc3718e06cb0d1d7f5c6
 - repo_url: dotnet/skills
   name: dotnet-ai
   host: github.com
@@ -78,7 +78,7 @@ dependencies:
     .agents/skills/mcp-csharp-test/references/evaluations.md: sha256:726b9f1f07b8c77df1d4eb4639581b7ef710ec8fe5c61fb321860e630a150f38
     .agents/skills/mcp-csharp-test/references/test-patterns.md: sha256:7e1f57b4ec3f2af4c8d9845a97d7651d652afb36ffc088c6beafefc60213e1a9
     .agents/skills/technology-selection/SKILL.md: sha256:94a7031083ba18d869322e21cdfa90d859703edf881381a3706a1bb0411a09a0
-  content_hash: sha256:76401b992b812f91104799cfb202575b8e6ead6fee894f3dc4044be6174c2186
+  content_hash: sha256:8d7cee1c367064bff3e7409e36e40568554413c7cd85b693be3c84bab572b700
 - repo_url: dotnet/skills
   name: dotnet-diag
   host: github.com
@@ -165,7 +165,7 @@ dependencies:
     .agents/skills/microbenchmarking/references/project-setup-and-running.md: sha256:dd6866d218be83e84e772b9bda17d1d8261da4a8318d6b098faffe71b95bfcdf
     .agents/skills/microbenchmarking/references/writing-benchmarks.md: sha256:00279137333ae46cec081a3b85d53858cec9a7565beddf902e15a6f7abe81f09
     .github/agents/optimizing-dotnet-performance.agent.md: sha256:aeae8474777971a8e29873b132963b18ef3a76acab706473734a9a82d19c6a84
-  content_hash: sha256:77664d4df12860e0e08d7a2370dc2c9adf9dfa261c3228a9907f4d9f0f5ae94a
+  content_hash: sha256:e7b778da689f212967e08c978415c142e0318c05ba4b1bbbfc0aa10d86902f77
 - repo_url: dotnet/skills
   name: dotnet-msbuild
   host: github.com
@@ -249,7 +249,7 @@ dependencies:
     .github/agents/build-perf.agent.md: sha256:5995d46bd024f19ee4b7a028ae8efa70b628baaa9f7cf7950cd91cdcfe3d8652
     .github/agents/msbuild-code-review.agent.md: sha256:7ad9f3d79b000551d247f39bc92ec4d3ab7a9d5dc1b66595f06c71b4a8bb5a66
     .github/agents/msbuild.agent.md: sha256:ddcc60dbe00aa6c7b66a00e61a7602dd580d8e4ac4c8881e5aca3602d749151d
-  content_hash: sha256:cb55dc55d8e821d9db615e3b0f4f938aa6069bef7fd51aec30d45e3a22c67e23
+  content_hash: sha256:4a80edc5749ee64f9b0b8b0ba8e7bdec8129ec5ffa725c89adfc0b39d9fc6c92
 - repo_url: dotnet/skills
   name: dotnet-nuget
   host: github.com
@@ -274,7 +274,7 @@ dependencies:
     .agents/skills/convert-to-cpm/references/directory-packages-props.md: sha256:f2a2fc03e206982fe03ba1b006e03aee3fb08740b28d336c876d21ee68e3a113
     .agents/skills/convert-to-cpm/references/msbuild-property-handling.md: sha256:3bc84372446e38af3336dd8161ad242938c70cfa4a3960c3e04a246d28d05063
     .agents/skills/convert-to-cpm/references/validation-and-errors.md: sha256:f60a06adec7f0deb3fc8b5ca10cda9e6446c54089dd8b0246dcc3fcd6e8c836a
-  content_hash: sha256:d39b41c310ac4caaa3f81493d84dea43f880e09d906ff22eaf5353b3d5fadbad
+  content_hash: sha256:53ede00ee1b7e6ffcc219994d8dc214800412616e3dceb493063b91bbf84be4d
 - repo_url: dotnet/skills
   name: dotnet-test
   host: github.com
@@ -449,7 +449,7 @@ dependencies:
     .github/agents/code-testing-tester.agent.md: sha256:41efd087a3f742ff64bf7a2181548430c2662f3a2b3bef92aa906e7e6ec24313
     .github/agents/test-quality-auditor.agent.md: sha256:180b6f070f73dd87bbbc233e7c08bb6e8a164a85c3494016ecca025df71ff312
     .github/agents/testability-migration.agent.md: sha256:cad6dd9a0ef2ee4a3062e33c428a8fa42e6442999f1e107b9e3c9a4a228bbfe6
-  content_hash: sha256:d0a687e17d32e5adc4602d5d9a1a9444ab3ac496e9b257cd88cdb0b888b26e85
+  content_hash: sha256:fee795aa5779476a67966344ed56025791dc9b0fda5af18ac41b48291e5988a4
 - repo_url: dotnet/skills
   name: dotnet-test-migration
   host: github.com
@@ -480,7 +480,7 @@ dependencies:
     .agents/skills/migrate-xunit-to-mstest/references/mapping-cheatsheet.md: sha256:cc531b415f93b60dbc14499a8b0e8b5963189e39297f17edf7f521ef6de5ac84
     .agents/skills/migrate-xunit-to-xunit-v3/SKILL.md: sha256:0481be42764236a4bf8aa67d1e8ff75f7000913dbdcb80312b0d612c2ceaeb34
     .github/agents/test-migration.agent.md: sha256:e6ad811429bb33306bc803ba52b87308160d0a8e972e6e0574bb514f1169fc18
-  content_hash: sha256:80ad285af6d3da05b1324da5693d032b65c3106d23b8bc010f81ec9b37922695
+  content_hash: sha256:93018869a86900c41d36f72aee06e5a1bf24b1aafd1a44e84052b7e343016318
 - repo_url: dotnet/skills
   name: dotnet-upgrade
   host: github.com
@@ -576,7 +576,7 @@ dependencies:
     .agents/skills/migrate-nullable-references/references/nullable-attributes.md: sha256:81a71f6bc0997ba44956fce3de28b61ebf6ad6fbc32cf5cca2efe2ceabc9cb7b
     .agents/skills/migrate-nullable-references/scripts/Get-NullableReadiness.ps1: sha256:61a5540f17c00b3da4d97dbbe82df85c2ccc1c580795586afe6af002d21493e6
     .agents/skills/thread-abort-migration/SKILL.md: sha256:0dfe570c456b940b44f5283f03bebe487261ee0dc036cad05a201f871c06e9eb
-  content_hash: sha256:f16b443b8d67e3302ecd69deb0537a805cbc3bbdad53142d38853f3992f641ba
+  content_hash: sha256:2f2dc2133f07b0e7a2711d6046e04676b9577f087354a86466f760a86816d6fd
 - repo_url: mattpocock/skills
   name: skills
   host: github.com
@@ -592,12 +592,71 @@ dependencies:
   deployed_file_hashes:
     .agents/skills/grill-me/SKILL.md: sha256:6189dfceb7304a6e5558f75d87e68fa3bc7fcf7ba120e44f21f8a61fe01eba54
   content_hash: sha256:f321507f77702a54af1db66549ec1685fc625390d06c57d7949cdcda8eb1b5c7
+- repo_url: microsoft/win-dev-skills
+  name: winui
+  host: github.com
+  resolved_commit: 7b7cfbfd97118bb477695354943ee94bb2203a52
+  resolved_ref: 7b7cfbfd97118bb477695354943ee94bb2203a52
+  version: 0.4.0
+  virtual_path: plugins/winui
+  is_virtual: true
+  package_type: marketplace_plugin
+  deployed_files:
+  - .agents/skills/winui-code-review
+  - .agents/skills/winui-code-review/SKILL.md
+  - .agents/skills/winui-code-review/references/quality-rules.md
+  - .agents/skills/winui-design
+  - .agents/skills/winui-design/SKILL.md
+  - .agents/skills/winui-design/references/brushes-and-icons.md
+  - .agents/skills/winui-design/references/layout-review.md
+  - .agents/skills/winui-design/references/theme-accessibility.md
+  - .agents/skills/winui-design/winui-search.exe
+  - .agents/skills/winui-dev-workflow
+  - .agents/skills/winui-dev-workflow/BuildAndRun.ps1
+  - .agents/skills/winui-dev-workflow/SKILL.md
+  - .agents/skills/winui-dev-workflow/analyzer/Microsoft.WindowsAppSDK.Analyzers.dll
+  - .agents/skills/winui-dev-workflow/analyzer/Microsoft.WindowsAppSDK.Analyzers.targets
+  - .agents/skills/winui-packaging
+  - .agents/skills/winui-packaging/SKILL.md
+  - .agents/skills/winui-packaging/references/sourcegen-patterns.md
+  - .agents/skills/winui-session-report
+  - .agents/skills/winui-session-report/Analyze-Session.ps1
+  - .agents/skills/winui-session-report/SKILL.md
+  - .agents/skills/winui-setup
+  - .agents/skills/winui-setup/SKILL.md
+  - .agents/skills/winui-ui-testing
+  - .agents/skills/winui-ui-testing/SKILL.md
+  - .agents/skills/winui-wpf-migration
+  - .agents/skills/winui-wpf-migration/SKILL.md
+  - .github/agents/winui-dev.agent.md
+  deployed_file_hashes:
+    .agents/skills/winui-code-review/SKILL.md: sha256:63ad45a2cbdf1289747bc0480272176cc11182bb45fe1fc2b6ae96706fa4b90c
+    .agents/skills/winui-code-review/references/quality-rules.md: sha256:9f4c258078ab1b5ef4da5973277d31c2e59dc137590768c1cdc185b3ece9f262
+    .agents/skills/winui-design/SKILL.md: sha256:324f00142c172bda0dbf7ed0d4616f3a31b49ea6e99b8695be323986c697ab8f
+    .agents/skills/winui-design/references/brushes-and-icons.md: sha256:7ebce795a714a6479320bd0f07ba21b26b5689edb3dd96a5227192e9e352a878
+    .agents/skills/winui-design/references/layout-review.md: sha256:12210e16f1562687c6d02762c433c689cbabd7f4c3e5d9457e44928127fe2542
+    .agents/skills/winui-design/references/theme-accessibility.md: sha256:79179212801c3edc16566941b1667f3e6b2c819a3bdd32e941c47531d11ed1fc
+    .agents/skills/winui-design/winui-search.exe: sha256:95e5fd0979c208d1ded2801fbf1981850b5b66a23a8711bc451db8460590e53c
+    .agents/skills/winui-dev-workflow/BuildAndRun.ps1: sha256:aeaed101f9ab5cb7328b32680ccfa8fc6c26b2c3689c5a112de7abfe7b0aa5d6
+    .agents/skills/winui-dev-workflow/SKILL.md: sha256:0b526dd001a4f458bd7d060d09422c4ff2b22a8dfc23ee0e13eac8a60e9bf585
+    .agents/skills/winui-dev-workflow/analyzer/Microsoft.WindowsAppSDK.Analyzers.dll: sha256:e989099a0e369a1f2c114b4d86a82789f1006d73efc719db96e9bbe45d88671c
+    .agents/skills/winui-dev-workflow/analyzer/Microsoft.WindowsAppSDK.Analyzers.targets: sha256:80e801c7d787248009cf365268a8dbdd16a30399806b3fe85a7fe87badba3727
+    .agents/skills/winui-packaging/SKILL.md: sha256:83e9685062d9ae7ef25e9bc4f1dce771ab4207ad6276e3d98ec8ffbd7766cf0a
+    .agents/skills/winui-packaging/references/sourcegen-patterns.md: sha256:a022b5dc66e63ef2652eb5aeac986e9b80fd86fa207f25fef4cc41470d3a3267
+    .agents/skills/winui-session-report/Analyze-Session.ps1: sha256:e06f4b3ef041d02ed1e5af593ba7c8edf62aa20a35322363f3328d3a4fed0af5
+    .agents/skills/winui-session-report/SKILL.md: sha256:00e1ebc5da3ad4fd158624fbd96f6a1a0ea57d8a6f6592d3236193932528fa86
+    .agents/skills/winui-setup/SKILL.md: sha256:a13270b69851f6cb4282575ad1e867a92e9b2d7d3fe3de7fc0059e5d62dfc3fb
+    .agents/skills/winui-ui-testing/SKILL.md: sha256:735f91d70d52074f91fb7a72a6d585fd2911159f83dbb659fbe9d21cd9490a6a
+    .agents/skills/winui-wpf-migration/SKILL.md: sha256:3f0de39015b2ebd204214036dcda4418cdaeb5b3e5b8ab9193bfc6e3aad446d3
+    .github/agents/winui-dev.agent.md: sha256:521e48c76ed667ab1a1ddb3e991bab1c414661872d844b64172fa8295396a5f2
+  content_hash: sha256:edb019058f7611fd270e3a5e46075792e5135529d630c1c555c6da8dc8a9ffff
+  declared_license: MIT
 - repo_url: microsoftdocs/mcp
-  name: mcp
+  name: microsoft-code-reference
   host: github.com
   resolved_commit: caa3d670bf2814171dba4f7346ece5080964021e
   resolved_ref: caa3d670bf2814171dba4f7346ece5080964021e
-  version: unknown
+  version: 1.0.0
   virtual_path: skills/microsoft-code-reference
   is_virtual: true
   package_type: claude_skill
@@ -605,14 +664,14 @@ dependencies:
   - .agents/skills/microsoft-code-reference
   - .agents/skills/microsoft-code-reference/SKILL.md
   deployed_file_hashes:
-    .agents/skills/microsoft-code-reference/SKILL.md: sha256:36354e87d7095fbba0b7138c251ee6fd30f85a89d35a0909e4a6aafdf74280fe
-  content_hash: sha256:b8f19fa71bfbb9b6c6e586c9135fbc4baa4df4aa3e2da2398d7db4add6fde1c3
+    .agents/skills/microsoft-code-reference/SKILL.md: sha256:e2ec37ae1c903a4935d35fddbe82b2e6bb01fa7621c7b5c4e53d3181eee3228e
+  content_hash: sha256:f99cca5887209d1fa47eeb37d54c68d50aea99ea9a4a98a909634baf36f6092b
 - repo_url: microsoftdocs/mcp
-  name: mcp
+  name: microsoft-docs
   host: github.com
   resolved_commit: caa3d670bf2814171dba4f7346ece5080964021e
   resolved_ref: caa3d670bf2814171dba4f7346ece5080964021e
-  version: unknown
+  version: 1.0.0
   virtual_path: skills/microsoft-docs
   is_virtual: true
   package_type: claude_skill
@@ -620,8 +679,8 @@ dependencies:
   - .agents/skills/microsoft-docs
   - .agents/skills/microsoft-docs/SKILL.md
   deployed_file_hashes:
-    .agents/skills/microsoft-docs/SKILL.md: sha256:23d6c309124c4dd7f96ef7166a1998814b4eaeca7e3d654bdac2feacde7e16d1
-  content_hash: sha256:0acd8d2629937e021d605fd1426e641295909e13bab47cad1153793f5564e85e
+    .agents/skills/microsoft-docs/SKILL.md: sha256:6477b6b1fa27e8f754e285094f15918c5c0dca414a3385096a2c3546eb46f799
+  content_hash: sha256:4f74ef0fb7127b151a00eee34cf7484414ea85965a2e7681b5775e9ee9484b37
 mcp_servers:
 - binlog
 - io.github.upstash/context7

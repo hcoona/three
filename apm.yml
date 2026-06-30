@@ -38,6 +38,9 @@ dependencies:
     - git: https://github.com/microsoftdocs/mcp.git
       path: skills/microsoft-code-reference
       ref: caa3d670bf2814171dba4f7346ece5080964021e
+    - git: https://github.com/microsoft/win-dev-skills.git
+      path: plugins/winui
+      ref: 7b7cfbfd97118bb477695354943ee94bb2203a52
   mcp:
     - name: io.github.upstash/context7
       registry: false
