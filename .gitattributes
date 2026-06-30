@@ -4,3 +4,14 @@ src/private/app/OxfordWordlistExtractor/*.html linguist-vendored
 tests/private/app/OxfordDictExtractor.Tests/examples/*.html linguist-vendored
 src/private/app/supermemo-mcp/references/*.ahk linguist-vendored
 src/private/app/factorio-cycle-calculator/src/factorio_cycle_calculator/generated/* linguist-generated
+
+# APM-managed generated outputs.
+.agents/skills/** linguist-generated
+.github/agents/build-perf.agent.md linguist-generated
+.github/agents/code-testing-*.agent.md linguist-generated
+.github/agents/msbuild*.agent.md linguist-generated
+.github/agents/optimizing-dotnet-performance.agent.md linguist-generated
+.github/agents/test*.agent.md linguist-generated
+.github/agents/winui-dev.agent.md linguist-generated
+.vscode/mcp.json linguist-generated
+apm.lock.yaml linguist-generated
