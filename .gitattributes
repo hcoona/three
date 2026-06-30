@@ -4,3 +4,23 @@ src/private/app/OxfordWordlistExtractor/*.html linguist-vendored
 tests/private/app/OxfordDictExtractor.Tests/examples/*.html linguist-vendored
 src/private/app/supermemo-mcp/references/*.ahk linguist-vendored
 src/private/app/factorio-cycle-calculator/src/factorio_cycle_calculator/generated/* linguist-generated
+
+# APM-managed generated outputs.
+.agents/skills/** linguist-generated
+.github/agents/*.agent.md linguist-generated
+.github/agents/code-fix-openai.agent.md -linguist-generated
+.github/agents/code-fix-orchestrator.agent.md -linguist-generated
+.github/agents/code-review-claude.agent.md -linguist-generated
+.github/agents/code-review-fix-loop-orchestrator.agent.md -linguist-generated
+.github/agents/code-review-gemini.agent.md -linguist-generated
+.github/agents/code-review-openai.agent.md -linguist-generated
+.github/agents/code-review-orchestrator.agent.md -linguist-generated
+.github/agents/coding-openai.agent.md -linguist-generated
+.github/agents/coding-orchestrator.agent.md -linguist-generated
+.github/agents/design-claude.agent.md -linguist-generated
+.github/agents/design-gemini.agent.md -linguist-generated
+.github/agents/design-openai.agent.md -linguist-generated
+.github/agents/design-orchestrator.agent.md -linguist-generated
+.github/agents/review-code-review-claude.agent.md -linguist-generated
+.vscode/mcp.json linguist-generated
+apm.lock.yaml linguist-generated

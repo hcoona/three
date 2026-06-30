@@ -16,7 +16,8 @@
     },
     "microsoft-learn": {
       "type": "http",
-      "url": "https://learn.microsoft.com/api/mcp"
+      "url": "https://learn.microsoft.com/api/mcp",
+      "headers": {}
     },
     "binlog": {
       "type": "stdio",
