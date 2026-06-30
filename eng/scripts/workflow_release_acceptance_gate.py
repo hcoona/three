@@ -168,6 +168,27 @@ MANDATORY_TEST_NODEIDS = (
     "test_release_shaped_batch_rejects_foreign_scoped_profile_phase",
     "src/public/lib/three-workflow-release-contracts/tests/"
     "test_ci_validation_batches.py::"
+    "test_release_shaped_batch_rejects_foreign_supplemental_primary_group_phase",
+    "src/public/lib/three-workflow-release-contracts/tests/"
+    "test_ci_validation_batches.py::"
+    "test_release_shaped_batch_accepts_supplemental_group_phase",
+    "src/public/lib/three-workflow-release-contracts/tests/"
+    "test_ci_validation_batches.py::"
+    "test_release_shaped_batch_rejects_standalone_supplemental_build_mismatch",
+    "src/public/lib/three-workflow-release-contracts/tests/"
+    "test_ci_validation_batches.py::"
+    "test_release_shaped_batch_accepts_group_backed_supplemental_build",
+    "src/public/lib/three-workflow-release-contracts/tests/"
+    "test_ci_validation_batches.py::"
+    "test_release_shaped_batch_rejects_group_mismatched_supplemental_build",
+    "src/public/lib/three-workflow-release-contracts/tests/"
+    "test_ci_validation_batches.py::"
+    "test_release_shaped_batch_rejects_non_success_supplemental_group_build",
+    "src/public/lib/three-workflow-release-contracts/tests/"
+    "test_ci_validation_batches.py::"
+    "test_release_shaped_batch_rejects_non_boolean_supplemental",
+    "src/public/lib/three-workflow-release-contracts/tests/"
+    "test_ci_validation_batches.py::"
     "test_release_shaped_batch_rejects_bundle_profile_root",
     "tests/test_workflow_release_control.py::"
     "test_ci_validation_profile_evidence_upload_rejects_bundle_profile_root",
@@ -215,6 +236,30 @@ MANDATORY_TEST_NODEIDS = (
     "test_ci_validation_slowest_release_build_deduplicates_output_path",
     "tests/test_workflow_release_control.py::"
     "test_ci_validation_slowest_release_build_default_limit_keeps_top_five",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_command_runner_captures_windows_dotnet_build_binlog",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_command_runner_captures_windows_dotnet_type_check_binlog",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_command_runner_ignores_stale_windows_dotnet_binlog",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_command_runner_rejects_symlinked_binlog_parent",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_command_runner_rejects_file_binlog_parent",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_batch_retains_slowest_ecosystem_binlogs",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_result_retains_slowest_ecosystem_binlog",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_ecosystem_binlog_staging_resets_unsafe_targets",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_ecosystem_binlog_retention_rejects_unsafe_paths",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_ecosystem_binlog_retention_rejects_symlink_paths",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_ecosystem_binlog_retention_rejects_symlinked_parents",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_orchestrator_uploads_ecosystem_only_evidence",
     "tests/test_workflow_release_control.py::"
     "test_acceptance_gate_pins_r36_dotnet_dist_boundary_regression",
     "tests/test_workflow_release_control.py::"

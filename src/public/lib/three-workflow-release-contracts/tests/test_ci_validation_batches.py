@@ -1185,6 +1185,267 @@ def test_release_shaped_batch_rejects_foreign_scoped_profile_phase() -> None:
     )
 
 
+def test_release_shaped_batch_rejects_foreign_supplemental_primary_group_phase() -> (  # noqa: E501
+    None
+):
+    """Primary-group phases cannot use supplemental scope mismatch allowance."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    primary_phase = deepcopy(_release_profile_phase(telemetry, "base"))
+    primary_phase["phase"] = "release-build-materialization-primary-group"
+    primary_phase["work-group-id"] = "wg-foreign"
+    primary_phase["supplemental"] = True
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    phases.append(primary_phase)
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[2].work-group-id" in issue.path
+        and "selector" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_accepts_supplemental_group_phase() -> None:
+    """Actual supplemental materialization may keep same-runner evidence."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    supplemental_phase = deepcopy(_release_profile_phase(telemetry, "base"))
+    supplemental_phase["phase"] = (
+        "release-build-materialization-supplemental-group"
+    )
+    supplemental_phase["work-group-id"] = "wg-supplemental"
+    supplemental_phase["supplemental"] = True
+    supplemental_phase["artifact-count"] = 2
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    phases.append(supplemental_phase)
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    _validate_release_bundle(bundle)
+
+
+def test_release_shaped_batch_rejects_standalone_supplemental_build_mismatch() -> (  # noqa: E501
+    None
+):
+    """Supplemental execute/release-build mismatch needs group evidence."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    foreign_digest = "f" * 64
+    foreign_bundle_id = foreign_digest[:24]
+    foreign_bundle_dir = (
+        ".three-ci-validation/work/validation-build/release-shaped/"
+        f"{foreign_bundle_id}"
+    )
+    foreign_execute = deepcopy(_release_profile_phase(telemetry, "base"))
+    foreign_execute["request-digest"] = foreign_digest
+    foreign_execute["bundle-id"] = foreign_bundle_id
+    foreign_execute["output-path"] = foreign_bundle_dir
+    foreign_execute["work-group-id"] = "wg-supplemental"
+    foreign_execute["supplemental"] = True
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    phases.append(foreign_execute)
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    release_build["request-digest"] = foreign_digest
+    release_build["bundle-id"] = foreign_bundle_id
+    release_build["bundle-dir"] = foreign_bundle_dir
+    release_build["work-group-id"] = "wg-supplemental"
+    release_build["supplemental"] = True
+    release_build["profile-root"] = f"{foreign_bundle_dir}/_profile/runs/run-1"
+    executor = cast("dict[str, object]", release_build["executor"])
+    executor["profile-root"] = f"{foreign_bundle_dir}/_profile/runs/run-1"
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[2].work-group-id" in issue.path
+        and "selector" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-build.work-group-id" in issue.path
+        and "selector" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+def test_release_shaped_batch_accepts_group_backed_supplemental_build() -> None:
+    """Supplemental execute/release-build evidence binds to group record."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    foreign_digest = "f" * 64
+    foreign_bundle_id = foreign_digest[:24]
+    foreign_bundle_dir = (
+        ".three-ci-validation/work/validation-build/release-shaped/"
+        f"{foreign_bundle_id}"
+    )
+    foreign_execute = deepcopy(_release_profile_phase(telemetry, "base"))
+    foreign_execute["request-digest"] = foreign_digest
+    foreign_execute["bundle-id"] = foreign_bundle_id
+    foreign_execute["output-path"] = foreign_bundle_dir
+    foreign_execute["work-group-id"] = "wg-supplemental"
+    foreign_execute["supplemental"] = True
+    supplemental_group = deepcopy(foreign_execute)
+    supplemental_group["phase"] = (
+        "release-build-materialization-supplemental-group"
+    )
+    supplemental_group["artifact-count"] = 2
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    phases.extend([supplemental_group, foreign_execute])
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    release_build["request-digest"] = foreign_digest
+    release_build["bundle-id"] = foreign_bundle_id
+    release_build["bundle-dir"] = foreign_bundle_dir
+    release_build["work-group-id"] = "wg-supplemental"
+    release_build["supplemental"] = True
+    release_build["profile-root"] = f"{foreign_bundle_dir}/_profile/runs/run-1"
+    executor = cast("dict[str, object]", release_build["executor"])
+    executor["profile-root"] = f"{foreign_bundle_dir}/_profile/runs/run-1"
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    _validate_release_bundle(bundle)
+
+
+def test_release_shaped_batch_rejects_group_mismatched_supplemental_build() -> (
+    None
+):
+    """Supplemental group proof must match execute/release-build work-group."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    foreign_digest = "f" * 64
+    foreign_bundle_id = foreign_digest[:24]
+    foreign_bundle_dir = (
+        ".three-ci-validation/work/validation-build/release-shaped/"
+        f"{foreign_bundle_id}"
+    )
+    foreign_execute = deepcopy(_release_profile_phase(telemetry, "base"))
+    foreign_execute["request-digest"] = foreign_digest
+    foreign_execute["bundle-id"] = foreign_bundle_id
+    foreign_execute["output-path"] = foreign_bundle_dir
+    foreign_execute["work-group-id"] = "wg-supplemental"
+    foreign_execute["supplemental"] = True
+    supplemental_group = deepcopy(foreign_execute)
+    supplemental_group["phase"] = (
+        "release-build-materialization-supplemental-group"
+    )
+    supplemental_group["work-group-id"] = "wg-other-supplemental"
+    supplemental_group["artifact-count"] = 2
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    phases.extend([supplemental_group, foreign_execute])
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    release_build["request-digest"] = foreign_digest
+    release_build["bundle-id"] = foreign_bundle_id
+    release_build["bundle-dir"] = foreign_bundle_dir
+    release_build["work-group-id"] = "wg-supplemental"
+    release_build["supplemental"] = True
+    release_build["profile-root"] = f"{foreign_bundle_dir}/_profile/runs/run-1"
+    executor = cast("dict[str, object]", release_build["executor"])
+    executor["profile-root"] = f"{foreign_bundle_dir}/_profile/runs/run-1"
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[3].work-group-id" in issue.path
+        and "selector" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-build.work-group-id" in issue.path
+        and "selector" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize("group_outcome", ["failure", "skipped"])
+def test_release_shaped_batch_rejects_non_success_supplemental_group_build(
+    group_outcome: str,
+) -> None:
+    """Only successful supplemental groups authorize mismatched builds."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    foreign_digest = "f" * 64
+    foreign_bundle_id = foreign_digest[:24]
+    foreign_bundle_dir = (
+        ".three-ci-validation/work/validation-build/release-shaped/"
+        f"{foreign_bundle_id}"
+    )
+    foreign_execute = deepcopy(_release_profile_phase(telemetry, "base"))
+    foreign_execute["request-digest"] = foreign_digest
+    foreign_execute["bundle-id"] = foreign_bundle_id
+    foreign_execute["output-path"] = foreign_bundle_dir
+    foreign_execute["work-group-id"] = "wg-supplemental"
+    foreign_execute["supplemental"] = True
+    supplemental_group = deepcopy(foreign_execute)
+    supplemental_group["phase"] = (
+        "release-build-materialization-supplemental-group"
+    )
+    supplemental_group["outcome"] = group_outcome
+    supplemental_group["artifact-count"] = 2
+    phases = cast("list[dict[str, object]]", telemetry["phases"])
+    phases.extend([supplemental_group, foreign_execute])
+    release_build = cast("dict[str, object]", telemetry["release-build"])
+    release_build["request-digest"] = foreign_digest
+    release_build["bundle-id"] = foreign_bundle_id
+    release_build["bundle-dir"] = foreign_bundle_dir
+    release_build["work-group-id"] = "wg-supplemental"
+    release_build["supplemental"] = True
+    release_build["profile-root"] = f"{foreign_bundle_dir}/_profile/runs/run-1"
+    executor = cast("dict[str, object]", release_build["executor"])
+    executor["profile-root"] = f"{foreign_bundle_dir}/_profile/runs/run-1"
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        ".profile-telemetry.phases[3].work-group-id" in issue.path
+        and "selector" in issue.message
+        for issue in exc_info.value.issues
+    )
+    assert any(
+        ".profile-telemetry.release-build.work-group-id" in issue.path
+        and "selector" in issue.message
+        for issue in exc_info.value.issues
+    )
+
+
+@pytest.mark.parametrize(
+    ("owner", "expected_path"),
+    [
+        ("release-build", ".profile-telemetry.release-build.supplemental"),
+        ("phase", ".profile-telemetry.phases[0].supplemental"),
+    ],
+)
+def test_release_shaped_batch_rejects_non_boolean_supplemental(
+    owner: str,
+    expected_path: str,
+) -> None:
+    """Supplemental markers are explicit booleans where admitted."""
+    bundle = _release_batch_bundle()
+    telemetry = _valid_release_profile_telemetry()
+    if owner == "release-build":
+        cast("dict[str, object]", telemetry["release-build"])[
+            "supplemental"
+        ] = "true"
+    else:
+        _release_profile_phase(telemetry, "base")["supplemental"] = "true"
+    _release_bundle_detail(bundle)["profile-telemetry"] = telemetry
+
+    with pytest.raises(ContractValidationError) as exc_info:
+        _validate_release_bundle(bundle)
+
+    assert any(
+        expected_path in issue.path and issue.message == "must be a boolean"
+        for issue in exc_info.value.issues
+    )
+
+
 @pytest.mark.parametrize(
     "phase_name",
     ["release-build-request", "unexpected-unscoped-phase"],

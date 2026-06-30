@@ -38,7 +38,7 @@ from collections.abc import (
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NoReturn, cast
 
 import yaml
 
@@ -88,6 +88,15 @@ _CI_PROFILE_EVIDENCE_UPLOAD_DIR_RE = re.compile(
     r"^validation-result(?:-.+)?-profile-evidence$",
 )
 _CI_RELEASE_PROFILE_EVIDENCE_SLOW_BUILD_LIMIT = 5
+_CI_ECOSYSTEM_BINLOG_EVIDENCE_SLOW_BUILD_LIMIT = 5
+_CI_SUPPLEMENTAL_RELEASE_SHAPED_PROFILE_PHASES = frozenset(
+    {
+        "release-build-execute-build",
+        "release-build-materialization-prep",
+        "release-build-materialization-supplemental-group",
+        "validation-build-artifact-mapping-record",
+    }
+)
 _CI_PROFILE_ARGV_PATH_VALUE_SWITCHES = frozenset(
     {
         "--output",
@@ -2744,6 +2753,11 @@ def _cmd_run_ci_validation_commands(args: argparse.Namespace) -> int:
         "commands": command_results,
         "timing": _ci_timing_finish(work_group_timing),
     }
+    _ci_retain_slowest_ecosystem_binlogs_for_result(
+        result,
+        result_path=Path(args.result_out),
+        repo_root=Path(args.repo_root),
+    )
     _ci_attach_uploaded_release_profile_evidence(
         result,
         result_path=Path(args.result_out),
@@ -2872,6 +2886,10 @@ def _cmd_run_ci_validation_batch_commands(args: argparse.Namespace) -> int:
             outcome = "blocking-failure"
         prior_selector_outcomes[work_group_id] = str(result.get("outcome"))
         result_paths.append(str(result_path))
+    _ci_retain_slowest_ecosystem_binlogs_for_batch(
+        [Path(path) for path in result_paths],
+        repo_root=Path(args.repo_root),
+    )
     _write_outputs(
         args.github_output,
         {
@@ -3319,6 +3337,23 @@ def _cmd_run_ci_validation_runner_family_orchestrator_step(  # noqa: C901, PLR09
     )
     for result_path in validation_result_paths:
         source_result = Path(result_path)
+        ecosystem_evidence_dir = _ci_ecosystem_evidence_dir_for_result(
+            source_result,
+        )
+        if (
+            ecosystem_evidence_dir.is_dir()
+            and not ecosystem_evidence_dir.is_symlink()
+        ):
+            ecosystem_upload_target = upload_dir / ecosystem_evidence_dir.name
+            with suppress(OSError):
+                _ci_remove_existing_profile_upload_target(
+                    ecosystem_upload_target,
+                )
+            shutil.copytree(
+                ecosystem_evidence_dir,
+                ecosystem_upload_target,
+                symlinks=False,
+            )
         profile_evidence_dir = _ci_release_profile_evidence_dir_for_result(
             source_result,
         )
@@ -5570,6 +5605,24 @@ def _ci_run_validation_command(
             timing,
         )
     argv_list = [str(item) for item in argv]
+    binlog_path = _ci_windows_dotnet_build_binlog_path(
+        command,
+        matrix_work_group=matrix_work_group,
+        index=index,
+        repo_root=repo_root,
+        argv=argv_list,
+    )
+    if binlog_path is not None:
+        binlog_path = _ci_prepare_windows_dotnet_build_binlog_path(
+            binlog_path,
+            repo_root=repo_root,
+            work_group_id=matrix_work_group.get("work-group-id"),
+        )
+    if binlog_path is not None:
+        argv_list = [
+            *argv_list,
+            f"/bl:{_ci_profile_relative_path(binlog_path, repo_root)}",
+        ]
     try:
         completed = subprocess.run(argv_list, cwd=repo_root, check=False)
         returncode: int | None = completed.returncode
@@ -5588,6 +5641,12 @@ def _ci_run_validation_command(
         "exit-code": returncode,
         "outcome": command_outcome,
     }
+    if binlog_path is not None:
+        result["binlog-path"] = _ci_profile_relative_path(
+            binlog_path,
+            repo_root,
+        )
+        result["binlog-exists"] = binlog_path.is_file()
     if error is not None:
         result["error"] = error
     return _ci_attach_timing(result, timing)
@@ -5609,6 +5668,117 @@ def _ci_validation_command_failure(
         "outcome": "blocking-failure",
         "error": error,
     }
+
+
+def _ci_windows_dotnet_build_binlog_path(
+    command: Mapping[str, object],
+    *,
+    matrix_work_group: Mapping[str, object],
+    index: int,
+    repo_root: Path,
+    argv: Sequence[str],
+) -> Path | None:
+    if not _ci_should_capture_windows_dotnet_build_binlog(
+        command,
+        matrix_work_group=matrix_work_group,
+        argv=argv,
+    ):
+        return None
+    work_group_id = str(matrix_work_group.get("work-group-id") or "unknown")
+    return (
+        repo_root
+        / ".three-ci-validation"
+        / "work"
+        / "ecosystem-gate-binlogs"
+        / _ci_safe_ecosystem_binlog_work_group(work_group_id)
+        / f"command-{index:03d}-dotnet-build.binlog"
+    )
+
+
+def _ci_should_capture_windows_dotnet_build_binlog(
+    command: Mapping[str, object],
+    *,
+    matrix_work_group: Mapping[str, object],
+    argv: Sequence[str],
+) -> bool:
+    if (
+        matrix_work_group.get("kind") != "ecosystem-gate"
+        or matrix_work_group.get("runner-family") != "windows"
+        or matrix_work_group.get("ecosystem") != "dotnet"
+        or command.get("capability") not in {"build", "type-check"}
+        or len(argv) < 2
+        or argv[0] != "dotnet"
+        or argv[1] != "build"
+    ):
+        return False
+    return not any(_CI_MSBUILD_BINLOG_ARG_RE.match(item) for item in argv)
+
+
+def _ci_safe_ecosystem_binlog_work_group(work_group_id: str) -> str:
+    safe_work_group = re.sub(r"[^A-Za-z0-9_.-]+", "-", work_group_id).strip(
+        ".-"
+    )
+    return safe_work_group or "unknown"
+
+
+def _ci_prepare_windows_dotnet_build_binlog_path(  # noqa: PLR0911
+    binlog_path: Path,
+    *,
+    repo_root: Path,
+    work_group_id: object,
+) -> Path | None:
+    if not isinstance(work_group_id, str) or not work_group_id:
+        return None
+    expected_parent = (
+        repo_root
+        / ".three-ci-validation"
+        / "work"
+        / "ecosystem-gate-binlogs"
+        / _ci_safe_ecosystem_binlog_work_group(work_group_id)
+    )
+    if binlog_path.parent != expected_parent:
+        return None
+    if _ci_path_has_symlink_or_nondirectory_parent(
+        expected_parent,
+        repo_root=repo_root,
+    ):
+        return None
+    try:
+        expected_parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    if _ci_path_has_symlink_or_nondirectory_parent(
+        expected_parent,
+        repo_root=repo_root,
+    ):
+        return None
+    if binlog_path.is_symlink() or (
+        binlog_path.exists() and not binlog_path.is_file()
+    ):
+        return None
+    if binlog_path.exists():
+        try:
+            binlog_path.unlink()
+        except OSError:
+            return None
+    return binlog_path
+
+
+def _ci_path_has_symlink_or_nondirectory_parent(
+    path: Path,
+    *,
+    repo_root: Path,
+) -> bool:
+    try:
+        relative_parts = path.relative_to(repo_root).parts
+    except ValueError:
+        return True
+    current = repo_root
+    for part in relative_parts:
+        current = current / part
+        if current.is_symlink() or (current.exists() and not current.is_dir()):
+            return True
+    return False
 
 
 def _ci_run_builtin_validation_command(
@@ -6326,6 +6496,7 @@ def _ci_no_publish_release_shaped_artifact_evidence(  # noqa: C901
     evidence_profile_phases = _ci_release_shaped_current_profile_phases(
         profile_phases,
         work_group_id=work_group_id,
+        runner_family=str(matrix_work_group.get("runner-family") or ""),
     )
     release_build_telemetries = (
         _ci_slowest_release_build_profile_telemetries_with_fallback(
@@ -6340,9 +6511,18 @@ def _ci_no_publish_release_shaped_artifact_evidence(  # noqa: C901
         release_build_telemetries=release_build_telemetries,
         repo_root=repo_root,
     )
+    source_proof_profile_phases = [
+        phase
+        for phase in evidence_profile_phases
+        if phase.get("work-group-id") == work_group_id
+        or (
+            not isinstance(phase.get("work-group-id"), str)
+            and _ci_release_shaped_preserve_unscoped_profile_phase(phase)
+        )
+    ]
     generated_builds = _ci_release_shaped_generated_build_identities(
-        evidence_profile_phases,
-        release_build_telemetries,
+        source_proof_profile_phases,
+        [],
         validation_build_identity=validation_build_identity,
     )
     source_proof: Json = {
@@ -6369,6 +6549,7 @@ def _ci_release_shaped_current_profile_phases(
     profile_phases: Sequence[Mapping[str, object]],
     *,
     work_group_id: str,
+    runner_family: str,
 ) -> list[Mapping[str, object]]:
     return [
         phase
@@ -6378,6 +6559,10 @@ def _ci_release_shaped_current_profile_phases(
             and _ci_release_shaped_preserve_unscoped_profile_phase(phase)
         )
         or phase.get("work-group-id") == work_group_id
+        or _ci_release_shaped_preserve_supplemental_profile_phase(
+            phase,
+            runner_family=runner_family,
+        )
     ]
 
 
@@ -6387,11 +6572,25 @@ def _ci_release_shaped_preserve_unscoped_profile_phase(
     return phase.get("phase") in {
         "artifact-digest-observation",
         "profile-evidence-upload",
-        "validation-build-artifact-mapping-record",
         "validation-build-output-mapping-after-materialization",
         "validation-build-output-mapping-current-request",
         "validation-build-output-mapping-initial",
     }
+
+
+def _ci_release_shaped_preserve_supplemental_profile_phase(
+    phase: Mapping[str, object],
+    *,
+    runner_family: str,
+) -> bool:
+    return (
+        phase.get("phase") in _CI_SUPPLEMENTAL_RELEASE_SHAPED_PROFILE_PHASES
+        and phase.get("supplemental") is True
+        and isinstance(phase.get("work-group-id"), str)
+        and phase.get("runner-family") == runner_family
+        and isinstance(phase.get("request-digest"), str)
+        and isinstance(phase.get("bundle-id"), str)
+    )
 
 
 def _ci_release_shaped_generated_build_identities(
@@ -6477,6 +6676,16 @@ def _ci_materialize_no_publish_release_shaped_artifacts(
         | None
     ) = None
     for group_index, obligation_group in enumerate(obligation_groups):
+        group_timing = _ci_timing_start()
+        runner_scope = _ci_release_shaped_validation_build_mapping_scope(
+            plan,
+            obligation_group,
+        )
+        expected_refs = [
+            ref
+            for obligation in obligation_group
+            for ref in _ci_artifact_expected_refs(obligation)
+        ]
         if (
             group_index != 0
             and _ci_release_shaped_generated_mapping_satisfies_group(
@@ -6487,19 +6696,10 @@ def _ci_materialize_no_publish_release_shaped_artifacts(
                 profile_phases=profile_phases,
             )
         ):
-            runner_scope = _ci_release_shaped_validation_build_mapping_scope(
-                plan,
-                obligation_group,
-            )
-            expected_refs = [
-                ref
-                for obligation in obligation_group
-                for ref in _ci_artifact_expected_refs(obligation)
-            ]
             _ci_profile_phase_record(
                 profile_phases,
                 "release-build-materialization-supplemental-skip",
-                _ci_timing_start(),
+                group_timing,
                 outcome="skipped",
                 cwd=repo_root,
                 obligation_count=len(obligation_group),
@@ -6518,7 +6718,29 @@ def _ci_materialize_no_publish_release_shaped_artifacts(
                 prepared_build=primary_prepared_build
                 if group_index == 0
                 else None,
+                supplemental=group_index != 0,
             )
+        )
+        group_metadata: dict[str, object] = {
+            "obligation_count": len(obligation_group),
+            "artifact_count": len(expected_refs),
+            "work_group_id": runner_scope[0] if runner_scope else None,
+            "runner_family": runner_scope[1] if runner_scope else None,
+            "supplemental": group_index != 0,
+        }
+        if materialization is not None:
+            request_digest, bundle_id, _bundle_dir = materialization[1]
+            group_metadata["request_digest"] = request_digest
+            group_metadata["bundle_id"] = bundle_id
+        _ci_profile_phase_record(
+            profile_phases,
+            "release-build-materialization-primary-group"
+            if group_index == 0
+            else "release-build-materialization-supplemental-group",
+            group_timing,
+            outcome="success" if materialization is not None else "failure",
+            cwd=repo_root,
+            **group_metadata,
         )
         if group_index == 0:
             primary_materialization = materialization
@@ -6943,6 +7165,7 @@ def _ci_materialize_no_publish_release_shaped_artifact_group(
     repo_root: Path,
     profile_phases: list[Json] | None = None,
     prepared_build: _CiReleaseShapedPreparedBuild | None = None,
+    supplemental: bool = False,
 ) -> tuple[Path, _CiValidationBuildRequestIdentity] | None:
     if prepared_build is None:
         prepared_build = (
@@ -6985,6 +7208,7 @@ def _ci_materialize_no_publish_release_shaped_artifact_group(
             len(refs) for refs in artifact_refs_by_build_id.values()
         ),
         build_id_count=len(artifact_refs_by_build_id),
+        supplemental=supplemental,
     )
     execute_timing = _ci_timing_start()
     try:
@@ -7003,6 +7227,7 @@ def _ci_materialize_no_publish_release_shaped_artifact_group(
             output_path=bundle_dir,
             error=str(exc),
             **execute_metadata,
+            supplemental=supplemental,
         )
         release_build_telemetries = (
             _ci_slowest_release_build_profile_telemetries_with_fallback(
@@ -7028,6 +7253,7 @@ def _ci_materialize_no_publish_release_shaped_artifact_group(
         cwd=repo_root,
         output_path=bundle_dir,
         **execute_metadata,
+        supplemental=supplemental,
     )
     record_timing = _ci_timing_start()
     try:
@@ -7056,6 +7282,9 @@ def _ci_materialize_no_publish_release_shaped_artifact_group(
             error=str(exc),
             work_group_id=mapping_scope[0],
             runner_family=mapping_scope[1],
+            request_digest=request_digest,
+            bundle_id=bundle_id,
+            supplemental=supplemental,
         )
         release_build_telemetries = (
             _ci_slowest_release_build_profile_telemetries_with_fallback(
@@ -7090,6 +7319,9 @@ def _ci_materialize_no_publish_release_shaped_artifact_group(
         ),
         work_group_id=mapping_scope[0],
         runner_family=mapping_scope[1],
+        request_digest=request_digest,
+        bundle_id=bundle_id,
+        supplemental=supplemental,
     )
     return bundle_dir, request_identity
 
@@ -25132,6 +25364,8 @@ def _ci_release_build_capture_identity(
         if not isinstance(value, str) or not value:
             return None
         identity[key] = value
+    if phase.get("supplemental") is True:
+        identity["supplemental"] = True
     return identity
 
 
@@ -26804,6 +27038,273 @@ def _ci_release_shaped_profile_telemetry_from_validation_result(
         return None
     telemetry = command.get("profile-telemetry")
     return dict(telemetry) if isinstance(telemetry, Mapping) else None
+
+
+def _ci_retain_slowest_ecosystem_binlogs_for_result(
+    validation_result: Json,
+    *,
+    result_path: Path,
+    repo_root: Path,
+) -> None:
+    _ci_clear_ecosystem_binlog_upload_claims(validation_result)
+    if not _ci_reset_ecosystem_evidence_dir(result_path):
+        return
+    candidates = _ci_ecosystem_binlog_candidates(
+        validation_result,
+        result_path=result_path,
+        repo_root=repo_root,
+    )
+    if not candidates:
+        return
+    _ci_stage_ecosystem_binlog_candidate(
+        sorted(candidates, key=lambda item: (-item.duration_ms, item.key))[0],
+    )
+
+
+def _ci_retain_slowest_ecosystem_binlogs_for_batch(
+    result_paths: Sequence[Path],
+    *,
+    repo_root: Path,
+    limit: int = _CI_ECOSYSTEM_BINLOG_EVIDENCE_SLOW_BUILD_LIMIT,
+) -> None:
+    loaded_results: list[tuple[Path, Json]] = []
+    candidates: list[_CiEcosystemBinlogCandidate] = []
+    for result_path in result_paths:
+        try:
+            loaded = _read_json(result_path)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(loaded, dict):
+            continue
+        result = cast("Json", loaded)
+        _ci_clear_ecosystem_binlog_upload_claims(result)
+        loaded_results.append((result_path, result))
+        if not _ci_reset_ecosystem_evidence_dir(result_path):
+            continue
+        candidates.extend(
+            _ci_ecosystem_binlog_candidates(
+                result,
+                result_path=result_path,
+                repo_root=repo_root,
+            )
+        )
+    selected = {
+        candidate.key
+        for candidate in sorted(
+            candidates,
+            key=lambda item: (-item.duration_ms, item.key),
+        )[: max(0, limit)]
+    }
+    for candidate in candidates:
+        if candidate.key in selected:
+            _ci_stage_ecosystem_binlog_candidate(candidate)
+    for result_path, result in loaded_results:
+        _write_json(result_path, result)
+
+
+class _CiEcosystemBinlogCandidate(NamedTuple):
+    key: str
+    duration_ms: int
+    result_path: Path
+    command: Json
+    source_path: Path
+    uploaded_path: str
+
+
+def _ci_ecosystem_binlog_candidates(
+    validation_result: Json,
+    *,
+    result_path: Path,
+    repo_root: Path,
+) -> list[_CiEcosystemBinlogCandidate]:
+    if (
+        validation_result.get("kind") != "ecosystem-gate"
+        or validation_result.get("runner-family") != "windows"
+    ):
+        return []
+    commands = validation_result.get("commands")
+    if not isinstance(commands, Sequence) or isinstance(commands, str | bytes):
+        return []
+    result: list[_CiEcosystemBinlogCandidate] = []
+    for command in commands:
+        if not isinstance(command, dict):
+            continue
+        binlog_path = command.get("binlog-path")
+        argv = command.get("argv")
+        timing = command.get("timing")
+        duration = (
+            timing.get("duration-ms") if isinstance(timing, Mapping) else None
+        )
+        if (
+            command.get("capability") not in {"build", "type-check"}
+            or not isinstance(argv, Sequence)
+            or isinstance(argv, str | bytes)
+            or len(argv) < 2
+            or argv[0] != "dotnet"
+            or argv[1] != "build"
+            or command.get("binlog-exists") is not True
+            or not isinstance(binlog_path, str)
+            or not binlog_path
+            or not isinstance(duration, int)
+            or isinstance(duration, bool)
+        ):
+            continue
+        source_path = _ci_safe_ecosystem_binlog_source_path(
+            binlog_path,
+            repo_root=repo_root,
+            work_group_id=validation_result.get("work-group-id"),
+        )
+        if source_path is None:
+            continue
+        if not source_path.is_file():
+            continue
+        command_index = command.get("index")
+        uploaded_path = (
+            f"{_ci_ecosystem_evidence_dir_for_result(result_path).name}/"
+            f"dotnet-build-command-{int(command_index):03d}.binlog"
+            if isinstance(command_index, int)
+            and not isinstance(command_index, bool)
+            else f"{_ci_ecosystem_evidence_dir_for_result(result_path).name}/"
+            "dotnet-build-command.binlog"
+        )
+        result.append(
+            _CiEcosystemBinlogCandidate(
+                key=(
+                    f"{validation_result.get('work-group-id') or ''}:"
+                    f"{command_index!s}:{binlog_path}"
+                ),
+                duration_ms=duration,
+                result_path=result_path,
+                command=command,
+                source_path=source_path,
+                uploaded_path=uploaded_path,
+            )
+        )
+    return result
+
+
+def _ci_safe_ecosystem_binlog_source_path(  # noqa: PLR0911
+    binlog_path: str,
+    *,
+    repo_root: Path,
+    work_group_id: object,
+) -> Path | None:
+    if Path(binlog_path).is_absolute():
+        return None
+    binlog_relative_path = PurePosixPath(binlog_path)
+    if ".." in binlog_relative_path.parts:
+        return None
+    if not isinstance(work_group_id, str) or not work_group_id:
+        return None
+    source_path = repo_root / binlog_relative_path
+    expected_root = (
+        repo_root
+        / ".three-ci-validation"
+        / "work"
+        / "ecosystem-gate-binlogs"
+        / _ci_safe_ecosystem_binlog_work_group(work_group_id)
+    )
+    try:
+        resolved_source = source_path.resolve(strict=True)
+        resolved_root = expected_root.resolve(strict=True)
+    except OSError:
+        return None
+    if (
+        resolved_source == resolved_root
+        or resolved_root not in resolved_source.parents
+    ):
+        return None
+    try:
+        source_path.relative_to(expected_root)
+    except ValueError:
+        return None
+    try:
+        relative_parts = source_path.relative_to(repo_root).parts
+    except ValueError:
+        return None
+    current = repo_root
+    for part in relative_parts:
+        current = current / part
+        if current.is_symlink():
+            return None
+    return resolved_source
+
+
+def _ci_stage_ecosystem_binlog_candidate(
+    candidate: _CiEcosystemBinlogCandidate,
+) -> None:
+    target = _ci_ecosystem_evidence_target_for_candidate(candidate)
+    if target is None:
+        return
+    shutil.copy2(candidate.source_path, target, follow_symlinks=False)
+    evidence_root = _ci_ecosystem_evidence_dir_for_result(candidate.result_path)
+    candidate.command["uploaded-evidence-path"] = evidence_root.name
+    candidate.command["uploaded-evidence-files"] = [candidate.uploaded_path]
+    candidate.command["binlog-uploaded-evidence-path"] = candidate.uploaded_path
+
+
+def _ci_reset_ecosystem_evidence_dir(result_path: Path) -> bool:
+    evidence_root = _ci_ecosystem_evidence_dir_for_result(result_path)
+    try:
+        if evidence_root.is_symlink() or (
+            evidence_root.exists() and not evidence_root.is_dir()
+        ):
+            evidence_root.unlink()
+        elif evidence_root.exists():
+            shutil.rmtree(evidence_root)
+    except OSError:
+        return False
+    return True
+
+
+def _ci_ecosystem_evidence_target_for_candidate(
+    candidate: _CiEcosystemBinlogCandidate,
+) -> Path | None:
+    evidence_root = _ci_ecosystem_evidence_dir_for_result(candidate.result_path)
+    target = candidate.result_path.parent / PurePosixPath(
+        candidate.uploaded_path
+    )
+    try:
+        target.relative_to(evidence_root)
+    except ValueError:
+        return None
+    if evidence_root.exists() and (
+        evidence_root.is_symlink() or not evidence_root.is_dir()
+    ):
+        return None
+    try:
+        evidence_root.mkdir(parents=True, exist_ok=True)
+        target.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+    except OSError:
+        return None
+    if _ci_path_has_symlink_or_nondirectory_parent(
+        target.parent,
+        repo_root=evidence_root,
+    ):
+        return None
+    if target.is_symlink() or (target.exists() and not target.is_file()):
+        return None
+    return target
+
+
+def _ci_clear_ecosystem_binlog_upload_claims(value: object) -> None:
+    if not isinstance(value, dict):
+        return
+    commands = value.get("commands")
+    if not isinstance(commands, Sequence) or isinstance(commands, str | bytes):
+        return
+    for command in commands:
+        if not isinstance(command, dict) or "binlog-path" not in command:
+            continue
+        for key in _CI_UPLOADED_PROFILE_EVIDENCE_CLAIM_KEYS:
+            command.pop(key, None)
+
+
+def _ci_ecosystem_evidence_dir_for_result(result_path: Path) -> Path:
+    return result_path.with_name(f"{result_path.stem}-ecosystem-evidence")
 
 
 def _ci_attach_uploaded_release_profile_evidence(

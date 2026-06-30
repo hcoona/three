@@ -296,6 +296,7 @@ _RELEASE_BUILD_PROFILE_KEYS = frozenset(
         "bundle-id",
         "work-group-id",
         "runner-family",
+        "supplemental",
     }
 )
 _RELEASE_BUILD_PROFILE_OPTIONAL_KEYS = frozenset(
@@ -307,6 +308,7 @@ _RELEASE_BUILD_PROFILE_OPTIONAL_KEYS = frozenset(
         "bundle-id",
         "work-group-id",
         "runner-family",
+        "supplemental",
     }
 )
 _EXECUTOR_PROFILE_KEYS = frozenset(
@@ -352,6 +354,7 @@ _PROFILE_PHASE_KEYS = frozenset(
         "target-count",
         "tracked-file-count",
         "runner-family",
+        "supplemental",
         "work-group-id",
     }
 )
@@ -364,6 +367,14 @@ _UNSCOPED_RELEASE_SHAPED_PROFILE_PHASES = frozenset(
         "validation-build-output-mapping-after-materialization",
         "validation-build-output-mapping-current-request",
         "validation-build-output-mapping-initial",
+    }
+)
+_SUPPLEMENTAL_RELEASE_SHAPED_PROFILE_PHASES = frozenset(
+    {
+        "release-build-execute-build",
+        "release-build-materialization-prep",
+        "release-build-materialization-supplemental-group",
+        "validation-build-artifact-mapping-record",
     }
 )
 _SELECTOR_RESULT_KEYS = frozenset(
@@ -7940,6 +7951,7 @@ def _validate_release_shaped_batch_detail(  # noqa: PLR0913
                 f"{path}.profile-telemetry",
                 issues,
                 selector_result=selector_result,
+                generated_build_identities=frozenset(),
             )
         for key in ("evidence-source", "source-proof"):
             if key in value:
@@ -7987,6 +7999,7 @@ def _validate_release_shaped_batch_detail(  # noqa: PLR0913
         )
         execute_build_identities = _profile_telemetry_execute_build_identities(
             value.get("profile-telemetry"),
+            selector_result=selector_result,
         )
         if (generated_bundle_ids or execute_build_identities) and not (
             generated_build_identities
@@ -8266,6 +8279,8 @@ def _profile_telemetry_contains_release_build_identity(value: object) -> bool:
 
 def _profile_telemetry_execute_build_identities(
     value: object,
+    *,
+    selector_result: Mapping[str, object] | None = None,
 ) -> frozenset[tuple[str, str]]:
     if not isinstance(value, Mapping):
         return frozenset()
@@ -8277,6 +8292,14 @@ def _profile_telemetry_execute_build_identities(
         if not (
             isinstance(phase, Mapping)
             and phase.get("phase") == "release-build-execute-build"
+        ):
+            continue
+        if (
+            selector_result is not None
+            and not _profile_identity_matches_selector_values(
+                phase,
+                selector_result,
+            )
         ):
             continue
         request_digest = phase.get("request-digest")
@@ -8373,22 +8396,30 @@ def _validate_release_build_profile_bindings(
 ) -> None:
     release_builds = _release_build_profile_binding_entries(value, path)
     execute_phases = _release_build_execute_phase_entries(value, path)
+    supplemental_identities = _supplemental_profile_materialization_identities(
+        value,
+        selector_result=selector_result,
+    )
     _validate_scoped_profile_phases_match_selector(
         value,
         path,
         issues,
         selector_result=selector_result,
+        supplemental_identities=supplemental_identities,
     )
     _validate_release_build_execute_phase_output_paths(execute_phases, issues)
     _validate_execute_phases_match_selector(
         execute_phases,
         issues,
         selector_result=selector_result,
+        supplemental_identities=supplemental_identities,
     )
     _validate_execute_phases_match_generated_builds(
         execute_phases,
         issues,
         generated_build_identities=generated_build_identities,
+        selector_result=selector_result,
+        supplemental_identities=supplemental_identities,
     )
     if (
         "release-build" in value
@@ -8408,7 +8439,11 @@ def _validate_release_build_profile_bindings(
     if not release_builds:
         return
     execute_phase_lookup = _release_build_execute_phase_lookup(execute_phases)
-    binding_context = (selector_result, generated_build_identities)
+    binding_context = (
+        selector_result,
+        generated_build_identities,
+        supplemental_identities,
+    )
     for build_path, release_build in release_builds:
         _validate_release_build_profile_binding(
             release_build,
@@ -8425,6 +8460,7 @@ def _validate_scoped_profile_phases_match_selector(
     issues: list[ValidationIssue],
     *,
     selector_result: Mapping[str, object] | None,
+    supplemental_identities: frozenset[tuple[str, str, str, str]],
 ) -> None:
     phases = value.get("phases")
     if not isinstance(phases, Sequence) or isinstance(phases, str | bytes):
@@ -8450,6 +8486,13 @@ def _validate_scoped_profile_phases_match_selector(
             expected = selector_result.get(key)
             actual = phase.get(key)
             if isinstance(expected, str) and actual != expected:
+                if _supplemental_profile_identity_may_mismatch_selector(
+                    phase,
+                    key=key,
+                    selector_result=selector_result,
+                    supplemental_identities=supplemental_identities,
+                ):
+                    continue
                 issues.append(
                     ValidationIssue(
                         f"{phase_path}.{key}",
@@ -8558,9 +8601,14 @@ def _validate_release_build_profile_binding(
     binding_context: tuple[
         Mapping[str, object] | None,
         frozenset[tuple[str, str]],
+        frozenset[tuple[str, str, str, str]],
     ],
 ) -> None:
-    selector_result, generated_build_identities = binding_context
+    (
+        selector_result,
+        generated_build_identities,
+        supplemental_identities,
+    ) = binding_context
     bundle_dir = release_build.get("bundle-dir")
     if not isinstance(bundle_dir, str) or not bundle_dir:
         return
@@ -8592,12 +8640,15 @@ def _validate_release_build_profile_binding(
         build_path,
         issues,
         selector_result=selector_result,
+        supplemental_identities=supplemental_identities,
     )
     _validate_profile_identity_matches_generated_builds(
         release_build,
         build_path,
         issues,
         generated_build_identities=generated_build_identities,
+        selector_result=selector_result,
+        supplemental_identities=supplemental_identities,
     )
     _validate_generated_bundle_path_matches_id(
         bundle_dir,
@@ -8725,6 +8776,7 @@ def _validate_execute_phases_match_selector(
     issues: list[ValidationIssue],
     *,
     selector_result: Mapping[str, object] | None,
+    supplemental_identities: frozenset[tuple[str, str, str, str]],
 ) -> None:
     if selector_result is None:
         return
@@ -8734,6 +8786,7 @@ def _validate_execute_phases_match_selector(
             phase_path,
             issues,
             selector_result=selector_result,
+            supplemental_identities=supplemental_identities,
         )
 
 
@@ -8742,6 +8795,8 @@ def _validate_execute_phases_match_generated_builds(
     issues: list[ValidationIssue],
     *,
     generated_build_identities: frozenset[tuple[str, str]],
+    selector_result: Mapping[str, object] | None,
+    supplemental_identities: frozenset[tuple[str, str, str, str]],
 ) -> None:
     for phase_path, phase in execute_phases:
         _validate_profile_identity_matches_generated_builds(
@@ -8749,6 +8804,8 @@ def _validate_execute_phases_match_generated_builds(
             phase_path,
             issues,
             generated_build_identities=generated_build_identities,
+            selector_result=selector_result,
+            supplemental_identities=supplemental_identities,
         )
 
 
@@ -8758,6 +8815,7 @@ def _validate_release_build_matches_selector(
     issues: list[ValidationIssue],
     *,
     selector_result: Mapping[str, object] | None,
+    supplemental_identities: frozenset[tuple[str, str, str, str]],
 ) -> None:
     if selector_result is None:
         return
@@ -8766,17 +8824,33 @@ def _validate_release_build_matches_selector(
         build_path,
         issues,
         selector_result=selector_result,
+        supplemental_identities=supplemental_identities,
     )
 
 
-def _validate_profile_identity_matches_generated_builds(
+def _validate_profile_identity_matches_generated_builds(  # noqa: PLR0913
     value: Mapping[str, object],
     path: str,
     issues: list[ValidationIssue],
     *,
     generated_build_identities: frozenset[tuple[str, str]],
+    selector_result: Mapping[str, object] | None,
+    supplemental_identities: frozenset[tuple[str, str, str, str]],
 ) -> None:
     if not generated_build_identities:
+        return
+    if (
+        selector_result is not None
+        and not _profile_identity_matches_selector_values(
+            value,
+            selector_result,
+        )
+        and _supplemental_profile_evidence_matches_runner(
+            value,
+            selector_result=selector_result,
+            supplemental_identities=supplemental_identities,
+        )
+    ):
         return
     request_digest = value.get("request-digest")
     bundle_id = value.get("bundle-id")
@@ -8803,14 +8877,120 @@ def _validate_profile_identity_matches_selector(
     issues: list[ValidationIssue],
     *,
     selector_result: Mapping[str, object],
+    supplemental_identities: frozenset[tuple[str, str, str, str]],
 ) -> None:
     for key in ("work-group-id", "runner-family"):
         expected = selector_result.get(key)
         actual = value.get(key)
         if isinstance(expected, str) and actual != expected:
+            if _supplemental_profile_identity_may_mismatch_selector(
+                value,
+                key=key,
+                selector_result=selector_result,
+                supplemental_identities=supplemental_identities,
+            ):
+                continue
             issues.append(
                 ValidationIssue(f"{path}.{key}", "must match selector")
             )
+
+
+def _supplemental_profile_identity_may_mismatch_selector(
+    value: Mapping[str, object],
+    *,
+    key: str,
+    selector_result: Mapping[str, object],
+    supplemental_identities: frozenset[tuple[str, str, str, str]],
+) -> bool:
+    if key == "runner-family":
+        return False
+    return _supplemental_profile_evidence_matches_runner(
+        value,
+        selector_result=selector_result,
+        supplemental_identities=supplemental_identities,
+    )
+
+
+def _supplemental_profile_materialization_identities(
+    value: Mapping[str, object],
+    *,
+    selector_result: Mapping[str, object] | None,
+) -> frozenset[tuple[str, str, str, str]]:
+    if selector_result is None:
+        return frozenset()
+    phases = value.get("phases")
+    if not isinstance(phases, Sequence) or isinstance(phases, str | bytes):
+        return frozenset()
+    identities: set[tuple[str, str, str, str]] = set()
+    for phase in phases:
+        if not (
+            isinstance(phase, Mapping)
+            and phase.get("phase")
+            == "release-build-materialization-supplemental-group"
+            and phase.get("supplemental") is True
+            and phase.get("outcome") == "success"
+        ):
+            continue
+        identity = _supplemental_profile_identity_tuple(phase)
+        if identity is None:
+            continue
+        expected_runner = selector_result.get("runner-family")
+        if isinstance(expected_runner, str) and identity[2] == expected_runner:
+            identities.add(identity)
+    return frozenset(identities)
+
+
+def _supplemental_profile_evidence_matches_runner(
+    value: Mapping[str, object],
+    *,
+    selector_result: Mapping[str, object],
+    supplemental_identities: frozenset[tuple[str, str, str, str]],
+) -> bool:
+    if value.get("supplemental") is not True:
+        return False
+    phase_name = value.get("phase")
+    if (
+        isinstance(phase_name, str)
+        and phase_name not in _SUPPLEMENTAL_RELEASE_SHAPED_PROFILE_PHASES
+    ):
+        return False
+    identity = _supplemental_profile_identity_tuple(value)
+    if identity is None:
+        return False
+    expected_runner = selector_result.get("runner-family")
+    return (
+        isinstance(expected_runner, str)
+        and identity[2] == expected_runner
+        and identity in supplemental_identities
+    )
+
+
+def _supplemental_profile_identity_tuple(
+    value: Mapping[str, object],
+) -> tuple[str, str, str, str] | None:
+    request_digest = value.get("request-digest")
+    bundle_id = value.get("bundle-id")
+    runner_family = value.get("runner-family")
+    work_group_id = value.get("work-group-id")
+    if (
+        isinstance(request_digest, str)
+        and isinstance(bundle_id, str)
+        and isinstance(runner_family, str)
+        and isinstance(work_group_id, str)
+    ):
+        return request_digest, bundle_id, runner_family, work_group_id
+    return None
+
+
+def _profile_identity_matches_selector_values(
+    value: Mapping[str, object],
+    selector_result: Mapping[str, object],
+) -> bool:
+    for key in ("work-group-id", "runner-family"):
+        expected = selector_result.get(key)
+        if isinstance(expected, str) and value.get(key) != expected:
+            return False
+    return True
 
 
 def _validate_release_build_profile_telemetry(
@@ -8855,6 +9035,12 @@ def _validate_release_build_profile_telemetry(
             issues,
         )
     _validate_release_build_profile_identity_fields(value, path, issues)
+    if "supplemental" in value and not isinstance(
+        value.get("supplemental"), bool
+    ):
+        issues.append(
+            ValidationIssue(f"{path}.supplemental", "must be a boolean")
+        )
     if "powershell" in value:
         _validate_powershell_profile_telemetry_sequence(
             value.get("powershell"),
@@ -9056,6 +9242,12 @@ def _validate_profile_phase(
     ):
         issues.append(
             ValidationIssue(f"{path}.binlog-exists", "must be a boolean")
+        )
+    if "supplemental" in value and not isinstance(
+        value.get("supplemental"), bool
+    ):
+        issues.append(
+            ValidationIssue(f"{path}.supplemental", "must be a boolean")
         )
 
 
