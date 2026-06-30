@@ -202,6 +202,16 @@ public sealed class CredentialCoreService
 
             return result;
         }
+        catch (DirectMsalIdentityProviderUnavailableException exception)
+        {
+            return CreateFailureResult(
+                request,
+                correlationId,
+                CredentialResultStatus.CredentialUnavailable,
+                CredentialErrorKind.CredentialUnavailable,
+                exception.Code,
+                exception.SafeMessage);
+        }
         catch (Exception)
         {
             return CreateFailureResult(

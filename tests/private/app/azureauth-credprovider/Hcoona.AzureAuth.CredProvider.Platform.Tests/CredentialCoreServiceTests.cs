@@ -43,6 +43,29 @@ public sealed class CredentialCoreServiceTests
     }
 
     [Fact]
+    public void ExecuteDefaultServiceUsesDeterministicFakeProvider()
+    {
+        CredentialRequest request = CreateGitRequest();
+        IdentityMaterial expectedIdentity = new DeterministicFakeIdentityProvider().GetIdentity(
+            request
+        );
+        var service = new CredentialCoreService();
+
+        CredentialResult result = service.Execute(request);
+
+        Assert.Equal(CredentialResultStatus.Success, result.Status);
+        Assert.Equal("AzureDevOps", result.Username);
+        Assert.Equal(expectedIdentity.Account, result.Account);
+        Assert.Equal(expectedIdentity.Tenant, result.Tenant);
+        Assert.Equal(expectedIdentity.ExpiresAt, result.ExpiresAt);
+        Assert.Equal(
+            Assert.IsType<string>(expectedIdentity.Secret),
+            Assert.IsType<string>(result.Password));
+        Assert.Null(result.BearerToken);
+        Assert.Null(result.Error);
+    }
+
+    [Fact]
     public void ExecutePatCompatibilityRequestReturnsSuccessAndValidCacheKey()
     {
         var provider = new DeterministicFakeIdentityProvider();
@@ -150,6 +173,128 @@ public sealed class CredentialCoreServiceTests
         Assert.Null(result.Error);
     }
 
+    [Fact]
+    public void ExecuteAcceptedMvpRequestWithInjectedDirectMsalProviderReturnsSuccess()
+    {
+        IdentityMaterial identity = CreateIdentityMaterial(
+            account: "direct-msal@example.com",
+            tenant: "direct-tenant",
+            secret: "direct-secret",
+            accessToken: "direct-access-token");
+        var provider = new CountingDirectMsalIdentityProvider(
+            _ => DirectMsalIdentityResult.Success(identity));
+        var service = new CredentialCoreService(new DirectMsalIdentityProvider(provider));
+
+        CredentialResult result = service.Execute(CreateGitRequest());
+
+        Assert.Equal(CredentialResultStatus.Success, result.Status);
+        Assert.Equal(1, provider.InvocationCount);
+        Assert.Equal(identity.Account, result.Account);
+        Assert.Equal(identity.Tenant, result.Tenant);
+        Assert.Equal(identity.ExpiresAt, result.ExpiresAt);
+        Assert.Equal("AzureDevOps", result.Username);
+        Assert.Equal(
+            Assert.IsType<string>(identity.Secret),
+            Assert.IsType<string>(result.Password));
+        Assert.Null(result.BearerToken);
+        Assert.Null(result.Error);
+    }
+
+    [Fact]
+    public void ExecuteDirectMsalProviderWithoutInjectedImplementationFailsClosed()
+    {
+        var tokenExchange = new CountingTokenExchange(
+            (_, _, _) => throw new InvalidOperationException("token exchange should not run"));
+        var service = new CredentialCoreService(
+            new DirectMsalIdentityProvider(),
+            diagnosticRouter: null,
+            derivedCredentialCache: null,
+            tokenExchange: tokenExchange);
+
+        CredentialResult result = service.Execute(CreateGitRequest());
+
+        Assert.Equal(CredentialResultStatus.CredentialUnavailable, result.Status);
+        Assert.Equal(0, tokenExchange.InvocationCount);
+        Assert.Null(result.Account);
+        Assert.Null(result.Tenant);
+        Assert.Null(result.CacheKey);
+        Assert.Null(result.Username);
+        Assert.Null(result.Password);
+        Assert.Null(result.BearerToken);
+
+        CredentialError error = Assert.IsType<CredentialError>(result.Error);
+        Assert.Equal(CredentialErrorKind.CredentialUnavailable, error.Kind);
+        Assert.Equal("DirectMsalNotImplemented", error.Code);
+        Assert.Equal(
+            "Direct MSAL identity provider is not implemented.",
+            error.SafeMessage);
+    }
+
+    [Fact]
+    public void ExecuteDirectMsalUnavailableFailsClosedWithoutLeakingDiagnostics()
+    {
+        const string rawUnavailableReason = "direct-msal-secret-should-not-leak";
+        var provider = new CountingDirectMsalIdentityProvider(
+            _ => throw new PlatformNotSupportedException(rawUnavailableReason));
+        var tokenExchange = new CountingTokenExchange(
+            (_, _, _) => throw new InvalidOperationException("token exchange should not run"));
+        var diagnosticText = new StringWriter();
+        var recordingSink = new RecordingDiagnosticSink();
+        var router = new DiagnosticRouter(
+            [new TextWriterDiagnosticSink(diagnosticText), recordingSink],
+            SecretRedactor.Empty);
+        var service = new CredentialCoreService(
+            new DirectMsalIdentityProvider(provider),
+            router,
+            derivedCredentialCache: null,
+            tokenExchange: tokenExchange);
+
+        CredentialResult result = service.Execute(
+            CreateGitRequest(kind: CredentialKind.BearerToken));
+
+        Assert.Equal(CredentialResultStatus.CredentialUnavailable, result.Status);
+        Assert.Equal(1, provider.InvocationCount);
+        Assert.Equal(0, tokenExchange.InvocationCount);
+        Assert.Null(result.Account);
+        Assert.Null(result.Tenant);
+        Assert.Null(result.CacheKey);
+        Assert.Null(result.Username);
+        Assert.Null(result.Password);
+        Assert.Null(result.BearerToken);
+
+        CredentialError error = Assert.IsType<CredentialError>(result.Error);
+        Assert.Equal(CredentialErrorKind.CredentialUnavailable, error.Kind);
+        Assert.Equal("DirectMsalUnavailable", error.Code);
+        Assert.Equal("Direct MSAL identity provider is unavailable.", error.SafeMessage);
+        Assert.DoesNotContain(rawUnavailableReason, error.SafeMessage, StringComparison.Ordinal);
+
+        foreach ((string key, string value) in error.SafeDetails)
+        {
+            Assert.DoesNotContain(rawUnavailableReason, key, StringComparison.Ordinal);
+            Assert.DoesNotContain(rawUnavailableReason, value, StringComparison.Ordinal);
+        }
+
+        string emittedText = diagnosticText.ToString();
+        Assert.DoesNotContain(rawUnavailableReason, emittedText, StringComparison.Ordinal);
+
+        foreach (DiagnosticEvent diagnosticEvent in recordingSink.Events)
+        {
+            Assert.DoesNotContain(
+                rawUnavailableReason,
+                diagnosticEvent.Message,
+                StringComparison.Ordinal);
+
+            foreach ((string key, string? value) in diagnosticEvent.Properties)
+            {
+                Assert.DoesNotContain(rawUnavailableReason, key, StringComparison.Ordinal);
+                Assert.DoesNotContain(
+                    rawUnavailableReason,
+                    value ?? string.Empty,
+                    StringComparison.Ordinal);
+            }
+        }
+    }
+
     [Theory]
     [MemberData(nameof(AcceptedTokenExchangeRequests))]
     public void ExecuteAcceptedRequestInvokesTokenExchangeExactlyOnceAndPreservesResultShape(
@@ -249,6 +394,29 @@ public sealed class CredentialCoreServiceTests
         CredentialResult result = service.Execute(request);
 
         Assert.NotEqual(CredentialResultStatus.Success, result.Status);
+        Assert.Equal(0, provider.InvocationCount);
+        Assert.Equal(0, tokenExchange.InvocationCount);
+    }
+
+    [Theory]
+    [MemberData(nameof(BlockedDirectMsalRequests))]
+    public void ExecuteBlockedRequestDoesNotInvokeDirectMsalProvider(
+        CredentialRequest request,
+        CredentialResultStatus expectedStatus)
+    {
+        var provider = new CountingDirectMsalIdentityProvider(
+            _ => throw new InvalidOperationException("direct msal provider should not run"));
+        var tokenExchange = new CountingTokenExchange(
+            (_, _, _) => throw new InvalidOperationException("token exchange should not run"));
+        var service = new CredentialCoreService(
+            new DirectMsalIdentityProvider(provider),
+            diagnosticRouter: null,
+            derivedCredentialCache: null,
+            tokenExchange: tokenExchange);
+
+        CredentialResult result = service.Execute(request);
+
+        Assert.Equal(expectedStatus, result.Status);
         Assert.Equal(0, provider.InvocationCount);
         Assert.Equal(0, tokenExchange.InvocationCount);
     }
@@ -1369,6 +1537,29 @@ public sealed class CredentialCoreServiceTests
             },
         };
 
+    public static TheoryData<CredentialRequest, CredentialResultStatus>
+        BlockedDirectMsalRequests() =>
+        new()
+        {
+            {
+                CreateGitRequest(
+                    flow: IdentityFlow.ServicePrincipal,
+                    kind: CredentialKind.BasicPassword),
+                CredentialResultStatus.FlowDeferred
+            },
+            {
+                CreateAzurePipelinesSystemAccessTokenRequest(
+                    CachePolicyMode.NonPersistentCi,
+                    ciContext: null),
+                CredentialResultStatus.FlowDisabled
+            },
+            {
+                CreateGitRequest(
+                    cachePolicy: CachePolicyMode.FuturePersistentCacheRequested),
+                CredentialResultStatus.CacheUnavailable
+            },
+        };
+
     public static TheoryData<CredentialRequest, IdentityMaterial>
         ProviderMaterialWithUnusedProtocolLineBreaksScenarios() =>
             new()
@@ -1858,6 +2049,23 @@ public sealed class CredentialCoreServiceTests
             ArgumentNullException.ThrowIfNull(request);
             InvocationCount++;
             return _identity;
+        }
+    }
+
+    private sealed class CountingDirectMsalIdentityProvider(
+        Func<CredentialRequest, DirectMsalIdentityResult> acquireIdentity)
+        : IDirectMsalIdentityProvider
+    {
+        private readonly Func<CredentialRequest, DirectMsalIdentityResult> _acquireIdentity =
+            acquireIdentity;
+
+        public int InvocationCount { get; private set; }
+
+        public DirectMsalIdentityResult AcquireIdentity(CredentialRequest request)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            InvocationCount++;
+            return _acquireIdentity(request);
         }
     }
 
