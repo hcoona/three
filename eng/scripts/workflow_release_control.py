@@ -89,6 +89,7 @@ _CI_PROFILE_EVIDENCE_UPLOAD_DIR_RE = re.compile(
 )
 _CI_RELEASE_PROFILE_EVIDENCE_SLOW_BUILD_LIMIT = 5
 _CI_ECOSYSTEM_BINLOG_EVIDENCE_SLOW_BUILD_LIMIT = 5
+_CI_ECOSYSTEM_BINLOG_EVIDENCE_CONSOLIDATED_RESTORE_LIMIT = 1
 _CI_SUPPLEMENTAL_RELEASE_SHAPED_PROFILE_PHASES = frozenset(
     {
         "release-build-execute-build",
@@ -2832,6 +2833,11 @@ def _cmd_run_ci_validation_batch_commands(args: argparse.Namespace) -> int:
     authoritative_dependency_results = _ci_authoritative_dependency_results(
         authoritative_dependency_bundles,
     )
+    consolidate_dotnet_restore = _ci_batch_consolidates_dotnet_restore(
+        plan,
+        batch,
+    )
+    consolidated_dotnet_restore_pending = consolidate_dotnet_restore
     prior_selector_outcomes: dict[str, str] = {}
     for index, selector in enumerate(_ci_batch_ordered_selectors(batch)):
         work_group_id = str(selector["work-group-id"])
@@ -2865,6 +2871,19 @@ def _cmd_run_ci_validation_batch_commands(args: argparse.Namespace) -> int:
             prior_selector_outcomes[work_group_id] = "skipped"
             result_paths.append(str(result_path))
             continue
+        if (
+            consolidate_dotnet_restore
+            and _ci_matrix_work_group_needs_dotnet_restore(
+                matrix_work_group,
+            )
+        ):
+            matrix_work_group = (
+                _ci_matrix_work_group_with_consolidated_dotnet_restore(
+                    matrix_work_group,
+                    include_restore=consolidated_dotnet_restore_pending,
+                )
+            )
+            consolidated_dotnet_restore_pending = False
         command_args = argparse.Namespace(
             plan=args.plan,
             changed_files_snapshot=args.changed_files_snapshot,
@@ -2902,6 +2921,109 @@ def _cmd_run_ci_validation_batch_commands(args: argparse.Namespace) -> int:
         },
     )
     return 0
+
+
+def _ci_batch_consolidates_dotnet_restore(
+    plan: Mapping[str, object],
+    batch: Mapping[str, object],
+) -> bool:
+    restore_targets = {
+        target
+        for selector in _ci_batch_ordered_selectors(batch)
+        for target in _ci_selector_dotnet_restore_targets(plan, selector)
+    }
+    return len(restore_targets) > 1
+
+
+def _ci_selector_dotnet_restore_targets(
+    plan: Mapping[str, object],
+    selector: Mapping[str, object],
+) -> list[str]:
+    work_group_id = selector.get("work-group-id")
+    if not isinstance(work_group_id, str) or not work_group_id:
+        return []
+    group = _ci_work_group_by_id(plan, work_group_id)
+    if (
+        group.get("kind") != "ecosystem-gate"
+        or group.get("ecosystem") != "dotnet"
+    ):
+        return []
+    return [
+        target
+        for command in _ci_validation_commands(plan, group)
+        if (target := _ci_dotnet_restore_command_target(command)) is not None
+    ]
+
+
+def _ci_matrix_work_group_needs_dotnet_restore(
+    matrix_work_group: Mapping[str, object],
+) -> bool:
+    if (
+        matrix_work_group.get("kind") != "ecosystem-gate"
+        or matrix_work_group.get("ecosystem") != "dotnet"
+    ):
+        return False
+    return any(
+        _ci_dotnet_restore_command_target(command) is not None
+        for command in _ci_matrix_work_group_validation_commands(
+            matrix_work_group,
+        )
+    )
+
+
+def _ci_matrix_work_group_with_consolidated_dotnet_restore(
+    matrix_work_group: Mapping[str, object],
+    *,
+    include_restore: bool,
+) -> Json:
+    commands = [
+        command
+        for command in _ci_matrix_work_group_validation_commands(
+            matrix_work_group,
+        )
+        if _ci_dotnet_restore_command_target(command) is None
+    ]
+    if include_restore:
+        commands.insert(
+            0,
+            _ci_command(
+                "dotnet restore",
+                ["dotnet", "restore", "dirs.proj"],
+                capability="restore",
+            ),
+        )
+    updated = dict(matrix_work_group)
+    updated["validation-commands"] = commands
+    return updated
+
+
+def _ci_matrix_work_group_validation_commands(
+    matrix_work_group: Mapping[str, object],
+) -> list[Json]:
+    commands = matrix_work_group.get("validation-commands")
+    if not isinstance(commands, Sequence) or isinstance(commands, str | bytes):
+        return []
+    return [
+        dict(command) for command in commands if isinstance(command, Mapping)
+    ]
+
+
+def _ci_dotnet_restore_command_target(
+    command: Mapping[str, object],
+) -> str | None:
+    argv = command.get("argv")
+    if (
+        command.get("capability") != "restore"
+        or not isinstance(argv, Sequence)
+        or isinstance(argv, str | bytes)
+        or len(argv) < 3
+        or argv[0] != "dotnet"
+        or argv[1] != "restore"
+        or not isinstance(argv[2], str)
+        or not argv[2]
+    ):
+        return None
+    return argv[2]
 
 
 def _ci_dependency_blocked_validation_result(
@@ -27118,10 +27240,21 @@ def _ci_retain_slowest_ecosystem_binlogs_for_batch(
     selected = {
         candidate.key
         for candidate in sorted(
-            candidates,
+            _ci_slowest_ecosystem_binlog_candidates(candidates),
             key=lambda item: (-item.duration_ms, item.key),
         )[: max(0, limit)]
     }
+    selected.update(
+        candidate.key
+        for candidate in sorted(
+            (
+                candidate
+                for candidate in candidates
+                if _ci_consolidated_dotnet_restore_binlog_candidate(candidate)
+            ),
+            key=lambda item: (-item.duration_ms, item.key),
+        )[:_CI_ECOSYSTEM_BINLOG_EVIDENCE_CONSOLIDATED_RESTORE_LIMIT]
+    )
     for candidate in candidates:
         if candidate.key in selected:
             _ci_stage_ecosystem_binlog_candidate(candidate)
@@ -27131,6 +27264,7 @@ def _ci_retain_slowest_ecosystem_binlogs_for_batch(
 
 class _CiEcosystemBinlogCandidate(NamedTuple):
     key: str
+    verb: Literal["build", "restore"]
     duration_ms: int
     result_path: Path
     command: Json
@@ -27195,6 +27329,7 @@ def _ci_ecosystem_binlog_candidates(
                     f"{validation_result.get('work-group-id') or ''}:"
                     f"{command_index!s}:{binlog_path}"
                 ),
+                verb=binlog_verb,
                 duration_ms=duration,
                 result_path=result_path,
                 command=command,
@@ -27203,6 +27338,28 @@ def _ci_ecosystem_binlog_candidates(
             )
         )
     return result
+
+
+def _ci_slowest_ecosystem_binlog_candidates(
+    candidates: Sequence[_CiEcosystemBinlogCandidate],
+) -> list[_CiEcosystemBinlogCandidate]:
+    return [
+        candidate
+        for candidate in candidates
+        if not _ci_consolidated_dotnet_restore_binlog_candidate(candidate)
+    ]
+
+
+def _ci_consolidated_dotnet_restore_binlog_candidate(
+    candidate: _CiEcosystemBinlogCandidate,
+) -> bool:
+    argv = candidate.command.get("argv")
+    return (
+        candidate.verb == "restore"
+        and isinstance(argv, Sequence)
+        and not isinstance(argv, str | bytes)
+        and list(argv[:3]) == ["dotnet", "restore", "dirs.proj"]
+    )
 
 
 def _ci_ecosystem_binlog_candidate_verb(

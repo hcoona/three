@@ -3505,6 +3505,12 @@ def test_acceptance_gate_pins_dotnet_restore_command_shape_regression() -> None:
         "test_ci_validation_command_runner_keeps_binlog_on_restored_dotnet_build",
         "tests/test_workflow_release_control.py::"
         "test_ci_validation_result_retains_slowest_ecosystem_restore_binlog",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_batch_pins_consolidated_restore_binlog",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_batch_consolidates_multiple_dotnet_restores_to_dirs_proj",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_batch_keeps_single_dotnet_target_restore",
     }
     matrix_nodeids = set().union(
         _matrix_test_nodeids(_acceptance_matrix()),
@@ -32438,6 +32444,150 @@ def test_ci_validation_batch_retains_slowest_ecosystem_binlogs() -> None:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def test_ci_validation_batch_pins_consolidated_restore_binlog() -> None:
+    """A fast consolidated dirs.proj restore keeps evidence beside slow builds."""
+    scratch = SCRATCH / "ci-validation-ecosystem-consolidated-restore-binlog"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        result_paths: list[Path] = []
+        for result_index in range(7):
+            work_group_id = f"wg-dotnet-{result_index}"
+            result_path = scratch / f"validation-result-{result_index:03d}.json"
+            stale_evidence_dir = (
+                scratch
+                / f"validation-result-{result_index:03d}-ecosystem-evidence"
+            )
+            stale_evidence_file = stale_evidence_dir / "stale.binlog"
+            stale_evidence_dir.mkdir(parents=True)
+            stale_evidence_file.write_bytes(b"stale")
+            binlog_root = (
+                scratch
+                / ".three-ci-validation/work/ecosystem-gate-binlogs"
+                / work_group_id
+            )
+            binlog_root.mkdir(parents=True)
+            commands: list[dict[str, object]] = []
+            if result_index == 0:
+                restore_binlog = (
+                    binlog_root / "command-000-dotnet-restore.binlog"
+                )
+                restore_binlog.write_bytes(b"consolidated restore")
+                commands.append(
+                    {
+                        "index": 0,
+                        "label": "dotnet restore",
+                        "argv": ["dotnet", "restore", "dirs.proj"],
+                        "capability": "restore",
+                        "exit-code": 0,
+                        "outcome": "success",
+                        "binlog-path": restore_binlog.relative_to(
+                            scratch
+                        ).as_posix(),
+                        "binlog-exists": True,
+                        "uploaded-evidence-path": stale_evidence_dir.name,
+                        "uploaded-evidence-files": [
+                            f"{stale_evidence_dir.name}/stale.binlog",
+                        ],
+                        "binlog-uploaded-evidence-path": (
+                            f"{stale_evidence_dir.name}/stale.binlog"
+                        ),
+                        "timing": {
+                            "started-at": "2026-01-01T00:00:00.000Z",
+                            "completed-at": "2026-01-01T00:00:00.100Z",
+                            "duration-ms": 100,
+                        },
+                    }
+                )
+            command_index = 1 if result_index == 0 else 0
+            build_binlog = (
+                binlog_root / f"command-{command_index:03d}-dotnet-build.binlog"
+            )
+            build_payload = f"build-{result_index}".encode()
+            build_binlog.write_bytes(build_payload)
+            commands.append(
+                {
+                    "index": command_index,
+                    "label": "dotnet build",
+                    "argv": ["dotnet", "build", "project", "--no-restore"],
+                    "capability": "build",
+                    "exit-code": 0,
+                    "outcome": "success",
+                    "binlog-path": build_binlog.relative_to(scratch).as_posix(),
+                    "binlog-exists": True,
+                    "timing": {
+                        "started-at": "2026-01-01T00:00:00.000Z",
+                        "completed-at": "2026-01-01T00:00:01.000Z",
+                        "duration-ms": (result_index + 2) * 1000,
+                    },
+                }
+            )
+            control._write_json(
+                result_path,
+                {
+                    "work-group-id": work_group_id,
+                    "kind": "ecosystem-gate",
+                    "runner-family": "windows",
+                    "ecosystem": "dotnet",
+                    "commands": commands,
+                },
+            )
+            result_paths.append(result_path)
+
+        control._ci_retain_slowest_ecosystem_binlogs_for_batch(
+            result_paths,
+            repo_root=scratch,
+        )
+
+        retained_payloads: list[bytes] = []
+        retained_build_work_groups: list[str] = []
+        for result_path in result_paths:
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            for command in result["commands"]:
+                uploaded_files = command.get("uploaded-evidence-files", [])
+                retained_payloads.extend(
+                    (scratch / path).read_bytes() for path in uploaded_files
+                )
+                if command["capability"] == "build" and uploaded_files:
+                    retained_build_work_groups.append(result["work-group-id"])
+                assert not (
+                    scratch
+                    / f"{result_path.stem}-ecosystem-evidence"
+                    / "stale.binlog"
+                ).exists()
+
+        first_result = json.loads(result_paths[0].read_text(encoding="utf-8"))
+        restore_command = first_result["commands"][0]
+        restore_upload = restore_command["binlog-uploaded-evidence-path"]
+        restore_upload_path = PurePosixPath(restore_upload)
+        assert not restore_upload_path.is_absolute()
+        assert ".." not in restore_upload_path.parts
+        assert restore_upload == (
+            "validation-result-000-ecosystem-evidence/"
+            "dotnet-restore-command-000.binlog"
+        )
+        assert (scratch / restore_upload).read_bytes() == (
+            b"consolidated restore"
+        )
+        assert retained_build_work_groups == [
+            f"wg-dotnet-{index}" for index in range(2, 7)
+        ]
+        assert sorted(retained_payloads) == [
+            b"build-2",
+            b"build-3",
+            b"build-4",
+            b"build-5",
+            b"build-6",
+            b"consolidated restore",
+        ]
+        assert len(retained_payloads) == (
+            control._CI_ECOSYSTEM_BINLOG_EVIDENCE_SLOW_BUILD_LIMIT
+            + control._CI_ECOSYSTEM_BINLOG_EVIDENCE_CONSOLIDATED_RESTORE_LIMIT
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def test_ci_validation_result_retains_slowest_ecosystem_binlog() -> None:
     """Single-result ecosystem evidence keeps slowest build/type-check binlog."""
     scratch = SCRATCH / "ci-validation-ecosystem-binlog-result-slowest"
@@ -33416,6 +33566,305 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
             "builtin": "release-shaped-artifact",
         }
     ]
+
+
+def _ci_dotnet_execution_batch_context(
+    targets: Sequence[tuple[str, Sequence[str]]],
+) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
+    subjects: list[dict[str, object]] = []
+    groups: list[dict[str, object]] = []
+    selectors: list[dict[str, object]] = []
+    for index, (root, capabilities) in enumerate(targets):
+        subject_id = f"dotnet-subject-{index}"
+        work_group_id = f"wg-dotnet-{index}"
+        subjects.append({"subject-id": subject_id, "root": root})
+        groups.append(
+            {
+                "work-group-id": work_group_id,
+                "kind": "ecosystem-gate",
+                "coverage-target": {"type": "subject", "id": subject_id},
+                "ecosystem": "dotnet",
+                "runner-family": "windows",
+                "depends-on": [],
+                "expected-evidence": {
+                    "planned-capabilities": list(capabilities),
+                },
+            }
+        )
+        selectors.append(
+            {
+                "selector-index": index,
+                "work-group-id": work_group_id,
+                "depends-on": [],
+            }
+        )
+    batch = {
+        "batch-id": "batch-dotnet",
+        "runner-family": "windows",
+        "expected-batch-evidence-bundle-ref": (
+            "ci-validation/batches/25887422010/1/batch-dotnet/"
+            "batch-evidence-bundle.json"
+        ),
+        "depends-on-batches": [],
+        "batch-writer": {"expected-job-identity": "execution-batch-windows"},
+        "ordered-selectors": selectors,
+    }
+    identity = control._ci_execution_batch_matrix_identity(batch)
+    return (
+        {"subjects": subjects, "work-groups": groups},
+        {"batches": [batch]},
+        {
+            "identity-matrix": identity,
+            **identity,
+            "expected-job-identity": "execution-batch-windows",
+        },
+    )
+
+
+def test_ci_validation_batch_consolidates_multiple_dotnet_restores_to_dirs_proj(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A multi-target dotnet batch restores dirs.proj once before builds."""
+    scratch = SCRATCH / "ci-validation-batch-consolidated-dotnet-restore"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan, manifest, matrix_row = _ci_dotnet_execution_batch_context(
+            [
+                ("src/public/lib/CircularList", ["build", "test"]),
+                ("src/public/lib/KeyedSemaphores", ["build"]),
+            ]
+        )
+        plan_path = scratch / "plan.json"
+        manifest_path = scratch / "execution-batch-manifest.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        captured_argvs: list[list[str]] = []
+
+        def fake_run(
+            argv: Sequence[str],
+            *,
+            cwd: Path,
+            check: bool,
+        ) -> subprocess.CompletedProcess[str]:
+            assert cwd == scratch
+            assert check is False
+            argv_list = list(argv)
+            captured_argvs.append(argv_list)
+            for binlog_arg in [
+                item for item in argv_list if item.startswith("/bl:")
+            ]:
+                binlog_path = scratch / binlog_arg.removeprefix("/bl:")
+                binlog_path.parent.mkdir(parents=True, exist_ok=True)
+                binlog_path.write_bytes(" ".join(argv_list).encode())
+            return subprocess.CompletedProcess(argv, 0)
+
+        monkeypatch.setattr(control.subprocess, "run", fake_run)
+        result_dir = scratch / "results"
+
+        assert (
+            control._cmd_run_ci_validation_batch_commands(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    request="",
+                    execution_batch_manifest=str(manifest_path),
+                    changed_files_snapshot="",
+                    fact_snapshot="",
+                    matrix_row_json=json.dumps(matrix_row),
+                    dependency_bundle=[],
+                    observed_artifacts_dir="",
+                    observed_commit_sha=SHA_B,
+                    repo_root=str(scratch),
+                    result_out_dir=str(result_dir),
+                    github_output=str(scratch / "outputs.txt"),
+                )
+            )
+            == 0
+        )
+
+        restore_argvs = [
+            argv for argv in captured_argvs if argv[:2] == ["dotnet", "restore"]
+        ]
+        assert restore_argvs == [
+            [
+                "dotnet",
+                "restore",
+                "dirs.proj",
+                (
+                    "/bl:.three-ci-validation/work/ecosystem-gate-binlogs/"
+                    "wg-dotnet-0/command-000-dotnet-restore.binlog"
+                ),
+            ]
+        ]
+        build_argvs = [
+            argv for argv in captured_argvs if argv[:2] == ["dotnet", "build"]
+        ]
+        assert build_argvs == [
+            [
+                "dotnet",
+                "build",
+                "src/public/lib/CircularList",
+                "--no-restore",
+                (
+                    "/bl:.three-ci-validation/work/ecosystem-gate-binlogs/"
+                    "wg-dotnet-0/command-001-dotnet-build.binlog"
+                ),
+            ],
+            [
+                "dotnet",
+                "build",
+                "src/public/lib/KeyedSemaphores",
+                "--no-restore",
+                (
+                    "/bl:.three-ci-validation/work/ecosystem-gate-binlogs/"
+                    "wg-dotnet-1/command-000-dotnet-build.binlog"
+                ),
+            ],
+        ]
+        assert [
+            "dotnet",
+            "test",
+            "src/public/lib/CircularList",
+            "--no-restore",
+            "--no-build",
+        ] in captured_argvs
+
+        first_result = json.loads(
+            (result_dir / "validation-result-000.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        second_result = json.loads(
+            (result_dir / "validation-result-001.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        restore_command = first_result["commands"][0]
+        assert restore_command["argv"][:3] == ["dotnet", "restore", "dirs.proj"]
+        assert restore_command["binlog-path"] == (
+            ".three-ci-validation/work/ecosystem-gate-binlogs/"
+            "wg-dotnet-0/command-000-dotnet-restore.binlog"
+        )
+        restore_upload = restore_command["binlog-uploaded-evidence-path"]
+        restore_upload_path = PurePosixPath(restore_upload)
+        assert not restore_upload_path.is_absolute()
+        assert ".." not in restore_upload_path.parts
+        assert restore_upload == (
+            "validation-result-000-ecosystem-evidence/"
+            "dotnet-restore-command-000.binlog"
+        )
+        assert (
+            (result_dir / restore_upload)
+            .read_bytes()
+            .startswith(b"dotnet restore dirs.proj")
+        )
+
+        first_build = first_result["commands"][1]
+        second_build = second_result["commands"][0]
+        assert first_build["argv"][:4] == [
+            "dotnet",
+            "build",
+            "src/public/lib/CircularList",
+            "--no-restore",
+        ]
+        assert second_build["argv"][:4] == [
+            "dotnet",
+            "build",
+            "src/public/lib/KeyedSemaphores",
+            "--no-restore",
+        ]
+        assert first_build["binlog-uploaded-evidence-path"] == (
+            "validation-result-000-ecosystem-evidence/"
+            "dotnet-build-command-001.binlog"
+        )
+        assert second_build["binlog-uploaded-evidence-path"] == (
+            "validation-result-001-ecosystem-evidence/"
+            "dotnet-build-command-000.binlog"
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_batch_keeps_single_dotnet_target_restore(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A single-target dotnet batch keeps target-scoped restore."""
+    scratch = SCRATCH / "ci-validation-batch-single-dotnet-restore"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        plan, manifest, matrix_row = _ci_dotnet_execution_batch_context(
+            [("src/public/lib/CircularList", ["build"])]
+        )
+        plan_path = scratch / "plan.json"
+        manifest_path = scratch / "execution-batch-manifest.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        captured_argvs: list[list[str]] = []
+
+        def fake_run(
+            argv: Sequence[str],
+            *,
+            cwd: Path,
+            check: bool,
+        ) -> subprocess.CompletedProcess[str]:
+            assert cwd == scratch
+            assert check is False
+            argv_list = list(argv)
+            captured_argvs.append(argv_list)
+            for binlog_arg in [
+                item for item in argv_list if item.startswith("/bl:")
+            ]:
+                binlog_path = scratch / binlog_arg.removeprefix("/bl:")
+                binlog_path.parent.mkdir(parents=True, exist_ok=True)
+                binlog_path.write_bytes(b"binlog")
+            return subprocess.CompletedProcess(argv, 0)
+
+        monkeypatch.setattr(control.subprocess, "run", fake_run)
+
+        assert (
+            control._cmd_run_ci_validation_batch_commands(
+                argparse.Namespace(
+                    plan=str(plan_path),
+                    request="",
+                    execution_batch_manifest=str(manifest_path),
+                    changed_files_snapshot="",
+                    fact_snapshot="",
+                    matrix_row_json=json.dumps(matrix_row),
+                    dependency_bundle=[],
+                    observed_artifacts_dir="",
+                    observed_commit_sha=SHA_B,
+                    repo_root=str(scratch),
+                    result_out_dir=str(scratch / "results"),
+                    github_output=str(scratch / "outputs.txt"),
+                )
+            )
+            == 0
+        )
+
+        assert captured_argvs == [
+            [
+                "dotnet",
+                "restore",
+                "src/public/lib/CircularList",
+                (
+                    "/bl:.three-ci-validation/work/ecosystem-gate-binlogs/"
+                    "wg-dotnet-0/command-000-dotnet-restore.binlog"
+                ),
+            ],
+            [
+                "dotnet",
+                "build",
+                "src/public/lib/CircularList",
+                "--no-restore",
+                (
+                    "/bl:.three-ci-validation/work/ecosystem-gate-binlogs/"
+                    "wg-dotnet-0/command-001-dotnet-build.binlog"
+                ),
+            ],
+        ]
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def test_ci_validation_dotnet_restore_precedes_no_restore_builds() -> None:

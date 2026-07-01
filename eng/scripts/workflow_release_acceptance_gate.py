@@ -255,6 +255,12 @@ MANDATORY_TEST_NODEIDS = (
     "tests/test_workflow_release_control.py::"
     "test_ci_validation_result_retains_slowest_ecosystem_restore_binlog",
     "tests/test_workflow_release_control.py::"
+    "test_ci_validation_batch_pins_consolidated_restore_binlog",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_batch_consolidates_multiple_dotnet_restores_to_dirs_proj",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_batch_keeps_single_dotnet_target_restore",
+    "tests/test_workflow_release_control.py::"
     "test_ci_validation_ecosystem_binlog_staging_resets_unsafe_targets",
     "tests/test_workflow_release_control.py::"
     "test_ci_validation_ecosystem_binlog_retention_rejects_unsafe_paths",
