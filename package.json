@@ -21,6 +21,6 @@
     "@commitlint/types": "^21.0.0",
     "ap-style-title-case": "^2.0.0",
     "markdownlint-cli2": "0.22.1",
-    "prettier": "3.9.0"
+    "prettier": "3.9.1"
   }
 }
