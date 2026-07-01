@@ -5605,7 +5605,7 @@ def _ci_run_validation_command(
             timing,
         )
     argv_list = [str(item) for item in argv]
-    binlog_path = _ci_windows_dotnet_build_binlog_path(
+    binlog_path = _ci_windows_dotnet_ecosystem_binlog_path(
         command,
         matrix_work_group=matrix_work_group,
         index=index,
@@ -5613,7 +5613,7 @@ def _ci_run_validation_command(
         argv=argv_list,
     )
     if binlog_path is not None:
-        binlog_path = _ci_prepare_windows_dotnet_build_binlog_path(
+        binlog_path = _ci_prepare_windows_dotnet_ecosystem_binlog_path(
             binlog_path,
             repo_root=repo_root,
             work_group_id=matrix_work_group.get("work-group-id"),
@@ -5670,7 +5670,7 @@ def _ci_validation_command_failure(
     }
 
 
-def _ci_windows_dotnet_build_binlog_path(
+def _ci_windows_dotnet_ecosystem_binlog_path(
     command: Mapping[str, object],
     *,
     matrix_work_group: Mapping[str, object],
@@ -5678,11 +5678,12 @@ def _ci_windows_dotnet_build_binlog_path(
     repo_root: Path,
     argv: Sequence[str],
 ) -> Path | None:
-    if not _ci_should_capture_windows_dotnet_build_binlog(
+    verb = _ci_windows_dotnet_ecosystem_binlog_verb(
         command,
         matrix_work_group=matrix_work_group,
         argv=argv,
-    ):
+    )
+    if verb is None:
         return None
     work_group_id = str(matrix_work_group.get("work-group-id") or "unknown")
     return (
@@ -5691,27 +5692,32 @@ def _ci_windows_dotnet_build_binlog_path(
         / "work"
         / "ecosystem-gate-binlogs"
         / _ci_safe_ecosystem_binlog_work_group(work_group_id)
-        / f"command-{index:03d}-dotnet-build.binlog"
+        / f"command-{index:03d}-dotnet-{verb}.binlog"
     )
 
 
-def _ci_should_capture_windows_dotnet_build_binlog(
+def _ci_windows_dotnet_ecosystem_binlog_verb(
     command: Mapping[str, object],
     *,
     matrix_work_group: Mapping[str, object],
     argv: Sequence[str],
-) -> bool:
+) -> Literal["build", "restore"] | None:
     if (
         matrix_work_group.get("kind") != "ecosystem-gate"
         or matrix_work_group.get("runner-family") != "windows"
         or matrix_work_group.get("ecosystem") != "dotnet"
-        or command.get("capability") not in {"build", "type-check"}
         or len(argv) < 2
         or argv[0] != "dotnet"
-        or argv[1] != "build"
     ):
-        return False
-    return not any(_CI_MSBUILD_BINLOG_ARG_RE.match(item) for item in argv)
+        return None
+    if any(_CI_MSBUILD_BINLOG_ARG_RE.match(item) for item in argv):
+        return None
+    capability = command.get("capability")
+    if capability == "restore" and argv[1] == "restore":
+        return "restore"
+    if capability in {"build", "type-check"} and argv[1] == "build":
+        return "build"
+    return None
 
 
 def _ci_safe_ecosystem_binlog_work_group(work_group_id: str) -> str:
@@ -5721,7 +5727,7 @@ def _ci_safe_ecosystem_binlog_work_group(work_group_id: str) -> str:
     return safe_work_group or "unknown"
 
 
-def _ci_prepare_windows_dotnet_build_binlog_path(  # noqa: PLR0911
+def _ci_prepare_windows_dotnet_ecosystem_binlog_path(  # noqa: PLR0911
     binlog_path: Path,
     *,
     repo_root: Path,
@@ -27150,19 +27156,14 @@ def _ci_ecosystem_binlog_candidates(
     for command in commands:
         if not isinstance(command, dict):
             continue
+        binlog_verb = _ci_ecosystem_binlog_candidate_verb(command)
         binlog_path = command.get("binlog-path")
-        argv = command.get("argv")
         timing = command.get("timing")
         duration = (
             timing.get("duration-ms") if isinstance(timing, Mapping) else None
         )
         if (
-            command.get("capability") not in {"build", "type-check"}
-            or not isinstance(argv, Sequence)
-            or isinstance(argv, str | bytes)
-            or len(argv) < 2
-            or argv[0] != "dotnet"
-            or argv[1] != "build"
+            binlog_verb is None
             or command.get("binlog-exists") is not True
             or not isinstance(binlog_path, str)
             or not binlog_path
@@ -27182,11 +27183,11 @@ def _ci_ecosystem_binlog_candidates(
         command_index = command.get("index")
         uploaded_path = (
             f"{_ci_ecosystem_evidence_dir_for_result(result_path).name}/"
-            f"dotnet-build-command-{int(command_index):03d}.binlog"
+            f"dotnet-{binlog_verb}-command-{int(command_index):03d}.binlog"
             if isinstance(command_index, int)
             and not isinstance(command_index, bool)
             else f"{_ci_ecosystem_evidence_dir_for_result(result_path).name}/"
-            "dotnet-build-command.binlog"
+            f"dotnet-{binlog_verb}-command.binlog"
         )
         result.append(
             _CiEcosystemBinlogCandidate(
@@ -27202,6 +27203,25 @@ def _ci_ecosystem_binlog_candidates(
             )
         )
     return result
+
+
+def _ci_ecosystem_binlog_candidate_verb(
+    command: Mapping[str, object],
+) -> Literal["build", "restore"] | None:
+    argv = command.get("argv")
+    if (
+        not isinstance(argv, Sequence)
+        or isinstance(argv, str | bytes)
+        or len(argv) < 2
+        or argv[0] != "dotnet"
+    ):
+        return None
+    capability = command.get("capability")
+    if capability == "restore" and argv[1] == "restore":
+        return "restore"
+    if capability in {"build", "type-check"} and argv[1] == "build":
+        return "build"
+    return None
 
 
 def _ci_safe_ecosystem_binlog_source_path(  # noqa: PLR0911

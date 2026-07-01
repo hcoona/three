@@ -3500,7 +3500,11 @@ def test_acceptance_gate_pins_dotnet_restore_command_shape_regression() -> None:
         "tests/test_workflow_release_control.py::"
         "test_ci_validation_dotnet_restore_precedes_no_restore_builds",
         "tests/test_workflow_release_control.py::"
+        "test_ci_validation_command_runner_captures_windows_dotnet_restore_binlog",
+        "tests/test_workflow_release_control.py::"
         "test_ci_validation_command_runner_keeps_binlog_on_restored_dotnet_build",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_result_retains_slowest_ecosystem_restore_binlog",
     }
     matrix_nodeids = set().union(
         _matrix_test_nodeids(_acceptance_matrix()),
@@ -31866,6 +31870,64 @@ def test_ci_validation_command_runner_captures_windows_dotnet_build_binlog(
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def test_ci_validation_command_runner_captures_windows_dotnet_restore_binlog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows ecosystem-gate dotnet restore commands get scoped binlogs."""
+    scratch = SCRATCH / "ci-validation-command-runner-dotnet-restore-binlog"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        captured_argv: list[str] = []
+
+        def fake_run(
+            argv: Sequence[str],
+            *,
+            cwd: Path,
+            check: bool,
+        ) -> subprocess.CompletedProcess[str]:
+            assert cwd == scratch
+            assert check is False
+            captured_argv.extend(argv)
+            binlog_arg = next(item for item in argv if item.startswith("/bl:"))
+            (scratch / binlog_arg.removeprefix("/bl:")).write_bytes(b"binlog")
+            return subprocess.CompletedProcess(argv, 0)
+
+        monkeypatch.setattr(control.subprocess, "run", fake_run)
+
+        result = control._ci_run_validation_command(
+            index=0,
+            command={
+                "label": "dotnet restore",
+                "capability": "restore",
+                "argv": ["dotnet", "restore", "src/public/lib/example"],
+            },
+            plan=None,
+            assignments=None,
+            changed_files_snapshot=None,
+            fact_snapshot=None,
+            observed_artifacts_dir="",
+            observed_commit_sha=SHA_B,
+            matrix_work_group={
+                "work-group-id": "wg-dotnet",
+                "kind": "ecosystem-gate",
+                "runner-family": "windows",
+                "ecosystem": "dotnet",
+            },
+            repo_root=scratch,
+        )
+
+        assert result["outcome"] == "success"
+        assert captured_argv[-1] == (
+            "/bl:.three-ci-validation/work/ecosystem-gate-binlogs/"
+            "wg-dotnet/command-000-dotnet-restore.binlog"
+        )
+        assert result["binlog-path"] == captured_argv[-1].removeprefix("/bl:")
+        assert result["binlog-exists"] is True
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def test_ci_validation_command_runner_captures_windows_dotnet_type_check_binlog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -31927,7 +31989,7 @@ def test_ci_validation_command_runner_captures_windows_dotnet_type_check_binlog(
 def test_ci_validation_command_runner_keeps_binlog_on_restored_dotnet_build(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Generated restore + build keeps binlog capture on build only."""
+    """Generated restore + build keeps restore binlog and no-restore build."""
     scratch = SCRATCH / "ci-validation-command-runner-restored-dotnet-binlog"
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True)
@@ -31948,7 +32010,10 @@ def test_ci_validation_command_runner_keeps_binlog_on_restored_dotnet_build(
                 item for item in argv_list if item.startswith("/bl:")
             ]
             if argv_list[:2] == ["dotnet", "restore"]:
-                assert not binlog_args
+                assert len(binlog_args) == 1
+                (scratch / binlog_args[0].removeprefix("/bl:")).write_bytes(
+                    b"restore binlog",
+                )
             else:
                 assert argv_list[:2] == ["dotnet", "build"]
                 assert "--no-restore" in argv_list
@@ -31995,6 +32060,10 @@ def test_ci_validation_command_runner_keeps_binlog_on_restored_dotnet_build(
             "dotnet",
             "restore",
             "src/public/lib/example",
+            (
+                "/bl:.three-ci-validation/work/ecosystem-gate-binlogs/"
+                "wg-dotnet/command-000-dotnet-restore.binlog"
+            ),
         ]
         assert captured_argvs[1][:4] == [
             "dotnet",
@@ -32009,22 +32078,31 @@ def test_ci_validation_command_runner_keeps_binlog_on_restored_dotnet_build(
         result = json.loads(result_path.read_text(encoding="utf-8"))
         restore_command, build_command = result["commands"]
         assert restore_command["capability"] == "restore"
-        assert "binlog-path" not in restore_command
-        assert "binlog-exists" not in restore_command
-        assert "uploaded-evidence-files" not in restore_command
+        assert restore_command["binlog-path"] == (
+            ".three-ci-validation/work/ecosystem-gate-binlogs/"
+            "wg-dotnet/command-000-dotnet-restore.binlog"
+        )
+        assert restore_command["binlog-exists"] is True
         assert build_command["capability"] == "build"
         assert build_command["binlog-path"] == (
             ".three-ci-validation/work/ecosystem-gate-binlogs/"
             "wg-dotnet/command-001-dotnet-build.binlog"
         )
         assert build_command["binlog-exists"] is True
-        assert build_command["uploaded-evidence-files"] == [
-            "validation-result-ecosystem-evidence/"
-            "dotnet-build-command-001.binlog",
+        retained_commands = [
+            command
+            for command in (restore_command, build_command)
+            if "uploaded-evidence-files" in command
         ]
-        assert (
-            scratch / build_command["binlog-uploaded-evidence-path"]
-        ).read_bytes() == b"build binlog"
+        assert len(retained_commands) == 1
+        retained_command = retained_commands[0]
+        retained_payload = (
+            scratch / retained_command["binlog-uploaded-evidence-path"]
+        ).read_bytes()
+        assert retained_payload in {
+            b"restore binlog",
+            b"build binlog",
+        }
         assert _github_outputs(output_path)["validation_outcome"] == "success"
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
@@ -32437,6 +32515,91 @@ def test_ci_validation_result_retains_slowest_ecosystem_binlog() -> None:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def test_ci_validation_result_retains_slowest_ecosystem_restore_binlog() -> (
+    None
+):
+    """Single-result ecosystem evidence can retain a slow restore binlog."""
+    scratch = SCRATCH / "ci-validation-ecosystem-restore-binlog-result-slowest"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        binlog_root = (
+            scratch
+            / ".three-ci-validation/work/ecosystem-gate-binlogs"
+            / "wg-dotnet"
+        )
+        binlog_root.mkdir(parents=True)
+        restore_binlog = binlog_root / "command-000-dotnet-restore.binlog"
+        build_binlog = binlog_root / "command-001-dotnet-build.binlog"
+        restore_binlog.write_bytes(b"restore")
+        build_binlog.write_bytes(b"build")
+        result_path = scratch / "validation-result.json"
+        result: dict[str, object] = {
+            "work-group-id": "wg-dotnet",
+            "kind": "ecosystem-gate",
+            "runner-family": "windows",
+            "ecosystem": "dotnet",
+            "commands": [
+                {
+                    "index": 0,
+                    "label": "dotnet restore",
+                    "argv": ["dotnet", "restore", "project"],
+                    "capability": "restore",
+                    "exit-code": 0,
+                    "outcome": "success",
+                    "binlog-path": restore_binlog.relative_to(
+                        scratch
+                    ).as_posix(),
+                    "binlog-exists": True,
+                    "timing": {
+                        "started-at": "2026-01-01T00:00:00.000Z",
+                        "completed-at": "2026-01-01T00:00:05.000Z",
+                        "duration-ms": 5000,
+                    },
+                },
+                {
+                    "index": 1,
+                    "label": "dotnet build",
+                    "argv": ["dotnet", "build", "project", "--no-restore"],
+                    "capability": "build",
+                    "exit-code": 0,
+                    "outcome": "success",
+                    "binlog-path": build_binlog.relative_to(scratch).as_posix(),
+                    "binlog-exists": True,
+                    "timing": {
+                        "started-at": "2026-01-01T00:00:00.000Z",
+                        "completed-at": "2026-01-01T00:00:01.000Z",
+                        "duration-ms": 1000,
+                    },
+                },
+            ],
+        }
+
+        control._ci_retain_slowest_ecosystem_binlogs_for_result(
+            result,
+            result_path=result_path,
+            repo_root=scratch,
+        )
+
+        commands = cast("list[dict[str, object]]", result["commands"])
+        assert commands[0]["uploaded-evidence-files"] == [
+            "validation-result-ecosystem-evidence/"
+            "dotnet-restore-command-000.binlog",
+        ]
+        assert commands[0]["binlog-uploaded-evidence-path"] == (
+            "validation-result-ecosystem-evidence/"
+            "dotnet-restore-command-000.binlog"
+        )
+        assert "uploaded-evidence-files" not in commands[1]
+        assert (
+            scratch
+            / "validation-result-ecosystem-evidence"
+            / "dotnet-restore-command-000.binlog"
+        ).read_bytes() == b"restore"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 @pytest.mark.parametrize("target_kind", ["symlink", "file"])
 def test_ci_validation_ecosystem_binlog_staging_resets_unsafe_targets(
     target_kind: str,
@@ -32513,24 +32676,36 @@ def test_ci_validation_ecosystem_binlog_staging_resets_unsafe_targets(
             "traversal",
             lambda _scratch, _binlog: (
                 ".three-ci-validation/work/ecosystem-gate-binlogs/"
-                "wg-dotnet/../wg-dotnet/command-000-dotnet-build.binlog"
+                f"wg-dotnet/../wg-dotnet/{_binlog.name}"
             ),
         ),
         (
             "foreign-work-group",
             lambda _scratch, _binlog: (
                 ".three-ci-validation/work/ecosystem-gate-binlogs/"
-                "wg-foreign/command-000-dotnet-build.binlog"
+                f"wg-foreign/{_binlog.name}"
             ),
         ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("capability", "verb", "binlog_filename"),
+    [
+        ("build", "build", "command-000-dotnet-build.binlog"),
+        ("restore", "restore", "command-000-dotnet-restore.binlog"),
     ],
 )
 def test_ci_validation_ecosystem_binlog_retention_rejects_unsafe_paths(
     case_name: str,
     binlog_path_factory: Callable[[Path, Path], str],
+    capability: str,
+    verb: str,
+    binlog_filename: str,
 ) -> None:
     """Ecosystem binlog upload claims must remain in the current work-group."""
-    scratch = SCRATCH / f"ci-validation-ecosystem-binlog-path-{case_name}"
+    scratch = SCRATCH / (
+        f"ci-validation-ecosystem-{verb}-binlog-path-{case_name}"
+    )
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True)
     try:
@@ -32538,7 +32713,7 @@ def test_ci_validation_ecosystem_binlog_retention_rejects_unsafe_paths(
             scratch
             / ".three-ci-validation/work/ecosystem-gate-binlogs"
             / "wg-dotnet"
-            / "command-000-dotnet-build.binlog"
+            / binlog_filename
         )
         valid_binlog.parent.mkdir(parents=True)
         valid_binlog.write_bytes(b"binlog")
@@ -32546,7 +32721,7 @@ def test_ci_validation_ecosystem_binlog_retention_rejects_unsafe_paths(
             scratch
             / ".three-ci-validation/work/ecosystem-gate-binlogs"
             / "wg-foreign"
-            / "command-000-dotnet-build.binlog"
+            / binlog_filename
         )
         foreign_binlog.parent.mkdir(parents=True)
         foreign_binlog.write_bytes(b"foreign")
@@ -32559,9 +32734,9 @@ def test_ci_validation_ecosystem_binlog_retention_rejects_unsafe_paths(
             "commands": [
                 {
                     "index": 0,
-                    "label": "dotnet build",
-                    "argv": ["dotnet", "build", "project"],
-                    "capability": "build",
+                    "label": f"dotnet {verb}",
+                    "argv": ["dotnet", verb, "project"],
+                    "capability": capability,
                     "exit-code": 0,
                     "outcome": "success",
                     "binlog-path": binlog_path_factory(scratch, valid_binlog),

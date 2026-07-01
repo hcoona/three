@@ -239,6 +239,8 @@ MANDATORY_TEST_NODEIDS = (
     "tests/test_workflow_release_control.py::"
     "test_ci_validation_command_runner_captures_windows_dotnet_build_binlog",
     "tests/test_workflow_release_control.py::"
+    "test_ci_validation_command_runner_captures_windows_dotnet_restore_binlog",
+    "tests/test_workflow_release_control.py::"
     "test_ci_validation_command_runner_captures_windows_dotnet_type_check_binlog",
     "tests/test_workflow_release_control.py::"
     "test_ci_validation_command_runner_ignores_stale_windows_dotnet_binlog",
@@ -250,6 +252,8 @@ MANDATORY_TEST_NODEIDS = (
     "test_ci_validation_batch_retains_slowest_ecosystem_binlogs",
     "tests/test_workflow_release_control.py::"
     "test_ci_validation_result_retains_slowest_ecosystem_binlog",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_result_retains_slowest_ecosystem_restore_binlog",
     "tests/test_workflow_release_control.py::"
     "test_ci_validation_ecosystem_binlog_staging_resets_unsafe_targets",
     "tests/test_workflow_release_control.py::"
