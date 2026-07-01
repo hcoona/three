@@ -287,6 +287,31 @@ public sealed class InMemoryFileSystemTests
     }
 
     [Fact]
+    public void CreateDirectoryUsesConfiguredDefaultUnixModeForNewDirectories()
+    {
+        const UnixFileMode expectedMode =
+            UnixFileMode.UserRead
+            | UnixFileMode.UserWrite
+            | UnixFileMode.UserExecute
+            | UnixFileMode.GroupRead
+            | UnixFileMode.GroupWrite
+            | UnixFileMode.GroupExecute
+            | UnixFileMode.OtherRead
+            | UnixFileMode.OtherWrite
+            | UnixFileMode.OtherExecute;
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix)
+        {
+            DefaultCreateDirectoryMode = expectedMode,
+        };
+
+        fileSystem.CreateDirectory("/root/created/nested");
+
+        Assert.Equal(expectedMode, fileSystem.GetUnixFileMode("/root"));
+        Assert.Equal(expectedMode, fileSystem.GetUnixFileMode("/root/created"));
+        Assert.Equal(expectedMode, fileSystem.GetUnixFileMode("/root/created/nested"));
+    }
+
+    [Fact]
     public void AtomicWriteAllTextCreatesNewFileWithOwnerOnlyMode()
     {
         var fileSystem = new InMemoryFileSystem();
@@ -845,6 +870,25 @@ public sealed class InMemoryFileSystemTests
     }
 
     [Fact]
+    public void WindowsIntegritySnapshotRevalidationIgnoresTrustedParentDirectoryPathCasing()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+        fileSystem.CreateDirectory(@"C:\Root\Nested");
+        fileSystem.WriteAllText(@"C:\Root\Nested\File.txt", "helper contents");
+        fileSystem.SetUnixFileMode(@"C:\Root\Nested\File.txt", HelperExecutableMode);
+
+        var snapshot = fileSystem.CaptureFileIntegritySnapshot(@"C:\Root\Nested\File.txt");
+
+        Assert.Equal(
+            [@"C:\Root\Nested", @"C:\Root", @"C:\"],
+            snapshot
+                .TrustedParentDirectories.Select(static directory => directory.FullPath)
+                .ToArray()
+        );
+        Assert.True(fileSystem.FileMatchesIntegritySnapshot(@"c:\root\nested\file.txt", snapshot));
+    }
+
+    [Fact]
     public void IntegritySnapshotRevalidationFailsWhenFileIdentityChanges()
     {
         var fileSystem = new InMemoryFileSystem();
@@ -856,6 +900,92 @@ public sealed class InMemoryFileSystemTests
         fileSystem.AtomicWriteAllText("root/helper", "helper contents");
 
         Assert.False(fileSystem.FileMatchesIntegritySnapshot("root/helper", snapshot));
+    }
+
+    [Fact]
+    public void AtomicWriteAllTextAndCaptureSnapshotNoFollowRecordsDedicatedPostWriteOperation()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        fileSystem.CreateDirectory("/root");
+        const string originalContents = "helper contents";
+        const string replacementContents = "replacement contents";
+        bool raceInjected = false;
+        fileSystem.AfterRecord = (call, system) =>
+        {
+            if (
+                raceInjected
+                || call.Operation
+                    != nameof(
+                        InMemoryFileSystem.AtomicWriteAllTextAndCaptureSnapshotNoFollow
+                    )
+                || call.Path != "/root/helper"
+            )
+            {
+                return;
+            }
+
+            raceInjected = true;
+            system.DeleteFile("/root/helper");
+            system.WriteAllText("/root/helper", replacementContents);
+        };
+
+        FileIntegritySnapshot snapshot = fileSystem.AtomicWriteAllTextAndCaptureSnapshotNoFollow(
+            "/root/helper",
+            originalContents
+        );
+        fileSystem.AfterRecord = null;
+
+        Assert.True(raceInjected);
+        Assert.Contains(
+            fileSystem.Calls,
+            call =>
+                call.Operation
+                    == nameof(InMemoryFileSystem.AtomicWriteAllTextAndCaptureSnapshotNoFollow)
+                && call.Path == "/root/helper"
+        );
+        Assert.Equal("/root/helper", snapshot.FullPath);
+        Assert.Equal(Sha256(originalContents), snapshot.Sha256Hash);
+        Assert.Equal(replacementContents, fileSystem.ReadAllText("/root/helper"));
+        Assert.False(fileSystem.FileMatchesIntegritySnapshot("/root/helper", snapshot));
+    }
+
+    [Fact]
+    public void
+    AtomicWriteAllTextAndCaptureSnapshotNoFollowRollsBackCreatedFileWhenPostWriteFailureIsInjected()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        fileSystem.CreateDirectory("/root");
+        bool failureInjected = false;
+        fileSystem.AfterRecord = (call, system) =>
+        {
+            if (
+                failureInjected
+                || call.Operation
+                    != nameof(
+                        InMemoryFileSystem.AtomicWriteAllTextAndCaptureSnapshotNoFollow
+                    )
+                || call.Path != "/root/helper"
+            )
+            {
+                return;
+            }
+
+            failureInjected = true;
+            system.FailNextCall(new IOException("post-write failure"));
+        };
+
+        IOException exception = Assert.Throws<IOException>(() =>
+            fileSystem.AtomicWriteAllTextAndCaptureSnapshotNoFollow(
+                "/root/helper",
+                "helper contents"
+            )
+        );
+        fileSystem.AfterRecord = null;
+
+        Assert.Contains("post-write failure", exception.Message, StringComparison.Ordinal);
+        Assert.True(failureInjected);
+        Assert.False(fileSystem.FileExists("/root/helper"));
+        Assert.True(fileSystem.DirectoryExists("/root"));
     }
 
     [Fact]
@@ -1200,6 +1330,154 @@ public sealed class InMemoryFileSystemTests
         Assert.Equal(
             [Path.GetFullPath(pathWithBackslashes)],
             fileSystem.EnumerateFiles("root", "*.txt", SearchOption.AllDirectories).ToArray()
+        );
+    }
+
+    [Fact]
+    public void WindowsPathSemanticsUseDriveRootsBackslashesAndCaseInsensitiveLookup()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+
+        fileSystem.CreateDirectory(@"C:\Root\Nested");
+        fileSystem.WriteAllText(@"c:/root/nested/File.txt", "contents");
+
+        Assert.True(fileSystem.IsPathFullyQualified(@"C:\Root\Nested\File.txt"));
+        Assert.False(fileSystem.IsPathFullyQualified(@"Root\Nested\File.txt"));
+        Assert.Equal(@"C:\Root\Nested\File.txt", fileSystem.GetFullPath(@"Root\Nested\File.txt"));
+        Assert.True(fileSystem.DirectoryExists(@"c:\ROOT\nested"));
+        Assert.True(fileSystem.FileExists(@"C:\ROOT\NESTED\file.txt"));
+        Assert.Equal("contents", fileSystem.ReadAllText(@"C:\ROOT\nested\FILE.txt"));
+        Assert.Equal(
+            [@"C:\root\nested\File.txt"],
+            fileSystem
+                .EnumerateFiles(@"C:\ROOT", "*.txt", SearchOption.AllDirectories)
+                .ToArray()
+        );
+    }
+
+    [Theory]
+    [InlineData(@"C:")]
+    [InlineData(@"D:")]
+    public void WindowsPathSemanticsRejectBareDriveRootsFailClosed(string path)
+    {
+        AssertWindowsUnsupportedDriveRelativeOrBareDrivePathFailsClosed(path);
+    }
+
+    [Theory]
+    [InlineData(@"C:relative")]
+    [InlineData(@"D:relative\root")]
+    public void WindowsPathSemanticsRejectDriveRelativeRootsFailClosed(string path)
+    {
+        AssertWindowsUnsupportedDriveRelativeOrBareDrivePathFailsClosed(path);
+    }
+
+    [Theory]
+    [InlineData(@"\\server\share\root\file.txt")]
+    [InlineData(@"\\?\UNC\server\share\root\file.txt")]
+    [InlineData(@"\??\UNC\server\share\root\file.txt")]
+    [InlineData(@"\Global??\UNC\server\share\root\file.txt")]
+    public void WindowsPathSemanticsRejectUnsupportedUncRootsFailClosed(string path)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+
+        NotSupportedException getFullPathException = Assert.Throws<NotSupportedException>(() =>
+            fileSystem.GetFullPath(path)
+        );
+        NotSupportedException createDirectoryException = Assert.Throws<NotSupportedException>(() =>
+            fileSystem.CreateDirectory(path)
+        );
+
+        Assert.Contains("UNC", getFullPathException.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            "drive-qualified",
+            createDirectoryException.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Empty(fileSystem.Calls);
+        Assert.Empty(fileSystem.Files);
+        Assert.Equal(
+            [@"C:\"],
+            fileSystem
+                .Directories.OrderBy(
+                    static directory => directory,
+                    StringComparer.OrdinalIgnoreCase
+                )
+                .ToArray()
+        );
+    }
+
+    [Theory]
+    [InlineData(@"\root\file.txt")]
+    [InlineData(@"/root/file.txt")]
+    [InlineData(@"\??\C:\root\file.txt")]
+    [InlineData(@"\Global??\C:\root\file.txt")]
+    public void WindowsPathSemanticsRejectUnsupportedRootedNonDriveOrDevicePathsFailClosed(
+        string path
+    )
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+
+        NotSupportedException getFullPathException = Assert.Throws<NotSupportedException>(() =>
+            fileSystem.GetFullPath(path)
+        );
+        NotSupportedException createDirectoryException = Assert.Throws<NotSupportedException>(() =>
+            fileSystem.CreateDirectory(path)
+        );
+
+        Assert.Contains(
+            "non-drive-qualified",
+            getFullPathException.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "drive-qualified",
+            createDirectoryException.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Empty(fileSystem.Calls);
+        Assert.Empty(fileSystem.Files);
+        Assert.Equal(
+            [@"C:\"],
+            fileSystem
+                .Directories.OrderBy(
+                    static directory => directory,
+                    StringComparer.OrdinalIgnoreCase
+                )
+                .ToArray()
+        );
+    }
+
+    private static void AssertWindowsUnsupportedDriveRelativeOrBareDrivePathFailsClosed(string path)
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Windows);
+
+        NotSupportedException getFullPathException = Assert.Throws<NotSupportedException>(() =>
+            fileSystem.GetFullPath(path)
+        );
+        NotSupportedException createDirectoryException = Assert.Throws<NotSupportedException>(() =>
+            fileSystem.CreateDirectory(path)
+        );
+
+        Assert.Contains(
+            "drive-relative or bare-drive roots",
+            getFullPathException.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "drive-relative or bare-drive roots",
+            createDirectoryException.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Empty(fileSystem.Calls);
+        Assert.Empty(fileSystem.Files);
+        Assert.Equal(
+            [@"C:\"],
+            fileSystem
+                .Directories.OrderBy(
+                    static directory => directory,
+                    StringComparer.OrdinalIgnoreCase
+                )
+                .ToArray()
         );
     }
 

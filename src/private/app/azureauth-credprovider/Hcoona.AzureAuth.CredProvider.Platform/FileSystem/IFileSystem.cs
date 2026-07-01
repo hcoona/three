@@ -96,6 +96,25 @@ internal interface IFileSystemFileLength
     long GetFileLength(string path);
 }
 
+internal interface IFakeAdapterScaffoldMaterializationFileSystem
+{
+    FileIntegritySnapshot AtomicWriteAllTextAndCaptureSnapshotNoFollow(
+        string path,
+        string contents,
+        Encoding? encoding = null,
+        AtomicWriteOptions options = AtomicWriteOptions.None,
+        FileMutationExpectation? expectation = null
+    );
+
+    FileIntegritySnapshot CaptureFileIntegritySnapshotWithoutTrustedParents(string path);
+
+    void CreateDirectoryNoFollow(string path);
+
+    void DeleteFileIfMatchesSnapshotNoFollow(string path, FileIntegritySnapshot snapshot);
+
+    void SetUnixFileModeNoFollow(string path, UnixFileMode mode);
+}
+
 public sealed record FileMutationExpectation(bool Exists, string? Sha256Hash)
 {
     public static FileMutationExpectation Existing(string sha256Hash) => new(true, sha256Hash);

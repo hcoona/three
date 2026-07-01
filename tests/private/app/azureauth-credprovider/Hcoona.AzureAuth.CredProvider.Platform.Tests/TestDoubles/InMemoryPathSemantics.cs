@@ -4,4 +4,5 @@ public enum InMemoryPathSemantics
 {
     Host,
     Posix,
+    Windows,
 }

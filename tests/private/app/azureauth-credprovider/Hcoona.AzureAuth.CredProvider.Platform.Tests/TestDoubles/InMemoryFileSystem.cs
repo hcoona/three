@@ -10,34 +10,48 @@ public sealed class InMemoryFileSystem
         IFileSystemMutationLock,
         IFileSystemReparsePointSafety,
         IFileSystemNoFollowEnumeration,
-        IFileSystemFileLength
+        IFileSystemFileLength,
+        IFakeAdapterScaffoldMaterializationFileSystem
 {
     private const UnixFileMode OwnerOnlyFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
     private const UnixFileMode OwnerOnlyDirectoryMode =
         UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
 
     private readonly InMemoryPathSemantics _pathSemantics;
+    private readonly StringComparer _pathComparer;
     private readonly string _rootPath;
-    private readonly Dictionary<string, byte[]> _files = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, FileSystemEntryIdentity> _identities = new(
-        StringComparer.Ordinal
-    );
-    private readonly Dictionary<string, UnixFileMode> _unixFileModes = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _symbolicLinks = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _reparsePoints = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, FileSystemOwner> _owners = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _directories = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, byte[]> _files;
+    private readonly Dictionary<string, FileSystemEntryIdentity> _identities;
+    private readonly Dictionary<string, UnixFileMode> _unixFileModes;
+    private readonly Dictionary<string, string> _symbolicLinks;
+    private readonly HashSet<string> _reparsePoints;
+    private readonly Dictionary<string, FileSystemOwner> _owners;
+    private readonly HashSet<string> _directories;
     private readonly Queue<Exception> _failures = [];
-    private readonly HashSet<string> _heldMutationLocks = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _heldMutationLocks;
     private long _nextIdentity = 1;
 
     public InMemoryFileSystem(InMemoryPathSemantics pathSemantics = InMemoryPathSemantics.Host)
     {
         _pathSemantics = pathSemantics;
+        _pathComparer =
+            pathSemantics == InMemoryPathSemantics.Windows
+                ? StringComparer.OrdinalIgnoreCase
+                : StringComparer.Ordinal;
+        _files = new Dictionary<string, byte[]>(_pathComparer);
+        _identities = new Dictionary<string, FileSystemEntryIdentity>(_pathComparer);
+        _unixFileModes = new Dictionary<string, UnixFileMode>(_pathComparer);
+        _symbolicLinks = new Dictionary<string, string>(_pathComparer);
+        _reparsePoints = new HashSet<string>(_pathComparer);
+        _owners = new Dictionary<string, FileSystemOwner>(_pathComparer);
+        _directories = new HashSet<string>(_pathComparer);
+        _heldMutationLocks = new HashSet<string>(_pathComparer);
         _rootPath =
             pathSemantics == InMemoryPathSemantics.Posix
                 ? "/"
-                : NormalizeHostFullPath(Directory.GetCurrentDirectory());
+                : pathSemantics == InMemoryPathSemantics.Windows
+                    ? @"C:\"
+                    : NormalizeHostFullPath(Directory.GetCurrentDirectory());
         _directories.Add(_rootPath);
         _identities[_rootPath] = CreateIdentity();
         _owners[_rootPath] = CurrentOwner;
@@ -47,11 +61,13 @@ public sealed class InMemoryFileSystem
 
     public bool SupportsConditionalFileMutations { get; set; } = true;
 
+    public UnixFileMode? DefaultCreateDirectoryMode { get; set; }
+
     public IReadOnlyDictionary<string, string> Files =>
         _files.ToDictionary(
             pair => pair.Key,
             pair => Encoding.UTF8.GetString(pair.Value),
-            StringComparer.Ordinal
+            _pathComparer
         );
 
     public IReadOnlySet<string> Directories => _directories;
@@ -163,7 +179,9 @@ public sealed class InMemoryFileSystem
         var isFullyQualified =
             _pathSemantics == InMemoryPathSemantics.Posix
                 ? path[0] == '/'
-                : Path.IsPathFullyQualified(path);
+                : _pathSemantics == InMemoryPathSemantics.Windows
+                    ? IsWindowsPathFullyQualified(path)
+                    : Path.IsPathFullyQualified(path);
         Record(nameof(IsPathFullyQualified), NormalizePath(path), isFullyQualified.ToString());
         ThrowIfFailureQueued();
 
@@ -214,6 +232,16 @@ public sealed class InMemoryFileSystem
         return CaptureFileIntegritySnapshotWithoutRecording(normalizedPath);
     }
 
+    public FileIntegritySnapshot CaptureFileIntegritySnapshotWithoutTrustedParents(string path)
+    {
+        ThrowIfPathContainsCurrentOrParentDirectoryComponent(path);
+        var normalizedPath = NormalizePath(path);
+        Record(nameof(CaptureFileIntegritySnapshotWithoutTrustedParents), normalizedPath);
+        ThrowIfFailureQueued();
+
+        return CaptureFileIntegritySnapshotWithoutTrustedParentsWithoutRecording(normalizedPath);
+    }
+
     public bool FileMatchesIntegritySnapshot(string path, FileIntegritySnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -230,15 +258,12 @@ public sealed class InMemoryFileSystem
         try
         {
             var currentSnapshot = CaptureFileIntegritySnapshotWithoutRecording(normalizedPath);
-            return string.Equals(
-                    currentSnapshot.FullPath,
-                    snapshot.FullPath,
-                    StringComparison.Ordinal
-                )
+            return PathEquals(currentSnapshot.FullPath, snapshot.FullPath)
                 && currentSnapshot.Identity == snapshot.Identity
                 && currentSnapshot.Owner == snapshot.Owner
                 && currentSnapshot.UnixFileMode == snapshot.UnixFileMode
-                && currentSnapshot.TrustedParentDirectories.SequenceEqual(
+                && TrustedParentDirectoriesMatchSnapshot(
+                    currentSnapshot.TrustedParentDirectories,
                     snapshot.TrustedParentDirectories
                 )
                 && currentSnapshot.Sha256Hash.SequenceEqual(snapshot.Sha256Hash);
@@ -373,6 +398,54 @@ public sealed class InMemoryFileSystem
         );
     }
 
+    public FileIntegritySnapshot AtomicWriteAllTextAndCaptureSnapshotNoFollow(
+        string path,
+        string contents,
+        Encoding? encoding = null,
+        AtomicWriteOptions options = AtomicWriteOptions.None,
+        FileMutationExpectation? expectation = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(contents);
+
+        var normalizedPath = NormalizePath(path);
+        Record(nameof(AtomicWriteAllText), normalizedPath, contents);
+        byte[] encodedContents = (encoding ?? Encoding.UTF8).GetBytes(contents);
+        AtomicWriteAllBytesCore(
+            normalizedPath,
+            encodedContents,
+            options,
+            expectation
+        );
+        FileSystemEntryIdentity writtenFileIdentity = _identities[normalizedPath];
+        FileSystemOwner writtenFileOwner = _owners.TryGetValue(
+            normalizedPath,
+            out FileSystemOwner? fileOwner
+        )
+            ? fileOwner
+            : CurrentOwner;
+        UnixFileMode writtenFileMode = GetUnixFileModeWithoutRecording(normalizedPath);
+        FileIntegritySnapshot writtenSnapshot = CreateNoFollowFileIntegritySnapshot(
+            normalizedPath,
+            writtenFileIdentity,
+            writtenFileOwner,
+            writtenFileMode,
+            encodedContents
+        );
+        try
+        {
+            Record(nameof(AtomicWriteAllTextAndCaptureSnapshotNoFollow), normalizedPath, contents);
+            ThrowIfFailureQueued();
+        }
+        catch
+        {
+            TryDeleteFileIfMatchesNoFollowSnapshotWithoutRecording(normalizedPath, writtenSnapshot);
+            throw;
+        }
+
+        return writtenSnapshot;
+    }
+
     public void AtomicWriteAllBytes(
         string path,
         byte[] contents,
@@ -449,6 +522,17 @@ public sealed class InMemoryFileSystem
         _unixFileModes[resolvedPath] = mode;
     }
 
+    public void SetUnixFileModeNoFollow(string path, UnixFileMode mode)
+    {
+        var normalizedPath = NormalizePath(path);
+        Record(nameof(SetUnixFileModeNoFollow), normalizedPath, mode.ToString());
+        ThrowIfFailureQueued();
+        ValidateNoFollowMutationPath(normalizedPath);
+        EnsureFileOrDirectoryExists(normalizedPath);
+
+        _unixFileModes[normalizedPath] = mode;
+    }
+
     public void CreateDirectory(string path)
     {
         var normalizedPath = NormalizePath(path);
@@ -458,6 +542,39 @@ public sealed class InMemoryFileSystem
 
         AddDirectoryWithParents(resolvedPath);
         _owners.TryAdd(resolvedPath, CurrentOwner);
+    }
+
+    public void CreateDirectoryNoFollow(string path)
+    {
+        var normalizedPath = NormalizePath(path);
+        Record(nameof(CreateDirectoryNoFollow), normalizedPath);
+        ThrowIfFailureQueued();
+        ValidateNoFollowMutationPath(normalizedPath);
+
+        AddDirectoryWithParents(normalizedPath);
+        _owners.TryAdd(normalizedPath, CurrentOwner);
+    }
+
+    public void DeleteFileIfMatchesSnapshotNoFollow(string path, FileIntegritySnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ThrowIfPathContainsCurrentOrParentDirectoryComponent(path);
+
+        var normalizedPath = NormalizePath(path);
+        Record(nameof(DeleteFile), normalizedPath);
+        ThrowIfFailureQueued();
+        ValidateNoFollowMutationPath(normalizedPath);
+
+        FileIntegritySnapshot currentSnapshot =
+            CaptureFileIntegritySnapshotNoFollowWithoutRecording(normalizedPath);
+        if (!FileIntegritySnapshotsMatch(currentSnapshot, snapshot))
+        {
+            throw new InvalidOperationException(
+                "Configuration conflict: mutation target snapshot does not match."
+            );
+        }
+
+        DeleteFileWithoutRecording(normalizedPath);
     }
 
     public void DeleteFile(string path, FileMutationExpectation? expectation = null)
@@ -484,10 +601,7 @@ public sealed class InMemoryFileSystem
             );
         }
 
-        _files.Remove(resolvedPath);
-        _identities.Remove(resolvedPath);
-        _unixFileModes.Remove(resolvedPath);
-        _owners.Remove(resolvedPath);
+        DeleteFileWithoutRecording(resolvedPath);
     }
 
     IDisposable IFileSystemMutationLock.AcquireMutationLock(
@@ -597,6 +711,18 @@ public sealed class InMemoryFileSystem
             }
 
             parentPath = GetParentPath(parentPath);
+        }
+    }
+
+    private void ValidateNoFollowMutationPath(string normalizedPath)
+    {
+        ValidateParentDirectoryChainHasNoSymbolicLinks(normalizedPath);
+        if (_symbolicLinks.ContainsKey(normalizedPath) || _reparsePoints.Contains(normalizedPath))
+        {
+            throw new NotSupportedException(
+                "Fake adapter scaffold materialization rejects symbolic-link or reparse-point "
+                    + "placement paths."
+            );
         }
     }
 
@@ -720,7 +846,7 @@ public sealed class InMemoryFileSystem
         EnsureDirectoryExists(resolvedDirectoryPath);
 
         var directories = _directories
-            .Where(directory => !string.Equals(directory, _rootPath, StringComparison.Ordinal))
+            .Where(directory => !PathEquals(directory, _rootPath))
             .Concat(
                 _symbolicLinks
                     .Where(link => _directories.Contains(ResolveSymbolicLinkPath(link.Key)))
@@ -757,12 +883,10 @@ public sealed class InMemoryFileSystem
 
         return _files
             .Keys.Concat(
-                _directories.Where(directory =>
-                    !string.Equals(directory, _rootPath, StringComparison.Ordinal)
-                )
+                _directories.Where(directory => !PathEquals(directory, _rootPath))
             )
             .Concat(_symbolicLinks.Keys)
-            .Distinct(StringComparer.Ordinal)
+            .Distinct(_pathComparer)
             .Where(entry =>
                 IsInEnumerationScope(resolvedDirectoryPath, entry, searchOption)
                 && !HasNoFollowEnumerationBoundaryAncestor(resolvedDirectoryPath, entry)
@@ -778,7 +902,7 @@ public sealed class InMemoryFileSystem
         string parentPath = GetParentPath(entryPath);
         while (
             parentPath.Length > 0
-            && !string.Equals(parentPath, rootPath, StringComparison.Ordinal)
+            && !PathEquals(parentPath, rootPath)
         )
         {
             if (_symbolicLinks.ContainsKey(parentPath) || _reparsePoints.Contains(parentPath))
@@ -798,7 +922,9 @@ public sealed class InMemoryFileSystem
 
         return _pathSemantics == InMemoryPathSemantics.Posix
             ? NormalizePosixPath(path)
-            : NormalizeHostFullPath(Path.GetFullPath(path));
+            : _pathSemantics == InMemoryPathSemantics.Windows
+                ? NormalizeWindowsPath(path)
+                : NormalizeHostFullPath(Path.GetFullPath(path));
     }
 
     private void ThrowIfPathContainsCurrentOrParentDirectoryComponent(string path)
@@ -848,7 +974,10 @@ public sealed class InMemoryFileSystem
             return true;
         }
 
-        if (_pathSemantics == InMemoryPathSemantics.Posix || !OperatingSystem.IsWindows())
+        if (
+            _pathSemantics == InMemoryPathSemantics.Posix
+            || (_pathSemantics == InMemoryPathSemantics.Host && !OperatingSystem.IsWindows())
+        )
         {
             return false;
         }
@@ -906,6 +1035,189 @@ public sealed class InMemoryFileSystem
         return segments.Count == 0 ? "/" : "/" + string.Join('/', segments);
     }
 
+    private string NormalizeWindowsPath(string path)
+    {
+        string canonicalPath = path.Replace('/', '\\');
+        if (HasUnsupportedWindowsNonDriveRoot(canonicalPath))
+        {
+            throw new NotSupportedException(
+                "In-memory Windows path semantics support only drive-qualified paths and reject "
+                    + "UNC or other unsupported non-drive-qualified roots."
+            );
+        }
+
+        if (HasUnsupportedWindowsDriveRelativeRoot(canonicalPath))
+        {
+            throw new NotSupportedException(
+                "In-memory Windows path semantics support only fully qualified drive-rooted "
+                    + "absolute paths and reject drive-relative or bare-drive roots."
+            );
+        }
+
+        string root;
+        string remainder;
+        if (TryGetWindowsDrivePath(canonicalPath, out char driveLetter, out int rootLength))
+        {
+            root = NormalizeWindowsRoot(driveLetter);
+            remainder =
+                canonicalPath.Length > rootLength
+                    ? canonicalPath[rootLength..]
+                    : string.Empty;
+        }
+        else
+        {
+            root = _rootPath;
+            remainder =
+                canonicalPath.Length > 0 && canonicalPath[0] == '\\'
+                    ? canonicalPath.TrimStart('\\')
+                    : canonicalPath;
+        }
+
+        var segments = new List<string>();
+        foreach (var segment in remainder.Split('\\'))
+        {
+            if (segment.Length == 0 || segment == ".")
+            {
+                continue;
+            }
+
+            if (segment == "..")
+            {
+                if (segments.Count > 0)
+                {
+                    segments.RemoveAt(segments.Count - 1);
+                }
+
+                continue;
+            }
+
+            segments.Add(segment);
+        }
+
+        return segments.Count == 0 ? root : root + string.Join('\\', segments);
+    }
+
+    private bool PathEquals(string left, string right)
+    {
+        return string.Equals(left, right, GetPathComparison());
+    }
+
+    private bool PathStartsWith(string path, string prefix)
+    {
+        return path.StartsWith(prefix, GetPathComparison());
+    }
+
+    private StringComparison GetPathComparison()
+    {
+        return _pathSemantics == InMemoryPathSemantics.Windows
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+    }
+
+    private bool TrustedParentDirectoriesMatchSnapshot(
+        IReadOnlyList<TrustedDirectorySnapshot> currentDirectories,
+        IReadOnlyList<TrustedDirectorySnapshot> expectedDirectories
+    )
+    {
+        if (currentDirectories.Count != expectedDirectories.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < currentDirectories.Count; index++)
+        {
+            var currentDirectory = currentDirectories[index];
+            var expectedDirectory = expectedDirectories[index];
+            if (
+                !PathEquals(currentDirectory.FullPath, expectedDirectory.FullPath)
+                || currentDirectory.Identity != expectedDirectory.Identity
+                || currentDirectory.Owner != expectedDirectory.Owner
+                || currentDirectory.UnixFileMode != expectedDirectory.UnixFileMode
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool FileIntegritySnapshotsMatch(
+        FileIntegritySnapshot currentSnapshot,
+        FileIntegritySnapshot expectedSnapshot
+    )
+    {
+        return PathEquals(currentSnapshot.FullPath, expectedSnapshot.FullPath)
+            && currentSnapshot.Identity == expectedSnapshot.Identity
+            && currentSnapshot.Owner == expectedSnapshot.Owner
+            && currentSnapshot.UnixFileMode == expectedSnapshot.UnixFileMode
+            && TrustedParentDirectoriesMatchSnapshot(
+                currentSnapshot.TrustedParentDirectories,
+                expectedSnapshot.TrustedParentDirectories
+            )
+            && currentSnapshot.Sha256Hash.SequenceEqual(expectedSnapshot.Sha256Hash);
+    }
+
+    private static bool IsWindowsPathFullyQualified(string path)
+    {
+        return TryGetWindowsDriveRoot(path, out _);
+    }
+
+    private static bool TryGetWindowsDriveRoot(string path, out string root)
+    {
+        string canonicalPath = path.Replace('/', '\\');
+        if (
+            canonicalPath.Length >= 3
+            && IsWindowsDriveLetter(canonicalPath[0])
+            && canonicalPath[1] == ':'
+            && canonicalPath[2] == '\\'
+        )
+        {
+            root = NormalizeWindowsRoot(canonicalPath[0]);
+            return true;
+        }
+
+        root = string.Empty;
+        return false;
+    }
+
+    private static bool TryGetWindowsDrivePath(
+        string path,
+        out char driveLetter,
+        out int rootLength
+    )
+    {
+        if (path.Length >= 2 && IsWindowsDriveLetter(path[0]) && path[1] == ':')
+        {
+            driveLetter = char.ToUpperInvariant(path[0]);
+            rootLength = path.Length >= 3 && path[2] == '\\' ? 3 : 2;
+            return true;
+        }
+
+        driveLetter = default;
+        rootLength = 0;
+        return false;
+    }
+
+    private static string NormalizeWindowsRoot(char driveLetter)
+    {
+        return string.Concat(char.ToUpperInvariant(driveLetter), ":\\");
+    }
+
+    private static bool HasUnsupportedWindowsNonDriveRoot(string canonicalPath) =>
+        canonicalPath.Length > 0 && canonicalPath[0] == '\\';
+
+    private static bool HasUnsupportedWindowsDriveRelativeRoot(string canonicalPath) =>
+        canonicalPath.Length >= 2
+        && IsWindowsDriveLetter(canonicalPath[0])
+        && canonicalPath[1] == ':'
+        && (canonicalPath.Length == 2 || canonicalPath[2] != '\\');
+
+    private static bool IsWindowsDriveLetter(char value)
+    {
+        return value is >= 'A' and <= 'Z' or >= 'a' and <= 'z';
+    }
+
     private string GetParentPath(string path)
     {
         if (_pathSemantics == InMemoryPathSemantics.Posix)
@@ -919,6 +1231,22 @@ public sealed class InMemoryFileSystem
             return separatorIndex <= 0 ? "/" : path[..separatorIndex];
         }
 
+        if (_pathSemantics == InMemoryPathSemantics.Windows)
+        {
+            if (TryGetWindowsDriveRoot(path, out string root))
+            {
+                if (PathEquals(path, root))
+                {
+                    return string.Empty;
+                }
+
+                int separatorIndex = path.LastIndexOf('\\');
+                return separatorIndex <= 2 ? root : path[..separatorIndex];
+            }
+
+            return _rootPath;
+        }
+
         var parentPath = Path.GetDirectoryName(path);
         return string.IsNullOrEmpty(parentPath) ? string.Empty : NormalizeHostFullPath(parentPath);
     }
@@ -927,11 +1255,11 @@ public sealed class InMemoryFileSystem
     {
         return parentPath.Length == 0
                 ? candidate.Length > 0
-                    && !string.Equals(candidate, parentPath, StringComparison.Ordinal)
+                    && !PathEquals(candidate, parentPath)
             : IsRootPath(parentPath)
                 ? candidate.Length > parentPath.Length
-                    && candidate.StartsWith(parentPath, StringComparison.Ordinal)
-            : candidate.StartsWith(parentPath + GetDirectorySeparator(), StringComparison.Ordinal);
+                    && PathStartsWith(candidate, parentPath)
+            : PathStartsWith(candidate, parentPath + GetDirectorySeparator());
     }
 
     private bool IsRootPath(string path)
@@ -939,6 +1267,11 @@ public sealed class InMemoryFileSystem
         if (_pathSemantics == InMemoryPathSemantics.Posix)
         {
             return path == "/";
+        }
+
+        if (_pathSemantics == InMemoryPathSemantics.Windows)
+        {
+            return TryGetWindowsDriveRoot(path, out string root) && PathEquals(path, root);
         }
 
         var rootPath = Path.GetPathRoot(path);
@@ -954,7 +1287,7 @@ public sealed class InMemoryFileSystem
         }
 
         return searchOption == SearchOption.AllDirectories
-            || string.Equals(GetParentPath(candidate), directoryPath, StringComparison.Ordinal);
+            || PathEquals(GetParentPath(candidate), directoryPath);
     }
 
     private bool MatchesSearchPattern(string path, string searchPattern)
@@ -964,7 +1297,7 @@ public sealed class InMemoryFileSystem
         return FileSystemName.MatchesSimpleExpression(
             searchPattern,
             GetFileName(path),
-            ignoreCase: false
+            ignoreCase: _pathSemantics == InMemoryPathSemantics.Windows
         );
     }
 
@@ -979,7 +1312,7 @@ public sealed class InMemoryFileSystem
 
     private string ResolveSymbolicLinkPath(string path, bool followFinalComponent = true)
     {
-        var visitedPaths = new HashSet<string>(StringComparer.Ordinal);
+        var visitedPaths = new HashSet<string>(_pathComparer);
         var currentPath = path;
 
         while (
@@ -1011,15 +1344,12 @@ public sealed class InMemoryFileSystem
     {
         foreach (var candidate in _symbolicLinks.Keys.OrderBy(candidate => candidate.Length))
         {
-            if (!followFinalComponent && string.Equals(candidate, path, StringComparison.Ordinal))
+            if (!followFinalComponent && PathEquals(candidate, path))
             {
                 continue;
             }
 
-            if (
-                string.Equals(candidate, path, StringComparison.Ordinal)
-                || IsChildPath(candidate, path)
-            )
+            if (PathEquals(candidate, path) || IsChildPath(candidate, path))
             {
                 linkPath = candidate;
                 targetPath = _symbolicLinks[candidate];
@@ -1041,7 +1371,9 @@ public sealed class InMemoryFileSystem
 
         return _pathSemantics == InMemoryPathSemantics.Posix
             ? NormalizePosixPath(targetPath + suffix)
-            : NormalizeHostFullPath(Path.GetFullPath(targetPath + suffix));
+            : _pathSemantics == InMemoryPathSemantics.Windows
+                ? NormalizeWindowsPath(targetPath + suffix)
+                : NormalizeHostFullPath(Path.GetFullPath(targetPath + suffix));
     }
 
     private string ProjectResolvedPath(
@@ -1050,7 +1382,7 @@ public sealed class InMemoryFileSystem
         string originalCandidatePath
     )
     {
-        if (string.Equals(requestedDirectoryPath, resolvedDirectoryPath, StringComparison.Ordinal))
+        if (PathEquals(requestedDirectoryPath, resolvedDirectoryPath))
         {
             return originalCandidatePath;
         }
@@ -1065,7 +1397,7 @@ public sealed class InMemoryFileSystem
 
     private bool IsRootDirectory(string path)
     {
-        return string.Equals(path, _rootPath, StringComparison.Ordinal);
+        return PathEquals(path, _rootPath);
     }
 
     private UnixFileMode GetUnixFileModeWithoutRecording(string normalizedPath)
@@ -1075,6 +1407,61 @@ public sealed class InMemoryFileSystem
 
     private FileIntegritySnapshot CaptureFileIntegritySnapshotWithoutRecording(
         string normalizedPath
+    ) => CaptureFileIntegritySnapshotCoreWithoutRecording(
+        normalizedPath,
+        captureTrustedParentDirectories: true
+    );
+
+    private FileIntegritySnapshot CaptureFileIntegritySnapshotWithoutTrustedParentsWithoutRecording(
+        string normalizedPath
+    ) => CaptureFileIntegritySnapshotCoreWithoutRecording(
+        normalizedPath,
+        captureTrustedParentDirectories: false
+    );
+
+    private FileIntegritySnapshot CaptureFileIntegritySnapshotNoFollowWithoutRecording(
+        string normalizedPath
+    )
+    {
+        ValidateNoFollowMutationPath(normalizedPath);
+        if (_directories.Contains(normalizedPath))
+        {
+            throw new IOException(
+                $"Cannot capture an in-memory no-follow file snapshot for '{normalizedPath}' "
+                    + "because it is not a regular file."
+            );
+        }
+
+        if (!_files.TryGetValue(normalizedPath, out var contents))
+        {
+            throw new FileNotFoundException("The in-memory file does not exist.", normalizedPath);
+        }
+
+        var owner =
+            _owners.TryGetValue(normalizedPath, out var fileOwner)
+                ? fileOwner
+                : CurrentOwner;
+        return CreateNoFollowFileIntegritySnapshot(
+            normalizedPath,
+            _identities[normalizedPath],
+            owner,
+            GetUnixFileModeWithoutRecording(normalizedPath),
+            contents
+        );
+    }
+
+    private static FileIntegritySnapshot CreateNoFollowFileIntegritySnapshot(
+        string normalizedPath,
+        FileSystemEntryIdentity identity,
+        FileSystemOwner owner,
+        UnixFileMode unixFileMode,
+        byte[] contents
+    ) =>
+        new(normalizedPath, identity, owner, unixFileMode, SHA256.HashData(contents), []);
+
+    private FileIntegritySnapshot CaptureFileIntegritySnapshotCoreWithoutRecording(
+        string normalizedPath,
+        bool captureTrustedParentDirectories
     )
     {
         ThrowIfSymbolicLinkParentComponent(normalizedPath);
@@ -1101,7 +1488,9 @@ public sealed class InMemoryFileSystem
             owner,
             unixFileMode,
             SHA256.HashData(contents),
-            CaptureTrustedParentDirectorySnapshotsWithoutRecording(resolvedPath)
+            captureTrustedParentDirectories
+                ? CaptureTrustedParentDirectorySnapshotsWithoutRecording(resolvedPath)
+                : []
         );
     }
 
@@ -1228,12 +1617,18 @@ public sealed class InMemoryFileSystem
     {
         return _pathSemantics == InMemoryPathSemantics.Posix
             ? value == '/'
-            : value == Path.DirectorySeparatorChar || value == Path.AltDirectorySeparatorChar;
+            : _pathSemantics == InMemoryPathSemantics.Windows
+                ? value is '\\' or '/'
+                : value == Path.DirectorySeparatorChar || value == Path.AltDirectorySeparatorChar;
     }
 
     private char GetDirectorySeparator()
     {
-        return _pathSemantics == InMemoryPathSemantics.Posix ? '/' : Path.DirectorySeparatorChar;
+        return _pathSemantics == InMemoryPathSemantics.Posix
+            ? '/'
+            : _pathSemantics == InMemoryPathSemantics.Windows
+                ? '\\'
+                : Path.DirectorySeparatorChar;
     }
 
     private string GetFileName(string path)
@@ -1241,6 +1636,12 @@ public sealed class InMemoryFileSystem
         if (_pathSemantics == InMemoryPathSemantics.Posix)
         {
             var separatorIndex = path.LastIndexOf('/');
+            return separatorIndex < 0 ? path : path[(separatorIndex + 1)..];
+        }
+
+        if (_pathSemantics == InMemoryPathSemantics.Windows)
+        {
+            int separatorIndex = path.LastIndexOf('\\');
             return separatorIndex < 0 ? path : path[(separatorIndex + 1)..];
         }
 
@@ -1260,6 +1661,45 @@ public sealed class InMemoryFileSystem
         {
             throw _failures.Dequeue();
         }
+    }
+
+    private void DeleteFileWithoutRecording(string path)
+    {
+        _files.Remove(path);
+        _identities.Remove(path);
+        _unixFileModes.Remove(path);
+        _owners.Remove(path);
+    }
+
+    private bool TryDeleteFileIfMatchesNoFollowSnapshotWithoutRecording(
+        string normalizedPath,
+        FileIntegritySnapshot expectedSnapshot
+    )
+    {
+        try
+        {
+            FileIntegritySnapshot currentSnapshot =
+                CaptureFileIntegritySnapshotNoFollowWithoutRecording(normalizedPath);
+            if (!FileIntegritySnapshotsMatch(currentSnapshot, expectedSnapshot))
+            {
+                return false;
+            }
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+        catch (NotSupportedException)
+        {
+            return false;
+        }
+
+        DeleteFileWithoutRecording(normalizedPath);
+        return true;
     }
 
     private void EnsureParentDirectoryExists(string path)
@@ -1325,7 +1765,7 @@ public sealed class InMemoryFileSystem
         {
             _identities.TryAdd(path, CreateIdentity());
             _owners.TryAdd(path, CurrentOwner);
-            if (createdDirectoryMode is { } mode)
+            if ((createdDirectoryMode ?? DefaultCreateDirectoryMode) is { } mode)
             {
                 _unixFileModes[path] = mode;
             }
