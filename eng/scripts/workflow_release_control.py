@@ -25963,11 +25963,27 @@ def _ci_dotnet_validation_commands(
 ) -> list[Json]:
     target = root if root != "." else "dirs.proj"
     commands: list[Json] = []
+    restores_before_build = any(
+        capability in capabilities for capability in ("build", "type-check")
+    )
+    if restores_before_build:
+        commands.append(
+            _ci_command(
+                "dotnet restore",
+                ["dotnet", "restore", target],
+                capability="restore",
+            )
+        )
     if "build" in capabilities:
         commands.append(
             _ci_command(
                 "dotnet build",
-                ["dotnet", "build", target],
+                [
+                    "dotnet",
+                    "build",
+                    target,
+                    "--no-restore",
+                ],
                 capability="build",
             )
         )
@@ -25990,7 +26006,12 @@ def _ci_dotnet_validation_commands(
         commands.append(
             _ci_command(
                 "dotnet type check",
-                ["dotnet", "build", target],
+                [
+                    "dotnet",
+                    "build",
+                    target,
+                    "--no-restore",
+                ],
                 capability="type-check",
             )
         )

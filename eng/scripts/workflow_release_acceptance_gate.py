@@ -261,6 +261,12 @@ MANDATORY_TEST_NODEIDS = (
     "tests/test_workflow_release_control.py::"
     "test_ci_validation_orchestrator_uploads_ecosystem_only_evidence",
     "tests/test_workflow_release_control.py::"
+    "test_acceptance_gate_pins_dotnet_restore_command_shape_regression",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_dotnet_restore_precedes_no_restore_builds",
+    "tests/test_workflow_release_control.py::"
+    "test_ci_validation_command_runner_keeps_binlog_on_restored_dotnet_build",
+    "tests/test_workflow_release_control.py::"
     "test_acceptance_gate_pins_r36_dotnet_dist_boundary_regression",
     "tests/test_workflow_release_control.py::"
     "test_acceptance_gate_pins_r37_github_release_skip_satisfied_regressions",

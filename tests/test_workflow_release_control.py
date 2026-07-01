@@ -3494,6 +3494,26 @@ def test_ci_acceptance_matrix_preserves_no_publish_boundaries() -> None:
         ), row["id"]
 
 
+def test_acceptance_gate_pins_dotnet_restore_command_shape_regression() -> None:
+    """Focused release acceptance must pin dotnet restore command shape."""
+    required_nodeids = {
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_dotnet_restore_precedes_no_restore_builds",
+        "tests/test_workflow_release_control.py::"
+        "test_ci_validation_command_runner_keeps_binlog_on_restored_dotnet_build",
+    }
+    matrix_nodeids = set().union(
+        _matrix_test_nodeids(_acceptance_matrix()),
+        _matrix_test_nodeids(_ci_acceptance_matrix()),
+    )
+
+    assert required_nodeids <= set(acceptance_gate.MANDATORY_TEST_NODEIDS)
+    assert required_nodeids.isdisjoint(matrix_nodeids), (
+        "gate-only pins must not be duplicated by acceptance matrices",
+        sorted(required_nodeids & matrix_nodeids),
+    )
+
+
 def test_acceptance_matrix_test_nodeids_are_collected_by_gate() -> None:
     """HK acceptance gate must execute every matrix test evidence nodeid."""
     matrix = _acceptance_matrix()
@@ -31904,6 +31924,112 @@ def test_ci_validation_command_runner_captures_windows_dotnet_type_check_binlog(
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def test_ci_validation_command_runner_keeps_binlog_on_restored_dotnet_build(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Generated restore + build keeps binlog capture on build only."""
+    scratch = SCRATCH / "ci-validation-command-runner-restored-dotnet-binlog"
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        captured_argvs: list[list[str]] = []
+
+        def fake_run(
+            argv: Sequence[str],
+            *,
+            cwd: Path,
+            check: bool,
+        ) -> subprocess.CompletedProcess[str]:
+            assert cwd == scratch
+            assert check is False
+            argv_list = list(argv)
+            captured_argvs.append(argv_list)
+            binlog_args = [
+                item for item in argv_list if item.startswith("/bl:")
+            ]
+            if argv_list[:2] == ["dotnet", "restore"]:
+                assert not binlog_args
+            else:
+                assert argv_list[:2] == ["dotnet", "build"]
+                assert "--no-restore" in argv_list
+                assert len(binlog_args) == 1
+                (scratch / binlog_args[0].removeprefix("/bl:")).write_bytes(
+                    b"build binlog",
+                )
+            return subprocess.CompletedProcess(argv, 0)
+
+        monkeypatch.setattr(control.subprocess, "run", fake_run)
+        result_path = scratch / "validation-result.json"
+        output_path = scratch / "outputs.txt"
+        matrix = {
+            "work-group-id": "wg-dotnet",
+            "kind": "ecosystem-gate",
+            "runner-family": "windows",
+            "ecosystem": "dotnet",
+            "validation-commands": control._ci_dotnet_validation_commands(
+                "src/public/lib/example",
+                ["build"],
+            ),
+        }
+
+        assert (
+            control._cmd_run_ci_validation_commands(
+                argparse.Namespace(
+                    matrix_work_group_json=json.dumps(matrix),
+                    plan="",
+                    assignments="",
+                    changed_files_snapshot="",
+                    fact_snapshot="",
+                    observed_artifacts_dir="",
+                    observed_commit_sha=SHA_B,
+                    repo_root=str(scratch),
+                    result_out=str(result_path),
+                    github_output=str(output_path),
+                )
+            )
+            == 0
+        )
+
+        assert len(captured_argvs) == 2
+        assert captured_argvs[0] == [
+            "dotnet",
+            "restore",
+            "src/public/lib/example",
+        ]
+        assert captured_argvs[1][:4] == [
+            "dotnet",
+            "build",
+            "src/public/lib/example",
+            "--no-restore",
+        ]
+        assert captured_argvs[1][4] == (
+            "/bl:.three-ci-validation/work/ecosystem-gate-binlogs/"
+            "wg-dotnet/command-001-dotnet-build.binlog"
+        )
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        restore_command, build_command = result["commands"]
+        assert restore_command["capability"] == "restore"
+        assert "binlog-path" not in restore_command
+        assert "binlog-exists" not in restore_command
+        assert "uploaded-evidence-files" not in restore_command
+        assert build_command["capability"] == "build"
+        assert build_command["binlog-path"] == (
+            ".three-ci-validation/work/ecosystem-gate-binlogs/"
+            "wg-dotnet/command-001-dotnet-build.binlog"
+        )
+        assert build_command["binlog-exists"] is True
+        assert build_command["uploaded-evidence-files"] == [
+            "validation-result-ecosystem-evidence/"
+            "dotnet-build-command-001.binlog",
+        ]
+        assert (
+            scratch / build_command["binlog-uploaded-evidence-path"]
+        ).read_bytes() == b"build binlog"
+        assert _github_outputs(output_path)["validation_outcome"] == "success"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def test_ci_validation_command_runner_ignores_stale_windows_dotnet_binlog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -32964,9 +33090,15 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
         metadata_tooling_group,
     )
 
-    assert ["dotnet", "build", "src/public/lib/CircularList"] in [
+    assert ["dotnet", "restore", "src/public/lib/CircularList"] in [
         command["argv"] for command in dotnet_commands
     ]
+    assert [
+        "dotnet",
+        "build",
+        "src/public/lib/CircularList",
+        "--no-restore",
+    ] in [command["argv"] for command in dotnet_commands]
     assert [
         "dotnet",
         "test",
@@ -32999,6 +33131,7 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
             "dotnet",
             "build",
             "src/public/lib/CircularList",
+            "--no-restore",
         ]
         for command in dotnet_commands
     )
@@ -33008,10 +33141,13 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
         "src/public/lib/CircularList",
         "--verify-no-changes",
     ] in [command["argv"] for command in dotnet_commands]
-    assert ["dotnet", "build", "dirs.proj"] not in [
+    assert ["dotnet", "build", "dirs.proj", "--no-restore"] not in [
         command["argv"] for command in dotnet_commands
     ]
-    assert ["dotnet", "build", "dirs.proj"] in [
+    assert ["dotnet", "restore", "dirs.proj"] in [
+        command["argv"] for command in fallback_commands
+    ]
+    assert ["dotnet", "build", "dirs.proj", "--no-restore"] in [
         command["argv"] for command in fallback_commands
     ]
     assert [
@@ -33104,6 +33240,96 @@ def test_ci_validation_command_mapping_uses_required_no_publish_checks() -> (
             "capability": None,
             "builtin": "release-shaped-artifact",
         }
+    ]
+
+
+def test_ci_validation_dotnet_restore_precedes_no_restore_builds() -> None:
+    """Dotnet ecosystem commands restore once before covered build commands."""
+    build_only = control._ci_dotnet_validation_commands(
+        "src/public/lib/CircularList",
+        ["build"],
+    )
+    type_check_only = control._ci_dotnet_validation_commands(
+        "src/public/lib/CircularList",
+        ["type-check"],
+    )
+    build_and_type_check = control._ci_dotnet_validation_commands(
+        "src/public/lib/CircularList",
+        ["build", "type-check"],
+    )
+    build_and_test = control._ci_dotnet_validation_commands(
+        "src/public/lib/CircularList",
+        ["build", "test"],
+    )
+    test_only = control._ci_dotnet_validation_commands(
+        "src/public/lib/CircularList",
+        ["test"],
+    )
+
+    assert [command["capability"] for command in build_only] == [
+        "restore",
+        "build",
+    ]
+    assert [command["argv"] for command in build_only] == [
+        ["dotnet", "restore", "src/public/lib/CircularList"],
+        [
+            "dotnet",
+            "build",
+            "src/public/lib/CircularList",
+            "--no-restore",
+        ],
+    ]
+    assert [command["capability"] for command in type_check_only] == [
+        "restore",
+        "type-check",
+    ]
+    assert [command["argv"] for command in type_check_only] == [
+        ["dotnet", "restore", "src/public/lib/CircularList"],
+        [
+            "dotnet",
+            "build",
+            "src/public/lib/CircularList",
+            "--no-restore",
+        ],
+    ]
+    assert [command["capability"] for command in build_and_type_check] == [
+        "restore",
+        "build",
+        "type-check",
+    ]
+    assert [command["argv"] for command in build_and_type_check] == [
+        ["dotnet", "restore", "src/public/lib/CircularList"],
+        [
+            "dotnet",
+            "build",
+            "src/public/lib/CircularList",
+            "--no-restore",
+        ],
+        [
+            "dotnet",
+            "build",
+            "src/public/lib/CircularList",
+            "--no-restore",
+        ],
+    ]
+    assert [command["argv"] for command in build_and_test] == [
+        ["dotnet", "restore", "src/public/lib/CircularList"],
+        [
+            "dotnet",
+            "build",
+            "src/public/lib/CircularList",
+            "--no-restore",
+        ],
+        [
+            "dotnet",
+            "test",
+            "src/public/lib/CircularList",
+            "--no-restore",
+            "--no-build",
+        ],
+    ]
+    assert [command["argv"] for command in test_only] == [
+        ["dotnet", "test", "src/public/lib/CircularList"],
     ]
 
 
