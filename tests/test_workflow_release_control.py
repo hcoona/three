@@ -3508,6 +3508,8 @@ def test_acceptance_gate_pins_dotnet_restore_command_shape_regression() -> None:
         "tests/test_workflow_release_control.py::"
         "test_ci_validation_batch_pins_consolidated_restore_binlog",
         "tests/test_workflow_release_control.py::"
+        "test_ci_validation_batch_pins_consolidated_warm_restore_binlog",
+        "tests/test_workflow_release_control.py::"
         "test_ci_validation_batch_consolidates_multiple_dotnet_restores_to_dirs_proj",
         "tests/test_workflow_release_control.py::"
         "test_ci_validation_batch_keeps_single_dotnet_target_restore",
@@ -32472,34 +32474,42 @@ def test_ci_validation_batch_pins_consolidated_restore_binlog() -> None:
                 restore_binlog = (
                     binlog_root / "command-000-dotnet-restore.binlog"
                 )
-                restore_binlog.write_bytes(b"consolidated restore")
-                commands.append(
-                    {
-                        "index": 0,
-                        "label": "dotnet restore",
-                        "argv": ["dotnet", "restore", "dirs.proj"],
-                        "capability": "restore",
-                        "exit-code": 0,
-                        "outcome": "success",
-                        "binlog-path": restore_binlog.relative_to(
-                            scratch
-                        ).as_posix(),
-                        "binlog-exists": True,
-                        "uploaded-evidence-path": stale_evidence_dir.name,
-                        "uploaded-evidence-files": [
-                            f"{stale_evidence_dir.name}/stale.binlog",
-                        ],
-                        "binlog-uploaded-evidence-path": (
-                            f"{stale_evidence_dir.name}/stale.binlog"
-                        ),
-                        "timing": {
-                            "started-at": "2026-01-01T00:00:00.000Z",
-                            "completed-at": "2026-01-01T00:00:00.100Z",
-                            "duration-ms": 100,
-                        },
-                    }
+                warm_restore_binlog = (
+                    binlog_root / "command-001-dotnet-restore.binlog"
                 )
-            command_index = 1 if result_index == 0 else 0
+                restore_binlog.write_bytes(b"consolidated restore")
+                warm_restore_binlog.write_bytes(b"consolidated restore warm")
+                for command_index, label, payload_path, duration_ms in (
+                    (0, "dotnet restore", restore_binlog, 100),
+                    (1, "dotnet restore (warm)", warm_restore_binlog, 50),
+                ):
+                    commands.append(
+                        {
+                            "index": command_index,
+                            "label": label,
+                            "argv": ["dotnet", "restore", "dirs.proj"],
+                            "capability": "restore",
+                            "exit-code": 0,
+                            "outcome": "success",
+                            "binlog-path": payload_path.relative_to(
+                                scratch
+                            ).as_posix(),
+                            "binlog-exists": True,
+                            "uploaded-evidence-path": stale_evidence_dir.name,
+                            "uploaded-evidence-files": [
+                                f"{stale_evidence_dir.name}/stale.binlog",
+                            ],
+                            "binlog-uploaded-evidence-path": (
+                                f"{stale_evidence_dir.name}/stale.binlog"
+                            ),
+                            "timing": {
+                                "started-at": "2026-01-01T00:00:00.000Z",
+                                "completed-at": "2026-01-01T00:00:00.100Z",
+                                "duration-ms": duration_ms,
+                            },
+                        }
+                    )
+            command_index = 2 if result_index == 0 else 0
             build_binlog = (
                 binlog_root / f"command-{command_index:03d}-dotnet-build.binlog"
             )
@@ -32557,17 +32567,25 @@ def test_ci_validation_batch_pins_consolidated_restore_binlog() -> None:
                 ).exists()
 
         first_result = json.loads(result_paths[0].read_text(encoding="utf-8"))
-        restore_command = first_result["commands"][0]
-        restore_upload = restore_command["binlog-uploaded-evidence-path"]
-        restore_upload_path = PurePosixPath(restore_upload)
-        assert not restore_upload_path.is_absolute()
-        assert ".." not in restore_upload_path.parts
-        assert restore_upload == (
+        restore_uploads = [
+            command["binlog-uploaded-evidence-path"]
+            for command in first_result["commands"][:2]
+        ]
+        for restore_upload in restore_uploads:
+            restore_upload_path = PurePosixPath(restore_upload)
+            assert not restore_upload_path.is_absolute()
+            assert ".." not in restore_upload_path.parts
+        assert restore_uploads == [
             "validation-result-000-ecosystem-evidence/"
-            "dotnet-restore-command-000.binlog"
-        )
-        assert (scratch / restore_upload).read_bytes() == (
+            "dotnet-restore-command-000.binlog",
+            "validation-result-000-ecosystem-evidence/"
+            "dotnet-restore-command-001.binlog",
+        ]
+        assert (scratch / restore_uploads[0]).read_bytes() == (
             b"consolidated restore"
+        )
+        assert (scratch / restore_uploads[1]).read_bytes() == (
+            b"consolidated restore warm"
         )
         assert retained_build_work_groups == [
             f"wg-dotnet-{index}" for index in range(2, 7)
@@ -32579,11 +32597,121 @@ def test_ci_validation_batch_pins_consolidated_restore_binlog() -> None:
             b"build-5",
             b"build-6",
             b"consolidated restore",
+            b"consolidated restore warm",
         ]
         assert len(retained_payloads) == (
             control._CI_ECOSYSTEM_BINLOG_EVIDENCE_SLOW_BUILD_LIMIT
             + control._CI_ECOSYSTEM_BINLOG_EVIDENCE_CONSOLIDATED_RESTORE_LIMIT
         )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_ci_validation_batch_pins_consolidated_warm_restore_binlog() -> None:
+    """Cold and warm consolidated dirs.proj restores are pinned evidence."""
+    scratch = (
+        SCRATCH / "ci-validation-ecosystem-consolidated-warm-restore-binlog"
+    )
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        result_path = scratch / "validation-result-000.json"
+        binlog_root = (
+            scratch
+            / ".three-ci-validation/work/ecosystem-gate-binlogs"
+            / "wg-dotnet"
+        )
+        binlog_root.mkdir(parents=True)
+        commands: list[dict[str, object]] = []
+        for command_index, label, payload in (
+            (0, "dotnet restore", b"cold restore"),
+            (1, "dotnet restore (warm)", b"warm restore"),
+        ):
+            binlog = (
+                binlog_root
+                / f"command-{command_index:03d}-dotnet-restore.binlog"
+            )
+            binlog.write_bytes(payload)
+            commands.append(
+                {
+                    "index": command_index,
+                    "label": label,
+                    "argv": ["dotnet", "restore", "dirs.proj"],
+                    "capability": "restore",
+                    "exit-code": 0,
+                    "outcome": "success",
+                    "binlog-path": binlog.relative_to(scratch).as_posix(),
+                    "binlog-exists": True,
+                    "timing": {
+                        "started-at": "2026-01-01T00:00:00.000Z",
+                        "completed-at": "2026-01-01T00:00:00.100Z",
+                        "duration-ms": 100 - command_index,
+                    },
+                }
+            )
+        for command_index in range(2, 8):
+            binlog = (
+                binlog_root / f"command-{command_index:03d}-dotnet-build.binlog"
+            )
+            binlog.write_bytes(f"build-{command_index}".encode())
+            commands.append(
+                {
+                    "index": command_index,
+                    "label": "dotnet build",
+                    "argv": ["dotnet", "build", "project", "--no-restore"],
+                    "capability": "build",
+                    "exit-code": 0,
+                    "outcome": "success",
+                    "binlog-path": binlog.relative_to(scratch).as_posix(),
+                    "binlog-exists": True,
+                    "timing": {
+                        "started-at": "2026-01-01T00:00:00.000Z",
+                        "completed-at": "2026-01-01T00:00:01.000Z",
+                        "duration-ms": command_index * 1000,
+                    },
+                }
+            )
+        control._write_json(
+            result_path,
+            {
+                "work-group-id": "wg-dotnet",
+                "kind": "ecosystem-gate",
+                "runner-family": "windows",
+                "ecosystem": "dotnet",
+                "commands": commands,
+            },
+        )
+
+        control._ci_retain_slowest_ecosystem_binlogs_for_batch(
+            [result_path],
+            repo_root=scratch,
+            limit=0,
+        )
+
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        retained_restore_paths = [
+            command["binlog-uploaded-evidence-path"]
+            for command in result["commands"][:2]
+        ]
+        for retained_path in retained_restore_paths:
+            retained_posix = PurePosixPath(retained_path)
+            assert not retained_posix.is_absolute()
+            assert ".." not in retained_posix.parts
+        assert retained_restore_paths == [
+            "validation-result-000-ecosystem-evidence/"
+            "dotnet-restore-command-000.binlog",
+            "validation-result-000-ecosystem-evidence/"
+            "dotnet-restore-command-001.binlog",
+        ]
+        assert (scratch / retained_restore_paths[0]).read_bytes() == (
+            b"cold restore"
+        )
+        assert (scratch / retained_restore_paths[1]).read_bytes() == (
+            b"warm restore"
+        )
+        for command in result["commands"][2:]:
+            assert "uploaded-evidence-files" not in command
+            assert "binlog-uploaded-evidence-path" not in command
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -33694,7 +33822,16 @@ def test_ci_validation_batch_consolidates_multiple_dotnet_restores_to_dirs_proj(
                     "/bl:.three-ci-validation/work/ecosystem-gate-binlogs/"
                     "wg-dotnet-0/command-000-dotnet-restore.binlog"
                 ),
-            ]
+            ],
+            [
+                "dotnet",
+                "restore",
+                "dirs.proj",
+                (
+                    "/bl:.three-ci-validation/work/ecosystem-gate-binlogs/"
+                    "wg-dotnet-0/command-001-dotnet-restore.binlog"
+                ),
+            ],
         ]
         build_argvs = [
             argv for argv in captured_argvs if argv[:2] == ["dotnet", "build"]
@@ -33707,7 +33844,7 @@ def test_ci_validation_batch_consolidates_multiple_dotnet_restores_to_dirs_proj(
                 "--no-restore",
                 (
                     "/bl:.three-ci-validation/work/ecosystem-gate-binlogs/"
-                    "wg-dotnet-0/command-001-dotnet-build.binlog"
+                    "wg-dotnet-0/command-002-dotnet-build.binlog"
                 ),
             ],
             [
@@ -33720,6 +33857,11 @@ def test_ci_validation_batch_consolidates_multiple_dotnet_restores_to_dirs_proj(
                     "wg-dotnet-1/command-000-dotnet-build.binlog"
                 ),
             ],
+        ]
+        assert captured_argvs[:3] == [
+            restore_argvs[0],
+            restore_argvs[1],
+            build_argvs[0],
         ]
         assert [
             "dotnet",
@@ -33740,26 +33882,51 @@ def test_ci_validation_batch_consolidates_multiple_dotnet_restores_to_dirs_proj(
             )
         )
         restore_command = first_result["commands"][0]
+        warm_restore_command = first_result["commands"][1]
         assert restore_command["argv"][:3] == ["dotnet", "restore", "dirs.proj"]
+        assert warm_restore_command["argv"][:3] == [
+            "dotnet",
+            "restore",
+            "dirs.proj",
+        ]
         assert restore_command["binlog-path"] == (
             ".three-ci-validation/work/ecosystem-gate-binlogs/"
             "wg-dotnet-0/command-000-dotnet-restore.binlog"
         )
+        assert warm_restore_command["binlog-path"] == (
+            ".three-ci-validation/work/ecosystem-gate-binlogs/"
+            "wg-dotnet-0/command-001-dotnet-restore.binlog"
+        )
         restore_upload = restore_command["binlog-uploaded-evidence-path"]
+        warm_restore_upload = warm_restore_command[
+            "binlog-uploaded-evidence-path"
+        ]
         restore_upload_path = PurePosixPath(restore_upload)
+        warm_restore_upload_path = PurePosixPath(warm_restore_upload)
         assert not restore_upload_path.is_absolute()
+        assert not warm_restore_upload_path.is_absolute()
         assert ".." not in restore_upload_path.parts
+        assert ".." not in warm_restore_upload_path.parts
         assert restore_upload == (
             "validation-result-000-ecosystem-evidence/"
             "dotnet-restore-command-000.binlog"
+        )
+        assert warm_restore_upload == (
+            "validation-result-000-ecosystem-evidence/"
+            "dotnet-restore-command-001.binlog"
         )
         assert (
             (result_dir / restore_upload)
             .read_bytes()
             .startswith(b"dotnet restore dirs.proj")
         )
+        assert (
+            (result_dir / warm_restore_upload)
+            .read_bytes()
+            .startswith(b"dotnet restore dirs.proj")
+        )
 
-        first_build = first_result["commands"][1]
+        first_build = first_result["commands"][2]
         second_build = second_result["commands"][0]
         assert first_build["argv"][:4] == [
             "dotnet",
@@ -33775,7 +33942,7 @@ def test_ci_validation_batch_consolidates_multiple_dotnet_restores_to_dirs_proj(
         ]
         assert first_build["binlog-uploaded-evidence-path"] == (
             "validation-result-000-ecosystem-evidence/"
-            "dotnet-build-command-001.binlog"
+            "dotnet-build-command-002.binlog"
         )
         assert second_build["binlog-uploaded-evidence-path"] == (
             "validation-result-001-ecosystem-evidence/"

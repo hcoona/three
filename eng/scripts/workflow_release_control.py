@@ -89,7 +89,7 @@ _CI_PROFILE_EVIDENCE_UPLOAD_DIR_RE = re.compile(
 )
 _CI_RELEASE_PROFILE_EVIDENCE_SLOW_BUILD_LIMIT = 5
 _CI_ECOSYSTEM_BINLOG_EVIDENCE_SLOW_BUILD_LIMIT = 5
-_CI_ECOSYSTEM_BINLOG_EVIDENCE_CONSOLIDATED_RESTORE_LIMIT = 1
+_CI_ECOSYSTEM_BINLOG_EVIDENCE_CONSOLIDATED_RESTORE_LIMIT = 2
 _CI_SUPPLEMENTAL_RELEASE_SHAPED_PROFILE_PHASES = frozenset(
     {
         "release-build-execute-build",
@@ -2988,6 +2988,14 @@ def _ci_matrix_work_group_with_consolidated_dotnet_restore(
             0,
             _ci_command(
                 "dotnet restore",
+                ["dotnet", "restore", "dirs.proj"],
+                capability="restore",
+            ),
+        )
+        commands.insert(
+            1,
+            _ci_command(
+                "dotnet restore (warm)",
                 ["dotnet", "restore", "dirs.proj"],
                 capability="restore",
             ),
