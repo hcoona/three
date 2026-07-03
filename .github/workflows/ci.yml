@@ -588,6 +588,10 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
+          cache: ${{ github.event_name != 'pull_request' }}
+          cache-dependency-path: |
+            src/**/packages.lock.json
+            tests/**/packages.lock.json
       - name: Install trusted NBGV CLI for release planning
         shell: bash
         env:
@@ -1367,6 +1371,10 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
+          cache: ${{ github.event_name != 'pull_request' }}
+          cache-dependency-path: |
+            src/**/packages.lock.json
+            tests/**/packages.lock.json
       - name: Install trusted NBGV CLI for release planning
         shell: bash
         env:
@@ -2135,6 +2143,10 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
+          cache: ${{ github.event_name != 'pull_request' }}
+          cache-dependency-path: |
+            src/**/packages.lock.json
+            tests/**/packages.lock.json
       - name: Install trusted NBGV CLI for release planning
         shell: bash
         env:

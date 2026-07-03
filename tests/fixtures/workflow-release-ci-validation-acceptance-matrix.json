@@ -224,7 +224,7 @@
           },
           {
             "type": "test",
-            "value": "tests/test_workflow_release_control.py::test_ci_validation_plan_dotnet_setup_skips_unused_nuget_cache"
+            "value": "tests/test_workflow_release_control.py::test_ci_validation_dotnet_setup_caches_trusted_execution_restores"
           },
           {
             "type": "test",

@@ -21077,8 +21077,8 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
         assert "NBGV_PYTHON_COMMAND=${nbgv_path}" in install_run
 
 
-def test_ci_validation_plan_dotnet_setup_skips_unused_nuget_cache() -> None:
-    """Trusted NBGV setup avoids unused NuGet cache cleanup on cache misses."""
+def test_ci_validation_dotnet_setup_caches_trusted_execution_restores() -> None:
+    """Execution orchestrators use setup-dotnet cache only on trusted events."""
     workflow = yaml.safe_load(_workflow("ci.yml"))
     jobs = workflow["jobs"]
     expected_trusted_nbgv_jobs = {
@@ -21087,7 +21087,13 @@ def test_ci_validation_plan_dotnet_setup_skips_unused_nuget_cache() -> None:
         "execution-batch-windows-orchestrator",
         "execution-batch-macos-orchestrator",
     }
+    expected_cached_jobs = expected_trusted_nbgv_jobs - {"plan"}
+    cache_dependency_paths = [
+        "src/**/packages.lock.json",
+        "tests/**/packages.lock.json",
+    ]
     actual_trusted_nbgv_jobs = set()
+    actual_cached_jobs = set()
 
     for job_name, job in jobs.items():
         steps = job.get("steps", [])
@@ -21113,10 +21119,34 @@ def test_ci_validation_plan_dotnet_setup_skips_unused_nuget_cache() -> None:
             assert setup_step is not None, job_name
             setup_with = setup_step["with"]
             assert setup_with["global-json-file"] == "global.json"
-            assert "cache" not in setup_with, job_name
-            assert "cache-dependency-path" not in setup_with, job_name
+            assert "NUGET_PACKAGES" not in cast(
+                "Mapping[str, object]",
+                job.get("env", {}),
+            )
+            assert not any(
+                step.get("name")
+                in {
+                    "Pin NuGet package cache path",
+                    "Reset NuGet package cache path for post-job save",
+                }
+                for step in steps
+            ), job_name
+            if job_name == "plan":
+                assert "cache" not in setup_with, job_name
+                assert "cache-dependency-path" not in setup_with, job_name
+                continue
+
+            assert setup_with["cache"] == (
+                "${{ github.event_name != 'pull_request' }}"
+            )
+            assert (
+                str(setup_with["cache-dependency-path"]).splitlines()
+                == cache_dependency_paths
+            )
+            actual_cached_jobs.add(job_name)
 
     assert actual_trusted_nbgv_jobs == expected_trusted_nbgv_jobs
+    assert actual_cached_jobs == expected_cached_jobs
 
 
 def test_ci_validation_workflow_uses_current_batch_evidence_commands() -> None:

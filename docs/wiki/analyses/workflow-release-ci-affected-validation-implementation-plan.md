@@ -410,7 +410,7 @@ Post-hosted closure-update disposition:
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Hosted behavior evidence      | The historical Group 2 baseline workflow and code behavior evidence remains anchored at GitHub Actions run `27111512179` for SHA `782571d535d4cd09795ad9a96955180aad279edb`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Docs-only closure updates     | Commit `9ef6a8c docs: Record Release Validation Acceptance Evidence`, the later docs-only review/waiver repair through commit `9f1791d`, and the earlier closure-recording updates after `9f1791d` through commit `b4cc789` are post-hosted documentation updates covered by the local hook-validation path when they do not alter workflow or code behavior. The later combined cache/full-checkout workflow repair, `src/**` source restoration, planner runtime/materialized-checkout behavior follow-up, config hygiene, and workflow-release-control test updates were outside that docs-only waiver and required separate hosted validation. |
-| Combined follow-up validation | Commit `4dd8d8e ci: Complete Release Validation Setup` was separately validated by hosted GitHub Actions run `27164117754` at SHA `4dd8d8eae0083416066bc803e06bdfd5d471e5a0`. That run completed successfully and does not replace the earlier historical baseline run `27111512179`.                                                                                                                                                                                                                                                                                                                                                              |
+| Combined follow-up validation | Commit `4dd8d8e ci: Complete Release Validation Setup` was separately validated by hosted GitHub Actions run `27164117754` at SHA `4dd8d8eae0083416066bc803e06bdfd5d471e5a0`. That run completed successfully and does not replace the earlier historical baseline run `27111512179`. It is historical evidence for the earlier combined follow-up cache shape; current trusted-trigger-only execution-cache validation requires two new trusted `workflow_dispatch` runs, one to provision the cache and one to verify a cache hit.                                                                                                               |
 | Hosted rerun waiver boundary  | Hosted rerun is waived for low-risk docs-only closure-recording updates after `782571d535d4cd09795ad9a96955180aad279edb` when local hook validation passes, because they do not alter workflow or code behavior. This prevents documentation closure notes from creating an infinite requirement for another hosted run. This waiver does not apply to later workflow, code, validation-script, or behavior-changing edits, which still need appropriate hosted evidence.                                                                                                                                                                          |
 
 Final accepted run job evidence:
@@ -583,12 +583,13 @@ Remaining non-blocking follow-up tasks:
 
 #### Runtime Cache, Full-Checkout, Source-Restoration, and Planner Follow-up
 
-The safe focused optimization chosen after the accepted hosted run is to restore
-the NuGet global-packages cache through `actions/setup-dotnet` for CI validation
-jobs that run NBGV-backed .NET planning or execution. This targets setup and
-restore cost without changing selected validation obligations, runner-family
-scheduling, artifact refs, producer-boundary checks, final uploaded-byte
-verification, hard caps, or aggregate evidence authority.
+The safe focused optimization chosen after the accepted hosted run is to enable
+the platform NuGet global-packages cache through `actions/setup-dotnet` for the
+CI validation execution-orchestrator jobs only. The cache is enabled for trusted
+triggers such as `push`, `schedule`, and `workflow_dispatch`, and disabled for
+`pull_request`. This targets restore cost without changing selected validation
+obligations, runner-family scheduling, artifact refs, producer-boundary checks,
+final uploaded-byte verification, hard caps, or aggregate evidence authority.
 
 The same follow-up also restored full checkout history (`fetch-depth: 0`) for
 NBGV-sensitive control-plane jobs after hosted run `27117479657` failed with
@@ -622,9 +623,18 @@ separate runtime-target improvement claim.
 
 The same combined state included workflow-release-control test updates in
 `tests/test_workflow_release_control.py`. Those tests assert the
-`actions/setup-dotnet` NuGet lockfile cache configuration and the
-NBGV/control-plane full-checkout requirements for the affected hosted workflow
-jobs.
+`actions/setup-dotnet` NuGet lockfile cache configuration on execution
+orchestrators, the intentionally uncached `plan` setup, the trusted-trigger-only
+cache gate, the `src/**/packages.lock.json` and `tests/**/packages.lock.json`
+dependency paths, and the NBGV/control-plane full-checkout requirements for the
+affected hosted workflow jobs.
+
+The current trusted-trigger-only cache configuration requires two new trusted
+`workflow_dispatch` CI validation runs before current-shape hosted evidence can
+be claimed: the first run provisions the cache, and a second run verifies a
+cache hit. Historical run `27164117754` remains valid evidence for the earlier
+combined follow-up, but it must not be cited as validation for this current
+execution-only cache shape.
 
 The earlier post-hosted docs-only rerun waiver does not apply to this combined
 state. That waiver only covered low-risk documentation-only closure updates that
@@ -641,7 +651,8 @@ successfully at https://github.com/hcoona/three/actions/runs/27164117754. The
 earlier failed hosted run `27117479657` is therefore dispositioned as the
 shallow-checkout/NBGV regression that motivated the control-plane
 `fetch-depth: 0` repair; run `27164117754` validates that repair together with
-the combined source, planner, config, and test follow-up scope.
+the combined source, planner, config, and test follow-up scope for the earlier
+cache shape, not the current trusted-trigger-only execution-cache shape.
 
 The combined follow-up success is not a runtime-target compliance claim. Run
 `27164117754` took 38m20s from createdAt `2026-06-08T20:12:57Z` to updatedAt
@@ -691,7 +702,10 @@ Combined code/source/planner/config/test/doc follow-up closure:
   raw-clean implementation rounds and two consecutive raw-clean group-interface
   rounds.
 - Hosted GitHub Actions run `27164117754` then validated the combined state at
-  HEAD `4dd8d8eae0083416066bc803e06bdfd5d471e5a0`.
+  HEAD `4dd8d8eae0083416066bc803e06bdfd5d471e5a0` for the earlier cache shape.
+- The current trusted-trigger-only execution-cache shape still requires two new
+  trusted `workflow_dispatch` runs: one to provision the cache and one to verify
+  a cache hit.
 
 Hosted-success documentation update closure:
 
@@ -758,7 +772,10 @@ validation-script, source-code, or test behavior. The later combined
 cache/full-checkout workflow repair, `src/**` source-restoration, and planner
 runtime/materialized-checkout behavior follow-up was outside that docs-only
 waiver; hosted run `27164117754` later satisfied that separate validation
-requirement for the combined follow-up.
+requirement for the historical combined follow-up. It does not satisfy the
+current trusted-trigger-only execution-cache shape, which still requires two new
+trusted `workflow_dispatch` runs: one to provision the cache and one to verify a
+cache hit.
 
 The later combined follow-up commit `4dd8d8e`, hosted-success docs commit
 `a41ae36`, and this audit-record repair postdate that earlier final-global
