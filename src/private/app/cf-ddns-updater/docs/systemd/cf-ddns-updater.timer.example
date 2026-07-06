@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Cloudflare DDNS updater periodically
+
+[Timer]
+OnActiveSec=5m
+OnUnitActiveSec=1h
+Persistent=true
+Unit=cf-ddns-updater.service
+
+[Install]
+WantedBy=timers.target
