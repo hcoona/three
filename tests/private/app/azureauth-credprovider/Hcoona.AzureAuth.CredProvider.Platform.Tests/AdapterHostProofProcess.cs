@@ -1,3 +1,4 @@
+using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
 using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
@@ -7,10 +8,15 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 
 internal static class AdapterHostProofProcess
 {
+    internal const string ForceNonUtf8ConsoleEnvironmentVariable =
+        "AZUREAUTH_ADAPTER_HOST_PROOF_FORCE_NON_UTF8_CONSOLE";
+
     internal const string GitGetSuccessScenario = "git-get-success";
     internal const string GitStoreSuccessScenario = "git-store-success";
     internal const string GitEraseSuccessScenario = "git-erase-success";
     internal const string GitFailureScenario = "git-protocol-failure";
+    internal const string GitInvalidUtf16ProtocolStdoutScenario =
+        "git-invalid-utf16-protocol-stdout";
     internal const string GitNoCredentialScenario = "git-no-credential";
     internal const string GitUnauthorizedScenario = "git-unauthorized";
     internal const string GitFatalScenario = "git-fatal";
@@ -20,14 +26,22 @@ internal static class AdapterHostProofProcess
     internal const string KeyringFailureScenario = "keyring-failure";
     internal const string InvocationBoundaryMismatchScenario = "invocation-boundary-mismatch";
     internal const string HumanCommandScenario = "human-command";
+    internal const string HumanCommandNonBmpScenario = "human-command-non-bmp";
+    internal const string HumanCommandInvalidUtf16StdoutScenario =
+        "human-command-invalid-utf16-stdout";
 
     internal const string GitGetSuccessProtocolPayload =
         "username=AzureDevOps\npassword=git-proof-password\n";
+    internal const string GitInvalidUtf16ProtocolPayload =
+        "\uD83Dusername=AzureDevOps\npassword=git-proof-password\n";
 
     internal const string NuGetSuccessProtocolPayload =
         "{\"type\":\"plugin-proof\",\"requestId\":\"proof\",\"payload\":\"opaque\"}";
 
     internal const string HumanCommandStdout = "doctor ok";
+    internal const string HumanCommandNonBmpStdout = "doctor 🚀 ok";
+    internal const string HumanCommandNonBmpDiagnosticMessage = "diagnostic 🧪";
+    internal const string HumanCommandInvalidUtf16Stdout = "\uD83Ddoctor ok";
     internal const string SuppressedProtocolPayload =
         "suppressed-protocol-payload-should-not-leak";
     internal const string SuppressedHumanStdout =
@@ -46,6 +60,8 @@ internal static class AdapterHostProofProcess
     internal const string UnauthorizedSafeMessage = "Synthetic unauthorized.";
     internal const string FatalSafeCode = "Fatal";
     internal const string FatalSafeMessage = "Synthetic fatal failure.";
+    internal const string UnhandledHostFailureSafeCode = "UnhandledHostFailure";
+    internal const string UnhandledHostFailureSafeMessage = "Adapter host execution failed.";
     internal const string InvocationBoundaryMismatchDescriptorMarker =
         "bootstrap-proof-descriptor-internal-should-not-leak";
     internal const string InvocationBoundaryMismatchPayloadMarker =
@@ -61,6 +77,8 @@ internal static class AdapterHostProofProcess
 
     internal static void Run(string[] args)
     {
+        ConfigureAmbientConsoleForProof();
+
         if (args.Length != 1 || string.IsNullOrWhiteSpace(args[0]))
         {
             ExitConfiguration("Adapter host proof process requires exactly one scenario.");
@@ -106,6 +124,13 @@ internal static class AdapterHostProofProcess
                 SharedExecutablePath,
                 ["git", "credential-helper", "get"],
                 CreateProtocolViolationOutput(CreateGitGetSuccessCredentialResult())),
+            GitInvalidUtf16ProtocolStdoutScenario => Execute(
+                CreateSharedGitDescriptor(),
+                SharedExecutablePath,
+                ["git", "credential-helper", "get"],
+                CreateProtocolSuccessOutput(
+                    CreateGitGetSuccessCredentialResult(),
+                    GitInvalidUtf16ProtocolPayload)),
             GitNoCredentialScenario => Execute(
                 CreateSharedGitDescriptor(),
                 SharedExecutablePath,
@@ -159,6 +184,29 @@ internal static class AdapterHostProofProcess
                 new AdapterHostHandlerOutput(
                     humanStdout: HumanCommandStdout,
                     protocolStdout: SuppressedProtocolPayload)),
+            HumanCommandInvalidUtf16StdoutScenario => Execute(
+                CreateSharedGitDescriptor(),
+                SharedExecutablePath,
+                ["doctor", "--invalid-utf16"],
+                new AdapterHostHandlerOutput(
+                    humanStdout: HumanCommandInvalidUtf16Stdout,
+                    protocolStdout: SuppressedProtocolPayload)),
+            HumanCommandNonBmpScenario => Execute(
+                CreateSharedGitDescriptor(),
+                SharedExecutablePath,
+                ["doctor", "--unicode"],
+                new AdapterHostHandlerOutput(
+                    humanStdout: HumanCommandNonBmpStdout,
+                    protocolStdout: SuppressedProtocolPayload,
+                    diagnosticEvents:
+                    [
+                        new DiagnosticEvent(
+                            DiagnosticSeverity.Error,
+                            DiagnosticChannel.Diagnostic,
+                            HumanCommandNonBmpDiagnosticMessage,
+                            timestamp: DateTimeOffset.Parse(
+                                "2025-01-02T03:04:05.0000000+00:00"))
+                    ])),
             _ => UnknownScenario(scenario),
         };
     }
@@ -169,17 +217,27 @@ internal static class AdapterHostProofProcess
         IReadOnlyList<string> arguments,
         AdapterHostHandlerOutput handlerOutput)
     {
+        var standardOutput = StandardConsoleTextWriter.StandardOutput();
+        var standardError = StandardConsoleTextWriter.StandardError();
         var diagnosticRouter = new DiagnosticRouter(
-            [new TextWriterDiagnosticSink(Console.Error)],
+            [new TextWriterDiagnosticSink(standardError)],
             SecretRedactor.Empty);
-        return AdapterHostExecutor.Execute(
-            descriptor,
-            executablePath,
-            arguments,
-            _ => handlerOutput,
-            protocolStdout: Console.Out,
-            humanStdout: Console.Out,
-            diagnosticRouter);
+        try
+        {
+            return AdapterHostExecutor.Execute(
+                descriptor,
+                executablePath,
+                arguments,
+                _ => handlerOutput,
+                protocolStdout: standardOutput,
+                humanStdout: standardOutput,
+                diagnosticRouter);
+        }
+        finally
+        {
+            standardOutput.Flush();
+            standardError.Flush();
+        }
     }
 
     private static AdapterHostHandlerOutput CreateProtocolSuccessOutput(
@@ -433,10 +491,22 @@ internal static class AdapterHostProofProcess
         throw new InvalidOperationException("Unreachable.");
     }
 
+    private static void ConfigureAmbientConsoleForProof()
+    {
+        if (string.Equals(
+            Environment.GetEnvironmentVariable(ForceNonUtf8ConsoleEnvironmentVariable),
+            "1",
+            StringComparison.Ordinal))
+        {
+            Console.OutputEncoding = Encoding.Latin1;
+        }
+    }
+
     private static void ExitConfiguration(string message)
     {
-        Console.Error.Write(message);
-        Console.Error.Flush();
+        StandardConsoleTextWriter standardError = StandardConsoleTextWriter.StandardError();
+        standardError.Write(message);
+        standardError.Flush();
         Environment.Exit((int)AdapterHostExitCode.ConfigurationError);
     }
 }

@@ -247,14 +247,7 @@ public sealed class InstallerDiscoveryScaffoldTests
 
         Dictionary<FakeAdapterSurface, FakeAdapterProbeResult> results =
             FakeAdapterDiscoveryScaffold
-                .ProbePlacements(
-                    new FakeAdapterDiscoveryContext
-                    {
-                        Layout = layout,
-                        FileExists = fileSystem.FileExists,
-                        DirectoryExists = fileSystem.DirectoryExists,
-                    }
-                )
+                .ProbePlacements(CreateTopologyAwareDiscoveryContext(layout, fileSystem))
                 .ToDictionary(result => result.Surface);
 
         AssertExpectedSurfaceSet(placements.Keys);
@@ -764,12 +757,7 @@ public sealed class InstallerDiscoveryScaffoldTests
         Dictionary<FakeAdapterSurface, FakeAdapterProbeResult> probeResults =
             FakeAdapterDiscoveryScaffold
                 .ProbePlacements(
-                    new FakeAdapterDiscoveryContext
-                    {
-                        Layout = rematerializedLayout,
-                        FileExists = fileSystem.FileExists,
-                        DirectoryExists = fileSystem.DirectoryExists,
-                    }
+                    CreateTopologyAwareDiscoveryContext(rematerializedLayout, fileSystem)
                 )
                 .ToDictionary(result => result.Surface);
         fileSystem.Calls.Clear();
@@ -1082,14 +1070,7 @@ public sealed class InstallerDiscoveryScaffoldTests
         );
         Dictionary<FakeAdapterSurface, FakeAdapterProbeResult> results =
             FakeAdapterDiscoveryScaffold
-                .ProbePlacements(
-                    new FakeAdapterDiscoveryContext
-                    {
-                        Layout = layout,
-                        FileExists = fileSystem.FileExists,
-                        DirectoryExists = fileSystem.DirectoryExists,
-                    }
-                )
+                .ProbePlacements(CreateTopologyAwareDiscoveryContext(layout, fileSystem))
                 .ToDictionary(result => result.Surface);
 
         Assert.Equal(canonicalPlacements[FakeAdapterSurface.GitHelper], placement);
@@ -1184,14 +1165,7 @@ public sealed class InstallerDiscoveryScaffoldTests
         );
         Dictionary<FakeAdapterSurface, FakeAdapterProbeResult> results =
             FakeAdapterDiscoveryScaffold
-                .ProbePlacements(
-                    new FakeAdapterDiscoveryContext
-                    {
-                        Layout = layout,
-                        FileExists = fileSystem.FileExists,
-                        DirectoryExists = fileSystem.DirectoryExists,
-                    }
-                )
+                .ProbePlacements(CreateTopologyAwareDiscoveryContext(layout, fileSystem))
                 .ToDictionary(result => result.Surface);
 
         Assert.Equal(canonicalPlacement, placement);
@@ -1964,14 +1938,7 @@ public sealed class InstallerDiscoveryScaffoldTests
                 .ToDictionary(placement => placement.Surface);
         Dictionary<FakeAdapterSurface, FakeAdapterProbeResult> results =
             FakeAdapterDiscoveryScaffold
-                .ProbePlacements(
-                    new FakeAdapterDiscoveryContext
-                    {
-                        Layout = layout,
-                        FileExists = fileSystem.FileExists,
-                        DirectoryExists = fileSystem.DirectoryExists,
-                    }
-                )
+                .ProbePlacements(CreateTopologyAwareDiscoveryContext(layout, fileSystem))
                 .ToDictionary(result => result.Surface);
 
         AssertExpectedSurfaceSet(placements.Keys);
@@ -4498,6 +4465,7 @@ public sealed class InstallerDiscoveryScaffoldTests
         FakeAdapterDiscoveryContext context = new()
         {
             Layout = layout,
+            IsPathFullyQualified = CreatePathSemanticsProbe(layout.Platform),
             FileExists = path =>
             {
                 fileExistsCalls++;
@@ -4537,6 +4505,7 @@ public sealed class InstallerDiscoveryScaffoldTests
         FakeAdapterDiscoveryContext context = new()
         {
             Layout = layout,
+            IsPathFullyQualified = CreatePathSemanticsProbe(layout.Platform),
             FileExists = path =>
             {
                 fileExistsCalls++;
@@ -4590,6 +4559,7 @@ public sealed class InstallerDiscoveryScaffoldTests
         FakeAdapterDiscoveryContext context = new()
         {
             Layout = layout,
+            IsPathFullyQualified = CreatePathSemanticsProbe(layout.Platform),
             FileExists = path =>
             {
                 fileExistsCalls++;
@@ -4613,6 +4583,400 @@ public sealed class InstallerDiscoveryScaffoldTests
         Assert.Contains(expectedMessageFragment, exception.Message, StringComparison.Ordinal);
         Assert.Equal(0, fileExistsCalls);
         Assert.Equal(0, directoryExistsCalls);
+    }
+
+    [Theory]
+    [InlineData(nameof(ConfigurationLayoutPlatform.Linux))]
+    [InlineData(nameof(ConfigurationLayoutPlatform.Windows))]
+    public void ProbePlacementsSkipAndSurfaceProbeRejectContextsWithoutTopologyCallbacks(
+        string platformName
+    )
+    {
+        ConfigurationLayoutPlatform platform =
+            Enum.Parse<ConfigurationLayoutPlatform>(platformName);
+        ConfigurationLayoutProjectionContext layout = CreateLayout(platform);
+        Dictionary<FakeAdapterSurface, FakeAdapterPlacement> placements = GetPlacementsBySurface(
+            layout
+        );
+        var files = new HashSet<string>(StringComparer.Ordinal)
+        {
+            placements[FakeAdapterSurface.GitHelper].ArtifactPath,
+        };
+        int fileExistsCalls = 0;
+        int directoryExistsCalls = 0;
+        FakeAdapterDiscoveryContext context = new()
+        {
+            Layout = layout,
+            IsPathFullyQualified = CreatePathSemanticsProbe(layout.Platform),
+            FileExists = path =>
+            {
+                fileExistsCalls++;
+                return files.Contains(path);
+            },
+            DirectoryExists = path =>
+            {
+                directoryExistsCalls++;
+                return false;
+            },
+        };
+
+        Assert.Empty(FakeAdapterDiscoveryScaffold.ProbePlacements(context));
+        NotSupportedException exception = Assert.Throws<NotSupportedException>(() =>
+            FakeAdapterDiscoveryScaffold.ProbePlacement(FakeAdapterSurface.GitHelper, context)
+        );
+        Assert.Contains(
+            "symbolic-link topology probe support",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(0, fileExistsCalls);
+        Assert.Equal(0, directoryExistsCalls);
+    }
+
+    [Fact]
+    public void ProbePlacementsSkipAndSurfaceProbeRejectWindowsContextsWithoutReparsePointCallback()
+    {
+        ConfigurationLayoutProjectionContext layout = CreateLayout(
+            ConfigurationLayoutPlatform.Windows
+        );
+        Dictionary<FakeAdapterSurface, FakeAdapterPlacement> placements = GetPlacementsBySurface(
+            layout
+        );
+        var files = new HashSet<string>(StringComparer.Ordinal)
+        {
+            placements[FakeAdapterSurface.GitHelper].ArtifactPath,
+        };
+        int fileExistsCalls = 0;
+        int directoryExistsCalls = 0;
+        int symbolicLinkCalls = 0;
+        FakeAdapterDiscoveryContext context = new()
+        {
+            Layout = layout,
+            IsPathFullyQualified = CreatePathSemanticsProbe(layout.Platform),
+            FileExists = path =>
+            {
+                fileExistsCalls++;
+                return files.Contains(path);
+            },
+            DirectoryExists = path =>
+            {
+                directoryExistsCalls++;
+                return false;
+            },
+            IsSymbolicLink = path =>
+            {
+                symbolicLinkCalls++;
+                return false;
+            },
+        };
+
+        Assert.Empty(FakeAdapterDiscoveryScaffold.ProbePlacements(context));
+        NotSupportedException exception = Assert.Throws<NotSupportedException>(() =>
+            FakeAdapterDiscoveryScaffold.ProbePlacement(FakeAdapterSurface.GitHelper, context)
+        );
+        Assert.Contains(
+            "reparse-point topology probe support",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(0, fileExistsCalls);
+        Assert.Equal(0, directoryExistsCalls);
+        Assert.Equal(0, symbolicLinkCalls);
+    }
+
+    [Theory]
+    [InlineData(nameof(ConfigurationLayoutPlatform.Linux), true)]
+    [InlineData(nameof(ConfigurationLayoutPlatform.Linux), false)]
+    [InlineData(nameof(ConfigurationLayoutPlatform.Windows), true)]
+    [InlineData(nameof(ConfigurationLayoutPlatform.Windows), false)]
+    public void ProbePlacementsSkipAndSurfaceProbeRejectWhenSymbolicLinkCallbackThrows(
+        string platformName,
+        bool throwUnauthorizedAccessException
+    )
+    {
+        ConfigurationLayoutPlatform platform =
+            Enum.Parse<ConfigurationLayoutPlatform>(platformName);
+        ConfigurationLayoutProjectionContext layout = CreateLayout(platform);
+        int fileExistsCalls = 0;
+        int directoryExistsCalls = 0;
+        int symbolicLinkCalls = 0;
+        int reparsePointCalls = 0;
+        FakeAdapterDiscoveryContext context = new()
+        {
+            Layout = layout,
+            IsPathFullyQualified = CreatePathSemanticsProbe(layout.Platform),
+            FileExists = _ =>
+            {
+                fileExistsCalls++;
+                return false;
+            },
+            DirectoryExists = _ =>
+            {
+                directoryExistsCalls++;
+                return false;
+            },
+            IsSymbolicLink = path =>
+            {
+                symbolicLinkCalls++;
+                throw CreateTopologyProbeCallbackException(
+                    throwUnauthorizedAccessException,
+                    path
+                );
+            },
+            IsReparsePoint = _ =>
+            {
+                reparsePointCalls++;
+                return false;
+            },
+        };
+
+        Assert.Empty(FakeAdapterDiscoveryScaffold.ProbePlacements(context));
+        NotSupportedException exception = Assert.Throws<NotSupportedException>(() =>
+            FakeAdapterDiscoveryScaffold.ProbePlacement(FakeAdapterSurface.GitHelper, context)
+        );
+
+        Assert.Contains(
+            "symbolic-link or reparse-point",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        if (throwUnauthorizedAccessException)
+        {
+            Assert.IsType<UnauthorizedAccessException>(exception.InnerException);
+        }
+        else
+        {
+            Assert.IsType<IOException>(exception.InnerException);
+        }
+
+        Assert.True(symbolicLinkCalls > 0);
+        Assert.Equal(0, reparsePointCalls);
+        Assert.Equal(0, fileExistsCalls);
+        Assert.Equal(0, directoryExistsCalls);
+    }
+
+    [Fact]
+    public void ProbePlacementsSkipAndSurfaceProbeRejectPathSemanticsMismatch()
+    {
+        ConfigurationLayoutProjectionContext layout = CreateLayout(
+            ConfigurationLayoutPlatform.Windows
+        );
+        var pathSemantics = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        int fileExistsCalls = 0;
+        int directoryExistsCalls = 0;
+        int symbolicLinkCalls = 0;
+        int reparsePointCalls = 0;
+        FakeAdapterDiscoveryContext context = new()
+        {
+            Layout = layout,
+            IsPathFullyQualified = pathSemantics.IsPathFullyQualified,
+            FileExists = _ =>
+            {
+                fileExistsCalls++;
+                return false;
+            },
+            DirectoryExists = _ =>
+            {
+                directoryExistsCalls++;
+                return false;
+            },
+            IsSymbolicLink = _ =>
+            {
+                symbolicLinkCalls++;
+                return false;
+            },
+            IsReparsePoint = _ =>
+            {
+                reparsePointCalls++;
+                return false;
+            },
+        };
+
+        Assert.Empty(FakeAdapterDiscoveryScaffold.ProbePlacements(context));
+        NotSupportedException exception = Assert.Throws<NotSupportedException>(() =>
+            FakeAdapterDiscoveryScaffold.ProbePlacement(FakeAdapterSurface.GitHelper, context)
+        );
+        Assert.Contains("path semantics", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(0, fileExistsCalls);
+        Assert.Equal(0, directoryExistsCalls);
+        Assert.Equal(0, symbolicLinkCalls);
+        Assert.Equal(0, reparsePointCalls);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ProbePlacementsSkipAndSurfaceProbeRejectWhenReparsePointCallbackThrows(
+        bool throwUnauthorizedAccessException
+    )
+    {
+        ConfigurationLayoutProjectionContext layout = CreateLayout(
+            ConfigurationLayoutPlatform.Windows
+        );
+        int fileExistsCalls = 0;
+        int directoryExistsCalls = 0;
+        int symbolicLinkCalls = 0;
+        int reparsePointCalls = 0;
+        FakeAdapterDiscoveryContext context = new()
+        {
+            Layout = layout,
+            IsPathFullyQualified = CreatePathSemanticsProbe(layout.Platform),
+            FileExists = _ =>
+            {
+                fileExistsCalls++;
+                return false;
+            },
+            DirectoryExists = _ =>
+            {
+                directoryExistsCalls++;
+                return false;
+            },
+            IsSymbolicLink = _ =>
+            {
+                symbolicLinkCalls++;
+                return false;
+            },
+            IsReparsePoint = path =>
+            {
+                reparsePointCalls++;
+                throw CreateTopologyProbeCallbackException(
+                    throwUnauthorizedAccessException,
+                    path
+                );
+            },
+        };
+
+        Assert.Empty(FakeAdapterDiscoveryScaffold.ProbePlacements(context));
+        NotSupportedException exception = Assert.Throws<NotSupportedException>(() =>
+            FakeAdapterDiscoveryScaffold.ProbePlacement(FakeAdapterSurface.GitHelper, context)
+        );
+
+        Assert.Contains(
+            "symbolic-link or reparse-point",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        if (throwUnauthorizedAccessException)
+        {
+            Assert.IsType<UnauthorizedAccessException>(exception.InnerException);
+        }
+        else
+        {
+            Assert.IsType<IOException>(exception.InnerException);
+        }
+
+        Assert.True(symbolicLinkCalls > 0);
+        Assert.True(reparsePointCalls > 0);
+        Assert.Equal(0, fileExistsCalls);
+        Assert.Equal(0, directoryExistsCalls);
+    }
+
+    [Theory]
+    [InlineData(nameof(ConfigurationLayoutPlatform.Linux))]
+    [InlineData(nameof(ConfigurationLayoutPlatform.Windows))]
+    public void ProbePlacementsSkipAndSurfaceProbeRejectContextsWithoutFileExistsCallback(
+        string platformName
+    )
+    {
+        ConfigurationLayoutPlatform platform =
+            Enum.Parse<ConfigurationLayoutPlatform>(platformName);
+        ConfigurationLayoutProjectionContext layout = CreateLayout(platform);
+        int directoryExistsCalls = 0;
+        FakeAdapterDiscoveryContext context = CreateTopologyAwareDiscoveryContext(
+            layout,
+            CreateMaterializationFileSystem(platform)
+        ) with
+        {
+            FileExists = null,
+            DirectoryExists = _ =>
+            {
+                directoryExistsCalls++;
+                return false;
+            },
+        };
+
+        Assert.Empty(FakeAdapterDiscoveryScaffold.ProbePlacements(context));
+        NotSupportedException exception = Assert.Throws<NotSupportedException>(() =>
+            FakeAdapterDiscoveryScaffold.ProbePlacement(FakeAdapterSurface.GitHelper, context)
+        );
+        Assert.Contains(
+            "file-existence probe support",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(0, directoryExistsCalls);
+    }
+
+    [Theory]
+    [InlineData(nameof(ConfigurationLayoutPlatform.Linux))]
+    [InlineData(nameof(ConfigurationLayoutPlatform.Windows))]
+    public void ProbePlacementsSkipAndSurfaceProbeRejectContextsWithoutDirectoryExistsCallback(
+        string platformName
+    )
+    {
+        ConfigurationLayoutPlatform platform =
+            Enum.Parse<ConfigurationLayoutPlatform>(platformName);
+        ConfigurationLayoutProjectionContext layout = CreateLayout(platform);
+        int fileExistsCalls = 0;
+        FakeAdapterDiscoveryContext context = CreateTopologyAwareDiscoveryContext(
+            layout,
+            CreateMaterializationFileSystem(platform)
+        ) with
+        {
+            FileExists = _ =>
+            {
+                fileExistsCalls++;
+                return false;
+            },
+            DirectoryExists = null,
+        };
+
+        Assert.Empty(FakeAdapterDiscoveryScaffold.ProbePlacements(context));
+        NotSupportedException exception = Assert.Throws<NotSupportedException>(() =>
+            FakeAdapterDiscoveryScaffold.ProbePlacement(FakeAdapterSurface.GitHelper, context)
+        );
+        Assert.Contains(
+            "directory-existence probe support",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(0, fileExistsCalls);
+    }
+
+    [Fact]
+    public void ProbePlacementsSkipStatefullyUnsafeRepeatObservationsInsteadOfThrowing()
+    {
+        ConfigurationLayoutProjectionContext layout = CreateLayout(
+            ConfigurationLayoutPlatform.Linux
+        );
+        var observedPaths = new HashSet<string>(StringComparer.Ordinal);
+        int symbolicLinkCalls = 0;
+        FakeAdapterDiscoveryContext context = new()
+        {
+            Layout = layout,
+            IsPathFullyQualified = CreatePathSemanticsProbe(layout.Platform),
+            FileExists = static _ => false,
+            DirectoryExists = static _ => false,
+            IsSymbolicLink = path =>
+            {
+                symbolicLinkCalls++;
+                return !observedPaths.Add(path);
+            },
+        };
+
+        Dictionary<FakeAdapterSurface, FakeAdapterProbeResult> results =
+            FakeAdapterDiscoveryScaffold
+                .ProbePlacements(context)
+                .ToDictionary(result => result.Surface);
+
+        AssertSurfaceSet([FakeAdapterSurface.GitHelper], results.Keys);
+        AssertResult(
+            results,
+            FakeAdapterSurface.GitHelper,
+            FakeAdapterProbeStatus.Missing,
+            FakeAdapterArtifactKind.Missing
+        );
+        Assert.True(symbolicLinkCalls > 1);
     }
 
     [Fact]
@@ -4644,8 +5008,11 @@ public sealed class InstallerDiscoveryScaffoldTests
                     new FakeAdapterDiscoveryContext
                     {
                         Layout = layout,
+                        IsPathFullyQualified = CreatePathSemanticsProbe(layout.Platform),
                         FileExists = files.Contains,
                         DirectoryExists = directories.Contains,
+                        IsSymbolicLink = static _ => false,
+                        IsReparsePoint = static _ => false,
                     }
                 )
                 .ToDictionary(result => result.Surface);
@@ -4680,6 +5047,113 @@ public sealed class InstallerDiscoveryScaffoldTests
             FakeAdapterSurface.KeyringShim,
             FakeAdapterProbeStatus.Missing,
             FakeAdapterArtifactKind.Missing
+        );
+    }
+
+    [Theory]
+    [InlineData(nameof(ConfigurationLayoutPlatform.Linux))]
+    [InlineData(nameof(ConfigurationLayoutPlatform.Windows))]
+    public void ProbePlacementsSkipAndSurfaceProbeRejectsProjectedSymbolicLinkPlacementRoot(
+        string platformName
+    )
+    {
+        ConfigurationLayoutPlatform platform =
+            Enum.Parse<ConfigurationLayoutPlatform>(platformName);
+        ConfigurationLayoutProjectionContext layout = CreateLayout(platform);
+        var fileSystem = CreateMaterializationFileSystem(platform);
+        Dictionary<FakeAdapterSurface, FakeAdapterPlacement> placements = GetPlacementsBySurface(
+            layout
+        );
+        FakeAdapterPlacement unsafePlacement = placements[FakeAdapterSurface.PythonKeyringHelper];
+        string placementRootParent = GetContainingDirectory(
+            platform,
+            unsafePlacement.PlacementRoot
+        );
+        string outsideRoot = platform == ConfigurationLayoutPlatform.Windows
+            ? @"C:\outside\python-keyring"
+            : "/outside/python-keyring";
+        FakeAdapterDiscoveryContext context = CreateTopologyAwareDiscoveryContext(
+            layout,
+            fileSystem
+        );
+
+        fileSystem.CreateDirectory(placementRootParent);
+        fileSystem.CreateDirectory(GetContainingDirectory(platform, outsideRoot));
+        fileSystem.CreateDirectory(outsideRoot);
+        fileSystem.AddSymbolicLink(unsafePlacement.PlacementRoot, outsideRoot);
+        fileSystem.CreateDirectory(unsafePlacement.ArtifactPath);
+
+        FakeAdapterProbeResult rawResult = FakeAdapterDiscoveryScaffold.ProbePlacement(
+            unsafePlacement,
+            context
+        );
+        Dictionary<FakeAdapterSurface, FakeAdapterProbeResult> results =
+            FakeAdapterDiscoveryScaffold
+                .ProbePlacements(context)
+                .ToDictionary(result => result.Surface);
+
+        Assert.Equal(FakeAdapterProbeStatus.WrongKind, rawResult.Status);
+        Assert.Equal(FakeAdapterArtifactKind.Directory, rawResult.ActualKind);
+        AssertSurfaceSet(
+            ExpectedSurfaces.Where(surface => surface != unsafePlacement.Surface),
+            results.Keys
+        );
+        Assert.DoesNotContain(unsafePlacement.Surface, results.Keys);
+
+        NotSupportedException exception = Assert.Throws<NotSupportedException>(() =>
+            FakeAdapterDiscoveryScaffold.ProbePlacement(unsafePlacement.Surface, context)
+        );
+        Assert.Contains(
+            "symbolic-link or reparse-point",
+            exception.Message,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
+    public void ProbePlacementsSkipAndSurfaceProbeRejectsProjectedReparseArtifactPath()
+    {
+        ConfigurationLayoutProjectionContext layout = CreateLayout(
+            ConfigurationLayoutPlatform.Windows
+        );
+        var fileSystem = CreateMaterializationFileSystem(ConfigurationLayoutPlatform.Windows);
+        Dictionary<FakeAdapterSurface, FakeAdapterPlacement> placements = GetPlacementsBySurface(
+            layout
+        );
+        FakeAdapterPlacement unsafePlacement = placements[FakeAdapterSurface.GitHelper];
+        FakeAdapterDiscoveryContext context = CreateTopologyAwareDiscoveryContext(
+            layout,
+            fileSystem
+        );
+
+        fileSystem.CreateDirectory(unsafePlacement.PlacementRoot);
+        fileSystem.WriteAllText(unsafePlacement.ArtifactPath, "helper");
+        fileSystem.MarkAsNonSymbolicReparsePoint(unsafePlacement.ArtifactPath);
+
+        FakeAdapterProbeResult rawResult = FakeAdapterDiscoveryScaffold.ProbePlacement(
+            unsafePlacement,
+            context
+        );
+        Dictionary<FakeAdapterSurface, FakeAdapterProbeResult> results =
+            FakeAdapterDiscoveryScaffold
+                .ProbePlacements(context)
+                .ToDictionary(result => result.Surface);
+
+        Assert.Equal(FakeAdapterProbeStatus.Found, rawResult.Status);
+        Assert.Equal(FakeAdapterArtifactKind.File, rawResult.ActualKind);
+        AssertSurfaceSet(
+            ExpectedSurfaces.Where(surface => surface != unsafePlacement.Surface),
+            results.Keys
+        );
+        Assert.DoesNotContain(unsafePlacement.Surface, results.Keys);
+
+        NotSupportedException exception = Assert.Throws<NotSupportedException>(() =>
+            FakeAdapterDiscoveryScaffold.ProbePlacement(unsafePlacement.Surface, context)
+        );
+        Assert.Contains(
+            "symbolic-link or reparse-point",
+            exception.Message,
+            StringComparison.Ordinal
         );
     }
 
@@ -4728,14 +5202,7 @@ public sealed class InstallerDiscoveryScaffoldTests
 
         Dictionary<FakeAdapterSurface, FakeAdapterProbeResult> results =
             FakeAdapterDiscoveryScaffold
-                .ProbePlacements(
-                    new FakeAdapterDiscoveryContext
-                    {
-                        Layout = layout,
-                        FileExists = fileSystem.FileExists,
-                        DirectoryExists = fileSystem.DirectoryExists,
-                    }
-                )
+                .ProbePlacements(CreateTopologyAwareDiscoveryContext(layout, fileSystem))
                 .ToDictionary(result => result.Surface);
 
         AssertExpectedSurfaceSet(results.Keys);
@@ -4756,8 +5223,11 @@ public sealed class InstallerDiscoveryScaffoldTests
             fileSystem.Calls,
             call =>
                 Assert.True(
-                    call.Operation is nameof(InMemoryFileSystem.FileExists)
+                    call.Operation is nameof(InMemoryFileSystem.IsPathFullyQualified)
+                        or nameof(InMemoryFileSystem.FileExists)
                         or nameof(InMemoryFileSystem.DirectoryExists)
+                        or nameof(InMemoryFileSystem.IsSymbolicLink)
+                        or nameof(IFileSystemReparsePointSafety.IsReparsePoint)
                 )
         );
     }
@@ -4842,6 +5312,34 @@ public sealed class InstallerDiscoveryScaffoldTests
                 ? InMemoryPathSemantics.Windows
                 : InMemoryPathSemantics.Posix
         );
+
+    private static Func<string, bool> CreatePathSemanticsProbe(
+        ConfigurationLayoutPlatform platform
+    ) => CreateMaterializationFileSystem(platform).IsPathFullyQualified;
+
+    private static FakeAdapterDiscoveryContext CreateTopologyAwareDiscoveryContext(
+        ConfigurationLayoutProjectionContext layout,
+        InMemoryFileSystem fileSystem
+    ) =>
+        new()
+        {
+            Layout = layout,
+            IsPathFullyQualified = fileSystem.IsPathFullyQualified,
+            FileExists = fileSystem.FileExists,
+            DirectoryExists = fileSystem.DirectoryExists,
+            IsSymbolicLink = fileSystem.IsSymbolicLink,
+            IsReparsePoint = ((IFileSystemReparsePointSafety)fileSystem).IsReparsePoint,
+        };
+
+    private static Exception CreateTopologyProbeCallbackException(
+        bool throwUnauthorizedAccessException,
+        string path
+    ) =>
+        throwUnauthorizedAccessException
+            ? new UnauthorizedAccessException(
+                $"Fake topology probe denied access to '{path}'."
+            )
+            : new IOException($"Fake topology probe failed for '{path}'.");
 
     private static FakeAdapterPlacement MaterializeSinglePlacement(
         FakeAdapterSurface surface,

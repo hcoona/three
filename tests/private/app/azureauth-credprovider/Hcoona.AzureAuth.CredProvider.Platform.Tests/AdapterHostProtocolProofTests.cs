@@ -23,6 +23,26 @@ public sealed class AdapterHostProtocolProofTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task
+        GitIsolatedSurrogateProtocolStdoutBecomesSafeFatalFailure()
+    {
+        ProcessResult result = await RunProofAsync(
+            AdapterHostProofProcess.GitInvalidUtf16ProtocolStdoutScenario);
+
+        AssertSafeFailure(
+            result,
+            FatalExitCode,
+            AdapterHostProofProcess.UnhandledHostFailureSafeCode,
+            AdapterHostProofProcess.UnhandledHostFailureSafeMessage,
+            AdapterHostProofProcess.SharedUsername,
+            AdapterHostProofProcess.GitPassword);
+        Assert.DoesNotContain(
+            "EncoderFallbackException",
+            result.StandardError,
+            StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(AdapterHostProofProcess.GitStoreSuccessScenario)]
     [InlineData(AdapterHostProofProcess.GitEraseSuccessScenario)]
@@ -210,20 +230,104 @@ public sealed class AdapterHostProtocolProofTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task
+        SharedHostHumanCommandIsolatedSurrogateStdoutBecomesSafeFatalFailure()
+    {
+        ProcessResult result = await RunProofAsync(
+            AdapterHostProofProcess.HumanCommandInvalidUtf16StdoutScenario);
+
+        AssertSafeFailure(
+            result,
+            FatalExitCode,
+            AdapterHostProofProcess.UnhandledHostFailureSafeCode,
+            AdapterHostProofProcess.UnhandledHostFailureSafeMessage);
+        Assert.DoesNotContain(
+            "EncoderFallbackException",
+            result.StandardError,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task
+        SharedHostHumanCommandAllowsNonBmpStdoutAndDiagnosticStderrThroughRealConsole()
+    {
+        ProcessResult result = await RunProofAsync(
+            AdapterHostProofProcess.HumanCommandNonBmpScenario);
+
+        Assert.Equal(SuccessExitCode, result.ExitCode);
+        Assert.Equal(AdapterHostProofProcess.HumanCommandNonBmpStdout, result.StandardOutput);
+        Assert.Equal(
+            "2025-01-02T03:04:05.0000000+00:00 [Error] "
+                + AdapterHostProofProcess.HumanCommandNonBmpDiagnosticMessage
+                + "\n",
+            ProcessTestApp.NormalizeNewlines(result.StandardError));
+        Assert.DoesNotContain(
+            AdapterHostProofProcess.SuppressedProtocolPayload,
+            result.StandardOutput,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            AdapterHostProofProcess.SuppressedProtocolPayload,
+            result.StandardError,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task
+        SharedHostHumanCommandAllowsNonBmpStdoutAndDiagnosticStderrThroughForcedNonUtf8Console()
+    {
+        ProcessResult result = await RunProofAsync(
+            AdapterHostProofProcess.HumanCommandNonBmpScenario,
+            forceNonUtf8Console: true);
+
+        Assert.Equal(SuccessExitCode, result.ExitCode);
+        Assert.Equal(AdapterHostProofProcess.HumanCommandNonBmpStdout, result.StandardOutput);
+        Assert.Equal(
+            "2025-01-02T03:04:05.0000000+00:00 [Error] "
+                + AdapterHostProofProcess.HumanCommandNonBmpDiagnosticMessage
+                + "\n",
+            ProcessTestApp.NormalizeNewlines(result.StandardError));
+    }
+
+    [Fact]
+    public async Task
+        ProofHelperUnknownScenarioUsesUtf8ConfigurationStderrThroughForcedNonUtf8Console()
+    {
+        ProcessResult result = await RunProofHelperAsync(true, "🚀");
+
+        AssertConfigurationFailure(result, "Unknown adapter host proof scenario '🚀'.");
+    }
+
     private static async Task<ProcessResult> RunProofAsync(string scenario)
     {
         return await RunProofHelperAsync(scenario);
     }
 
+    private static async Task<ProcessResult> RunProofAsync(
+        string scenario,
+        bool forceNonUtf8Console)
+    {
+        return await RunProofHelperAsync(forceNonUtf8Console, scenario);
+    }
+
     private static async Task<ProcessResult> RunProofHelperAsync(params string[] scenarioArguments)
+    {
+        return await RunProofHelperAsync(false, scenarioArguments);
+    }
+
+    private static async Task<ProcessResult> RunProofHelperAsync(
+        bool forceNonUtf8Console,
+        params string[] scenarioArguments)
     {
         var runner = new SystemProcessRunner();
         return await runner.RunAsync(
-            ProofStartSpec(scenarioArguments),
+            ProofStartSpec(forceNonUtf8Console, scenarioArguments),
             TestContext.Current.CancellationToken);
     }
 
-    private static ProcessStartSpec ProofStartSpec(params string[] scenarioArguments)
+    private static ProcessStartSpec ProofStartSpec(
+        bool forceNonUtf8Console,
+        params string[] scenarioArguments)
     {
         var helperNonce = ProcessTestApp.CreateHelperNonce();
         List<string> arguments = ProcessTestApp.CreateHelperArguments(
@@ -231,12 +335,21 @@ public sealed class AdapterHostProtocolProofTests
             "adapter-host-proof",
             scenarioArguments
         );
+        Dictionary<string, string?>? environment = null;
+        if (forceNonUtf8Console)
+        {
+            environment = new Dictionary<string, string?>
+            {
+                [AdapterHostProofProcess.ForceNonUtf8ConsoleEnvironmentVariable] = "1",
+            };
+        }
 
         return new ProcessStartSpec(
             ProcessTestApp.AppHostPath(),
             arguments,
             environment: ProcessTestApp.CreateHelperEnvironment(
                 helperNonce,
+                environment,
                 environmentMode: ProcessEnvironmentMode.ExplicitOnly),
             environmentMode: ProcessEnvironmentMode.ExplicitOnly);
     }

@@ -40,6 +40,9 @@ public sealed class DiagnosticEvent
 
     internal bool AllowCodeSpecificFallback { get; init; }
 
+    internal SafeDiagnosticFallbackScope FallbackScope { get; init; } =
+        SafeDiagnosticFallbackScope.AdapterHost;
+
     private static ReadOnlyDictionary<string, string?> CopyProperties(
         IReadOnlyDictionary<string, string?>? properties)
     {
@@ -50,4 +53,10 @@ public sealed class DiagnosticEvent
 
         return new ReadOnlyDictionary<string, string?>(new Dictionary<string, string?>(properties));
     }
+}
+
+internal enum SafeDiagnosticFallbackScope
+{
+    AdapterHost,
+    CredentialCore,
 }

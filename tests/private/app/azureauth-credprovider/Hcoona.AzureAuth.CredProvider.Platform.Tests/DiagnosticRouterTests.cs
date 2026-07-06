@@ -1,3 +1,4 @@
+using System.Reflection;
 using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
 using Hcoona.AzureAuth.CredProvider.Platform.Redaction;
 using Xunit;
@@ -415,6 +416,34 @@ public sealed class DiagnosticRouterTests
     }
 
     [Fact]
+    public void
+        RouteSafeEnvelopeRestoresBlankRedactedMessageFromTrustedCredentialCoreUnsupportedFlowCode()
+    {
+        var diagnosticText = new StringWriter();
+        var textSink = new TextWriterDiagnosticSink(diagnosticText);
+        var recordingSink = new RecordingDiagnosticSink();
+        var router = new DiagnosticRouter([textSink, recordingSink], Redactor("ED"));
+        DiagnosticEvent diagnosticEvent = SafeDiagnosticEnvelope(
+            "ED",
+            new Dictionary<string, string?>
+            {
+                ["code"] = "UnsupportedFlow",
+            },
+            allowCodeSpecificFallback: true,
+            fallbackScope: SafeDiagnosticFallbackScope.CredentialCore);
+
+        router.Route(diagnosticEvent);
+
+        DiagnosticEvent routedEvent = Assert.Single(recordingSink.Events);
+        string diagnosticTextValue = diagnosticText.ToString();
+        Assert.Equal(
+            "Requested identity flow is not supported by the current MVP policy.",
+            routedEvent.Message);
+        Assert.Equal("UnsupportedFlow", routedEvent.Properties["code"]);
+        Assert.Contains(routedEvent.Message, diagnosticTextValue, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RoutePreservesCanonicalSafeCodePropertyName()
     {
         var sink = new RecordingDiagnosticSink();
@@ -499,6 +528,21 @@ public sealed class DiagnosticRouterTests
         Assert.Throws<ArgumentNullException>(
             "redactor",
             () => new DiagnosticRouter([sink], redactor: null!));
+    }
+
+    [Fact]
+    public void RouteNullDiagnosticEventThrowsArgumentNullExceptionBeforeSuppression()
+    {
+        var sink = new CommitTrackingRecordingDiagnosticSink(returnOutputCommitted: false);
+        var router = new DiagnosticRouter([sink], Redactor());
+
+        using (router.BeginUserVisibleCommitTracking(
+            suppressDirectCredentialCoreSafeDiagnosticRoutes: true))
+        {
+            Assert.Throws<ArgumentNullException>(
+                "diagnosticEvent",
+                () => router.Route(null!));
+        }
     }
 
     [Fact]
@@ -606,15 +650,796 @@ public sealed class DiagnosticRouterTests
         Assert.Equal(SecretRedactor.DefaultMask, firstEvent.Properties["token"]);
     }
 
+    [Fact]
+    public async Task RouteNormalizesClosedFlowedChildScopeToOpenAncestor()
+    {
+        var sink = new CommitTrackingRecordingDiagnosticSink(returnOutputCommitted: true);
+        var router = new DiagnosticRouter([sink], Redactor());
+        using var releaseFlowedRoute = new ManualResetEventSlim(false);
+        Task? flowedRouteTask = null;
+        DiagnosticCommitTrackingScope? parentScope = null;
+
+        using (parentScope = router.BeginUserVisibleCommitTracking())
+        {
+            using (router.BeginUserVisibleCommitTracking())
+            {
+                flowedRouteTask = Task.Run(
+                    () =>
+                    {
+                        if (!releaseFlowedRoute.Wait(TimeSpan.FromSeconds(10)))
+                        {
+                            throw new TimeoutException(
+                                "Timed out waiting to release the flowed direct diagnostic route.");
+                        }
+
+                        router.Route(new DiagnosticEvent(
+                            DiagnosticSeverity.Warning,
+                            DiagnosticChannel.Diagnostic,
+                            "normalized direct diagnostic"));
+                    },
+                    TestContext.Current.CancellationToken);
+            }
+
+            releaseFlowedRoute.Set();
+
+            await Assert
+                .IsType<Task>(flowedRouteTask)
+                .WaitAsync(
+                    TimeSpan.FromSeconds(10),
+                    TestContext.Current.CancellationToken);
+            Assert.True(parentScope.OutputCommitted);
+        }
+
+        DiagnosticEvent diagnosticEvent = Assert.Single(sink.Events);
+        Assert.Equal("normalized direct diagnostic", diagnosticEvent.Message);
+    }
+
+    [Fact]
+    public async Task DisposeSuppressesNewOutputAcrossClosedIntermediateScope()
+    {
+        var sink = new CommitTrackingRecordingDiagnosticSink(returnOutputCommitted: true);
+        var router = new DiagnosticRouter([sink], Redactor());
+        using var descendantScopeOpened = new ManualResetEventSlim(false);
+        using var releaseDescendantRoute = new ManualResetEventSlim(false);
+        Task? flowedTask = null;
+        DiagnosticCommitTrackingScope? parentScope = null;
+
+        using (parentScope = router.BeginUserVisibleCommitTracking())
+        {
+            using (router.BeginUserVisibleCommitTracking())
+            {
+                flowedTask = Task.Run(
+                    () =>
+                    {
+                        using (router.BeginUserVisibleCommitTracking())
+                        {
+                            descendantScopeOpened.Set();
+                            if (!releaseDescendantRoute.Wait(TimeSpan.FromSeconds(10)))
+                            {
+                                throw new TimeoutException(
+                                    "Timed out waiting to release the descendant " +
+                                    "diagnostic route.");
+                            }
+
+                            Assert.False(router.RouteWithCommitTracking(new DiagnosticEvent(
+                                DiagnosticSeverity.Warning,
+                                DiagnosticChannel.Diagnostic,
+                                "descendant diagnostic")));
+                        }
+                    },
+                    TestContext.Current.CancellationToken);
+
+                if (!descendantScopeOpened.Wait(
+                    TimeSpan.FromSeconds(10),
+                    TestContext.Current.CancellationToken))
+                {
+                    throw new TimeoutException(
+                        "Timed out waiting for the descendant commit tracking scope to open.");
+                }
+            }
+
+            releaseDescendantRoute.Set();
+
+            await Assert
+                .IsType<Task>(flowedTask)
+                .WaitAsync(
+                    TimeSpan.FromSeconds(10),
+                    TestContext.Current.CancellationToken);
+            Assert.False(parentScope.OutputCommitted);
+        }
+
+        Assert.Empty(sink.Events);
+    }
+
+    [Fact]
+    public void RouteWithCommitTrackingMarksOpenAncestorCommittedBeforeDescendantScopeDisposes()
+    {
+        var sink = new CommitTrackingRecordingDiagnosticSink(returnOutputCommitted: true);
+        var router = new DiagnosticRouter([sink], Redactor());
+        DiagnosticCommitTrackingScope? parentScope = null;
+
+        using (parentScope = router.BeginUserVisibleCommitTracking())
+        {
+            using (router.BeginUserVisibleCommitTracking())
+            {
+                Assert.True(router.RouteWithCommitTracking(new DiagnosticEvent(
+                    DiagnosticSeverity.Warning,
+                    DiagnosticChannel.Diagnostic,
+                    "descendant committed diagnostic")));
+                Assert.True(parentScope.OutputCommitted);
+            }
+        }
+
+        DiagnosticEvent diagnosticEvent = Assert.Single(sink.Events);
+        Assert.Equal("descendant committed diagnostic", diagnosticEvent.Message);
+    }
+
+    [Fact]
+    public async Task
+        RouteWithCommitTrackingMarksOpenAncestorCommittedWhileDescendantRouteIsInFlight()
+    {
+        using var sink = new BlockingCommitTrackingDiagnosticSink(
+            "in-flight descendant diagnostic");
+        var router = new DiagnosticRouter([sink], Redactor());
+        Task<bool>? descendantRouteTask = null;
+        DiagnosticCommitTrackingScope? parentScope = null;
+
+        try
+        {
+            using (parentScope = router.BeginUserVisibleCommitTracking())
+            {
+                using (router.BeginUserVisibleCommitTracking())
+                {
+                    descendantRouteTask = Task.Run(
+                        () => router.RouteWithCommitTracking(new DiagnosticEvent(
+                            DiagnosticSeverity.Warning,
+                            DiagnosticChannel.Diagnostic,
+                            "in-flight descendant diagnostic")),
+                        TestContext.Current.CancellationToken);
+                    sink.WaitForBlockedWriteEntered();
+                    Assert.True(parentScope.OutputCommitted);
+                }
+            }
+        }
+        finally
+        {
+            sink.ReleaseBlockedWrite();
+        }
+
+        bool outputCommitted = await Assert
+            .IsType<Task<bool>>(descendantRouteTask)
+            .WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+        Assert.False(outputCommitted);
+        DiagnosticEvent diagnosticEvent = Assert.Single(sink.AttemptedEvents);
+        Assert.Equal("in-flight descendant diagnostic", diagnosticEvent.Message);
+    }
+
+    [Fact]
+    public async Task
+        RouteWithCommitTrackingDoesNotPartiallyPublishDescendantRoutesBeforeAncestorVisibility()
+    {
+        FieldInfo? stateGateField = typeof(DiagnosticCommitTrackingScope).GetField(
+            "_stateGate",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(stateGateField);
+
+        var sink = new CommitTrackingRecordingDiagnosticSink(returnOutputCommitted: false);
+        var router = new DiagnosticRouter([sink], Redactor());
+        DiagnosticCommitTrackingScope? parentScope = null;
+        DiagnosticCommitTrackingScope? childScope = null;
+        bool childPublishedBeforeRelease;
+        bool parentPublishedBeforeRelease;
+        Task<bool>? descendantRouteTask = null;
+
+        using (parentScope = router.BeginUserVisibleCommitTracking())
+        {
+            using (childScope = router.BeginUserVisibleCommitTracking())
+            {
+                object stateGate = Assert.IsType<object>(stateGateField.GetValue(parentScope));
+                Monitor.Enter(stateGate);
+                try
+                {
+                    descendantRouteTask = Task.Run(
+                        () => router.RouteWithCommitTracking(new DiagnosticEvent(
+                            DiagnosticSeverity.Warning,
+                            DiagnosticChannel.Diagnostic,
+                            "partially published descendant diagnostic")),
+                        TestContext.Current.CancellationToken);
+                    Task<bool> routeTask = Assert.IsType<Task<bool>>(descendantRouteTask);
+                    _ = SpinWait.SpinUntil(
+                        () => childScope.OutputCommitted || routeTask.IsCompleted,
+                        TimeSpan.FromSeconds(1));
+                    childPublishedBeforeRelease = childScope.OutputCommitted;
+                    parentPublishedBeforeRelease = parentScope.OutputCommitted;
+                }
+                finally
+                {
+                    Monitor.Exit(stateGate);
+                }
+
+                bool outputCommitted = await Assert
+                    .IsType<Task<bool>>(descendantRouteTask)
+                    .WaitAsync(
+                        TimeSpan.FromSeconds(10),
+                        TestContext.Current.CancellationToken);
+                Assert.False(outputCommitted);
+            }
+        }
+
+        DiagnosticEvent diagnosticEvent = Assert.Single(sink.Events);
+        Assert.Equal("partially published descendant diagnostic", diagnosticEvent.Message);
+        Assert.False(childPublishedBeforeRelease && !parentPublishedBeforeRelease);
+    }
+
+    [Fact]
+    public async Task RouteSuppressesLateDirectFlowedWritesFromDisposedScopeWithoutOpenAncestor()
+    {
+        var sink = new CommitTrackingRecordingDiagnosticSink(returnOutputCommitted: true);
+        var router = new DiagnosticRouter([sink], Redactor());
+        using var releaseLateRoute = new ManualResetEventSlim(false);
+        Task? lateRouteTask = null;
+
+        using (router.BeginUserVisibleCommitTracking())
+        {
+            lateRouteTask = Task.Run(
+                () =>
+                {
+                    if (!releaseLateRoute.Wait(TimeSpan.FromSeconds(10)))
+                    {
+                        throw new TimeoutException(
+                            "Timed out waiting to release the late direct diagnostic route.");
+                    }
+
+                    router.Route(new DiagnosticEvent(
+                        DiagnosticSeverity.Warning,
+                        DiagnosticChannel.Diagnostic,
+                        "late direct diagnostic"));
+                },
+                TestContext.Current.CancellationToken);
+        }
+
+        releaseLateRoute.Set();
+
+        await Assert
+            .IsType<Task>(lateRouteTask)
+            .WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+        Assert.Empty(sink.Events);
+    }
+
+    [Fact]
+    public async Task RouteSuppressesNewDescendantRouteWhenAncestorDisposedBeforeEntry()
+    {
+        var sink = new CommitTrackingRecordingDiagnosticSink(returnOutputCommitted: true);
+        var router = new DiagnosticRouter([sink], Redactor());
+        using var descendantScopeOpened = new ManualResetEventSlim(false);
+        using var releaseDescendantRoute = new ManualResetEventSlim(false);
+        Task? descendantRouteTask = null;
+
+        using (router.BeginUserVisibleCommitTracking())
+        {
+            descendantRouteTask = Task.Run(
+                () =>
+                {
+                    using (router.BeginUserVisibleCommitTracking())
+                    {
+                        descendantScopeOpened.Set();
+                        if (!releaseDescendantRoute.Wait(TimeSpan.FromSeconds(10)))
+                        {
+                            throw new TimeoutException(
+                                "Timed out waiting to release the descendant " +
+                                "diagnostic route.");
+                        }
+
+                        router.Route(new DiagnosticEvent(
+                            DiagnosticSeverity.Warning,
+                            DiagnosticChannel.Diagnostic,
+                            "late descendant diagnostic"));
+                    }
+                },
+                TestContext.Current.CancellationToken);
+
+            if (!descendantScopeOpened.Wait(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken))
+            {
+                throw new TimeoutException(
+                    "Timed out waiting for the descendant commit tracking scope to open.");
+            }
+        }
+
+        releaseDescendantRoute.Set();
+
+        await Assert
+            .IsType<Task>(descendantRouteTask)
+            .WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+        Assert.Empty(sink.Events);
+    }
+
+    [Fact]
+    public async Task RouteWithCommitTrackingSuppressesLateFlowedWritesFromDisposedScope()
+    {
+        var sink = new CommitTrackingRecordingDiagnosticSink(returnOutputCommitted: true);
+        var router = new DiagnosticRouter([sink], Redactor());
+        using var releaseLateRoute = new ManualResetEventSlim(false);
+        Task<bool>? lateRouteTask = null;
+
+        using (router.BeginUserVisibleCommitTracking())
+        {
+            lateRouteTask = Task.Run(() =>
+            {
+                if (!releaseLateRoute.Wait(TimeSpan.FromSeconds(10)))
+                {
+                    throw new TimeoutException(
+                        "Timed out waiting to release a disposed-scope diagnostic route.");
+                }
+
+                return router.RouteWithCommitTracking(new DiagnosticEvent(
+                    DiagnosticSeverity.Warning,
+                    DiagnosticChannel.Diagnostic,
+                    "late diagnostic"));
+            });
+        }
+
+        releaseLateRoute.Set();
+
+        bool outputCommitted = await Assert
+            .IsType<Task<bool>>(lateRouteTask)
+            .WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+        Assert.False(outputCommitted);
+        Assert.Empty(sink.Events);
+    }
+
+    [Fact]
+    public async Task BeginUserVisibleCommitTrackingIgnoresInheritedDisposedParentScope()
+    {
+        var sink = new CommitTrackingRecordingDiagnosticSink(returnOutputCommitted: false);
+        var router = new DiagnosticRouter([sink], Redactor());
+        using var releaseFlowedTask = new ManualResetEventSlim(false);
+        Task? flowedTask = null;
+
+        using (router.BeginUserVisibleCommitTracking())
+        {
+            flowedTask = Task.Run(
+                () =>
+                {
+                    if (!releaseFlowedTask.Wait(TimeSpan.FromSeconds(10)))
+                    {
+                        throw new TimeoutException(
+                            "Timed out waiting to release the flowed commit tracking scope.");
+                    }
+
+                    using (router.BeginUserVisibleCommitTracking())
+                    {
+                    }
+
+                    router.Route(new DiagnosticEvent(
+                        DiagnosticSeverity.Warning,
+                        DiagnosticChannel.Diagnostic,
+                        "plain diagnostic after reopened tracking"));
+                },
+                TestContext.Current.CancellationToken);
+        }
+
+        releaseFlowedTask.Set();
+
+        await Assert
+            .IsType<Task>(flowedTask)
+            .WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+        DiagnosticEvent diagnosticEvent = Assert.Single(sink.Events);
+        Assert.Equal("plain diagnostic after reopened tracking", diagnosticEvent.Message);
+    }
+
+    [Fact]
+    public async Task BeginUserVisibleCommitTrackingPreservesOpenAncestorWhenPruningClosedScope()
+    {
+        var sink = new CommitTrackingRecordingDiagnosticSink(returnOutputCommitted: true);
+        var router = new DiagnosticRouter([sink], Redactor());
+        using var releaseFlowedTask = new ManualResetEventSlim(false);
+        Task? flowedTask = null;
+        DiagnosticCommitTrackingScope? parentScope = null;
+
+        using (parentScope = router.BeginUserVisibleCommitTracking())
+        {
+            using (router.BeginUserVisibleCommitTracking())
+            {
+                flowedTask = Task.Run(
+                    () =>
+                    {
+                        if (!releaseFlowedTask.Wait(TimeSpan.FromSeconds(10)))
+                        {
+                            throw new TimeoutException(
+                                "Timed out waiting to release the flowed commit tracking scope.");
+                        }
+
+                        using (router.BeginUserVisibleCommitTracking())
+                        {
+                            Assert.True(router.RouteWithCommitTracking(new DiagnosticEvent(
+                                DiagnosticSeverity.Warning,
+                                DiagnosticChannel.Diagnostic,
+                                "reopened diagnostic")));
+                        }
+                    },
+                    TestContext.Current.CancellationToken);
+            }
+
+            releaseFlowedTask.Set();
+
+            await Assert
+                .IsType<Task>(flowedTask)
+                .WaitAsync(
+                    TimeSpan.FromSeconds(10),
+                    TestContext.Current.CancellationToken);
+            Assert.True(parentScope.OutputCommitted);
+        }
+
+        DiagnosticEvent diagnosticEvent = Assert.Single(sink.Events);
+        Assert.Equal("reopened diagnostic", diagnosticEvent.Message);
+    }
+
+    [Fact]
+    public void
+        BeginUserVisibleCommitTrackingInheritsLateCoreRecoverySuppressionFromOpenAncestor()
+    {
+        var router = new DiagnosticRouter([], Redactor());
+
+        using var outerScope = router.BeginUserVisibleCommitTracking();
+        using (var firstChildScope = router.BeginUserVisibleCommitTracking())
+        {
+            firstChildScope.SuppressLateCredentialCoreRecovery();
+        }
+
+        Assert.True(outerScope.SuppressesLateCredentialCoreRecovery);
+
+        using var secondChildScope = router.BeginUserVisibleCommitTracking();
+        Assert.True(secondChildScope.SuppressesLateCredentialCoreRecovery);
+    }
+
+    [Fact]
+    public void
+        RouteSuppressesDirectCredentialCoreSafeEnvelopesWhileProtocolSuppressionScopeIsActive()
+    {
+        var sink = new CommitTrackingRecordingDiagnosticSink(returnOutputCommitted: false);
+        var router = new DiagnosticRouter([sink], Redactor());
+
+        using (router.BeginUserVisibleCommitTracking(
+            suppressDirectCredentialCoreSafeDiagnosticRoutes: true))
+        {
+            router.Route(new DiagnosticEvent(
+                DiagnosticSeverity.Warning,
+                DiagnosticChannel.Diagnostic,
+                "credential core diagnostic",
+                properties: new Dictionary<string, string?>
+                {
+                    ["code"] = "FlowDisabled",
+                },
+                isSafeDiagnosticEnvelope: true)
+            {
+                AllowCodeSpecificFallback = true,
+                FallbackScope = SafeDiagnosticFallbackScope.CredentialCore,
+            });
+
+            _ = router.RouteWithCommitTracking(new DiagnosticEvent(
+                DiagnosticSeverity.Error,
+                DiagnosticChannel.Diagnostic,
+                "host-owned diagnostic",
+                properties: new Dictionary<string, string?>
+                {
+                    ["code"] = "FlowDisabled",
+                },
+                isSafeDiagnosticEnvelope: true)
+            {
+                AllowCodeSpecificFallback = true,
+                FallbackScope = SafeDiagnosticFallbackScope.CredentialCore,
+            });
+        }
+
+        DiagnosticEvent routedEvent = Assert.Single(sink.Events);
+        Assert.Equal("host-owned diagnostic", routedEvent.Message);
+    }
+
+    [Fact]
+    public async Task DisposeMarksInFlightRouteAsCommittedAndSuppressesLateFlowedRoutes()
+    {
+        using var sink = new BlockingCommitTrackingDiagnosticSink(
+            blockedMessage: "in-flight diagnostic");
+        var router = new DiagnosticRouter([sink], Redactor());
+        using var releaseLateRoute = new ManualResetEventSlim(false);
+        Task<bool>? inFlightRouteTask = null;
+        Task<bool>? lateRouteTask = null;
+        DiagnosticCommitTrackingScope? scope = null;
+
+        using (scope = router.BeginUserVisibleCommitTracking())
+        {
+            inFlightRouteTask = Task.Run(
+                () => router.RouteWithCommitTracking(new DiagnosticEvent(
+                    DiagnosticSeverity.Warning,
+                    DiagnosticChannel.Diagnostic,
+                    "in-flight diagnostic")),
+                TestContext.Current.CancellationToken);
+            sink.WaitForBlockedWriteEntered();
+            lateRouteTask = Task.Run(
+                () =>
+                {
+                    if (!releaseLateRoute.Wait(TimeSpan.FromSeconds(10)))
+                    {
+                        throw new TimeoutException(
+                            "Timed out waiting to release the late commit-tracked route.");
+                    }
+
+                    return router.RouteWithCommitTracking(new DiagnosticEvent(
+                        DiagnosticSeverity.Warning,
+                        DiagnosticChannel.Diagnostic,
+                        "late diagnostic"));
+                },
+                TestContext.Current.CancellationToken);
+        }
+
+        Assert.True(Assert.IsType<DiagnosticCommitTrackingScope>(scope).OutputCommitted);
+
+        releaseLateRoute.Set();
+        sink.ReleaseBlockedWrite();
+
+        bool inFlightOutputCommitted = await Assert
+            .IsType<Task<bool>>(inFlightRouteTask)
+            .WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+        bool lateOutputCommitted = await Assert
+            .IsType<Task<bool>>(lateRouteTask)
+            .WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+
+        Assert.False(inFlightOutputCommitted);
+        Assert.False(lateOutputCommitted);
+        DiagnosticEvent diagnosticEvent = Assert.Single(sink.AttemptedEvents);
+        Assert.Equal("in-flight diagnostic", diagnosticEvent.Message);
+    }
+
+    [Fact]
+    public async Task RouteSuppressesLaterSinksWhenAncestorClosesAfterDescendantRouteEntry()
+    {
+        using var firstSink = new BlockingCommitTrackingDiagnosticSink(
+            blockedMessage: "in-flight descendant diagnostic");
+        var secondSink = new CommitTrackingRecordingDiagnosticSink(returnOutputCommitted: true);
+        var router = new DiagnosticRouter([firstSink, secondSink], Redactor());
+        using var descendantScopeOpened = new ManualResetEventSlim(false);
+        Task? descendantRouteTask = null;
+        DiagnosticCommitTrackingScope? parentScope = null;
+
+        try
+        {
+            using (parentScope = router.BeginUserVisibleCommitTracking())
+            {
+                descendantRouteTask = Task.Run(
+                    () =>
+                    {
+                        using (router.BeginUserVisibleCommitTracking())
+                        {
+                            descendantScopeOpened.Set();
+                            router.Route(new DiagnosticEvent(
+                                DiagnosticSeverity.Warning,
+                                DiagnosticChannel.Diagnostic,
+                                "in-flight descendant diagnostic"));
+                        }
+                    },
+                    TestContext.Current.CancellationToken);
+
+                if (!descendantScopeOpened.Wait(
+                    TimeSpan.FromSeconds(10),
+                    TestContext.Current.CancellationToken))
+                {
+                    throw new TimeoutException(
+                        "Timed out waiting for the descendant commit tracking scope to open.");
+                }
+
+                firstSink.WaitForBlockedWriteEntered();
+            }
+
+            Assert.True(Assert.IsType<DiagnosticCommitTrackingScope>(parentScope).OutputCommitted);
+        }
+        finally
+        {
+            firstSink.ReleaseBlockedWrite();
+        }
+
+        await Assert
+            .IsType<Task>(descendantRouteTask)
+            .WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+        DiagnosticEvent diagnosticEvent = Assert.Single(firstSink.AttemptedEvents);
+        Assert.Equal("in-flight descendant diagnostic", diagnosticEvent.Message);
+        Assert.Empty(secondSink.Events);
+    }
+
+    [Fact]
+    public async Task RouteSuppressesLaterSinkWhenAncestorClosesBeforeLaterSinkAdmission()
+    {
+        FieldInfo? stateGateField = typeof(DiagnosticCommitTrackingScope).GetField(
+            "_stateGate",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(stateGateField);
+
+        using var firstSink = new BlockingCommitTrackingDiagnosticSink(
+            blockedMessage: "in-flight descendant diagnostic");
+        var secondSink = new CommitTrackingRecordingDiagnosticSink(returnOutputCommitted: true);
+        var router = new DiagnosticRouter([firstSink, secondSink], Redactor());
+        Task? descendantRouteTask = null;
+        DiagnosticCommitTrackingScope? parentScope = null;
+
+        try
+        {
+            using (parentScope = router.BeginUserVisibleCommitTracking())
+            {
+                descendantRouteTask = Task.Run(
+                    () =>
+                    {
+                        using (router.BeginUserVisibleCommitTracking())
+                        {
+                            router.Route(new DiagnosticEvent(
+                                DiagnosticSeverity.Warning,
+                                DiagnosticChannel.Diagnostic,
+                                "in-flight descendant diagnostic"));
+                        }
+                    },
+                    TestContext.Current.CancellationToken);
+
+                firstSink.WaitForBlockedWriteEntered();
+
+                object stateGate = Assert.IsType<object>(stateGateField.GetValue(parentScope));
+                Monitor.Enter(stateGate);
+                try
+                {
+                    firstSink.ReleaseBlockedWrite();
+                    parentScope.Dispose();
+                }
+                finally
+                {
+                    Monitor.Exit(stateGate);
+                }
+            }
+
+            Assert.True(Assert.IsType<DiagnosticCommitTrackingScope>(parentScope).OutputCommitted);
+        }
+        finally
+        {
+            firstSink.ReleaseBlockedWrite();
+        }
+
+        await Assert
+            .IsType<Task>(descendantRouteTask)
+            .WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+        DiagnosticEvent diagnosticEvent = Assert.Single(firstSink.AttemptedEvents);
+        Assert.Equal("in-flight descendant diagnostic", diagnosticEvent.Message);
+        Assert.Empty(secondSink.Events);
+    }
+
+    [Fact]
+    public void OutputCommittedIncludesCommittedAncestorScope()
+    {
+        var router = new DiagnosticRouter([], Redactor());
+        using var parentScope = router.BeginUserVisibleCommitTracking();
+        using var childScope = router.BeginUserVisibleCommitTracking();
+
+        Assert.False(childScope.OutputCommitted);
+        parentScope.RecordCommit(true);
+        Assert.True(childScope.OutputCommitted);
+    }
+
+    [Fact]
+    public void OutputCommittedIncludesInFlightAncestorScope()
+    {
+        var router = new DiagnosticRouter([], Redactor());
+        using var parentScope = router.BeginUserVisibleCommitTracking();
+        Assert.True(parentScope.TryEnterRoute());
+
+        try
+        {
+            using var childScope = router.BeginUserVisibleCommitTracking();
+            Assert.True(childScope.OutputCommitted);
+        }
+        finally
+        {
+            parentScope.CompleteRoute(false);
+        }
+    }
+
+    [Fact]
+    public void OutputCommittedObservesConcurrentRecordCommit()
+    {
+        Assert.True(ObserveOutputCommittedDuringConcurrentCommit(static scope =>
+            scope.RecordCommit(true)));
+    }
+
+    [Fact]
+    public void OutputCommittedObservesConcurrentCompleteRouteCommit()
+    {
+        Assert.True(ObserveOutputCommittedDuringConcurrentCommit(
+            static scope =>
+            {
+                Assert.True(scope.TryEnterRoute());
+                scope.CompleteRoute(true);
+            }));
+    }
+
+    [Fact]
+    public void ConcurrentRecordCommitNeverLosesCommittedOutput()
+    {
+        const int attemptCount = 64;
+        int concurrentFalseCommitCount = Math.Max(4, Environment.ProcessorCount);
+        var router = new DiagnosticRouter([], Redactor());
+
+        for (var attempt = 0; attempt < attemptCount; attempt++)
+        {
+            var scope = new DiagnosticCommitTrackingScope(router, previousScope: null);
+            Action[] actions =
+            [
+                () => scope.RecordCommit(true),
+            ];
+
+            Array.Resize(ref actions, concurrentFalseCommitCount + 1);
+            for (int index = 1; index < actions.Length; index++)
+            {
+                actions[index] = () => scope.RecordCommit(false);
+            }
+
+            RunSimultaneously(actions);
+            Assert.True(scope.OutputCommitted);
+        }
+    }
+
     private static SecretRedactor Redactor(params string[] secrets)
     {
         return new SecretRedactor(secrets);
     }
 
+    private static void RunSimultaneously(params Action[] actions)
+    {
+        ArgumentNullException.ThrowIfNull(actions);
+
+        using var ready = new CountdownEvent(actions.Length);
+        using var release = new ManualResetEventSlim(false);
+        var threads = new Thread[actions.Length];
+
+        for (int index = 0; index < actions.Length; index++)
+        {
+            Action action = actions[index];
+            threads[index] = new Thread(() =>
+            {
+                ready.Signal();
+                release.Wait();
+                action();
+            });
+            threads[index].Start();
+        }
+
+        Assert.True(ready.Wait(TimeSpan.FromSeconds(10)));
+        release.Set();
+
+        foreach (Thread thread in threads)
+        {
+            Assert.True(thread.Join(TimeSpan.FromSeconds(10)));
+        }
+    }
+
     private static DiagnosticEvent SafeDiagnosticEnvelope(
         string message,
         IReadOnlyDictionary<string, string?> properties,
-        bool allowCodeSpecificFallback = false)
+        bool allowCodeSpecificFallback = false,
+        SafeDiagnosticFallbackScope fallbackScope = SafeDiagnosticFallbackScope.AdapterHost)
     {
         return new DiagnosticEvent(
             DiagnosticSeverity.Error,
@@ -624,7 +1449,62 @@ public sealed class DiagnosticRouterTests
             isSafeDiagnosticEnvelope: true)
         {
             AllowCodeSpecificFallback = allowCodeSpecificFallback,
+            FallbackScope = fallbackScope,
         };
+    }
+
+    private static bool ObserveOutputCommittedDuringConcurrentCommit(
+        Action<DiagnosticCommitTrackingScope> commitAction)
+    {
+        const int attemptCount = 64;
+        FieldInfo? stateGateField = typeof(DiagnosticCommitTrackingScope).GetField(
+            "_stateGate",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(stateGateField);
+
+        for (var attempt = 0; attempt < attemptCount; attempt++)
+        {
+            var router = new DiagnosticRouter([], Redactor());
+            var scope = new DiagnosticCommitTrackingScope(router, previousScope: null);
+            object stateGate = Assert.IsType<object>(stateGateField.GetValue(scope));
+            using var readerStarted = new ManualResetEventSlim(false);
+            bool? observedOutputCommitted = null;
+            Exception? readerException = null;
+            var readerThread = new Thread(() =>
+            {
+                try
+                {
+                    readerStarted.Set();
+                    observedOutputCommitted = scope.OutputCommitted;
+                }
+                catch (Exception ex)
+                {
+                    readerException = ex;
+                }
+            });
+
+            Monitor.Enter(stateGate);
+            try
+            {
+                readerThread.Start();
+                Assert.True(readerStarted.Wait(TimeSpan.FromSeconds(10)));
+                Thread.Sleep(1);
+                commitAction(scope);
+            }
+            finally
+            {
+                Monitor.Exit(stateGate);
+            }
+
+            Assert.True(readerThread.Join(TimeSpan.FromSeconds(10)));
+            Assert.Null(readerException);
+            if (scope.OutputCommitted && observedOutputCommitted == false)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private sealed class RecordingDiagnosticSink : IDiagnosticSink
@@ -634,6 +1514,102 @@ public sealed class DiagnosticRouterTests
         public void Write(DiagnosticEvent diagnosticEvent)
         {
             Events.Add(diagnosticEvent);
+        }
+    }
+
+    private sealed class CommitTrackingRecordingDiagnosticSink : ICommitTrackingDiagnosticSink
+    {
+        private readonly bool _returnOutputCommitted;
+
+        public CommitTrackingRecordingDiagnosticSink(bool returnOutputCommitted)
+        {
+            _returnOutputCommitted = returnOutputCommitted;
+        }
+
+        public List<DiagnosticEvent> Events { get; } = [];
+
+        public void Write(DiagnosticEvent diagnosticEvent)
+        {
+            Events.Add(diagnosticEvent);
+        }
+
+        public bool WriteWithCommitTracking(DiagnosticEvent diagnosticEvent)
+        {
+            Write(diagnosticEvent);
+            return _returnOutputCommitted;
+        }
+    }
+
+    private sealed class BlockingCommitTrackingDiagnosticSink
+        : ICommitTrackingDiagnosticSink, IDisposable
+    {
+        private readonly string _blockedMessage;
+        private readonly List<DiagnosticEvent> _attemptedEvents = [];
+        private readonly ManualResetEventSlim _blockedWriteEntered = new(false);
+        private readonly ManualResetEventSlim _releaseBlockedWrite = new(false);
+
+        public BlockingCommitTrackingDiagnosticSink(string blockedMessage)
+        {
+            _blockedMessage = blockedMessage;
+        }
+
+        public DiagnosticEvent[] AttemptedEvents
+        {
+            get
+            {
+                lock (_attemptedEvents)
+                {
+                    return _attemptedEvents.ToArray();
+                }
+            }
+        }
+
+        public void WaitForBlockedWriteEntered()
+        {
+            if (!_blockedWriteEntered.Wait(TimeSpan.FromSeconds(10)))
+            {
+                throw new TimeoutException(
+                    "Timed out waiting for the in-flight commit-tracked route.");
+            }
+        }
+
+        public void ReleaseBlockedWrite()
+        {
+            _releaseBlockedWrite.Set();
+        }
+
+        public void Write(DiagnosticEvent diagnosticEvent)
+        {
+            throw new NotSupportedException("Commit tracking is required.");
+        }
+
+        public bool WriteWithCommitTracking(DiagnosticEvent diagnosticEvent)
+        {
+            lock (_attemptedEvents)
+            {
+                _attemptedEvents.Add(diagnosticEvent);
+            }
+
+            if (string.Equals(
+                diagnosticEvent.Message,
+                _blockedMessage,
+                StringComparison.Ordinal))
+            {
+                _blockedWriteEntered.Set();
+                if (!_releaseBlockedWrite.Wait(TimeSpan.FromSeconds(10)))
+                {
+                    throw new TimeoutException(
+                        "Timed out releasing the in-flight commit-tracked route.");
+                }
+            }
+
+            return false;
+        }
+
+        public void Dispose()
+        {
+            _blockedWriteEntered.Dispose();
+            _releaseBlockedWrite.Dispose();
         }
     }
 }

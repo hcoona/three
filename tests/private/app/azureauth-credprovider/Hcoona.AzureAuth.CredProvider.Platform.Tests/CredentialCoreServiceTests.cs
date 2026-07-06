@@ -295,6 +295,547 @@ public sealed class CredentialCoreServiceTests
         }
     }
 
+    [Fact]
+    public void ExecuteSuccessDiagnosticsUseCredentialCoreFallbackWhenRedactionBlanksMessage()
+    {
+        const string expectedMessage = "Credential request succeeded.";
+        const string expectedCode = "CredentialIssued";
+        var diagnosticText = new StringWriter();
+        var recordingSink = new RecordingDiagnosticSink();
+        DiagnosticRouter router = CreateRecordingDiagnosticRouter(
+            diagnosticText,
+            recordingSink,
+            CreateBlankingRedactor(expectedMessage));
+        var service = new CredentialCoreService(new DeterministicFakeIdentityProvider(), router);
+
+        CredentialResult result = service.Execute(CreateGitRequest());
+
+        Assert.Equal(CredentialResultStatus.Success, result.Status);
+
+        DiagnosticEvent diagnosticEvent = Assert.Single(recordingSink.Events);
+        Assert.Equal(expectedMessage, diagnosticEvent.Message);
+        Assert.Equal(expectedCode, diagnosticEvent.Properties["code"]);
+
+        string emittedText = diagnosticText.ToString();
+        Assert.Contains(expectedMessage, emittedText, StringComparison.Ordinal);
+        Assert.Contains($"code={expectedCode}", emittedText, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Adapter host execution failed.",
+            emittedText,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void
+        ExecuteCacheUnavailableDiagnosticsUseCredentialCoreFallbackWhenRedactionBlanksMessage()
+    {
+        const string expectedMessage = "Persistent derived credential cache is unavailable.";
+        const string expectedCode = "CacheUnavailable";
+        var diagnosticText = new StringWriter();
+        var recordingSink = new RecordingDiagnosticSink();
+        DiagnosticRouter router = CreateRecordingDiagnosticRouter(
+            diagnosticText,
+            recordingSink,
+            CreateBlankingRedactor(expectedMessage));
+        var service = new CredentialCoreService(
+            new DeterministicFakeIdentityProvider(),
+            router,
+            new ReportingDerivedCredentialCache(
+                new DerivedCredentialCacheAvailability(
+                    DerivedCredentialCacheAvailabilityStatus.Unavailable)));
+
+        CredentialResult result = service.Execute(
+            CreateGitRequest(cachePolicy: CachePolicyMode.FuturePersistentCacheRequested));
+
+        Assert.Equal(CredentialResultStatus.CacheUnavailable, result.Status);
+
+        DiagnosticEvent diagnosticEvent = Assert.Single(recordingSink.Events);
+        Assert.Equal(expectedMessage, diagnosticEvent.Message);
+        Assert.Equal(expectedCode, diagnosticEvent.Properties["code"]);
+
+        string emittedText = diagnosticText.ToString();
+        Assert.Contains(expectedMessage, emittedText, StringComparison.Ordinal);
+        Assert.Contains($"code={expectedCode}", emittedText, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Adapter host execution failed.",
+            emittedText,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExecuteFlowDisabledDiagnosticsUseCredentialCoreFallbackWhenRedactionBlanksMessage()
+    {
+        const string expectedMessage = "Credential request is disabled by the current MVP policy.";
+        const string expectedCode = "FlowDisabled";
+        var diagnosticText = new StringWriter();
+        var recordingSink = new RecordingDiagnosticSink();
+        DiagnosticRouter router = CreateRecordingDiagnosticRouter(
+            diagnosticText,
+            recordingSink,
+            CreateBlankingRedactor(expectedMessage));
+        var service = new CredentialCoreService(new DeterministicFakeIdentityProvider(), router);
+
+        CredentialResult result = service.Execute(
+            CreateAzurePipelinesSystemAccessTokenRequest(
+                CachePolicyMode.NonPersistentCi,
+                ciContext: null));
+
+        Assert.Equal(CredentialResultStatus.FlowDisabled, result.Status);
+
+        CredentialError error = Assert.IsType<CredentialError>(result.Error);
+        Assert.Equal(expectedCode, error.Code);
+        Assert.Equal(expectedMessage, error.SafeMessage);
+
+        DiagnosticEvent diagnosticEvent = Assert.Single(recordingSink.Events);
+        Assert.Equal(error.SafeMessage, diagnosticEvent.Message);
+        Assert.Equal(expectedCode, diagnosticEvent.Properties["code"]);
+
+        string emittedText = diagnosticText.ToString();
+        Assert.Contains(error.SafeMessage, emittedText, StringComparison.Ordinal);
+        Assert.Contains($"code={expectedCode}", emittedText, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Adapter host execution failed.",
+            emittedText,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void
+        ExecuteDirectMsalUnavailableDiagnosticsUseCredentialCoreFallbackWhenRedactionDropsCode()
+    {
+        const string expectedMessage = "Direct MSAL identity provider is unavailable.";
+        const string expectedCode = "DirectMsalUnavailable";
+        var provider = new CountingDirectMsalIdentityProvider(
+            _ => throw new PlatformNotSupportedException("direct-msal should stay internal"));
+        var tokenExchange = new CountingTokenExchange(
+            (_, _, _) => throw new InvalidOperationException("token exchange should not run"));
+        var diagnosticText = new StringWriter();
+        var recordingSink = new RecordingDiagnosticSink();
+        DiagnosticRouter router = CreateRecordingDiagnosticRouter(
+            diagnosticText,
+            recordingSink,
+            CreateBlankingRedactor(expectedMessage, expectedCode));
+        var service = new CredentialCoreService(
+            new DirectMsalIdentityProvider(provider),
+            router,
+            derivedCredentialCache: null,
+            tokenExchange: tokenExchange);
+
+        CredentialResult result = service.Execute(
+            CreateGitRequest(kind: CredentialKind.BearerToken));
+
+        Assert.Equal(CredentialResultStatus.CredentialUnavailable, result.Status);
+        Assert.Equal(1, provider.InvocationCount);
+        Assert.Equal(0, tokenExchange.InvocationCount);
+
+        DiagnosticEvent diagnosticEvent = Assert.Single(recordingSink.Events);
+        Assert.Equal(expectedMessage, diagnosticEvent.Message);
+        Assert.False(diagnosticEvent.Properties.ContainsKey("code"));
+
+        string emittedText = diagnosticText.ToString();
+        Assert.Contains(expectedMessage, emittedText, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            $"code={expectedCode}",
+            emittedText,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Adapter host execution failed.",
+            emittedText,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task
+        ExecuteRecoversSafeDiagnosticFromInheritedDisposedCommitTrackingScopeWithoutLateRoutes()
+    {
+        var diagnosticText = new StringWriter();
+        var router = new DiagnosticRouter(
+            [new TextWriterDiagnosticSink(diagnosticText)],
+            SecretRedactor.Empty);
+        var service = new CredentialCoreService(new DeterministicFakeIdentityProvider(), router);
+        using var releaseFlowedTasks = new ManualResetEventSlim(false);
+        Task<CredentialResult>? flowedExecutionTask = null;
+        Task? lateSiblingRouteTask = null;
+
+        using (router.BeginUserVisibleCommitTracking())
+        {
+            flowedExecutionTask = Task.Run(
+                () =>
+                {
+                    if (!releaseFlowedTasks.Wait(TimeSpan.FromSeconds(10)))
+                    {
+                        throw new TimeoutException(
+                            "Timed out waiting to release the flowed credential-core execution.");
+                    }
+
+                    CredentialResult result = service.Execute(CreateGitRequest());
+                    router.Route(new DiagnosticEvent(
+                        DiagnosticSeverity.Warning,
+                        DiagnosticChannel.Diagnostic,
+                        "late raw diagnostic"));
+                    return result;
+                },
+                TestContext.Current.CancellationToken);
+            lateSiblingRouteTask = Task.Run(
+                () =>
+                {
+                    if (!releaseFlowedTasks.Wait(TimeSpan.FromSeconds(10)))
+                    {
+                        throw new TimeoutException(
+                            "Timed out waiting to release the late flowed diagnostic route.");
+                    }
+
+                    router.Route(new DiagnosticEvent(
+                        DiagnosticSeverity.Warning,
+                        DiagnosticChannel.Diagnostic,
+                        "late sibling diagnostic"));
+                },
+                TestContext.Current.CancellationToken);
+        }
+
+        releaseFlowedTasks.Set();
+
+        CredentialResult result = await Assert
+            .IsType<Task<CredentialResult>>(flowedExecutionTask)
+            .WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+        await Assert
+            .IsType<Task>(lateSiblingRouteTask)
+            .WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+
+        Assert.Equal(CredentialResultStatus.Success, result.Status);
+
+        string emittedText = diagnosticText.ToString();
+        Assert.Contains("Credential request succeeded.", emittedText, StringComparison.Ordinal);
+        Assert.Contains("code=CredentialIssued", emittedText, StringComparison.Ordinal);
+        Assert.DoesNotContain("late raw diagnostic", emittedText, StringComparison.Ordinal);
+        Assert.DoesNotContain("late sibling diagnostic", emittedText, StringComparison.Ordinal);
+        Assert.Equal(1, emittedText.Split('\n').Length - 1);
+    }
+
+    [Fact]
+    public async Task
+        ExecuteSuppressesSafeDiagnosticRecoveryFromInheritedDisposedCommittedCommitTrackingScope()
+    {
+        var diagnosticText = new StringWriter();
+        var router = new DiagnosticRouter(
+            [new TextWriterDiagnosticSink(diagnosticText)],
+            SecretRedactor.Empty);
+        var service = new CredentialCoreService(new DeterministicFakeIdentityProvider(), router);
+        using var releaseFlowedExecution = new ManualResetEventSlim(false);
+        Task<CredentialResult>? flowedExecutionTask = null;
+
+        using (router.BeginUserVisibleCommitTracking())
+        {
+            router.Route(new DiagnosticEvent(
+                DiagnosticSeverity.Warning,
+                DiagnosticChannel.Diagnostic,
+                "committed boundary diagnostic"));
+
+            flowedExecutionTask = Task.Run(
+                () =>
+                {
+                    if (!releaseFlowedExecution.Wait(TimeSpan.FromSeconds(10)))
+                    {
+                        throw new TimeoutException(
+                            "Timed out waiting to release the flowed credential-core execution.");
+                    }
+
+                    return service.Execute(CreateGitRequest());
+                },
+                TestContext.Current.CancellationToken);
+        }
+
+        releaseFlowedExecution.Set();
+
+        CredentialResult result = await Assert
+            .IsType<Task<CredentialResult>>(flowedExecutionTask)
+            .WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+
+        Assert.Equal(CredentialResultStatus.Success, result.Status);
+
+        string emittedText = diagnosticText.ToString();
+        Assert.Contains("committed boundary diagnostic", emittedText, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Credential request succeeded.",
+            emittedText,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("code=CredentialIssued", emittedText, StringComparison.Ordinal);
+        Assert.Equal(1, emittedText.Split('\n').Length - 1);
+    }
+
+    [Fact]
+    public async Task
+        ExecuteSuppressesSafeDiagnosticRecoveryFromInheritedDisposedDirectSuppressionScope()
+    {
+        var diagnosticText = new StringWriter();
+        var router = new DiagnosticRouter(
+            [new TextWriterDiagnosticSink(diagnosticText)],
+            SecretRedactor.Empty);
+        var service = new CredentialCoreService(new DeterministicFakeIdentityProvider(), router);
+        using var releaseFlowedExecution = new ManualResetEventSlim(false);
+        Task<CredentialResult>? flowedExecutionTask = null;
+
+        using (router.BeginUserVisibleCommitTracking(
+            suppressDirectCredentialCoreSafeDiagnosticRoutes: true))
+        {
+            flowedExecutionTask = Task.Run(
+                () =>
+                {
+                    if (!releaseFlowedExecution.Wait(TimeSpan.FromSeconds(10)))
+                    {
+                        throw new TimeoutException(
+                            "Timed out waiting to release the flowed credential-core execution.");
+                    }
+
+                    return service.Execute(CreateGitRequest(flow: IdentityFlow.ServicePrincipal));
+                },
+                TestContext.Current.CancellationToken);
+        }
+
+        releaseFlowedExecution.Set();
+
+        CredentialResult result = await Assert
+            .IsType<Task<CredentialResult>>(flowedExecutionTask)
+            .WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+
+        Assert.Equal(CredentialResultStatus.FlowDeferred, result.Status);
+        Assert.Equal(string.Empty, diagnosticText.ToString());
+    }
+
+    [Theory]
+    [InlineData("provider")]
+    [InlineData("tokenExchange")]
+    public async Task ExecuteSuppressesLateDescendantRoutesSpawnedInsideProviderAndTokenExchange(
+        string descendantOwner)
+    {
+        var diagnosticText = new StringWriter();
+        var router = new DiagnosticRouter(
+            [new TextWriterDiagnosticSink(diagnosticText)],
+            SecretRedactor.Empty);
+        using var seamEntered = new ManualResetEventSlim(false);
+        using var releaseDescendantRoute = new ManualResetEventSlim(false);
+        Task? descendantRouteTask = null;
+        const string lateDescendantDiagnostic = "late descendant diagnostic";
+
+        Task CreateDescendantRouteTask()
+        {
+            return Task.Run(
+                () =>
+                {
+                    if (!releaseDescendantRoute.Wait(TimeSpan.FromSeconds(10)))
+                    {
+                        throw new TimeoutException(
+                            "Timed out waiting to release the late flowed descendant "
+                                + "diagnostic route.");
+                    }
+
+                    router.Route(new DiagnosticEvent(
+                        DiagnosticSeverity.Warning,
+                        DiagnosticChannel.Diagnostic,
+                        lateDescendantDiagnostic));
+                },
+                TestContext.Current.CancellationToken);
+        }
+
+        IIdentityProvider identityProvider;
+        ITokenExchange tokenExchange;
+        switch (descendantOwner)
+        {
+            case "provider":
+                var deterministicIdentityProvider = new DeterministicFakeIdentityProvider();
+                identityProvider = new CallbackIdentityProvider(
+                    request =>
+                    {
+                        seamEntered.Set();
+                        descendantRouteTask = CreateDescendantRouteTask();
+                        if (!releaseDescendantRoute.Wait(TimeSpan.FromSeconds(10)))
+                        {
+                            throw new TimeoutException(
+                                "Timed out waiting to release the flowed credential-core "
+                                    + "identity-provider descendant route.");
+                        }
+
+                        Assert
+                            .IsType<Task>(descendantRouteTask)
+                            .WaitAsync(
+                                TimeSpan.FromSeconds(10),
+                                TestContext.Current.CancellationToken)
+                            .GetAwaiter()
+                            .GetResult();
+                        return deterministicIdentityProvider.GetIdentity(request);
+                    });
+                tokenExchange = new DeterministicLocalTokenExchange();
+                break;
+            case "tokenExchange":
+                identityProvider = new DeterministicFakeIdentityProvider();
+                tokenExchange = new CountingTokenExchange(
+                    (request, identity, cacheKey) =>
+                    {
+                        seamEntered.Set();
+                        descendantRouteTask = CreateDescendantRouteTask();
+                        if (!releaseDescendantRoute.Wait(TimeSpan.FromSeconds(10)))
+                        {
+                            throw new TimeoutException(
+                                "Timed out waiting to release the flowed credential-core "
+                                    + "token-exchange descendant route.");
+                        }
+
+                        Assert
+                            .IsType<Task>(descendantRouteTask)
+                            .WaitAsync(
+                                TimeSpan.FromSeconds(10),
+                                TestContext.Current.CancellationToken)
+                            .GetAwaiter()
+                            .GetResult();
+                        return new DeterministicLocalTokenExchange().Exchange(
+                            request,
+                            identity,
+                            cacheKey);
+                    });
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(descendantOwner),
+                    descendantOwner,
+                    null);
+        }
+
+        var service = new CredentialCoreService(
+            identityProvider,
+            router,
+            derivedCredentialCache: null,
+            tokenExchange: tokenExchange);
+        Task<CredentialResult>? flowedExecutionTask = null;
+
+        try
+        {
+            using (router.BeginUserVisibleCommitTracking())
+            {
+                flowedExecutionTask = Task.Run(
+                    () => service.Execute(CreateGitRequest()),
+                    TestContext.Current.CancellationToken);
+
+                if (!seamEntered.Wait(
+                    TimeSpan.FromSeconds(10),
+                    TestContext.Current.CancellationToken))
+                {
+                    throw new TimeoutException(
+                        $"Timed out waiting for the flowed credential-core {descendantOwner} "
+                            + "seam.");
+                }
+            }
+        }
+        finally
+        {
+            releaseDescendantRoute.Set();
+        }
+
+        CredentialResult result = await Assert
+            .IsType<Task<CredentialResult>>(flowedExecutionTask)
+            .WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+        await Assert
+            .IsType<Task>(descendantRouteTask)
+            .WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+
+        Assert.Equal(CredentialResultStatus.Success, result.Status);
+
+        string emittedText = diagnosticText.ToString();
+        Assert.Contains("Credential request succeeded.", emittedText, StringComparison.Ordinal);
+        Assert.Contains("code=CredentialIssued", emittedText, StringComparison.Ordinal);
+        Assert.DoesNotContain(lateDescendantDiagnostic, emittedText, StringComparison.Ordinal);
+        Assert.Equal(1, emittedText.Split('\n').Length - 1);
+    }
+
+    [Fact]
+    public async Task
+        ExecuteRecoversSafeDiagnosticAfterMidExecutionScopeClosureWithoutRevivingLateRoutes()
+    {
+        var diagnosticText = new StringWriter();
+        var router = new DiagnosticRouter(
+            [new TextWriterDiagnosticSink(diagnosticText)],
+            SecretRedactor.Empty);
+        using var tokenExchangeEntered = new ManualResetEventSlim(false);
+        using var releaseTokenExchange = new ManualResetEventSlim(false);
+        var tokenExchange = new CountingTokenExchange(
+            (request, identity, cacheKey) =>
+            {
+                tokenExchangeEntered.Set();
+                if (!releaseTokenExchange.Wait(TimeSpan.FromSeconds(10)))
+                {
+                    throw new TimeoutException(
+                        "Timed out waiting to release the flowed credential-core token exchange.");
+                }
+
+                return new DeterministicLocalTokenExchange().Exchange(
+                    request,
+                    identity,
+                    cacheKey);
+            });
+        var service = new CredentialCoreService(
+            new DeterministicFakeIdentityProvider(),
+            router,
+            derivedCredentialCache: null,
+            tokenExchange: tokenExchange);
+        Task<CredentialResult>? flowedExecutionTask = null;
+
+        try
+        {
+            using (router.BeginUserVisibleCommitTracking())
+            {
+                flowedExecutionTask = Task.Run(
+                    () =>
+                    {
+                        CredentialResult result = service.Execute(CreateGitRequest());
+                        router.Route(new DiagnosticEvent(
+                            DiagnosticSeverity.Warning,
+                            DiagnosticChannel.Diagnostic,
+                            "late raw diagnostic"));
+                        return result;
+                    },
+                    TestContext.Current.CancellationToken);
+
+                if (!tokenExchangeEntered.Wait(
+                    TimeSpan.FromSeconds(10),
+                    TestContext.Current.CancellationToken))
+                {
+                    throw new TimeoutException(
+                        "Timed out waiting for the flowed credential-core token exchange.");
+                }
+            }
+        }
+        finally
+        {
+            releaseTokenExchange.Set();
+        }
+
+        CredentialResult result = await Assert
+            .IsType<Task<CredentialResult>>(flowedExecutionTask)
+            .WaitAsync(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken);
+
+        Assert.Equal(CredentialResultStatus.Success, result.Status);
+        Assert.Equal(1, tokenExchange.InvocationCount);
+
+        string emittedText = diagnosticText.ToString();
+        Assert.Contains("Credential request succeeded.", emittedText, StringComparison.Ordinal);
+        Assert.Contains("code=CredentialIssued", emittedText, StringComparison.Ordinal);
+        Assert.DoesNotContain("late raw diagnostic", emittedText, StringComparison.Ordinal);
+        Assert.Equal(1, emittedText.Split('\n').Length - 1);
+    }
+
     [Theory]
     [MemberData(nameof(AcceptedTokenExchangeRequests))]
     public void ExecuteAcceptedRequestInvokesTokenExchangeExactlyOnceAndPreservesResultShape(
@@ -809,6 +1350,36 @@ public sealed class CredentialCoreServiceTests
     }
 
     [Fact]
+    public void ExecuteNonGetRequestFailsClosedWithoutInvokingProviderOrTokenExchange()
+    {
+        var provider = new DeterministicFakeIdentityProvider();
+        var tokenExchange = new CountingTokenExchange(
+            (_, _, _) => throw new InvalidOperationException("token exchange should not run"));
+        var service = new CredentialCoreService(provider, null, null, tokenExchange);
+        CredentialRequest request = CreateGitRequest() with
+        {
+            Operation = CredentialOperation.Store,
+        };
+
+        CredentialResult result = service.Execute(request);
+
+        Assert.Equal(CredentialResultStatus.CredentialUnavailable, result.Status);
+        Assert.Equal(0, provider.InvocationCount);
+        Assert.Equal(0, tokenExchange.InvocationCount);
+        Assert.Null(result.Username);
+        Assert.Null(result.Password);
+        Assert.Null(result.BearerToken);
+        Assert.Null(result.CacheKey);
+
+        CredentialError error = Assert.IsType<CredentialError>(result.Error);
+        Assert.Equal(CredentialErrorKind.CredentialUnavailable, error.Kind);
+        Assert.Equal("OperationNotSupported", error.Code);
+        Assert.Equal(
+            "Credential core scaffold only supports get operations.",
+            error.SafeMessage);
+    }
+
+    [Fact]
     public void ExecuteAllowsOnlyExplicitAzurePipelinesSystemAccessTokenWithNonPersistentCi()
     {
         var acceptedProvider = new DeterministicFakeIdentityProvider();
@@ -1068,6 +1639,51 @@ public sealed class CredentialCoreServiceTests
         CredentialError error = Assert.IsType<CredentialError>(result.Error);
         Assert.Equal(CredentialErrorKind.CacheUnavailable, error.Kind);
         Assert.Equal("CacheUnavailable", error.Code);
+    }
+
+    [Fact]
+    public void ExecutePersistentCacheRequestWithAvailableCacheStillFailsClosedByCurrentMvpPolicy()
+    {
+        var provider = new DeterministicFakeIdentityProvider();
+        var derivedCredentialCache = new ReportingDerivedCredentialCache(
+            new DerivedCredentialCacheAvailability(
+                DerivedCredentialCacheAvailabilityStatus.Available)
+        );
+        var tokenExchange = new CountingTokenExchange(
+            static (_, _, _) =>
+                throw new InvalidOperationException("Token exchange should not run.")
+        );
+        var service = new CredentialCoreService(
+            provider,
+            diagnosticRouter: null,
+            derivedCredentialCache: derivedCredentialCache,
+            tokenExchange: tokenExchange
+        );
+        CredentialRequest request = CreateGitRequest(
+            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested);
+
+        CredentialResult result = service.Execute(request);
+
+        Assert.Equal(CredentialResultStatus.FlowDisabled, result.Status);
+        Assert.Equal(0, provider.InvocationCount);
+        Assert.Equal(0, tokenExchange.InvocationCount);
+        Assert.Equal(1, derivedCredentialCache.PersistentAvailabilityCheckCount);
+        Assert.Equal(0, derivedCredentialCache.PersistentReadCount);
+        Assert.Equal(0, derivedCredentialCache.PersistentWriteCount);
+        Assert.Null(result.Account);
+        Assert.Null(result.Tenant);
+        Assert.Null(result.CacheKey);
+        Assert.Null(result.Username);
+        Assert.Null(result.Password);
+        Assert.Null(result.BearerToken);
+
+        CredentialError error = Assert.IsType<CredentialError>(result.Error);
+        Assert.Equal(CredentialErrorKind.FlowDisabled, error.Kind);
+        Assert.Equal("FlowDisabled", error.Code);
+        Assert.Equal(
+            "Credential request is disabled by the current MVP policy.",
+            error.SafeMessage
+        );
     }
 
     [Theory]
@@ -1514,6 +2130,54 @@ public sealed class CredentialCoreServiceTests
                         "unsafe\r\ntoken",
                         ["unsafe\r\ntoken"]
                     },
+                    {
+                        CreateGitRequest(),
+                        false,
+                        "AzureDevOps",
+                        "unsafe\0password",
+                        null,
+                        ["unsafe\0password"]
+                    },
+                    {
+                        CreateGitRequest(),
+                        false,
+                        "AzureDevOps",
+                        "unsafe\u001Bpassword",
+                        null,
+                        ["unsafe\u001Bpassword"]
+                    },
+                    {
+                        CreateGitRequest(),
+                        false,
+                        "AzureDevOps",
+                        "unsafe\u009Fpassword",
+                        null,
+                        ["unsafe\u009Fpassword"]
+                    },
+                    {
+                        CreateGitRequest(kind: CredentialKind.BearerToken),
+                        false,
+                        null,
+                        null,
+                        "unsafe\0token",
+                        ["unsafe\0token"]
+                    },
+                    {
+                        CreateGitRequest(kind: CredentialKind.BearerToken),
+                        false,
+                        null,
+                        null,
+                        "unsafe\u001Btoken",
+                        ["unsafe\u001Btoken"]
+                    },
+                    {
+                        CreateGitRequest(kind: CredentialKind.BearerToken),
+                        false,
+                        null,
+                        null,
+                        "unsafe\u009Ftoken",
+                        ["unsafe\u009Ftoken"]
+                    },
             };
 
     public static TheoryData<CredentialRequest> BlockedTokenExchangeRequests() =>
@@ -1585,6 +2249,30 @@ public sealed class CredentialCoreServiceTests
                 {
                     CreateGitRequest(kind: CredentialKind.BearerToken),
                     CreateIdentityMaterial(accessToken: "unsafe\r\ntoken")
+                },
+                {
+                    CreateGitRequest(),
+                    CreateIdentityMaterial(secret: "unsafe\0secret")
+                },
+                {
+                    CreateGitRequest(),
+                    CreateIdentityMaterial(secret: "unsafe\u001Bsecret")
+                },
+                {
+                    CreateGitRequest(),
+                    CreateIdentityMaterial(secret: "unsafe\u009Fsecret")
+                },
+                {
+                    CreateGitRequest(kind: CredentialKind.BearerToken),
+                    CreateIdentityMaterial(accessToken: "unsafe\0token")
+                },
+                {
+                    CreateGitRequest(kind: CredentialKind.BearerToken),
+                    CreateIdentityMaterial(accessToken: "unsafe\u001Btoken")
+                },
+                {
+                    CreateGitRequest(kind: CredentialKind.BearerToken),
+                    CreateIdentityMaterial(accessToken: "unsafe\u009Ftoken")
                 },
                 {
                     CreateGitRequest(),
@@ -1977,6 +2665,31 @@ public sealed class CredentialCoreServiceTests
             SecretRedactor.Empty
         );
 
+    private static SecretRedactor CreateBlankingRedactor(params string[] valuesToBlank)
+    {
+        var secrets = new List<string?> { SecretRedactor.DefaultMask };
+        foreach (string value in valuesToBlank)
+        {
+            secrets.Add(value);
+        }
+
+        return new SecretRedactor(secrets);
+    }
+
+    private static DiagnosticRouter CreateRecordingDiagnosticRouter(
+        StringWriter diagnosticText,
+        RecordingDiagnosticSink recordingSink,
+        SecretRedactor redactor)
+    {
+        ArgumentNullException.ThrowIfNull(diagnosticText);
+        ArgumentNullException.ThrowIfNull(recordingSink);
+        ArgumentNullException.ThrowIfNull(redactor);
+
+        return new DiagnosticRouter(
+            [new TextWriterDiagnosticSink(diagnosticText), recordingSink],
+            redactor);
+    }
+
     private static void AssertClosedFailureResult(
         CredentialResult result,
         IdentityMaterial identity,
@@ -2049,6 +2762,22 @@ public sealed class CredentialCoreServiceTests
             ArgumentNullException.ThrowIfNull(request);
             InvocationCount++;
             return _identity;
+        }
+    }
+
+    private sealed class CallbackIdentityProvider(
+        Func<CredentialRequest, IdentityMaterial> getIdentity)
+        : IIdentityProvider
+    {
+        private readonly Func<CredentialRequest, IdentityMaterial> _getIdentity = getIdentity;
+
+        public int InvocationCount { get; private set; }
+
+        public IdentityMaterial GetIdentity(CredentialRequest request)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            InvocationCount++;
+            return _getIdentity(request);
         }
     }
 

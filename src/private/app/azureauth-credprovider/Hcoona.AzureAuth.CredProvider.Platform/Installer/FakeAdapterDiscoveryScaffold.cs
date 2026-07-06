@@ -149,8 +149,8 @@ internal static class FakeAdapterDiscoveryScaffold
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(context.Layout);
 
-        return GetProbeableSurfaces(context.Layout)
-            .Select(surface => ProbePlacement(surface, context))
+        return GetProbeablePlacements(context)
+            .Select(placement => ProbePlacement(placement, context))
             .ToArray();
     }
 
@@ -163,7 +163,7 @@ internal static class FakeAdapterDiscoveryScaffold
         ArgumentNullException.ThrowIfNull(context.Layout);
         ValidateSurface(surface);
 
-        return ProbePlacement(ProjectPlacementForSafeProbe(surface, context.Layout), context);
+        return ProbePlacement(ProjectPlacementForSafeProbe(surface, context), context);
     }
 
     public static FakeAdapterProbeResult ProbePlacement(
@@ -173,19 +173,22 @@ internal static class FakeAdapterDiscoveryScaffold
     {
         ArgumentNullException.ThrowIfNull(placement);
         ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(context.FileExists);
-        ArgumentNullException.ThrowIfNull(context.DirectoryExists);
+        Func<string, bool>? fileExists = context.FileExists;
+        Func<string, bool>? directoryExists = context.DirectoryExists;
+
+        ArgumentNullException.ThrowIfNull(fileExists);
+        ArgumentNullException.ThrowIfNull(directoryExists);
 
         FakeAdapterArtifactKind actualKind = placement.ArtifactKind switch
         {
-            FakeAdapterArtifactKind.File => context.FileExists(placement.ArtifactPath)
+            FakeAdapterArtifactKind.File => fileExists(placement.ArtifactPath)
                 ? FakeAdapterArtifactKind.File
-                : context.DirectoryExists(placement.ArtifactPath)
+                : directoryExists(placement.ArtifactPath)
                     ? FakeAdapterArtifactKind.Directory
                     : FakeAdapterArtifactKind.Missing,
-            FakeAdapterArtifactKind.Directory => context.DirectoryExists(placement.ArtifactPath)
+            FakeAdapterArtifactKind.Directory => directoryExists(placement.ArtifactPath)
                 ? FakeAdapterArtifactKind.Directory
-                : context.FileExists(placement.ArtifactPath)
+                : fileExists(placement.ArtifactPath)
                     ? FakeAdapterArtifactKind.File
                     : FakeAdapterArtifactKind.Missing,
             FakeAdapterArtifactKind.Missing => throw new InvalidOperationException(
@@ -784,43 +787,142 @@ internal static class FakeAdapterDiscoveryScaffold
             _ => throw new InvalidOperationException("Unknown fake adapter surface."),
         };
 
-    private static FakeAdapterSurface[] GetProbeableSurfaces(
-        ConfigurationLayoutProjectionContext context
-    ) =>
-        Enum.GetValues<FakeAdapterSurface>()
-            .Where(surface => CanProbeSurface(surface, context))
-            .ToArray();
-
-    private static bool CanProbeSurface(
-        FakeAdapterSurface surface,
-        ConfigurationLayoutProjectionContext context
+    private static FakeAdapterPlacement[] GetProbeablePlacements(
+        FakeAdapterDiscoveryContext context
     )
     {
-        try
+        var placements = new List<FakeAdapterPlacement>();
+
+        foreach (FakeAdapterSurface surface in Enum.GetValues<FakeAdapterSurface>())
         {
-            _ = ProjectPlacementForSafeProbe(surface, context);
-            return true;
+            try
+            {
+                placements.Add(ProjectPlacementForSafeProbe(surface, context));
+            }
+            catch (ArgumentException)
+            {
+            }
+            catch (NotSupportedException)
+            {
+            }
         }
-        catch (ArgumentException)
-        {
-            return false;
-        }
-        catch (NotSupportedException)
-        {
-            return false;
-        }
+
+        return [.. placements];
     }
 
     private static FakeAdapterPlacement ProjectPlacementForSafeProbe(
         FakeAdapterSurface surface,
-        ConfigurationLayoutProjectionContext context
+        FakeAdapterDiscoveryContext context
     )
     {
-        EnsureRelevantLayoutRootsAreSafeForMaterialization(surface, context);
-        FakeAdapterPlacement placement = ProjectPlacement(surface, context);
-        EnsurePlacementPathsAreSafeForMaterialization(placement, context.Platform);
-        EnsureArtifactPathIsWithinPlacementRoot(placement, context.Platform);
+        EnsureRelevantLayoutRootsAreSafeForMaterialization(surface, context.Layout);
+        FakeAdapterPlacement placement = ProjectPlacement(surface, context.Layout);
+        EnsurePlacementPathsAreSafeForMaterialization(placement, context.Layout.Platform);
+        EnsureArtifactPathIsWithinPlacementRoot(placement, context.Layout.Platform);
+        EnsurePlacementPathsAreSafeForProbe(placement, context);
         return placement;
+    }
+
+    private static void EnsurePlacementPathsAreSafeForProbe(
+        FakeAdapterPlacement placement,
+        FakeAdapterDiscoveryContext context
+    )
+    {
+        EnsurePlacementPathsAreFullyQualifiedForProbe(placement, context);
+        EnsureSafeProbeExistenceSupport(context);
+        EnsureSafeProbeTopologySupport(context);
+
+        foreach (
+            string path in EnumerateMaterializationSafetyPaths(placement, context.Layout.Platform)
+        )
+        {
+            if (IsUnsupportedLinkOrReparsePoint(context, path))
+            {
+                throw new NotSupportedException(
+                    "Fake adapter discovery rejects symbolic-link or reparse-point placement "
+                        + "paths."
+                );
+            }
+        }
+    }
+
+    private static void EnsurePlacementPathsAreFullyQualifiedForProbe(
+        FakeAdapterPlacement placement,
+        FakeAdapterDiscoveryContext context
+    )
+    {
+        EnsurePathIsFullyQualifiedForProbe(context, placement.PlacementRoot);
+        EnsurePathIsFullyQualifiedForProbe(context, placement.ArtifactPath);
+    }
+
+    private static void EnsurePathIsFullyQualifiedForProbe(
+        FakeAdapterDiscoveryContext context,
+        string path
+    )
+    {
+        Func<string, bool>? isPathFullyQualified = context.IsPathFullyQualified;
+        if (isPathFullyQualified is null)
+        {
+            throw new NotSupportedException(
+                "Fake adapter discovery requires file-system path semantics probe support."
+            );
+        }
+
+        try
+        {
+            if (isPathFullyQualified(path))
+            {
+                return;
+            }
+        }
+        catch (NotSupportedException)
+        {
+            // Treat unsupported roots under the active probe path semantics as an unsafe
+            // host/layout mismatch and fail closed before topology or existence probes.
+        }
+
+        throw new NotSupportedException(
+            "Fake adapter discovery requires file-system path semantics that match the "
+                + "requested layout platform before topology or existence probes."
+        );
+    }
+
+    private static void EnsureSafeProbeExistenceSupport(FakeAdapterDiscoveryContext context)
+    {
+        if (context.FileExists is null)
+        {
+            throw new NotSupportedException(
+                "Fake adapter discovery requires file-existence probe support."
+            );
+        }
+
+        if (context.DirectoryExists is null)
+        {
+            throw new NotSupportedException(
+                "Fake adapter discovery requires directory-existence probe support."
+            );
+        }
+    }
+
+    private static void EnsureSafeProbeTopologySupport(FakeAdapterDiscoveryContext context)
+    {
+        if (context.IsSymbolicLink is null)
+        {
+            throw new NotSupportedException(
+                "Fake adapter discovery requires symbolic-link topology probe support."
+            );
+        }
+
+        if (
+            context.Layout.Platform == ConfigurationLayoutPlatform.Windows
+            && context.IsReparsePoint is null
+        )
+        {
+            throw new NotSupportedException(
+                "Fake adapter discovery on Windows requires reparse-point topology probe "
+                    + "support."
+            );
+        }
     }
 
     private static string? GetProductDataRawLayoutRoot(
@@ -1162,6 +1264,7 @@ internal static class FakeAdapterDiscoveryScaffold
         FakeAdapterDiscoveryContext probeContext = new()
         {
             Layout = context.Layout,
+            IsPathFullyQualified = context.FileSystem.IsPathFullyQualified,
             FileExists = context.FileSystem.FileExists,
             DirectoryExists = context.FileSystem.DirectoryExists,
         };
@@ -1544,6 +1647,46 @@ internal static class FakeAdapterDiscoveryScaffold
         catch (DirectoryNotFoundException)
         {
             return false;
+        }
+    }
+
+    private static bool IsUnsupportedLinkOrReparsePoint(
+        FakeAdapterDiscoveryContext context,
+        string path
+    )
+    {
+        try
+        {
+            if ((context.IsSymbolicLink?.Invoke(path)).GetValueOrDefault())
+            {
+                return true;
+            }
+
+            return (context.IsReparsePoint?.Invoke(path)).GetValueOrDefault();
+        }
+        catch (FileNotFoundException)
+        {
+            return false;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            throw new NotSupportedException(
+                "Fake adapter discovery rejects symbolic-link or reparse-point placement "
+                    + "paths.",
+                exception
+            );
+        }
+        catch (IOException exception)
+        {
+            throw new NotSupportedException(
+                "Fake adapter discovery rejects symbolic-link or reparse-point placement "
+                    + "paths.",
+                exception
+            );
         }
     }
 
@@ -1986,8 +2129,11 @@ internal static class FakeAdapterDiscoveryScaffold
 internal sealed record FakeAdapterDiscoveryContext
 {
     public required ConfigurationLayoutProjectionContext Layout { get; init; }
-    public Func<string, bool> FileExists { get; init; } = static _ => false;
-    public Func<string, bool> DirectoryExists { get; init; } = static _ => false;
+    public Func<string, bool>? IsPathFullyQualified { get; init; }
+    public Func<string, bool>? FileExists { get; init; }
+    public Func<string, bool>? DirectoryExists { get; init; }
+    public Func<string, bool>? IsSymbolicLink { get; init; }
+    public Func<string, bool>? IsReparsePoint { get; init; }
 }
 
 internal sealed record FakeAdapterMaterializationContext

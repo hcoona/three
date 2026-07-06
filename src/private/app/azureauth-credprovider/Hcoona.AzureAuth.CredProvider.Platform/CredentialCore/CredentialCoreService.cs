@@ -93,7 +93,7 @@ public sealed class CredentialCoreService
                     CredentialResultStatus.FlowDisabled,
                     CredentialErrorKind.FlowDisabled,
                     "FlowDisabled",
-                    "Requested identity flow is disabled by the MVP scaffold.",
+                    GetCredentialCoreFallbackMessage("FlowDisabled"),
                     flowState),
                 _ => CreateFailureResult(
                     request,
@@ -101,7 +101,7 @@ public sealed class CredentialCoreService
                     CredentialResultStatus.UnsupportedFlow,
                     CredentialErrorKind.UnsupportedFlow,
                     "UnsupportedFlow",
-                    "Requested identity flow is not supported by the MVP scaffold.",
+                    GetCredentialCoreFallbackMessage("UnsupportedFlow"),
                     flowState),
             };
         }
@@ -137,7 +137,7 @@ public sealed class CredentialCoreService
                 CredentialResultStatus.FlowDisabled,
                 CredentialErrorKind.FlowDisabled,
                 "FlowDisabled",
-                "Credential request is disabled by the current MVP policy.",
+                GetCredentialCoreFallbackMessage("FlowDisabled"),
                 flowState);
         }
 
@@ -148,7 +148,10 @@ public sealed class CredentialCoreService
                 request.CredentialKind
             );
 
-            CacheKey cacheKey = CacheKeySchema.Create(request, identity.Account, identity.Tenant);
+            CacheKey cacheKey = CacheKeySchema.Create(
+                request,
+                identity.Account,
+                identity.Tenant);
             TokenExchangeResult exchangeResult = NormalizeTokenExchangeResult(
                 _tokenExchange.Exchange(request, identity, cacheKey));
 
@@ -366,16 +369,54 @@ public sealed class CredentialCoreService
             return;
         }
 
+        DiagnosticCommitTrackingScope? capturedCommitTrackingScope =
+            _diagnosticRouter.CaptureActiveCommitTrackingScope();
+        bool restoreCapturedCommitTrackingScope = false;
+
+        if (
+            capturedCommitTrackingScope is not null
+            && (
+                capturedCommitTrackingScope.OutputCommitted
+                || capturedCommitTrackingScope.SuppressesLateCredentialCoreRecovery
+                || capturedCommitTrackingScope
+                    .SuppressesDirectCredentialCoreSafeDiagnosticRoutes
+            )
+        )
+        {
+            return;
+        }
+
+        if (capturedCommitTrackingScope?.IsClosed == true)
+        {
+            _diagnosticRouter.PruneClosedActiveCommitTrackingScope();
+            restoreCapturedCommitTrackingScope = true;
+        }
+
         try
         {
-            _diagnosticRouter.Route(
-                new DiagnosticEvent(
-                    severity,
-                    DiagnosticChannel.Diagnostic,
-                    message,
-                    correlationId,
-                    properties,
-                    isSafeDiagnosticEnvelope: true));
+            try
+            {
+                _diagnosticRouter.Route(
+                    new DiagnosticEvent(
+                        severity,
+                        DiagnosticChannel.Diagnostic,
+                        message,
+                        correlationId,
+                        properties,
+                        isSafeDiagnosticEnvelope: true)
+                    {
+                        AllowCodeSpecificFallback = true,
+                        FallbackScope = SafeDiagnosticFallbackScope.CredentialCore,
+                    });
+            }
+            finally
+            {
+                if (restoreCapturedCommitTrackingScope)
+                {
+                    _diagnosticRouter.RestoreCapturedActiveCommitTrackingScope(
+                        capturedCommitTrackingScope);
+                }
+            }
         }
         catch (Exception)
         {
@@ -429,6 +470,13 @@ public sealed class CredentialCoreService
         return properties;
     }
 
+    private static string GetCredentialCoreFallbackMessage(string code)
+    {
+        return SafeDiagnosticMessageFallback.GetDefaultMessage(
+            SafeDiagnosticFallbackScope.CredentialCore,
+            code);
+    }
+
     private static IdentityMaterial NormalizeAndEnsureValid(
         IdentityMaterial identity,
         CredentialKind credentialKind)
@@ -448,10 +496,9 @@ public sealed class CredentialCoreService
 
         if (ContainsAdapterProtocolLineBreak(identity.Account)
             || ContainsAdapterProtocolLineBreak(identity.Tenant)
-            || (RequiresSecret(credentialKind)
-                && ContainsAdapterProtocolLineBreak(identity.Secret))
+            || (RequiresSecret(credentialKind) && ContainsControlCharacters(identity.Secret))
             || (RequiresAccessToken(credentialKind)
-                && ContainsAdapterProtocolLineBreak(identity.AccessToken)))
+                && ContainsControlCharacters(identity.AccessToken)))
         {
             throw new InvalidOperationException(
                 "Identity provider returned protocol-incompatible credential core material.");
@@ -485,9 +532,9 @@ public sealed class CredentialCoreService
                 "Token exchange returned incomplete credential output material.");
         }
 
-        if (ContainsAdapterProtocolLineBreak(material.Username)
-            || ContainsAdapterProtocolLineBreak(material.Password)
-            || ContainsAdapterProtocolLineBreak(material.BearerToken))
+        if (ContainsControlCharacters(material.Username)
+            || ContainsControlCharacters(material.Password)
+            || ContainsControlCharacters(material.BearerToken))
         {
             throw new InvalidOperationException(
                 "Token exchange returned protocol-incompatible credential output material.");
