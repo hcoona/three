@@ -20,7 +20,7 @@ We use [MISE](https://mise.jdx.dev/) to manage tools across different projects i
 
 We use [HK](https://hk.jdx.dev/) for both git hooks manager and CI validation gate. Check `hk.pkl` for further details.
 
-Note that in GitHub workflow, we should build C# projects in Windows runners, while Python and JavaScript/TypeScript projects can be built in Ubuntu runners.
+Note that in GitHub workflows, general C# builds run on Windows runners unless a release descriptor variant explicitly targets another platform; Python and JavaScript/TypeScript projects can be built on Ubuntu runners.
 
 Do not get stuck in a pager when executing CLI commands.
 

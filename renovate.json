@@ -26,6 +26,11 @@
     "commitMessageAction": "Refresh",
     "commitMessageTopic": "Dependency Lock Files"
   },
+  "postUpgradeTasks": {
+    "commands": ["mise install pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
+    "fileFilters": ["pnpm-lock.yaml", "**/pnpm-lock.yaml"],
+    "executionMode": "branch"
+  },
   "vulnerabilityAlerts": {
     "enabled": true,
     "labels": ["security"]
@@ -146,6 +151,14 @@
       "matchDepTypes": ["devDependencies"],
       "groupName": "Repo JS Tooling",
       "postUpdateOptions": ["pnpmDedupe"]
+    },
+    {
+      "description": "Group Biome updates across JavaScript workspaces.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["@biomejs/biome"],
+      "groupName": "Biome",
+      "postUpdateOptions": ["pnpmDedupe"],
+      "automerge": true
     },
     {
       "description": "Group Commitlint packages.",
@@ -392,6 +405,13 @@
       "automerge": true
     },
     {
+      "description": "Title public NuGet library lock-file maintenance distinctly.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["src/public/lib/Directory.Packages.props"],
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "commitMessageTopic": "Public NuGet Library Minimum Dependency Versions Lock Files"
+    },
+    {
       "description": "Group root NuGet versions used as public library minimums.",
       "matchManagers": ["nuget"],
       "matchFileNames": ["Directory.Packages.props"],
@@ -459,15 +479,21 @@
       "automerge": true
     },
     {
-      "description": "Group pnpm mise updates and refresh pnpm lockfiles.",
+      "description": "Refresh pnpm lockfiles after mise pnpm updates.",
       "matchManagers": ["mise"],
       "matchDepNames": ["pnpm"],
-      "groupName": "Mise pnpm",
       "postUpgradeTasks": {
         "commands": ["mise install pnpm", "mise run --skip-tools --force update-pnpm-lockfiles"],
         "fileFilters": ["mise.lock", "**/mise.lock", "**/.mise.lock", "pnpm-lock.yaml", "**/pnpm-lock.yaml"],
         "executionMode": "branch"
       },
+      "automerge": true
+    },
+    {
+      "description": "Group pnpm tool version updates across workflows and mise.",
+      "matchManagers": ["github-actions", "mise"],
+      "matchDepNames": ["pnpm"],
+      "groupName": "pnpm",
       "automerge": true
     },
     {

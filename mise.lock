@@ -246,13 +246,8 @@ url = "https://github.com/jdx/hk/releases/download/v1.38.0/hk-x86_64-pc-windows-
 version = "25.0.2"
 backend = "core:java"
 
-[tools.java."platforms.linux-x64"]
-checksum = "sha256:555ce0821e4fe175ea50d54518cd6fbece9663c1998de529bc6ce429534457df"
-url = "https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_linux-x64_bin.tar.gz"
-
-[tools.java."platforms.windows-x64"]
-checksum = "sha256:74784a0c07258f32d36e9224dd79187c566d831c30d47dc06888d4212087331d"
-url = "https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_windows-x64_bin.zip"
+[tools.java.options]
+shorthand_vendor = "openjdk"
 
 [[tools.node]]
 version = "24.14.0"
@@ -323,36 +318,36 @@ checksum = "sha256:a8834481667325b44c539dbb758d7365a16389070f343c04b639bbe525ede
 url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-windows-amd64.exe"
 
 [[tools.pnpm]]
-version = "10.33.4"
+version = "10.34.1"
 backend = "aqua:pnpm/pnpm"
 
 [tools.pnpm."platforms.linux-arm64"]
-checksum = "sha256:d29649c7380b5cd522f574208fbd35335846686498f45004604d3f5b8658b5cb"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.33.4/pnpm-linux-arm64"
+checksum = "sha256:a91a72e6ac0f30e5354af9a1c15eff1a9448b5471f572f3109863da928e5699f"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.1/pnpm-linux-arm64"
 
 [tools.pnpm."platforms.linux-arm64-musl"]
-checksum = "sha256:d29649c7380b5cd522f574208fbd35335846686498f45004604d3f5b8658b5cb"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.33.4/pnpm-linux-arm64"
+checksum = "sha256:a91a72e6ac0f30e5354af9a1c15eff1a9448b5471f572f3109863da928e5699f"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.1/pnpm-linux-arm64"
 
 [tools.pnpm."platforms.linux-x64"]
-checksum = "sha256:ff1795595535a10d0dfe327303f3dd02377be141190b1f5756de68edde2cf813"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.33.4/pnpm-linux-x64"
+checksum = "sha256:25dec6207e51ea4c8335dc1d8b203c9274f0bdcf630b998e0df46060dde65dba"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.1/pnpm-linux-x64"
 
 [tools.pnpm."platforms.linux-x64-musl"]
-checksum = "sha256:ff1795595535a10d0dfe327303f3dd02377be141190b1f5756de68edde2cf813"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.33.4/pnpm-linux-x64"
+checksum = "sha256:25dec6207e51ea4c8335dc1d8b203c9274f0bdcf630b998e0df46060dde65dba"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.1/pnpm-linux-x64"
 
 [tools.pnpm."platforms.macos-arm64"]
-checksum = "sha256:7aae186a04e1ffaa0047d43cd07d68a98dec303304f28be52234ba955d26c671"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.33.4/pnpm-macos-arm64"
+checksum = "sha256:a33fd791e3c152d0056ecf073b69654818b1f9c6c0851d36cb53275be9efaad7"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.1/pnpm-macos-arm64"
 
 [tools.pnpm."platforms.macos-x64"]
-checksum = "sha256:3b0c97b9f794cdda293949a8ee0e0151ca08f512f4a832408386221c7c73eec6"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.33.4/pnpm-macos-x64"
+checksum = "sha256:41ebbe92d39812307fef898a297ff2a8253e7f3bb0d5973882dfb11c62983507"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.1/pnpm-macos-x64"
 
 [tools.pnpm."platforms.windows-x64"]
-checksum = "sha256:3268b2f29defe0dce8a3a26c0ef01488f0d4aa4872923173186ef618ab7d68ef"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.33.4/pnpm-win-x64.exe"
+checksum = "sha256:d686165405e14ae722ff116e29516ddcc30b56f0382e4360aa8623e83553cfee"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.1/pnpm-win-x64.exe"
 
 [[tools.powershell]]
 version = "7.5.4"
@@ -454,38 +449,11 @@ url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15
 version = "4.0.5"
 backend = "core:ruby"
 
-[tools.ruby."platforms.linux-arm64"]
-checksum = "sha256:fa8d337b2e97149f17d609cec5e6e5907f032390ad24bc3095f66157ce2eddf1"
-url = "https://github.com/jdx/ruby/releases/download/4.0.5-1/ruby-4.0.5.arm64_linux.tar.gz"
-provenance = "github-attestations"
-
-[tools.ruby."platforms.linux-arm64-musl"]
-checksum = "sha256:fa8d337b2e97149f17d609cec5e6e5907f032390ad24bc3095f66157ce2eddf1"
-url = "https://github.com/jdx/ruby/releases/download/4.0.5-1/ruby-4.0.5.arm64_linux.tar.gz"
-provenance = "github-attestations"
-
-[tools.ruby."platforms.linux-x64"]
-checksum = "sha256:831f0e8bdc423156065d7965116f8d5c5fac943aff9128342094e2d745bd2051"
-url = "https://github.com/jdx/ruby/releases/download/4.0.5-1/ruby-4.0.5.x86_64_linux.tar.gz"
-provenance = "github-attestations"
-
-[tools.ruby."platforms.linux-x64-musl"]
-checksum = "sha256:831f0e8bdc423156065d7965116f8d5c5fac943aff9128342094e2d745bd2051"
-url = "https://github.com/jdx/ruby/releases/download/4.0.5-1/ruby-4.0.5.x86_64_linux.tar.gz"
-provenance = "github-attestations"
-
-[tools.ruby."platforms.macos-arm64"]
-checksum = "sha256:cc07d78e61eef4a0d04fce62bce56b6822b261dbed30bad306f6bc7f9ca7085d"
-url = "https://github.com/jdx/ruby/releases/download/4.0.5-1/ruby-4.0.5.macos.tar.gz"
-provenance = "github-attestations"
-
-[tools.ruby."platforms.macos-x64"]
-checksum = "sha256:7d6149079a63f8ae1d326c9fa65c6019ba2dc3155eae7b39159817911c88958e"
-url = "https://cache.ruby-lang.org/pub/ruby/4.0/ruby-4.0.5.tar.gz"
-
-[tools.ruby."platforms.windows-x64"]
-checksum = "sha256:74e31613fc71e6e23431dfc4d8b6ec2818a4dc1fd16e0983b074144c16719c8b"
-url = "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-4.0.5-1/rubyinstaller-4.0.5-1-x64.7z"
+[tools.ruby.options]
+compile = "false"
+precompiled_url = "jdx/ruby"
+ruby_build_repo = "https://github.com/rbenv/ruby-build.git"
+ruby_install = "false"
 
 [[tools.taplo]]
 version = "0.10.0"
