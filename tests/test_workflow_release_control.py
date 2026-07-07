@@ -98,6 +98,17 @@ SHA_D = "d" * 40
 SHA_B = "b" * 64
 SHA_C = "c" * 64
 SIGNER_WORKFLOW = "hcoona/three/.github/workflows/release-orchestrate.yml"
+CHECKOUT_ACTION = "actions/checkout@v7"
+SETUP_UV_ACTION = "astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39"
+SETUP_UV_ACTION_WITH_VERSION_COMMENT = f"{SETUP_UV_ACTION} # v8.2.0"
+RUBY_SETUP_ACTION_WITH_VERSION_COMMENT = (
+    "ruby/setup-ruby@d45b1a4e94b71acab930e56e79c6aa188764e7f9 # v1.316.0"
+)
+UPLOAD_ARTIFACT_ACTION = "actions/upload-artifact@v7"
+RUBYGEMS_CREDENTIALS_ACTION_WITH_VERSION_COMMENT = (
+    "rubygems/configure-rubygems-credentials@"
+    "dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0"
+)
 FORBIDDEN_FAIL_CLOSED_OUTPUTS = {
     "release-plan.json",
     "execution-sets.json",
@@ -15270,7 +15281,7 @@ def test_reusable_release_builds_upload_dist() -> None:
         checkout_step = next(
             step
             for step in cast("list[dict[str, object]]", job["steps"])
-            if step.get("uses") == "actions/checkout@v6"
+            if step.get("uses") == CHECKOUT_ACTION
         )
         checkout_with = cast("dict[str, object]", checkout_step["with"])
         assert checkout_with["fetch-depth"] == 0, workflow_name
@@ -15520,14 +15531,10 @@ def test_python_build_uses_trusted_nbgv_for_uv_build() -> None:
     build_steps = cast("list[dict[str, object]]", build_job["steps"])
     verify_steps = cast("list[dict[str, object]]", verify_job["steps"])
     build_checkout_steps = [
-        step
-        for step in build_steps
-        if step.get("uses") == "actions/checkout@v6"
+        step for step in build_steps if step.get("uses") == CHECKOUT_ACTION
     ]
     verify_checkout_steps = [
-        step
-        for step in verify_steps
-        if step.get("uses") == "actions/checkout@v6"
+        step for step in verify_steps if step.get("uses") == CHECKOUT_ACTION
     ]
     setup_dotnet_step = next(
         step for step in build_steps if step.get("name") == "Setup .NET SDK"
@@ -16243,6 +16250,78 @@ def test_release_resolve_workflow_uses_safe_git_target_validation() -> None:
     assert "git rev-list -n1" not in resolve_run
 
 
+def test_workflow_action_pins_are_consistent() -> None:
+    """Workflow action upgrades must not leave mixed stale pins."""
+    expected_action_uses = {
+        "actions/checkout": CHECKOUT_ACTION,
+        "astral-sh/setup-uv": SETUP_UV_ACTION_WITH_VERSION_COMMENT,
+        "ruby/setup-ruby": RUBY_SETUP_ACTION_WITH_VERSION_COMMENT,
+        "actions/upload-artifact": UPLOAD_ARTIFACT_ACTION,
+        "rubygems/configure-rubygems-credentials": (
+            RUBYGEMS_CREDENTIALS_ACTION_WITH_VERSION_COMMENT
+        ),
+    }
+    forbidden_action_uses = {
+        f"actions/checkout@v{6}",
+        (
+            "astral-sh/setup-uv@"
+            + "".join(
+                (
+                    "0880",
+                    "7647e7069bb48b6ef5acd8ec9567f424441b",
+                )
+            )
+            + f" # v{8}.1.0"
+        ),
+        (
+            "ruby/setup-ruby@"
+            + "".join(
+                (
+                    "afea",
+                    "fc3d1ab54a631816aba4c914a0081c12ff2f",
+                )
+            )
+            + f" # v{1}.310.0"
+        ),
+        f"actions/upload-artifact@v{6}",
+        (
+            "rubygems/configure-rubygems-credentials@"
+            + "".join(
+                (
+                    "762a",
+                    "4b77c3300434bb57c7ce80b20e36231927aa",
+                )
+            )
+            + f" # v{2}.0.0"
+        ),
+    }
+    workflow_paths = sorted((REPO_ROOT / ".github/workflows").glob("*.yml"))
+    combined_workflow_text = "\n".join(
+        path.read_text(encoding="utf-8") for path in workflow_paths
+    )
+
+    for forbidden_action_use in forbidden_action_uses:
+        assert forbidden_action_use not in combined_workflow_text
+
+    for action_name, expected_action_use in expected_action_uses.items():
+        expected_line = f"uses: {expected_action_use}"
+        observed_lines: dict[str, set[str]] = {}
+        for path in workflow_paths:
+            for line_number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                stripped = line.strip()
+                if stripped.startswith("- "):
+                    stripped = stripped[2:].strip()
+                if stripped.startswith(f"uses: {action_name}@"):
+                    observed_lines.setdefault(stripped, set()).add(
+                        f"{path.name}:{line_number}"
+                    )
+
+        assert observed_lines, action_name
+        assert set(observed_lines) == {expected_line}, observed_lines
+
+
 def test_release_workflows_disable_checkout_persist_credentials() -> None:
     """Active release workflow checkouts must not persist credentials."""
     orchestrate = _workflow_yaml("release-orchestrate.yml")
@@ -16258,7 +16337,7 @@ def test_release_workflows_disable_checkout_persist_credentials() -> None:
             "list[dict[str, object]]", orchestrate["jobs"][job_name]["steps"]
         )
         checkout_step = next(
-            step for step in steps if step.get("uses") == "actions/checkout@v6"
+            step for step in steps if step.get("uses") == CHECKOUT_ACTION
         )
         checkout_with = cast("dict[str, object]", checkout_step.get("with", {}))
         assert checkout_with.get("fetch-depth", 1) == expected_fetch_depth, (
@@ -16271,9 +16350,7 @@ def test_release_workflows_disable_checkout_persist_credentials() -> None:
         _workflow_yaml("release-resolve.yml")["jobs"]["resolve"]["steps"],
     )
     resolve_checkout = next(
-        step
-        for step in resolve_steps
-        if step.get("uses") == "actions/checkout@v6"
+        step for step in resolve_steps if step.get("uses") == CHECKOUT_ACTION
     )
     assert resolve_checkout["with"]["fetch-depth"] == 0
     assert resolve_checkout["with"]["persist-credentials"] is False
@@ -16285,9 +16362,7 @@ def test_release_workflows_disable_checkout_persist_credentials() -> None:
         ],
     )
     notes_checkout = next(
-        step
-        for step in notes_steps
-        if step.get("uses") == "actions/checkout@v6"
+        step for step in notes_steps if step.get("uses") == CHECKOUT_ACTION
     )
     assert notes_checkout["with"]["fetch-depth"] == 0
     assert notes_checkout["with"]["ref"] == "${{ inputs.target }}"
@@ -16335,7 +16410,7 @@ def test_publish_jobs_run_helpers_from_trusted_workflow_checkout() -> None:
         ), job_name
         steps = cast("list[dict[str, object]]", job["steps"])
         checkout_step = next(
-            step for step in steps if step.get("uses") == "actions/checkout@v6"
+            step for step in steps if step.get("uses") == CHECKOUT_ACTION
         )
         checkout_with = cast("dict[str, object]", checkout_step["with"])
         assert checkout_step["name"] == "Checkout (trusted workflow scripts)"
@@ -18892,7 +18967,7 @@ def test_node_pack_workflow_supports_github_release_only_mode() -> None:
     pack_job = workflow["jobs"]["pack"]
     steps = cast("list[dict[str, object]]", pack_job["steps"])
     checkout_steps = [
-        step for step in steps if step.get("uses") == "actions/checkout@v6"
+        step for step in steps if step.get("uses") == CHECKOUT_ACTION
     ]
     assert checkout_steps[0]["name"] == "Checkout release target"
     assert cast("dict[str, object]", checkout_steps[0]["with"])["path"] == (
@@ -21042,7 +21117,7 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
     assert diagnostics_upload["with"]["name"] == (
         "${{ needs.normalize-input.outputs.planner-diagnostics-artifact-name }}"
     )
-    assert workflow["env"]["NBGV_VERSION"] == "3.9.50"
+    assert workflow["env"]["NBGV_VERSION"] == "3.10.85"
     nbgv_backed_jobs = (
         "plan",
         "execution-batch-ubuntu-orchestrator",
@@ -21487,7 +21562,7 @@ def test_ci_validation_orchestrators_use_internal_dependency_state() -> None:
             "artifact-id state manifest" in str(step.get("name", ""))
             for step in steps
         )
-        assert upload_step["uses"] == "actions/upload-artifact@v7"
+        assert upload_step["uses"] == UPLOAD_ARTIFACT_ACTION
         assert upload_step["with"]["name"] == (
             "${{ steps.run-slot-00.outputs."
             "batch_evidence_bundle_artifact_name }}"
@@ -26460,7 +26535,6 @@ def test_ci_validation_batch_observation_cli_is_not_public() -> None:
 def test_ci_validation_retries_uv_setup_failures() -> None:
     """Matrix rows retry setup-uv after transient action failures."""
     workflow = yaml.safe_load(_workflow("ci.yml"))
-    setup_action = "astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39"
     setup_count = 0
 
     for job in workflow["jobs"].values():
@@ -26473,13 +26547,13 @@ def test_ci_validation_retries_uv_setup_failures() -> None:
 
             assert step["id"] == "setup-uv"
             assert step["continue-on-error"] is True
-            assert step["uses"] == setup_action
+            assert step["uses"] == SETUP_UV_ACTION
             assert step["with"]["version"] == "0.10.9"
             assert retry_step["name"] == "Retry uv installation"
             assert (
                 retry_step["if"] == "${{ steps.setup-uv.outcome == 'failure' }}"
             )
-            assert retry_step["uses"] == setup_action
+            assert retry_step["uses"] == SETUP_UV_ACTION
             assert retry_step["with"]["version"] == "0.10.9"
 
     assert setup_count == 7
@@ -26916,7 +26990,7 @@ def test_ci_validation_workflow_checks_canonical_changed_paths() -> None:
 def test_ci_validation_workflow_checks_out_pull_request_head() -> None:
     """PR validation executes on the confirmed head boundary, not merge refs."""
     workflow = _workflow("ci.yml")
-    checkout_count = workflow.count("uses: actions/checkout@v6")
+    checkout_count = workflow.count(f"uses: {CHECKOUT_ACTION}")
 
     assert checkout_count > 0
     assert (
@@ -26942,7 +27016,7 @@ def test_ci_validation_control_plane_uses_full_checkout_for_nbgv() -> None:
     for job_name in control_plane_jobs:
         steps = workflow["jobs"][job_name]["steps"]
         checkout_step = next(
-            step for step in steps if step.get("uses") == "actions/checkout@v6"
+            step for step in steps if step.get("uses") == CHECKOUT_ACTION
         )
 
         assert checkout_step["with"]["fetch-depth"] == 0
@@ -29071,16 +29145,7 @@ def test_ci_aggregate_control_boundary_excludes_current_final_refs(
 
 def test_release_workflow_uv_setup_precedes_uv_run() -> None:
     """Every release job installs pinned uv before invoking uv commands."""
-    setup_actions = (
-        (
-            "uses: astral-sh/setup-uv@"
-            "fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0"
-        ),
-        (
-            "uses: astral-sh/setup-uv@"
-            "08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0"
-        ),
-    )
+    setup_action = f"uses: {SETUP_UV_ACTION_WITH_VERSION_COMMENT}"
 
     for workflow_path in _release_workflow_paths():
         workflow = workflow_path.read_text(encoding="utf-8")
@@ -29095,15 +29160,8 @@ def test_release_workflow_uv_setup_precedes_uv_run() -> None:
             block = "".join(lines[start:end])
             if "uv run" not in block:
                 continue
-            setup_index = next(
-                (
-                    block.index(setup_action)
-                    for setup_action in setup_actions
-                    if setup_action in block
-                ),
-                None,
-            )
-            assert setup_index is not None, workflow_path.name
+            assert setup_action in block, workflow_path.name
+            setup_index = block.index(setup_action)
             assert "          version: '0.10.9'\n" in block, workflow_path.name
             uv_index = block.index("uv run")
             assert setup_index < uv_index, workflow_path.name
@@ -29779,7 +29837,7 @@ def test_release_workflows_generate_final_release_reports() -> None:
         run_script = cast("str", generate_step["run"])
         assert "workflow_release_control.py report" in run_script
         assert '--head-sha "$HEAD_SHA"' in run_script
-        assert upload_step["uses"] == "actions/upload-artifact@v7"
+        assert upload_step["uses"] == UPLOAD_ARTIFACT_ACTION
         assert upload_step["with"]["path"] == (
             ".three-workflow-release/release-report.json"
         )
@@ -29954,7 +30012,7 @@ def test_release_workflows_generate_final_release_reports() -> None:
         '--entry-publish-handoff-artifact-name "$ENTRY_PUBLISH_HANDOFF_ARTIFACT_NAME"'
         in run_script
     )
-    assert upload_step["uses"] == "actions/upload-artifact@v7"
+    assert upload_step["uses"] == UPLOAD_ARTIFACT_ACTION
     assert upload_step["with"]["path"] == (
         ".three-workflow-release/release-report.json"
     )
@@ -30313,7 +30371,7 @@ def test_release_create_workflow_scopes_result_artifact_to_run_attempt() -> (
         if step.get("name") == "Upload GitHub Release result"
     )
 
-    assert upload_step["uses"] == "actions/upload-artifact@v6"
+    assert upload_step["uses"] == UPLOAD_ARTIFACT_ACTION
     assert upload_step["with"]["name"] == "${{ env.RESULT_ARTIFACT_NAME }}"
     assert upload_step["with"]["path"] == "${{ env.RESULT_JSON }}"
     assert upload_step["with"]["overwrite"] is False

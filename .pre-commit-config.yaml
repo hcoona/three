@@ -10,13 +10,13 @@ repos:
     entry: python eng/scripts/hk_exec.py typos -c .typos.toml --force-exclude --
     language: system
     pass_filenames: true
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*|\.agents/.*|\.vscode/mcp\.json|apm\.lock\.yaml|.*/apm\.lock\.yaml)
   - id: editorconfig-check
     name: Editorconfig Check
     entry: python eng/scripts/hk_exec.py editorconfig-checker --disable-indent-size --
     language: system
     pass_filenames: true
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*|\.agents/.*|\.vscode/mcp\.json|apm\.lock\.yaml|.*/apm\.lock\.yaml)
   - id: actionlint
     name: Actionlint
     entry: python eng/scripts/hk_actionlint.py
@@ -29,14 +29,14 @@ repos:
     language: system
     pass_filenames: true
     files: '[^/]*\.md$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*|\.agents/.*|\.vscode/mcp\.json|apm\.lock\.yaml|.*/apm\.lock\.yaml)
   - id: markdown-prettier
     name: Markdown Prettier
     entry: python eng/scripts/hk_exec.py pnpm exec -- prettier --check --
     language: system
     pass_filenames: true
     files: '[^/]*\.md$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*|\.agents/.*|\.vscode/mcp\.json|apm\.lock\.yaml|.*/apm\.lock\.yaml)
   - id: pkl-eval
     name: Pkl Eval
     entry: python eng/scripts/hk_pkl_eval.py
@@ -55,78 +55,84 @@ repos:
     language: system
     pass_filenames: true
     files: '[^/]*\.json$|[^/]*\.jsonc$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*|\.agents/.*|\.vscode/mcp\.json|apm\.lock\.yaml|.*/apm\.lock\.yaml)
   - id: yaml-prettier
     name: Yaml Prettier
     entry: python eng/scripts/hk_exec.py pnpm exec -- prettier --check --
     language: system
     pass_filenames: true
     files: '[^/]*\.yml$|[^/]*\.yaml$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*|\.agents/.*|\.vscode/mcp\.json|apm\.lock\.yaml|.*/apm\.lock\.yaml)
   - id: toml-taplo-check
     name: Toml Taplo Check
     entry: python eng/scripts/hk_exec.py pnpm exec -- taplo check --
     language: system
     pass_filenames: true
     files: (?:.*/)*[^/]*\.toml$
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*|\.agents/.*|\.vscode/mcp\.json|apm\.lock\.yaml|.*/apm\.lock\.yaml)
   - id: toml-taplo-format
     name: Toml Taplo Format
     entry: python eng/scripts/hk_exec.py pnpm exec -- taplo format --check --
     language: system
     pass_filenames: true
     files: (?:.*/)*[^/]*\.toml$
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*|\.agents/.*|\.vscode/mcp\.json|apm\.lock\.yaml|.*/apm\.lock\.yaml)
   - id: hadolint
     name: Hadolint
     entry: python eng/scripts/hk_exec.py hadolint --
     language: system
     pass_filenames: true
     files: Dockerfile$|[^/]*\.Dockerfile$|Dockerfile\.[^/]*$
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*|\.agents/.*|\.vscode/mcp\.json|apm\.lock\.yaml|.*/apm\.lock\.yaml)
   - id: shellcheck
     name: Shellcheck
     entry: python eng/scripts/hk_exec.py shellcheck --
     language: system
     pass_filenames: true
     files: (?:.*/)*[^/]*\.sh$|(?:.*/)*[^/]*\.bash$
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*|\.agents/.*|\.vscode/mcp\.json|apm\.lock\.yaml|.*/apm\.lock\.yaml)
   - id: shfmt
     name: Shfmt
     entry: python eng/scripts/hk_exec.py shfmt -d --apply-ignore --
     language: system
     pass_filenames: true
     files: (?:.*/)*[^/]*\.sh$|(?:.*/)*[^/]*\.bash$|(?:.*/)*[^/]*\.mksh$|(?:.*/)*[^/]*\.bats$|(?:.*/)*[^/]*\.zsh$
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*|\.agents/.*|\.vscode/mcp\.json|apm\.lock\.yaml|.*/apm\.lock\.yaml)
   - id: pwsh-formatter
     name: Pwsh Formatter
     entry: python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-FormatterWrapper.ps1 -Mode Check -Path --
     language: system
     pass_filenames: true
     files: '[^/]*\.ps1$|[^/]*\.psm1$|[^/]*\.psd1$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*|\.agents/.*|\.vscode/mcp\.json|apm\.lock\.yaml|.*/apm\.lock\.yaml)
   - id: pwsh-script-analyzer
     name: Pwsh Script Analyzer
     entry: python eng/scripts/hk_exec.py pwsh -NoLogo -NoProfile -NonInteractive -File eng/pre-commit/Invoke-ScriptAnalyzerWrapper.ps1 -Mode Check -Path --
     language: system
     pass_filenames: true
     files: '[^/]*\.ps1$|[^/]*\.psm1$|[^/]*\.psd1$'
-    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*)
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*|\.agents/.*|\.vscode/mcp\.json|apm\.lock\.yaml|.*/apm\.lock\.yaml)
   - id: biome
     name: Biome
     entry: python eng/scripts/hk_exec.py pnpm exec -- biome check --no-errors-on-unmatched --
     language: system
     pass_filenames: true
     files: '[^/]*\.js$|[^/]*\.cjs$|[^/]*\.mjs$|[^/]*\.jsx$|[^/]*\.ts$|[^/]*\.cts$|[^/]*\.mts$|[^/]*\.tsx$'
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*|\.agents/.*|\.vscode/mcp\.json|apm\.lock\.yaml|.*/apm\.lock\.yaml)
   - id: ruff
     name: Ruff
     entry: python eng/scripts/hk_exec.py uv run ruff check --force-exclude --
     language: system
     pass_filenames: true
     files: '[^/]*\.py$|[^/]*\.pyi$|[^/]*\.ipynb$'
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*|\.agents/.*|\.vscode/mcp\.json|apm\.lock\.yaml|.*/apm\.lock\.yaml)
   - id: ruff_format
     name: Ruff_format
     entry: python eng/scripts/hk_exec.py uv run ruff format --quiet --force-exclude --check --
     language: system
     pass_filenames: true
     files: '[^/]*\.py$|[^/]*\.pyi$|[^/]*\.ipynb$'
+    exclude: (\.pre-commit-config\.yaml|.*/packages\.lock\.json|global\.json|project\.assets\.json|package-lock\.json|PklProject\.deps\.json|pnpm-lock\.yaml|.*/pnpm-lock\.yaml|uv\.lock|\.mise\.lock|.*/\.github/.*|.*/\.specify/.*|.*/specs/.*/[^/]*\.md|.*/generated/.*|\.agents/.*|\.vscode/mcp\.json|apm\.lock\.yaml|.*/apm\.lock\.yaml)
   - id: uv-lock
     name: Uv Lock
     entry: uv lock --check

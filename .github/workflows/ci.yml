@@ -14,7 +14,7 @@ permissions:
   actions: read
 
 env:
-  NBGV_VERSION: '3.9.50'
+  NBGV_VERSION: '3.10.85'
 
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('ci/pr/{0}', github.event.pull_request.number) || github.event_name == 'push' && format('ci/push/{0}', github.ref) || format('ci/{0}/{1}', github.event_name, github.run_id) }}
@@ -39,7 +39,7 @@ jobs:
       request-artifact-id: ${{ steps.upload-request.outputs.artifact-id }}
       mode: ${{ steps.mode.outputs.mode }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -314,7 +314,7 @@ jobs:
       changed-files-snapshot-artifact-id: ${{ steps.upload-changed-files.outputs.artifact-id }}
       fact-snapshot-artifact-id: ${{ steps.upload-fact-snapshot.outputs.artifact-id }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -460,7 +460,7 @@ jobs:
       macos-execution-batch-matrix: ${{ steps.materialize.outputs.macos_execution_batch_matrix }}
       execution-batch-manifest-artifact-id: ${{ steps.upload-execution-batch-manifest.outputs.artifact-id }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -568,7 +568,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -636,7 +636,7 @@ jobs:
         shell: bash
         run: corepack enable pnpm
       - name: Install Ruby for RubyGems validation
-        uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1.310.0
+        uses: ruby/setup-ruby@d45b1a4e94b71acab930e56e79c6aa188764e7f9 # v1.316.0
         with:
           ruby-version: '4.0.5'
       - uses: actions/download-artifact@v8
@@ -1351,7 +1351,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -2123,7 +2123,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -2898,7 +2898,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false

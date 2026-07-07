@@ -1,7 +1,7 @@
 name: Build Python Package (Reusable)
 
 env:
-  NBGV_VERSION: '3.9.50'
+  NBGV_VERSION: '3.10.85'
 
 on:
   workflow_call:
@@ -39,7 +39,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout release target
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ inputs.target }}
@@ -159,7 +159,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout trusted control-plane
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           ref: ${{ github.workflow_sha }}

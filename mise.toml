@@ -15,10 +15,10 @@ node = "24"
 pkl = "0.31.1"
 powershell = "7"
 python = "3.14"
-ruby = "4.0"
+ruby = "3.3"
 
 # Package Managers
-pnpm = "10.34.1"
+pnpm = "10.34.4"
 uv = "latest"
 
 # Git Commit Hook Manager
@@ -54,6 +54,7 @@ dotenv-linter = "latest"
 fd = "latest"
 ripgrep = "latest"
 github-cli = "latest"
+"github:microsoft/apm" = "latest"
 
 #
 # Environment Variables

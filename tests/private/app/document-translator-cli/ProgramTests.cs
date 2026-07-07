@@ -1,6 +1,7 @@
 using Azure;
 using Azure.AI.Translation.Document;
 using Azure.Identity;
+using System.Text;
 using Xunit;
 
 namespace Hcoona.DocumentTranslatorCli.Tests;
@@ -189,6 +190,53 @@ public sealed class ProgramTests
     }
 
     [Fact]
+    public async Task RunAsyncMarkdownAwarePreCanceledTokenWithExistingOutputReturnsCancellation()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "Hello");
+        string outputPath = directory.WriteFile("translated.md", "old content");
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        using CancellationTokenSource cancellationTokenSource = new();
+        await cancellationTokenSource.CancelAsync();
+        bool executed = false;
+
+        int exitCode = await Program.RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+                "--markdown-mode",
+                "aware",
+            ],
+            standardOutput,
+            standardError,
+            _ => null,
+            (_, _, _) =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            },
+            cancellationTokenSource.Token);
+
+        string error = standardError.ToString();
+        Assert.Equal(Program.UnexpectedErrorExitCode, exitCode);
+        Assert.False(executed);
+        Assert.Equal("old content", File.ReadAllText(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("Operation canceled.", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("already exists", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RunAsyncMapsUnexpectedValidationSeamExceptionToUnexpectedExitCode()
     {
         using StringWriter standardOutput = new();
@@ -268,11 +316,12 @@ public sealed class ProgramTests
     }
 
     [Fact]
-    public async Task EnvironmentFallbackSuppliesEndpointAuthModeAndApiKey()
+    public async Task
+        EnvironmentFallbackSuppliesEndpointAuthModeApiKeyAndRegionForMarkdownAwareRoute()
     {
         using TestDirectory directory = TestDirectory.Create();
-        string inputPath = directory.WriteFile("source.docx", "content");
-        string outputPath = directory.GetPath("translated.docx");
+        string inputPath = directory.WriteFile("source.md", "content");
+        string outputPath = directory.GetPath("translated.md");
         TranslationOptions? executedOptions = null;
 
         int exitCode = await RunAsync(
@@ -283,6 +332,7 @@ public sealed class ProgramTests
                     "https://resource.cognitiveservices.azure.com/translator",
                 TranslationOptionResolver.AuthModeEnvironmentVariable => "API-KEY",
                 TranslationOptionResolver.ApiKeyEnvironmentVariable => "secret",
+                TranslationOptionResolver.RegionEnvironmentVariable => " eastus ",
                 _ => null,
             },
             options =>
@@ -295,9 +345,50 @@ public sealed class ProgramTests
         Assert.NotNull(executedOptions);
         Assert.Equal(AuthMode.ApiKey, executedOptions.AuthMode);
         Assert.Equal("secret", executedOptions.ApiKey);
+        Assert.Equal("eastus", executedOptions.Region);
         Assert.Equal(
             "https://resource.cognitiveservices.azure.com",
             executedOptions.Endpoint.ToString().TrimEnd('/'));
+    }
+
+    [Fact]
+    public async Task CommandLineRegionOverridesEnvironmentForMarkdownAwareApiKeyRoute()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "content");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+                "--region",
+                "westus2",
+            ],
+            name => name == TranslationOptionResolver.RegionEnvironmentVariable
+                ? "eastus"
+                : null,
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.Equal(AuthMode.ApiKey, executedOptions.AuthMode);
+        Assert.Equal(TranslationRoute.MarkdownAware, executedOptions.TranslationRoute);
+        Assert.Equal("westus2", executedOptions.Region);
     }
 
     [Fact]
@@ -546,6 +637,8 @@ public sealed class ProgramTests
                 "https://cli.cognitiveservices.azure.com/translator",
                 "--key",
                 "cli-secret",
+                "--region",
+                "westus2",
             ],
             name => name switch
             {
@@ -553,6 +646,7 @@ public sealed class ProgramTests
                     "https://env.cognitiveservices.azure.com/translator",
                 TranslationOptionResolver.AuthModeEnvironmentVariable => "api-key",
                 TranslationOptionResolver.ApiKeyEnvironmentVariable => "env-secret",
+                TranslationOptionResolver.RegionEnvironmentVariable => "eastus",
                 _ => null,
             },
             options =>
@@ -565,9 +659,125 @@ public sealed class ProgramTests
         Assert.NotNull(executedOptions);
         Assert.Equal(AuthMode.EntraId, executedOptions.AuthMode);
         Assert.Null(executedOptions.ApiKey);
+        Assert.Null(executedOptions.Region);
         Assert.Equal(
             "https://cli.cognitiveservices.azure.com",
             executedOptions.Endpoint.ToString().TrimEnd('/'));
+    }
+
+    [Fact]
+    public async Task BlankCommandLineRegionDoesNotFallBackToEnvironment()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "content");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+                "--region",
+                " ",
+            ],
+            name => name == TranslationOptionResolver.RegionEnvironmentVariable
+                ? "eastus"
+                : null,
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.Null(executedOptions.Region);
+    }
+
+    [Fact]
+    public async Task CommandLineMarkdownModeOverridesEnvironmentFallback()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+                "--markdown-mode",
+                "legacy",
+            ],
+            name => name == TranslationOptionResolver.MarkdownModeEnvironmentVariable
+                ? "aware"
+                : null,
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.Equal(MarkdownMode.Legacy, executedOptions.MarkdownMode);
+        Assert.Equal(TranslationRoute.LegacyDocument, executedOptions.TranslationRoute);
+    }
+
+    [Fact]
+    public async Task EnvironmentMarkdownModeOverridesDefault()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "invalid {{ markdown fixture");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+            ],
+            name => name == TranslationOptionResolver.MarkdownModeEnvironmentVariable
+                ? " legacy "
+                : null,
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.Equal(MarkdownMode.Legacy, executedOptions.MarkdownMode);
+        Assert.Equal(TranslationRoute.LegacyDocument, executedOptions.TranslationRoute);
+        Assert.Equal("text/plain", executedOptions.LegacyDocumentContentType);
     }
 
     [Fact]
@@ -746,6 +956,141 @@ public sealed class ProgramTests
     }
 
     [Theory]
+    [InlineData(null, true)]
+    [InlineData("eastus", true)]
+    [InlineData("westus2", true)]
+    [InlineData(" eastus ", true)]
+    [InlineData("east us", false)]
+    [InlineData("-eastus", false)]
+    [InlineData("eastus-", false)]
+    public void RegionSyntaxIsValidated(string? region, bool expectedValid)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "content");
+        string outputPath = directory.GetPath("translated.md");
+        RawTranslationOptions options = ValidRawOptions(inputPath, outputPath) with
+        {
+            Region = region,
+        };
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(options);
+
+        Assert.Equal(expectedValid, result.Errors.Count == 0);
+        if (expectedValid)
+        {
+            Assert.Equal(region?.Trim(), result.Options!.Region);
+        }
+    }
+
+    [Fact]
+    public async Task LegacyDocumentRouteIgnoresInvalidEnvironmentRegion()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.docx", "content");
+        string outputPath = directory.GetPath("translated.docx");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            ["translate", "--input", inputPath, "--output", outputPath, "--target-language", "fr"],
+            name => name switch
+            {
+                TranslationOptionResolver.EndpointEnvironmentVariable =>
+                    "https://resource.cognitiveservices.azure.com/translator",
+                TranslationOptionResolver.ApiKeyEnvironmentVariable => "secret",
+                TranslationOptionResolver.RegionEnvironmentVariable => "east us",
+                _ => null,
+            },
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.Equal(TranslationRoute.LegacyDocument, executedOptions.TranslationRoute);
+        Assert.Null(executedOptions.Region);
+    }
+
+    [Fact]
+    public async Task MarkdownAwareApiKeyRouteRejectsInvalidEnvironmentRegion()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "content");
+        string outputPath = directory.GetPath("translated.md");
+        bool executed = false;
+
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        int exitCode = await Program.RunAsync(
+            ["translate", "--input", inputPath, "--output", outputPath, "--target-language", "fr"],
+            standardOutput,
+            standardError,
+            name => name switch
+            {
+                TranslationOptionResolver.EndpointEnvironmentVariable =>
+                    "https://resource.cognitiveservices.azure.com/translator",
+                TranslationOptionResolver.ApiKeyEnvironmentVariable => "secret",
+                TranslationOptionResolver.RegionEnvironmentVariable => "east us",
+                _ => null,
+            },
+            (_, _, _) =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(Program.ValidationErrorExitCode, exitCode);
+        Assert.False(executed);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains(
+            "Azure Translator region must be a syntactically valid Azure region name.",
+            standardError.ToString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EntraIdMarkdownAwareRouteIgnoresRegion()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "content");
+        string outputPath = directory.GetPath("translated.md");
+        RawTranslationOptions options = ValidRawOptions(inputPath, outputPath) with
+        {
+            AuthMode = "entra-id",
+            Region = "east us",
+        };
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(options);
+
+        Assert.Empty(result.Errors);
+        Assert.NotNull(result.Options);
+        Assert.Equal(AuthMode.EntraId, result.Options.AuthMode);
+        Assert.Equal(TranslationRoute.MarkdownAware, result.Options.TranslationRoute);
+        Assert.Null(result.Options.Region);
+    }
+
+    [Fact]
+    public void LegacyDocumentRouteClearsValidRegion()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.docx", "content");
+        string outputPath = directory.GetPath("translated.docx");
+        RawTranslationOptions options = ValidRawOptions(inputPath, outputPath) with
+        {
+            Region = "eastus",
+        };
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(options);
+
+        Assert.Empty(result.Errors);
+        Assert.NotNull(result.Options);
+        Assert.Equal(TranslationRoute.LegacyDocument, result.Options.TranslationRoute);
+        Assert.Null(result.Options.Region);
+    }
+
+    [Theory]
     [InlineData("source.TXT", "text/plain")]
     [InlineData("source.tsv", "text/tab-separated-values")]
     [InlineData("source.tab", "text/tab-separated-values")]
@@ -763,9 +1108,9 @@ public sealed class ProgramTests
     [InlineData("source.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")]
     [InlineData("source.msg", "application/vnd.ms-outlook")]
     [InlineData("source.xlf", "application/xliff+xml")]
-    public void SupportedExtensionsResolveContentTypeCaseInsensitively(
+    public void SupportedExtensionsResolveLegacyDocumentContentTypeCaseInsensitively(
         string fileName,
-        string expectedContentType)
+        string expectedLegacyDocumentContentType)
     {
         using TestDirectory directory = TestDirectory.Create();
         string inputPath = directory.WriteFile(fileName, "content");
@@ -775,13 +1120,349 @@ public sealed class ProgramTests
             ValidRawOptions(inputPath, outputPath));
 
         Assert.Empty(result.Errors);
-        Assert.Equal(expectedContentType, result.Options!.ContentType);
+        Assert.Equal(expectedLegacyDocumentContentType, result.Options!.LegacyDocumentContentType);
+        Assert.Equal(fileName, result.Options.OriginalFileName);
+    }
+
+    [Fact]
+    public async Task DefaultMarkdownModeIsAuto()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+            ],
+            _ => null,
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.Equal(MarkdownMode.Auto, executedOptions.MarkdownMode);
+        Assert.False(executedOptions.IsMarkdownExtension);
+        Assert.Equal(TranslationRoute.LegacyDocument, executedOptions.TranslationRoute);
+    }
+
+    [Theory]
+    [InlineData("source.md")]
+    [InlineData("source.MD")]
+    [InlineData("source.MarkDown")]
+    [InlineData("archive.tar.markdown")]
+    public void MarkdownExtensionsRouteToMarkdownAwareInAuto(string fileName)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(fileName, "content");
+        string outputPath = directory.GetPath("translated.md");
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(
+            ValidRawOptions(inputPath, outputPath));
+
+        Assert.Empty(result.Errors);
+        Assert.Equal(MarkdownMode.Auto, result.Options!.MarkdownMode);
+        Assert.True(result.Options.IsMarkdownExtension);
+        Assert.Equal(TranslationRoute.MarkdownAware, result.Options.TranslationRoute);
+        Assert.Null(result.Options.LegacyDocumentContentType);
+    }
+
+    [Theory]
+    [InlineData("source.md")]
+    [InlineData("source.markdown")]
+    public void AwareMarkdownModeRoutesMarkdownExtensionsToMarkdownAware(string fileName)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(fileName, "content");
+        string outputPath = directory.GetPath("translated.md");
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(
+            ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "aware",
+            });
+
+        Assert.Empty(result.Errors);
+        Assert.Equal(MarkdownMode.Aware, result.Options!.MarkdownMode);
+        Assert.True(result.Options.IsMarkdownExtension);
+        Assert.Equal(TranslationRoute.MarkdownAware, result.Options.TranslationRoute);
+        Assert.Null(result.Options.LegacyDocumentContentType);
+    }
+
+    [Theory]
+    [InlineData("source.txt")]
+    [InlineData("source.docx")]
+    public void NonMarkdownSupportedFormatsRouteToLegacyDocumentInAuto(string fileName)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(fileName, "content");
+        string outputPath = directory.GetPath("translated.out");
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(
+            ValidRawOptions(inputPath, outputPath));
+
+        Assert.Empty(result.Errors);
+        Assert.False(result.Options!.IsMarkdownExtension);
+        Assert.Equal(TranslationRoute.LegacyDocument, result.Options.TranslationRoute);
+    }
+
+    [Fact]
+    public void MarkdownParentDirectoryDoesNotAffectAutoRouteForNonMarkdownLeafFile()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(Path.Combine("folder.md", "source.txt"), "content");
+        string outputPath = directory.GetPath("translated.txt");
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(
+            ValidRawOptions(inputPath, outputPath));
+
+        Assert.Empty(result.Errors);
+        Assert.False(result.Options!.IsMarkdownExtension);
+        Assert.Equal(TranslationRoute.LegacyDocument, result.Options.TranslationRoute);
+        Assert.Equal("text/plain", result.Options.LegacyDocumentContentType);
+    }
+
+    [Fact]
+    public void AwareMarkdownModeRejectsNonMarkdownExtensions()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(
+            ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = " aware ",
+            });
+
+        Assert.NotEmpty(result.Errors);
+        Assert.Contains(
+            "Markdown-aware translation requires a .md or .markdown input file.",
+            result.Errors);
+    }
+
+    [Theory]
+    [InlineData("source.md")]
+    [InlineData("source.MARKDOWN")]
+    public void LegacyMarkdownModeRoutesMarkdownExtensionsAsTextPlain(string fileName)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(fileName, "invalid {{ markdown fixture");
+        string outputPath = directory.GetPath("translated.md");
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(
+            ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "LEGACY",
+            });
+
+        Assert.Empty(result.Errors);
+        Assert.Equal(MarkdownMode.Legacy, result.Options!.MarkdownMode);
+        Assert.True(result.Options.IsMarkdownExtension);
+        Assert.Equal(TranslationRoute.LegacyDocument, result.Options.TranslationRoute);
+        Assert.Equal("text/plain", result.Options.LegacyDocumentContentType);
+        Assert.Equal(fileName, result.Options.OriginalFileName);
+    }
+
+    [Theory]
+    [InlineData("source.txt", "text/plain")]
+    [InlineData(
+        "source.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document")]
+    public void LegacyMarkdownModeRoutesNonMarkdownSupportedFormatsToLegacyDocument(
+        string fileName,
+        string expectedLegacyDocumentContentType)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(fileName, "content");
+        string outputPath = directory.GetPath("translated.out");
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(
+            ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "legacy",
+            });
+
+        Assert.Empty(result.Errors);
+        Assert.Equal(MarkdownMode.Legacy, result.Options!.MarkdownMode);
+        Assert.False(result.Options.IsMarkdownExtension);
+        Assert.Equal(TranslationRoute.LegacyDocument, result.Options.TranslationRoute);
+        Assert.Equal(expectedLegacyDocumentContentType, result.Options.LegacyDocumentContentType);
         Assert.Equal(fileName, result.Options.OriginalFileName);
     }
 
     [Theory]
     [InlineData("source.pdf")]
-    [InlineData("source.md")]
+    [InlineData("source")]
+    public void LegacyMarkdownModeRejectsUnsupportedExtensions(string fileName)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(fileName, "content");
+        string outputPath = directory.GetPath("translated.txt");
+
+        TranslationValidationResult result = TranslationOptionsValidator.Validate(
+            ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "legacy",
+            });
+
+        Assert.NotEmpty(result.Errors);
+    }
+
+    [Fact]
+    public async Task InvalidMarkdownModeFailsBeforeTranslation()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.GetPath("translated.txt");
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        bool executed = false;
+
+        int exitCode = await Program.RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+                "--markdown-mode",
+                "sometimes",
+            ],
+            standardOutput,
+            standardError,
+            _ => null,
+            (_, _, _) =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(Program.ValidationErrorExitCode, exitCode);
+        Assert.False(executed);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains(
+            "Markdown mode must be 'auto', 'aware', or 'legacy'.",
+            standardError.ToString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task LegacyMarkdownModeBypassesMarkdownAwareValidationAndCallsLegacyTranslator()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "invalid {{ markdown fixture");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+                "--markdown-mode",
+                "legacy",
+            ],
+            _ => null,
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.Equal(TranslationRoute.LegacyDocument, executedOptions.TranslationRoute);
+        Assert.Equal("text/plain", executedOptions.LegacyDocumentContentType);
+    }
+
+    [Theory]
+    [InlineData("source.TXT", "text/plain")]
+    [InlineData("source.tsv", "text/tab-separated-values")]
+    [InlineData("source.tab", "text/tab-separated-values")]
+    [InlineData("source.csv", "text/csv")]
+    [InlineData("source.html", "text/html")]
+    [InlineData("source.htm", "text/html")]
+    [InlineData("source.mhtml", "message/rfc822")]
+    [InlineData("source.mht", "message/rfc822")]
+    [InlineData(
+        "source.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document")]
+    [InlineData(
+        "source.pptx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation")]
+    [InlineData("source.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")]
+    [InlineData("source.msg", "application/vnd.ms-outlook")]
+    [InlineData("source.xlf", "application/xliff+xml")]
+    public async Task RunAsyncExecutesValidatedCommandForSupportedExtensions(
+        string fileName,
+        string expectedLegacyDocumentContentType)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(fileName, "content");
+        string outputPath = directory.GetPath("translated.out");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+            ],
+            _ => null,
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.Equal(inputPath, executedOptions.InputPath);
+        Assert.Equal(outputPath, executedOptions.OutputPath);
+        Assert.Equal(fileName, executedOptions.OriginalFileName);
+        Assert.Equal(expectedLegacyDocumentContentType, executedOptions.LegacyDocumentContentType);
+    }
+
+    [Theory]
+    [InlineData("source.pdf")]
     [InlineData("source")]
     public void UnsupportedExtensionsFailValidation(string fileName)
     {
@@ -793,6 +1474,53 @@ public sealed class ProgramTests
             ValidRawOptions(inputPath, outputPath));
 
         Assert.NotEmpty(result.Errors);
+    }
+
+    [Theory]
+    [InlineData("source.pdf", ".pdf")]
+    [InlineData("source", "")]
+    public async Task RunAsyncRejectsUnsupportedExtensionsBeforeExecution(
+        string fileName,
+        string expectedExtension)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(fileName, "content");
+        string outputPath = directory.GetPath("translated.txt");
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        bool executed = false;
+
+        int exitCode = await Program.RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+            ],
+            standardOutput,
+            standardError,
+            _ => null,
+            (_, _, _) =>
+            {
+                executed = true;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(Program.ValidationErrorExitCode, exitCode);
+        Assert.False(executed);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains(
+            $"Unsupported input file extension '{expectedExtension}'.",
+            standardError.ToString(),
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1015,6 +1743,42 @@ public sealed class ProgramTests
 
         Assert.NotEmpty(withoutForce.Errors);
         Assert.Empty(withForce.Errors);
+    }
+
+    [Fact]
+    public async Task RunAsyncPropagatesForceWhenReplacingExistingOutput()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "content");
+        string outputPath = directory.WriteFile("translated.txt", "old content");
+        TranslationOptions? executedOptions = null;
+
+        int exitCode = await RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+                "--force",
+            ],
+            _ => null,
+            options =>
+            {
+                executedOptions = options;
+                return new ValueTask<int>(Program.SuccessExitCode);
+            });
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(executedOptions);
+        Assert.True(executedOptions.Force);
+        Assert.Equal(outputPath, executedOptions.OutputPath);
     }
 
     [Fact]
@@ -1245,7 +2009,7 @@ public sealed class ProgramTests
         Assert.True(translator.InputStreamWasReadable);
         TranslationOptions capturedOptions = translator.Options!;
         Assert.Equal("source.TXT", capturedOptions.OriginalFileName);
-        Assert.Equal("text/plain", capturedOptions.ContentType);
+        Assert.Equal("text/plain", capturedOptions.LegacyDocumentContentType);
         Assert.Equal(cancellationTokenSource.Token, translator.CancellationToken);
     }
 
@@ -1339,6 +2103,40 @@ public sealed class ProgramTests
             new CredentialUnavailableException(
                 "DefaultAzureCredential unavailable; checked environment secret")
         ];
+    }
+
+    [Fact]
+    public async Task
+        ExecuteValidatedCommandMapsUnexpectedTextTranslationServiceFailureToUnexpectedExitCode()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.txt", "sensitive segment");
+        string outputPath = directory.GetPath("translated.txt");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath))
+            .Options!;
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new TextTranslationServiceException(
+                "Azure Text Translation service returned malformed JSON.")),
+            CancellationToken.None);
+
+        string error = standardError.ToString();
+        Assert.Equal(Program.UnexpectedErrorExitCode, exitCode);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("Unexpected error", error, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Azure Text Translation service error",
+            error,
+            StringComparison.Ordinal);
+        Assert.Contains("malformed JSON", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("sensitive segment", error, StringComparison.Ordinal);
     }
 
     public static IEnumerable<object[]> StandardErrorOutputChannelFailures()
@@ -1659,6 +2457,47 @@ public sealed class ProgramTests
         Assert.Equal(string.Empty, standardOutput.ToString());
         Assert.Contains("File I/O error", standardError.ToString(), StringComparison.Ordinal);
         Assert.Contains("already exists", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ExecuteValidatedCommandRejectsExistingOutputBeforeOpeningMissingInput()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.GetPath("missing-source.txt");
+        string outputPath = directory.WriteFile("translated.txt", "old content");
+        TranslationOptions options = ValidOptions("source.txt") with
+        {
+            InputPath = inputPath,
+            OutputPath = outputPath,
+            Force = false,
+        };
+        CapturingDocumentTranslator translator = new(BinaryData.FromString("translated"));
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        bool outputWriterCalled = false;
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            translator,
+            (_, _, _, _) =>
+            {
+                outputWriterCalled = true;
+                return ValueTask.CompletedTask;
+            },
+            CreatePreflightTempFile,
+            CancellationToken.None);
+
+        string error = standardError.ToString();
+        Assert.Equal(Program.FileIoErrorExitCode, exitCode);
+        Assert.Null(translator.Options);
+        Assert.False(outputWriterCalled);
+        Assert.Equal("old content", File.ReadAllText(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("File I/O error", error, StringComparison.Ordinal);
+        Assert.Contains("already exists", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("missing-source.txt", error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2337,6 +3176,720 @@ public sealed class ProgramTests
             path => Path.GetFileName(path).EndsWith(".tmp", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task MarkdownAwareRouteRunsPipelineAndWritesTranslatedMarkdown()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "# Hello\r\n\r\nWorld\r\n");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "aware",
+            })
+            .Options!;
+        PrefixingTextSegmentTranslator textTranslator = new("fr:");
+        using CancellationTokenSource cancellationTokenSource = new();
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new InvalidOperationException("legacy called")),
+            textTranslator,
+            cancellationTokenSource.Token);
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.Equal(2, textTranslator.Requests.Count);
+        Assert.Equal(cancellationTokenSource.Token, textTranslator.CancellationToken);
+        Assert.Equal("# fr:Hello\r\n\r\nfr:World\r\n", File.ReadAllText(outputPath));
+        Assert.Contains(
+            "Translation completed.",
+            standardOutput.ToString(),
+            StringComparison.Ordinal);
+        Assert.Equal(string.Empty, standardError.ToString());
+    }
+
+    [Theory]
+    [InlineData("source.md")]
+    [InlineData("source.markdown")]
+    public async Task AutoMarkdownExtensionDispatchesToMarkdownAwarePipeline(
+        string inputFileName)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile(inputFileName, "# Hello\r\n\r\nWorld\r\n");
+        string outputPath = directory.GetPath("translated.md");
+        CapturingDocumentTranslator documentTranslator = new(
+            BinaryData.FromString("legacy translated"));
+        PrefixingTextSegmentTranslator textTranslator = new("fr:");
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        TranslationOptions? capturedOptions = null;
+
+        int exitCode = await Program.RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+            ],
+            standardOutput,
+            standardError,
+            _ => null,
+            async (options, output, token) =>
+            {
+                capturedOptions = options;
+                return await Program.ExecuteValidatedCommandAsync(
+                        options,
+                        output,
+                        standardError,
+                        documentTranslator,
+                        textTranslator,
+                        token)
+                    .ConfigureAwait(false);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(capturedOptions);
+        Assert.Equal(MarkdownMode.Auto, capturedOptions.MarkdownMode);
+        Assert.Equal(TranslationRoute.MarkdownAware, capturedOptions.TranslationRoute);
+        Assert.Equal(2, textTranslator.Requests.Count);
+        Assert.Null(documentTranslator.Options);
+        Assert.Equal("# fr:Hello\r\n\r\nfr:World\r\n", File.ReadAllText(outputPath));
+        Assert.Contains(
+            "Translation completed.",
+            standardOutput.ToString(),
+            StringComparison.Ordinal);
+        Assert.Equal(string.Empty, standardError.ToString());
+    }
+
+    [Fact]
+    public async Task LegacyMarkdownModeDispatchesToDocumentTranslator()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "# Hello\r\n\r\nWorld\r\n");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "legacy",
+            })
+            .Options!;
+        CapturingDocumentTranslator documentTranslator = new(
+            BinaryData.FromString("legacy translated"));
+        PrefixingTextSegmentTranslator textTranslator = new("fr:");
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            documentTranslator,
+            textTranslator,
+            CancellationToken.None);
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.Equal(MarkdownMode.Legacy, options.MarkdownMode);
+        Assert.Equal(TranslationRoute.LegacyDocument, options.TranslationRoute);
+        Assert.NotNull(documentTranslator.Options);
+        Assert.Empty(textTranslator.Requests);
+        Assert.Equal("legacy translated", File.ReadAllText(outputPath));
+        Assert.Contains(
+            "Translation completed.",
+            standardOutput.ToString(),
+            StringComparison.Ordinal);
+        Assert.Equal(string.Empty, standardError.ToString());
+    }
+
+    [Fact]
+    public async Task MarkdownAwareOutputWriterReceivesCallerCancellationToken()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "Hello");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "aware",
+            })
+            .Options!;
+        PrefixingTextSegmentTranslator textTranslator = new("fr:");
+        using CancellationTokenSource cancellationTokenSource = new();
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        CancellationToken capturedToken = default;
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new InvalidOperationException("legacy called")),
+            textTranslator,
+            async (path, content, overwrite, token) =>
+            {
+                Assert.False(overwrite);
+                capturedToken = token;
+                await File.WriteAllBytesAsync(path, content.ToArray(), token).ConfigureAwait(false);
+            },
+            cancellationTokenSource.Token);
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.Equal(cancellationTokenSource.Token, capturedToken);
+        Assert.Equal("fr:Hello", File.ReadAllText(outputPath));
+        Assert.Contains(
+            "Translation completed.",
+            standardOutput.ToString(),
+            StringComparison.Ordinal);
+        Assert.Equal(string.Empty, standardError.ToString());
+    }
+
+    [Fact]
+    public async Task MarkdownAwareIgnoresStatusMessageIoFailureAfterOutputCommit()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "Hello");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "aware",
+            })
+            .Options!;
+        PrefixingTextSegmentTranslator textTranslator = new("fr:");
+        using ThrowingStringWriter standardOutput = new(new IOException("stdout failed"));
+        using StringWriter standardError = new();
+        bool outputCommitted = false;
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new InvalidOperationException("legacy called")),
+            textTranslator,
+            async (path, content, overwrite, token) =>
+            {
+                Assert.False(overwrite);
+                outputCommitted = true;
+                await File.WriteAllBytesAsync(path, content.ToArray(), token).ConfigureAwait(false);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.True(outputCommitted);
+        Assert.Equal("fr:Hello", File.ReadAllText(outputPath));
+        Assert.Equal(string.Empty, standardError.ToString());
+    }
+
+    [Fact]
+    public async Task RunAsyncMarkdownAwareForcePassesOverwriteTrueToOutputWriterForExistingOutput()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "Hello");
+        string outputPath = directory.WriteFile("translated.md", "old content");
+        PrefixingTextSegmentTranslator textTranslator = new("fr:");
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+        bool? capturedOverwrite = null;
+        TranslationOptions? capturedOptions = null;
+
+        int exitCode = await Program.RunAsync(
+            [
+                "translate",
+                "--input",
+                inputPath,
+                "--output",
+                outputPath,
+                "--target-language",
+                "fr",
+                "--endpoint",
+                "https://resource.cognitiveservices.azure.com/translator",
+                "--key",
+                "secret",
+                "--markdown-mode",
+                "aware",
+                "--force",
+            ],
+            standardOutput,
+            standardError,
+            _ => null,
+            async (options, output, token) =>
+            {
+                capturedOptions = options;
+                return await Program.ExecuteValidatedCommandAsync(
+                        options,
+                        output,
+                        standardError,
+                        new ThrowingDocumentTranslator(
+                            new InvalidOperationException("legacy called")),
+                        textTranslator,
+                        async (path, content, overwrite, writerToken) =>
+                        {
+                            capturedOverwrite = overwrite;
+                            if (!overwrite)
+                            {
+                                throw new IOException("Overwrite was not requested.");
+                            }
+
+                            await File
+                                .WriteAllBytesAsync(path, content.ToArray(), writerToken)
+                                .ConfigureAwait(false);
+                        },
+                        token)
+                    .ConfigureAwait(false);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.NotNull(capturedOptions);
+        Assert.True(capturedOptions.Force);
+        Assert.True(capturedOverwrite);
+        Assert.Equal("fr:Hello", File.ReadAllText(outputPath));
+        Assert.Contains(
+            "Translation completed.",
+            standardOutput.ToString(),
+            StringComparison.Ordinal);
+        Assert.Equal(string.Empty, standardError.ToString());
+    }
+
+    [Fact]
+    public async Task MarkdownAwareZeroSegmentsWritesOriginalWithoutCallingBackend()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.GetPath("source.md");
+        string outputPath = directory.GetPath("translated.md");
+        byte[] inputBytes =
+        [
+            0xEF,
+            0xBB,
+            0xBF,
+            .. Encoding.UTF8.GetBytes("```text\r\nunchanged\r\n```\r\n"),
+        ];
+        File.WriteAllBytes(inputPath, inputBytes);
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "aware",
+            })
+            .Options!;
+        PrefixingTextSegmentTranslator textTranslator = new("fr:");
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new InvalidOperationException("legacy called")),
+            textTranslator,
+            CancellationToken.None);
+
+        Assert.Equal(Program.SuccessExitCode, exitCode);
+        Assert.Empty(textTranslator.Requests);
+        Assert.Equal(inputBytes, File.ReadAllBytes(outputPath));
+    }
+
+    [Fact]
+    public async Task MarkdownAwareValidationFailureDoesNotWriteOutput()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "Hello");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "aware",
+            })
+            .Options!;
+        ReplacingTextSegmentTranslator textTranslator = new("# Broken");
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new InvalidOperationException("legacy called")),
+            textTranslator,
+            CancellationToken.None);
+
+        Assert.Equal(Program.ValidationErrorExitCode, exitCode);
+        Assert.False(File.Exists(outputPath));
+        Assert.Contains("Markdown-aware", standardError.ToString(), StringComparison.Ordinal);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+    }
+
+    [Fact]
+    public async Task MarkdownAwareTranslatorCancellationWinsOverValidationFailure()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "Hello");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "aware",
+            })
+            .Options!;
+        using CancellationTokenSource cancellationTokenSource = new();
+        CancelingReplacingTextSegmentTranslator textTranslator = new(
+            "# Broken",
+            cancellationTokenSource);
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new InvalidOperationException("legacy called")),
+            textTranslator,
+            cancellationTokenSource.Token);
+
+        Assert.Equal(Program.UnexpectedErrorExitCode, exitCode);
+        Assert.False(File.Exists(outputPath));
+        Assert.Contains("Operation canceled.", standardError.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("Markdown-aware", standardError.ToString(), StringComparison.Ordinal);
+        Assert.Equal(string.Empty, standardOutput.ToString());
+    }
+
+    [Fact]
+    public async Task MarkdownAwareExistingOutputPreflightFailsBeforeReadingInputOrCallingBackend()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.CreateSubdirectory("source.md");
+        string outputPath = directory.WriteFile("translated.md", "old content");
+        TranslationOptions options = ValidOptions("source.md") with
+        {
+            InputPath = inputPath,
+            OutputPath = outputPath,
+            MarkdownMode = MarkdownMode.Aware,
+            TranslationRoute = TranslationRoute.MarkdownAware,
+        };
+        PrefixingTextSegmentTranslator textTranslator = new("fr:");
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new InvalidOperationException("legacy called")),
+            textTranslator,
+            CancellationToken.None);
+
+        Assert.Equal(Program.FileIoErrorExitCode, exitCode);
+        Assert.Empty(textTranslator.Requests);
+        Assert.Equal("old content", File.ReadAllText(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("already exists", standardError.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("source.md", standardError.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            Directory.EnumerateFiles(directory.Path),
+            path => System.IO.Path.GetFileName(path).EndsWith(".tmp", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task MarkdownAwarePatchFailurePreservesExistingOutput()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "Hello");
+        string outputPath = directory.WriteFile("translated.md", "old content");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                Force = true,
+                MarkdownMode = "aware",
+            })
+            .Options!;
+        NullTextSegmentTranslator textTranslator = new();
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new InvalidOperationException("legacy called")),
+            textTranslator,
+            CancellationToken.None);
+
+        Assert.Equal(Program.ValidationErrorExitCode, exitCode);
+        Assert.Equal("old content", File.ReadAllText(outputPath));
+    }
+
+    [Theory]
+    [MemberData(nameof(MarkdownAwareServiceFailures))]
+    public async Task MarkdownAwareServiceFailuresReturnServiceExitCodeWithoutLeakingDetails(
+        Exception exception,
+        string expectedError)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "Hello");
+        string outputPath = directory.WriteFile("translated.md", "old content");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                Force = true,
+                MarkdownMode = "aware",
+            })
+            .Options!;
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new InvalidOperationException("legacy called")),
+            new ThrowingTextSegmentTranslator(exception),
+            CancellationToken.None);
+
+        Assert.Equal(Program.ServiceErrorExitCode, exitCode);
+        Assert.Equal("old content", File.ReadAllText(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Equal(expectedError + Environment.NewLine, standardError.ToString());
+        if (exception is TextTranslationServiceException)
+        {
+            Assert.Contains(
+                exception.Message,
+                standardError.ToString(),
+                StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.DoesNotContain(
+                exception.Message,
+                standardError.ToString(),
+                StringComparison.Ordinal);
+        }
+        Assert.DoesNotContain(
+            "secret",
+            standardError.ToString(),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [MemberData(nameof(MarkdownAwareCredentialFailures))]
+    public async Task
+        MarkdownAwareCredentialFailuresReturnFixedCredentialErrorWithoutLeakingDetails(
+        Exception exception)
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "Hello");
+        string outputPath = directory.WriteFile("translated.md", "old content");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                Force = true,
+                MarkdownMode = "aware",
+                AuthMode = "entra-id",
+                ApiKey = null,
+            })
+            .Options!;
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new InvalidOperationException("legacy called")),
+            new ThrowingTextSegmentTranslator(exception),
+            CancellationToken.None);
+
+        string error = standardError.ToString();
+        Assert.Equal(Program.ServiceErrorExitCode, exitCode);
+        Assert.Equal("old content", File.ReadAllText(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Equal(
+            "Error: Azure credential acquisition failed." + Environment.NewLine,
+            error);
+        Assert.DoesNotContain(exception.Message, error, StringComparison.Ordinal);
+        Assert.DoesNotContain("AZURE_CLIENT_SECRET", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret", error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task MarkdownAwareParseFailureDoesNotCallBackend()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "{\"title\":\"unsupported\"}");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "aware",
+            })
+            .Options!;
+        PrefixingTextSegmentTranslator textTranslator = new("fr:");
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new InvalidOperationException("legacy called")),
+            textTranslator,
+            CancellationToken.None);
+
+        Assert.Equal(Program.ValidationErrorExitCode, exitCode);
+        Assert.Empty(textTranslator.Requests);
+        Assert.False(File.Exists(outputPath));
+    }
+
+    [Fact]
+    public async Task
+        MarkdownAwareInputReadFileIoFailureReturnsFileIoExitCodeWithoutCallingBackend()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.CreateSubdirectory("source.md");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions options = ValidOptions("source.md") with
+        {
+            InputPath = inputPath,
+            OutputPath = outputPath,
+            MarkdownMode = MarkdownMode.Aware,
+            TranslationRoute = TranslationRoute.MarkdownAware,
+        };
+        PrefixingTextSegmentTranslator textTranslator = new("fr:");
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new InvalidOperationException("legacy called")),
+            textTranslator,
+            CancellationToken.None);
+
+        Assert.Equal(Program.FileIoErrorExitCode, exitCode);
+        Assert.Empty(textTranslator.Requests);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("File I/O error", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MarkdownAwareOutputWriterIoFailureReturnsFileIoExitCodeWithoutFinalOutput()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "Hello");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "aware",
+            })
+            .Options!;
+        PrefixingTextSegmentTranslator textTranslator = new("fr:");
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new InvalidOperationException("legacy called")),
+            textTranslator,
+            (_, _, _, _) => throw new IOException("writer failed"),
+            CancellationToken.None);
+
+        Assert.Equal(Program.FileIoErrorExitCode, exitCode);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("File I/O error", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MarkdownAwareTextSegmentTranslatorIoFailureReturnsUnexpectedExitCode()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "Hello");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "aware",
+            })
+            .Options!;
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new InvalidOperationException("legacy called")),
+            new ThrowingTextSegmentTranslator(new IOException("network stream failed")),
+            CancellationToken.None);
+
+        Assert.Equal(Program.UnexpectedErrorExitCode, exitCode);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("Unexpected error", standardError.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("File I/O error", standardError.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task
+        MarkdownAwarePostTranslationCancellationReturnsUnexpectedExitCodeWithoutOutputOrTempFile()
+    {
+        using TestDirectory directory = TestDirectory.Create();
+        string inputPath = directory.WriteFile("source.md", "Hello");
+        string outputPath = directory.GetPath("translated.md");
+        TranslationOptions options = TranslationOptionsValidator
+            .Validate(ValidRawOptions(inputPath, outputPath) with
+            {
+                MarkdownMode = "aware",
+            })
+            .Options!;
+        using CancellationTokenSource cancellationTokenSource = new();
+        CancelingPrefixingTextSegmentTranslator textTranslator = new(
+            "fr:",
+            cancellationTokenSource);
+        bool outputWriterCalled = false;
+        using StringWriter standardOutput = new();
+        using StringWriter standardError = new();
+
+        int exitCode = await Program.ExecuteValidatedCommandAsync(
+            options,
+            standardOutput,
+            standardError,
+            new ThrowingDocumentTranslator(new InvalidOperationException("legacy called")),
+            textTranslator,
+            async (path, content, _, token) =>
+            {
+                outputWriterCalled = true;
+                token.ThrowIfCancellationRequested();
+                await File.WriteAllBytesAsync(path, content.ToArray(), token).ConfigureAwait(false);
+            },
+            cancellationTokenSource.Token);
+
+        Assert.Equal(Program.UnexpectedErrorExitCode, exitCode);
+        Assert.Equal(cancellationTokenSource.Token, textTranslator.CancellationToken);
+        Assert.True(textTranslator.CancellationToken.IsCancellationRequested);
+        Assert.False(outputWriterCalled);
+        Assert.False(File.Exists(outputPath));
+        Assert.Equal(string.Empty, standardOutput.ToString());
+        Assert.Contains("Operation canceled.", standardError.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            Directory.EnumerateFiles(directory.Path),
+            path => Path.GetFileName(path).EndsWith(".tmp", StringComparison.Ordinal));
+    }
+
     private static RawTranslationOptions ValidRawOptions(string inputPath, string outputPath) =>
         new(
             inputPath,
@@ -2345,6 +3898,7 @@ public sealed class ProgramTests
             "api-key",
             "https://resource.cognitiveservices.azure.com/translator",
             "secret",
+            "auto",
             Force: false);
 
     private static TranslationOptions ValidOptions(string originalFileName) =>
@@ -2355,9 +3909,12 @@ public sealed class ProgramTests
             new Uri("https://resource.cognitiveservices.azure.com"),
             AuthMode.ApiKey,
             "secret",
+            MarkdownMode.Auto,
+            TranslationRoute.LegacyDocument,
+            TranslationOptionsValidator.IsMarkdownExtension(originalFileName),
             Force: false,
             originalFileName,
-            DocumentTranslationContentTypes.TryGetContentType(
+            LegacyDocumentContentTypes.TryGetContentType(
                 Path.GetExtension(originalFileName),
                 out string contentType)
                 ? contentType
@@ -2401,6 +3958,40 @@ public sealed class ProgramTests
         AddOption(args, "--auth-mode", effectiveAuthMode);
         AddOption(args, "--key", effectiveApiKey);
         return [.. args];
+    }
+
+    public static IEnumerable<object[]> MarkdownAwareServiceFailures()
+    {
+        yield return
+        [
+            new TextTranslationServiceException(
+                "Azure Text Translation service returned malformed JSON."),
+            "Error: Azure Text Translation service error: "
+                + "Azure Text Translation service returned malformed JSON.",
+        ];
+        yield return
+        [
+            new RequestFailedException(
+                503,
+                "service unavailable with secret-token",
+                "Unavailable",
+                null),
+            "Error: Azure service error (503, Unavailable).",
+        ];
+    }
+
+    public static IEnumerable<object[]> MarkdownAwareCredentialFailures()
+    {
+        yield return
+        [
+            new CredentialUnavailableException(
+                "DefaultAzureCredential unavailable; checked AZURE_CLIENT_SECRET=secret-token")
+        ];
+        yield return
+        [
+            new AuthenticationFailedException(
+                "EnvironmentCredential failed with AZURE_CLIENT_SECRET=secret-token")
+        ];
     }
 
     private static void AddOption(List<string> args, string optionName, string? value)
@@ -2606,6 +4197,100 @@ public sealed class ProgramTests
         public ValueTask<BinaryData> TranslateAsync(
             TranslationOptions options,
             Stream inputStream,
+            CancellationToken cancellationToken)
+        {
+            throw exception;
+        }
+    }
+
+    private sealed class PrefixingTextSegmentTranslator(string prefix) : ITextSegmentTranslator
+    {
+        public List<TextSegmentTranslationRequest> Requests { get; } = [];
+
+        public CancellationToken CancellationToken { get; private set; }
+
+        public ValueTask<IReadOnlyList<string>> TranslateAsync(
+            TranslationOptions options,
+            IReadOnlyList<TextSegmentTranslationRequest> segments,
+            CancellationToken cancellationToken)
+        {
+            CancellationToken = cancellationToken;
+            Requests.AddRange(segments);
+            IReadOnlyList<string> translations = segments
+                .OrderBy(static segment => segment.SegmentIndex)
+                .Select(segment => prefix + segment.Text)
+                .ToArray();
+            return new ValueTask<IReadOnlyList<string>>(translations);
+        }
+    }
+
+    private sealed class CancelingPrefixingTextSegmentTranslator(
+        string prefix,
+        CancellationTokenSource cancellationTokenSource)
+        : ITextSegmentTranslator
+    {
+        public CancellationToken CancellationToken { get; private set; }
+
+        public ValueTask<IReadOnlyList<string>> TranslateAsync(
+            TranslationOptions options,
+            IReadOnlyList<TextSegmentTranslationRequest> segments,
+            CancellationToken cancellationToken)
+        {
+            CancellationToken = cancellationToken;
+            cancellationTokenSource.Cancel();
+            IReadOnlyList<string> translations = segments
+                .OrderBy(static segment => segment.SegmentIndex)
+                .Select(segment => prefix + segment.Text)
+                .ToArray();
+            return new ValueTask<IReadOnlyList<string>>(translations);
+        }
+    }
+
+    private sealed class ReplacingTextSegmentTranslator(string replacement) : ITextSegmentTranslator
+    {
+        public ValueTask<IReadOnlyList<string>> TranslateAsync(
+            TranslationOptions options,
+            IReadOnlyList<TextSegmentTranslationRequest> segments,
+            CancellationToken cancellationToken)
+        {
+            IReadOnlyList<string> translations = segments.Select(_ => replacement).ToArray();
+            return new ValueTask<IReadOnlyList<string>>(translations);
+        }
+    }
+
+    private sealed class CancelingReplacingTextSegmentTranslator(
+        string replacement,
+        CancellationTokenSource cancellationTokenSource)
+        : ITextSegmentTranslator
+    {
+        public ValueTask<IReadOnlyList<string>> TranslateAsync(
+            TranslationOptions options,
+            IReadOnlyList<TextSegmentTranslationRequest> segments,
+            CancellationToken cancellationToken)
+        {
+            cancellationTokenSource.Cancel();
+            IReadOnlyList<string> translations = segments.Select(_ => replacement).ToArray();
+            return new ValueTask<IReadOnlyList<string>>(translations);
+        }
+    }
+
+    private sealed class NullTextSegmentTranslator : ITextSegmentTranslator
+    {
+        public ValueTask<IReadOnlyList<string>> TranslateAsync(
+            TranslationOptions options,
+            IReadOnlyList<TextSegmentTranslationRequest> segments,
+            CancellationToken cancellationToken)
+        {
+            IReadOnlyList<string> translations = [null!];
+            return new ValueTask<IReadOnlyList<string>>(translations);
+        }
+    }
+
+    private sealed class ThrowingTextSegmentTranslator(Exception exception) : ITextSegmentTranslator
+    {
+        public ValueTask<IReadOnlyList<string>> TranslateAsync(
+            TranslationOptions options,
+            IReadOnlyList<TextSegmentTranslationRequest> segments,
             CancellationToken cancellationToken)
         {
             throw exception;

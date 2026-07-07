@@ -7,4 +7,6 @@ internal sealed record RawTranslationOptions(
     string? AuthMode,
     string? Endpoint,
     string? ApiKey,
-    bool Force);
+    string? MarkdownMode,
+    bool Force,
+    string? Region = null);

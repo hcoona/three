@@ -78,7 +78,7 @@ on:
           Release channel label for logs and policy validation (example: official, buddy).
           Reserved values: 'official' and 'buddy' are governed by strict policy assertions.
           Custom allowlisted channels must not use 'x-official' or 'x-buddy' as these names
-          are reserved as sanitization escape slugs and will collide with mis-typed official/buddy
+          are reserved as sanitization escape slugs and will collide with mistyped official/buddy
           inputs in the generated target_environment output.
         required: true
         type: string
@@ -164,7 +164,7 @@ env:
   NODE_VERSION: '24'
   PNPM_VERSION: '10.34.1'
   RUBY_VERSION: '3.3'
-  NBGV_VERSION: '3.9.50'
+  NBGV_VERSION: '3.10.85'
   # SYNC[tool-versions]: keep in step with EXPECTED_*_VERSION in lint-version-consistency job env below.
   # Updating only one side will either cause the lint gate to fail (if env is updated but
   # EXPECTED is not) or silently pass with stale runtime env (if EXPECTED is updated but env is not).
@@ -371,7 +371,7 @@ jobs:
       # SYNC[tool-versions]: keep in step with the workflow-level env: block above.
       # These EXPECTED_* values are what the lint check validates hardcoded with: values against.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -437,7 +437,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout (policy scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -486,7 +486,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout (policy publish-target scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -982,13 +982,13 @@ jobs:
     steps:
       - name: Install jq
         if: inputs.enforce_non_clobber
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        uses: dcarbone/install-jq-action@4fcb5062d7ce9bc4382d1a352d19ba3ba2c317c1 # v4.0.1
         with:
           version: '1.7.1'
 
       - name: Checkout (non-clobber guard scripts)
         if: inputs.enforce_non_clobber
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -1026,7 +1026,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -1126,13 +1126,13 @@ jobs:
       expected_ruby_gem_sha256: ${{ steps.outputs.outputs.expected_ruby_gem_sha256 }}
     steps:
       - name: Checkout (trusted planner scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Checkout release target data
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -1151,13 +1151,13 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
 
       - name: Setup pnpm
         if: needs.resolve.outputs.project_kind == 'node'
-        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: ${{ env.PNPM_VERSION }}
           run_install: false
@@ -1172,7 +1172,7 @@ jobs:
 
       - name: Setup Ruby (Bundler)
         if: needs.resolve.outputs.project_kind == 'ruby' && hashFiles(format('.three-workflow-release/target/{0}/Gemfile', needs.resolve.outputs.package_dir)) != ''
-        uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1.310.0
+        uses: ruby/setup-ruby@d45b1a4e94b71acab930e56e79c6aa188764e7f9 # v1.316.0
         with:
           ruby-version: ${{ needs.resolve.outputs.ruby_version }}
           bundler-cache: true
@@ -1180,7 +1180,7 @@ jobs:
 
       - name: Setup Ruby
         if: needs.resolve.outputs.project_kind == 'ruby' && hashFiles(format('.three-workflow-release/target/{0}/Gemfile', needs.resolve.outputs.package_dir)) == ''
-        uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1.310.0
+        uses: ruby/setup-ruby@d45b1a4e94b71acab930e56e79c6aa188764e7f9 # v1.316.0
         with:
           ruby-version: ${{ needs.resolve.outputs.ruby_version }}
 
@@ -1563,13 +1563,13 @@ jobs:
           fi
 
       - name: Checkout (tag scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
 
@@ -1691,13 +1691,13 @@ jobs:
         publish-node-id: ${{ fromJson(needs.prepare-release-plan.outputs.skip_publish_node_ids) }}
     steps:
       - name: Checkout (skip receipt scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
 
@@ -1797,7 +1797,7 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: ${{ github.workspace }}/out/*
 
@@ -1966,18 +1966,18 @@ jobs:
           echo "See: https://docs.pypi.org/trusted-publishers/"
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        uses: dcarbone/install-jq-action@4fcb5062d7ce9bc4382d1a352d19ba3ba2c317c1 # v4.0.1
         with:
           version: '1.7.1'
 
       - name: Checkout (trusted workflow scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
 
@@ -2106,7 +2106,7 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: ${{ github.workspace }}/out/*
 
@@ -2292,7 +2292,7 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: ${{ github.workspace }}/out/*
 
@@ -2494,13 +2494,13 @@ jobs:
           fi
 
       - name: Checkout (trusted workflow scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
 
@@ -2728,13 +2728,13 @@ jobs:
           fi
 
       - name: Checkout (trusted workflow scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
 
@@ -2875,7 +2875,7 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: ${{ github.workspace }}/out/*
 
@@ -3071,13 +3071,13 @@ jobs:
           fi
 
       - name: Checkout (trusted workflow scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
 
@@ -3100,7 +3100,7 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Setup Ruby
-        uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1.310.0
+        uses: ruby/setup-ruby@d45b1a4e94b71acab930e56e79c6aa188764e7f9 # v1.316.0
         with:
           ruby-version: ${{ needs.resolve.outputs.ruby_version }}
 
@@ -3269,18 +3269,18 @@ jobs:
           fi
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        uses: dcarbone/install-jq-action@4fcb5062d7ce9bc4382d1a352d19ba3ba2c317c1 # v4.0.1
         with:
           version: '1.7.1'
 
       - name: Checkout (trusted workflow scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
 
@@ -3303,12 +3303,12 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Setup Ruby
-        uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1.310.0
+        uses: ruby/setup-ruby@d45b1a4e94b71acab930e56e79c6aa188764e7f9 # v1.316.0
         with:
           ruby-version: ${{ needs.resolve.outputs.ruby_version }}
 
       - name: Configure RubyGems Trusted Publishing credentials
-        uses: rubygems/configure-rubygems-credentials@762a4b77c3300434bb57c7ce80b20e36231927aa # v2.0.0
+        uses: rubygems/configure-rubygems-credentials@dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0
         with:
           trusted-publisher: true
 
@@ -3409,7 +3409,7 @@ jobs:
           path: ${{ github.workspace }}/out
 
       - name: Attest build provenance (GitHub)
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: ${{ github.workspace }}/out/*
 
@@ -3634,18 +3634,18 @@ jobs:
       actions: read
     steps:
       - name: Checkout (release sentinel scripts)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+        uses: dcarbone/install-jq-action@4fcb5062d7ce9bc4382d1a352d19ba3ba2c317c1 # v4.0.1
         with:
           version: '1.7.1'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
 

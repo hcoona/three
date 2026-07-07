@@ -1,0 +1,85 @@
+name: short
+version: 1.0.0
+description: APM configuration for shared agent skills.
+targets:
+  - copilot
+dependencies:
+  apm:
+    - git: https://github.com/dotnet/skills.git
+      path: plugins/dotnet
+      ref: 691cd472a108927024b575e4599d273bca62c60c
+    - git: https://github.com/dotnet/skills.git
+      path: plugins/dotnet-diag
+      ref: 691cd472a108927024b575e4599d273bca62c60c
+    - git: https://github.com/dotnet/skills.git
+      path: plugins/dotnet-msbuild
+      ref: 691cd472a108927024b575e4599d273bca62c60c
+    - git: https://github.com/dotnet/skills.git
+      path: plugins/dotnet-nuget
+      ref: 691cd472a108927024b575e4599d273bca62c60c
+    - git: https://github.com/dotnet/skills.git
+      path: plugins/dotnet-upgrade
+      ref: 691cd472a108927024b575e4599d273bca62c60c
+    - git: https://github.com/dotnet/skills.git
+      path: plugins/dotnet-ai
+      ref: 691cd472a108927024b575e4599d273bca62c60c
+    - git: https://github.com/dotnet/skills.git
+      path: plugins/dotnet-test
+      ref: 691cd472a108927024b575e4599d273bca62c60c
+    - git: https://github.com/dotnet/skills.git
+      path: plugins/dotnet-test-migration
+      ref: 691cd472a108927024b575e4599d273bca62c60c
+    - git: https://github.com/mattpocock/skills.git
+      path: skills/productivity/grill-me
+      ref: 5d78bd0903420f97c791f834201e550c765699f8
+    - git: https://github.com/microsoftdocs/mcp.git
+      path: skills/microsoft-docs
+      ref: caa3d670bf2814171dba4f7346ece5080964021e
+    - git: https://github.com/microsoftdocs/mcp.git
+      path: skills/microsoft-code-reference
+      ref: caa3d670bf2814171dba4f7346ece5080964021e
+    - git: https://github.com/microsoft/win-dev-skills.git
+      path: plugins/winui
+      ref: 7b7cfbfd97118bb477695354943ee94bb2203a52
+  mcp:
+    - name: io.github.upstash/context7
+      registry: false
+      transport: stdio
+      command: mise
+      args:
+        - exec
+        - --
+        - pnpm
+        - dlx
+        - '@upstash/context7-mcp@1.0.30'
+      env:
+        CONTEXT7_API_KEY: '${input:CONTEXT7_API_KEY}'
+    - name: microsoft-learn
+      registry: false
+      transport: http
+      url: https://learn.microsoft.com/api/mcp
+    - name: binlog
+      registry: false
+      transport: stdio
+      command: mise
+      args:
+        - exec
+        - --
+        - dotnet
+        - dnx
+        - Microsoft.AITools.BinlogMcp
+        - --yes
+  lsp:
+    - name: csharp
+      command: mise
+      args:
+        - exec
+        - --
+        - dotnet
+        - tool
+        - run
+        - csharp-ls
+      extensionToLanguage:
+        .cs: csharp
+includes: auto
+scripts: {}
