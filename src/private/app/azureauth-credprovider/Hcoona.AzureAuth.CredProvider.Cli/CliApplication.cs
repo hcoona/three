@@ -2,19 +2,24 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 using Hcoona.AzureAuth.CredProvider.Platform.Redaction;
+using Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
 
 namespace Hcoona.AzureAuth.CredProvider.Cli;
 
 internal static class CliApplication
 {
     private const string CommandName = "azureauth-credprovider";
-    private const string PhaseName = "7-cli-shell";
+    private const string PhaseName = "8-architecture-vertical-slice";
     private const int SuccessExitCode = 0;
     private const int NotImplementedExitCode = 1;
     private const int UsageExitCode = 2;
     private const int FatalExitCode = 70;
     private const string FatalErrorMessage = "error: unexpected fatal failure.";
+    private const string GitCredentialHelperConfigurationKey = "credential.helper";
+    private const string GitUseHttpPathConfigurationKey =
+        "credential.https://dev.azure.com.useHttpPath";
 
     private static readonly string[] SupportedEcosystems = ["git", "nuget", "python", "npm"];
     private static readonly HashSet<string> SecretLikeOptionNames = new(StringComparer.Ordinal)
@@ -36,6 +41,16 @@ internal static class CliApplication
 
     public static int Run(IReadOnlyList<string> args, TextWriter stdout, TextWriter stderr)
     {
+        return Run(args, stdout, stderr, runtimeOptions: null);
+    }
+
+    internal static int Run(
+        IReadOnlyList<string> args,
+        TextWriter stdout,
+        TextWriter stderr,
+        CliRuntimeOptions? runtimeOptions
+    )
+    {
         ArgumentNullException.ThrowIfNull(args);
         ArgumentNullException.ThrowIfNull(stdout);
         ArgumentNullException.ThrowIfNull(stderr);
@@ -53,9 +68,14 @@ internal static class CliApplication
             return invocation.Command switch
             {
                 CliCommand.Status => HandleStatus(invocation, stdout),
-                CliCommand.Configure => HandleConfigure(invocation, stdout, stderr),
-                CliCommand.Unconfigure => HandleUnconfigure(invocation, stdout, stderr),
-                CliCommand.Doctor or CliCommand.Login or CliCommand.Logout => HandlePhaseStub(
+                CliCommand.Configure => HandleConfigure(invocation, stdout, stderr, runtimeOptions),
+                CliCommand.Unconfigure => HandleUnconfigure(
+                    invocation,
+                    stdout,
+                    stderr,
+                    runtimeOptions),
+                CliCommand.Doctor => HandleDoctor(invocation, stdout, runtimeOptions),
+                CliCommand.Login or CliCommand.Logout => HandlePhaseStub(
                     invocation,
                     stderr),
                 _ => throw new InvalidOperationException("Unsupported CLI command."),
@@ -82,42 +102,158 @@ internal static class CliApplication
     private static int HandleConfigure(
         CliInvocation invocation,
         TextWriter stdout,
-        TextWriter stderr)
+        TextWriter stderr,
+        CliRuntimeOptions? runtimeOptions)
     {
-        if (!invocation.DryRun)
+        CredentialEcosystem ecosystem = invocation.Ecosystem
+            ?? throw new InvalidOperationException("Configure requires an ecosystem.");
+
+        if (invocation.DryRun)
+        {
+            if (ecosystem == CredentialEcosystem.Git && invocation.CiMode == CliCiMode.None)
+            {
+                GitPhase8ConfigureDryRunResult dryRunResult;
+                try
+                {
+                    dryRunResult = CreateGitPhase8VerticalSliceService(runtimeOptions)
+                        .DryRunConfigureAsync()
+                        .AsTask()
+                        .GetAwaiter()
+                        .GetResult();
+                }
+                catch (GitPhase8UnrecognizedStateException)
+                {
+                    TryWriteDiagnosticText(
+                        stderr,
+                        "error: configure cannot modify unrecognized Phase 8 Git state.");
+                    return NotImplementedExitCode;
+                }
+
+                WriteText(stdout, BuildGitConfigureDryRunOutput(invocation, dryRunResult));
+                return dryRunResult.Validation.IsValid ? SuccessExitCode : NotImplementedExitCode;
+            }
+
+            WriteText(stdout, BuildDryRunOutput(invocation));
+            return SuccessExitCode;
+        }
+
+        if (ecosystem != CredentialEcosystem.Git || invocation.CiMode != CliCiMode.None)
         {
             TryWriteDiagnosticText(
                 stderr,
-                "error: configure without '--dry-run' is not implemented in phase 7.");
+                "error: configure without '--dry-run' is not implemented in phase 8.");
             return NotImplementedExitCode;
         }
 
-        WriteText(stdout, BuildDryRunOutput(invocation));
+        GitPhase8ConfigureResult configureResult;
+        try
+        {
+            configureResult = CreateGitPhase8VerticalSliceService(runtimeOptions)
+                .ConfigureAsync()
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (GitPhase8UnrecognizedStateException)
+        {
+            TryWriteDiagnosticText(
+                stderr,
+                "error: configure cannot modify unrecognized Phase 8 Git state.");
+            return NotImplementedExitCode;
+        }
+
+        WriteText(stdout, BuildGitConfigureOutput(invocation, configureResult));
         return SuccessExitCode;
     }
 
     private static int HandleUnconfigure(
         CliInvocation invocation,
         TextWriter stdout,
-        TextWriter stderr)
+        TextWriter stderr,
+        CliRuntimeOptions? runtimeOptions)
     {
-        if (!invocation.DryRun)
+        CredentialEcosystem ecosystem = invocation.Ecosystem
+            ?? throw new InvalidOperationException("Unconfigure requires an ecosystem.");
+
+        if (invocation.DryRun)
+        {
+            if (ecosystem == CredentialEcosystem.Git && invocation.CiMode == CliCiMode.None)
+            {
+                try
+                {
+                    CreateGitPhase8VerticalSliceService(runtimeOptions)
+                        .ValidateUnconfigureDryRunAsync()
+                        .AsTask()
+                        .GetAwaiter()
+                        .GetResult();
+                }
+                catch (GitPhase8UnrecognizedStateException)
+                {
+                    TryWriteDiagnosticText(
+                        stderr,
+                        "error: unconfigure cannot modify unrecognized Phase 8 Git state.");
+                    return NotImplementedExitCode;
+                }
+            }
+
+            WriteText(stdout, BuildDryRunOutput(invocation));
+            return SuccessExitCode;
+        }
+
+        if (ecosystem != CredentialEcosystem.Git || invocation.CiMode != CliCiMode.None)
         {
             TryWriteDiagnosticText(
                 stderr,
-                "error: unconfigure without '--dry-run' is not implemented in phase 7.");
+                "error: unconfigure without '--dry-run' is not implemented in phase 8.");
             return NotImplementedExitCode;
         }
 
-        WriteText(stdout, BuildDryRunOutput(invocation));
+        GitPhase8UnconfigureResult unconfigureResult;
+        try
+        {
+            unconfigureResult = CreateGitPhase8VerticalSliceService(runtimeOptions)
+                .UnconfigureAsync()
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (GitPhase8UnrecognizedStateException)
+        {
+            TryWriteDiagnosticText(
+                stderr,
+                "error: unconfigure cannot modify unrecognized Phase 8 Git state.");
+            return NotImplementedExitCode;
+        }
+
+        WriteText(stdout, BuildGitUnconfigureOutput(invocation, unconfigureResult));
         return SuccessExitCode;
+    }
+
+    private static int HandleDoctor(
+        CliInvocation invocation,
+        TextWriter stdout,
+        CliRuntimeOptions? runtimeOptions)
+    {
+        GitPhase8DoctorResult doctorResult = CreateGitPhase8VerticalSliceService(runtimeOptions)
+            .DoctorAsync()
+            .AsTask()
+            .GetAwaiter()
+            .GetResult();
+        WriteText(stdout, BuildDoctorOutput(invocation, doctorResult));
+        return doctorResult.ConfigurationPlanValid
+            && doctorResult.OwnedGitEntriesPresent
+            && doctorResult.OwnershipManifestPresent
+            && doctorResult.CredentialCoreSuccess
+            && doctorResult.GitProtocolPathSuccess
+            ? SuccessExitCode
+            : NotImplementedExitCode;
     }
 
     private static int HandlePhaseStub(CliInvocation invocation, TextWriter stderr)
     {
         TryWriteDiagnosticText(
             stderr,
-            $"error: {invocation.CommandName} is not implemented in phase 7.");
+            $"error: {invocation.CommandName} is not implemented in phase 8.");
         return NotImplementedExitCode;
     }
 
@@ -145,7 +281,7 @@ internal static class CliApplication
         return NormalizeCommand(commandToken) switch
         {
             CliCommand.Status => ParseStatus(remainingArgs),
-            CliCommand.Doctor => ParsePhaseStub(CliCommand.Doctor, remainingArgs),
+            CliCommand.Doctor => ParseDoctor(remainingArgs),
             CliCommand.Login => ParsePhaseStub(CliCommand.Login, remainingArgs),
             CliCommand.Logout => ParsePhaseStub(CliCommand.Logout, remainingArgs),
             CliCommand.Configure => ParseConfigurationCommand(CliCommand.Configure, remainingArgs),
@@ -230,6 +366,40 @@ internal static class CliApplication
         }
 
         return new CliInvocation(command, null, CliCiMode.None, DryRun: false, HelpText: null);
+    }
+
+    private static CliInvocation ParseDoctor(IReadOnlyList<string> args)
+    {
+        if (ContainsStandaloneHelpToken(args))
+        {
+            ThrowIfAnyValuelessOptionHasAssignedValue(args);
+            return CliInvocation.CreateHelp(BuildDoctorHelp());
+        }
+
+        foreach (string token in args)
+        {
+            ThrowIfValuelessOptionHasAssignedValue(token);
+            if (IsHelpToken(token))
+            {
+                return CliInvocation.CreateHelp(BuildDoctorHelp());
+            }
+
+            if (IsOptionToken(token))
+            {
+                throw CreateUnknownOptionError(token);
+            }
+
+            throw CreateUsageError(
+                "error: doctor does not accept positional arguments. "
+                + $"Run '{CommandName} doctor --help' for usage.");
+        }
+
+        return new CliInvocation(
+            CliCommand.Doctor,
+            null,
+            CliCiMode.None,
+            DryRun: false,
+            HelpText: null);
     }
 
     private static CliInvocation ParseConfigurationCommand(
@@ -496,12 +666,12 @@ internal static class CliApplication
             $"  {CommandName} <command> [options]",
             string.Empty,
             "Commands:",
-            "  status                       Show deterministic Phase 7 shell status.",
-            "  doctor                       Phase 7 stub; not implemented yet.",
-            "  login                        Phase 7 stub; not implemented yet.",
-            "  logout                       Phase 7 stub; not implemented yet.",
-            "  configure <ecosystem>        Phase 7 dry-run only for git, nuget, python, or npm.",
-            "  unconfigure <ecosystem>      Phase 7 dry-run only for git, nuget, python, or npm.",
+            "  status                       Show deterministic Phase 8 shell status.",
+            "  doctor                       Run Phase 8 Git vertical-slice checks.",
+            "  login                        Phase 8 stub; not implemented yet.",
+            "  logout                       Phase 8 stub; not implemented yet.",
+            "  configure <ecosystem>        Git --ci none applies; others are dry-run only.",
+            "  unconfigure <ecosystem>      Git --ci none removes; others are dry-run only.",
             string.Empty,
             "Options:",
             "  -h, --help                   Show help.",
@@ -531,7 +701,7 @@ internal static class CliApplication
         return JoinLines(
             $"{CommandName} {commandName}",
             "Usage:",
-            $"  {CommandName} {commandName} <ecosystem> --dry-run [--ci <mode>] [--help]",
+            $"  {CommandName} {commandName} <ecosystem> [--dry-run] [--ci <mode>] [--help]",
             string.Empty,
             "Ecosystems:",
             "  git",
@@ -540,9 +710,22 @@ internal static class CliApplication
             "  npm",
             string.Empty,
             "Options:",
-            "  --dry-run                    Required in phase 7; render deterministic "
-            + "no-mutation output.",
+            "  --dry-run                    Optional for git none; required otherwise.",
             "  --ci <mode>                  Select CI mode explicitly: none | azure-pipelines.",
+            "  -h, --help                   Show help.");
+    }
+
+    private static string BuildDoctorHelp()
+    {
+        return JoinLines(
+            $"{CommandName} doctor",
+            "Usage:",
+            $"  {CommandName} doctor [--help]",
+            string.Empty,
+            "Status:",
+            "  Run safe deterministic Phase 8 Git-only vertical slice checks.",
+            string.Empty,
+            "Options:",
             "  -h, --help                   Show help.");
     }
 
@@ -555,7 +738,7 @@ internal static class CliApplication
             $"  {CommandName} {commandName} [--help]",
             string.Empty,
             "Status:",
-            "  Phase 7 stub only. This command is not implemented yet.",
+            "  Phase 8 stub only. This command is not implemented yet.",
             string.Empty,
             "Options:",
             "  -h, --help                   Show help.");
@@ -572,7 +755,7 @@ internal static class CliApplication
             "environment-probing: disabled",
             "persistent-cache: disabled",
             "dry-run-rendering: enabled",
-            "mutating-commands: disabled",
+            "mutating-commands: git-only",
             $"supported-ecosystems: {string.Join(", ", SupportedEcosystems)}");
     }
 
@@ -598,8 +781,96 @@ internal static class CliApplication
             lines.Add($"  {index + 1}. {actions[index]}");
         }
 
-        lines.Add("note: no files, credentials, or caches are changed in phase 7");
+        lines.Add("note: no files, credentials, or caches are changed in phase 8");
         return JoinLines(lines);
+    }
+
+    private static string BuildGitConfigureDryRunOutput(
+        CliInvocation invocation,
+        GitPhase8ConfigureDryRunResult dryRunResult)
+    {
+        ArgumentNullException.ThrowIfNull(dryRunResult);
+
+        List<string> lines =
+        [
+            $"command: {invocation.CommandName}",
+            "ecosystem: git",
+            $"phase: {PhaseName}",
+            $"ci-mode: {GetCiModeText(invocation.CiMode)}",
+            $"scope: {GetScopeText(invocation.CiMode)}",
+            "mutates-state: no",
+            $"configuration-plan: {GetValidityText(dryRunResult.Validation.IsValid)}",
+            $"planned-change-count: {dryRunResult.PlanResult.Changes.Count}",
+            "planned-actions:",
+        ];
+
+        foreach (ConfigurationPlannedChange change in dryRunResult.PlanResult.Changes)
+        {
+            lines.Add($"  {change.Sequence}. {GetPlannedActionText(change)}");
+        }
+
+        lines.Add("note: dry-run only; no files, credentials, or caches are changed in phase 8");
+        return JoinLines(lines);
+    }
+
+    private static string BuildGitConfigureOutput(
+        CliInvocation invocation,
+        GitPhase8ConfigureResult configureResult)
+    {
+        ArgumentNullException.ThrowIfNull(configureResult);
+
+        return JoinLines(
+            $"command: {invocation.CommandName}",
+            "ecosystem: git",
+            $"phase: {PhaseName}",
+            $"ci-mode: {GetCiModeText(invocation.CiMode)}",
+            $"scope: {GetScopeText(invocation.CiMode)}",
+            "mutates-state: yes",
+            $"plan-state: {GetPlanStateText(configureResult.PlanResult.State)}",
+            $"applied-change-count: {configureResult.PlanResult.Changes.Count}",
+            $"owned-git-entries: {GetPresenceText(configureResult.OwnedGitEntriesPresent)}",
+            $"ownership-manifest: {GetPresenceText(configureResult.OwnershipManifestPresent)}",
+            "note: credential material is not printed");
+    }
+
+    private static string BuildGitUnconfigureOutput(
+        CliInvocation invocation,
+        GitPhase8UnconfigureResult unconfigureResult)
+    {
+        ArgumentNullException.ThrowIfNull(unconfigureResult);
+
+        ConfigurationPlanResult? planResult = unconfigureResult.PlanResult;
+        return JoinLines(
+            $"command: {invocation.CommandName}",
+            "ecosystem: git",
+            $"phase: {PhaseName}",
+            $"ci-mode: {GetCiModeText(invocation.CiMode)}",
+            $"scope: {GetScopeText(invocation.CiMode)}",
+            "mutates-state: yes",
+            "plan-state: "
+                + (planResult is null ? "not-needed" : GetPlanStateText(planResult.State)),
+            $"removed-change-count: {planResult?.Changes.Count ?? 0}",
+            $"owned-git-entries: {GetPresenceText(unconfigureResult.OwnedGitEntriesPresent)}",
+            $"ownership-manifest: {GetPresenceText(unconfigureResult.OwnershipManifestPresent)}",
+            "note: credential material is not printed");
+    }
+
+    private static string BuildDoctorOutput(
+        CliInvocation invocation,
+        GitPhase8DoctorResult doctorResult)
+    {
+        ArgumentNullException.ThrowIfNull(doctorResult);
+
+        return JoinLines(
+            $"command: {invocation.CommandName}",
+            $"phase: {PhaseName}",
+            $"configuration-plan: {GetCheckStatusText(doctorResult.ConfigurationPlanValid)}",
+            $"owned-git-entries: {GetPresenceText(doctorResult.OwnedGitEntriesPresent)}",
+            $"ownership-manifest: {GetPresenceText(doctorResult.OwnershipManifestPresent)}",
+            $"fake-credential-core: {GetCheckStatusText(doctorResult.CredentialCoreSuccess)}",
+            $"fake-git-protocol-path: {GetCheckStatusText(doctorResult.GitProtocolPathSuccess)}",
+            "protocol-payload: "
+                + (doctorResult.ProtocolPayloadCaptured ? "captured-not-printed" : "not-captured"));
     }
 
     private static string[] GetPlannedActions(
@@ -619,8 +890,8 @@ internal static class CliApplication
                         "prepare temporary dev.azure.com useHttpPath scaffold",
                     ]
                     : [
-                        "register product-owned git credential helper scaffold",
-                        "set product-owned dev.azure.com useHttpPath scaffold",
+                        "set product-owned git credential.helper entry",
+                        "set product-owned dev.azure.com useHttpPath entry",
                     ]
                 : ciTemporary
                     ? [
@@ -628,8 +899,8 @@ internal static class CliApplication
                         "remove temporary dev.azure.com useHttpPath scaffold",
                     ]
                     : [
-                        "remove product-owned git credential helper scaffold",
-                        "remove product-owned dev.azure.com useHttpPath scaffold",
+                        "remove product-owned git credential.helper entry",
+                        "remove product-owned dev.azure.com useHttpPath entry",
                     ],
             CredentialEcosystem.NuGet => configure
                 ? ciTemporary
@@ -691,6 +962,41 @@ internal static class CliApplication
             _ => throw new InvalidOperationException("Unsupported dry-run ecosystem."),
         };
     }
+
+    private static GitPhase8VerticalSliceService CreateGitPhase8VerticalSliceService(
+        CliRuntimeOptions? runtimeOptions)
+    {
+        return new GitPhase8VerticalSliceService(runtimeOptions?.GitPhase8Options);
+    }
+
+    private static string GetPlannedActionText(ConfigurationPlannedChange change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+
+        return (change.Operation, change.Key) switch
+        {
+            (ConfigurationChangeOperation.Set, GitCredentialHelperConfigurationKey) =>
+                "set product-owned git credential.helper entry",
+            (ConfigurationChangeOperation.Set, GitUseHttpPathConfigurationKey) =>
+                "set product-owned dev.azure.com useHttpPath entry",
+            (ConfigurationChangeOperation.Remove, GitCredentialHelperConfigurationKey) =>
+                "remove product-owned git credential.helper entry",
+            (ConfigurationChangeOperation.Remove, GitUseHttpPathConfigurationKey) =>
+                "remove product-owned dev.azure.com useHttpPath entry",
+            _ => throw new InvalidOperationException("Unsupported Git Phase 8 planned change."),
+        };
+    }
+
+    private static string GetPlanStateText(ConfigurationPlanState state)
+    {
+        return state.ToString().ToLowerInvariant();
+    }
+
+    private static string GetValidityText(bool isValid) => isValid ? "valid" : "invalid";
+
+    private static string GetCheckStatusText(bool value) => value ? "pass" : "fail";
+
+    private static string GetPresenceText(bool value) => value ? "present" : "absent";
 
     private static string GetCommandName(CliCommand command)
     {
@@ -972,6 +1278,11 @@ internal static class CliApplicationCommandNames
             _ => "unknown",
         };
     }
+}
+
+internal sealed record CliRuntimeOptions
+{
+    public GitPhase8VerticalSliceOptions? GitPhase8Options { get; init; }
 }
 
 internal sealed class CliUsageException : Exception

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
@@ -239,6 +240,12 @@ internal sealed class GitConfigPhysicalTargetWriter(IFileSystem fileSystem)
     private const string DevAzureComHost = "dev.azure.com";
     private const string HelperVariableName = "helper";
     private const string UseHttpPathVariableName = "useHttpPath";
+    private const string ProductOwnedCredentialScaffoldMarkerPrefix =
+        "# azureauth-credprovider: product-owned credential scaffold";
+    private const string ProductOwnedCredentialScaffoldMetadataPrefix =
+        "hcoona.azureAuthCredProvider.gitCredentialScaffold=created:";
+    private const string PreviousTrailingNewLineMissingMarker =
+        "previousTrailingNewLine=false";
     private const string UnsafeCredentialHelperValueMessage =
         "The Git config physical writer supports credential.helper only as a simple helper "
             + "name or fully qualified path without shell syntax.";
@@ -575,8 +582,7 @@ internal sealed class GitConfigPhysicalTargetWriter(IFileSystem fileSystem)
                 continue;
             }
 
-            InsertEntryLine(lines, document, change.Key, renderedLine);
-            appended = true;
+            appended |= InsertEntryLine(lines, document, change, renderedLine);
             document = GitConfigDocument.Parse(
                 document.Path,
                 Render(lines, document.NewLine, document.HadTrailingNewLine || appended),
@@ -606,8 +612,171 @@ internal sealed class GitConfigPhysicalTargetWriter(IFileSystem fileSystem)
             lines.RemoveAt(lineIndex);
         }
 
-        return Render(lines, document.NewLine, document.HadTrailingNewLine);
+        string updatedContents = Render(lines, document.NewLine, document.HadTrailingNewLine);
+        GitConfigDocument updatedDocument = GitConfigDocument.Parse(
+            document.Path,
+            updatedContents,
+            document.MutationExpectation
+        );
+        bool restoreMissingTrailingNewLine = PruneEmptyGitCredentialScaffolds(
+            lines,
+            updatedDocument,
+            changes
+        );
+        return Render(
+            lines,
+            document.NewLine,
+            document.HadTrailingNewLine && !restoreMissingTrailingNewLine
+        );
     }
+
+    private static bool PruneEmptyGitCredentialScaffolds(
+        List<string> lines,
+        GitConfigDocument document,
+        IReadOnlyList<GitConfigChange> changes
+    )
+    {
+        var removeLineIndexes = new SortedSet<int>();
+        var missingTrailingNewLineCandidates = new List<GitConfigSectionLocation>();
+        foreach (GitConfigSectionLocation section in document.Sections)
+        {
+            if (
+                !TryGetExpectedScaffoldId(section.Key, changes, out string? scaffoldId)
+                || !InspectProductOwnedCredentialScaffoldSection(
+                    document,
+                    section,
+                    scaffoldId,
+                    out IReadOnlyList<int> markerLineIndexes,
+                    out bool sectionHadMissingTrailingNewLine,
+                    out bool hasForeignContent
+                )
+            )
+            {
+                continue;
+            }
+
+            if (hasForeignContent)
+            {
+                foreach (int markerLineIndex in markerLineIndexes)
+                {
+                    removeLineIndexes.Add(markerLineIndex);
+                }
+
+                continue;
+            }
+
+            if (sectionHadMissingTrailingNewLine)
+            {
+                missingTrailingNewLineCandidates.Add(section);
+            }
+
+            for (
+                var lineIndex = section.HeaderLineIndex;
+                lineIndex < section.EndExclusiveLineIndex;
+                lineIndex++
+            )
+            {
+                removeLineIndexes.Add(lineIndex);
+            }
+        }
+
+        bool restoreMissingTrailingNewLine = missingTrailingNewLineCandidates.Any(section =>
+            RemovedRangeOwnsEndOfFile(
+                section.HeaderLineIndex,
+                document.Lines.Count,
+                removeLineIndexes
+            )
+        );
+        foreach (int lineIndex in removeLineIndexes.Reverse())
+        {
+            lines.RemoveAt(lineIndex);
+        }
+
+        return restoreMissingTrailingNewLine;
+    }
+
+    private static bool RemovedRangeOwnsEndOfFile(
+        int startLineIndex,
+        int lineCount,
+        SortedSet<int> removeLineIndexes
+    )
+    {
+        for (int lineIndex = startLineIndex; lineIndex < lineCount; lineIndex++)
+        {
+            if (!removeLineIndexes.Contains(lineIndex))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool InspectProductOwnedCredentialScaffoldSection(
+        GitConfigDocument document,
+        GitConfigSectionLocation section,
+        string expectedScaffoldId,
+        out IReadOnlyList<int> markerLineIndexes,
+        out bool previousTrailingNewLineMissing,
+        out bool hasForeignContent
+    )
+    {
+        var markers = new List<int>();
+        markerLineIndexes = markers;
+        previousTrailingNewLineMissing = false;
+        hasForeignContent = false;
+        if (!IsPrunableCredentialScaffoldSection(section.Key))
+        {
+            return false;
+        }
+
+        var hasProductMarker = false;
+        for (
+            var lineIndex = section.HeaderLineIndex + 1;
+            lineIndex < section.EndExclusiveLineIndex;
+            lineIndex++
+        )
+        {
+            string line = document.Lines[lineIndex];
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            if (TryReadProductOwnedScaffoldMarker(line, expectedScaffoldId, out bool missing))
+            {
+                hasProductMarker = true;
+                markers.Add(lineIndex);
+                previousTrailingNewLineMissing |= missing;
+                continue;
+            }
+
+            if (IsProductOwnedScaffoldMarkerLine(line))
+            {
+                throw new InvalidOperationException(
+                    "Configuration conflict: product-owned Git credential scaffold marker does "
+                        + "not match the existing manifest."
+                );
+            }
+
+            hasForeignContent = true;
+        }
+
+        return hasProductMarker;
+    }
+
+    private static bool IsPrunableCredentialScaffoldSection(GitConfigKey key) =>
+        string.Equals(key.SectionName, CredentialSectionName, StringComparison.OrdinalIgnoreCase)
+        && (
+            key.Subsection is null
+            || IsDevAzureComCredentialSubsection(key.Subsection)
+        );
+
+    private static bool IsProductOwnedScaffoldMarkerLine(string line) =>
+        line.Trim().StartsWith(
+            ProductOwnedCredentialScaffoldMarkerPrefix + ";",
+            StringComparison.Ordinal
+        );
 
     private static void ValidateApplyExistingEntries(
         GitConfigChange change,
@@ -725,28 +894,272 @@ internal sealed class GitConfigPhysicalTargetWriter(IFileSystem fileSystem)
         }
     }
 
-    private static void InsertEntryLine(
+    private static bool TryGetExpectedScaffoldId(
+        GitConfigKey sectionKey,
+        IReadOnlyList<GitConfigChange> changes,
+        [NotNullWhen(true)] out string? scaffoldId
+    )
+    {
+        scaffoldId = null;
+        foreach (GitConfigChange change in changes)
+        {
+            if (
+                ScaffoldSectionsEqual(sectionKey, change.Key)
+                && TryGetScaffoldId(
+                    change.Change.PreviousOwnedEntryMetadata,
+                    out string? candidateScaffoldId
+                )
+            )
+            {
+                scaffoldId = candidateScaffoldId;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ScaffoldSectionsEqual(GitConfigKey left, GitConfigKey right) =>
+        string.Equals(left.SectionName, right.SectionName, StringComparison.OrdinalIgnoreCase)
+        && ScaffoldCredentialSubsectionsEqualForSection(left, right);
+
+    private static bool ScaffoldCredentialSubsectionsEqualForSection(
+        GitConfigKey section,
+        GitConfigKey target
+    )
+    {
+        if (
+            IsCredentialSectionKey(section)
+            && IsCredentialUseHttpPathKey(target)
+            && IsDevAzureComCredentialSubsection(target.Subsection)
+        )
+        {
+            return IsDevAzureComCredentialSubsection(section.Subsection);
+        }
+
+        return string.Equals(section.Subsection, target.Subsection, StringComparison.Ordinal);
+    }
+
+    private static bool IsCredentialSectionKey(GitConfigKey key) =>
+        string.Equals(
+            key.SectionName,
+            CredentialSectionName,
+            StringComparison.OrdinalIgnoreCase
+        );
+
+    private static bool IsCredentialUseHttpPathKey(GitConfigKey key) =>
+        IsCredentialSectionKey(key)
+        && string.Equals(
+            key.VariableName,
+            UseHttpPathVariableName,
+            StringComparison.OrdinalIgnoreCase
+        );
+
+    private static bool IsDevAzureComCredentialSubsection(string? subsection) =>
+        GetDevAzureComCredentialSubsectionMatch(subsection)
+            == DevAzureComCredentialSubsectionMatch.Canonicalizable;
+
+    private static DevAzureComCredentialSubsectionMatch
+        GetDevAzureComCredentialSubsectionMatch(string? subsection)
+    {
+        if (subsection is null)
+        {
+            return DevAzureComCredentialSubsectionMatch.NotDevAzureCom;
+        }
+
+        if (
+            string.Equals(
+                subsection,
+                DevAzureComCredentialSubsection,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return DevAzureComCredentialSubsectionMatch.Canonicalizable;
+        }
+
+        if (
+            !Uri.TryCreate(subsection, UriKind.Absolute, out Uri? uri)
+            || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            return DevAzureComCredentialSubsectionMatch.NotDevAzureCom;
+        }
+
+        DevAzureComCredentialSubsectionMatch hostMatch =
+            GetDevAzureComCredentialHostMatch(uri);
+        if (hostMatch != DevAzureComCredentialSubsectionMatch.Canonicalizable)
+        {
+            return hostMatch;
+        }
+
+        if (
+            !uri.IsDefaultPort
+            || !string.IsNullOrEmpty(uri.UserInfo)
+            || !string.IsNullOrEmpty(uri.Query)
+            || !string.IsNullOrEmpty(uri.Fragment)
+        )
+        {
+            return DevAzureComCredentialSubsectionMatch.UnsafeEffectiveAlias;
+        }
+
+        return uri.AbsolutePath is "" or "/"
+            ? DevAzureComCredentialSubsectionMatch.Canonicalizable
+            : DevAzureComCredentialSubsectionMatch.UnsafeEffectiveAlias;
+    }
+
+    private static DevAzureComCredentialSubsectionMatch GetDevAzureComCredentialHostMatch(Uri uri)
+    {
+        if (IsCanonicalDevAzureComHost(uri.IdnHost) && IsCanonicalDevAzureComHost(uri.Host))
+        {
+            return DevAzureComCredentialSubsectionMatch.Canonicalizable;
+        }
+
+        return IsDevAzureComEffectiveHostAlias(uri.IdnHost)
+            || IsDevAzureComEffectiveHostAlias(uri.Host)
+            ? DevAzureComCredentialSubsectionMatch.UnsafeEffectiveAlias
+            : DevAzureComCredentialSubsectionMatch.NotDevAzureCom;
+    }
+
+    private static bool IsCanonicalDevAzureComHost(string host) =>
+        string.Equals(host, DevAzureComHost, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsDevAzureComEffectiveHostAlias(string host)
+    {
+        string trimmedHost = host.TrimEnd('.');
+        return trimmedHost.Length != host.Length
+            && string.Equals(trimmedHost, DevAzureComHost, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool InsertEntryLine(
         List<string> lines,
         GitConfigDocument document,
-        GitConfigKey key,
+        GitConfigChange change,
         string renderedLine
     )
     {
+        GitConfigKey key = change.Key;
         GitConfigSectionLocation? section = document.FindSection(key);
         if (section is null)
         {
-            if (lines.Count > 0 && !string.IsNullOrWhiteSpace(lines[^1]))
+            bool markProductOwnedScaffold = ShouldMarkProductOwnedCredentialScaffold(change);
+            if (
+                !markProductOwnedScaffold
+                && lines.Count > 0
+                && !string.IsNullOrWhiteSpace(lines[^1])
+            )
             {
                 lines.Add(string.Empty);
             }
 
             lines.Add(RenderSectionHeader(key));
+            if (markProductOwnedScaffold)
+            {
+                lines.Add(CreateProductOwnedScaffoldMarker(change, document.HadTrailingNewLine));
+            }
+
             lines.Add(renderedLine);
-            return;
+            return true;
         }
 
         lines.Insert(section.Value.EndExclusiveLineIndex, renderedLine);
+        return false;
     }
+
+    private static bool ShouldMarkProductOwnedCredentialScaffold(GitConfigChange change) =>
+        IsPrunableCredentialScaffoldSection(change.Key)
+        && TryGetScaffoldId(change.Change.PreviousOwnedEntryMetadata, out _);
+
+    private static string CreateProductOwnedScaffoldMarker(
+        GitConfigChange change,
+        bool previousHadTrailingNewLine
+    )
+    {
+        if (!TryGetScaffoldId(change.Change.PreviousOwnedEntryMetadata, out string? scaffoldId))
+        {
+            throw new InvalidOperationException(
+                "Product-owned Git credential scaffolds require scaffold metadata."
+            );
+        }
+
+        string marker = ProductOwnedCredentialScaffoldMarkerPrefix + "; id=" + scaffoldId;
+        return previousHadTrailingNewLine
+            ? marker
+            : marker + "; " + PreviousTrailingNewLineMissingMarker;
+    }
+
+    private static bool TryReadProductOwnedScaffoldMarker(
+        string line,
+        string expectedScaffoldId,
+        out bool previousTrailingNewLineMissing
+    )
+    {
+        previousTrailingNewLineMissing = false;
+        string trimmed = line.Trim();
+        if (
+            !trimmed.StartsWith(
+                ProductOwnedCredentialScaffoldMarkerPrefix + ";",
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return false;
+        }
+
+        string[] tokens = trimmed[(ProductOwnedCredentialScaffoldMarkerPrefix.Length + 1)..]
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (
+            !tokens.Any(token =>
+                string.Equals(token, "id=" + expectedScaffoldId, StringComparison.Ordinal)
+            )
+        )
+        {
+            return false;
+        }
+
+        previousTrailingNewLineMissing = tokens.Any(token =>
+            string.Equals(token, PreviousTrailingNewLineMissingMarker, StringComparison.Ordinal)
+        );
+        return true;
+    }
+
+    internal static string CreateProductOwnedCredentialScaffoldMetadata(string scaffoldId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scaffoldId);
+        return ProductOwnedCredentialScaffoldMetadataPrefix + scaffoldId;
+    }
+
+    internal static bool TryGetProductOwnedCredentialScaffoldId(
+        string? metadata,
+        [NotNullWhen(true)] out string? scaffoldId
+    ) => TryGetScaffoldId(metadata, out scaffoldId);
+
+    private static bool TryGetScaffoldId(
+        string? metadata,
+        [NotNullWhen(true)] out string? scaffoldId
+    )
+    {
+        scaffoldId = null;
+        if (
+            string.IsNullOrWhiteSpace(metadata)
+            || !metadata.StartsWith(
+                ProductOwnedCredentialScaffoldMetadataPrefix,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return false;
+        }
+
+        scaffoldId = metadata[ProductOwnedCredentialScaffoldMetadataPrefix.Length..];
+        return IsLowercaseHex32(scaffoldId);
+    }
+
+    private static bool IsLowercaseHex32(string value) =>
+        value.Length == 32
+        && value.All(character =>
+            character is >= '0' and <= '9' or >= 'a' and <= 'f'
+        );
 
     private GitConfigChange CreateGitConfigChange(
         ConfigurationPhysicalTargetWriterRequest request,
