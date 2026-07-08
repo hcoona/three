@@ -2,7 +2,9 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
 using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
+using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
 using Hcoona.AzureAuth.CredProvider.Platform.Redaction;
 using Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
 
@@ -11,7 +13,7 @@ namespace Hcoona.AzureAuth.CredProvider.Cli;
 internal static class CliApplication
 {
     private const string CommandName = "azureauth-credprovider";
-    private const string PhaseName = "8-architecture-vertical-slice";
+    private const string PhaseName = "9-git-adapter";
     private const int SuccessExitCode = 0;
     private const int NotImplementedExitCode = 1;
     private const int UsageExitCode = 2;
@@ -51,13 +53,42 @@ internal static class CliApplication
         CliRuntimeOptions? runtimeOptions
     )
     {
+        return Run(args, stdout, stderr, runtimeOptions, Console.In, CommandName);
+    }
+
+    internal static int Run(
+        IReadOnlyList<string> args,
+        TextWriter stdout,
+        TextWriter stderr,
+        CliRuntimeOptions? runtimeOptions,
+        TextReader stdin,
+        string? executablePath
+    )
+    {
         ArgumentNullException.ThrowIfNull(args);
         ArgumentNullException.ThrowIfNull(stdout);
         ArgumentNullException.ThrowIfNull(stderr);
+        ArgumentNullException.ThrowIfNull(stdin);
 
         SecretRedactor redactor = CreateRedactor(args);
         try
         {
+            if (
+                GitCredentialHelperAdapter.TryResolveProtocolInvocation(
+                    executablePath ?? CommandName,
+                    args,
+                    out _)
+            )
+            {
+                return HandleGitCredentialHelperProtocol(
+                    args,
+                    stdin,
+                    stdout,
+                    stderr,
+                    redactor,
+                    executablePath ?? CommandName);
+            }
+
             CliInvocation invocation = Parse(args);
             if (invocation.HelpText is not null)
             {
@@ -91,6 +122,27 @@ internal static class CliApplication
             WriteFatalError(stderr, redactor);
             return FatalExitCode;
         }
+    }
+
+    private static int HandleGitCredentialHelperProtocol(
+        IReadOnlyList<string> args,
+        TextReader stdin,
+        TextWriter stdout,
+        TextWriter stderr,
+        SecretRedactor redactor,
+        string executablePath)
+    {
+        var diagnosticRouter = new DiagnosticRouter(
+            [new TextWriterDiagnosticSink(stderr)],
+            redactor);
+        AdapterHostExecutionOutcome outcome = new GitCredentialHelperAdapter().Execute(
+            executablePath,
+            args,
+            stdin,
+            stdout,
+            TextWriter.Null,
+            diagnosticRouter);
+        return (int)outcome.Result.ExitCode;
     }
 
     private static int HandleStatus(CliInvocation invocation, TextWriter stdout)
@@ -141,7 +193,7 @@ internal static class CliApplication
         {
             TryWriteDiagnosticText(
                 stderr,
-                "error: configure without '--dry-run' is not implemented in phase 8.");
+                "error: configure without '--dry-run' is not implemented in phase 9.");
             return NotImplementedExitCode;
         }
 
@@ -204,7 +256,7 @@ internal static class CliApplication
         {
             TryWriteDiagnosticText(
                 stderr,
-                "error: unconfigure without '--dry-run' is not implemented in phase 8.");
+                "error: unconfigure without '--dry-run' is not implemented in phase 9.");
             return NotImplementedExitCode;
         }
 
@@ -244,7 +296,11 @@ internal static class CliApplication
             && doctorResult.OwnedGitEntriesPresent
             && doctorResult.OwnershipManifestPresent
             && doctorResult.CredentialCoreSuccess
-            && doctorResult.GitProtocolPathSuccess
+            && doctorResult.GitCredentialHelperGetSuccess
+            && doctorResult.GitCredentialHelperStoreSuccess
+            && doctorResult.GitCredentialHelperEraseSuccess
+            && doctorResult.LocalShellHelperShorthandSuccess
+            && doctorResult.DevAzureUseHttpPathPresent
             ? SuccessExitCode
             : NotImplementedExitCode;
     }
@@ -253,7 +309,7 @@ internal static class CliApplication
     {
         TryWriteDiagnosticText(
             stderr,
-            $"error: {invocation.CommandName} is not implemented in phase 8.");
+            $"error: {invocation.CommandName} is not implemented in phase 9.");
         return NotImplementedExitCode;
     }
 
@@ -666,10 +722,10 @@ internal static class CliApplication
             $"  {CommandName} <command> [options]",
             string.Empty,
             "Commands:",
-            "  status                       Show deterministic Phase 8 shell status.",
-            "  doctor                       Run Phase 8 Git vertical-slice checks.",
-            "  login                        Phase 8 stub; not implemented yet.",
-            "  logout                       Phase 8 stub; not implemented yet.",
+            "  status                       Show deterministic Phase 9 shell status.",
+            "  doctor                       Run Phase 9 Git adapter checks.",
+            "  login                        Phase 9 stub; not implemented yet.",
+            "  logout                       Phase 9 stub; not implemented yet.",
             "  configure <ecosystem>        Git --ci none applies; others are dry-run only.",
             "  unconfigure <ecosystem>      Git --ci none removes; others are dry-run only.",
             string.Empty,
@@ -723,7 +779,7 @@ internal static class CliApplication
             $"  {CommandName} doctor [--help]",
             string.Empty,
             "Status:",
-            "  Run safe deterministic Phase 8 Git-only vertical slice checks.",
+            "  Run safe deterministic Phase 9 Git adapter checks.",
             string.Empty,
             "Options:",
             "  -h, --help                   Show help.");
@@ -738,7 +794,7 @@ internal static class CliApplication
             $"  {CommandName} {commandName} [--help]",
             string.Empty,
             "Status:",
-            "  Phase 8 stub only. This command is not implemented yet.",
+            "  Phase 9 stub only. This command is not implemented yet.",
             string.Empty,
             "Options:",
             "  -h, --help                   Show help.");
@@ -781,7 +837,7 @@ internal static class CliApplication
             lines.Add($"  {index + 1}. {actions[index]}");
         }
 
-        lines.Add("note: no files, credentials, or caches are changed in phase 8");
+        lines.Add("note: no files, credentials, or caches are changed in phase 9");
         return JoinLines(lines);
     }
 
@@ -809,7 +865,7 @@ internal static class CliApplication
             lines.Add($"  {change.Sequence}. {GetPlannedActionText(change)}");
         }
 
-        lines.Add("note: dry-run only; no files, credentials, or caches are changed in phase 8");
+        lines.Add("note: dry-run only; no files, credentials, or caches are changed in phase 9");
         return JoinLines(lines);
     }
 
@@ -867,10 +923,30 @@ internal static class CliApplication
             $"configuration-plan: {GetCheckStatusText(doctorResult.ConfigurationPlanValid)}",
             $"owned-git-entries: {GetPresenceText(doctorResult.OwnedGitEntriesPresent)}",
             $"ownership-manifest: {GetPresenceText(doctorResult.OwnershipManifestPresent)}",
+            "dev.azure.com-useHttpPath: "
+                + GetPresenceText(doctorResult.DevAzureUseHttpPathPresent),
             $"fake-credential-core: {GetCheckStatusText(doctorResult.CredentialCoreSuccess)}",
-            $"fake-git-protocol-path: {GetCheckStatusText(doctorResult.GitProtocolPathSuccess)}",
+            "git-credential-helper-get: "
+                + GetCheckStatusText(doctorResult.GitCredentialHelperGetSuccess),
+            "git-credential-helper-store: "
+                + GetCheckStatusText(doctorResult.GitCredentialHelperStoreSuccess),
+            "git-credential-helper-erase: "
+                + GetCheckStatusText(doctorResult.GitCredentialHelperEraseSuccess),
+            "local-shell-helper-shorthand: "
+                + GetLocalShellHelperShorthandStatusText(doctorResult),
             "protocol-payload: "
                 + (doctorResult.ProtocolPayloadCaptured ? "captured-not-printed" : "not-captured"));
+    }
+
+    private static string GetLocalShellHelperShorthandStatusText(
+        GitPhase8DoctorResult doctorResult)
+    {
+        if (doctorResult.LocalShellHelperShorthandDeferred)
+        {
+            return "unsupported-mvp";
+        }
+
+        return GetCheckStatusText(doctorResult.LocalShellHelperShorthandSuccess);
     }
 
     private static string[] GetPlannedActions(

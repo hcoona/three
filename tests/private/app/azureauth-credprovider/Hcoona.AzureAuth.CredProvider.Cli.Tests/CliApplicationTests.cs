@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using Hcoona.AzureAuth.CredProvider.Platform.Processes;
 using Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
 using Xunit;
 
@@ -7,6 +8,8 @@ namespace Hcoona.AzureAuth.CredProvider.Cli.Tests;
 
 public sealed class CliApplicationTests
 {
+    public static bool IsWindows => OperatingSystem.IsWindows();
+
     [Fact]
     public void NoArgumentsWritesRootHelp()
     {
@@ -21,10 +24,10 @@ public sealed class CliApplicationTests
                   azureauth-credprovider <command> [options]
 
                 Commands:
-                  status                       Show deterministic Phase 8 shell status.
-                  doctor                       Run Phase 8 Git vertical-slice checks.
-                  login                        Phase 8 stub; not implemented yet.
-                  logout                       Phase 8 stub; not implemented yet.
+                  status                       Show deterministic Phase 9 shell status.
+                  doctor                       Run Phase 9 Git adapter checks.
+                  login                        Phase 9 stub; not implemented yet.
+                  logout                       Phase 9 stub; not implemented yet.
                   configure <ecosystem>        Git --ci none applies; others are dry-run only.
                   unconfigure <ecosystem>      Git --ci none removes; others are dry-run only.
 
@@ -116,7 +119,7 @@ public sealed class CliApplicationTests
                 """
                 command: status
                 product: azureauth-credprovider
-                phase: 8-architecture-vertical-slice
+                phase: 9-git-adapter
                 ci-mode: none
                 status-shell: ready
                 environment-probing: disabled
@@ -147,7 +150,7 @@ public sealed class CliApplicationTests
                 """
                 command: status
                 product: azureauth-credprovider
-                phase: 8-architecture-vertical-slice
+                phase: 9-git-adapter
                 ci-mode: azure-pipelines
                 status-shell: ready
                 environment-probing: disabled
@@ -158,6 +161,107 @@ public sealed class CliApplicationTests
                 """),
             result.StdOut);
         Assert.Equal(string.Empty, result.StdErr);
+    }
+
+    [Fact]
+    public void GitCredentialHelperSharedEntrypointWritesProtocolStdoutOnly()
+    {
+        CommandResult result = InvokeWithStandardInput(
+            """
+            protocol=https
+            host=dev.azure.com
+            path=org/project/_git/repository
+
+            """,
+            executablePath: "azureauth-credprovider",
+            "git",
+            "credential-helper",
+            "get");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.StartsWith("username=AzureDevOps\npassword=fake-secret-", result.StdOut);
+        Assert.Equal(string.Empty, result.StdErr);
+    }
+
+    [Fact]
+    public void GitCredentialHelperMalformedInputFailsWithoutLeakingInput()
+    {
+        CommandResult result = InvokeWithStandardInput(
+            """
+            protocol=https
+            host=dev.azure.com
+            host=should-not-leak.example
+
+            """,
+            executablePath: "azureauth-credprovider",
+            "git",
+            "credential-helper",
+            "get");
+
+        Assert.Equal(64, result.ExitCode);
+        Assert.Equal(string.Empty, result.StdOut);
+        Assert.Contains("code=ProtocolViolation", result.StdErr, StringComparison.Ordinal);
+        Assert.DoesNotContain("should-not-leak", result.StdErr, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GitCredentialHelperAppHostWritesProtocolStdoutToRealConsole()
+    {
+        var runner = new SystemProcessRunner();
+
+        ProcessResult result = await runner.RunAsync(
+            new ProcessStartSpec(
+                CliAppHostPath(),
+                ["git", "credential-helper", "get"],
+                standardInput:
+                    """
+                    protocol=https
+                    host=dev.azure.com
+                    path=org/project/_git/repository
+
+                    """),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.StartsWith("username=AzureDevOps\npassword=fake-secret-", result.StandardOutput);
+        Assert.Equal(string.Empty, result.StandardError);
+    }
+
+    [Fact(Skip = "Non-Windows helper symlink test.", SkipWhen = nameof(IsWindows))]
+    public async Task GitCredentialHelperAppHostAcceptsHelperNamedSymlink()
+    {
+        string tempDirectory = CreateTestDirectory();
+        var runner = new SystemProcessRunner();
+        string helperPath = Path.Combine(
+            tempDirectory,
+            "git-credential-azureauth-credprovider");
+
+        try
+        {
+            Directory.CreateDirectory(tempDirectory);
+            File.CreateSymbolicLink(helperPath, CliAppHostPath());
+
+            ProcessResult result = await runner.RunAsync(
+                new ProcessStartSpec(
+                    helperPath,
+                    ["get"],
+                    standardInput:
+                        """
+                        protocol=https
+                        host=dev.azure.com
+                        path=org/project/_git/repository
+
+                        """),
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.StartsWith("username=AzureDevOps\npassword=fake-secret-", result.StandardOutput);
+            Assert.Equal(string.Empty, result.StandardError);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(tempDirectory);
+        }
     }
 
     [Theory]
@@ -263,8 +367,8 @@ public sealed class CliApplicationTests
 
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(service.Paths.GitConfigPath)!);
-            File.WriteAllText(service.Paths.GitConfigPath, existingGitConfig);
+            CreateOwnerOnlyDirectory(Path.GetDirectoryName(service.Paths.GitConfigPath)!);
+            WriteOwnerOnlyText(service.Paths.GitConfigPath, existingGitConfig);
 
             CommandResult implicitCiResult = InvokeWithRuntime(
                 runtimeOptions,
@@ -312,10 +416,11 @@ public sealed class CliApplicationTests
             Assert.Equal(string.Empty, result.StdErr);
             Assert.True(File.Exists(service.Paths.GitConfigPath));
             Assert.True(File.Exists(service.Paths.OwnershipManifestPath));
+            Assert.True(File.Exists(service.Paths.GitHelperPath));
 
             string gitConfig = File.ReadAllText(service.Paths.GitConfigPath);
             Assert.Contains(
-                "helper = \"azureauth-credprovider\"",
+                $"helper = \"{service.Paths.GitHelperPath}\"",
                 gitConfig,
                 StringComparison.Ordinal);
             Assert.Contains(
@@ -329,6 +434,63 @@ public sealed class CliApplicationTests
                 "credential.https://dev.azure.com.useHttpPath",
                 manifest,
                 StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact(Skip = "Non-Windows symlink safety test.", SkipWhen = nameof(IsWindows))]
+    public void ConfigureGitRefusesSymlinkedHelperDirectory()
+    {
+        string stateDirectory = CreateTestDirectory();
+        string externalDirectory = CreateTestDirectory();
+        GitPhase8VerticalSliceService service = CreateGitPhase8Service(stateDirectory);
+        CliRuntimeOptions runtimeOptions = CreateGitPhase8RuntimeOptions(stateDirectory);
+
+        try
+        {
+            CreateOwnerOnlyDirectory(stateDirectory);
+            CreateOwnerOnlyDirectory(externalDirectory);
+            Directory.CreateSymbolicLink(service.Paths.GitHelperDirectoryPath, externalDirectory);
+
+            CommandResult result = InvokeWithRuntime(runtimeOptions, "configure", "git");
+
+            Assert.Equal(1, result.ExitCode);
+            Assert.Equal(string.Empty, result.StdOut);
+            Assert.Equal(
+                "error: configure cannot modify unrecognized Phase 8 Git state.\n",
+                result.StdErr);
+            Assert.False(
+                File.Exists(Path.Combine(
+                    externalDirectory,
+                    "git-credential-azureauth-credprovider")));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+            DeleteDirectoryIfExists(externalDirectory);
+        }
+    }
+
+    [Theory]
+    [InlineData("space path")]
+    [InlineData("semi;path")]
+    public void ConfigureGitRefusesShellUnsafeHelperPath(string unsafeSegment)
+    {
+        string stateDirectory = Path.Combine(CreateTestDirectory(), unsafeSegment);
+        CliRuntimeOptions runtimeOptions = CreateGitPhase8RuntimeOptions(stateDirectory);
+
+        try
+        {
+            CommandResult result = InvokeWithRuntime(runtimeOptions, "configure", "git");
+
+            Assert.Equal(1, result.ExitCode);
+            Assert.Equal(string.Empty, result.StdOut);
+            Assert.Equal(
+                "error: configure cannot modify unrecognized Phase 8 Git state.\n",
+                result.StdErr);
         }
         finally
         {
@@ -393,6 +555,40 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
+    public void DoctorReportsDeferredLocalShellHelperShorthandAsUnsupportedMvp()
+    {
+        string stateDirectory = CreateTestDirectory();
+        CliRuntimeOptions runtimeOptions = new()
+        {
+            GitPhase8Options = new GitPhase8VerticalSliceOptions
+            {
+                StateDirectoryPath = stateDirectory,
+                ProcessRunner = new PassingGitDiscoveryProcessRunner(),
+                LocalShellGitDiscoverySupported = false,
+                ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
+            },
+        };
+
+        try
+        {
+            CommandResult configureResult = InvokeWithRuntime(runtimeOptions, "configure", "git");
+            CommandResult doctorResult = InvokeWithRuntime(runtimeOptions, "doctor");
+
+            Assert.Equal(0, configureResult.ExitCode);
+            Assert.Equal(1, doctorResult.ExitCode);
+            Assert.Contains(
+                "local-shell-helper-shorthand: unsupported-mvp\n",
+                doctorResult.StdOut,
+                StringComparison.Ordinal);
+            Assert.Equal(string.Empty, doctorResult.StdErr);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
     public void DoctorDoesNotTreatCommentTextAsOwnedGitState()
     {
         string stateDirectory = CreateTestDirectory();
@@ -410,7 +606,7 @@ public sealed class CliApplicationTests
             CommandResult configureResult = InvokeWithRuntime(runtimeOptions, "configure", "git");
             Assert.Equal(0, configureResult.ExitCode);
 
-            File.WriteAllText(service.Paths.GitConfigPath, Normalize(commentedGitConfig));
+            WriteOwnerOnlyText(service.Paths.GitConfigPath, Normalize(commentedGitConfig));
 
             CommandResult doctorResult = InvokeWithRuntime(runtimeOptions, "doctor");
 
@@ -450,7 +646,8 @@ public sealed class CliApplicationTests
                 GetExpectedDoctorOutput(
                     ownedGitEntriesPresent: true,
                     ownershipManifestPresent: false,
-                    configurationPlanValid: false),
+                    configurationPlanValid: false,
+                    localShellHelperShorthandSuccess: false),
                 doctorResult.StdOut);
             Assert.Equal(string.Empty, doctorResult.StdErr);
         }
@@ -481,7 +678,8 @@ public sealed class CliApplicationTests
                 GetExpectedDoctorOutput(
                     ownedGitEntriesPresent: true,
                     ownershipManifestPresent: true,
-                    configurationPlanValid: false),
+                    configurationPlanValid: false,
+                    localShellHelperShorthandSuccess: false),
                 doctorResult.StdOut);
             Assert.Equal(string.Empty, doctorResult.StdErr);
         }
@@ -515,7 +713,8 @@ public sealed class CliApplicationTests
                 GetExpectedDoctorOutput(
                     ownedGitEntriesPresent: true,
                     ownershipManifestPresent: true,
-                    configurationPlanValid: false),
+                    configurationPlanValid: false,
+                    localShellHelperShorthandSuccess: false),
                 doctorResult.StdOut);
             Assert.Equal(string.Empty, doctorResult.StdErr);
         }
@@ -615,7 +814,7 @@ public sealed class CliApplicationTests
             CommandResult configureResult = InvokeWithRuntime(runtimeOptions, "configure", "git");
             Assert.Equal(0, configureResult.ExitCode);
             string manifest = File.ReadAllText(service.Paths.OwnershipManifestPath);
-            File.WriteAllText(
+            WriteOwnerOnlyText(
                 service.Paths.OwnershipManifestPath,
                 manifest.Replace(
                     originalManifestText,
@@ -656,7 +855,7 @@ public sealed class CliApplicationTests
             CommandResult configureResult = InvokeWithRuntime(runtimeOptions, "configure", "git");
             Assert.Equal(0, configureResult.ExitCode);
             string manifest = File.ReadAllText(service.Paths.OwnershipManifestPath);
-            File.WriteAllText(
+            WriteOwnerOnlyText(
                 service.Paths.OwnershipManifestPath,
                 manifest.Replace(
                     "\"manifestId\":\"phase8-git-configuration\"",
@@ -696,7 +895,7 @@ public sealed class CliApplicationTests
             CommandResult configureResult = InvokeWithRuntime(runtimeOptions, "configure", "git");
             Assert.Equal(0, configureResult.ExitCode);
             string manifest = File.ReadAllText(service.Paths.OwnershipManifestPath);
-            File.WriteAllText(
+            WriteOwnerOnlyText(
                 service.Paths.OwnershipManifestPath,
                 manifest.Replace(
                     "\"manifestId\":\"phase8-git-configuration\"",
@@ -767,8 +966,8 @@ public sealed class CliApplicationTests
 
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(service.Paths.GitConfigPath)!);
-            File.WriteAllText(
+            CreateOwnerOnlyDirectory(Path.GetDirectoryName(service.Paths.GitConfigPath)!);
+            WriteOwnerOnlyText(
                 service.Paths.GitConfigPath,
                 """
                 [credential]
@@ -854,7 +1053,7 @@ public sealed class CliApplicationTests
             string replacementId = originalId[0] == '0'
                 ? "10000000000000000000000000000000"
                 : "00000000000000000000000000000000";
-            File.WriteAllText(
+            WriteOwnerOnlyText(
                 service.Paths.GitConfigPath,
                 markerIdRegex.Replace(gitConfig, "id=" + replacementId, count: 1));
 
@@ -890,10 +1089,10 @@ public sealed class CliApplicationTests
             Assert.Equal(0, configureResult.ExitCode);
             string tamperedGitConfig = File.ReadAllText(service.Paths.GitConfigPath)
                 .Replace(
-                    "helper = \"azureauth-credprovider\"",
+                    $"helper = \"{service.Paths.GitHelperPath}\"",
                     "helper = \"foreign\"",
                     StringComparison.Ordinal);
-            File.WriteAllText(service.Paths.GitConfigPath, tamperedGitConfig);
+            WriteOwnerOnlyText(service.Paths.GitConfigPath, tamperedGitConfig);
 
             CommandResult unconfigureResult = dryRun
                 ? InvokeWithRuntime(runtimeOptions, "unconfigure", "git", "--dry-run")
@@ -940,7 +1139,7 @@ public sealed class CliApplicationTests
                 gitConfig,
                 "id=" + replacementId,
                 count: 1);
-            File.WriteAllText(service.Paths.GitConfigPath, tamperedGitConfig);
+            WriteOwnerOnlyText(service.Paths.GitConfigPath, tamperedGitConfig);
 
             CommandResult unconfigureResult = InvokeWithRuntime(
                 runtimeOptions,
@@ -977,7 +1176,7 @@ public sealed class CliApplicationTests
                     "[credential \"https://dev.azure.com\"]",
                     "[credential \"https://dev.azure.com/\"]",
                     StringComparison.Ordinal);
-            File.WriteAllText(service.Paths.GitConfigPath, tamperedGitConfig);
+            WriteOwnerOnlyText(service.Paths.GitConfigPath, tamperedGitConfig);
 
             CommandResult unconfigureResult = InvokeWithRuntime(
                 runtimeOptions,
@@ -1019,7 +1218,7 @@ public sealed class CliApplicationTests
             string gitConfigWithForeignContent = gitConfig.Insert(
                 markerLineEnd + 1,
                 "    # keep user comment\n");
-            File.WriteAllText(service.Paths.GitConfigPath, gitConfigWithForeignContent);
+            WriteOwnerOnlyText(service.Paths.GitConfigPath, gitConfigWithForeignContent);
 
             CommandResult unconfigureResult = InvokeWithRuntime(
                 runtimeOptions,
@@ -1137,7 +1336,7 @@ public sealed class CliApplicationTests
                     "helper = \"azureauth-credprovider\"",
                     replacementHelperLine,
                     StringComparison.Ordinal);
-            File.WriteAllText(service.Paths.GitConfigPath, staleGitConfig);
+            WriteOwnerOnlyText(service.Paths.GitConfigPath, staleGitConfig);
             File.Delete(service.Paths.OwnershipManifestPath);
 
             CommandResult unconfigureResult = InvokeWithRuntime(
@@ -1174,13 +1373,13 @@ public sealed class CliApplicationTests
         CliRuntimeOptions runtimeOptions = CreateGitPhase8RuntimeOptions(stateDirectory);
         string staleGitConfig = $"""
             [credential "{subsection}"]
-                helper = "azureauth-credprovider"
+                helper = "{service.Paths.GitHelperPath}"
             """;
 
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(service.Paths.GitConfigPath)!);
-            File.WriteAllText(service.Paths.GitConfigPath, Normalize(staleGitConfig));
+            CreateOwnerOnlyDirectory(Path.GetDirectoryName(service.Paths.GitConfigPath)!);
+            WriteOwnerOnlyText(service.Paths.GitConfigPath, Normalize(staleGitConfig));
 
             CommandResult unconfigureResult = InvokeWithRuntime(
                 runtimeOptions,
@@ -1370,7 +1569,7 @@ public sealed class CliApplicationTests
             CommandResult configureResult = InvokeWithRuntime(runtimeOptions, "configure", "git");
             Assert.Equal(0, configureResult.ExitCode);
             string manifest = File.ReadAllText(service.Paths.OwnershipManifestPath);
-            File.WriteAllText(
+            WriteOwnerOnlyText(
                 service.Paths.OwnershipManifestPath,
                 Regex.Replace(
                     manifest,
@@ -1415,7 +1614,7 @@ public sealed class CliApplicationTests
                 "\"previousOwnedEntryMetadata\":\"[^\"]+\"",
                 RegexOptions.None,
                 TimeSpan.FromSeconds(1));
-            File.WriteAllText(
+            WriteOwnerOnlyText(
                 service.Paths.OwnershipManifestPath,
                 metadataRegex.Replace(
                     manifest,
@@ -1458,8 +1657,8 @@ public sealed class CliApplicationTests
 
         try
         {
-            Directory.CreateDirectory(stateDirectory);
-            Directory.CreateDirectory(symlinkTarget);
+            CreateOwnerOnlyDirectory(stateDirectory);
+            CreateOwnerOnlyDirectory(symlinkTarget);
             Directory.CreateSymbolicLink(Path.Combine(stateDirectory, "git"), symlinkTarget);
 
             CommandResult doctorResult = InvokeWithRuntime(runtimeOptions, "doctor");
@@ -1494,8 +1693,8 @@ public sealed class CliApplicationTests
 
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(service.Paths.GitConfigPath)!);
-            File.WriteAllText(service.Paths.GitConfigPath, existingGitConfig);
+            CreateOwnerOnlyDirectory(Path.GetDirectoryName(service.Paths.GitConfigPath)!);
+            WriteOwnerOnlyText(service.Paths.GitConfigPath, existingGitConfig);
 
             CommandResult configureResult = InvokeWithRuntime(runtimeOptions, "configure", "git");
             CommandResult unconfigureResult = InvokeWithRuntime(
@@ -1539,8 +1738,8 @@ public sealed class CliApplicationTests
 
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(service.Paths.GitConfigPath)!);
-            File.WriteAllText(service.Paths.GitConfigPath, existingGitConfig);
+            CreateOwnerOnlyDirectory(Path.GetDirectoryName(service.Paths.GitConfigPath)!);
+            WriteOwnerOnlyText(service.Paths.GitConfigPath, existingGitConfig);
 
             CommandResult configureResult = InvokeWithRuntime(runtimeOptions, "configure", "git");
             CommandResult unconfigureResult = InvokeWithRuntime(
@@ -1574,8 +1773,8 @@ public sealed class CliApplicationTests
 
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(service.Paths.GitConfigPath)!);
-            File.WriteAllText(service.Paths.GitConfigPath, initialGitConfig);
+            CreateOwnerOnlyDirectory(Path.GetDirectoryName(service.Paths.GitConfigPath)!);
+            WriteOwnerOnlyText(service.Paths.GitConfigPath, initialGitConfig);
 
             CommandResult configureResult = InvokeWithRuntime(runtimeOptions, "configure", "git");
             File.AppendAllText(service.Paths.GitConfigPath, appendedGitConfig);
@@ -1612,8 +1811,8 @@ public sealed class CliApplicationTests
 
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(service.Paths.GitConfigPath)!);
-            File.WriteAllText(service.Paths.GitConfigPath, existingGitConfig);
+            CreateOwnerOnlyDirectory(Path.GetDirectoryName(service.Paths.GitConfigPath)!);
+            WriteOwnerOnlyText(service.Paths.GitConfigPath, existingGitConfig);
 
             CommandResult configureResult = InvokeWithRuntime(runtimeOptions, "configure", "git");
             CommandResult unconfigureResult = InvokeWithRuntime(
@@ -1651,8 +1850,8 @@ public sealed class CliApplicationTests
 
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(service.Paths.GitConfigPath)!);
-            File.WriteAllText(service.Paths.GitConfigPath, existingGitConfig);
+            CreateOwnerOnlyDirectory(Path.GetDirectoryName(service.Paths.GitConfigPath)!);
+            WriteOwnerOnlyText(service.Paths.GitConfigPath, existingGitConfig);
 
             CommandResult configureResult = InvokeWithRuntime(runtimeOptions, "configure", "git");
             CommandResult unconfigureResult = InvokeWithRuntime(
@@ -1677,6 +1876,7 @@ public sealed class CliApplicationTests
                 gitConfig,
                 StringComparison.Ordinal);
             Assert.False(File.Exists(service.Paths.OwnershipManifestPath));
+            Assert.False(File.Exists(service.Paths.GitHelperPath));
         }
         finally
         {
@@ -1688,11 +1888,11 @@ public sealed class CliApplicationTests
     [InlineData(
         "configure",
         "nuget",
-        "error: configure without '--dry-run' is not implemented in phase 8.\n")]
+        "error: configure without '--dry-run' is not implemented in phase 9.\n")]
     [InlineData(
         "unconfigure",
         "nuget",
-        "error: unconfigure without '--dry-run' is not implemented in phase 8.\n")]
+        "error: unconfigure without '--dry-run' is not implemented in phase 9.\n")]
     public void NonDryRunConfigurationCommandsReturnPhaseStubErrors(
         string command,
         string ecosystem,
@@ -1714,7 +1914,7 @@ public sealed class CliApplicationTests
 
         Assert.Equal(1, result.ExitCode);
         Assert.Equal(string.Empty, result.StdOut);
-        Assert.Equal($"error: {command} is not implemented in phase 8.\n", result.StdErr);
+        Assert.Equal($"error: {command} is not implemented in phase 9.\n", result.StdErr);
     }
 
     [Fact]
@@ -2450,7 +2650,7 @@ public sealed class CliApplicationTests
                       azureauth-credprovider doctor [--help]
 
                     Status:
-                      Run safe deterministic Phase 8 Git-only vertical slice checks.
+                      Run safe deterministic Phase 9 Git adapter checks.
 
                     Options:
                       -h, --help                   Show help.
@@ -2462,7 +2662,7 @@ public sealed class CliApplicationTests
                       azureauth-credprovider login [--help]
 
                     Status:
-                      Phase 8 stub only. This command is not implemented yet.
+                      Phase 9 stub only. This command is not implemented yet.
 
                     Options:
                       -h, --help                   Show help.
@@ -2474,7 +2674,7 @@ public sealed class CliApplicationTests
                       azureauth-credprovider logout [--help]
 
                     Status:
-                      Phase 8 stub only. This command is not implemented yet.
+                      Phase 9 stub only. This command is not implemented yet.
 
                     Options:
                       -h, --help                   Show help.
@@ -2496,7 +2696,7 @@ public sealed class CliApplicationTests
         [
             $"command: {command}",
             $"ecosystem: {ecosystem}",
-            "phase: 8-architecture-vertical-slice",
+            "phase: 9-git-adapter",
             $"ci-mode: {ciMode}",
             $"scope: {GetExpectedScope(ciMode)}",
             "mutates-state: no",
@@ -2508,7 +2708,7 @@ public sealed class CliApplicationTests
             lines.Add($"  {index + 1}. {plannedActions[index]}");
         }
 
-        lines.Add("note: no files, credentials, or caches are changed in phase 8");
+        lines.Add("note: no files, credentials, or caches are changed in phase 9");
         return Normalize(string.Join("\n", lines));
     }
 
@@ -2518,7 +2718,7 @@ public sealed class CliApplicationTests
             """
             command: configure
             ecosystem: git
-            phase: 8-architecture-vertical-slice
+            phase: 9-git-adapter
             ci-mode: none
             scope: user
             mutates-state: no
@@ -2527,7 +2727,7 @@ public sealed class CliApplicationTests
             planned-actions:
               1. set product-owned git credential.helper entry
               2. set product-owned dev.azure.com useHttpPath entry
-            note: dry-run only; no files, credentials, or caches are changed in phase 8
+            note: dry-run only; no files, credentials, or caches are changed in phase 9
             """
         );
     }
@@ -2548,7 +2748,7 @@ public sealed class CliApplicationTests
                 [
                     $"command: {command}",
                     "ecosystem: git",
-                    "phase: 8-architecture-vertical-slice",
+                    "phase: 9-git-adapter",
                     "ci-mode: none",
                     "scope: user",
                     "mutates-state: yes",
@@ -2563,19 +2763,27 @@ public sealed class CliApplicationTests
     private static string GetExpectedDoctorOutput(
         bool ownedGitEntriesPresent,
         bool ownershipManifestPresent,
-        bool configurationPlanValid = true)
+        bool configurationPlanValid = true,
+        bool? localShellHelperShorthandSuccess = null)
     {
+        bool devAzureUseHttpPathPresent = ownedGitEntriesPresent;
+        bool localShellSuccess = localShellHelperShorthandSuccess ?? ownedGitEntriesPresent;
         return Normalize(
             string.Join(
                 "\n",
                 [
                     "command: doctor",
-                    "phase: 8-architecture-vertical-slice",
+                    "phase: 9-git-adapter",
                     $"configuration-plan: {(configurationPlanValid ? "pass" : "fail")}",
                     $"owned-git-entries: {(ownedGitEntriesPresent ? "present" : "absent")}",
                     $"ownership-manifest: {(ownershipManifestPresent ? "present" : "absent")}",
+                    "dev.azure.com-useHttpPath: "
+                        + (devAzureUseHttpPathPresent ? "present" : "absent"),
                     "fake-credential-core: pass",
-                    "fake-git-protocol-path: pass",
+                    "git-credential-helper-get: pass",
+                    "git-credential-helper-store: pass",
+                    "git-credential-helper-erase: pass",
+                    "local-shell-helper-shorthand: " + (localShellSuccess ? "pass" : "fail"),
                     "protocol-payload: captured-not-printed",
                 ]));
     }
@@ -2609,6 +2817,28 @@ public sealed class CliApplicationTests
             stderr.ToString());
     }
 
+    private static CommandResult InvokeWithStandardInput(
+        string standardInput,
+        string executablePath,
+        params string[] args)
+    {
+        var stdout = new StringWriter(new StringBuilder());
+        var stderr = new StringWriter(new StringBuilder());
+
+        int exitCode = CliApplication.Run(
+            args,
+            stdout,
+            stderr,
+            runtimeOptions: null,
+            new StringReader(standardInput),
+            executablePath);
+
+        return new CommandResult(
+            exitCode,
+            stdout.ToString(),
+            stderr.ToString());
+    }
+
     private static CliRuntimeOptions CreateGitPhase8RuntimeOptions(string stateDirectory)
     {
         return new CliRuntimeOptions
@@ -2616,6 +2846,8 @@ public sealed class CliApplicationTests
             GitPhase8Options = new GitPhase8VerticalSliceOptions
             {
                 StateDirectoryPath = stateDirectory,
+                ProcessRunner = new PassingGitDiscoveryProcessRunner(),
+                ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
             },
         };
     }
@@ -2626,15 +2858,118 @@ public sealed class CliApplicationTests
             new GitPhase8VerticalSliceOptions
             {
                 StateDirectoryPath = stateDirectory,
+                ProcessRunner = new PassingGitDiscoveryProcessRunner(),
+                ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
             });
+    }
+
+    private static string CreateFakeProductExecutable(string stateDirectory)
+    {
+        string directory = Path.Combine(stateDirectory, "product-bin");
+        CreateOwnerOnlyDirectory(directory);
+        string executablePath = Path.Combine(directory, "azureauth-credprovider");
+        WriteOwnerOnlyText(executablePath, "#!/bin/sh\nexit 70\n");
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(
+                executablePath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        return executablePath;
+    }
+
+    private static string CliAppHostPath()
+    {
+        string assemblyPath = typeof(CliApplication).Assembly.Location;
+        string directory = Path.GetDirectoryName(assemblyPath)
+            ?? throw new InvalidOperationException(
+                $"CLI assembly path '{assemblyPath}' does not have a parent directory.");
+        string fileName = Path.GetFileNameWithoutExtension(assemblyPath);
+        if (OperatingSystem.IsWindows())
+        {
+            fileName += ".exe";
+        }
+
+        string appHostPath = Path.Combine(directory, fileName);
+        if (!File.Exists(appHostPath))
+        {
+            throw new FileNotFoundException(
+                $"Sibling CLI apphost '{appHostPath}' was not found for '{assemblyPath}'.",
+                appHostPath);
+        }
+
+        return appHostPath;
+    }
+
+    private sealed class PassingGitDiscoveryProcessRunner : IProcessRunner
+    {
+        public Task<ProcessResult> RunAsync(
+            ProcessStartSpec startSpec,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(startSpec);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            TryWriteHelperMarker(startSpec);
+            return Task.FromResult(
+                new ProcessResult(
+                    0,
+                    "protocol=https\nhost=dev.azure.com\npath=org/project/_git/repository\n"
+                        + "username=AzureDevOps\n"
+                        + "password=fake-secret-phase9-probe\n",
+                    string.Empty));
+        }
+
+        private static void TryWriteHelperMarker(ProcessStartSpec startSpec)
+        {
+            if (
+                !startSpec.Environment.TryGetValue(
+                    "AZUREAUTH_CREDPROVIDER_DOCTOR_MARKER",
+                    out string? markerPath)
+                || string.IsNullOrEmpty(markerPath)
+            )
+            {
+                return;
+            }
+
+            File.WriteAllText(markerPath, string.Empty);
+        }
     }
 
     private static string CreateTestDirectory()
     {
-        return Path.Combine(
+        string root = Path.Combine(
             Path.GetTempPath(),
-            "azureauth-credprovider-cli-tests",
-            Guid.NewGuid().ToString("N"));
+            "azureauth-credprovider-cli-tests");
+        CreateOwnerOnlyDirectory(root);
+        string directory = Path.Combine(root, Guid.NewGuid().ToString("N"));
+        CreateOwnerOnlyDirectory(directory);
+        return directory;
+    }
+
+    private static void CreateOwnerOnlyDirectory(string path)
+    {
+        Directory.CreateDirectory(path);
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        File.SetUnixFileMode(
+            path,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+
+    private static void WriteOwnerOnlyText(string path, string contents)
+    {
+        File.WriteAllText(path, contents);
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
 
     private static void DeleteDirectoryIfExists(string path)

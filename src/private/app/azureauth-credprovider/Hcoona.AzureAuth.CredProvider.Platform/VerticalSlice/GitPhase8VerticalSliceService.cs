@@ -5,6 +5,7 @@ using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
+using Hcoona.AzureAuth.CredProvider.Platform.Processes;
 using Hcoona.AzureAuth.CredProvider.Platform.Redaction;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
@@ -12,6 +13,14 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
 public sealed record GitPhase8VerticalSliceOptions
 {
     public string? StateDirectoryPath { get; init; }
+
+    public IProcessRunner? ProcessRunner { get; init; }
+
+    public string? GitExecutablePath { get; init; }
+
+    public string? ProductExecutablePath { get; init; }
+
+    public bool? LocalShellGitDiscoverySupported { get; init; }
 }
 
 public sealed record GitPhase8VerticalSliceResolvedPaths
@@ -21,6 +30,10 @@ public sealed record GitPhase8VerticalSliceResolvedPaths
     public required string GitConfigPath { get; init; }
 
     public required string OwnershipManifestPath { get; init; }
+
+    public required string GitHelperDirectoryPath { get; init; }
+
+    public required string GitHelperPath { get; init; }
 }
 
 public sealed record GitPhase8ConfigureDryRunResult
@@ -55,7 +68,17 @@ public sealed record GitPhase8DoctorResult
 
     public required bool CredentialCoreSuccess { get; init; }
 
-    public required bool GitProtocolPathSuccess { get; init; }
+    public required bool GitCredentialHelperGetSuccess { get; init; }
+
+    public required bool GitCredentialHelperStoreSuccess { get; init; }
+
+    public required bool GitCredentialHelperEraseSuccess { get; init; }
+
+    public required bool LocalShellHelperShorthandSuccess { get; init; }
+
+    public required bool LocalShellHelperShorthandDeferred { get; init; }
+
+    public required bool DevAzureUseHttpPathPresent { get; init; }
 
     public required bool ProtocolPayloadCaptured { get; init; }
 }
@@ -91,18 +114,38 @@ public sealed class GitPhase8VerticalSliceService
     private const string ConfigureChangeSetId = "phase8-git-configure-changeset";
     private const string EntrySelector = "git.config";
     internal const string GitCredentialHelperKey = "credential.helper";
-    internal const string GitCredentialHelperValue = ProductId;
     internal const string GitUseHttpPathKey = "credential.https://dev.azure.com.useHttpPath";
     internal const string GitUseHttpPathValue = "true";
+    private const string GitCredentialHelperProtocolInput =
+        "protocol=https\n"
+        + "host=dev.azure.com\n"
+        + "path=org/project/_git/repository\n"
+        + "\n";
+    private const UnixFileMode OwnerOnlyDirectoryMode =
+        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+    private const UnixFileMode StateFileUnsafeWriteBits =
+        UnixFileMode.GroupWrite | UnixFileMode.OtherWrite;
 
     private static readonly Uri GitServiceEndpoint = new("https://dev.azure.com/org");
     private readonly SystemFileSystem fileSystem;
+    private readonly string gitExecutablePath;
+    private readonly bool localShellGitDiscoverySupported;
     private readonly GitPhase8VerticalSliceResolvedPaths paths;
+    private readonly IProcessRunner processRunner;
+    private readonly ProductExecutableInvocation? productExecutableInvocation;
 
     public GitPhase8VerticalSliceService(GitPhase8VerticalSliceOptions? options = null)
     {
         fileSystem = new SystemFileSystem();
         paths = ResolvePaths(options);
+        processRunner = options?.ProcessRunner ?? new SystemProcessRunner();
+        gitExecutablePath = string.IsNullOrWhiteSpace(options?.GitExecutablePath)
+            ? "git"
+            : options.GitExecutablePath;
+        productExecutableInvocation = ResolveProductExecutableInvocation(
+            options?.ProductExecutablePath);
+        localShellGitDiscoverySupported =
+            options?.LocalShellGitDiscoverySupported ?? !OperatingSystem.IsWindows();
     }
 
     public GitPhase8VerticalSliceResolvedPaths Paths => paths;
@@ -153,8 +196,11 @@ public sealed class GitPhase8VerticalSliceService
         ConfigurationPlanResult planResult;
         try
         {
+            ConfigurationChangePlan configurePlan = CreateConfigurePlan();
+            EnsureTrustedConfigurationStateDirectories();
+            EnsureStateGitHelperShim();
             planResult = await CreateManager()
-                .ApplyAsync(CreateConfigurePlan(), cancellationToken);
+                .ApplyAsync(configurePlan, cancellationToken);
         }
         catch (Exception exception)
             when (IsExpectedDoctorCheckFailure(exception))
@@ -202,11 +248,11 @@ public sealed class GitPhase8VerticalSliceService
             configurationPlanValid = false;
         }
 
-        CredentialResult? credentialResult = null;
         var credentialCoreSuccess = false;
         try
         {
-            credentialResult = CreateCredentialCoreService().Execute(CreateGitRequest());
+            CredentialResult credentialResult = CreateCredentialCoreService()
+                .Execute(CreateGitRequest());
             credentialCoreSuccess = credentialResult.Status == CredentialResultStatus.Success;
         }
         catch (Exception exception)
@@ -215,22 +261,59 @@ public sealed class GitPhase8VerticalSliceService
             credentialCoreSuccess = false;
         }
 
-        var gitProtocolPathSuccess = false;
+        var gitCredentialHelperGetSuccess = false;
+        var gitCredentialHelperStoreSuccess = false;
+        var gitCredentialHelperEraseSuccess = false;
+        var localShellHelperShorthandSuccess = false;
+        var localShellHelperShorthandDeferred = false;
         var protocolPayloadCaptured = false;
-        if (credentialResult is not null)
+        bool devAzureUseHttpPathPresent = TryInspectDevAzureUseHttpPathState();
+        try
+        {
+            (
+                gitCredentialHelperGetSuccess,
+                protocolPayloadCaptured
+            ) = ExecuteGitCredentialHelperAdapterPath(
+                ProductId,
+                ["git", "credential-helper", "get"],
+                CredentialOperation.Get);
+            gitCredentialHelperStoreSuccess = ExecuteGitCredentialHelperAdapterPath(
+                ProductId,
+                ["git", "credential-helper", "store"],
+                CredentialOperation.Store).Success;
+            gitCredentialHelperEraseSuccess = ExecuteGitCredentialHelperAdapterPath(
+                ProductId,
+                ["git", "credential-helper", "erase"],
+                CredentialOperation.Erase).Success;
+        }
+        catch (Exception exception)
+            when (IsExpectedDoctorCheckFailure(exception))
+        {
+            gitCredentialHelperGetSuccess = false;
+            gitCredentialHelperStoreSuccess = false;
+            gitCredentialHelperEraseSuccess = false;
+            protocolPayloadCaptured = false;
+        }
+
+        if (
+            configurationPlanValid
+            && ownedState.OwnedGitEntriesPresent
+            && ownedState.OwnershipManifestPresent
+            && devAzureUseHttpPathPresent
+        )
         {
             try
             {
                 (
-                    gitProtocolPathSuccess,
-                    protocolPayloadCaptured
-                ) = ExecuteGitProtocolPath(credentialResult);
+                    localShellHelperShorthandSuccess,
+                    localShellHelperShorthandDeferred
+                ) = await ExecuteLocalShellGitHelperDiscoveryAsync(cancellationToken);
             }
             catch (Exception exception)
                 when (IsExpectedDoctorCheckFailure(exception))
             {
-                gitProtocolPathSuccess = false;
-                protocolPayloadCaptured = false;
+                localShellHelperShorthandSuccess = false;
+                localShellHelperShorthandDeferred = false;
             }
         }
 
@@ -241,7 +324,12 @@ public sealed class GitPhase8VerticalSliceService
             OwnedGitEntriesPresent = ownedState.OwnedGitEntriesPresent,
             OwnershipManifestPresent = ownedState.OwnershipManifestPresent,
             CredentialCoreSuccess = credentialCoreSuccess,
-            GitProtocolPathSuccess = gitProtocolPathSuccess,
+            GitCredentialHelperGetSuccess = gitCredentialHelperGetSuccess,
+            GitCredentialHelperStoreSuccess = gitCredentialHelperStoreSuccess,
+            GitCredentialHelperEraseSuccess = gitCredentialHelperEraseSuccess,
+            LocalShellHelperShorthandSuccess = localShellHelperShorthandSuccess,
+            LocalShellHelperShorthandDeferred = localShellHelperShorthandDeferred,
+            DevAzureUseHttpPathPresent = devAzureUseHttpPathPresent,
             ProtocolPayloadCaptured = protocolPayloadCaptured,
         };
     }
@@ -281,6 +369,7 @@ public sealed class GitPhase8VerticalSliceService
                     CreateUnconfigurePlan(manifest, manifestJson),
                     cancellationToken
                 );
+            TryDeleteStateGitHelperShim();
         }
         catch (Exception exception)
             when (IsExpectedDoctorCheckFailure(exception))
@@ -367,7 +456,7 @@ public sealed class GitPhase8VerticalSliceService
                 CreateGitConfigChange(
                     ConfigurationChangeOperation.Set,
                     GitCredentialHelperKey,
-                    GitCredentialHelperValue,
+                    CreateGitCredentialHelperValue(),
                     scaffoldMetadata
                 ),
                 CreateGitConfigChange(
@@ -436,6 +525,60 @@ public sealed class GitPhase8VerticalSliceService
             PreserveDeclarationsAndComments = true,
             PreviousOwnedEntryMetadata = previousOwnedEntryMetadata,
         };
+
+    private string CreateGitCredentialHelperValue()
+    {
+        string helperValue = CreateGitCredentialHelperPathValue(paths.GitHelperPath);
+        if (!IsSafeRawGitCredentialHelperPath(helperValue))
+        {
+            throw new GitPhase8UnrecognizedStateException(
+                "The Phase 8 Git configuration state is not recognized.");
+        }
+
+        return helperValue;
+    }
+
+    private static string CreateGitCredentialHelperPathValue(string path)
+    {
+        return OperatingSystem.IsWindows()
+            ? path.Replace('\\', '/')
+            : path;
+    }
+
+    private static bool IsSafeRawGitCredentialHelperPath(string path)
+    {
+        return path.Length != 0
+            && path.All(IsSafeRawGitCredentialHelperPathCharacter);
+    }
+
+    private static bool IsSafeRawGitCredentialHelperPathCharacter(char character)
+    {
+        return char.IsAsciiLetterOrDigit(character)
+            || character is '/' or ':' or '.' or '_' or '-'
+            || (OperatingSystem.IsWindows() && character == '\\');
+    }
+
+    private ProductExecutableInvocation GetRequiredProductExecutableInvocation()
+    {
+        if (
+            productExecutableInvocation is null
+            || !File.Exists(productExecutableInvocation.ExecutablePath)
+            || (
+                IsManagedAssemblyInvocation(productExecutableInvocation.ExecutablePath)
+                && productExecutableInvocation.DotnetExecutablePath is null
+            )
+            || (
+                productExecutableInvocation.DotnetExecutablePath is not null
+                && !File.Exists(productExecutableInvocation.DotnetExecutablePath)
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "The Git credential helper executable could not be resolved.");
+        }
+
+        return productExecutableInvocation;
+    }
 
     private ConfigurationChange CreateGitConfigRemoveChange(
         ConfigurationOwnershipManifestEntry entry
@@ -551,7 +694,7 @@ public sealed class GitPhase8VerticalSliceService
         }
     }
 
-    private static bool ContainsUnexpectedProductOwnedGitConfigState(
+    private bool ContainsUnexpectedProductOwnedGitConfigState(
         string gitConfig,
         string? expectedScaffoldId
     )
@@ -593,7 +736,7 @@ public sealed class GitPhase8VerticalSliceService
                     out string value
                 )
                 && string.Equals(variableName, "helper", StringComparison.OrdinalIgnoreCase)
-                && string.Equals(value, ProductId, StringComparison.Ordinal)
+                && IsProductCredentialHelperValue(value)
             )
             {
                 return true;
@@ -667,7 +810,7 @@ public sealed class GitPhase8VerticalSliceService
         }
     }
 
-    private static bool ContainsProductOwnedGitConfigState(string gitConfig)
+    private bool ContainsProductOwnedGitConfigState(string gitConfig)
     {
         var inCredentialSection = false;
         foreach (string rawLine in SplitLines(gitConfig))
@@ -700,7 +843,7 @@ public sealed class GitPhase8VerticalSliceService
                     out string value
                 )
                 && string.Equals(variableName, "helper", StringComparison.OrdinalIgnoreCase)
-                && string.Equals(value, ProductId, StringComparison.Ordinal)
+                && IsProductCredentialHelperValue(value)
             )
             {
                 return true;
@@ -708,6 +851,17 @@ public sealed class GitPhase8VerticalSliceService
         }
 
         return false;
+    }
+
+    private bool IsProductCredentialHelperValue(string value)
+    {
+        if (string.Equals(value, ProductId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return TryCreateGitCredentialHelperValue(out string? helperValue)
+            && string.Equals(value, helperValue, GetPathComparison());
     }
 
     private static IEnumerable<string> SplitLines(string text)
@@ -1005,69 +1159,388 @@ public sealed class GitPhase8VerticalSliceService
             },
         };
 
-    private static AdapterDescriptor CreateGitCredentialHelperDescriptor()
-    {
-        AdapterEntrypointDescriptor protocolEntrypoint = new(
-            "GitCredentialHelper",
-            AdapterInvocationMode.Protocol,
-            executableNames: [ProductId],
-            argumentTokens: ["git", "credential-helper"],
-            argumentMatchMode: AdapterArgumentMatchMode.Prefix
-        );
-        AdapterEntrypointDescriptor humanEntrypoint = new(
-            "HumanCommand",
-            AdapterInvocationMode.HumanCommand,
-            executableNames: [ProductId]
-        );
-
-        return new AdapterDescriptor(
-            "Git Credential Helper",
-            AdapterProtocol.GitCredentialHelper,
-            [protocolEntrypoint, humanEntrypoint]
-        );
-    }
-
-    private static (bool Success, bool PayloadCaptured) ExecuteGitProtocolPath(
-        CredentialResult credentialResult
+    private static (bool Success, bool PayloadCaptured) ExecuteGitCredentialHelperAdapterPath(
+        string executablePath,
+        string[] arguments,
+        CredentialOperation expectedOperation
     )
     {
-        ArgumentNullException.ThrowIfNull(credentialResult);
-
-        string? protocolPayload = CreateGitCredentialHelperProtocolPayload(credentialResult);
         var protocolStdout = new StringWriter();
-        AdapterHostExecutionOutcome outcome = AdapterHostExecutor.Execute(
-            CreateGitCredentialHelperDescriptor(),
-            executablePath: ProductId,
-            arguments: ["git", "credential-helper", "get"],
-            handler: _ => new AdapterHostHandlerOutput(
-                credentialResult: credentialResult,
-                protocolStdout: protocolPayload
-            ),
-            protocolStdout: protocolStdout,
-            humanStdout: TextWriter.Null,
-            diagnosticRouter: new DiagnosticRouter([], SecretRedactor.Empty)
+        AdapterHostExecutionOutcome outcome = new GitCredentialHelperAdapter(
+            CreateCredentialCoreService()
+        ).Execute(
+            executablePath,
+            arguments,
+            new StringReader(GitCredentialHelperProtocolInput),
+            protocolStdout,
+            TextWriter.Null,
+            new DiagnosticRouter([], SecretRedactor.Empty)
         );
 
         string capturedPayload = protocolStdout.ToString();
+        bool expectsPayload = expectedOperation == CredentialOperation.Get;
         bool payloadCaptured = capturedPayload.Length != 0;
         bool success = outcome.Result.ExitCode == AdapterHostExitCode.Success
-            && outcome.Result.WriteProtocolStdout
-            && payloadCaptured;
+            && outcome.Result.WriteProtocolStdout == expectsPayload
+            && payloadCaptured == expectsPayload
+            && !capturedPayload.Contains('\r');
 
         return (success, payloadCaptured);
     }
 
-    private static string? CreateGitCredentialHelperProtocolPayload(
-        CredentialResult credentialResult
-    )
+    private async ValueTask<(bool Success, bool Deferred)> ExecuteLocalShellGitHelperDiscoveryAsync(
+        CancellationToken cancellationToken)
     {
-        return AdapterHostResultMapper.TryMapGitCredentialHelperBasicMaterial(
-            credentialResult,
-            out string? username,
-            out string? password
-        )
-            ? $"username={username}\npassword={password}\n"
-            : null;
+        if (!localShellGitDiscoverySupported)
+        {
+            return (Success: false, Deferred: true);
+        }
+
+        string scratchDirectory = Path.Combine(
+            paths.StateDirectoryPath,
+            "doctor-git-discovery",
+            Guid.NewGuid().ToString("N"));
+        string homeDirectory = Path.Combine(scratchDirectory, "home");
+        string workDirectory = Path.Combine(scratchDirectory, "work");
+        string markerPath = Path.Combine(scratchDirectory, "helper-ran");
+
+        try
+        {
+            Directory.CreateDirectory(homeDirectory);
+            Directory.CreateDirectory(workDirectory);
+
+            if (!CanSafelyExecuteStateGitHelperShim())
+            {
+                return (Success: false, Deferred: false);
+            }
+
+            ProcessResult result = await processRunner
+                .RunAsync(
+                    CreateLocalShellGitDiscoveryStartSpec(
+                        homeDirectory,
+                        workDirectory,
+                        markerPath),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            bool success = result.ExitCode == 0
+                && File.Exists(markerPath)
+                && IsExpectedGitCredentialFillOutput(result.StandardOutput)
+                && result.StandardError.Length == 0;
+            return (success, Deferred: false);
+        }
+        finally
+        {
+            TryDeleteDirectory(scratchDirectory);
+        }
+    }
+
+    private void EnsureTrustedConfigurationStateDirectories()
+    {
+        EnsureTrustedStateDirectory(GetRequiredDirectoryName(paths.GitConfigPath));
+        EnsureTrustedStateDirectory(GetRequiredDirectoryName(paths.OwnershipManifestPath));
+    }
+
+    private void EnsureStateGitHelperShim()
+    {
+        ProductExecutableInvocation invocation = GetRequiredProductExecutableInvocation();
+        ThrowIfUnsafeProductExecutableInvocation(invocation);
+        ThrowIfUnsafeStateGitHelperPath();
+        EnsureTrustedStateDirectory(paths.GitHelperDirectoryPath);
+        WriteLocalShellProductShim(paths.GitHelperPath, invocation);
+        if (!OperatingSystem.IsWindows())
+        {
+            fileSystem.SetUnixFileMode(
+                paths.GitHelperPath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        ThrowIfUnsafeStateFile(paths.GitHelperPath, requireExecutable: true);
+    }
+
+    private void ThrowIfUnsafeStateGitHelperPath()
+    {
+        ThrowIfPathIsOutsideStateDirectory(paths.GitHelperPath);
+        ThrowIfUnsafeStateDirectoryAncestors();
+        ThrowIfExistingStateDirectoryChainIsUnsafe(paths.GitHelperDirectoryPath);
+
+        if (fileSystem.DirectoryExists(paths.GitHelperPath))
+        {
+            throw new GitPhase8UnrecognizedStateException(
+                "The Phase 8 Git configuration state is not recognized.");
+        }
+
+        if (fileSystem.FileExists(paths.GitHelperPath))
+        {
+            ThrowIfUnsafeStateFile(paths.GitHelperPath, requireExecutable: false);
+        }
+    }
+
+    private static string GetRequiredDirectoryName(string path)
+    {
+        string? directory = Path.GetDirectoryName(path);
+        return string.IsNullOrEmpty(directory)
+            ? Directory.GetCurrentDirectory()
+            : directory;
+    }
+
+    private void EnsureTrustedStateDirectory(string directory)
+    {
+        ThrowIfPathIsOutsideStateDirectory(directory);
+        ThrowIfUnsafeStateDirectoryAncestors();
+        foreach (string stateDirectory in EnumerateStateDirectoryChain(directory))
+        {
+            if (!fileSystem.DirectoryExists(stateDirectory))
+            {
+                CreateOwnerOnlyDirectory(stateDirectory);
+            }
+
+            ThrowIfUnsafeStateDirectory(stateDirectory);
+        }
+    }
+
+    private static void CreateOwnerOnlyDirectory(string directory)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Directory.CreateDirectory(directory);
+            return;
+        }
+
+        Directory.CreateDirectory(directory, OwnerOnlyDirectoryMode);
+    }
+
+    private void TryDeleteStateGitHelperShim()
+    {
+        try
+        {
+            if (File.Exists(paths.GitHelperPath))
+            {
+                File.Delete(paths.GitHelperPath);
+            }
+
+            if (
+                Directory.Exists(paths.GitHelperDirectoryPath)
+                && Directory.GetFileSystemEntries(paths.GitHelperDirectoryPath).Length == 0
+            )
+            {
+                Directory.Delete(paths.GitHelperDirectoryPath);
+            }
+        }
+        catch (Exception exception)
+            when (IsExpectedDoctorCheckFailure(exception))
+        {
+        }
+    }
+
+    private void WriteLocalShellProductShim(
+        string helperPath,
+        ProductExecutableInvocation invocation)
+    {
+        fileSystem.AtomicWriteAllText(
+            helperPath,
+            CreateLocalShellProductShimContent(invocation),
+            options: AtomicWriteOptions.RestrictUnixFileModeToOwnerOnly);
+    }
+
+    private static string CreateLocalShellProductShimContent(
+        ProductExecutableInvocation invocation)
+    {
+        string command = invocation.DotnetExecutablePath is null
+            ? QuotePosixShellArgument(invocation.ExecutablePath)
+            : string.Concat(
+                QuotePosixShellArgument(invocation.DotnetExecutablePath),
+                " ",
+                QuotePosixShellArgument(invocation.ExecutablePath));
+        return string.Concat(
+            "#!/bin/sh\n",
+            "if [ -n \"${AZUREAUTH_CREDPROVIDER_DOCTOR_MARKER-}\" ]; then\n",
+            "  : > \"$AZUREAUTH_CREDPROVIDER_DOCTOR_MARKER\" || exit 70\n",
+            "fi\n",
+            "exec ",
+            command,
+            " git credential-helper \"$@\"\n");
+    }
+
+    private static string QuotePosixShellArgument(string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return string.Concat("'", value.Replace("'", "'\"'\"'", StringComparison.Ordinal), "'");
+    }
+
+    private static bool IsExpectedGitCredentialFillOutput(string standardOutput)
+    {
+        var fields = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (string line in SplitLines(standardOutput))
+        {
+            int separatorIndex = line.IndexOf('=');
+            if (separatorIndex <= 0)
+            {
+                return false;
+            }
+
+            string key = line[..separatorIndex];
+            string value = line[(separatorIndex + 1)..];
+            if (
+                key is not ("protocol" or "host" or "path" or "username" or "password")
+                || !fields.TryAdd(key, value)
+            )
+            {
+                return false;
+            }
+        }
+
+        return fields.Count == 5
+            && string.Equals(fields["protocol"], "https", StringComparison.Ordinal)
+            && string.Equals(fields["host"], "dev.azure.com", StringComparison.Ordinal)
+            && string.Equals(
+                fields["path"],
+                "org/project/_git/repository",
+                StringComparison.Ordinal)
+            && string.Equals(fields["username"], "AzureDevOps", StringComparison.Ordinal)
+            && fields["password"].StartsWith("fake-secret-", StringComparison.Ordinal);
+    }
+
+    private ProcessStartSpec CreateLocalShellGitDiscoveryStartSpec(
+        string homeDirectory,
+        string workDirectory,
+        string markerPath)
+    {
+        return new ProcessStartSpec(
+            gitExecutablePath,
+            [
+                "credential",
+                "fill",
+            ],
+            workingDirectory: workDirectory,
+            environment: CreateLocalShellGitDiscoveryEnvironment(
+                homeDirectory,
+                markerPath,
+                paths.GitConfigPath),
+            standardInput: GitCredentialHelperProtocolInput,
+            environmentMode: ProcessEnvironmentMode.ExplicitOnly);
+    }
+
+    private static Dictionary<string, string?> CreateLocalShellGitDiscoveryEnvironment(
+        string homeDirectory,
+        string markerPath,
+        string gitConfigPath)
+    {
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["AZUREAUTH_CREDPROVIDER_DOCTOR_MARKER"] = markerPath,
+            ["GIT_ASKPASS"] = null,
+            ["GIT_CONFIG_GLOBAL"] = gitConfigPath,
+            ["GIT_CONFIG_NOSYSTEM"] = "1",
+            ["GIT_CONFIG_SYSTEM"] = Path.Combine(homeDirectory, "system.gitconfig"),
+            ["GIT_SSH_ASKPASS"] = null,
+            ["GIT_SSH_COMMAND"] = null,
+            ["GIT_TERMINAL_PROMPT"] = "0",
+            ["HOME"] = homeDirectory,
+            ["PATH"] = Environment.GetEnvironmentVariable("PATH"),
+            ["SSH_ASKPASS"] = null,
+        };
+        foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables())
+        {
+            if (entry.Key is not string key || entry.Value is not string value)
+            {
+                continue;
+            }
+
+            if (
+                string.Equals(key, "DOTNET_MULTILEVEL_LOOKUP", StringComparison.Ordinal)
+                || string.Equals(key, "DOTNET_ROOT", StringComparison.Ordinal)
+                || key.StartsWith("DOTNET_ROOT_", StringComparison.Ordinal)
+            )
+            {
+                environment[key] = value;
+            }
+        }
+
+        return environment;
+    }
+
+    private static void TryDeleteDirectory(string directory)
+    {
+        try
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+        catch (Exception exception)
+            when (IsExpectedDoctorCheckFailure(exception))
+        {
+        }
+    }
+
+    private bool TryInspectDevAzureUseHttpPathState()
+    {
+        try
+        {
+            return DevAzureUseHttpPathStateExists();
+        }
+        catch (Exception exception)
+            when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private bool DevAzureUseHttpPathStateExists()
+    {
+        if (!fileSystem.FileExists(paths.GitConfigPath))
+        {
+            return false;
+        }
+
+        if (!CanSafelyReadPath(paths.GitConfigPath))
+        {
+            throw new GitPhase8UnrecognizedStateException(
+                "The Phase 8 Git configuration state is not recognized."
+            );
+        }
+
+        return ContainsDevAzureUseHttpPathState(fileSystem.ReadAllText(paths.GitConfigPath));
+    }
+
+    private static bool ContainsDevAzureUseHttpPathState(string gitConfig)
+    {
+        var inDevAzureCredentialSection = false;
+        foreach (string rawLine in SplitLines(gitConfig))
+        {
+            string line = rawLine.Length > 0 && rawLine[^1] == '\r'
+                ? rawLine[..^1]
+                : rawLine;
+            string trimmedStart = line.TrimStart();
+            if (TryParseSimpleGitConfigSection(trimmedStart, out _))
+            {
+                inDevAzureCredentialSection = TryParseSimpleGitConfigSectionText(
+                    trimmedStart,
+                    out string sectionText
+                )
+                && TryParseDevAzureComCredentialSubsection(sectionText, out string subsection)
+                && IsRootDevAzureComCredentialSubsection(subsection);
+                continue;
+            }
+
+            if (
+                inDevAzureCredentialSection
+                && TryParseSimpleGitConfigAssignment(
+                    trimmedStart,
+                    out string variableName,
+                    out string value
+                )
+                && string.Equals(variableName, "useHttpPath", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(value, GitUseHttpPathValue, StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private (ConfigurationOwnershipManifest Manifest, string Json) LoadOwnershipManifest()
@@ -1219,29 +1692,36 @@ public sealed class GitPhase8VerticalSliceService
             manifest,
             sequence: 1,
             GitCredentialHelperKey,
-            GitCredentialHelperValue
+            CreateExpectedGitCredentialHelperManifestValues()
         )
         && HasExpectedManagedManifestEntry(
             manifest,
             sequence: 2,
             GitUseHttpPathKey,
-            GitUseHttpPathValue
+            [GitUseHttpPathValue]
         );
 
     private bool HasExpectedManagedManifestEntry(
         ConfigurationOwnershipManifest manifest,
         int sequence,
         string expectedKey,
-        string expectedValue
+        string[] expectedValues
     )
     {
         ArgumentNullException.ThrowIfNull(manifest);
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedKey);
-        ArgumentException.ThrowIfNullOrWhiteSpace(expectedValue);
+        ArgumentNullException.ThrowIfNull(expectedValues);
+        if (expectedValues.Length == 0 || expectedValues.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException(
+                "At least one expected manifest value is required.",
+                nameof(expectedValues));
+        }
 
         ConfigurationOwnershipManifestEntry[] matchingEntries = manifest
             .Entries.Where(entry => MatchesManagedManifestEntry(entry, expectedKey))
             .ToArray();
+        string[] expectedValueHashes = expectedValues.Select(ComputeSha256).ToArray();
 
         return matchingEntries.Length == 1
             && matchingEntries[0].Sequence == sequence
@@ -1249,16 +1729,41 @@ public sealed class GitPhase8VerticalSliceService
             && matchingEntries[0].PreserveDeclarationsAndComments
             && matchingEntries[0].HasPlannedValue
             && !matchingEntries[0].IsSecretValue
-            && string.Equals(
+            && expectedValueHashes.Contains(
                 matchingEntries[0].PlannedValueSha256,
-                ComputeSha256(expectedValue),
-                StringComparison.Ordinal
+                StringComparer.Ordinal
             );
     }
 
+    private string[] CreateExpectedGitCredentialHelperManifestValues()
+    {
+        List<string> expectedValues = [ProductId];
+        if (TryCreateGitCredentialHelperValue(out string? helperValue))
+        {
+            expectedValues.Add(helperValue);
+        }
+
+        return [.. expectedValues];
+    }
+
+    private bool TryCreateGitCredentialHelperValue(
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? helperValue)
+    {
+        try
+        {
+            helperValue = CreateGitCredentialHelperValue();
+            return true;
+        }
+        catch (GitPhase8UnrecognizedStateException)
+        {
+            helperValue = null;
+            return false;
+        }
+    }
+
     private bool TryGetExistingScaffoldId(
-        ConfigurationOwnershipManifest manifest,
-        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? scaffoldId
+            ConfigurationOwnershipManifest manifest,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? scaffoldId
     )
     {
         scaffoldId = null;
@@ -1317,17 +1822,73 @@ public sealed class GitPhase8VerticalSliceService
 
     private bool CanSafelyReadPath(string path)
     {
-        if (IsUnsafeReparsePoint(path))
+        try
+        {
+            ThrowIfUnsafeStatePath(path, requireExecutable: false);
+            return true;
+        }
+        catch (Exception exception)
+            when (IsExpectedDoctorCheckFailure(exception))
         {
             return false;
         }
+    }
 
-        foreach (string directory in EnumerateParentDirectories(path))
+    private bool CanSafelyExecuteStateGitHelperShim()
+    {
+        try
         {
-            if (fileSystem.DirectoryExists(directory) && IsUnsafeReparsePoint(directory))
-            {
-                return false;
-            }
+            ProductExecutableInvocation invocation = GetRequiredProductExecutableInvocation();
+            ThrowIfUnsafeProductExecutableInvocation(invocation);
+            ThrowIfUnsafeStatePath(paths.GitHelperPath, requireExecutable: true);
+            return string.Equals(
+                fileSystem.ReadAllText(paths.GitHelperPath),
+                CreateLocalShellProductShimContent(invocation),
+                StringComparison.Ordinal);
+        }
+        catch (Exception exception)
+            when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private void ThrowIfUnsafeProductExecutableInvocation(
+        ProductExecutableInvocation invocation)
+    {
+        ThrowIfProductExecutableCannotHandleSharedCliEntrypoint(invocation);
+        ThrowIfUnsafeProductExecutablePath(
+            invocation.ExecutablePath,
+            requireExecutable: !IsManagedAssemblyInvocation(invocation.ExecutablePath));
+        if (invocation.DotnetExecutablePath is not null)
+        {
+            ThrowIfUnsafeProductExecutablePath(
+                invocation.DotnetExecutablePath,
+                requireExecutable: true);
+        }
+    }
+
+    private static void ThrowIfProductExecutableCannotHandleSharedCliEntrypoint(
+        ProductExecutableInvocation invocation)
+    {
+        if (
+            !string.Equals(
+                Path.GetFileNameWithoutExtension(invocation.ExecutablePath),
+                GitCredentialHelperAdapter.ProductExecutableName,
+                StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            throw new GitPhase8UnrecognizedStateException(
+                "The Phase 8 Git configuration state is not recognized.");
+        }
+    }
+
+    private void ThrowIfUnsafeProductExecutablePath(string path, bool requireExecutable)
+    {
+        if (!fileSystem.FileExists(path) || IsUnsafeReparsePoint(path))
+        {
+            throw new GitPhase8UnrecognizedStateException(
+                "The Phase 8 Git configuration state is not recognized.");
         }
 
         try
@@ -1336,10 +1897,241 @@ public sealed class GitPhase8VerticalSliceService
         }
         catch (PlatformNotSupportedException)
         {
-            return true;
         }
 
-        return true;
+        foreach (string directory in EnumerateParentDirectories(path))
+        {
+            if (fileSystem.DirectoryExists(directory))
+            {
+                ThrowIfUnsafeProductExecutableDirectory(directory);
+            }
+        }
+
+        ThrowIfWindowsAclValidationUnsupported();
+        ThrowIfUntrustedStateOwner(path, allowRoot: true);
+        UnixFileMode mode = fileSystem.GetUnixFileMode(path);
+        if (
+            (mode & StateFileUnsafeWriteBits) != 0
+            || !HasRequiredReadBit(path, mode)
+            || (requireExecutable && !HasRequiredExecutableBit(path, mode))
+        )
+        {
+            throw new GitPhase8UnrecognizedStateException(
+                "The Phase 8 Git configuration state is not recognized.");
+        }
+    }
+
+    private void ThrowIfUnsafeProductExecutableDirectory(string directory)
+    {
+        if (IsUnsafeReparsePoint(directory))
+        {
+            throw new GitPhase8UnrecognizedStateException(
+                "The Phase 8 Git configuration state is not recognized.");
+        }
+
+        ThrowIfWindowsAclValidationUnsupported();
+        ThrowIfUntrustedStateOwner(directory, allowRoot: true);
+        UnixFileMode mode = fileSystem.GetUnixFileMode(directory);
+        if ((mode & StateFileUnsafeWriteBits) != 0 && (mode & UnixFileMode.StickyBit) == 0)
+        {
+            throw new GitPhase8UnrecognizedStateException(
+                "The Phase 8 Git configuration state is not recognized.");
+        }
+    }
+
+    private void ThrowIfUnsafeStatePath(string path, bool requireExecutable)
+    {
+        ThrowIfPathIsOutsideStateDirectory(path);
+        ThrowIfUnsafeStateDirectoryAncestors();
+        string? directory = Path.GetDirectoryName(path);
+        if (string.IsNullOrEmpty(directory))
+        {
+            directory = Directory.GetCurrentDirectory();
+        }
+
+        ThrowIfStateDirectoryChainIsUnsafe(directory);
+        ThrowIfUnsafeStateFile(path, requireExecutable);
+    }
+
+    private void ThrowIfExistingStateDirectoryChainIsUnsafe(string directory)
+    {
+        foreach (string stateDirectory in EnumerateStateDirectoryChain(directory))
+        {
+            if (fileSystem.DirectoryExists(stateDirectory))
+            {
+                ThrowIfUnsafeStateDirectory(stateDirectory);
+            }
+        }
+    }
+
+    private void ThrowIfStateDirectoryChainIsUnsafe(string directory)
+    {
+        foreach (string stateDirectory in EnumerateStateDirectoryChain(directory))
+        {
+            ThrowIfUnsafeStateDirectory(stateDirectory);
+        }
+    }
+
+    private void ThrowIfUnsafeStateDirectoryAncestors()
+    {
+        foreach (string directory in EnumerateParentDirectories(paths.StateDirectoryPath))
+        {
+            if (fileSystem.DirectoryExists(directory))
+            {
+                ThrowIfUnsafeStateAncestorDirectory(directory);
+            }
+        }
+    }
+
+    private void ThrowIfUnsafeStateAncestorDirectory(string directory)
+    {
+        if (IsUnsafeReparsePoint(directory))
+        {
+            throw new GitPhase8UnrecognizedStateException(
+                "The Phase 8 Git configuration state is not recognized.");
+        }
+
+        ThrowIfWindowsAclValidationUnsupported();
+        ThrowIfUntrustedStateOwner(directory, allowRoot: true);
+        UnixFileMode mode = fileSystem.GetUnixFileMode(directory);
+        if ((mode & StateFileUnsafeWriteBits) != 0 && (mode & UnixFileMode.StickyBit) == 0)
+        {
+            throw new GitPhase8UnrecognizedStateException(
+                "The Phase 8 Git configuration state is not recognized.");
+        }
+    }
+
+    private void ThrowIfUnsafeStateDirectory(string directory)
+    {
+        if (!fileSystem.DirectoryExists(directory) || IsUnsafeReparsePoint(directory))
+        {
+            throw new GitPhase8UnrecognizedStateException(
+                "The Phase 8 Git configuration state is not recognized.");
+        }
+
+        ThrowIfWindowsAclValidationUnsupported();
+        ThrowIfUntrustedStateOwner(directory, allowRoot: true);
+        UnixFileMode mode = fileSystem.GetUnixFileMode(directory);
+        if ((mode & StateFileUnsafeWriteBits) != 0)
+        {
+            throw new GitPhase8UnrecognizedStateException(
+                "The Phase 8 Git configuration state is not recognized.");
+        }
+    }
+
+    private void ThrowIfUnsafeStateFile(string path, bool requireExecutable)
+    {
+        if (!fileSystem.FileExists(path) || IsUnsafeReparsePoint(path))
+        {
+            throw new GitPhase8UnrecognizedStateException(
+                "The Phase 8 Git configuration state is not recognized.");
+        }
+
+        try
+        {
+            _ = fileSystem.GetFileLength(path);
+        }
+        catch (PlatformNotSupportedException)
+        {
+        }
+
+        ThrowIfWindowsAclValidationUnsupported();
+        ThrowIfUntrustedStateOwner(path, allowRoot: true);
+        UnixFileMode mode = fileSystem.GetUnixFileMode(path);
+        if (
+            (mode & StateFileUnsafeWriteBits) != 0
+            || !HasRequiredReadBit(path, mode)
+            || (requireExecutable && !HasRequiredExecutableBit(path, mode))
+        )
+        {
+            throw new GitPhase8UnrecognizedStateException(
+                "The Phase 8 Git configuration state is not recognized.");
+        }
+    }
+
+    private void ThrowIfUntrustedStateOwner(string path, bool allowRoot)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            throw new PlatformNotSupportedException(
+                "Phase 9 Git helper state owner validation is supported only on Linux.");
+        }
+
+        FileSystemOwner owner = fileSystem.GetOwner(path);
+        FileSystemOwner currentOwner = fileSystem.GetCurrentOwner();
+        if (
+            !string.Equals(owner.Id, currentOwner.Id, StringComparison.Ordinal)
+            && (!allowRoot || !string.Equals(owner.Id, "unix:0", StringComparison.Ordinal))
+        )
+        {
+            throw new GitPhase8UnrecognizedStateException(
+                "The Phase 8 Git configuration state is not recognized.");
+        }
+    }
+
+    private static void ThrowIfWindowsAclValidationUnsupported()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException(
+                "Phase 9 Git helper state ACL validation is not implemented for Windows.");
+        }
+    }
+
+    private bool HasRequiredReadBit(string path, UnixFileMode mode)
+    {
+        if (IsCurrentUserOwned(path))
+        {
+            return (mode & UnixFileMode.UserRead) != 0;
+        }
+
+        if (OperatingSystem.IsLinux())
+        {
+            return (mode & UnixFileMode.OtherRead) != 0;
+        }
+
+        return HasAnyReadBit(mode);
+    }
+
+    private bool HasRequiredExecutableBit(string path, UnixFileMode mode)
+    {
+        if (IsCurrentUserOwned(path))
+        {
+            return (mode & UnixFileMode.UserExecute) != 0;
+        }
+
+        if (OperatingSystem.IsLinux())
+        {
+            return (mode & UnixFileMode.OtherExecute) != 0;
+        }
+
+        return HasAnyExecutableBit(mode);
+    }
+
+    private static bool HasAnyReadBit(UnixFileMode mode)
+    {
+        const UnixFileMode readBits =
+            UnixFileMode.UserRead | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+        return (mode & readBits) != 0;
+    }
+
+    private bool IsCurrentUserOwned(string path)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return false;
+        }
+
+        FileSystemOwner owner = fileSystem.GetOwner(path);
+        FileSystemOwner currentOwner = fileSystem.GetCurrentOwner();
+        return string.Equals(owner.Id, currentOwner.Id, StringComparison.Ordinal);
+    }
+
+    private static bool HasAnyExecutableBit(UnixFileMode mode)
+    {
+        const UnixFileMode executableBits =
+            UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
+        return (mode & executableBits) != 0;
     }
 
     private bool IsUnsafeReparsePoint(string path)
@@ -1351,6 +2143,55 @@ public sealed class GitPhase8VerticalSliceService
 
         return fileSystem is IFileSystemReparsePointSafety reparsePointSafety
             && reparsePointSafety.IsReparsePoint(path);
+    }
+
+    private void ThrowIfPathIsOutsideStateDirectory(string path)
+    {
+        string relativePath = Path.GetRelativePath(paths.StateDirectoryPath, path);
+        if (
+            Path.IsPathRooted(relativePath)
+            || string.Equals(relativePath, "..", GetPathComparison())
+            || relativePath.StartsWith(
+                ".." + Path.DirectorySeparatorChar,
+                GetPathComparison())
+            || (
+                Path.AltDirectorySeparatorChar != Path.DirectorySeparatorChar
+                && relativePath.StartsWith(
+                    ".." + Path.AltDirectorySeparatorChar,
+                    GetPathComparison())
+            )
+        )
+        {
+            throw new GitPhase8UnrecognizedStateException(
+                "The Phase 8 Git configuration state is not recognized.");
+        }
+    }
+
+    private IEnumerable<string> EnumerateStateDirectoryChain(string directory)
+    {
+        ThrowIfPathIsOutsideStateDirectory(directory);
+        yield return paths.StateDirectoryPath;
+
+        string relativePath = Path.GetRelativePath(paths.StateDirectoryPath, directory);
+        if (string.Equals(relativePath, ".", StringComparison.Ordinal))
+        {
+            yield break;
+        }
+
+        string current = paths.StateDirectoryPath;
+        foreach (string component in relativePath.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (component is "." or "..")
+            {
+                throw new GitPhase8UnrecognizedStateException(
+                    "The Phase 8 Git configuration state is not recognized.");
+            }
+
+            current = Path.Combine(current, component);
+            yield return current;
+        }
     }
 
     private static IEnumerable<string> EnumerateParentDirectories(string path)
@@ -1376,14 +2217,21 @@ public sealed class GitPhase8VerticalSliceService
         options ??= new GitPhase8VerticalSliceOptions();
 
         string stateDirectoryPath = GetFullPath(
-            options.StateDirectoryPath
-                ?? Path.Combine(Path.GetTempPath(), ProductId, "phase8")
+            options.StateDirectoryPath ?? GetDefaultStateDirectoryPath()
         );
         string gitConfigPath = GetFullPath(
             Path.Combine(stateDirectoryPath, "git", "user.gitconfig")
         );
         string ownershipManifestPath = GetFullPath(
             Path.Combine(stateDirectoryPath, "manifests", "git-ownership-manifest.json")
+        );
+        string gitHelperDirectoryPath = GetFullPath(
+            Path.Combine(stateDirectoryPath, "git-helper")
+        );
+        string gitHelperPath = GetFullPath(
+            Path.Combine(
+                gitHelperDirectoryPath,
+                GitCredentialHelperAdapter.HelperExecutableName)
         );
 
         if (string.Equals(gitConfigPath, ownershipManifestPath, GetPathComparison()))
@@ -1399,7 +2247,172 @@ public sealed class GitPhase8VerticalSliceService
             StateDirectoryPath = stateDirectoryPath,
             GitConfigPath = gitConfigPath,
             OwnershipManifestPath = ownershipManifestPath,
+            GitHelperDirectoryPath = gitHelperDirectoryPath,
+            GitHelperPath = gitHelperPath,
         };
+    }
+
+    private static string GetDefaultStateDirectoryPath()
+    {
+        string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrWhiteSpace(userProfile))
+        {
+            return Path.Combine(userProfile, "." + ProductId, "phase8");
+        }
+
+        string localApplicationData = Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData);
+        if (!string.IsNullOrWhiteSpace(localApplicationData))
+        {
+            return Path.Combine(localApplicationData, ProductId, "phase8");
+        }
+
+        return Path.Combine(Path.GetTempPath(), ProductId, "phase8");
+    }
+
+    private static ProductExecutableInvocation? ResolveProductExecutableInvocation(
+        string? configuredPath)
+    {
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            if (IsManagedAssemblyInvocation(configuredPath))
+            {
+                return new ProductExecutableInvocation(
+                    GetFullPath(configuredPath),
+                    ResolveDotnetExecutablePath());
+            }
+
+            return new ProductExecutableInvocation(
+                GetFullPath(configuredPath),
+                DotnetExecutablePath: null);
+        }
+
+        if (!IsManagedHostInvocation(Environment.ProcessPath))
+        {
+            return string.IsNullOrWhiteSpace(Environment.ProcessPath)
+                ? null
+                : new ProductExecutableInvocation(
+                    GetFullPath(Environment.ProcessPath),
+                    DotnetExecutablePath: null);
+        }
+
+        string? managedAssemblyPath = TryGetManagedAssemblyPath();
+        return string.IsNullOrWhiteSpace(managedAssemblyPath)
+            || string.IsNullOrWhiteSpace(Environment.ProcessPath)
+            ? null
+            : new ProductExecutableInvocation(
+                GetFullPath(managedAssemblyPath),
+                GetFullPath(Environment.ProcessPath));
+    }
+
+    private static string? GetCurrentProcessInvocationPath()
+    {
+        string? nativeArgv0 = TryReadLinuxArgv0();
+        if (!IsManagedHostInvocation(nativeArgv0))
+        {
+            return nativeArgv0;
+        }
+
+        string[] commandLineArgs = Environment.GetCommandLineArgs();
+        if (commandLineArgs.Length == 0)
+        {
+            return Environment.ProcessPath;
+        }
+
+        string invocationPath = commandLineArgs[0];
+        return IsManagedHostInvocation(invocationPath)
+            ? Environment.ProcessPath
+            : invocationPath;
+    }
+
+    private static bool IsManagedHostInvocation(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return true;
+        }
+
+        string fileName = Path.GetFileName(path);
+        return string.Equals(fileName, "dotnet", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(fileName, "dotnet.exe", StringComparison.OrdinalIgnoreCase)
+            || IsManagedAssemblyInvocation(fileName);
+    }
+
+    private static bool IsManagedAssemblyInvocation(string path) =>
+        string.Equals(
+            Path.GetExtension(path),
+            ".dll",
+            StringComparison.OrdinalIgnoreCase);
+
+    private static string? TryReadLinuxArgv0()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return null;
+        }
+
+        try
+        {
+            byte[] commandLine = File.ReadAllBytes("/proc/self/cmdline");
+            int terminatorIndex = Array.IndexOf(commandLine, (byte)0);
+            int length = terminatorIndex < 0 ? commandLine.Length : terminatorIndex;
+            return length == 0
+                ? null
+                : System.Text.Encoding.UTF8.GetString(commandLine, 0, length);
+        }
+        catch (Exception exception)
+            when (exception is IOException
+                or UnauthorizedAccessException
+                or System.Security.SecurityException)
+        {
+            return null;
+        }
+    }
+
+    private static string? TryGetManagedAssemblyPath()
+    {
+        string[] commandLineArgs = Environment.GetCommandLineArgs();
+        if (commandLineArgs.Length == 0)
+        {
+            return null;
+        }
+
+        string invocationPath = commandLineArgs[0];
+        return string.Equals(
+            Path.GetExtension(invocationPath),
+            ".dll",
+            StringComparison.OrdinalIgnoreCase)
+            ? invocationPath
+            : null;
+    }
+
+    private static string? ResolveDotnetExecutablePath()
+    {
+        string? processPath = Environment.ProcessPath;
+        if (
+            !string.IsNullOrWhiteSpace(processPath)
+            && string.Equals(
+                Path.GetFileName(processPath),
+                OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet",
+                StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            return GetFullPath(processPath);
+        }
+
+        string? dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+        if (!string.IsNullOrWhiteSpace(dotnetRoot))
+        {
+            string candidate = Path.Combine(
+                dotnetRoot,
+                OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet");
+            if (File.Exists(candidate))
+            {
+                return GetFullPath(candidate);
+            }
+        }
+
+        return null;
     }
 
     private static string GetFullPath(string path)
@@ -1433,7 +2446,12 @@ public sealed class GitPhase8VerticalSliceService
             or InvalidOperationException
             or NotSupportedException
             or PlatformNotSupportedException
+            or System.ComponentModel.Win32Exception
             or System.Text.Json.JsonException;
+
+    private sealed record ProductExecutableInvocation(
+        string ExecutablePath,
+        string? DotnetExecutablePath);
 
     private sealed record GitPhase8OwnedState(
         bool OwnedGitEntriesPresent,
