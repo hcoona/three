@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Hcoona.AzureAuth.CredProvider.Platform.Tests" />
+    <PackageReference Include="NuGet.Protocol" />
     <ProjectReference Include="../Hcoona.AzureAuth.CredProvider.Contracts/Hcoona.AzureAuth.CredProvider.Contracts.csproj" />
   </ItemGroup>
 

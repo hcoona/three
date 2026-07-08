@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 using Hcoona.AzureAuth.CredProvider.Platform.Processes;
 using Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
 using Xunit;
@@ -24,12 +25,12 @@ public sealed class CliApplicationTests
                   azureauth-credprovider <command> [options]
 
                 Commands:
-                  status                       Show deterministic Phase 9 shell status.
-                  doctor                       Run Phase 9 Git adapter checks.
-                  login                        Phase 9 stub; not implemented yet.
-                  logout                       Phase 9 stub; not implemented yet.
-                  configure <ecosystem>        Git --ci none applies; others are dry-run only.
-                  unconfigure <ecosystem>      Git --ci none removes; others are dry-run only.
+                  status                       Show deterministic Phase 10 shell status.
+                  doctor                       Run Git and active NuGet adapter checks.
+                  login                        Phase 10 stub; not implemented yet.
+                  logout                       Phase 10 stub; not implemented yet.
+                  configure <ecosystem>        Git/NuGet --ci none applies; others dry-run.
+                  unconfigure <ecosystem>      Git/NuGet --ci none removes; others dry-run.
 
                 Options:
                   -h, --help                   Show help.
@@ -119,13 +120,13 @@ public sealed class CliApplicationTests
                 """
                 command: status
                 product: azureauth-credprovider
-                phase: 9-git-adapter
+                phase: 10-nuget-adapter
                 ci-mode: none
                 status-shell: ready
                 environment-probing: disabled
                 persistent-cache: disabled
                 dry-run-rendering: enabled
-                mutating-commands: git-only
+                mutating-commands: git-and-nuget
                 supported-ecosystems: git, nuget, python, npm
                 """),
             result.StdOut);
@@ -150,13 +151,13 @@ public sealed class CliApplicationTests
                 """
                 command: status
                 product: azureauth-credprovider
-                phase: 9-git-adapter
+                phase: 10-nuget-adapter
                 ci-mode: azure-pipelines
                 status-shell: ready
                 environment-probing: disabled
                 persistent-cache: disabled
                 dry-run-rendering: enabled
-                mutating-commands: git-only
+                mutating-commands: git-and-nuget
                 supported-ecosystems: git, nuget, python, npm
                 """),
             result.StdOut);
@@ -399,6 +400,64 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
+    public void ConfigureNuGetDryRunUsesPhase10PlanBackedOutput()
+    {
+        CliRuntimeOptions runtimeOptions = CreateNuGetPhase10DryRunRuntimeOptions();
+        CommandResult implicitCiResult = InvokeWithRuntime(
+            runtimeOptions,
+            "configure",
+            "nuget",
+            "--dry-run");
+        CommandResult explicitCiResult = InvokeWithRuntime(
+            runtimeOptions,
+            "configure",
+            "nuget",
+            "--dry-run",
+            "--ci",
+            "none");
+
+        Assert.Equal(0, implicitCiResult.ExitCode);
+        Assert.Equal(0, explicitCiResult.ExitCode);
+        Assert.Equal(GetExpectedNuGetConfigureDryRunOutput(), implicitCiResult.StdOut);
+        Assert.Equal(GetExpectedNuGetConfigureDryRunOutput(), explicitCiResult.StdOut);
+        Assert.Equal(implicitCiResult.StdOut, explicitCiResult.StdOut);
+        Assert.Equal(string.Empty, implicitCiResult.StdErr);
+        Assert.Equal(string.Empty, explicitCiResult.StdErr);
+    }
+
+    [Fact]
+    public void UnconfigureNuGetDryRunValidatesPhase10StateAndWritesGenericOutput()
+    {
+        CliRuntimeOptions runtimeOptions = CreateNuGetPhase10DryRunRuntimeOptions();
+        CommandResult implicitCiResult = InvokeWithRuntime(
+            runtimeOptions,
+            "unconfigure",
+            "nuget",
+            "--dry-run");
+        CommandResult explicitCiResult = InvokeWithRuntime(
+            runtimeOptions,
+            "unconfigure",
+            "nuget",
+            "--dry-run",
+            "--ci",
+            "none");
+        string expectedOutput = GetExpectedDryRunOutput(
+            "unconfigure",
+            "nuget",
+            "none",
+            "remove product-owned NuGet plugin discovery scaffold",
+            "remove product-owned Azure Artifacts NuGet credential scaffold");
+
+        Assert.Equal(0, implicitCiResult.ExitCode);
+        Assert.Equal(0, explicitCiResult.ExitCode);
+        Assert.Equal(expectedOutput, implicitCiResult.StdOut);
+        Assert.Equal(expectedOutput, explicitCiResult.StdOut);
+        Assert.Equal(implicitCiResult.StdOut, explicitCiResult.StdOut);
+        Assert.Equal(string.Empty, implicitCiResult.StdErr);
+        Assert.Equal(string.Empty, explicitCiResult.StdErr);
+    }
+
+    [Fact]
     public void ConfigureGitCreatesOwnedFakeEntriesAndManifest()
     {
         string stateDirectory = CreateTestDirectory();
@@ -567,6 +626,7 @@ public sealed class CliApplicationTests
                 LocalShellGitDiscoverySupported = false,
                 ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
             },
+            NuGetPhase10Options = CreateIsolatedNuGetPhase10Options(),
         };
 
         try
@@ -1887,12 +1947,12 @@ public sealed class CliApplicationTests
     [Theory]
     [InlineData(
         "configure",
-        "nuget",
-        "error: configure without '--dry-run' is not implemented in phase 9.\n")]
+        "python",
+        "error: configure without '--dry-run' is not implemented in phase 10.\n")]
     [InlineData(
         "unconfigure",
-        "nuget",
-        "error: unconfigure without '--dry-run' is not implemented in phase 9.\n")]
+        "npm",
+        "error: unconfigure without '--dry-run' is not implemented in phase 10.\n")]
     public void NonDryRunConfigurationCommandsReturnPhaseStubErrors(
         string command,
         string ecosystem,
@@ -1914,7 +1974,7 @@ public sealed class CliApplicationTests
 
         Assert.Equal(1, result.ExitCode);
         Assert.Equal(string.Empty, result.StdOut);
-        Assert.Equal($"error: {command} is not implemented in phase 9.\n", result.StdErr);
+        Assert.Equal($"error: {command} is not implemented in phase 10.\n", result.StdErr);
     }
 
     [Fact]
@@ -2209,13 +2269,6 @@ public sealed class CliApplicationTests
             {
                 "configure",
                 "nuget",
-                "none",
-                "register product-owned NuGet plugin discovery scaffold",
-                "register product-owned Azure Artifacts NuGet credential scaffold"
-            },
-            {
-                "configure",
-                "nuget",
                 "azure-pipelines",
                 "prepare temporary Azure Pipelines NuGet plugin discovery scaffold",
                 "prepare temporary Azure Artifacts NuGet credential scaffold"
@@ -2265,13 +2318,6 @@ public sealed class CliApplicationTests
             {
                 "unconfigure",
                 "nuget",
-                "none",
-                "remove product-owned NuGet plugin discovery scaffold",
-                "remove product-owned Azure Artifacts NuGet credential scaffold"
-            },
-            {
-                "unconfigure",
-                "nuget",
                 "azure-pipelines",
                 "remove temporary Azure Pipelines NuGet plugin discovery scaffold",
                 "remove temporary Azure Artifacts NuGet credential scaffold"
@@ -2311,12 +2357,6 @@ public sealed class CliApplicationTests
         {
             {
                 "configure",
-                "nuget",
-                "register product-owned NuGet plugin discovery scaffold",
-                "register product-owned Azure Artifacts NuGet credential scaffold"
-            },
-            {
-                "configure",
                 "python",
                 "register product-owned Python keyring backend scaffold",
                 "register product-owned Python keyring helper scaffold"
@@ -2332,12 +2372,6 @@ public sealed class CliApplicationTests
                 "git",
                 "remove product-owned git credential.helper entry",
                 "remove product-owned dev.azure.com useHttpPath entry"
-            },
-            {
-                "unconfigure",
-                "nuget",
-                "remove product-owned NuGet plugin discovery scaffold",
-                "remove product-owned Azure Artifacts NuGet credential scaffold"
             },
             {
                 "unconfigure",
@@ -2612,7 +2646,8 @@ public sealed class CliApplicationTests
                     Options:
                     """
                     + "\n"
-                    + "  --dry-run                    Optional for git none; required otherwise.\n"
+                    + "  --dry-run                    Optional for git/nuget none; "
+                    + "required otherwise.\n"
                     + "  --ci <mode>                  Select CI mode explicitly: "
                     + "none | azure-pipelines.\n"
                     + """
@@ -2637,7 +2672,8 @@ public sealed class CliApplicationTests
                     Options:
                     """
                     + "\n"
-                    + "  --dry-run                    Optional for git none; required otherwise.\n"
+                    + "  --dry-run                    Optional for git/nuget none; "
+                    + "required otherwise.\n"
                     + "  --ci <mode>                  Select CI mode explicitly: "
                     + "none | azure-pipelines.\n"
                     + """
@@ -2650,7 +2686,7 @@ public sealed class CliApplicationTests
                       azureauth-credprovider doctor [--help]
 
                     Status:
-                      Run safe deterministic Phase 9 Git adapter checks.
+                      Run safe deterministic Git checks and active Phase 10 NuGet checks.
 
                     Options:
                       -h, --help                   Show help.
@@ -2662,7 +2698,7 @@ public sealed class CliApplicationTests
                       azureauth-credprovider login [--help]
 
                     Status:
-                      Phase 9 stub only. This command is not implemented yet.
+                      Phase 10 stub only. This command is not implemented yet.
 
                     Options:
                       -h, --help                   Show help.
@@ -2674,7 +2710,7 @@ public sealed class CliApplicationTests
                       azureauth-credprovider logout [--help]
 
                     Status:
-                      Phase 9 stub only. This command is not implemented yet.
+                      Phase 10 stub only. This command is not implemented yet.
 
                     Options:
                       -h, --help                   Show help.
@@ -2696,7 +2732,7 @@ public sealed class CliApplicationTests
         [
             $"command: {command}",
             $"ecosystem: {ecosystem}",
-            "phase: 9-git-adapter",
+            "phase: 10-nuget-adapter",
             $"ci-mode: {ciMode}",
             $"scope: {GetExpectedScope(ciMode)}",
             "mutates-state: no",
@@ -2708,7 +2744,7 @@ public sealed class CliApplicationTests
             lines.Add($"  {index + 1}. {plannedActions[index]}");
         }
 
-        lines.Add("note: no files, credentials, or caches are changed in phase 9");
+        lines.Add("note: no files, credentials, or caches are changed in phase 10");
         return Normalize(string.Join("\n", lines));
     }
 
@@ -2718,7 +2754,7 @@ public sealed class CliApplicationTests
             """
             command: configure
             ecosystem: git
-            phase: 9-git-adapter
+            phase: 10-nuget-adapter
             ci-mode: none
             scope: user
             mutates-state: no
@@ -2727,7 +2763,26 @@ public sealed class CliApplicationTests
             planned-actions:
               1. set product-owned git credential.helper entry
               2. set product-owned dev.azure.com useHttpPath entry
-            note: dry-run only; no files, credentials, or caches are changed in phase 9
+            note: dry-run only; no files, credentials, or caches are changed in phase 10
+            """
+        );
+    }
+
+    private static string GetExpectedNuGetConfigureDryRunOutput()
+    {
+        return Normalize(
+            """
+            command: configure
+            ecosystem: nuget
+            phase: 10-nuget-adapter
+            ci-mode: none
+            scope: user
+            mutates-state: no
+            configuration-plan: valid
+            planned-change-count: 1
+            planned-actions:
+              1. register product-owned NuGet netcore plugin layout marker
+            note: dry-run only; no files, credentials, or caches are changed in phase 10
             """
         );
     }
@@ -2748,7 +2803,7 @@ public sealed class CliApplicationTests
                 [
                     $"command: {command}",
                     "ecosystem: git",
-                    "phase: 9-git-adapter",
+                    "phase: 10-nuget-adapter",
                     "ci-mode: none",
                     "scope: user",
                     "mutates-state: yes",
@@ -2773,7 +2828,7 @@ public sealed class CliApplicationTests
                 "\n",
                 [
                     "command: doctor",
-                    "phase: 9-git-adapter",
+                    "phase: 10-nuget-adapter",
                     $"configuration-plan: {(configurationPlanValid ? "pass" : "fail")}",
                     $"owned-git-entries: {(ownedGitEntriesPresent ? "present" : "absent")}",
                     $"ownership-manifest: {(ownershipManifestPresent ? "present" : "absent")}",
@@ -2849,8 +2904,25 @@ public sealed class CliApplicationTests
                 ProcessRunner = new PassingGitDiscoveryProcessRunner(),
                 ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
             },
+            NuGetPhase10Options = CreateIsolatedNuGetPhase10Options(),
         };
     }
+
+    private static CliRuntimeOptions CreateNuGetPhase10DryRunRuntimeOptions()
+    {
+        return new CliRuntimeOptions
+        {
+            NuGetPhase10Options = CreateIsolatedNuGetPhase10Options(),
+        };
+    }
+
+    private static NuGetPhase10VerticalSliceOptions CreateIsolatedNuGetPhase10Options() =>
+        new()
+        {
+            StateDirectoryPath = "/state/azureauth-credprovider/phase10",
+            FileSystem = new EmptyNuGetDryRunFileSystem(),
+            EnvironmentVariableReader = _ => null,
+        };
 
     private static GitPhase8VerticalSliceService CreateGitPhase8Service(string stateDirectory)
     {
@@ -2996,6 +3068,94 @@ public sealed class CliApplicationTests
         {
             throw new InvalidOperationException("Simulated writer failure.");
         }
+    }
+
+    private sealed class EmptyNuGetDryRunFileSystem : IFileSystem
+    {
+        private static readonly FileSystemOwner Owner = new("fake:current");
+
+        public bool SupportsConditionalFileMutations => true;
+
+        public bool FileExists(string path) => false;
+
+        public bool DirectoryExists(string path) => false;
+
+        public string GetFullPath(string path) => Path.GetFullPath(path);
+
+        public bool IsPathFullyQualified(string path) => Path.IsPathFullyQualified(path);
+
+        public bool IsSymbolicLink(string path) => false;
+
+        public byte[] ComputeSha256Hash(string path) => throw CreateMissingPathException(path);
+
+        public FileIntegritySnapshot CaptureFileIntegritySnapshot(string path) =>
+            throw CreateMissingPathException(path);
+
+        public bool FileMatchesIntegritySnapshot(
+            string path,
+            FileIntegritySnapshot snapshot) => false;
+
+        public IReadOnlyList<TrustedDirectorySnapshot> CaptureTrustedParentDirectorySnapshots(
+            string path
+        ) => throw CreateMissingPathException(path);
+
+        public FileSystemOwner GetCurrentOwner() => Owner;
+
+        public FileSystemOwner GetOwner(string path) => Owner;
+
+        public string ReadAllText(string path, Encoding? encoding = null) =>
+            throw CreateMissingPathException(path);
+
+        public byte[] ReadAllBytes(string path) => throw CreateMissingPathException(path);
+
+        public void WriteAllText(string path, string contents, Encoding? encoding = null) =>
+            throw CreateMutationException();
+
+        public void AtomicWriteAllText(
+            string path,
+            string contents,
+            Encoding? encoding = null,
+            AtomicWriteOptions options = AtomicWriteOptions.None,
+            FileMutationExpectation? expectation = null
+        ) => throw CreateMutationException();
+
+        public void AtomicWriteAllBytes(
+            string path,
+            byte[] contents,
+            AtomicWriteOptions options = AtomicWriteOptions.None,
+            FileMutationExpectation? expectation = null
+        ) => throw CreateMutationException();
+
+        public UnixFileMode GetUnixFileMode(string path) => throw CreateMissingPathException(path);
+
+        public void SetUnixFileMode(string path, UnixFileMode mode) =>
+            throw CreateMutationException();
+
+        public void CreateDirectory(string path) => throw CreateMutationException();
+
+        public void DeleteFile(string path, FileMutationExpectation? expectation = null) =>
+            throw CreateMutationException();
+
+        public void DeleteDirectory(string path, bool recursive = false) =>
+            throw CreateMutationException();
+
+        public IEnumerable<string> EnumerateFiles(
+            string path,
+            string searchPattern = "*",
+            SearchOption searchOption = SearchOption.TopDirectoryOnly
+        ) => throw CreateMissingPathException(path);
+
+        public IEnumerable<string> EnumerateDirectories(
+            string path,
+            string searchPattern = "*",
+            SearchOption searchOption = SearchOption.TopDirectoryOnly
+        ) => throw CreateMissingPathException(path);
+
+        private static FileNotFoundException CreateMissingPathException(string path) =>
+            new("The dry-run fake filesystem has no files.", path);
+
+        private static InvalidOperationException CreateMutationException() =>
+            new("The dry-run fake filesystem must not be mutated.");
     }
 
     private sealed record CommandResult(int ExitCode, string StdOut, string StdErr);

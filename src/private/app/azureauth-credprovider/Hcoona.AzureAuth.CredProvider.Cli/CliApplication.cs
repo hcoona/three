@@ -13,7 +13,7 @@ namespace Hcoona.AzureAuth.CredProvider.Cli;
 internal static class CliApplication
 {
     private const string CommandName = "azureauth-credprovider";
-    private const string PhaseName = "9-git-adapter";
+    private const string PhaseName = "10-nuget-adapter";
     private const int SuccessExitCode = 0;
     private const int NotImplementedExitCode = 1;
     private const int UsageExitCode = 2;
@@ -22,6 +22,7 @@ internal static class CliApplication
     private const string GitCredentialHelperConfigurationKey = "credential.helper";
     private const string GitUseHttpPathConfigurationKey =
         "credential.https://dev.azure.com.useHttpPath";
+    private const string NuGetPluginLayoutConfigurationKey = "physical-target";
 
     private static readonly string[] SupportedEcosystems = ["git", "nuget", "python", "npm"];
     private static readonly HashSet<string> SecretLikeOptionNames = new(StringComparer.Ordinal)
@@ -185,7 +186,76 @@ internal static class CliApplication
                 return dryRunResult.Validation.IsValid ? SuccessExitCode : NotImplementedExitCode;
             }
 
+            if (ecosystem == CredentialEcosystem.NuGet && invocation.CiMode == CliCiMode.None)
+            {
+                NuGetPhase10ConfigureDryRunResult dryRunResult;
+                try
+                {
+                    dryRunResult = CreateNuGetPhase10VerticalSliceService(runtimeOptions)
+                        .DryRunConfigureAsync()
+                        .AsTask()
+                        .GetAwaiter()
+                        .GetResult();
+                }
+                catch (NuGetPhase10UnrecognizedStateException)
+                {
+                    TryWriteDiagnosticText(
+                        stderr,
+                        "error: configure cannot modify unrecognized Phase 10 NuGet state.");
+                    return NotImplementedExitCode;
+                }
+
+                WriteText(stdout, BuildNuGetConfigureDryRunOutput(invocation, dryRunResult));
+                return dryRunResult.Validation.IsValid ? SuccessExitCode : NotImplementedExitCode;
+            }
+
             WriteText(stdout, BuildDryRunOutput(invocation));
+            return SuccessExitCode;
+        }
+
+        if (ecosystem == CredentialEcosystem.Git && invocation.CiMode == CliCiMode.None)
+        {
+            GitPhase8ConfigureResult configureResult;
+            try
+            {
+                configureResult = CreateGitPhase8VerticalSliceService(runtimeOptions)
+                    .ConfigureAsync()
+                    .AsTask()
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch (GitPhase8UnrecognizedStateException)
+            {
+                TryWriteDiagnosticText(
+                    stderr,
+                    "error: configure cannot modify unrecognized Phase 8 Git state.");
+                return NotImplementedExitCode;
+            }
+
+            WriteText(stdout, BuildGitConfigureOutput(invocation, configureResult));
+            return SuccessExitCode;
+        }
+
+        if (ecosystem == CredentialEcosystem.NuGet && invocation.CiMode == CliCiMode.None)
+        {
+            NuGetPhase10ConfigureResult configureResult;
+            try
+            {
+                configureResult = CreateNuGetPhase10VerticalSliceService(runtimeOptions)
+                    .ConfigureAsync()
+                    .AsTask()
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch (NuGetPhase10UnrecognizedStateException)
+            {
+                TryWriteDiagnosticText(
+                    stderr,
+                    "error: configure cannot modify unrecognized Phase 10 NuGet state.");
+                return NotImplementedExitCode;
+            }
+
+            WriteText(stdout, BuildNuGetConfigureOutput(invocation, configureResult));
             return SuccessExitCode;
         }
 
@@ -193,29 +263,11 @@ internal static class CliApplication
         {
             TryWriteDiagnosticText(
                 stderr,
-                "error: configure without '--dry-run' is not implemented in phase 9.");
+                "error: configure without '--dry-run' is not implemented in phase 10.");
             return NotImplementedExitCode;
         }
 
-        GitPhase8ConfigureResult configureResult;
-        try
-        {
-            configureResult = CreateGitPhase8VerticalSliceService(runtimeOptions)
-                .ConfigureAsync()
-                .AsTask()
-                .GetAwaiter()
-                .GetResult();
-        }
-        catch (GitPhase8UnrecognizedStateException)
-        {
-            TryWriteDiagnosticText(
-                stderr,
-                "error: configure cannot modify unrecognized Phase 8 Git state.");
-            return NotImplementedExitCode;
-        }
-
-        WriteText(stdout, BuildGitConfigureOutput(invocation, configureResult));
-        return SuccessExitCode;
+        throw new InvalidOperationException("Unsupported configure command.");
     }
 
     private static int HandleUnconfigure(
@@ -247,8 +299,72 @@ internal static class CliApplication
                     return NotImplementedExitCode;
                 }
             }
+            else if (ecosystem == CredentialEcosystem.NuGet && invocation.CiMode == CliCiMode.None)
+            {
+                try
+                {
+                    CreateNuGetPhase10VerticalSliceService(runtimeOptions)
+                        .ValidateUnconfigureDryRunAsync()
+                        .AsTask()
+                        .GetAwaiter()
+                        .GetResult();
+                }
+                catch (NuGetPhase10UnrecognizedStateException)
+                {
+                    TryWriteDiagnosticText(
+                        stderr,
+                        "error: unconfigure cannot modify unrecognized Phase 10 NuGet state.");
+                    return NotImplementedExitCode;
+                }
+            }
 
             WriteText(stdout, BuildDryRunOutput(invocation));
+            return SuccessExitCode;
+        }
+
+        if (ecosystem == CredentialEcosystem.Git && invocation.CiMode == CliCiMode.None)
+        {
+            GitPhase8UnconfigureResult unconfigureResult;
+            try
+            {
+                unconfigureResult = CreateGitPhase8VerticalSliceService(runtimeOptions)
+                    .UnconfigureAsync()
+                    .AsTask()
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch (GitPhase8UnrecognizedStateException)
+            {
+                TryWriteDiagnosticText(
+                    stderr,
+                    "error: unconfigure cannot modify unrecognized Phase 8 Git state.");
+                return NotImplementedExitCode;
+            }
+
+            WriteText(stdout, BuildGitUnconfigureOutput(invocation, unconfigureResult));
+            return SuccessExitCode;
+        }
+
+        if (ecosystem == CredentialEcosystem.NuGet && invocation.CiMode == CliCiMode.None)
+        {
+            NuGetPhase10UnconfigureResult unconfigureResult;
+            try
+            {
+                unconfigureResult = CreateNuGetPhase10VerticalSliceService(runtimeOptions)
+                    .UnconfigureAsync()
+                    .AsTask()
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch (NuGetPhase10UnrecognizedStateException)
+            {
+                TryWriteDiagnosticText(
+                    stderr,
+                    "error: unconfigure cannot modify unrecognized Phase 10 NuGet state.");
+                return NotImplementedExitCode;
+            }
+
+            WriteText(stdout, BuildNuGetUnconfigureOutput(invocation, unconfigureResult));
             return SuccessExitCode;
         }
 
@@ -256,29 +372,11 @@ internal static class CliApplication
         {
             TryWriteDiagnosticText(
                 stderr,
-                "error: unconfigure without '--dry-run' is not implemented in phase 9.");
+                "error: unconfigure without '--dry-run' is not implemented in phase 10.");
             return NotImplementedExitCode;
         }
 
-        GitPhase8UnconfigureResult unconfigureResult;
-        try
-        {
-            unconfigureResult = CreateGitPhase8VerticalSliceService(runtimeOptions)
-                .UnconfigureAsync()
-                .AsTask()
-                .GetAwaiter()
-                .GetResult();
-        }
-        catch (GitPhase8UnrecognizedStateException)
-        {
-            TryWriteDiagnosticText(
-                stderr,
-                "error: unconfigure cannot modify unrecognized Phase 8 Git state.");
-            return NotImplementedExitCode;
-        }
-
-        WriteText(stdout, BuildGitUnconfigureOutput(invocation, unconfigureResult));
-        return SuccessExitCode;
+        throw new InvalidOperationException("Unsupported unconfigure command.");
     }
 
     private static int HandleDoctor(
@@ -291,16 +389,21 @@ internal static class CliApplication
             .AsTask()
             .GetAwaiter()
             .GetResult();
-        WriteText(stdout, BuildDoctorOutput(invocation, doctorResult));
-        return doctorResult.ConfigurationPlanValid
-            && doctorResult.OwnedGitEntriesPresent
-            && doctorResult.OwnershipManifestPresent
-            && doctorResult.CredentialCoreSuccess
-            && doctorResult.GitCredentialHelperGetSuccess
-            && doctorResult.GitCredentialHelperStoreSuccess
-            && doctorResult.GitCredentialHelperEraseSuccess
-            && doctorResult.LocalShellHelperShorthandSuccess
-            && doctorResult.DevAzureUseHttpPathPresent
+        NuGetPhase10DoctorResult nuGetDoctorResult = CreateNuGetPhase10VerticalSliceService(
+                runtimeOptions)
+            .DoctorAsync()
+            .AsTask()
+            .GetAwaiter()
+            .GetResult();
+        bool includeNuGetDoctor = ShouldIncludeNuGetDoctor(nuGetDoctorResult);
+        WriteText(
+            stdout,
+            BuildDoctorOutput(
+                invocation,
+                doctorResult,
+                includeNuGetDoctor ? nuGetDoctorResult : null));
+        return IsGitDoctorSuccess(doctorResult)
+            && (!includeNuGetDoctor || IsNuGetDoctorSuccess(nuGetDoctorResult))
             ? SuccessExitCode
             : NotImplementedExitCode;
     }
@@ -309,7 +412,7 @@ internal static class CliApplication
     {
         TryWriteDiagnosticText(
             stderr,
-            $"error: {invocation.CommandName} is not implemented in phase 9.");
+            $"error: {invocation.CommandName} is not implemented in phase 10.");
         return NotImplementedExitCode;
     }
 
@@ -722,12 +825,12 @@ internal static class CliApplication
             $"  {CommandName} <command> [options]",
             string.Empty,
             "Commands:",
-            "  status                       Show deterministic Phase 9 shell status.",
-            "  doctor                       Run Phase 9 Git adapter checks.",
-            "  login                        Phase 9 stub; not implemented yet.",
-            "  logout                       Phase 9 stub; not implemented yet.",
-            "  configure <ecosystem>        Git --ci none applies; others are dry-run only.",
-            "  unconfigure <ecosystem>      Git --ci none removes; others are dry-run only.",
+            "  status                       Show deterministic Phase 10 shell status.",
+            "  doctor                       Run Git and active NuGet adapter checks.",
+            "  login                        Phase 10 stub; not implemented yet.",
+            "  logout                       Phase 10 stub; not implemented yet.",
+            "  configure <ecosystem>        Git/NuGet --ci none applies; others dry-run.",
+            "  unconfigure <ecosystem>      Git/NuGet --ci none removes; others dry-run.",
             string.Empty,
             "Options:",
             "  -h, --help                   Show help.",
@@ -766,7 +869,7 @@ internal static class CliApplication
             "  npm",
             string.Empty,
             "Options:",
-            "  --dry-run                    Optional for git none; required otherwise.",
+            "  --dry-run                    Optional for git/nuget none; required otherwise.",
             "  --ci <mode>                  Select CI mode explicitly: none | azure-pipelines.",
             "  -h, --help                   Show help.");
     }
@@ -779,7 +882,7 @@ internal static class CliApplication
             $"  {CommandName} doctor [--help]",
             string.Empty,
             "Status:",
-            "  Run safe deterministic Phase 9 Git adapter checks.",
+            "  Run safe deterministic Git checks and active Phase 10 NuGet checks.",
             string.Empty,
             "Options:",
             "  -h, --help                   Show help.");
@@ -794,7 +897,7 @@ internal static class CliApplication
             $"  {CommandName} {commandName} [--help]",
             string.Empty,
             "Status:",
-            "  Phase 9 stub only. This command is not implemented yet.",
+            "  Phase 10 stub only. This command is not implemented yet.",
             string.Empty,
             "Options:",
             "  -h, --help                   Show help.");
@@ -811,7 +914,7 @@ internal static class CliApplication
             "environment-probing: disabled",
             "persistent-cache: disabled",
             "dry-run-rendering: enabled",
-            "mutating-commands: git-only",
+            "mutating-commands: git-and-nuget",
             $"supported-ecosystems: {string.Join(", ", SupportedEcosystems)}");
     }
 
@@ -837,7 +940,7 @@ internal static class CliApplication
             lines.Add($"  {index + 1}. {actions[index]}");
         }
 
-        lines.Add("note: no files, credentials, or caches are changed in phase 9");
+        lines.Add("note: no files, credentials, or caches are changed in phase 10");
         return JoinLines(lines);
     }
 
@@ -865,7 +968,35 @@ internal static class CliApplication
             lines.Add($"  {change.Sequence}. {GetPlannedActionText(change)}");
         }
 
-        lines.Add("note: dry-run only; no files, credentials, or caches are changed in phase 9");
+        lines.Add("note: dry-run only; no files, credentials, or caches are changed in phase 10");
+        return JoinLines(lines);
+    }
+
+    private static string BuildNuGetConfigureDryRunOutput(
+        CliInvocation invocation,
+        NuGetPhase10ConfigureDryRunResult dryRunResult)
+    {
+        ArgumentNullException.ThrowIfNull(dryRunResult);
+
+        List<string> lines =
+        [
+            $"command: {invocation.CommandName}",
+            "ecosystem: nuget",
+            $"phase: {PhaseName}",
+            $"ci-mode: {GetCiModeText(invocation.CiMode)}",
+            $"scope: {GetScopeText(invocation.CiMode)}",
+            "mutates-state: no",
+            $"configuration-plan: {GetValidityText(dryRunResult.Validation.IsValid)}",
+            $"planned-change-count: {dryRunResult.PlanResult.Changes.Count}",
+            "planned-actions:",
+        ];
+
+        foreach (ConfigurationPlannedChange change in dryRunResult.PlanResult.Changes)
+        {
+            lines.Add($"  {change.Sequence}. {GetPlannedActionText(change)}");
+        }
+
+        lines.Add("note: dry-run only; no files, credentials, or caches are changed in phase 10");
         return JoinLines(lines);
     }
 
@@ -911,13 +1042,59 @@ internal static class CliApplication
             "note: credential material is not printed");
     }
 
+    private static string BuildNuGetConfigureOutput(
+        CliInvocation invocation,
+        NuGetPhase10ConfigureResult configureResult)
+    {
+        ArgumentNullException.ThrowIfNull(configureResult);
+
+        return JoinLines(
+            $"command: {invocation.CommandName}",
+            "ecosystem: nuget",
+            $"phase: {PhaseName}",
+            $"ci-mode: {GetCiModeText(invocation.CiMode)}",
+            $"scope: {GetScopeText(invocation.CiMode)}",
+            "mutates-state: yes",
+            $"plan-state: {GetPlanStateText(configureResult.PlanResult.State)}",
+            $"applied-change-count: {configureResult.PlanResult.Changes.Count}",
+            "nuget-plugin-layout-marker: "
+                + GetPresenceText(configureResult.PluginLayoutMarkerPresent),
+            $"ownership-manifest: {GetPresenceText(configureResult.OwnershipManifestPresent)}",
+            "note: credential material is not printed");
+    }
+
+    private static string BuildNuGetUnconfigureOutput(
+        CliInvocation invocation,
+        NuGetPhase10UnconfigureResult unconfigureResult)
+    {
+        ArgumentNullException.ThrowIfNull(unconfigureResult);
+
+        ConfigurationPlanResult? planResult = unconfigureResult.PlanResult;
+        return JoinLines(
+            $"command: {invocation.CommandName}",
+            "ecosystem: nuget",
+            $"phase: {PhaseName}",
+            $"ci-mode: {GetCiModeText(invocation.CiMode)}",
+            $"scope: {GetScopeText(invocation.CiMode)}",
+            "mutates-state: yes",
+            "plan-state: "
+                + (planResult is null ? "not-needed" : GetPlanStateText(planResult.State)),
+            $"removed-change-count: {planResult?.Changes.Count ?? 0}",
+            "nuget-plugin-layout-marker: "
+                + GetPresenceText(unconfigureResult.PluginLayoutMarkerPresent),
+            $"ownership-manifest: {GetPresenceText(unconfigureResult.OwnershipManifestPresent)}",
+            "note: credential material is not printed");
+    }
+
     private static string BuildDoctorOutput(
         CliInvocation invocation,
-        GitPhase8DoctorResult doctorResult)
+        GitPhase8DoctorResult doctorResult,
+        NuGetPhase10DoctorResult? nuGetDoctorResult)
     {
         ArgumentNullException.ThrowIfNull(doctorResult);
 
-        return JoinLines(
+        List<string> lines =
+        [
             $"command: {invocation.CommandName}",
             $"phase: {PhaseName}",
             $"configuration-plan: {GetCheckStatusText(doctorResult.ConfigurationPlanValid)}",
@@ -935,7 +1112,40 @@ internal static class CliApplication
             "local-shell-helper-shorthand: "
                 + GetLocalShellHelperShorthandStatusText(doctorResult),
             "protocol-payload: "
-                + (doctorResult.ProtocolPayloadCaptured ? "captured-not-printed" : "not-captured"));
+                + (doctorResult.ProtocolPayloadCaptured ? "captured-not-printed" : "not-captured"),
+        ];
+
+        if (nuGetDoctorResult is not null)
+        {
+            lines.AddRange(BuildNuGetDoctorLines(nuGetDoctorResult));
+        }
+
+        return JoinLines(lines);
+    }
+
+    private static IEnumerable<string> BuildNuGetDoctorLines(
+        NuGetPhase10DoctorResult doctorResult)
+    {
+        ArgumentNullException.ThrowIfNull(doctorResult);
+        return
+        [
+            "nuget-configuration-plan: "
+                + GetCheckStatusText(doctorResult.ConfigurationPlanValid),
+            "nuget-plugin-layout-marker: "
+                + GetPresenceText(doctorResult.PluginLayoutMarkerPresent),
+            "nuget-ownership-manifest: "
+                + GetPresenceText(doctorResult.OwnershipManifestPresent),
+            "nuget-netcore-plugin-entrypoint: "
+                + GetCheckStatusText(doctorResult.NetCorePluginEntrypointPresent),
+            "nuget-plugin-mode-entrypoint: "
+                + GetCheckStatusText(doctorResult.PluginModeEntrypointResolvable),
+            "nuget-azure-artifacts-source: "
+                + GetCheckStatusText(doctorResult.AzureArtifactsSourceCanonicalizationSuccess),
+            "nuget-interactive-policy: "
+                + GetCheckStatusText(doctorResult.InteractivePolicyGuidanceSuccess),
+            "nuget-environment-overrides: "
+                + (doctorResult.OptionalEnvironmentOverridesAbsent ? "absent" : "present"),
+        ];
     }
 
     private static string GetLocalShellHelperShorthandStatusText(
@@ -1045,22 +1255,96 @@ internal static class CliApplication
         return new GitPhase8VerticalSliceService(runtimeOptions?.GitPhase8Options);
     }
 
+    private static NuGetPhase10VerticalSliceService CreateNuGetPhase10VerticalSliceService(
+        CliRuntimeOptions? runtimeOptions)
+    {
+        return new NuGetPhase10VerticalSliceService(runtimeOptions?.NuGetPhase10Options);
+    }
+
     private static string GetPlannedActionText(ConfigurationPlannedChange change)
     {
         ArgumentNullException.ThrowIfNull(change);
 
-        return (change.Operation, change.Key) switch
+        return (change.Operation, change.TargetKind, change.Key) switch
         {
-            (ConfigurationChangeOperation.Set, GitCredentialHelperConfigurationKey) =>
+            (
+                ConfigurationChangeOperation.Set,
+                ConfigurationTargetKind.GitConfig,
+                GitCredentialHelperConfigurationKey
+            ) =>
                 "set product-owned git credential.helper entry",
-            (ConfigurationChangeOperation.Set, GitUseHttpPathConfigurationKey) =>
+            (
+                ConfigurationChangeOperation.Set,
+                ConfigurationTargetKind.GitConfig,
+                GitUseHttpPathConfigurationKey
+            ) =>
                 "set product-owned dev.azure.com useHttpPath entry",
-            (ConfigurationChangeOperation.Remove, GitCredentialHelperConfigurationKey) =>
+            (
+                ConfigurationChangeOperation.Remove,
+                ConfigurationTargetKind.GitConfig,
+                GitCredentialHelperConfigurationKey
+            ) =>
                 "remove product-owned git credential.helper entry",
-            (ConfigurationChangeOperation.Remove, GitUseHttpPathConfigurationKey) =>
+            (
+                ConfigurationChangeOperation.Remove,
+                ConfigurationTargetKind.GitConfig,
+                GitUseHttpPathConfigurationKey
+            ) =>
                 "remove product-owned dev.azure.com useHttpPath entry",
-            _ => throw new InvalidOperationException("Unsupported Git Phase 8 planned change."),
+            (
+                ConfigurationChangeOperation.Set,
+                ConfigurationTargetKind.NuGetPluginLayout,
+                NuGetPluginLayoutConfigurationKey
+            ) =>
+                "register product-owned NuGet netcore plugin layout marker",
+            (
+                ConfigurationChangeOperation.Remove,
+                ConfigurationTargetKind.NuGetPluginLayout,
+                NuGetPluginLayoutConfigurationKey
+            ) =>
+                "remove product-owned NuGet netcore plugin layout marker",
+            _ => throw new InvalidOperationException("Unsupported planned change."),
         };
+    }
+
+    private static bool ShouldIncludeNuGetDoctor(NuGetPhase10DoctorResult doctorResult)
+    {
+        ArgumentNullException.ThrowIfNull(doctorResult);
+
+        return !doctorResult.ConfigurationPlanValid
+            || doctorResult.PluginLayoutMarkerPresent
+            || doctorResult.OwnershipManifestPresent
+            || doctorResult.NetCorePluginEntrypointPresent
+            || !doctorResult.OptionalEnvironmentOverridesAbsent;
+    }
+
+    private static bool IsGitDoctorSuccess(GitPhase8DoctorResult doctorResult)
+    {
+        ArgumentNullException.ThrowIfNull(doctorResult);
+
+        return doctorResult.ConfigurationPlanValid
+            && doctorResult.OwnedGitEntriesPresent
+            && doctorResult.OwnershipManifestPresent
+            && doctorResult.CredentialCoreSuccess
+            && doctorResult.GitCredentialHelperGetSuccess
+            && doctorResult.GitCredentialHelperStoreSuccess
+            && doctorResult.GitCredentialHelperEraseSuccess
+            && doctorResult.LocalShellHelperShorthandSuccess
+            && doctorResult.DevAzureUseHttpPathPresent;
+    }
+
+    private static bool IsNuGetDoctorSuccess(NuGetPhase10DoctorResult doctorResult)
+    {
+        ArgumentNullException.ThrowIfNull(doctorResult);
+
+        return doctorResult.ConfigurationPlanValid
+            && doctorResult.PluginLayoutMarkerPresent
+            && doctorResult.OwnershipManifestPresent
+            && doctorResult.NetCorePluginEntrypointPresent
+            && doctorResult.PluginModeEntrypointResolvable
+            && doctorResult.AzureArtifactsSourceCanonicalizationSuccess
+            && doctorResult.InteractivePolicyGuidanceSuccess
+            && doctorResult.OptionalEnvironmentOverridesAbsent;
     }
 
     private static string GetPlanStateText(ConfigurationPlanState state)
@@ -1359,6 +1643,8 @@ internal static class CliApplicationCommandNames
 internal sealed record CliRuntimeOptions
 {
     public GitPhase8VerticalSliceOptions? GitPhase8Options { get; init; }
+
+    public NuGetPhase10VerticalSliceOptions? NuGetPhase10Options { get; init; }
 }
 
 internal sealed class CliUsageException : Exception

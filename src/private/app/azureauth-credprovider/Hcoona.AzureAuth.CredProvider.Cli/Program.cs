@@ -1,3 +1,4 @@
+using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
 using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
 
 namespace Hcoona.AzureAuth.CredProvider.Cli;
@@ -6,13 +7,41 @@ internal static class Program
 {
     public static int Main(string[] args)
     {
+        string? invocationPath = GetInvocationPath();
+        if (
+            NuGetPluginAdapter.TryResolveProtocolInvocation(
+                invocationPath ?? "azureauth-credprovider",
+                args,
+                out _)
+        )
+        {
+            return RunNuGetPlugin();
+        }
+
         return CliApplication.Run(
             args,
             StandardConsoleTextWriters.StandardOutput(),
             StandardConsoleTextWriters.StandardError(),
             runtimeOptions: null,
             Console.In,
-            GetInvocationPath());
+            invocationPath);
+    }
+
+    private static int RunNuGetPlugin()
+    {
+        try
+        {
+            return new NuGetPluginAdapter()
+                .RunPluginAsync()
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (Exception)
+        {
+            StandardConsoleTextWriters.StandardError()
+                .WriteLine("error: unexpected fatal failure.");
+            return 70;
+        }
     }
 
     private static string? GetInvocationPath()
