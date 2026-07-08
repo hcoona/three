@@ -5,6 +5,7 @@ requires-python = ">=3.13"
 [manifest]
 members = [
     "azure-document-intelligence-lab",
+    "azureauth-credprovider-keyring",
     "factorio-cycle-calculator",
     "git-commit-heatmap",
     "hcoona-three-monorepo",
@@ -331,6 +332,21 @@ sdist = { url = "https://files.pythonhosted.org/packages/b5/29/1201ffbb6a57a1652
 wheels = [
     { url = "https://files.pythonhosted.org/packages/99/b3/e2d7ab810eb68575a5c7569b03c0228b8f4ce927ffa6211471b526f270c9/azure_identity-1.23.1-py3-none-any.whl", hash = "sha256:7eed28baa0097a47e3fb53bd35a63b769e6b085bb3cb616dfce2b67f28a004a1", size = 186810, upload-time = "2025-07-15T19:16:40.184Z" },
 ]
+
+[[package]]
+name = "azureauth-credprovider-keyring"
+version = "0.0.0.dev0"
+source = { editable = "src/private/app/azureauth-credprovider/python" }
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.3.4" }]
 
 [[package]]
 name = "beautifulsoup4"

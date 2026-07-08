@@ -1,5 +1,6 @@
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
 using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
+using Hcoona.AzureAuth.CredProvider.Platform.Redaction;
 
 namespace Hcoona.AzureAuth.CredProvider.Cli;
 
@@ -16,6 +17,16 @@ internal static class Program
         )
         {
             return RunNuGetPlugin();
+        }
+
+        if (
+            KeyringHelperAdapter.TryResolveProtocolInvocation(
+                invocationPath ?? "azureauth-credprovider",
+                args,
+                out _)
+        )
+        {
+            return RunKeyringHelper(invocationPath, args);
         }
 
         return CliApplication.Run(
@@ -35,6 +46,31 @@ internal static class Program
                 .RunPluginAsync()
                 .GetAwaiter()
                 .GetResult();
+        }
+        catch (Exception)
+        {
+            StandardConsoleTextWriters.StandardError()
+                .WriteLine("error: unexpected fatal failure.");
+            return 70;
+        }
+    }
+
+    private static int RunKeyringHelper(string? invocationPath, string[] args)
+    {
+        try
+        {
+            TextWriter protocolStdout = StandardConsoleTextWriters.StandardOutput();
+            TextWriter stderr = StandardConsoleTextWriters.StandardError();
+            var diagnosticRouter = new DiagnosticRouter(
+                [new TextWriterDiagnosticSink(stderr)],
+                SecretRedactor.Empty);
+            AdapterHostExecutionOutcome outcome = new KeyringHelperAdapter().Execute(
+                invocationPath ?? KeyringHelperAdapter.ProductExecutableName,
+                args,
+                protocolStdout,
+                humanStdout: protocolStdout,
+                diagnosticRouter);
+            return (int)outcome.Result.ExitCode;
         }
         catch (Exception)
         {
