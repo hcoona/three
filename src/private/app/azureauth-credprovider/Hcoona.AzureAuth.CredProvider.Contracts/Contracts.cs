@@ -569,7 +569,8 @@ public static class CanonicalResourceIdentityPolicy
                     && IsSegment(segments[suffixStart + 1], "registry") => FeedEndpointKind.Npm,
             2
                 when IsSegment(segments[suffixStart], "pypi")
-                    && IsSegment(segments[suffixStart + 1], "simple") => FeedEndpointKind.Python,
+                    && IsSupportedPythonFeedEndpointKind(segments[suffixStart + 1]) =>
+                FeedEndpointKind.Python,
             3
                 when IsSegment(segments[suffixStart], "nuget")
                     && IsSegment(segments[suffixStart + 1], "v3")
@@ -595,7 +596,8 @@ public static class CanonicalResourceIdentityPolicy
                     && IsSegment(segments[suffixStart + 1], "registry") => FeedEndpointKind.Npm,
             2
                 when IsSegment(segments[suffixStart], "pypi")
-                    && IsSegment(segments[suffixStart + 1], "simple") => FeedEndpointKind.Python,
+                    && IsSupportedPythonFeedEndpointKind(segments[suffixStart + 1]) =>
+                FeedEndpointKind.Python,
             _ => FeedEndpointKind.Unsupported,
         };
 
@@ -614,6 +616,9 @@ public static class CanonicalResourceIdentityPolicy
                     canonicalComponent,
                     StringComparison.OrdinalIgnoreCase
                 );
+
+    private static bool IsSupportedPythonFeedEndpointKind(string segment) =>
+        IsSegment(segment, "simple") || IsSegment(segment, "upload");
 
     private static bool HasLeadingOrTrailingWhiteSpace(string? value) =>
         value is not null && !string.Equals(value, value.Trim(), StringComparison.Ordinal);

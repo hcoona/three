@@ -262,6 +262,11 @@ public sealed class ContractFreezeTests
     [InlineData(
         CredentialEcosystem.NuGet,
         CredentialKind.NuGetPluginCredential,
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/upload"
+    )]
+    [InlineData(
+        CredentialEcosystem.NuGet,
+        CredentialKind.NuGetPluginCredential,
         "https://pkgs.dev.azure.com/org/_packaging/feed/npm"
     )]
     [InlineData(
@@ -283,6 +288,11 @@ public sealed class ContractFreezeTests
         CredentialEcosystem.Npm,
         CredentialKind.NpmAuthToken,
         "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple"
+    )]
+    [InlineData(
+        CredentialEcosystem.Npm,
+        CredentialKind.NpmAuthToken,
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/upload"
     )]
     [InlineData(
         CredentialEcosystem.Pnpm,
@@ -1237,6 +1247,16 @@ public sealed class ContractFreezeTests
         "proj"
     )]
     [InlineData(
+        "https://dev.azure.com/org/proj/_packaging/feed/pypi/upload/",
+        "dev.azure.com",
+        "proj"
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/upload/",
+        "pkgs.dev.azure.com",
+        null
+    )]
+    [InlineData(
         "https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json",
         "pkgs.dev.azure.com",
         null
@@ -1286,6 +1306,11 @@ public sealed class ContractFreezeTests
     )]
     [InlineData(
         "https://org.visualstudio.com/DefaultCollection/project/_packaging/feed/pypi/simple/",
+        "org.visualstudio.com",
+        "project"
+    )]
+    [InlineData(
+        "https://org.visualstudio.com/DefaultCollection/project/_packaging/feed/pypi/upload/",
         "org.visualstudio.com",
         "project"
     )]
@@ -1370,6 +1395,11 @@ public sealed class ContractFreezeTests
     )]
     [InlineData(
         "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/extra",
+        "pkgs.dev.azure.com",
+        null
+    )]
+    [InlineData(
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/upload/extra",
         "pkgs.dev.azure.com",
         null
     )]

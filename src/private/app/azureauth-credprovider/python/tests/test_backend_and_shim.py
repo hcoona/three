@@ -48,9 +48,13 @@ def test_endpoint_classifies_modern_and_legacy_python_feeds() -> None:
     """Supported Azure Artifacts Python feed URL shapes are accepted."""
     supported = [
         PYTHON_FEED,
+        "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/upload/",
         "https://dev.azure.com/org/project/_packaging/feed/pypi/simple/",
+        "https://dev.azure.com/org/project/_packaging/feed/pypi/upload/",
         "https://org.visualstudio.com/DefaultCollection/project/_packaging/feed/pypi/simple/",
+        "https://org.visualstudio.com/DefaultCollection/project/_packaging/feed/pypi/upload/",
         "https://org.pkgs.visualstudio.com/DefaultCollection/_packaging/feed/pypi/simple/",
+        "https://org.pkgs.visualstudio.com/DefaultCollection/_packaging/feed/pypi/upload/",
     ]
 
     for service in supported:

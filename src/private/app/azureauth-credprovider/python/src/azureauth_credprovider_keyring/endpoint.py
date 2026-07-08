@@ -10,6 +10,7 @@ from urllib.parse import SplitResult, unquote, urlsplit
 DIRECT_FEED_SEGMENT_COUNT = 4
 PROJECT_FEED_SEGMENT_COUNT = 5
 CONTROL_CHARACTER_CATEGORY = "Cc"
+SUPPORTED_PYPI_ENDPOINT_KINDS = {"simple", "upload"}
 
 
 class EndpointStatus(Enum):
@@ -133,7 +134,7 @@ def _parse_python_feed_segments(
         len(segments) == DIRECT_FEED_SEGMENT_COUNT
         and segments[0].lower() == "_packaging"
         and segments[2].lower() == "pypi"
-        and segments[3].lower() == "simple"
+        and segments[3].lower() in SUPPORTED_PYPI_ENDPOINT_KINDS
         and segments[1].strip()
     ):
         return None, segments[1]
@@ -142,7 +143,7 @@ def _parse_python_feed_segments(
         len(segments) == PROJECT_FEED_SEGMENT_COUNT
         and segments[1].lower() == "_packaging"
         and segments[3].lower() == "pypi"
-        and segments[4].lower() == "simple"
+        and segments[4].lower() in SUPPORTED_PYPI_ENDPOINT_KINDS
         and segments[0].strip()
         and segments[2].strip()
     ):

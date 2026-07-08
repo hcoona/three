@@ -71,6 +71,33 @@ public sealed class KeyringHelperAdapterTests
         Assert.Equal("feed", credentialRequest.Resource.Feed);
     }
 
+    [Theory]
+    [InlineData("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/upload/", null)]
+    [InlineData("https://dev.azure.com/org/project/_packaging/feed/pypi/upload/", "project")]
+    [InlineData(
+        "https://org.visualstudio.com/DefaultCollection/project/_packaging/feed/pypi/upload/",
+        "project")]
+    public void UploadEndpointFeedsAreAcceptedForPublishing(string service, string? project)
+    {
+        var provider = new CapturingIdentityProvider();
+        KeyringHelperRequest request = CreateRequest(
+            service,
+            username: null,
+            KeyringHelperMode.Credentials);
+
+        AdapterRunResult result = Execute(
+            KeyringHelperV2.BuildArguments(request).Skip(1).ToArray(),
+            credentialCore: new CredentialCoreService(provider));
+
+        Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
+        Assert.Equal("AzureDevOps\nphase11-secret\n", result.ProtocolStdout);
+
+        CredentialRequest credentialRequest = Assert.Single(provider.Requests);
+        Assert.Equal("org", credentialRequest.Resource.Organization);
+        Assert.Equal(project, credentialRequest.Resource.Project);
+        Assert.Equal("feed", credentialRequest.Resource.Feed);
+    }
+
     [Fact]
     public void SharedHostEntrypointAcceptsFullHelperCommand()
     {

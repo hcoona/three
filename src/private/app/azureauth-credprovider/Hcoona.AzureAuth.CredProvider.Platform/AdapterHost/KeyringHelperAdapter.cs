@@ -362,7 +362,7 @@ public sealed class KeyringHelperAdapter
         if (
             resourceSegments.Length == 4
             && IsSegment(resourceSegments[0], "_packaging")
-            && IsPythonSimpleSuffix(resourceSegments, 2)
+            && IsPythonFeedEndpointSuffix(resourceSegments, 2)
         )
         {
             return new AzureArtifactsPythonResourceShape(
@@ -374,7 +374,7 @@ public sealed class KeyringHelperAdapter
         if (
             resourceSegments.Length == 5
             && IsSegment(resourceSegments[1], "_packaging")
-            && IsPythonSimpleSuffix(resourceSegments, 3)
+            && IsPythonFeedEndpointSuffix(resourceSegments, 3)
         )
         {
             return new AzureArtifactsPythonResourceShape(
@@ -386,9 +386,10 @@ public sealed class KeyringHelperAdapter
         return null;
     }
 
-    private static bool IsPythonSimpleSuffix(string[] segments, int startIndex) =>
+    private static bool IsPythonFeedEndpointSuffix(string[] segments, int startIndex) =>
         IsSegment(segments[startIndex], "pypi")
-        && IsSegment(segments[startIndex + 1], "simple");
+        && (IsSegment(segments[startIndex + 1], "simple")
+            || IsSegment(segments[startIndex + 1], "upload"));
 
     private static bool TryGetPathSegments(Uri uri, [NotNullWhen(true)] out string[]? segments)
     {
