@@ -13,7 +13,7 @@ namespace Hcoona.AzureAuth.CredProvider.Cli;
 internal static class CliApplication
 {
     private const string CommandName = "azureauth-credprovider";
-    private const string PhaseName = "14.1-auth-orchestration";
+    private const string PhaseName = "14.2-configuration-orchestration";
     private const int SuccessExitCode = 0;
     private const int NotImplementedExitCode = 1;
     private const int UsageExitCode = 2;
@@ -24,7 +24,15 @@ internal static class CliApplication
         "credential.https://dev.azure.com.useHttpPath";
     private const string NuGetPluginLayoutConfigurationKey = "physical-target";
 
-    private static readonly string[] SupportedEcosystems = ["git", "nuget", "python", "npm"];
+    private static readonly string[] SupportedEcosystems =
+    [
+        "git",
+        "nuget",
+        "python",
+        "npm",
+        "pnpm",
+        "yarn",
+    ];
     private static readonly HashSet<string> SecretLikeOptionNames = new(StringComparer.Ordinal)
     {
         "--access-token",
@@ -258,11 +266,35 @@ internal static class CliApplication
             return SuccessExitCode;
         }
 
+        if (IsPhase14ConfigurationEcosystem(ecosystem))
+        {
+            ConfigurationPhase14PlanResult configureResult;
+            try
+            {
+                configureResult = CreateConfigurationPhase14VerticalSliceService(runtimeOptions)
+                    .ConfigureAsync(ecosystem, GetConfigurationPhase14Scope(invocation.CiMode))
+                    .AsTask()
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch (Exception exception)
+                when (exception is InvalidOperationException
+                    or NotSupportedException
+                    or ArgumentException)
+            {
+                TryWriteDiagnosticText(stderr, "error: " + exception.Message);
+                return NotImplementedExitCode;
+            }
+
+            WriteText(stdout, BuildConfigurationPhase14Output(invocation, configureResult));
+            return SuccessExitCode;
+        }
+
         if (ecosystem != CredentialEcosystem.Git || invocation.CiMode != CliCiMode.None)
         {
             TryWriteDiagnosticText(
                 stderr,
-                "error: configure without '--dry-run' is not implemented in phase 10.");
+                $"error: configure without '--dry-run' is not implemented in {PhaseName}.");
             return NotImplementedExitCode;
         }
 
@@ -367,11 +399,35 @@ internal static class CliApplication
             return SuccessExitCode;
         }
 
+        if (IsPhase14ConfigurationEcosystem(ecosystem))
+        {
+            ConfigurationPhase14PlanResult unconfigureResult;
+            try
+            {
+                unconfigureResult = CreateConfigurationPhase14VerticalSliceService(runtimeOptions)
+                    .UnconfigureAsync(ecosystem, GetConfigurationPhase14Scope(invocation.CiMode))
+                    .AsTask()
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch (Exception exception)
+                when (exception is InvalidOperationException
+                    or NotSupportedException
+                    or ArgumentException)
+            {
+                TryWriteDiagnosticText(stderr, "error: " + exception.Message);
+                return NotImplementedExitCode;
+            }
+
+            WriteText(stdout, BuildConfigurationPhase14Output(invocation, unconfigureResult));
+            return SuccessExitCode;
+        }
+
         if (ecosystem != CredentialEcosystem.Git || invocation.CiMode != CliCiMode.None)
         {
             TryWriteDiagnosticText(
                 stderr,
-                "error: unconfigure without '--dry-run' is not implemented in phase 10.");
+                $"error: unconfigure without '--dry-run' is not implemented in {PhaseName}.");
             return NotImplementedExitCode;
         }
 
@@ -981,8 +1037,12 @@ internal static class CliApplication
                 CredentialEcosystem.Python,
             { } value when string.Equals(value, "npm", StringComparison.OrdinalIgnoreCase) =>
                 CredentialEcosystem.Npm,
+            { } value when string.Equals(value, "pnpm", StringComparison.OrdinalIgnoreCase) =>
+                CredentialEcosystem.Pnpm,
+            { } value when string.Equals(value, "yarn", StringComparison.OrdinalIgnoreCase) =>
+                CredentialEcosystem.Yarn,
             _ => throw CreateUsageError(
-                "error: ecosystem must be one of: git, nuget, python, npm."),
+                "error: ecosystem must be one of: git, nuget, python, npm, pnpm, yarn."),
         };
     }
 
@@ -1074,12 +1134,12 @@ internal static class CliApplication
             $"  {CommandName} <command> [options]",
             string.Empty,
             "Commands:",
-            "  status                       Show deterministic Phase 14.1 shell status.",
+            "  status                       Show deterministic Phase 14.2 shell status.",
             "  doctor                       Run adapter and auth policy checks.",
             "  login                        Run accepted MVP authentication orchestration.",
             "  logout                       Clear product-owned authentication state.",
-            "  configure <ecosystem>        Git/NuGet --ci none applies; others dry-run.",
-            "  unconfigure <ecosystem>      Git/NuGet --ci none removes; others dry-run.",
+            "  configure <ecosystem>        Apply supported configuration plans.",
+            "  unconfigure <ecosystem>      Remove supported configuration plans.",
             string.Empty,
             "Options:",
             "  -h, --help                   Show help.",
@@ -1118,9 +1178,11 @@ internal static class CliApplication
             "  nuget",
             "  python",
             "  npm",
+            "  pnpm",
+            "  yarn",
             string.Empty,
             "Options:",
-            "  --dry-run                    Optional for git/nuget none; required otherwise.",
+            "  --dry-run                    Render planned actions without mutating files.",
             "  --ci <mode>                  Select CI mode explicitly: none | azure-pipelines.",
             "  -h, --help                   Show help.");
     }
@@ -1226,6 +1288,38 @@ internal static class CliApplication
             "persistent-derived-credentials-removed: "
                 + (logoutResult.PersistentDerivedCredentialsRemoved ? "yes" : "none"),
             "plaintext-fallback: disabled");
+    }
+
+    private static string BuildConfigurationPhase14Output(
+        CliInvocation invocation,
+        ConfigurationPhase14PlanResult result)
+    {
+        string changeCountLabel = invocation.Command == CliCommand.Configure
+            ? "applied-change-count"
+            : "removed-change-count";
+        List<string> lines =
+        [
+            $"command: {invocation.CommandName}",
+            $"ecosystem: {GetEcosystemText(invocation.Ecosystem!.Value)}",
+            $"phase: {PhaseName}",
+            $"ci-mode: {GetCiModeText(invocation.CiMode)}",
+            $"scope: {GetScopeText(invocation.CiMode)}",
+            "mutates-state: yes",
+            $"plan-state: {GetPlanStateText(result.PlanResult.State)}",
+            $"{changeCountLabel}: {result.ChangeCount}",
+            "ownership-manifest: " + GetPresenceText(result.OwnershipManifestPresent),
+            "credential-material: not-printed",
+        ];
+
+        if (result.PlanResult.Plan.TemporaryContainer is { } temporaryContainer)
+        {
+            lines.Add(
+                "temporary-container: "
+                    + temporaryContainer.Kind.ToString().ToLowerInvariant()
+            );
+        }
+
+        return JoinLines(lines);
     }
 
     private static string BuildDryRunOutput(CliInvocation invocation)
@@ -1540,6 +1634,44 @@ internal static class CliApplication
                         "remove product-owned Python keyring backend scaffold",
                         "remove product-owned Python keyring helper scaffold",
                     ],
+            CredentialEcosystem.Pnpm => configure
+                ? ciTemporary
+                    ? [
+                        "prepare temporary Azure Pipelines pnpm auth refresh scaffold",
+                        "prepare temporary pnpm registry credential scaffold",
+                    ]
+                    : [
+                        "register product-owned pnpm auth refresh scaffold",
+                        "register product-owned pnpm registry credential scaffold",
+                    ]
+                : ciTemporary
+                    ? [
+                        "remove temporary Azure Pipelines pnpm auth refresh scaffold",
+                        "remove temporary pnpm registry credential scaffold",
+                    ]
+                    : [
+                        "remove product-owned pnpm auth refresh scaffold",
+                        "remove product-owned pnpm registry credential scaffold",
+                    ],
+            CredentialEcosystem.Yarn => configure
+                ? ciTemporary
+                    ? [
+                        "prepare temporary Azure Pipelines Yarn auth refresh scaffold",
+                        "prepare temporary Yarn registry credential scaffold",
+                    ]
+                    : [
+                        "register product-owned Yarn auth refresh scaffold",
+                        "register product-owned Yarn registry credential scaffold",
+                    ]
+                : ciTemporary
+                    ? [
+                        "remove temporary Azure Pipelines Yarn auth refresh scaffold",
+                        "remove temporary Yarn registry credential scaffold",
+                    ]
+                    : [
+                        "remove product-owned Yarn auth refresh scaffold",
+                        "remove product-owned Yarn registry credential scaffold",
+                    ],
             CredentialEcosystem.Npm => configure
                 ? ciTemporary
                     ? [
@@ -1579,6 +1711,13 @@ internal static class CliApplication
         CliRuntimeOptions? runtimeOptions)
     {
         return new AuthPhase14VerticalSliceService(runtimeOptions?.AuthPhase14Options);
+    }
+
+    private static ConfigurationPhase14VerticalSliceService
+        CreateConfigurationPhase14VerticalSliceService(CliRuntimeOptions? runtimeOptions)
+    {
+        return new ConfigurationPhase14VerticalSliceService(
+            runtimeOptions?.ConfigurationPhase14Options);
     }
 
     private static string GetPlannedActionText(ConfigurationPlannedChange change)
@@ -1715,9 +1854,22 @@ internal static class CliApplication
             CredentialEcosystem.NuGet => "nuget",
             CredentialEcosystem.Python => "python",
             CredentialEcosystem.Npm => "npm",
+            CredentialEcosystem.Pnpm => "pnpm",
+            CredentialEcosystem.Yarn => "yarn",
             _ => throw new InvalidOperationException("Unsupported ecosystem."),
         };
     }
+
+    private static bool IsPhase14ConfigurationEcosystem(CredentialEcosystem ecosystem) =>
+        ecosystem is CredentialEcosystem.Python
+            or CredentialEcosystem.Npm
+            or CredentialEcosystem.Pnpm
+            or CredentialEcosystem.Yarn;
+
+    private static ConfigurationPhase14Scope GetConfigurationPhase14Scope(CliCiMode ciMode) =>
+        ciMode == CliCiMode.AzurePipelines
+            ? ConfigurationPhase14Scope.CiTemporary
+            : ConfigurationPhase14Scope.User;
 
     private static string GetIdentityFlowText(IdentityFlow flow)
     {
@@ -1997,6 +2149,8 @@ internal sealed record CliRuntimeOptions
     public NuGetPhase10VerticalSliceOptions? NuGetPhase10Options { get; init; }
 
     public AuthPhase14VerticalSliceOptions? AuthPhase14Options { get; init; }
+
+    public ConfigurationPhase14VerticalSliceOptions? ConfigurationPhase14Options { get; init; }
 }
 
 internal sealed class CliUsageException : Exception

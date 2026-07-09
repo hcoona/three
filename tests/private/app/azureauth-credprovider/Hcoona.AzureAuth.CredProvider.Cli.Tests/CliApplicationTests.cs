@@ -25,12 +25,12 @@ public sealed class CliApplicationTests
                   azureauth-credprovider <command> [options]
 
                 Commands:
-                  status                       Show deterministic Phase 14.1 shell status.
+                  status                       Show deterministic Phase 14.2 shell status.
                   doctor                       Run adapter and auth policy checks.
                   login                        Run accepted MVP authentication orchestration.
                   logout                       Clear product-owned authentication state.
-                  configure <ecosystem>        Git/NuGet --ci none applies; others dry-run.
-                  unconfigure <ecosystem>      Git/NuGet --ci none removes; others dry-run.
+                  configure <ecosystem>        Apply supported configuration plans.
+                  unconfigure <ecosystem>      Remove supported configuration plans.
 
                 Options:
                   -h, --help                   Show help.
@@ -122,7 +122,7 @@ public sealed class CliApplicationTests
                 """
                 command: status
                 product: azureauth-credprovider
-                phase: 14.1-auth-orchestration
+                phase: 14.2-configuration-orchestration
                 ci-mode: none
                 status-shell: ready
                 environment-probing: disabled
@@ -132,7 +132,7 @@ public sealed class CliApplicationTests
                 deferred-identity-flows: service-principal, managed-identity, workload-identity
                 dry-run-rendering: enabled
                 mutating-commands: git-nuget-auth
-                supported-ecosystems: git, nuget, python, npm
+                supported-ecosystems: git, nuget, python, npm, pnpm, yarn
                 """),
             result.StdOut);
         Assert.Equal(string.Empty, result.StdErr);
@@ -156,7 +156,7 @@ public sealed class CliApplicationTests
                 """
                 command: status
                 product: azureauth-credprovider
-                phase: 14.1-auth-orchestration
+                phase: 14.2-configuration-orchestration
                 ci-mode: azure-pipelines
                 status-shell: ready
                 environment-probing: disabled
@@ -166,7 +166,7 @@ public sealed class CliApplicationTests
                 deferred-identity-flows: service-principal, managed-identity, workload-identity
                 dry-run-rendering: enabled
                 mutating-commands: git-nuget-auth
-                supported-ecosystems: git, nuget, python, npm
+                supported-ecosystems: git, nuget, python, npm, pnpm, yarn
                 """),
             result.StdOut);
         Assert.Equal(string.Empty, result.StdErr);
@@ -192,7 +192,7 @@ public sealed class CliApplicationTests
             Normalize(
                 $$"""
                 command: login
-                phase: 14.1-auth-orchestration
+                phase: 14.2-configuration-orchestration
                 ci-mode: none
                 identity-flow: {{expectedFlow}}
                 status: success
@@ -271,7 +271,7 @@ public sealed class CliApplicationTests
             Normalize(
                 """
                 command: login
-                phase: 14.1-auth-orchestration
+                phase: 14.2-configuration-orchestration
                 ci-mode: azure-pipelines
                 identity-flow: azure-pipelines
                 status: success
@@ -313,7 +313,7 @@ public sealed class CliApplicationTests
             Normalize(
                 """
                 command: logout
-                phase: 14.1-auth-orchestration
+                phase: 14.2-configuration-orchestration
                 ci-mode: none
                 persistent-derived-credentials-removed: none
                 plaintext-fallback: disabled
@@ -751,7 +751,7 @@ public sealed class CliApplicationTests
             CommandResult configureResult = InvokeWithRuntime(runtimeOptions, "configure", "git");
             CommandResult doctorResult = InvokeWithRuntime(runtimeOptions, "doctor");
 
-            Assert.Equal(0, configureResult.ExitCode);
+            Assert.True(configureResult.ExitCode == 0, configureResult.StdErr);
             Assert.Equal(0, doctorResult.ExitCode);
             Assert.Equal(
                 GetExpectedDoctorOutput(
@@ -958,7 +958,7 @@ public sealed class CliApplicationTests
                 "git");
 
             Assert.Equal(0, configureResult.ExitCode);
-            Assert.Equal(0, unconfigureResult.ExitCode);
+            Assert.True(unconfigureResult.ExitCode == 0, unconfigureResult.StdErr);
             Assert.Equal(
                 GetExpectedGitMutationOutput("unconfigure", "applied", 2, false, false),
                 unconfigureResult.StdOut);
@@ -994,7 +994,7 @@ public sealed class CliApplicationTests
 
             Assert.Equal(0, firstConfigure.ExitCode);
             Assert.Equal(0, secondConfigure.ExitCode);
-            Assert.Equal(0, unconfigureResult.ExitCode);
+            Assert.True(unconfigureResult.ExitCode == 0, unconfigureResult.StdErr);
             Assert.Equal(
                 GetExpectedGitMutationOutput("unconfigure", "applied", 2, false, false),
                 unconfigureResult.StdOut);
@@ -2102,25 +2102,80 @@ public sealed class CliApplicationTests
         }
     }
 
-    [Theory]
-    [InlineData(
-        "configure",
-        "python",
-        "error: configure without '--dry-run' is not implemented in phase 10.\n")]
-    [InlineData(
-        "unconfigure",
-        "npm",
-        "error: unconfigure without '--dry-run' is not implemented in phase 10.\n")]
-    public void NonDryRunConfigurationCommandsReturnPhaseStubErrors(
-        string command,
-        string ecosystem,
-        string expectedError)
+    [Fact]
+    public void ConfigureAndUnconfigureNpmUsePhase14ConfigurationPlans()
     {
-        CommandResult result = Invoke(command, ecosystem);
+        string stateDirectory = CreateTestDirectory();
+        try
+        {
+            CliRuntimeOptions runtimeOptions = CreateConfigurationRuntime(stateDirectory);
 
-        Assert.Equal(1, result.ExitCode);
-        Assert.Equal(string.Empty, result.StdOut);
-        Assert.Equal(expectedError, result.StdErr);
+            CommandResult configureResult = InvokeWithRuntime(
+                runtimeOptions,
+                "configure",
+                "npm");
+
+            Assert.Equal(0, configureResult.ExitCode);
+            Assert.Equal(
+                Normalize(
+                    """
+                    command: configure
+                    ecosystem: npm
+                    phase: 14.2-configuration-orchestration
+                    ci-mode: none
+                    scope: user
+                    mutates-state: yes
+                    plan-state: applied
+                    applied-change-count: 1
+                    ownership-manifest: present
+                    credential-material: not-printed
+                    """),
+                configureResult.StdOut);
+            Assert.Equal(string.Empty, configureResult.StdErr);
+            string npmrcPath = Path.Combine(stateDirectory, "npm", "user.npmrc");
+            Assert.True(File.Exists(npmrcPath));
+            Assert.Contains("_authToken=", File.ReadAllText(npmrcPath), StringComparison.Ordinal);
+            Assert.DoesNotContain("fake-token-", configureResult.StdOut, StringComparison.Ordinal);
+
+            CommandResult unconfigureResult = InvokeWithRuntime(
+                runtimeOptions,
+                "unconfigure",
+                "npm");
+
+            Assert.True(unconfigureResult.ExitCode == 0, unconfigureResult.StdErr);
+            Assert.Contains("removed-change-count: 1\n", unconfigureResult.StdOut);
+            Assert.DoesNotContain(
+                "fake-token-",
+                unconfigureResult.StdOut,
+                StringComparison.Ordinal);
+            Assert.Equal(string.Empty, unconfigureResult.StdErr);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void ConfigureYarnReportsAggregatePhase14ConfigurationPlanCount()
+    {
+        string stateDirectory = CreateTestDirectory();
+        try
+        {
+            CommandResult result = InvokeWithRuntime(
+                CreateConfigurationRuntime(stateDirectory),
+                "configure",
+                "yarn");
+
+            Assert.True(result.ExitCode == 0, result.StdErr);
+            Assert.Contains("applied-change-count: 2\n", result.StdOut);
+            Assert.DoesNotContain("fake-token-", result.StdOut, StringComparison.Ordinal);
+            Assert.Equal(string.Empty, result.StdErr);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
     }
 
     [Fact]
@@ -2167,7 +2222,7 @@ public sealed class CliApplicationTests
         Assert.Equal(2, result.ExitCode);
         Assert.Equal(string.Empty, result.StdOut);
         Assert.Equal(
-            "error: ecosystem must be one of: git, nuget, python, npm.\n",
+            "error: ecosystem must be one of: git, nuget, python, npm, pnpm, yarn.\n",
             result.StdErr);
     }
 
@@ -2788,12 +2843,14 @@ public sealed class CliApplicationTests
                       nuget
                       python
                       npm
+                      pnpm
+                      yarn
 
                     Options:
                     """
                     + "\n"
-                    + "  --dry-run                    Optional for git/nuget none; "
-                    + "required otherwise.\n"
+                    + "  --dry-run                    Render planned actions without "
+                    + "mutating files.\n"
                     + "  --ci <mode>                  Select CI mode explicitly: "
                     + "none | azure-pipelines.\n"
                     + """
@@ -2814,12 +2871,14 @@ public sealed class CliApplicationTests
                       nuget
                       python
                       npm
+                      pnpm
+                      yarn
 
                     Options:
                     """
                     + "\n"
-                    + "  --dry-run                    Optional for git/nuget none; "
-                    + "required otherwise.\n"
+                    + "  --dry-run                    Render planned actions without "
+                    + "mutating files.\n"
                     + "  --ci <mode>                  Select CI mode explicitly: "
                     + "none | azure-pipelines.\n"
                     + """
@@ -2889,7 +2948,7 @@ public sealed class CliApplicationTests
         [
             $"command: {command}",
             $"ecosystem: {ecosystem}",
-            "phase: 14.1-auth-orchestration",
+            "phase: 14.2-configuration-orchestration",
             $"ci-mode: {ciMode}",
             $"scope: {GetExpectedScope(ciMode)}",
             "mutates-state: no",
@@ -2911,7 +2970,7 @@ public sealed class CliApplicationTests
             """
             command: configure
             ecosystem: git
-            phase: 14.1-auth-orchestration
+            phase: 14.2-configuration-orchestration
             ci-mode: none
             scope: user
             mutates-state: no
@@ -2931,7 +2990,7 @@ public sealed class CliApplicationTests
             """
             command: configure
             ecosystem: nuget
-            phase: 14.1-auth-orchestration
+            phase: 14.2-configuration-orchestration
             ci-mode: none
             scope: user
             mutates-state: no
@@ -2960,7 +3019,7 @@ public sealed class CliApplicationTests
                 [
                     $"command: {command}",
                     "ecosystem: git",
-                    "phase: 14.1-auth-orchestration",
+                    "phase: 14.2-configuration-orchestration",
                     "ci-mode: none",
                     "scope: user",
                     "mutates-state: yes",
@@ -2985,7 +3044,7 @@ public sealed class CliApplicationTests
                 "\n",
                 [
                     "command: doctor",
-                    "phase: 14.1-auth-orchestration",
+                    "phase: 14.2-configuration-orchestration",
                     $"configuration-plan: {(configurationPlanValid ? "pass" : "fail")}",
                     $"owned-git-entries: {(ownedGitEntriesPresent ? "present" : "absent")}",
                     $"ownership-manifest: {(ownershipManifestPresent ? "present" : "absent")}",
@@ -3043,6 +3102,18 @@ public sealed class CliApplicationTests
             {
                 EnvironmentVariableReader = name =>
                     environment.TryGetValue(name, out string? value) ? value : null,
+            },
+        };
+    }
+
+    private static CliRuntimeOptions CreateConfigurationRuntime(string stateDirectoryPath)
+    {
+        return new CliRuntimeOptions
+        {
+            ConfigurationPhase14Options = new ConfigurationPhase14VerticalSliceOptions
+            {
+                StateDirectoryPath = stateDirectoryPath,
+                EnvironmentVariableReader = _ => null,
             },
         };
     }

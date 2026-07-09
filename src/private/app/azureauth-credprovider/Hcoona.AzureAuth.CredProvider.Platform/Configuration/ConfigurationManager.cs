@@ -7292,6 +7292,17 @@ public sealed class ConfigurationManager : IConfigurationManager
     )
     {
         if (
+            TryDeleteTemporaryContainerFile(
+                fileSystem,
+                containerSnapshot,
+                throwIfUnsafe: true
+            )
+        )
+        {
+            return;
+        }
+
+        if (
             !EnsureSafeTemporaryContainerForCleanup(
                 fileSystem,
                 containerSnapshot,
@@ -7322,6 +7333,17 @@ public sealed class ConfigurationManager : IConfigurationManager
         ContainerRollbackSnapshot containerSnapshot
     )
     {
+        if (
+            TryDeleteTemporaryContainerFile(
+                fileSystem,
+                containerSnapshot,
+                throwIfUnsafe: false
+            )
+        )
+        {
+            return;
+        }
+
         if (
             !EnsureSafeTemporaryContainerForCleanup(
                 fileSystem,
@@ -7390,6 +7412,65 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
 
         fileSystem.DeleteDirectory(containerSnapshot.Path, recursive: true);
+    }
+
+    private static bool TryDeleteTemporaryContainerFile(
+        IFileSystem fileSystem,
+        ContainerRollbackSnapshot containerSnapshot,
+        bool throwIfUnsafe
+    )
+    {
+        try
+        {
+            string currentPath = fileSystem.GetFullPath(containerSnapshot.Path);
+            if (
+                !string.Equals(
+                    Path.TrimEndingDirectorySeparator(containerSnapshot.Path),
+                    Path.TrimEndingDirectorySeparator(currentPath),
+                    GetPathIdentityComparison()
+                )
+            )
+            {
+                throw new NotSupportedException(
+                    "Temporary container cleanup rejects container paths that no longer resolve "
+                        + "to the expected product-owned root."
+                );
+            }
+
+            if (
+                fileSystem.DirectoryExists(containerSnapshot.Path)
+                || !fileSystem.FileExists(containerSnapshot.Path)
+            )
+            {
+                return false;
+            }
+
+            if (!IsSafeFileSystemArtifact(fileSystem, containerSnapshot.Path))
+            {
+                throw new NotSupportedException(
+                    "Temporary container cleanup rejects unsafe file containers."
+                );
+            }
+
+            if (
+                fileSystem is not IFileSystemFileLength fileLength
+                || fileLength.GetFileLength(containerSnapshot.Path) != 0
+            )
+            {
+                return false;
+            }
+
+            fileSystem.DeleteFile(containerSnapshot.Path);
+            return true;
+        }
+        catch (Exception exception)
+            when (!throwIfUnsafe
+                && exception is IOException
+                    or UnauthorizedAccessException
+                    or NotSupportedException)
+        {
+            return false;
+        }
     }
 
     private static void DeleteExistingTemporaryContainerIfOnlyArtifactsRemain(
