@@ -91,6 +91,7 @@ CI_LOW_LEVEL_DESIGN = REPO_ROOT / (
     "workflow-release-ci-affected-validation-low-level-design.md"
 )
 ACCEPTANCE_GATE = REPO_ROOT / "eng/scripts/workflow_release_acceptance_gate.py"
+HK_EXEC_SCRIPT = REPO_ROOT / "eng/scripts/hk_exec.py"
 SCRATCH = REPO_ROOT / ".pytest-workflow-release-control"
 GIT = shutil.which("git")
 SHA_A = "a" * 40
@@ -293,6 +294,12 @@ assert gate_spec is not None
 acceptance_gate = importlib.util.module_from_spec(gate_spec)
 assert gate_spec.loader is not None
 gate_spec.loader.exec_module(acceptance_gate)
+
+hk_exec_spec = importlib.util.spec_from_file_location("hk_exec", HK_EXEC_SCRIPT)
+assert hk_exec_spec is not None
+hk_exec = importlib.util.module_from_spec(hk_exec_spec)
+assert hk_exec_spec.loader is not None
+hk_exec_spec.loader.exec_module(hk_exec)
 
 
 def _load(name: str) -> dict[str, object]:
@@ -5210,6 +5217,21 @@ def test_matrix_outputs_partition_reusable_publish_permission_classes() -> None:
         assert values["has_reusable_external_oidc_publish"] == "false"
     finally:
         shutil.rmtree(SCRATCH, ignore_errors=True)
+
+
+def test_publish_permission_class_requires_exact_github_packages_host() -> None:
+    """GitHub Packages host matching must not accept lookalike suffixes."""
+    plan = deepcopy(_load("release-plan.json"))
+    node_id = "publish-node/nuget"
+    snapshot_id = plan["graph"]["publish-nodes"][node_id][
+        "target-instance-snapshot-id"
+    ]
+    snapshot = plan["graph"]["target-instance-snapshots"][snapshot_id]
+    snapshot["instance-id"] = "github-packages"
+    snapshot["destination"]["host"] = "attackerpkg.github.com"
+
+    with pytest.raises(RuntimeError, match="unsupported reusable publish"):
+        control._publish_permission_class(plan, node_id)
 
 
 def test_matrix_outputs_route_non_dotnet_variants_to_ubuntu() -> None:
@@ -18625,6 +18647,179 @@ def test_dotnet_github_release_route_is_active() -> None:
     assert "dotnet/NuGet workflow path are restored" not in rollout
     assert "floating `*-latest` labels are not allowed" not in design
     assert "`ubuntu-latest`, `macos-latest`, or `windows-latest`" in design
+
+
+def test_release_build_variant_runs_control_from_trusted_checkout() -> None:
+    """Generic variant builds must keep helper execution out of target data."""
+    workflow = _workflow_yaml("release-build-variant.yml")
+    job = workflow["jobs"]["build"]
+    steps = cast("list[dict[str, object]]", job["steps"])
+
+    control_checkout = next(
+        step
+        for step in steps
+        if step.get("name") == "Checkout trusted control-plane"
+    )
+    target_checkout = next(
+        step
+        for step in steps
+        if step.get("name") == "Checkout release target data"
+    )
+    assert cast("dict[str, object]", control_checkout["with"]) == {
+        "ref": "${{ github.workflow_sha }}",
+        "path": ".three-workflow-release/control-plane",
+        "fetch-depth": 1,
+        "persist-credentials": False,
+    }
+    assert cast("dict[str, object]", target_checkout["with"]) == {
+        "ref": "${{ inputs.commit-sha }}",
+        "path": ".three-workflow-release/target",
+        "fetch-depth": 0,
+        "fetch-tags": True,
+        "persist-credentials": False,
+    }
+    pin_step = next(
+        step for step in steps if step.get("name") == "Pin release target data"
+    )
+    assert pin_step["working-directory"] == ".three-workflow-release/target"
+    pin_run = cast("str", pin_step["run"])
+    assert 'git cat-file -t "${RELEASE_TARGET}"' in pin_run
+    assert '"${release_target_type}" != "commit"' in pin_run
+    assert "release target must resolve to a commit object" in pin_run
+    assert 'git cat-file -e "${RELEASE_TARGET}^{commit}"' not in pin_run
+    assert "git checkout --detach" in pin_run
+    assert 'git checkout --detach "${RELEASE_TARGET}"' in pin_run
+    assert "^[0-9a-fA-F]{40}$" in pin_run
+    for step in steps:
+        run = cast("str", step.get("run", ""))
+        if (
+            "workflow_release_control.py" in run
+            or "three-workflow-release-build" in run
+        ):
+            assert (
+                step.get("working-directory")
+                == ".three-workflow-release/control-plane"
+            )
+        if "three-workflow-release-build" in run:
+            assert "${GITHUB_WORKSPACE}/.three-workflow-release/target" in run
+
+
+def test_final_ci_json_rejects_confidential_field_names(tmp_path: Path) -> None:
+    """Final CI evidence helpers must not persist secret-shaped fields."""
+    with pytest.raises(ValueError, match="confidential field"):
+        control._write_final_ci_json(
+            tmp_path / "result.json",
+            {"safe": {"client-secret": "redacted"}},
+        )
+
+
+def test_github_outputs_reject_confidential_output_names(
+    tmp_path: Path,
+) -> None:
+    """GitHub output helpers must reject secret-shaped output names."""
+    with pytest.raises(ValueError, match="confidential GitHub output"):
+        control._write_outputs(
+            str(tmp_path / "outputs.txt"),
+            {"api_key": "redacted"},
+        )
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "clientSecret",
+        "clientsecret",
+        "clientsecretjson",
+        "accessToken",
+        "apikey",
+        "apiToken",
+        "apitoken",
+        "apitokenvalue",
+        "apikeyvalue",
+        "authtoken",
+        "authtokenvalue",
+        "authToken",
+        "bearerToken",
+        "bearertoken",
+        "bearertokenvalue",
+        "deployToken",
+        "deploytoken",
+        "deploytokenfile",
+        "deploytokenvalue",
+        "release-token",
+        "runner_token",
+        "runnertoken",
+        "runnertokenpath",
+        "tokens",
+        "githubtokens",
+        "githubTokens",
+        "githubtoken",
+        "githubtokenvalue",
+        "privateKey",
+        "privatekey",
+        "privatekeyvalue",
+        "githubToken",
+        "idToken",
+        "idtoken",
+        "idtokenvalue",
+        "refreshToken",
+        "refreshtoken",
+        "refreshtokenvalue",
+        "sessionToken",
+        "sessiontoken",
+        "sessiontokenvalue",
+        "clientsecretvalue",
+        "credentialfilepath",
+        "credentialvalue",
+        "githubcredentials",
+        "runnercredentialvalue",
+        "secret_value",
+        "aws_secret_access_key",
+        "secretaccesskey",
+        "secretaccesskeyvalue",
+        "secretjsonpath",
+        "deploysecret",
+        "runnersecretvalue",
+        "secrets",
+        "runnersecrets",
+        "runnerSecrets",
+        "github_token",
+        "runnerpassword",
+        "passwordhash",
+        "passwordhashvalue",
+        "passwordvalue",
+        "runnerpasswordvalue",
+        "passwords",
+        "token",
+        "tokenfilepath",
+        "tokenizeddeploytokenvalue",
+        "tokenValue",
+        "token_value",
+    ],
+)
+def test_confidential_field_detection_covers_common_secret_shapes(
+    field_name: str,
+) -> None:
+    """Public CI field guards must catch common sensitive field spellings."""
+    assert control._is_confidential_field_name(field_name)
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "target-key",
+        "artifact-key",
+        "tokenized_count",
+        "required-enable-token",
+        "credential-posture",
+        "checkpoint",
+    ],
+)
+def test_confidential_field_detection_allows_common_public_evidence_keys(
+    field_name: str,
+) -> None:
+    """Public CI field guards should not reject non-secret evidence names."""
+    assert not control._is_confidential_field_name(field_name)
 
 
 def test_release_build_dotnet_workflow_is_tracked() -> None:
@@ -52528,8 +52723,16 @@ def test_hk_runs_focused_workflow_release_validation() -> None:
     workflow_release_files = re.compile(
         cast("str", workflow_release_hook["files"])
     )
+    workflow_release_entry = cast("str", workflow_release_hook["entry"])
+    workflow_release_entry_args = shlex.split(workflow_release_entry)
 
     assert "workflow-release-control-tests" in hk_config
+    assert "--timeout-seconds 300" in hk_config
+    assert (
+        '["UV_PROJECT_ENVIRONMENT"] = ".venv-workflow-release-control"'
+        in hk_config
+    )
+    assert ".pre-commit-config.yaml" in hk_config
     assert ".github/CODEOWNERS" in hk_config
     assert ".github/actionlint.yaml" in hk_config
     assert ".github/workflows/*.yml" in hk_config
@@ -52547,10 +52750,17 @@ def test_hk_runs_focused_workflow_release_validation() -> None:
     assert "eng/scripts/validate_pypi_remote_digests.sh" in hk_config
     assert "eng/scripts/verify_python_distribution_exactness.py" in hk_config
     assert "eng/scripts/verify_python_artifact_version.py" in hk_config
+    assert "eng/scripts/hk_exec.py" in hk_config
     assert "eng/scripts/workflow_release_control.py" in hk_config
     assert "eng/scripts/workflow_release_acceptance_gate.py" in hk_config
+    assert "hk.pkl" in hk_config
+    assert (
+        "src/private/app/llm-text-splitter/src/"
+        "llm_text_splitter/text_splitter_manager.py" in hk_config
+    )
     assert "src/**/three.release.yml" in hk_config
     assert "src/public/lib/three-workflow-release-*/**" in hk_config
+    assert "tests/test_llm_text_splitter_logging.py" in hk_config
     assert "tests/test_workflow_release_control.py" in hk_config
     assert "tests/test_verify_python_distribution_exactness.py" in hk_config
     assert "tests/fixtures/workflow-release-acceptance-matrix.json" in hk_config
@@ -52564,6 +52774,25 @@ def test_hk_runs_focused_workflow_release_validation() -> None:
     )
     assert "actionlint" in hk_config
     assert "id: workflow-release-control-tests" in pre_commit_config
+    assert r"\.pre-commit-config\.yaml$" in pre_commit_config
+    assert workflow_release_entry_args[:4] == [
+        "python",
+        "eng/scripts/hk_exec.py",
+        "--timeout-seconds",
+        "300",
+    ]
+    assert workflow_release_entry_args[4:] == [
+        "uv",
+        "run",
+        "python",
+        "eng/scripts/workflow_release_acceptance_gate.py",
+    ]
+    timeout_seconds, command_args, option_error = hk_exec.parse_wrapper_options(
+        workflow_release_entry_args[2:],
+    )
+    assert timeout_seconds == 300
+    assert command_args == workflow_release_entry_args[4:]
+    assert option_error is None
     assert r"\.github/CODEOWNERS$" in pre_commit_config
     assert r"\.github/actionlint\.yaml$" in pre_commit_config
     assert r"\.github/workflows/[^/]*\.yml$" in pre_commit_config
@@ -52588,12 +52817,19 @@ def test_hk_runs_focused_workflow_release_validation() -> None:
     assert (
         r"eng/scripts/verify_python_artifact_version\.py$" in pre_commit_config
     )
+    assert r"eng/scripts/hk_exec\.py$" in pre_commit_config
+    assert (
+        "src/private/app/llm-text-splitter/src/"
+        r"llm_text_splitter/text_splitter_manager\.py$" in pre_commit_config
+    )
+    assert r"tests/test_llm_text_splitter_logging\.py$" in pre_commit_config
     assert (
         r"tests/test_verify_python_distribution_exactness\.py$"
         in pre_commit_config
     )
     for helper_path in (
         ".github/workflows/codeql.yml",
+        ".pre-commit-config.yaml",
         ".github/workflows/generated-test.yaml",
         ".github/workflows/docs/DESIGN.v2.md",
         "docs/wiki/analyses/workflow-release-descriptor-schema.md",
@@ -52607,12 +52843,166 @@ def test_hk_runs_focused_workflow_release_validation() -> None:
         "eng/scripts/validate_pypi_remote_digests.sh",
         "eng/scripts/verify_python_distribution_exactness.py",
         "eng/scripts/verify_python_artifact_version.py",
+        "eng/scripts/hk_exec.py",
         "eng/scripts/publish_node_gpr_idempotent.sh",
         "eng/scripts/publish_node_npmjs_idempotent.sh",
         "eng/scripts/release_orchestrate_release_completed_check.sh",
+        "hk.pkl",
+        "src/private/app/llm-text-splitter/src/"
+        "llm_text_splitter/text_splitter_manager.py",
+        "tests/test_llm_text_splitter_logging.py",
         "tests/test_verify_python_distribution_exactness.py",
     ):
         assert workflow_release_files.fullmatch(helper_path)
+
+
+def test_hk_exec_parses_timeout_wrapper_options() -> None:
+    """hk_exec wrapper options must preserve command argv after timeout parsing."""
+    assert hk_exec.parse_wrapper_options(
+        [
+            "--timeout-seconds",
+            "300",
+            "uv",
+            "run",
+            "python",
+            "eng/scripts/workflow_release_acceptance_gate.py",
+        ]
+    ) == (
+        300,
+        [
+            "uv",
+            "run",
+            "python",
+            "eng/scripts/workflow_release_acceptance_gate.py",
+        ],
+        None,
+    )
+    assert hk_exec.parse_wrapper_options(
+        [
+            "--timeout-seconds=240",
+            "python",
+            "-c",
+            "print('ok')",
+        ]
+    ) == (
+        240,
+        [
+            "python",
+            "-c",
+            "print('ok')",
+        ],
+        None,
+    )
+    assert hk_exec.parse_wrapper_options(["uv", "run"]) == (
+        None,
+        ["uv", "run"],
+        None,
+    )
+
+
+def test_hk_exec_timeout_wrapper_option_cli_strips_command_option() -> None:
+    """The hk_exec CLI must not pass wrapper timeout options to the command."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "eng/scripts/hk_exec.py",
+            "--timeout-seconds",
+            "30",
+            "uv",
+            "run",
+            "python",
+            "-c",
+            "print('nested-timeout-ok')",
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        text=True,
+        capture_output=True,
+        timeout=60,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "nested-timeout-ok" in output
+    assert "(timeout=30s)" in output
+    assert "--timeout-seconds 30 uv run" not in output
+    assert "Permission denied: '--timeout-seconds'" not in output
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected_error"),
+    [
+        (
+            ["--timeout-seconds"],
+            "--timeout-seconds requires a value",
+        ),
+        (
+            ["--timeout-seconds", "0", "uv"],
+            "--timeout-seconds must be a positive integer",
+        ),
+        (
+            ["--timeout-seconds=-1", "uv"],
+            "--timeout-seconds must be a positive integer",
+        ),
+        (
+            ["--timeout-seconds=soon", "uv"],
+            "--timeout-seconds must be a positive integer",
+        ),
+    ],
+)
+def test_hk_exec_rejects_invalid_timeout_wrapper_options(
+    argv: list[str],
+    expected_error: str,
+) -> None:
+    """hk_exec must reject malformed timeout wrapper options."""
+    timeout, remaining, error = hk_exec.parse_wrapper_options(argv)
+
+    assert timeout is None
+    assert remaining == []
+    assert error == expected_error
+
+
+def test_acceptance_gate_sanitizes_git_hook_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nested pytest must not inherit Git hook-local repository variables."""
+    dynamic_git_var = "GIT_DYNAMIC_LOCAL_TEST"
+    for name in acceptance_gate.GIT_LOCAL_ENV_VARS | {dynamic_git_var}:
+        monkeypatch.setenv(name, f"{name}-value")
+    monkeypatch.setenv("PATH", os.environ.get("PATH", ""))
+
+    def fake_run(
+        args: Sequence[str],
+        *_args: object,
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        assert args == ["git", "rev-parse", "--local-env-vars"]
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            "\n".join(
+                [
+                    "GIT_CONFIG",
+                    "GIT_CONFIG_PARAMETERS",
+                    "GIT_CONFIG_COUNT",
+                    "GIT_GRAFT_FILE",
+                    "GIT_IMPLICIT_WORK_TREE",
+                    "GIT_NO_REPLACE_OBJECTS",
+                    "GIT_REPLACE_REF_BASE",
+                    "GIT_SHALLOW_FILE",
+                    dynamic_git_var,
+                ],
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(acceptance_gate.subprocess, "run", fake_run)
+
+    env = acceptance_gate._pytest_environment()
+
+    assert "PATH" in env
+    for name in acceptance_gate.GIT_LOCAL_ENV_VARS | {dynamic_git_var}:
+        assert name not in env
 
 
 def test_ci_validate_workflow_passes_actionlint_gate() -> None:

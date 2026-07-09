@@ -79,20 +79,25 @@ async def split_text(
 
         for i in range(attempts_max):
             logger.info(
-                f"Round {i} - Model: {_MODELS[model_index]} - Input: {input_items}"  # noqa: E501, G004
+                "Round %s - Model: %s - Input item count: %s",
+                i,
+                _MODELS[model_index],
+                len(input_items),
             )
 
             text_splitter_run_result = await Runner.run(
                 text_splitter_agent, input=input_items
             )
 
+            segmented_topics = text_splitter_run_result.final_output
             logger.info(
-                f"Round {i} - Model: {_MODELS[model_index]} - Segmentation: {text_splitter_run_result.final_output}"  # noqa: E501, G004
+                "Round %s - Model: %s - Segmentation topic count: %s",
+                i,
+                _MODELS[model_index],
+                len(segmented_topics.topics),
             )
 
-            validation_result = _validate_indices(
-                utterances, text_splitter_run_result.final_output
-            )
+            validation_result = _validate_indices(utterances, segmented_topics)
             if validation_result:
                 input_items.append(
                     {
@@ -101,15 +106,20 @@ async def split_text(
                     }
                 )
                 logger.info(
-                    f"Round {i} - Model: {_MODELS[model_index]} - Validation failed: {validation_result}"  # noqa: E501, G004
+                    "Round %s - Model: %s - Validation failed: %s",
+                    i,
+                    _MODELS[model_index],
+                    validation_result,
                 )
                 continue
 
             input_items = text_splitter_run_result.to_input_list()
-            final_output = text_splitter_run_result.final_output
+            final_output = segmented_topics
 
             logger.info(
-                f"Round {i} - Model: {_MODELS[model_index]} - Message: Evaluating segmentation..."  # noqa: E501, G004
+                "Round %s - Model: %s - Message: Evaluating segmentation...",
+                i,
+                _MODELS[model_index],
             )
 
             evaluation_run_result = await Runner.run(
@@ -117,12 +127,14 @@ async def split_text(
                 input=input_items,
             )
 
-            logger.info(
-                f"Round {i} - Model: {_MODELS[model_index]} - Evaluation result: {evaluation_run_result.final_output}"  # noqa: E501, G004
-            )
-
             evaluation_result: EvaluationResult = (
                 evaluation_run_result.final_output
+            )
+            logger.info(
+                "Round %s - Model: %s - Evaluation score: %s",
+                i,
+                _MODELS[model_index],
+                evaluation_result.score,
             )
             if evaluation_result.score > 0.9:  # noqa: PLR2004
                 good_flag = True

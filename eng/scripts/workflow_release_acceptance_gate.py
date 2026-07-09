@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -13,6 +14,27 @@ MATRIX_PATHS = (
     REPO_ROOT / "tests/fixtures/workflow-release-acceptance-matrix.json",
     REPO_ROOT
     / "tests/fixtures/workflow-release-ci-validation-acceptance-matrix.json",
+)
+GIT_LOCAL_ENV_VARS = frozenset(
+    {
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_COMMON_DIR",
+        "GIT_CONFIG",
+        "GIT_CONFIG_COUNT",
+        "GIT_CONFIG_PARAMETERS",
+        "GIT_DIR",
+        "GIT_GRAFT_FILE",
+        "GIT_IMPLICIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_NAMESPACE",
+        "GIT_NO_REPLACE_OBJECTS",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_PREFIX",
+        "GIT_QUARANTINE_PATH",
+        "GIT_REPLACE_REF_BASE",
+        "GIT_SHALLOW_FILE",
+        "GIT_WORK_TREE",
+    }
 )
 MANDATORY_TEST_NODEIDS = (
     "tests/test_workflow_release_control.py::"
@@ -43,6 +65,20 @@ MANDATORY_TEST_NODEIDS = (
     "test_acceptance_gate_pins_r35_release_planner_regression",
     "tests/test_workflow_release_control.py::"
     "test_acceptance_gate_pins_phase1_dotnet_metadata_cache_regression",
+    "tests/test_workflow_release_control.py::"
+    "test_publish_permission_class_requires_exact_github_packages_host",
+    "tests/test_workflow_release_control.py::"
+    "test_release_build_variant_runs_control_from_trusted_checkout",
+    "tests/test_workflow_release_control.py::"
+    "test_final_ci_json_rejects_confidential_field_names",
+    "tests/test_workflow_release_control.py::"
+    "test_github_outputs_reject_confidential_output_names",
+    "tests/test_workflow_release_control.py::"
+    "test_confidential_field_detection_covers_common_secret_shapes",
+    "tests/test_workflow_release_control.py::"
+    "test_confidential_field_detection_allows_common_public_evidence_keys",
+    "tests/test_llm_text_splitter_logging.py::"
+    "test_split_text_does_not_log_sensitive_input",
     "tests/test_workflow_release_control.py::"
     "test_acceptance_gate_pins_slow_release_evidence_regressions",
     "tests/test_workflow_release_control.py::"
@@ -406,6 +442,14 @@ MANDATORY_TEST_NODEIDS = (
     "tests/test_workflow_release_control.py::"
     "test_hk_runs_focused_workflow_release_validation",
     "tests/test_workflow_release_control.py::"
+    "test_hk_exec_parses_timeout_wrapper_options",
+    "tests/test_workflow_release_control.py::"
+    "test_hk_exec_timeout_wrapper_option_cli_strips_command_option",
+    "tests/test_workflow_release_control.py::"
+    "test_hk_exec_rejects_invalid_timeout_wrapper_options",
+    "tests/test_workflow_release_control.py::"
+    "test_acceptance_gate_sanitizes_git_hook_environment",
+    "tests/test_workflow_release_control.py::"
     "test_ci_validate_workflow_passes_actionlint_gate",
     "tests/test_workflow_release_control.py::"
     "test_acceptance_gate_rejects_option_like_nodeids_and_uses_separator",
@@ -660,6 +704,35 @@ def _pytest_command(nodeids: list[str]) -> list[str]:
     ]
 
 
+def _pytest_environment() -> dict[str, str]:
+    """Build a pytest environment safe for nested Git commands in hooks."""
+    env = os.environ.copy()
+    for name in _git_local_env_vars():
+        env.pop(name, None)
+    return env
+
+
+def _git_local_env_vars() -> frozenset[str]:
+    """Return Git repository-local environment variables to clear."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--local-env-vars"],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return GIT_LOCAL_ENV_VARS
+    if result.returncode != 0:
+        return GIT_LOCAL_ENV_VARS
+    discovered = {
+        line.strip() for line in result.stdout.splitlines() if line.strip()
+    }
+    return GIT_LOCAL_ENV_VARS | discovered
+
+
 def main() -> int:
     """Run the acceptance evidence pytest nodeids."""
     documents = [
@@ -679,6 +752,7 @@ def main() -> int:
     return subprocess.run(
         _pytest_command(nodeids),
         cwd=REPO_ROOT,
+        env=_pytest_environment(),
         check=False,
     ).returncode
 

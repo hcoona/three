@@ -80,6 +80,93 @@ _CI_UPLOADED_PROFILE_EVIDENCE_CLAIM_KEYS = frozenset(
         "binlog-uploaded-evidence-paths",
     }
 )
+_GITHUB_PACKAGES_HOSTS = frozenset(
+    {
+        "npm.pkg.github.com",
+        "nuget.pkg.github.com",
+        "rubygems.pkg.github.com",
+    }
+)
+_CONFIDENTIAL_FIELD_PHRASES = frozenset(
+    {
+        "api-key",
+        "api-token",
+        "apitoken",
+        "apikey",
+        "access-token",
+        "accesstoken",
+        "auth-token",
+        "authtoken",
+        "bearer-token",
+        "bearertoken",
+        "client-secret",
+        "clientsecret",
+        "github-token",
+        "githubtoken",
+        "id-token",
+        "idtoken",
+        "password",
+        "passwords",
+        "private-key",
+        "privatekey",
+        "refresh-token",
+        "refreshtoken",
+        "secret",
+        "secret-access-key",
+        "secretaccesskey",
+        "secrets",
+        "session-token",
+        "sessiontoken",
+        "token",
+        "tokens",
+    }
+)
+_CONFIDENTIAL_COMPACT_FIELD_PHRASES = frozenset(
+    {
+        "apikey",
+        "apitoken",
+        "accesstoken",
+        "authtoken",
+        "bearertoken",
+        "clientsecret",
+        "githubtoken",
+        "idtoken",
+        "privatekey",
+        "refreshtoken",
+        "secretaccesskey",
+        "sessiontoken",
+    }
+)
+_CONFIDENTIAL_COMPACT_FIELD_SUFFIXES = frozenset(
+    {
+        "file",
+        "hash",
+        "id",
+        "json",
+        "key",
+        "path",
+        "value",
+        "values",
+    }
+)
+_PUBLIC_FIELD_NAMES = frozenset(
+    {
+        "credential-posture",
+        "required-enable-token",
+    }
+)
+_CONFIDENTIAL_FIELD_COMPONENTS = frozenset(
+    {
+        "credential",
+        "credentials",
+        "password",
+        "passwords",
+        "secret",
+        "secrets",
+        "token",
+        "tokens",
+    }
+)
 _CI_MSBUILD_BINLOG_ARG_RE = re.compile(
     r"(?i)^(?P<prefix>/bl:|-bl:|/binaryLogger:|-binaryLogger:)"
     r"(?P<payload>.+)$",
@@ -284,7 +371,7 @@ class _CiReleaseShapedBuildError(ValueError):
         super().__init__(message)
 
 
-class _TrustedDependencyBundle(dict[str, object]):
+class _AdmittedDependencyBundle(dict[str, object]):
     def __init__(
         self,
         bundle: Mapping[str, object],
@@ -5339,7 +5426,7 @@ def _ci_trusted_dependency_bundle(
         artifact_instance_id=artifact_instance_id,
         physical_artifact_name=physical_name,
     )
-    return _TrustedDependencyBundle(
+    return _AdmittedDependencyBundle(
         bundle,
         artifact_instance_id=artifact_instance_id,
         admitted_candidate_id=candidate_id,
@@ -11071,8 +11158,117 @@ def _ci_aggregate_manifest_out(args: argparse.Namespace) -> str:
 
 
 def _write_final_ci_json(path: Path, document: object) -> None:
+    public_document = _public_json_document(document)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(canonical_json_bytes(document))
+    path.write_bytes(canonical_json_bytes(public_document))
+
+
+def _public_json_document(document: object) -> object:
+    _reject_confidential_field_names(document)
+    return document
+
+
+def _reject_confidential_field_names(value: object, path: str = "$") -> None:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            key_text = str(key)
+            child_path = f"{path}.{key_text}"
+            if _is_confidential_field_name(key_text):
+                msg = f"refusing to write confidential field {child_path}"
+                raise ValueError(msg)
+            _reject_confidential_field_names(item, child_path)
+        return
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        for index, item in enumerate(value):
+            _reject_confidential_field_names(item, f"{path}[{index}]")
+
+
+def _is_confidential_field_name(name: str) -> bool:
+    parts = _field_name_parts(name)
+    normalized = "-".join(parts)
+    if normalized in _PUBLIC_FIELD_NAMES:
+        return False
+    compact = "".join(parts)
+    phrases = {
+        normalized,
+        *(
+            "-".join(parts[index : index + 2])
+            for index in range(max(len(parts) - 1, 0))
+        ),
+        *(
+            "-".join(parts[index : index + 3])
+            for index in range(max(len(parts) - 2, 0))
+        ),
+        *(
+            "-".join(parts[index : index + 4])
+            for index in range(max(len(parts) - 3, 0))
+        ),
+    }
+    return bool(
+        phrases & _CONFIDENTIAL_FIELD_PHRASES
+        or set(parts) & _CONFIDENTIAL_FIELD_COMPONENTS
+        or _has_confidential_compact_field_phrase(compact)
+    )
+
+
+def _has_confidential_compact_field_phrase(compact: str) -> bool:
+    compact_phrases = (
+        *_CONFIDENTIAL_COMPACT_FIELD_PHRASES,
+        "credential",
+        "credentials",
+        "password",
+        "passwords",
+        "secret",
+        "secrets",
+        "token",
+        "tokens",
+    )
+    for phrase in compact_phrases:
+        start = 0
+        while True:
+            index = compact.find(phrase, start)
+            if index == -1:
+                break
+            suffix = compact[index + len(phrase) :]
+            if _is_confidential_compact_field_suffix(suffix):
+                return True
+            start = index + 1
+    return False
+
+
+def _is_confidential_compact_field_suffix(suffix: str) -> bool:
+    if not suffix:
+        return True
+    remaining = suffix
+    while remaining:
+        next_remaining = None
+        for suffix_token in sorted(
+            _CONFIDENTIAL_COMPACT_FIELD_SUFFIXES,
+            key=len,
+            reverse=True,
+        ):
+            if remaining.startswith(suffix_token):
+                next_remaining = remaining[len(suffix_token) :]
+                break
+        if next_remaining is None:
+            return False
+        remaining = next_remaining
+    return True
+
+
+def _field_name_parts(name: str) -> list[str]:
+    camel_split = re.sub(r"([a-z0-9])([A-Z])", r"\1-\2", name)
+    acronym_split = re.sub(
+        r"([A-Z]+)([A-Z][a-z])",
+        r"\1-\2",
+        camel_split,
+    )
+    normalized = re.sub(
+        r"[^A-Za-z0-9]+",
+        "-",
+        acronym_split,
+    ).casefold()
+    return [part for part in normalized.strip("-").split("-") if part]
 
 
 def _ci_preserve_all_phase_aggregate_manifest_bytes(
@@ -14013,7 +14209,7 @@ def _ci_aggregate_batch_slots(
                 msg = "valid batch bundle candidate is missing artifact instance id"
                 raise RuntimeError(msg)
             admitted_bundles.append(
-                _TrustedDependencyBundle(
+                _AdmittedDependencyBundle(
                     cast("Mapping[str, object]", valid_candidate["bundle"]),
                     artifact_instance_id=artifact_instance_id,
                     admitted_candidate_id=admitted_candidate_id,
@@ -19560,9 +19756,7 @@ def _publish_permission_class(plan: Json, publish_node_id: str) -> str:
     if target.get("family") == "github-release":
         return "github-release"
     destination_host = target.get("destination", {}).get("host", "")
-    if target.get(
-        "instance-id"
-    ) == "github-packages" or destination_host.endswith("pkg.github.com"):
+    if destination_host in _GITHUB_PACKAGES_HOSTS:
         return "github-packages"
     msg = (
         "unsupported reusable publish permission class for "
@@ -29410,11 +29604,17 @@ def _write_json_atomic(path: Path, document: object) -> None:
 def _write_outputs(path: str | None, values: Mapping[str, str]) -> None:
     if not path:
         return
+    for key in values:
+        if _is_confidential_field_name(key):
+            msg = f"refusing to write confidential GitHub output {key!r}"
+            raise ValueError(msg)
     with Path(path).open("a", encoding="utf-8") as handle:
         for key, value in values.items():
             if "\n" in value:
-                token = hashlib.sha256(f"{key}\n{value}".encode()).hexdigest()
-                handle.write(f"{key}<<{token}\n{value}\n{token}\n")
+                delimiter = hashlib.sha256(
+                    f"{key}\n{value}".encode(),
+                ).hexdigest()
+                handle.write(f"{key}<<{delimiter}\n{value}\n{delimiter}\n")
             else:
                 handle.write(f"{key}={value}\n")
 

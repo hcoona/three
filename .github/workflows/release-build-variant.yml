@@ -39,13 +39,41 @@ jobs:
       bundle-artifact-name: ${{ steps.names.outputs.bundle_artifact_name }}
       build-result-artifact-name: ${{ steps.names.outputs.build_result_artifact_name }}
     steps:
-      - name: Check out selected commit
+      - name: Checkout trusted control-plane
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .three-workflow-release/control-plane
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Checkout release target data
         uses: actions/checkout@v7
         with:
           ref: ${{ inputs.commit-sha }}
+          path: .three-workflow-release/target
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
+
+      - name: Pin release target data
+        shell: bash
+        working-directory: .three-workflow-release/target
+        env:
+          RELEASE_TARGET: ${{ inputs.commit-sha }}
+        run: |
+          set -Eeuo pipefail
+          if [[ ! "${RELEASE_TARGET}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "release target must be a 40-character commit SHA" >&2
+            exit 1
+          fi
+
+          release_target_type="$(git cat-file -t "${RELEASE_TARGET}")"
+          if [[ "${release_target_type}" != "commit" ]]; then
+            echo "release target must resolve to a commit object" >&2
+            exit 1
+          fi
+          git checkout --detach "${RELEASE_TARGET}"
 
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
@@ -66,8 +94,10 @@ jobs:
         env:
           RELEASE_VARIANT_ID: ${{ inputs.variant-id }}
         shell: pwsh
+        working-directory: .three-workflow-release/control-plane
         run: |
-          $plan = Get-Content .three-workflow-release/plan/release-plan.json -Raw | ConvertFrom-Json -Depth 100
+          $planPath = Join-Path $env:GITHUB_WORKSPACE '.three-workflow-release/plan/release-plan.json'
+          $plan = Get-Content $planPath -Raw | ConvertFrom-Json -Depth 100
           $variant = $plan.graph.variants.PSObject.Properties[$env:RELEASE_VARIANT_ID].Value
           if ($null -eq $variant) {
             throw "Variant not found in release plan: $env:RELEASE_VARIANT_ID"
@@ -101,12 +131,14 @@ jobs:
           RELEASE_RUN_ID: ${{ inputs.run-id }}
           RELEASE_VARIANT_ID: ${{ inputs.variant-id }}
         shell: bash
+        working-directory: .three-workflow-release/control-plane
         run: |
+          plan_path="${GITHUB_WORKSPACE}/.three-workflow-release/plan/release-plan.json"
           uv run python eng/scripts/workflow_release_control.py artifact-name \
             --kind variant-bundle \
             --run-id "$RELEASE_RUN_ID" \
             --attempt "$RELEASE_RUN_ATTEMPT" \
-            --plan-id "$(jq -r '.envelope["plan-id"]' .three-workflow-release/plan/release-plan.json)" \
+            --plan-id "$(jq -r '.envelope["plan-id"]' "$plan_path")" \
             --variant-id "$RELEASE_VARIANT_ID" \
             --output-name bundle_artifact_name \
             --github-output "$GITHUB_OUTPUT"
@@ -114,7 +146,7 @@ jobs:
             --kind build-result \
             --run-id "$RELEASE_RUN_ID" \
             --attempt "$RELEASE_RUN_ATTEMPT" \
-            --plan-id "$(jq -r '.envelope["plan-id"]' .three-workflow-release/plan/release-plan.json)" \
+            --plan-id "$(jq -r '.envelope["plan-id"]' "$plan_path")" \
             --variant-id "$RELEASE_VARIANT_ID" \
             --output-name build_result_artifact_name \
             --github-output "$GITHUB_OUTPUT"
@@ -123,15 +155,17 @@ jobs:
         env:
           RELEASE_VARIANT_ID: ${{ inputs.variant-id }}
         shell: bash
+        working-directory: .three-workflow-release/control-plane
         run: |
-          mkdir -p .three-workflow-release/build
+          mkdir -p "${GITHUB_WORKSPACE}/.three-workflow-release/build"
           uv run python eng/scripts/workflow_release_control.py build-request \
-            --plan .three-workflow-release/plan/release-plan.json \
+            --plan "${GITHUB_WORKSPACE}/.three-workflow-release/plan/release-plan.json" \
             --variant-id "$RELEASE_VARIANT_ID" \
-            --out .three-workflow-release/build/build-request.json
+            --out "${GITHUB_WORKSPACE}/.three-workflow-release/build/build-request.json"
 
       - name: Restore local .NET tools
         shell: bash
+        working-directory: .three-workflow-release/target
         run: |
           if [ -f .config/dotnet-tools.json ]; then
             dotnet tool restore
@@ -139,20 +173,21 @@ jobs:
 
       - name: Execute build unit
         shell: bash
+        working-directory: .three-workflow-release/control-plane
         run: |
           uv run three-workflow-release-build build \
-            --repo-root . \
-            --request .three-workflow-release/build/build-request.json \
-            --bundle-dir .three-workflow-release/build/bundle \
-            --result-out .three-workflow-release/build/build-result.json \
-            --diagnostics-out .three-workflow-release/build/build-diagnostics.json
+            --repo-root "${GITHUB_WORKSPACE}/.three-workflow-release/target" \
+            --request "${GITHUB_WORKSPACE}/.three-workflow-release/build/build-request.json" \
+            --bundle-dir "${GITHUB_WORKSPACE}/.three-workflow-release/build/bundle" \
+            --result-out "${GITHUB_WORKSPACE}/.three-workflow-release/build/build-result.json" \
+            --diagnostics-out "${GITHUB_WORKSPACE}/.three-workflow-release/build/build-diagnostics.json"
 
       - name: Upload build diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.names.outputs.build_result_artifact_name }}-diagnostics
-          path: .three-workflow-release/build/build-diagnostics.json
+          path: ${{ github.workspace }}/.three-workflow-release/build/build-diagnostics.json
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 30
@@ -161,7 +196,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.names.outputs.bundle_artifact_name }}
-          path: .three-workflow-release/build/bundle
+          path: ${{ github.workspace }}/.three-workflow-release/build/bundle
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
@@ -170,7 +205,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.names.outputs.build_result_artifact_name }}
-          path: .three-workflow-release/build/build-result.json
+          path: ${{ github.workspace }}/.three-workflow-release/build/build-result.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30

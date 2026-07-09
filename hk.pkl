@@ -259,6 +259,7 @@ local python_linters = new Mapping<String, Step> {
 local workflow_release_validation = new Mapping<String, Step> {
   local workflow_release_files =
     List(
+      ".pre-commit-config.yaml",
       ".github/CODEOWNERS",
       ".github/actionlint.yaml",
       ".github/workflows/*.yml",
@@ -276,10 +277,14 @@ local workflow_release_validation = new Mapping<String, Step> {
       "eng/scripts/validate_pypi_remote_digests.sh",
       "eng/scripts/verify_python_distribution_exactness.py",
       "eng/scripts/verify_python_artifact_version.py",
+      "eng/scripts/hk_exec.py",
       "eng/scripts/workflow_release_control.py",
       "eng/scripts/workflow_release_acceptance_gate.py",
+      "hk.pkl",
+      "src/private/app/llm-text-splitter/src/llm_text_splitter/text_splitter_manager.py",
       "src/**/three.release.yml",
       "src/public/lib/three-workflow-release-*/**",
+      "tests/test_llm_text_splitter_logging.py",
       "tests/test_workflow_release_control.py",
       "tests/test_verify_python_distribution_exactness.py",
       "tests/fixtures/workflow-release-acceptance-matrix.json",
@@ -289,8 +294,11 @@ local workflow_release_validation = new Mapping<String, Step> {
   ["workflow-release-control-tests"] {
     profiles = List("small")
     glob = workflow_release_files
+    env {
+      ["UV_PROJECT_ENVIRONMENT"] = ".venv-workflow-release-control"
+    }
     check =
-      "python eng/scripts/hk_exec.py uv run python eng/scripts/workflow_release_acceptance_gate.py"
+      "python eng/scripts/hk_exec.py --timeout-seconds 300 uv run python eng/scripts/workflow_release_acceptance_gate.py"
   }
 }
 
