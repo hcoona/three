@@ -25,8 +25,9 @@ public sealed class CliApplicationTests
                   azureauth-credprovider <command> [options]
 
                 Commands:
-                  status                       Show deterministic Phase 14.2 shell status.
-                  doctor                       Run adapter and auth policy checks.
+                  status                       Show deterministic Phase 14.3 shell status.
+                  doctor                       Run aggregate adapter, config, and auth checks.
+                  cleanup [ecosystem]          Clean product-owned temporary CI state.
                   login                        Run accepted MVP authentication orchestration.
                   logout                       Clear product-owned authentication state.
                   configure <ecosystem>        Apply supported configuration plans.
@@ -41,6 +42,7 @@ public sealed class CliApplicationTests
                   azureauth-credprovider login --ci azure-pipelines
                   azureauth-credprovider status --ci azure-pipelines
                   azureauth-credprovider configure git --dry-run
+                  azureauth-credprovider cleanup --ci azure-pipelines
                   azureauth-credprovider unconfigure npm --dry-run
                 """),
             result.StdOut);
@@ -52,6 +54,7 @@ public sealed class CliApplicationTests
     [InlineData("configure")]
     [InlineData("unconfigure")]
     [InlineData("doctor")]
+    [InlineData("cleanup")]
     [InlineData("login")]
     [InlineData("logout")]
     public void CommandHelpWritesGoldenText(string command)
@@ -68,6 +71,7 @@ public sealed class CliApplicationTests
     [InlineData("configure", "git", "--help", "--bogus")]
     [InlineData("unconfigure", "python", "-h", "unexpected")]
     [InlineData("doctor", null, "--help", "--bogus")]
+    [InlineData("cleanup", "npm", "-h", "unexpected")]
     [InlineData("login", null, "-h", "unexpected")]
     [InlineData("logout", null, "--help", "--bogus")]
     public void HelpShortCircuitsInvalidTrailingTokens(
@@ -122,7 +126,7 @@ public sealed class CliApplicationTests
                 """
                 command: status
                 product: azureauth-credprovider
-                phase: 14.2-configuration-orchestration
+                phase: 14.3-doctor-cleanup
                 ci-mode: none
                 status-shell: ready
                 environment-probing: disabled
@@ -131,7 +135,7 @@ public sealed class CliApplicationTests
                 accepted-identity-flows: browser, device-code, pat, azure-pipelines
                 deferred-identity-flows: service-principal, managed-identity, workload-identity
                 dry-run-rendering: enabled
-                mutating-commands: git-nuget-auth
+                mutating-commands: git-nuget-auth-config-cleanup
                 supported-ecosystems: git, nuget, python, npm, pnpm, yarn
                 """),
             result.StdOut);
@@ -156,7 +160,7 @@ public sealed class CliApplicationTests
                 """
                 command: status
                 product: azureauth-credprovider
-                phase: 14.2-configuration-orchestration
+                phase: 14.3-doctor-cleanup
                 ci-mode: azure-pipelines
                 status-shell: ready
                 environment-probing: disabled
@@ -165,7 +169,7 @@ public sealed class CliApplicationTests
                 accepted-identity-flows: browser, device-code, pat, azure-pipelines
                 deferred-identity-flows: service-principal, managed-identity, workload-identity
                 dry-run-rendering: enabled
-                mutating-commands: git-nuget-auth
+                mutating-commands: git-nuget-auth-config-cleanup
                 supported-ecosystems: git, nuget, python, npm, pnpm, yarn
                 """),
             result.StdOut);
@@ -192,7 +196,7 @@ public sealed class CliApplicationTests
             Normalize(
                 $$"""
                 command: login
-                phase: 14.2-configuration-orchestration
+                phase: 14.3-doctor-cleanup
                 ci-mode: none
                 identity-flow: {{expectedFlow}}
                 status: success
@@ -271,7 +275,7 @@ public sealed class CliApplicationTests
             Normalize(
                 """
                 command: login
-                phase: 14.2-configuration-orchestration
+                phase: 14.3-doctor-cleanup
                 ci-mode: azure-pipelines
                 identity-flow: azure-pipelines
                 status: success
@@ -313,7 +317,7 @@ public sealed class CliApplicationTests
             Normalize(
                 """
                 command: logout
-                phase: 14.2-configuration-orchestration
+                phase: 14.3-doctor-cleanup
                 ci-mode: none
                 persistent-derived-credentials-removed: none
                 plaintext-fallback: disabled
@@ -785,6 +789,7 @@ public sealed class CliApplicationTests
                 ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
             },
             NuGetPhase10Options = CreateIsolatedNuGetPhase10Options(),
+            ConfigurationPhase14Options = CreateConfigurationPhase14Options(stateDirectory),
         };
 
         try
@@ -2121,7 +2126,7 @@ public sealed class CliApplicationTests
                     """
                     command: configure
                     ecosystem: npm
-                    phase: 14.2-configuration-orchestration
+                    phase: 14.3-doctor-cleanup
                     ci-mode: none
                     scope: user
                     mutates-state: yes
@@ -2149,6 +2154,136 @@ public sealed class CliApplicationTests
                 unconfigureResult.StdOut,
                 StringComparison.Ordinal);
             Assert.Equal(string.Empty, unconfigureResult.StdErr);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void CleanupDryRunWritesPhase14CiTemporaryGuidance()
+    {
+        CommandResult result = Invoke(
+            "cleanup",
+            "--dry-run",
+            "--ci",
+            "azure-pipelines");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(
+            Normalize(
+                """
+                command: cleanup
+                ecosystem: all
+                phase: 14.3-doctor-cleanup
+                ci-mode: azure-pipelines
+                scope: ci-temporary
+                mutates-state: no
+                planned-actions:
+                  1. clean product-owned npm, pnpm, and Yarn CI temporary configuration
+                note: dry-run only; no files, credentials, or caches are changed
+                """),
+            result.StdOut);
+        Assert.Equal(string.Empty, result.StdErr);
+    }
+
+    [Fact]
+    public void CleanupNpmCiTemporaryRemovesOwnedConfigurationWithoutPrintingToken()
+    {
+        string stateDirectory = CreateTestDirectory();
+        CliRuntimeOptions runtimeOptions = CreateConfigurationRuntimeWithCiToken(stateDirectory);
+
+        try
+        {
+            CommandResult configureResult = InvokeWithRuntime(
+                runtimeOptions,
+                "configure",
+                "npm",
+                "--ci",
+                "azure-pipelines");
+            string npmrcPath = Path.Combine(stateDirectory, "npm", "ci", "userconfig.npmrc");
+            Assert.Equal(0, configureResult.ExitCode);
+            Assert.True(File.Exists(npmrcPath));
+
+            CommandResult cleanupResult = InvokeWithRuntime(
+                runtimeOptions,
+                "cleanup",
+                "npm",
+                "--ci",
+                "azure-pipelines");
+
+            Assert.Equal(0, cleanupResult.ExitCode);
+            Assert.Equal(
+                Normalize(
+                    """
+                    command: cleanup
+                    ecosystem: npm
+                    phase: 14.3-doctor-cleanup
+                    ci-mode: azure-pipelines
+                    scope: ci-temporary
+                    mutates-state: yes
+                    removed-change-count: 1
+                    persistent-derived-credentials-removed: none
+                    npm-ci-temporary-cleanup: removed
+                    npm-ci-temporary-removed-change-count: 1
+                    npm-ci-temporary-ownership-manifest: absent
+                    npm-ci-temporary-temporary-container: absent
+                    note: credential material is not printed
+                    """),
+                cleanupResult.StdOut);
+            Assert.Equal(string.Empty, cleanupResult.StdErr);
+            Assert.False(File.Exists(npmrcPath));
+            Assert.DoesNotContain("system-token", cleanupResult.StdOut, StringComparison.Ordinal);
+            Assert.DoesNotContain("fake-token-", cleanupResult.StdOut, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void CleanupNpmCiTemporaryRemovesOrphanedKnownTemporaryContainer()
+    {
+        string stateDirectory = CreateTestDirectory();
+        CliRuntimeOptions runtimeOptions = CreateConfigurationRuntime(stateDirectory);
+        string npmrcPath = Path.Combine(stateDirectory, "npm", "ci", "userconfig.npmrc");
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(npmrcPath)!);
+            File.WriteAllText(npmrcPath, "//registry/:_authToken=orphaned-token");
+
+            CommandResult cleanupResult = InvokeWithRuntime(
+                runtimeOptions,
+                "cleanup",
+                "npm",
+                "--ci",
+                "azure-pipelines");
+
+            Assert.Equal(0, cleanupResult.ExitCode);
+            Assert.Equal(
+                Normalize(
+                    """
+                    command: cleanup
+                    ecosystem: npm
+                    phase: 14.3-doctor-cleanup
+                    ci-mode: azure-pipelines
+                    scope: ci-temporary
+                    mutates-state: yes
+                    removed-change-count: 0
+                    persistent-derived-credentials-removed: none
+                    npm-ci-temporary-cleanup: removed
+                    npm-ci-temporary-removed-change-count: 0
+                    npm-ci-temporary-ownership-manifest: absent
+                    npm-ci-temporary-temporary-container: absent
+                    note: credential material is not printed
+                    """),
+                cleanupResult.StdOut);
+            Assert.Equal(string.Empty, cleanupResult.StdErr);
+            Assert.False(File.Exists(npmrcPath));
+            Assert.DoesNotContain("orphaned-token", cleanupResult.StdOut, StringComparison.Ordinal);
         }
         finally
         {
@@ -2891,9 +3026,35 @@ public sealed class CliApplicationTests
                       azureauth-credprovider doctor [--help]
 
                     Status:
-                      Run safe deterministic adapter and Phase 14.1 auth policy checks.
+                      Run safe deterministic cross-ecosystem checks and remediation guidance.
 
                     Options:
+                      -h, --help                   Show help.
+                    """,
+                "cleanup" =>
+                    """
+                    azureauth-credprovider cleanup
+                    Usage:
+                    """
+                    + "\n  azureauth-credprovider cleanup [<ecosystem>|all] [--dry-run] "
+                    + "[--ci <mode>] [--help]\n"
+                    + """
+
+                    Ecosystems:
+                      npm
+                      pnpm
+                      yarn
+
+                    Status:
+                      Clean product-owned CI temporary package configuration.
+                      User-level integration removal stays under unconfigure <ecosystem>.
+
+                    Options:
+                      --dry-run                    Render cleanup actions without mutating files.
+                    """
+                    + "\n  --ci <mode>                  Select CI mode explicitly: "
+                    + "none | azure-pipelines.\n"
+                    + """
                       -h, --help                   Show help.
                     """,
                 "login" =>
@@ -2948,7 +3109,7 @@ public sealed class CliApplicationTests
         [
             $"command: {command}",
             $"ecosystem: {ecosystem}",
-            "phase: 14.2-configuration-orchestration",
+            "phase: 14.3-doctor-cleanup",
             $"ci-mode: {ciMode}",
             $"scope: {GetExpectedScope(ciMode)}",
             "mutates-state: no",
@@ -2970,7 +3131,7 @@ public sealed class CliApplicationTests
             """
             command: configure
             ecosystem: git
-            phase: 14.2-configuration-orchestration
+            phase: 14.3-doctor-cleanup
             ci-mode: none
             scope: user
             mutates-state: no
@@ -2990,7 +3151,7 @@ public sealed class CliApplicationTests
             """
             command: configure
             ecosystem: nuget
-            phase: 14.2-configuration-orchestration
+            phase: 14.3-doctor-cleanup
             ci-mode: none
             scope: user
             mutates-state: no
@@ -3019,7 +3180,7 @@ public sealed class CliApplicationTests
                 [
                     $"command: {command}",
                     "ecosystem: git",
-                    "phase: 14.2-configuration-orchestration",
+                    "phase: 14.3-doctor-cleanup",
                     "ci-mode: none",
                     "scope: user",
                     "mutates-state: yes",
@@ -3044,7 +3205,7 @@ public sealed class CliApplicationTests
                 "\n",
                 [
                     "command: doctor",
-                    "phase: 14.2-configuration-orchestration",
+                    "phase: 14.3-doctor-cleanup",
                     $"configuration-plan: {(configurationPlanValid ? "pass" : "fail")}",
                     $"owned-git-entries: {(ownedGitEntriesPresent ? "present" : "absent")}",
                     $"ownership-manifest: {(ownershipManifestPresent ? "present" : "absent")}",
@@ -3061,6 +3222,36 @@ public sealed class CliApplicationTests
                         + "service-principal, managed-identity, workload-identity",
                     "auth-persistent-derived-credentials: disabled",
                     "auth-plaintext-fallback: disabled",
+                    "nuget-configuration-plan: pass",
+                    "nuget-plugin-layout-marker: absent",
+                    "nuget-ownership-manifest: absent",
+                    "nuget-netcore-plugin-entrypoint: fail",
+                    "nuget-plugin-mode-entrypoint: fail",
+                    "nuget-azure-artifacts-source: pass",
+                    "nuget-interactive-policy: pass",
+                    "nuget-environment-overrides: absent",
+                    "configuration-aggregation: pass",
+                    "npm-user-configuration-plan: pass",
+                    "npm-user-owned-targets: absent",
+                    "npm-user-ownership-manifest: absent",
+                    "npm-user-remediation: azureauth-credprovider configure npm",
+                    "pnpm-user-configuration-plan: pass",
+                    "pnpm-user-owned-targets: absent",
+                    "pnpm-user-ownership-manifest: absent",
+                    "pnpm-user-remediation: azureauth-credprovider configure pnpm",
+                    "python-user-configuration-plan: pass",
+                    "python-user-owned-targets: absent",
+                    "python-user-ownership-manifest: absent",
+                    "python-user-remediation: azureauth-credprovider configure python",
+                    "yarn-user-configuration-plan: pass",
+                    "yarn-user-owned-targets: absent",
+                    "yarn-user-ownership-manifest: absent",
+                    "yarn-user-remediation: azureauth-credprovider configure yarn",
+                    "ci-system-access-token: absent",
+                    "ci-temporary-cleanup-command: "
+                        + "azureauth-credprovider cleanup --ci azure-pipelines",
+                    "ci-guidance: set SYSTEM_ACCESSTOKEN and use --ci azure-pipelines in CI",
+                    "persistent-derived-credential-cache: disabled",
                 ]));
     }
 
@@ -3118,6 +3309,22 @@ public sealed class CliApplicationTests
         };
     }
 
+    private static CliRuntimeOptions CreateConfigurationRuntimeWithCiToken(
+        string stateDirectoryPath)
+    {
+        return new CliRuntimeOptions
+        {
+            ConfigurationPhase14Options = new ConfigurationPhase14VerticalSliceOptions
+            {
+                StateDirectoryPath = stateDirectoryPath,
+                EnvironmentVariableReader = name =>
+                    string.Equals(name, "SYSTEM_ACCESSTOKEN", StringComparison.Ordinal)
+                        ? "system-token"
+                        : null,
+            },
+        };
+    }
+
     private static CommandResult InvokeWithStandardInput(
         string standardInput,
         string executablePath,
@@ -3151,8 +3358,17 @@ public sealed class CliApplicationTests
                 ProductExecutablePath = CreateFakeProductExecutable(stateDirectory),
             },
             NuGetPhase10Options = CreateIsolatedNuGetPhase10Options(),
+            ConfigurationPhase14Options = CreateConfigurationPhase14Options(stateDirectory),
         };
     }
+
+    private static ConfigurationPhase14VerticalSliceOptions CreateConfigurationPhase14Options(
+        string stateDirectoryPath) =>
+        new()
+        {
+            StateDirectoryPath = Path.Combine(stateDirectoryPath, "configuration"),
+            EnvironmentVariableReader = _ => null,
+        };
 
     private static CliRuntimeOptions CreateNuGetPhase10DryRunRuntimeOptions()
     {

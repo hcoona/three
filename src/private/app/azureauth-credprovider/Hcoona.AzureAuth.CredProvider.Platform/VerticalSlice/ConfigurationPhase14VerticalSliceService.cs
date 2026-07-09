@@ -53,6 +53,68 @@ public sealed record ConfigurationPhase14PlanResult
     public int ChangeCount => PlanResults.Sum(static result => result.Changes.Count);
 }
 
+public sealed record ConfigurationPhase14DoctorResult
+{
+    public required ConfigurationPhase14ResolvedPaths Paths { get; init; }
+
+    public required IReadOnlyList<ConfigurationPhase14EcosystemDoctorResult> Ecosystems
+    {
+        get;
+        init;
+    }
+
+    public required bool AzurePipelinesSystemAccessTokenPresent { get; init; }
+
+    public required bool PersistentDerivedCredentialCacheEnabled { get; init; }
+}
+
+public sealed record ConfigurationPhase14EcosystemDoctorResult
+{
+    public required CredentialEcosystem Ecosystem { get; init; }
+
+    public required ConfigurationPhase14Scope Scope { get; init; }
+
+    public required bool ConfigurationPlanValid { get; init; }
+
+    public required bool OwnershipManifestPresent { get; init; }
+
+    public required bool OwnedTargetPresent { get; init; }
+
+    public required bool TemporaryContainerPresent { get; init; }
+}
+
+public sealed record ConfigurationPhase14CleanupResult
+{
+    public required ConfigurationPhase14ResolvedPaths Paths { get; init; }
+
+    public required ConfigurationPhase14Scope Scope { get; init; }
+
+    public required IReadOnlyList<ConfigurationPhase14CleanupEcosystemResult> Ecosystems
+    {
+        get;
+        init;
+    }
+
+    public required bool PersistentDerivedCredentialsRemoved { get; init; }
+
+    public int ChangeCount => Ecosystems.Sum(static result => result.ChangeCount);
+}
+
+public sealed record ConfigurationPhase14CleanupEcosystemResult
+{
+    public required CredentialEcosystem Ecosystem { get; init; }
+
+    public required ConfigurationPhase14Scope Scope { get; init; }
+
+    public required string State { get; init; }
+
+    public required int ChangeCount { get; init; }
+
+    public required bool OwnershipManifestPresent { get; init; }
+
+    public required bool TemporaryContainerPresent { get; init; }
+}
+
 public sealed class ConfigurationPhase14VerticalSliceService
 {
     private const string ProductId = "azureauth-credprovider";
@@ -64,6 +126,9 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private const string AzurePipelinesSystemAccessTokenVariable = "SYSTEM_ACCESSTOKEN";
     private const string NpmUserConfigEnvironmentVariable = "NPM_CONFIG_USERCONFIG";
     private const string LowercaseNpmUserConfigEnvironmentVariable = "npm_config_userconfig";
+    private const string CleanupStateNotNeeded = "not-needed";
+    private const string CleanupStateRemoved = "removed";
+    private const string CleanupStateIncomplete = "incomplete";
 
     private static readonly Uri FakeNpmRegistryUrl = new(
         "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/"
@@ -148,6 +213,80 @@ public sealed class ConfigurationPhase14VerticalSliceService
             ? CreateResult([CreateNoOpPlanResult(ConfigurationPlanOperation.Remove)],
                 ownershipManifestPath)
             : CreateResult(planResults, ownershipManifestPath);
+    }
+
+    public async ValueTask<ConfigurationPhase14DoctorResult> DoctorAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        List<ConfigurationPhase14EcosystemDoctorResult> ecosystemResults = [];
+        foreach (CredentialEcosystem ecosystem in GetSupportedUserEcosystems())
+        {
+            ecosystemResults.Add(await InspectDoctorAsync(
+                ecosystem,
+                ConfigurationPhase14Scope.User,
+                cancellationToken
+            ));
+        }
+
+        foreach (CredentialEcosystem ecosystem in GetSupportedCiTemporaryEcosystems())
+        {
+            if (TemporaryStateExists(ecosystem, ConfigurationPhase14Scope.CiTemporary))
+            {
+                ecosystemResults.Add(await InspectDoctorAsync(
+                    ecosystem,
+                    ConfigurationPhase14Scope.CiTemporary,
+                    cancellationToken
+                ));
+            }
+        }
+
+        return new ConfigurationPhase14DoctorResult
+        {
+            Paths = paths,
+            Ecosystems = ecosystemResults,
+            AzurePipelinesSystemAccessTokenPresent = !string.IsNullOrWhiteSpace(
+                environmentVariableReader(AzurePipelinesSystemAccessTokenVariable)
+            ),
+            PersistentDerivedCredentialCacheEnabled = false,
+        };
+    }
+
+    public async ValueTask<ConfigurationPhase14CleanupResult> CleanupAsync(
+        CredentialEcosystem? ecosystem,
+        ConfigurationPhase14Scope scope,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (scope != ConfigurationPhase14Scope.CiTemporary)
+        {
+            return new ConfigurationPhase14CleanupResult
+            {
+                Paths = paths,
+                Scope = scope,
+                Ecosystems = [],
+                PersistentDerivedCredentialsRemoved = false,
+            };
+        }
+
+        List<ConfigurationPhase14CleanupEcosystemResult> cleanupResults = [];
+        foreach (CredentialEcosystem targetEcosystem in GetCleanupEcosystems(ecosystem))
+        {
+            cleanupResults.Add(await CleanupCiTemporaryEcosystemAsync(
+                targetEcosystem,
+                cancellationToken
+            ));
+        }
+
+        return new ConfigurationPhase14CleanupResult
+        {
+            Paths = paths,
+            Scope = scope,
+            Ecosystems = cleanupResults,
+            PersistentDerivedCredentialsRemoved = false,
+        };
     }
 
     private IReadOnlyList<ConfigurationChangePlan> CreateApplyPlans(
@@ -343,6 +482,326 @@ public sealed class ConfigurationPhase14VerticalSliceService
             _ => throw new NotSupportedException("Unsupported npm-compatible configuration scope."),
         };
     }
+
+    private async ValueTask<ConfigurationPhase14EcosystemDoctorResult> InspectDoctorAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
+        bool ownershipManifestPresent = SafeFileExists(ownershipManifestPath);
+        bool ownedTargetPresent = TryInspectOwnedTargetPresence(
+            ecosystem,
+            scope,
+            ownershipManifestPath
+        );
+        bool temporaryContainerPresent = TemporaryContainerExists(ecosystem, scope);
+        bool configurationPlanValid = ownershipManifestPresent
+            ? await TryValidateRemovalPlanAsync(
+                ecosystem,
+                scope,
+                ownershipManifestPath,
+                cancellationToken
+            )
+            : scope == ConfigurationPhase14Scope.CiTemporary && temporaryContainerPresent
+                ? false
+                : true;
+
+        return new ConfigurationPhase14EcosystemDoctorResult
+        {
+            Ecosystem = ecosystem,
+            Scope = scope,
+            ConfigurationPlanValid = configurationPlanValid,
+            OwnershipManifestPresent = ownershipManifestPresent,
+            OwnedTargetPresent = ownedTargetPresent,
+            TemporaryContainerPresent = temporaryContainerPresent,
+        };
+    }
+
+    private async ValueTask<ConfigurationPhase14CleanupEcosystemResult>
+        CleanupCiTemporaryEcosystemAsync(
+            CredentialEcosystem ecosystem,
+            CancellationToken cancellationToken
+        )
+    {
+        bool temporaryContainerBefore = TemporaryContainerExists(
+            ecosystem,
+            ConfigurationPhase14Scope.CiTemporary
+        );
+        ConfigurationPhase14PlanResult result = await UnconfigureAsync(
+            ecosystem,
+            ConfigurationPhase14Scope.CiTemporary,
+            cancellationToken
+        );
+        bool temporaryContainerAfter = TemporaryContainerExists(
+            ecosystem,
+            ConfigurationPhase14Scope.CiTemporary
+        );
+        if (temporaryContainerBefore && temporaryContainerAfter)
+        {
+            DeleteKnownCiTemporaryContainer(ecosystem);
+            temporaryContainerAfter = TemporaryContainerExists(
+                ecosystem,
+                ConfigurationPhase14Scope.CiTemporary
+            );
+        }
+
+        string state = result.ChangeCount > 0 || temporaryContainerBefore
+            ? temporaryContainerAfter
+                ? CleanupStateIncomplete
+                : CleanupStateRemoved
+            : CleanupStateNotNeeded;
+
+        return new ConfigurationPhase14CleanupEcosystemResult
+        {
+            Ecosystem = ecosystem,
+            Scope = ConfigurationPhase14Scope.CiTemporary,
+            State = state,
+            ChangeCount = result.ChangeCount,
+            OwnershipManifestPresent = result.OwnershipManifestPresent,
+            TemporaryContainerPresent = temporaryContainerAfter,
+        };
+    }
+
+    private void DeleteKnownCiTemporaryContainer(CredentialEcosystem ecosystem)
+    {
+        switch (ecosystem)
+        {
+            case CredentialEcosystem.Npm:
+                fileSystem.DeleteFile(paths.NpmCiTemporaryNpmrcPath);
+                break;
+            case CredentialEcosystem.Pnpm:
+                fileSystem.DeleteFile(paths.PnpmCiTemporaryNpmrcPath);
+                break;
+            case CredentialEcosystem.Yarn:
+                fileSystem.DeleteDirectory(paths.YarnCiTemporaryHomePath, recursive: true);
+                break;
+            default:
+                throw new NotSupportedException(
+                    "Phase 14.3 cleanup supports npm, pnpm, and Yarn CI temporary state."
+                );
+        }
+    }
+
+    private async ValueTask<bool> TryValidateApplyPlanAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
+            foreach (ConfigurationChangePlan plan in CreateApplyPlans(ecosystem, scope))
+            {
+                ConfigurationPlanResult result = await CreateManager(ownershipManifestPath)
+                    .DryRunAsync(
+                        AttachPreviousOwnershipManifestHashIfPresent(
+                            plan,
+                            ownershipManifestPath
+                        ),
+                        cancellationToken
+                    );
+                if (result.State != ConfigurationPlanState.Planned)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        catch (Exception exception)
+            when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private async ValueTask<bool> TryValidateRemovalPlanAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        string ownershipManifestPath,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            if (!TryLoadOwnershipManifest(
+                    ownershipManifestPath,
+                    out ConfigurationOwnershipManifest? manifest,
+                    out string? manifestJson))
+            {
+                return false;
+            }
+
+            foreach (
+                ConfigurationChangePlan plan in CreateRemovePlans(
+                    ecosystem,
+                    scope,
+                    manifest,
+                    manifestJson)
+            )
+            {
+                ConfigurationPlanResult result = await CreateManager(ownershipManifestPath)
+                    .DryRunAsync(
+                        AttachPreviousOwnershipManifestHashIfPresent(
+                            plan,
+                            ownershipManifestPath
+                        ),
+                        cancellationToken
+                    );
+                if (result.State != ConfigurationPlanState.Planned)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        catch (Exception exception)
+            when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private bool TryInspectOwnedTargetPresence(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        string ownershipManifestPath
+    )
+    {
+        try
+        {
+            if (!TryLoadOwnershipManifest(
+                    ownershipManifestPath,
+                    out ConfigurationOwnershipManifest? manifest,
+                    out _))
+            {
+                return false;
+            }
+
+            ConfigurationOwnershipManifestEntry[] entries = manifest
+                .Entries.Where(entry => EntryMatchesEcosystem(entry, ecosystem))
+                .ToArray();
+            return entries.Length > 0
+                && entries.All(entry => ConfigurationTargetExists(entry.TargetPathOrName));
+        }
+        catch (Exception exception)
+            when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private bool ConfigurationTargetExists(string targetPath)
+    {
+        try
+        {
+            return fileSystem.FileExists(targetPath) || fileSystem.DirectoryExists(targetPath);
+        }
+        catch (Exception exception)
+            when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private bool TemporaryStateExists(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope
+    )
+    {
+        return SafeFileExists(GetOwnershipManifestPath(ecosystem, scope))
+            || TemporaryContainerExists(ecosystem, scope);
+    }
+
+    private bool TemporaryContainerExists(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope
+    )
+    {
+        if (scope != ConfigurationPhase14Scope.CiTemporary)
+        {
+            return false;
+        }
+
+        return ecosystem switch
+        {
+            CredentialEcosystem.Npm => SafeFileExists(paths.NpmCiTemporaryNpmrcPath),
+            CredentialEcosystem.Pnpm => SafeFileExists(paths.PnpmCiTemporaryNpmrcPath),
+            CredentialEcosystem.Yarn => SafeDirectoryExists(paths.YarnCiTemporaryHomePath),
+            _ => false,
+        };
+    }
+
+    private bool SafeFileExists(string path)
+    {
+        try
+        {
+            return fileSystem.FileExists(path);
+        }
+        catch (Exception exception)
+            when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private bool SafeDirectoryExists(string path)
+    {
+        try
+        {
+            return fileSystem.DirectoryExists(path);
+        }
+        catch (Exception exception)
+            when (IsExpectedDoctorCheckFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private static IReadOnlyList<CredentialEcosystem> GetSupportedUserEcosystems() =>
+        [
+            CredentialEcosystem.Python,
+            CredentialEcosystem.Npm,
+            CredentialEcosystem.Pnpm,
+            CredentialEcosystem.Yarn,
+        ];
+
+    private static IReadOnlyList<CredentialEcosystem> GetSupportedCiTemporaryEcosystems() =>
+        [
+            CredentialEcosystem.Npm,
+            CredentialEcosystem.Pnpm,
+            CredentialEcosystem.Yarn,
+        ];
+
+    private static IReadOnlyList<CredentialEcosystem> GetCleanupEcosystems(
+        CredentialEcosystem? ecosystem
+    )
+    {
+        if (ecosystem is null)
+        {
+            return GetSupportedCiTemporaryEcosystems();
+        }
+
+        return ecosystem.Value is CredentialEcosystem.Npm
+            or CredentialEcosystem.Pnpm
+            or CredentialEcosystem.Yarn
+            ? [ecosystem.Value]
+            : throw new NotSupportedException(
+                "Phase 14.3 cleanup supports npm, pnpm, and Yarn CI temporary state."
+            );
+    }
+
+    private static bool IsExpectedDoctorCheckFailure(Exception exception) =>
+        exception is IOException
+            or UnauthorizedAccessException
+            or InvalidOperationException
+            or NotSupportedException
+            or ArgumentException;
 
     private static Dictionary<string, string> CreateNpmrcActivationSetVariables(
         string platform,

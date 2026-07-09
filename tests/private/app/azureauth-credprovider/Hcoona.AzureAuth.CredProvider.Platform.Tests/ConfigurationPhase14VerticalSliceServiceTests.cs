@@ -245,6 +245,134 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.False(result.OwnershipManifestPresent);
     }
 
+    [Fact]
+    public async Task DoctorAggregatesUserConfigurationAndCiGuidanceWithoutSecrets()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var service = CreateService(fileSystem);
+
+        await service.ConfigureAsync(
+            CredentialEcosystem.Yarn,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14DoctorResult result = await service.DoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14EcosystemDoctorResult yarn = Assert.Single(
+            result.Ecosystems,
+            ecosystemResult => ecosystemResult.Ecosystem == CredentialEcosystem.Yarn
+                && ecosystemResult.Scope == ConfigurationPhase14Scope.User
+        );
+        Assert.True(yarn.ConfigurationPlanValid);
+        Assert.True(yarn.OwnershipManifestPresent);
+        Assert.True(yarn.OwnedTargetPresent);
+        Assert.False(yarn.TemporaryContainerPresent);
+        Assert.False(result.AzurePipelinesSystemAccessTokenPresent);
+        Assert.False(result.PersistentDerivedCredentialCacheEnabled);
+    }
+
+    [Fact]
+    public async Task CleanupCiTemporaryRemovesAllOwnedPackageContainers()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var service = CreateService(fileSystem, environmentVariableReader: ReadCiEnvironment);
+
+        await service.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+        await service.ConfigureAsync(
+            CredentialEcosystem.Pnpm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+        await service.ConfigureAsync(
+            CredentialEcosystem.Yarn,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14CleanupResult result = await service.CleanupAsync(
+            ecosystem: null,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(3, result.Ecosystems.Count);
+        Assert.Equal(4, result.ChangeCount);
+        Assert.All(result.Ecosystems, cleanupResult =>
+        {
+            Assert.Equal("removed", cleanupResult.State);
+            Assert.False(cleanupResult.OwnershipManifestPresent);
+            Assert.False(cleanupResult.TemporaryContainerPresent);
+        });
+        Assert.False(fileSystem.FileExists(service.Paths.NpmCiTemporaryNpmrcPath));
+        Assert.False(fileSystem.FileExists(service.Paths.PnpmCiTemporaryNpmrcPath));
+        Assert.False(fileSystem.DirectoryExists(service.Paths.YarnCiTemporaryHomePath));
+    }
+
+    [Fact]
+    public async Task CleanupCiTemporaryRemovesOrphanedKnownTemporaryContainer()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var service = CreateService(fileSystem, environmentVariableReader: ReadCiEnvironment);
+        fileSystem.CreateDirectory(Path.GetDirectoryName(service.Paths.NpmCiTemporaryNpmrcPath)!);
+        fileSystem.WriteAllText(
+            service.Paths.NpmCiTemporaryNpmrcPath,
+            "//registry/:_authToken=secret"
+        );
+
+        ConfigurationPhase14CleanupResult result = await service.CleanupAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14CleanupEcosystemResult cleanupResult = Assert.Single(
+            result.Ecosystems
+        );
+        Assert.Equal("removed", cleanupResult.State);
+        Assert.Equal(0, cleanupResult.ChangeCount);
+        Assert.False(cleanupResult.TemporaryContainerPresent);
+        Assert.False(fileSystem.FileExists(service.Paths.NpmCiTemporaryNpmrcPath));
+    }
+
+    [Fact]
+    public async Task CleanupCiTemporaryRemovesYarnHomeWithCiArtifacts()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var service = CreateService(fileSystem, environmentVariableReader: ReadCiEnvironment);
+        await service.ConfigureAsync(
+            CredentialEcosystem.Yarn,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+        string ciArtifactDirectory = Path.Combine(
+            service.Paths.YarnCiTemporaryHomePath,
+            "ci-artifacts"
+        );
+        fileSystem.CreateDirectory(ciArtifactDirectory);
+        fileSystem.WriteAllText(Path.Combine(ciArtifactDirectory, "metadata.txt"), "ci");
+
+        ConfigurationPhase14CleanupResult result = await service.CleanupAsync(
+            CredentialEcosystem.Yarn,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14CleanupEcosystemResult cleanupResult = Assert.Single(
+            result.Ecosystems
+        );
+        Assert.Equal("removed", cleanupResult.State);
+        Assert.True(cleanupResult.ChangeCount > 0);
+        Assert.False(cleanupResult.TemporaryContainerPresent);
+        Assert.False(fileSystem.DirectoryExists(service.Paths.YarnCiTemporaryHomePath));
+    }
+
     private static ConfigurationPhase14VerticalSliceService CreateService(
         InMemoryFileSystem fileSystem,
         IIdentityProvider? identityProvider = null,

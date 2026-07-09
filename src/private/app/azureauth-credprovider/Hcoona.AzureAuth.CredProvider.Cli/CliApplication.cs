@@ -13,7 +13,7 @@ namespace Hcoona.AzureAuth.CredProvider.Cli;
 internal static class CliApplication
 {
     private const string CommandName = "azureauth-credprovider";
-    private const string PhaseName = "14.2-configuration-orchestration";
+    private const string PhaseName = "14.3-doctor-cleanup";
     private const int SuccessExitCode = 0;
     private const int NotImplementedExitCode = 1;
     private const int UsageExitCode = 2;
@@ -115,6 +115,7 @@ internal static class CliApplication
                     stderr,
                     runtimeOptions),
                 CliCommand.Doctor => HandleDoctor(invocation, stdout, runtimeOptions),
+                CliCommand.Cleanup => HandleCleanup(invocation, stdout, stderr, runtimeOptions),
                 CliCommand.Login => HandleLogin(invocation, stdout, stderr, runtimeOptions),
                 CliCommand.Logout => HandleLogout(invocation, stdout),
                 _ => throw new InvalidOperationException("Unsupported CLI command."),
@@ -450,15 +451,61 @@ internal static class CliApplication
             .AsTask()
             .GetAwaiter()
             .GetResult();
-        bool includeNuGetDoctor = ShouldIncludeNuGetDoctor(nuGetDoctorResult);
+        ConfigurationPhase14DoctorResult configurationDoctorResult =
+            CreateConfigurationPhase14VerticalSliceService(runtimeOptions)
+                .DoctorAsync()
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
         WriteText(
             stdout,
             BuildDoctorOutput(
                 invocation,
                 doctorResult,
-                includeNuGetDoctor ? nuGetDoctorResult : null));
+                nuGetDoctorResult,
+                configurationDoctorResult));
         return IsGitDoctorSuccess(doctorResult)
-            && (!includeNuGetDoctor || IsNuGetDoctorSuccess(nuGetDoctorResult))
+            && IsNuGetDoctorSuccess(nuGetDoctorResult)
+            && IsConfigurationPhase14DoctorSuccess(configurationDoctorResult)
+            ? SuccessExitCode
+            : NotImplementedExitCode;
+    }
+
+    private static int HandleCleanup(
+        CliInvocation invocation,
+        TextWriter stdout,
+        TextWriter stderr,
+        CliRuntimeOptions? runtimeOptions)
+    {
+        if (invocation.DryRun)
+        {
+            WriteText(stdout, BuildCleanupDryRunOutput(invocation));
+            return SuccessExitCode;
+        }
+
+        ConfigurationPhase14CleanupResult cleanupResult;
+        try
+        {
+            cleanupResult = CreateConfigurationPhase14VerticalSliceService(runtimeOptions)
+                .CleanupAsync(
+                    invocation.Ecosystem,
+                    GetConfigurationPhase14Scope(invocation.CiMode)
+                )
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (Exception exception)
+            when (exception is InvalidOperationException
+                or NotSupportedException
+                or ArgumentException)
+        {
+            TryWriteDiagnosticText(stderr, "error: " + exception.Message);
+            return NotImplementedExitCode;
+        }
+
+        WriteText(stdout, BuildCleanupOutput(invocation, cleanupResult));
+        return IsConfigurationPhase14CleanupSuccess(cleanupResult)
             ? SuccessExitCode
             : NotImplementedExitCode;
     }
@@ -547,6 +594,7 @@ internal static class CliApplication
         {
             CliCommand.Status => ParseStatus(remainingArgs),
             CliCommand.Doctor => ParseDoctor(remainingArgs),
+            CliCommand.Cleanup => ParseCleanup(remainingArgs),
             CliCommand.Login => ParseLogin(remainingArgs),
             CliCommand.Logout => ParseLogout(remainingArgs),
             CliCommand.Configure => ParseConfigurationCommand(CliCommand.Configure, remainingArgs),
@@ -776,6 +824,75 @@ internal static class CliApplication
             null,
             CliCiMode.None,
             DryRun: false,
+            HelpText: null);
+    }
+
+    private static CliInvocation ParseCleanup(IReadOnlyList<string> args)
+    {
+        if (ContainsStandaloneHelpToken(args))
+        {
+            ThrowIfAnyValuelessOptionHasAssignedValue(args);
+            return CliInvocation.CreateHelp(BuildCleanupHelp());
+        }
+
+        var ciMode = CliCiMode.None;
+        var ciSpecified = false;
+        var dryRun = false;
+        var ecosystemSpecified = false;
+        CredentialEcosystem? ecosystem = null;
+
+        for (var index = 0; index < args.Count; index++)
+        {
+            string token = args[index];
+            ThrowIfValuelessOptionHasAssignedValue(token);
+            if (IsHelpToken(token))
+            {
+                return CliInvocation.CreateHelp(BuildCleanupHelp());
+            }
+
+            if (string.Equals(token, "--dry-run", StringComparison.Ordinal))
+            {
+                dryRun = true;
+                continue;
+            }
+
+            if (ciSpecified && IsCiOptionToken(token))
+            {
+                throw CreateUsageError(
+                    "error: option '--ci' cannot be specified more than once.");
+            }
+
+            if (TryParseCiMode(args, ref index, out CliCiMode parsedCiMode))
+            {
+                ciSpecified = true;
+                ciMode = parsedCiMode;
+                continue;
+            }
+
+            if (IsOptionToken(token))
+            {
+                throw CreateUnknownOptionError(token);
+            }
+
+            if (!ecosystemSpecified)
+            {
+                ecosystemSpecified = true;
+                ecosystem = string.Equals(token, "all", StringComparison.OrdinalIgnoreCase)
+                    ? null
+                    : ParseEcosystem(token);
+                continue;
+            }
+
+            throw CreateUsageError(
+                "error: cleanup accepts at most one <ecosystem> argument. "
+                + $"Run '{CommandName} cleanup --help' for usage.");
+        }
+
+        return new CliInvocation(
+            CliCommand.Cleanup,
+            ecosystem,
+            ciMode,
+            dryRun,
             HelpText: null);
     }
 
@@ -1054,6 +1171,8 @@ internal static class CliApplication
                 CliCommand.Status,
             { } value when string.Equals(value, "doctor", StringComparison.OrdinalIgnoreCase) =>
                 CliCommand.Doctor,
+            { } value when string.Equals(value, "cleanup", StringComparison.OrdinalIgnoreCase) =>
+                CliCommand.Cleanup,
             { } value when string.Equals(value, "login", StringComparison.OrdinalIgnoreCase) =>
                 CliCommand.Login,
             { } value when string.Equals(value, "logout", StringComparison.OrdinalIgnoreCase) =>
@@ -1134,8 +1253,9 @@ internal static class CliApplication
             $"  {CommandName} <command> [options]",
             string.Empty,
             "Commands:",
-            "  status                       Show deterministic Phase 14.2 shell status.",
-            "  doctor                       Run adapter and auth policy checks.",
+            "  status                       Show deterministic Phase 14.3 shell status.",
+            "  doctor                       Run aggregate adapter, config, and auth checks.",
+            "  cleanup [ecosystem]          Clean product-owned temporary CI state.",
             "  login                        Run accepted MVP authentication orchestration.",
             "  logout                       Clear product-owned authentication state.",
             "  configure <ecosystem>        Apply supported configuration plans.",
@@ -1150,6 +1270,7 @@ internal static class CliApplication
             $"  {CommandName} login --ci azure-pipelines",
             $"  {CommandName} status --ci azure-pipelines",
             $"  {CommandName} configure git --dry-run",
+            $"  {CommandName} cleanup --ci azure-pipelines",
             $"  {CommandName} unconfigure npm --dry-run");
     }
 
@@ -1195,9 +1316,31 @@ internal static class CliApplication
             $"  {CommandName} doctor [--help]",
             string.Empty,
             "Status:",
-            "  Run safe deterministic adapter and Phase 14.1 auth policy checks.",
+            "  Run safe deterministic cross-ecosystem checks and remediation guidance.",
             string.Empty,
             "Options:",
+            "  -h, --help                   Show help.");
+    }
+
+    private static string BuildCleanupHelp()
+    {
+        return JoinLines(
+            $"{CommandName} cleanup",
+            "Usage:",
+            $"  {CommandName} cleanup [<ecosystem>|all] [--dry-run] [--ci <mode>] [--help]",
+            string.Empty,
+            "Ecosystems:",
+            "  npm",
+            "  pnpm",
+            "  yarn",
+            string.Empty,
+            "Status:",
+            "  Clean product-owned CI temporary package configuration.",
+            "  User-level integration removal stays under unconfigure <ecosystem>.",
+            string.Empty,
+            "Options:",
+            "  --dry-run                    Render cleanup actions without mutating files.",
+            "  --ci <mode>                  Select CI mode explicitly: none | azure-pipelines.",
             "  -h, --help                   Show help.");
     }
 
@@ -1254,7 +1397,7 @@ internal static class CliApplication
             "accepted-identity-flows: browser, device-code, pat, azure-pipelines",
             "deferred-identity-flows: service-principal, managed-identity, workload-identity",
             "dry-run-rendering: enabled",
-            "mutating-commands: git-nuget-auth",
+            "mutating-commands: git-nuget-auth-config-cleanup",
             $"supported-ecosystems: {string.Join(", ", SupportedEcosystems)}");
     }
 
@@ -1319,6 +1462,86 @@ internal static class CliApplication
             );
         }
 
+        return JoinLines(lines);
+    }
+
+    private static string BuildCleanupDryRunOutput(CliInvocation invocation)
+    {
+        string ecosystemText = invocation.Ecosystem is { } ecosystem
+            ? GetEcosystemText(ecosystem)
+            : "all";
+        List<string> lines =
+        [
+            $"command: {invocation.CommandName}",
+            $"ecosystem: {ecosystemText}",
+            $"phase: {PhaseName}",
+            $"ci-mode: {GetCiModeText(invocation.CiMode)}",
+            $"scope: {GetScopeText(invocation.CiMode)}",
+            "mutates-state: no",
+            "planned-actions:",
+        ];
+
+        if (invocation.CiMode == CliCiMode.AzurePipelines)
+        {
+            lines.Add(
+                invocation.Ecosystem is { } selectedEcosystem
+                    ? "  1. clean product-owned "
+                        + GetEcosystemText(selectedEcosystem)
+                        + " CI temporary configuration"
+                    : "  1. clean product-owned npm, pnpm, and Yarn CI temporary configuration");
+        }
+        else
+        {
+            lines.Add("  1. report persistent derived credential cache cleanup status");
+        }
+
+        lines.Add("note: dry-run only; no files, credentials, or caches are changed");
+        return JoinLines(lines);
+    }
+
+    private static string BuildCleanupOutput(
+        CliInvocation invocation,
+        ConfigurationPhase14CleanupResult cleanupResult)
+    {
+        ArgumentNullException.ThrowIfNull(cleanupResult);
+        string ecosystemText = invocation.Ecosystem is { } ecosystem
+            ? GetEcosystemText(ecosystem)
+            : "all";
+        List<string> lines =
+        [
+            $"command: {invocation.CommandName}",
+            $"ecosystem: {ecosystemText}",
+            $"phase: {PhaseName}",
+            $"ci-mode: {GetCiModeText(invocation.CiMode)}",
+            $"scope: {GetScopeText(invocation.CiMode)}",
+            "mutates-state: "
+                + (cleanupResult.Scope == ConfigurationPhase14Scope.CiTemporary ? "yes" : "no"),
+            $"removed-change-count: {cleanupResult.ChangeCount}",
+            "persistent-derived-credentials-removed: "
+                + (cleanupResult.PersistentDerivedCredentialsRemoved ? "yes" : "none"),
+        ];
+
+        foreach (ConfigurationPhase14CleanupEcosystemResult ecosystemResult in cleanupResult
+            .Ecosystems.OrderBy(static result => GetEcosystemText(result.Ecosystem)))
+        {
+            string prefix = GetConfigurationPhase14CleanupPrefix(ecosystemResult);
+            lines.Add($"{prefix}-cleanup: {ecosystemResult.State}");
+            lines.Add($"{prefix}-removed-change-count: {ecosystemResult.ChangeCount}");
+            lines.Add(
+                $"{prefix}-ownership-manifest: "
+                    + GetPresenceText(ecosystemResult.OwnershipManifestPresent));
+            lines.Add(
+                $"{prefix}-temporary-container: "
+                    + GetPresenceText(ecosystemResult.TemporaryContainerPresent));
+        }
+
+        if (cleanupResult.Ecosystems.Count == 0)
+        {
+            lines.Add("cleanup-state: not-needed");
+            lines.Add("remediation: use unconfigure <ecosystem> to remove user-level integrations");
+        }
+
+        lines.Add("note: credential material is not printed");
         return JoinLines(lines);
     }
 
@@ -1493,9 +1716,12 @@ internal static class CliApplication
     private static string BuildDoctorOutput(
         CliInvocation invocation,
         GitPhase8DoctorResult doctorResult,
-        NuGetPhase10DoctorResult? nuGetDoctorResult)
+        NuGetPhase10DoctorResult nuGetDoctorResult,
+        ConfigurationPhase14DoctorResult configurationDoctorResult)
     {
         ArgumentNullException.ThrowIfNull(doctorResult);
+        ArgumentNullException.ThrowIfNull(nuGetDoctorResult);
+        ArgumentNullException.ThrowIfNull(configurationDoctorResult);
 
         List<string> lines =
         [
@@ -1523,10 +1749,8 @@ internal static class CliApplication
             "auth-plaintext-fallback: disabled",
         ];
 
-        if (nuGetDoctorResult is not null)
-        {
-            lines.AddRange(BuildNuGetDoctorLines(nuGetDoctorResult));
-        }
+        lines.AddRange(BuildNuGetDoctorLines(nuGetDoctorResult));
+        lines.AddRange(BuildConfigurationPhase14DoctorLines(configurationDoctorResult));
 
         return JoinLines(lines);
     }
@@ -1554,6 +1778,61 @@ internal static class CliApplication
             "nuget-environment-overrides: "
                 + (doctorResult.OptionalEnvironmentOverridesAbsent ? "absent" : "present"),
         ];
+    }
+
+    private static List<string> BuildConfigurationPhase14DoctorLines(
+        ConfigurationPhase14DoctorResult doctorResult)
+    {
+        ArgumentNullException.ThrowIfNull(doctorResult);
+        List<string> lines =
+        [
+            "configuration-aggregation: "
+                + GetCheckStatusText(IsConfigurationPhase14DoctorSuccess(doctorResult)),
+        ];
+
+        foreach (
+            ConfigurationPhase14EcosystemDoctorResult ecosystemResult in doctorResult
+                .Ecosystems.OrderBy(static result => GetEcosystemText(result.Ecosystem))
+                .ThenBy(static result => result.Scope)
+        )
+        {
+            string prefix = GetConfigurationPhase14DoctorPrefix(ecosystemResult);
+            lines.Add(
+                $"{prefix}-configuration-plan: "
+                    + GetCheckStatusText(ecosystemResult.ConfigurationPlanValid));
+            lines.Add(
+                $"{prefix}-owned-targets: "
+                    + GetPresenceText(ecosystemResult.OwnedTargetPresent));
+            lines.Add(
+                $"{prefix}-ownership-manifest: "
+                    + GetPresenceText(ecosystemResult.OwnershipManifestPresent));
+            if (ecosystemResult.Scope == ConfigurationPhase14Scope.CiTemporary)
+            {
+                lines.Add(
+                    $"{prefix}-temporary-container: "
+                        + GetPresenceText(ecosystemResult.TemporaryContainerPresent));
+            }
+
+            if (ShouldEmitConfigurationPhase14Remediation(ecosystemResult))
+            {
+                lines.Add(
+                    $"{prefix}-remediation: "
+                        + GetConfigurationPhase14RemediationCommand(ecosystemResult));
+            }
+        }
+
+        lines.Add(
+            "ci-system-access-token: "
+                + GetPresenceText(doctorResult.AzurePipelinesSystemAccessTokenPresent));
+        lines.Add(
+            "ci-temporary-cleanup-command: "
+                + $"{CommandName} cleanup --ci azure-pipelines");
+        lines.Add(
+            "ci-guidance: set SYSTEM_ACCESSTOKEN and use --ci azure-pipelines in CI");
+        lines.Add(
+            "persistent-derived-credential-cache: "
+                + (doctorResult.PersistentDerivedCredentialCacheEnabled ? "enabled" : "disabled"));
+        return lines;
     }
 
     private static string GetLocalShellHelperShorthandStatusText(
@@ -1766,17 +2045,6 @@ internal static class CliApplication
         };
     }
 
-    private static bool ShouldIncludeNuGetDoctor(NuGetPhase10DoctorResult doctorResult)
-    {
-        ArgumentNullException.ThrowIfNull(doctorResult);
-
-        return !doctorResult.ConfigurationPlanValid
-            || doctorResult.PluginLayoutMarkerPresent
-            || doctorResult.OwnershipManifestPresent
-            || doctorResult.NetCorePluginEntrypointPresent
-            || !doctorResult.OptionalEnvironmentOverridesAbsent;
-    }
-
     private static bool IsGitDoctorSuccess(GitPhase8DoctorResult doctorResult)
     {
         ArgumentNullException.ThrowIfNull(doctorResult);
@@ -1797,13 +2065,109 @@ internal static class CliApplication
         ArgumentNullException.ThrowIfNull(doctorResult);
 
         return doctorResult.ConfigurationPlanValid
-            && doctorResult.PluginLayoutMarkerPresent
-            && doctorResult.OwnershipManifestPresent
-            && doctorResult.NetCorePluginEntrypointPresent
-            && doctorResult.PluginModeEntrypointResolvable
             && doctorResult.AzureArtifactsSourceCanonicalizationSuccess
             && doctorResult.InteractivePolicyGuidanceSuccess
-            && doctorResult.OptionalEnvironmentOverridesAbsent;
+            && doctorResult.OptionalEnvironmentOverridesAbsent
+            && (NuGetDoctorStateAbsent(doctorResult)
+                || (doctorResult.PluginLayoutMarkerPresent
+                    && doctorResult.OwnershipManifestPresent
+                    && doctorResult.NetCorePluginEntrypointPresent
+                    && doctorResult.PluginModeEntrypointResolvable));
+    }
+
+    private static bool NuGetDoctorStateAbsent(NuGetPhase10DoctorResult doctorResult) =>
+        !doctorResult.PluginLayoutMarkerPresent
+        && !doctorResult.OwnershipManifestPresent
+        && !doctorResult.NetCorePluginEntrypointPresent;
+
+    private static bool IsConfigurationPhase14DoctorSuccess(
+        ConfigurationPhase14DoctorResult doctorResult)
+    {
+        ArgumentNullException.ThrowIfNull(doctorResult);
+        return doctorResult.Ecosystems
+                .Where(static result => result.Scope == ConfigurationPhase14Scope.User)
+                .All(IsConfigurationPhase14EcosystemDoctorSuccess)
+            && doctorResult.Ecosystems
+                .Where(static result => result.Scope == ConfigurationPhase14Scope.CiTemporary)
+                .All(static result =>
+                    result.ConfigurationPlanValid
+                    && !result.OwnershipManifestPresent
+                    && !result.OwnedTargetPresent
+                    && !result.TemporaryContainerPresent);
+    }
+
+    private static bool IsConfigurationPhase14EcosystemDoctorSuccess(
+        ConfigurationPhase14EcosystemDoctorResult doctorResult)
+    {
+        ArgumentNullException.ThrowIfNull(doctorResult);
+        if (doctorResult.Scope == ConfigurationPhase14Scope.CiTemporary)
+        {
+            return doctorResult.ConfigurationPlanValid
+                && !doctorResult.OwnershipManifestPresent
+                && !doctorResult.OwnedTargetPresent
+                && !doctorResult.TemporaryContainerPresent;
+        }
+
+        return doctorResult.ConfigurationPlanValid
+            && (ConfigurationPhase14DoctorStateAbsent(doctorResult)
+                || (doctorResult.OwnershipManifestPresent && doctorResult.OwnedTargetPresent));
+    }
+
+    private static bool ConfigurationPhase14DoctorStateAbsent(
+        ConfigurationPhase14EcosystemDoctorResult doctorResult) =>
+        !doctorResult.OwnershipManifestPresent && !doctorResult.OwnedTargetPresent;
+
+    private static bool IsConfigurationPhase14CleanupSuccess(
+        ConfigurationPhase14CleanupResult cleanupResult)
+    {
+        ArgumentNullException.ThrowIfNull(cleanupResult);
+        return cleanupResult.Ecosystems.All(static result => !result.TemporaryContainerPresent);
+    }
+
+    private static bool ShouldEmitConfigurationPhase14Remediation(
+        ConfigurationPhase14EcosystemDoctorResult doctorResult)
+    {
+        return !IsConfigurationPhase14EcosystemDoctorSuccess(doctorResult)
+            || (doctorResult.Scope == ConfigurationPhase14Scope.User
+                && ConfigurationPhase14DoctorStateAbsent(doctorResult));
+    }
+
+    private static string GetConfigurationPhase14DoctorPrefix(
+        ConfigurationPhase14EcosystemDoctorResult doctorResult)
+    {
+        return GetEcosystemText(doctorResult.Ecosystem)
+            + "-"
+            + GetConfigurationPhase14ScopeText(doctorResult.Scope);
+    }
+
+    private static string GetConfigurationPhase14CleanupPrefix(
+        ConfigurationPhase14CleanupEcosystemResult cleanupResult)
+    {
+        return GetEcosystemText(cleanupResult.Ecosystem)
+            + "-"
+            + GetConfigurationPhase14ScopeText(cleanupResult.Scope);
+    }
+
+    private static string GetConfigurationPhase14RemediationCommand(
+        ConfigurationPhase14EcosystemDoctorResult doctorResult)
+    {
+        if (doctorResult.Scope == ConfigurationPhase14Scope.CiTemporary)
+        {
+            return $"{CommandName} cleanup {GetEcosystemText(doctorResult.Ecosystem)} "
+                + "--ci azure-pipelines";
+        }
+
+        return $"{CommandName} configure {GetEcosystemText(doctorResult.Ecosystem)}";
+    }
+
+    private static string GetConfigurationPhase14ScopeText(ConfigurationPhase14Scope scope)
+    {
+        return scope switch
+        {
+            ConfigurationPhase14Scope.User => "user",
+            ConfigurationPhase14Scope.CiTemporary => "ci-temporary",
+            _ => throw new InvalidOperationException("Unsupported Phase 14 scope."),
+        };
     }
 
     private static string GetPlanStateText(ConfigurationPlanState state)
@@ -1823,6 +2187,7 @@ internal static class CliApplication
         {
             CliCommand.Status => "status",
             CliCommand.Doctor => "doctor",
+            CliCommand.Cleanup => "cleanup",
             CliCommand.Login => "login",
             CliCommand.Logout => "logout",
             CliCommand.Configure => "configure",
@@ -2112,10 +2477,11 @@ internal enum CliCommand
     Help = 1,
     Status = 2,
     Doctor = 3,
-    Login = 4,
-    Logout = 5,
-    Configure = 6,
-    Unconfigure = 7,
+    Cleanup = 4,
+    Login = 5,
+    Logout = 6,
+    Configure = 7,
+    Unconfigure = 8,
 }
 
 internal enum CliCiMode
@@ -2132,6 +2498,7 @@ internal static class CliApplicationCommandNames
         {
             CliCommand.Status => "status",
             CliCommand.Doctor => "doctor",
+            CliCommand.Cleanup => "cleanup",
             CliCommand.Login => "login",
             CliCommand.Logout => "logout",
             CliCommand.Configure => "configure",
