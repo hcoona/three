@@ -391,7 +391,10 @@ public sealed class NpmPhase12VerticalSliceService
                 registryUrl,
                 CredentialEcosystem.Npm
             )
-            || !TryCreateNpmResourceIdentity(registryUrl, out CanonicalResourceIdentity? resource)
+            || !TryCreateAzureArtifactsNpmResourceIdentity(
+                registryUrl,
+                out CanonicalResourceIdentity? resource
+            )
         )
         {
             return false;
@@ -408,7 +411,7 @@ public sealed class NpmPhase12VerticalSliceService
         return true;
     }
 
-    private static bool TryCreateNpmResourceIdentity(
+    internal static bool TryCreateAzureArtifactsNpmResourceIdentity(
         Uri registryUrl,
         [NotNullWhen(true)] out CanonicalResourceIdentity? resource
     )
@@ -709,7 +712,7 @@ public sealed class NpmPhase12VerticalSliceService
     )
     {
         if (
-            !TryCreateNpmResourceIdentity(
+            !TryCreateAzureArtifactsNpmResourceIdentity(
                 new Uri(registryUrl, UriKind.Absolute),
                 out CanonicalResourceIdentity? resource
             )
