@@ -1,10 +1,12 @@
 using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 using Hcoona.AzureAuth.CredProvider.Platform.Tests.TestDoubles;
 using Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
 using Xunit;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 
+[Collection("ConfigurationManagerExecution")]
 public sealed class NpmPhase12VerticalSliceServiceTests
 {
     [Fact]
@@ -223,6 +225,149 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.Equal("org", declaration.ResourceIdentity.Organization);
         Assert.Equal("project", declaration.ResourceIdentity.Project);
         Assert.Equal("feed", declaration.ResourceIdentity.Feed);
+    }
+
+    [Fact]
+    public void CreateCiTemporaryCredentialPlanDeclaresNpmrcActivationEnvironment()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+
+        ConfigurationChangePlan plan = service.CreateCiTemporaryCredentialPlan(
+            new NpmPhase12CredentialPlanRequest
+            {
+                Declaration = declaration,
+                AuthToken = "short-lived-token",
+                TargetNpmrcPath = "/tmp/azureauth-ci/.npmrc",
+            }
+        );
+
+        ConfigurationChange change = Assert.Single(plan.Changes);
+        Assert.Equal(ConfigurationScope.CiTemporary, plan.Scope);
+        Assert.Equal(
+            ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible,
+            plan.DeclarationPreservation
+        );
+        Assert.Equal("/tmp/azureauth-ci/.npmrc", change.TargetPathOrName);
+        Assert.NotNull(plan.TemporaryContainer);
+        Assert.Equal(ConfigurationTemporaryContainerKind.NpmrcFile, plan.TemporaryContainer.Kind);
+        Assert.Equal("/tmp/azureauth-ci/.npmrc", plan.TemporaryContainer.ProductOwnedPath);
+        Assert.NotNull(plan.TemporaryContainer.ActivationEnvironment);
+        Assert.Equal("posix", plan.TemporaryContainer.ActivationEnvironment.Platform);
+        Assert.Equal(
+            "/tmp/azureauth-ci/.npmrc",
+            plan.TemporaryContainer.ActivationEnvironment.SetVariables["NPM_CONFIG_USERCONFIG"]
+        );
+        Assert.Equal(
+            "/tmp/azureauth-ci/.npmrc",
+            plan.TemporaryContainer.ActivationEnvironment.SetVariables["npm_config_userconfig"]
+        );
+        Assert.Empty(plan.TemporaryContainer.ActivationEnvironment.ClearVariables);
+        Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
+    }
+
+    [Fact]
+    public async Task CiTemporaryCredentialPlanAppliesThroughConfigurationManager()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/tmp/azureauth-ci");
+        CreateDirectory(fileSystem, "/state");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+        ConfigurationChangePlan plan = service.CreateCiTemporaryCredentialPlan(
+            new NpmPhase12CredentialPlanRequest
+            {
+                Declaration = declaration,
+                AuthToken = "short-lived-token",
+                TargetNpmrcPath = "/tmp/azureauth-ci/.npmrc",
+            }
+        );
+        var manager = new ConfigurationManager(
+            fileSystem,
+            "/state/phase12-ci-manifest.json",
+            new ConfigurationPhysicalTargetWriterDispatcher(fileSystem)
+        );
+
+        ConfigurationPlanResult result = await manager.ApplyAsync(
+            plan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Applied, result.State);
+        Assert.Contains(
+            "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken=short-lived-token",
+            fileSystem.ReadAllText("/tmp/azureauth-ci/.npmrc"),
+            StringComparison.Ordinal
+        );
+        Assert.Equal(
+            "registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n",
+            fileSystem.ReadAllText("/workspace/.npmrc")
+        );
+    }
+
+    [Fact]
+    public void CreateCiTemporaryCredentialPlanRejectsUserOnlyRegistryDeclaration()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/home/alice/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateCiTemporaryCredentialPlan(
+                new NpmPhase12CredentialPlanRequest
+                {
+                    Declaration = declaration,
+                    AuthToken = "short-lived-token",
+                    TargetNpmrcPath = "/tmp/azureauth-ci/.npmrc",
+                }
+            )
+        );
+
+        Assert.Contains("registry declaration to remain visible", exception.Message);
     }
 
     private static void CreateDirectory(InMemoryFileSystem fileSystem, string path)

@@ -93,45 +93,86 @@ public sealed class NpmPhase12VerticalSliceService
         NpmPhase12CredentialPlanRequest request
     )
     {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentException.ThrowIfNullOrWhiteSpace(request.AuthToken);
-        if (request.AuthToken.Contains('\r', StringComparison.Ordinal)
-            || request.AuthToken.Contains('\n', StringComparison.Ordinal))
-        {
-            throw new ArgumentException(
-                "The npm auth token must not contain CR or LF.",
-                nameof(request)
-            );
-        }
-
-        if (request.Ecosystem is not CredentialEcosystem.Npm and not CredentialEcosystem.Pnpm)
-        {
-            throw new ArgumentException(
-                "Phase 12 npmrc plans support only npm and pnpm ecosystems.",
-                nameof(request)
-            );
-        }
-
+        ValidateCredentialPlanRequest(request);
         string targetNpmrcPath = fileSystem.GetFullPath(
             NullIfWhiteSpace(request.TargetNpmrcPath) ?? ResolveUserNpmrcPath()
         );
-        string authTokenKey = request.Declaration.AuthSelectors.NpmAuthTokenKey;
-        ConfigurationChange change = new()
+
+        return CreateCredentialPlan(
+            request,
+            targetNpmrcPath,
+            ConfigurationScope.User,
+            temporaryContainer: null,
+            ConfigurationDeclarationPreservation.NotApplicable
+        );
+    }
+
+    public ConfigurationChangePlan CreateCiTemporaryCredentialPlan(
+        NpmPhase12CredentialPlanRequest request
+    )
+    {
+        ValidateCredentialPlanRequest(request);
+        ThrowIfCiTemporaryPlanWouldHideRegistryDeclaration(request.Declaration);
+        string targetNpmrcPath =
+            NullIfWhiteSpace(request.TargetNpmrcPath)
+            ?? throw new ArgumentException(
+                "CI temporary npmrc plans require a product-owned target npmrc path.",
+                nameof(request)
+            );
+        targetNpmrcPath = fileSystem.GetFullPath(targetNpmrcPath);
+        string platform = InferActivationPlatform(targetNpmrcPath);
+        var activationEnvironment = new ConfigurationActivationEnvironment
         {
-            Operation = ConfigurationChangeOperation.Set,
-            TargetKind = ConfigurationTargetKind.Npmrc,
-            TargetPathOrName = targetNpmrcPath,
-            Key = authTokenKey,
-            Value = request.AuthToken,
-            IsSecretValue = true,
-            RequiresOwnershipRecord = true,
+            Platform = platform,
+            SetVariables = CreateNpmrcActivationSetVariables(platform, targetNpmrcPath),
+            ClearVariables = [],
+        };
+        var temporaryContainer = new ConfigurationTemporaryContainer
+        {
+            Kind = ConfigurationTemporaryContainerKind.NpmrcFile,
+            ProductOwnedPath = targetNpmrcPath,
+            ActivationEnvironment = activationEnvironment,
         };
 
+        return CreateCredentialPlan(
+            request,
+            targetNpmrcPath,
+            ConfigurationScope.CiTemporary,
+            temporaryContainer,
+            ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible
+        );
+    }
+
+    private void ThrowIfCiTemporaryPlanWouldHideRegistryDeclaration(
+        NpmPhase12RegistryDeclaration declaration
+    )
+    {
+        string userNpmrcPath = ResolveUserNpmrcPath();
+        if (PathsEqual(declaration.SourcePath, userNpmrcPath))
+        {
+            throw new InvalidOperationException(
+                "CI temporary npmrc auth-only plans require the registry declaration to remain "
+                    + "visible outside the replaced user npmrc. Copying hidden declarations into "
+                    + "temporary npmrc files is a separate Phase 12 follow-up."
+            );
+        }
+    }
+
+    private static ConfigurationChangePlan CreateCredentialPlan(
+        NpmPhase12CredentialPlanRequest request,
+        string targetNpmrcPath,
+        ConfigurationScope scope,
+        ConfigurationTemporaryContainer? temporaryContainer,
+        ConfigurationDeclarationPreservation declarationPreservation
+    )
+    {
+        string authTokenKey = request.Declaration.AuthSelectors.NpmAuthTokenKey;
+        ConfigurationChange change = CreateAuthTokenChange(request, targetNpmrcPath, authTokenKey);
         return ConfigurationChangePlanPolicy.Create(
             ConfigurePlanId,
             ConfigureChangeSetId,
             ProductId,
-            ConfigurationScope.User,
+            scope,
             new ConfigurationManifestMetadata
             {
                 ManifestId = ManifestId,
@@ -146,9 +187,66 @@ public sealed class NpmPhase12VerticalSliceService
                 },
             },
             [change],
+            temporaryContainer: temporaryContainer,
+            declarationPreservation: declarationPreservation,
             containsCredentialMaterial: true
         );
     }
+
+    private static void ValidateCredentialPlanRequest(NpmPhase12CredentialPlanRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.AuthToken);
+        if (
+            request.AuthToken.Contains('\r', StringComparison.Ordinal)
+            || request.AuthToken.Contains('\n', StringComparison.Ordinal)
+        )
+        {
+            throw new ArgumentException(
+                "The npm auth token must not contain CR or LF.",
+                nameof(request)
+            );
+        }
+
+        if (request.Ecosystem is not CredentialEcosystem.Npm and not CredentialEcosystem.Pnpm)
+        {
+            throw new ArgumentException(
+                "Phase 12 npmrc plans support only npm and pnpm ecosystems.",
+                nameof(request)
+            );
+        }
+    }
+
+    private static ConfigurationChange CreateAuthTokenChange(
+        NpmPhase12CredentialPlanRequest request,
+        string targetNpmrcPath,
+        string authTokenKey
+    ) =>
+        new()
+        {
+            Operation = ConfigurationChangeOperation.Set,
+            TargetKind = ConfigurationTargetKind.Npmrc,
+            TargetPathOrName = targetNpmrcPath,
+            Key = authTokenKey,
+            Value = request.AuthToken,
+            IsSecretValue = true,
+            RequiresOwnershipRecord = true,
+        };
+
+    private static Dictionary<string, string> CreateNpmrcActivationSetVariables(
+        string platform,
+        string targetNpmrcPath
+    ) =>
+        string.Equals(platform, "windows", StringComparison.Ordinal)
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [NpmUserConfigEnvironmentVariable] = targetNpmrcPath,
+            }
+            : new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [NpmUserConfigEnvironmentVariable] = targetNpmrcPath,
+                [LowercaseNpmUserConfigEnvironmentVariable] = targetNpmrcPath,
+            };
 
     private NpmPhase12RegistryDeclaration[] ReadRegistryDeclarations(string npmrcPath)
     {
@@ -393,6 +491,31 @@ public sealed class NpmPhase12VerticalSliceService
         throw new InvalidOperationException("User profile directory is unavailable.");
     }
 
+    private static string InferActivationPlatform(string targetNpmrcPath)
+    {
+        if (targetNpmrcPath.StartsWith('/'))
+        {
+            return "posix";
+        }
+
+        if (IsWindowsDrivePath(targetNpmrcPath) || IsWindowsUncPath(targetNpmrcPath))
+        {
+            return "windows";
+        }
+
+        return OperatingSystem.IsWindows() ? "windows" : "posix";
+    }
+
+    private static bool IsWindowsDrivePath(string path) =>
+        path.Length >= 3
+        && path[1] == ':'
+        && (path[2] == '\\' || path[2] == '/')
+        && char.IsAsciiLetter(path[0]);
+
+    private static bool IsWindowsUncPath(string path) =>
+        path.StartsWith(@"\\", StringComparison.Ordinal)
+        || path.StartsWith("//", StringComparison.Ordinal);
+
     private static string[] SplitLines(string contents) =>
         contents.Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n')
@@ -435,6 +558,22 @@ public sealed class NpmPhase12VerticalSliceService
 
     private string? NormalizeOptionalPath(string? path) =>
         NullIfWhiteSpace(path) is { } value ? fileSystem.GetFullPath(value) : null;
+
+    private bool PathsEqual(string left, string right)
+    {
+        string normalizedLeft = fileSystem.GetFullPath(left);
+        string normalizedRight = fileSystem.GetFullPath(right);
+        return string.Equals(
+            normalizedLeft,
+            normalizedRight,
+            IsWindowsLikePath(normalizedLeft) || IsWindowsLikePath(normalizedRight)
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal
+        );
+    }
+
+    private static bool IsWindowsLikePath(string path) =>
+        IsWindowsDrivePath(path) || IsWindowsUncPath(path);
 
     private static string ToContractEcosystemName(CredentialEcosystem ecosystem) =>
         ecosystem switch
