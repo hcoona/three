@@ -15,6 +15,8 @@ public sealed record NpmPhase12VerticalSliceOptions
     public string? UserHomeDirectoryPath { get; init; }
 
     public string? UserNpmrcPath { get; init; }
+
+    public string? CiTemporaryNpmrcPath { get; init; }
 }
 
 public sealed record NpmPhase12RegistryDeclaration
@@ -41,6 +43,41 @@ public sealed record NpmPhase12CredentialPlanRequest
     public string? TargetNpmrcPath { get; init; }
 }
 
+public sealed record NpmPhase12DoctorResult
+{
+    public required string? WorkspaceNpmrcPath { get; init; }
+
+    public required bool WorkspaceNpmrcExists { get; init; }
+
+    public required string EffectiveUserNpmrcPath { get; init; }
+
+    public required bool EffectiveUserNpmrcExists { get; init; }
+
+    public required string CiTemporaryNpmrcPath { get; init; }
+
+    public required bool UppercaseUserConfigEnvironmentOverridePresent { get; init; }
+
+    public required bool LowercaseUserConfigEnvironmentOverridePresent { get; init; }
+
+    public required IReadOnlyList<NpmPhase12RegistryDeclaration> RegistryDeclarations { get; init; }
+
+    public required bool AzureArtifactsNpmEndpointCanonicalizationSuccess { get; init; }
+
+    public required bool NpmUserCredentialPlanValid { get; init; }
+
+    public required bool PnpmUserCredentialPlanValid { get; init; }
+
+    public required bool CiTemporaryCredentialPlanValid { get; init; }
+
+    public bool RegistryDeclarationDiscovered => RegistryDeclarations.Count > 0;
+
+    public bool EffectiveUserConfigEnvironmentOverridePresent =>
+        UppercaseUserConfigEnvironmentOverridePresent
+        || LowercaseUserConfigEnvironmentOverridePresent;
+
+    public bool CiTemporaryAuthOnlyPlanSupported => CiTemporaryCredentialPlanValid;
+}
+
 public sealed class NpmPhase12VerticalSliceService
 {
     private const string ProductId = "azureauth-credprovider";
@@ -57,6 +94,7 @@ public sealed class NpmPhase12VerticalSliceService
     private readonly string? workspaceDirectoryPath;
     private readonly string? userHomeDirectoryPath;
     private readonly string? userNpmrcPath;
+    private readonly string? ciTemporaryNpmrcPath;
 
     public NpmPhase12VerticalSliceService(NpmPhase12VerticalSliceOptions? options = null)
     {
@@ -67,6 +105,7 @@ public sealed class NpmPhase12VerticalSliceService
         workspaceDirectoryPath = NormalizeOptionalPath(options.WorkspaceDirectoryPath);
         userHomeDirectoryPath = NormalizeOptionalPath(options.UserHomeDirectoryPath);
         userNpmrcPath = NormalizeOptionalPath(options.UserNpmrcPath);
+        ciTemporaryNpmrcPath = NormalizeOptionalPath(options.CiTemporaryNpmrcPath);
     }
 
     public IReadOnlyList<NpmPhase12RegistryDeclaration> DiscoverRegistryDeclarations()
@@ -87,6 +126,56 @@ public sealed class NpmPhase12VerticalSliceService
         return fileSystem.FileExists(resolvedUserNpmrcPath)
             ? ReadRegistryDeclarations(resolvedUserNpmrcPath)
             : [];
+    }
+
+    public ValueTask<NpmPhase12DoctorResult> RunDoctorAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        string? workspaceNpmrcPath = GetWorkspaceNpmrcPath();
+        string effectiveUserNpmrcPath = ResolveUserNpmrcPath();
+        string resolvedCiTemporaryNpmrcPath = ResolveCiTemporaryNpmrcPath();
+        IReadOnlyList<NpmPhase12RegistryDeclaration> declarations =
+            DiscoverRegistryDeclarations();
+        NpmPhase12RegistryDeclaration? firstDeclaration =
+            declarations.Count == 0 ? null : declarations[0];
+
+        return ValueTask.FromResult(
+            new NpmPhase12DoctorResult
+            {
+                WorkspaceNpmrcPath = workspaceNpmrcPath,
+                WorkspaceNpmrcExists =
+                    workspaceNpmrcPath is not null && fileSystem.FileExists(workspaceNpmrcPath),
+                EffectiveUserNpmrcPath = effectiveUserNpmrcPath,
+                EffectiveUserNpmrcExists = fileSystem.FileExists(effectiveUserNpmrcPath),
+                CiTemporaryNpmrcPath = resolvedCiTemporaryNpmrcPath,
+                UppercaseUserConfigEnvironmentOverridePresent = NullIfWhiteSpace(
+                    environmentVariableReader(NpmUserConfigEnvironmentVariable)
+                )
+                    is not null,
+                LowercaseUserConfigEnvironmentOverridePresent = NullIfWhiteSpace(
+                    environmentVariableReader(LowercaseNpmUserConfigEnvironmentVariable)
+                )
+                    is not null,
+                RegistryDeclarations = declarations,
+                AzureArtifactsNpmEndpointCanonicalizationSuccess =
+                    CheckAzureArtifactsNpmEndpointCanonicalization(),
+                NpmUserCredentialPlanValid = TryValidateUserCredentialPlan(
+                    firstDeclaration,
+                    CredentialEcosystem.Npm
+                ),
+                PnpmUserCredentialPlanValid = TryValidateUserCredentialPlan(
+                    firstDeclaration,
+                    CredentialEcosystem.Pnpm
+                ),
+                CiTemporaryCredentialPlanValid = TryValidateCiTemporaryCredentialPlan(
+                    firstDeclaration,
+                    resolvedCiTemporaryNpmrcPath
+                ),
+            }
+        );
     }
 
     public ConfigurationChangePlan CreateUserCredentialPlan(
@@ -215,6 +304,8 @@ public sealed class NpmPhase12VerticalSliceService
                 nameof(request)
             );
         }
+
+        ArgumentNullException.ThrowIfNull(request.Declaration);
     }
 
     private static ConfigurationChange CreateAuthTokenChange(
@@ -491,6 +582,147 @@ public sealed class NpmPhase12VerticalSliceService
         throw new InvalidOperationException("User profile directory is unavailable.");
     }
 
+    private string ResolveCiTemporaryNpmrcPath() =>
+        ciTemporaryNpmrcPath
+        ?? fileSystem.GetFullPath(
+            Path.Combine(Path.GetTempPath(), ProductId, "phase12-ci", ".npmrc")
+        );
+
+    private bool TryValidateUserCredentialPlan(
+        NpmPhase12RegistryDeclaration? declaration,
+        CredentialEcosystem ecosystem
+    )
+    {
+        if (declaration is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            ConfigurationChangePlan plan = CreateUserCredentialPlan(
+                new NpmPhase12CredentialPlanRequest
+                {
+                    Declaration = declaration,
+                    AuthToken = "doctor-token",
+                    Ecosystem = ecosystem,
+                }
+            );
+            return ConfigurationChangePlanPolicy.IsValid(plan);
+        }
+        catch (Exception exception)
+            when (IsExpectedDoctorProbeFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private bool TryValidateCiTemporaryCredentialPlan(
+        NpmPhase12RegistryDeclaration? declaration,
+        string targetNpmrcPath
+    )
+    {
+        if (declaration is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            ConfigurationChangePlan plan = CreateCiTemporaryCredentialPlan(
+                new NpmPhase12CredentialPlanRequest
+                {
+                    Declaration = declaration,
+                    AuthToken = "doctor-token",
+                    TargetNpmrcPath = targetNpmrcPath,
+                }
+            );
+            return ConfigurationChangePlanPolicy.IsValid(plan);
+        }
+        catch (Exception exception)
+            when (IsExpectedDoctorProbeFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private static bool CheckAzureArtifactsNpmEndpointCanonicalization()
+    {
+        try
+        {
+            return EndpointCanonicalizes(
+                    "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/",
+                    "org",
+                    project: null,
+                    feed: "feed"
+                )
+                && EndpointCanonicalizes(
+                    "https://pkgs.dev.azure.com/org/project/_packaging/feed/npm/registry/",
+                    "org",
+                    "project",
+                    "feed"
+                )
+                && EndpointCanonicalizes(
+                    "https://dev.azure.com/org/project/_packaging/feed/npm/registry/",
+                    "org",
+                    "project",
+                    "feed"
+                )
+                && EndpointCanonicalizes(
+                    "https://org.pkgs.visualstudio.com/_packaging/feed/npm/registry/",
+                    "org",
+                    project: null,
+                    feed: "feed"
+                )
+                && EndpointCanonicalizes(
+                    "https://org.visualstudio.com/DefaultCollection/project/"
+                        + "_packaging/feed/npm/registry/",
+                    "org",
+                    "project",
+                    "feed"
+                )
+                && !EndpointCanonicalizes(
+                    "https://registry.npmjs.org/",
+                    "org",
+                    project: null,
+                    feed: "feed"
+                )
+                && !EndpointCanonicalizes(
+                    "https://pkgs.dev.azure.com/org/_packaging/feed/npm",
+                    "org",
+                    project: null,
+                    feed: "feed"
+                );
+        }
+        catch (Exception exception)
+            when (IsExpectedDoctorProbeFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private static bool EndpointCanonicalizes(
+        string registryUrl,
+        string organization,
+        string? project,
+        string feed
+    )
+    {
+        if (
+            !TryCreateNpmResourceIdentity(
+                new Uri(registryUrl, UriKind.Absolute),
+                out CanonicalResourceIdentity? resource
+            )
+        )
+        {
+            return false;
+        }
+
+        return string.Equals(resource.Organization, organization, StringComparison.Ordinal)
+            && string.Equals(resource.Project, project, StringComparison.Ordinal)
+            && string.Equals(resource.Feed, feed, StringComparison.Ordinal);
+    }
+
     private static string InferActivationPlatform(string targetNpmrcPath)
     {
         if (targetNpmrcPath.StartsWith('/'))
@@ -582,6 +814,14 @@ public sealed class NpmPhase12VerticalSliceService
             CredentialEcosystem.Pnpm => "pnpm",
             _ => throw new ArgumentOutOfRangeException(nameof(ecosystem), ecosystem, null),
         };
+
+    private static bool IsExpectedDoctorProbeFailure(Exception exception) =>
+        exception is ArgumentException
+            or IOException
+            or InvalidOperationException
+            or NotSupportedException
+            or PlatformNotSupportedException
+            or UnauthorizedAccessException;
 
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value;

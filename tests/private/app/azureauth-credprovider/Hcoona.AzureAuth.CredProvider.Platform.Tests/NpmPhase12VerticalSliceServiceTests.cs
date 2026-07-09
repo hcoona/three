@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 using Hcoona.AzureAuth.CredProvider.Platform.Tests.TestDoubles;
@@ -335,6 +337,84 @@ public sealed class NpmPhase12VerticalSliceServiceTests
     }
 
     [Fact]
+    public async Task UserCredentialPlanAppliesAndRemovesThroughConfigurationManager()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        CreateDirectory(fileSystem, "/state");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        fileSystem.WriteAllText(
+            "/home/alice/.npmrc",
+            "# user config\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+        NpmPhase12RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+        ConfigurationChangePlan applyPlan = service.CreateUserCredentialPlan(
+            new NpmPhase12CredentialPlanRequest
+            {
+                Declaration = declaration,
+                AuthToken = "short-lived-token",
+            }
+        );
+        const string manifestPath = "/state/phase12-user-manifest.json";
+        var manager = new ConfigurationManager(
+            fileSystem,
+            manifestPath,
+            new ConfigurationPhysicalTargetWriterDispatcher(fileSystem)
+        );
+
+        ConfigurationPlanResult applyResult = await manager.ApplyAsync(
+            applyPlan,
+            TestContext.Current.CancellationToken
+        );
+        string manifestJson = fileSystem.ReadAllText(manifestPath);
+        ConfigurationOwnershipManifestEntry ownedEntry = Assert.Single(
+            applyResult.OwnershipManifest?.Entries ?? []
+        );
+        ConfigurationChangePlan removePlan = applyPlan with
+        {
+            Manifest = applyPlan.Manifest with
+            {
+                ResourceIdentity = null,
+                PreviousOwnedEntryHash = "sha256:" + ComputeSha256(manifestJson),
+            },
+            Changes =
+            [
+                applyPlan.Changes[0] with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata =
+                        ownedEntry.PlannedValueSha256 ?? "previous-npmrc-secret-remove-entry",
+                },
+            ],
+        };
+
+        ConfigurationPlanResult removeResult = await manager.RemoveAsync(
+            removePlan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Applied, applyResult.State);
+        Assert.Equal(ConfigurationPlanState.Applied, removeResult.State);
+        Assert.Equal("# user config\n", fileSystem.ReadAllText("/home/alice/.npmrc"));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
     public void CreateCiTemporaryCredentialPlanRejectsUserOnlyRegistryDeclaration()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
@@ -370,6 +450,149 @@ public sealed class NpmPhase12VerticalSliceServiceTests
         Assert.Contains("registry declaration to remain visible", exception.Message);
     }
 
+    [Fact]
+    public async Task DoctorReportsWorkspaceRegistryAndValidNpmPnpmPlansWithoutWritingFiles()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+                CiTemporaryNpmrcPath = "/tmp/azureauth-ci/.npmrc",
+            }
+        );
+        fileSystem.Calls.Clear();
+
+        NpmPhase12DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal("/workspace/.npmrc", result.WorkspaceNpmrcPath);
+        Assert.True(result.WorkspaceNpmrcExists);
+        Assert.Equal("/home/alice/.npmrc", result.EffectiveUserNpmrcPath);
+        Assert.False(result.EffectiveUserNpmrcExists);
+        Assert.True(result.RegistryDeclarationDiscovered);
+        Assert.True(result.AzureArtifactsNpmEndpointCanonicalizationSuccess);
+        Assert.True(result.NpmUserCredentialPlanValid);
+        Assert.True(result.PnpmUserCredentialPlanValid);
+        Assert.True(result.CiTemporaryCredentialPlanValid);
+        Assert.True(result.CiTemporaryAuthOnlyPlanSupported);
+        Assert.False(result.EffectiveUserConfigEnvironmentOverridePresent);
+        AssertNoFilesystemMutationCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public async Task DoctorReportsCiTemporaryAuthOnlyUnsupportedForUserOnlyDeclaration()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/home/alice/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+                CiTemporaryNpmrcPath = "/tmp/azureauth-ci/.npmrc",
+            }
+        );
+
+        NpmPhase12DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.True(result.RegistryDeclarationDiscovered);
+        Assert.True(result.NpmUserCredentialPlanValid);
+        Assert.True(result.PnpmUserCredentialPlanValid);
+        Assert.False(result.CiTemporaryCredentialPlanValid);
+        Assert.False(result.CiTemporaryAuthOnlyPlanSupported);
+    }
+
+    [Fact]
+    public async Task DoctorReportsEffectiveUserConfigEnvironmentOverride()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/tmp");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            "registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/\n"
+        );
+        fileSystem.WriteAllText(
+            "/tmp/override.npmrc",
+            "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken=old\n"
+        );
+        var environment = new EnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["NPM_CONFIG_USERCONFIG"] = "/tmp/override.npmrc",
+            }
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = environment.Get,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+                CiTemporaryNpmrcPath = "/tmp/azureauth-ci/.npmrc",
+            }
+        );
+
+        NpmPhase12DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal("/tmp/override.npmrc", result.EffectiveUserNpmrcPath);
+        Assert.True(result.EffectiveUserNpmrcExists);
+        Assert.True(result.UppercaseUserConfigEnvironmentOverridePresent);
+        Assert.False(result.LowercaseUserConfigEnvironmentOverridePresent);
+        Assert.True(result.EffectiveUserConfigEnvironmentOverridePresent);
+    }
+
+    [Fact]
+    public async Task DoctorReportsNoCredentialPlansWhenNoRegistryDeclarationExists()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.npmrc",
+            "registry=https://registry.npmjs.org/\n"
+        );
+        var service = new NpmPhase12VerticalSliceService(
+            new NpmPhase12VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+                CiTemporaryNpmrcPath = "/tmp/azureauth-ci/.npmrc",
+            }
+        );
+
+        NpmPhase12DoctorResult result = await service.RunDoctorAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.False(result.RegistryDeclarationDiscovered);
+        Assert.True(result.AzureArtifactsNpmEndpointCanonicalizationSuccess);
+        Assert.False(result.NpmUserCredentialPlanValid);
+        Assert.False(result.PnpmUserCredentialPlanValid);
+        Assert.False(result.CiTemporaryCredentialPlanValid);
+    }
+
     private static void CreateDirectory(InMemoryFileSystem fileSystem, string path)
     {
         string[] segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -382,6 +605,29 @@ public sealed class NpmPhase12VerticalSliceServiceTests
                 fileSystem.CreateDirectory(current);
             }
         }
+    }
+
+    private static void AssertNoFilesystemMutationCalls(IEnumerable<FileSystemCall> calls)
+    {
+        Assert.DoesNotContain(
+            calls,
+            static call =>
+                call.Operation
+                    is nameof(InMemoryFileSystem.WriteAllText)
+                        or nameof(InMemoryFileSystem.AtomicWriteAllText)
+                        or nameof(InMemoryFileSystem.AtomicWriteAllBytes)
+                        or nameof(InMemoryFileSystem.SetUnixFileMode)
+                        or nameof(InMemoryFileSystem.CreateDirectory)
+                        or nameof(InMemoryFileSystem.DeleteFile)
+                        or nameof(InMemoryFileSystem.DeleteDirectory)
+                        or nameof(InMemoryFileSystem.AddSymbolicLink)
+        );
+    }
+
+    private static string ComputeSha256(string value)
+    {
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     private sealed class EnvironmentVariables
