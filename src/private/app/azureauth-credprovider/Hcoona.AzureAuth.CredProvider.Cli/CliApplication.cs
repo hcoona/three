@@ -13,7 +13,7 @@ namespace Hcoona.AzureAuth.CredProvider.Cli;
 internal static class CliApplication
 {
     private const string CommandName = "azureauth-credprovider";
-    private const string PhaseName = "10-nuget-adapter";
+    private const string PhaseName = "14.1-auth-orchestration";
     private const int SuccessExitCode = 0;
     private const int NotImplementedExitCode = 1;
     private const int UsageExitCode = 2;
@@ -107,9 +107,8 @@ internal static class CliApplication
                     stderr,
                     runtimeOptions),
                 CliCommand.Doctor => HandleDoctor(invocation, stdout, runtimeOptions),
-                CliCommand.Login or CliCommand.Logout => HandlePhaseStub(
-                    invocation,
-                    stderr),
+                CliCommand.Login => HandleLogin(invocation, stdout, stderr, runtimeOptions),
+                CliCommand.Logout => HandleLogout(invocation, stdout),
                 _ => throw new InvalidOperationException("Unsupported CLI command."),
             };
         }
@@ -408,12 +407,63 @@ internal static class CliApplication
             : NotImplementedExitCode;
     }
 
-    private static int HandlePhaseStub(CliInvocation invocation, TextWriter stderr)
+    private static int HandleLogin(
+        CliInvocation invocation,
+        TextWriter stdout,
+        TextWriter stderr,
+        CliRuntimeOptions? runtimeOptions)
     {
-        TryWriteDiagnosticText(
-            stderr,
-            $"error: {invocation.CommandName} is not implemented in phase 10.");
-        return NotImplementedExitCode;
+        if (invocation.AuthOptions.DeferredFlowName is { } deferredFlowName)
+        {
+            TryWriteDiagnosticText(
+                stderr,
+                $"error: identity flow '{deferredFlowName}' is deferred for MVP.");
+            return NotImplementedExitCode;
+        }
+
+        AuthPhase14LoginResult loginResult;
+        try
+        {
+            loginResult = CreateAuthPhase14VerticalSliceService(runtimeOptions)
+                .Login(
+                    new AuthPhase14LoginRequest
+                    {
+                        IdentityFlow = invocation.AuthOptions.IdentityFlow,
+                        AccountHint = invocation.AuthOptions.AccountHint,
+                        TenantHint = invocation.AuthOptions.TenantHint,
+                        ExplicitPatMaterialProvided =
+                            invocation.AuthOptions.ExplicitPatMaterialProvided,
+                        ExplicitAzurePipelinesCiMode =
+                            invocation.CiMode == CliCiMode.AzurePipelines,
+                    }
+                );
+        }
+        catch (Exception exception)
+            when (exception is InvalidOperationException or NotSupportedException)
+        {
+            TryWriteDiagnosticText(stderr, "error: " + exception.Message);
+            return NotImplementedExitCode;
+        }
+
+        if (loginResult.CredentialResult.Status != CredentialResultStatus.Success)
+        {
+            TryWriteDiagnosticText(
+                stderr,
+                "error: "
+                    + (loginResult.CredentialResult.Error?.SafeMessage
+                        ?? "credential login failed."));
+            return NotImplementedExitCode;
+        }
+
+        WriteText(stdout, BuildLoginOutput(invocation, loginResult));
+        return SuccessExitCode;
+    }
+
+    private static int HandleLogout(CliInvocation invocation, TextWriter stdout)
+    {
+        AuthPhase14LogoutResult logoutResult = AuthPhase14VerticalSliceService.Logout();
+        WriteText(stdout, BuildLogoutOutput(invocation, logoutResult));
+        return SuccessExitCode;
     }
 
     private static CliInvocation Parse(IReadOnlyList<string> args)
@@ -441,8 +491,8 @@ internal static class CliApplication
         {
             CliCommand.Status => ParseStatus(remainingArgs),
             CliCommand.Doctor => ParseDoctor(remainingArgs),
-            CliCommand.Login => ParsePhaseStub(CliCommand.Login, remainingArgs),
-            CliCommand.Logout => ParsePhaseStub(CliCommand.Logout, remainingArgs),
+            CliCommand.Login => ParseLogin(remainingArgs),
+            CliCommand.Logout => ParseLogout(remainingArgs),
             CliCommand.Configure => ParseConfigurationCommand(CliCommand.Configure, remainingArgs),
             CliCommand.Unconfigure =>
                 ParseConfigurationCommand(CliCommand.Unconfigure, remainingArgs),
@@ -497,21 +547,84 @@ internal static class CliApplication
         return new CliInvocation(CliCommand.Status, null, ciMode, DryRun: false, HelpText: null);
     }
 
-    private static CliInvocation ParsePhaseStub(CliCommand command, IReadOnlyList<string> args)
+    private static CliInvocation ParseLogin(IReadOnlyList<string> args)
     {
         if (ContainsStandaloneHelpToken(args))
         {
             ThrowIfAnyValuelessOptionHasAssignedValue(args);
-            return CliInvocation.CreateHelp(BuildPhaseStubHelp(command));
+            return CliInvocation.CreateHelp(BuildLoginHelp());
         }
 
-        string commandName = GetCommandName(command);
-        foreach (string token in args)
+        var ciMode = CliCiMode.None;
+        var ciSpecified = false;
+        var flowSpecified = false;
+        var authOptions = new CliAuthOptions();
+
+        for (var index = 0; index < args.Count; index++)
         {
+            string token = args[index];
             ThrowIfValuelessOptionHasAssignedValue(token);
             if (IsHelpToken(token))
             {
-                return CliInvocation.CreateHelp(BuildPhaseStubHelp(command));
+                return CliInvocation.CreateHelp(BuildLoginHelp());
+            }
+
+            if (ciSpecified && IsCiOptionToken(token))
+            {
+                throw CreateUsageError(
+                    "error: option '--ci' cannot be specified more than once.");
+            }
+
+            if (TryParseCiMode(args, ref index, out CliCiMode parsedCiMode))
+            {
+                ciSpecified = true;
+                ciMode = parsedCiMode;
+                authOptions = authOptions with
+                {
+                    IdentityFlow = parsedCiMode == CliCiMode.AzurePipelines
+                        ? IdentityFlow.AzurePipelinesSystemAccessToken
+                        : authOptions.IdentityFlow,
+                };
+                continue;
+            }
+
+            if (TryParseLoginFlowOption(token, ref flowSpecified, out CliAuthOptions flowOptions))
+            {
+                authOptions = authOptions with
+                {
+                    IdentityFlow = flowOptions.IdentityFlow,
+                    DeferredFlowName = flowOptions.DeferredFlowName,
+                };
+                continue;
+            }
+
+            if (TryParseStringOption(args, ref index, "--account", out string? accountHint))
+            {
+                authOptions = authOptions with { AccountHint = accountHint };
+                continue;
+            }
+
+            if (TryParseStringOption(args, ref index, "--tenant", out string? tenantHint))
+            {
+                authOptions = authOptions with { TenantHint = tenantHint };
+                continue;
+            }
+
+            if (TryParseStringOption(args, ref index, "--pat", out _))
+            {
+                if (flowSpecified)
+                {
+                    throw CreateUsageError(
+                        "error: login accepts only one identity-flow option.");
+                }
+
+                flowSpecified = true;
+                authOptions = authOptions with
+                {
+                    IdentityFlow = IdentityFlow.PatCompatibility,
+                    ExplicitPatMaterialProvided = true,
+                };
+                continue;
             }
 
             if (IsOptionToken(token))
@@ -520,11 +633,60 @@ internal static class CliApplication
             }
 
             throw CreateUsageError(
-                $"error: {commandName} does not accept positional arguments. "
-                + $"Run '{CommandName} {commandName} --help' for usage.");
+                "error: login does not accept positional arguments. "
+                + $"Run '{CommandName} login --help' for usage.");
         }
 
-        return new CliInvocation(command, null, CliCiMode.None, DryRun: false, HelpText: null);
+        if (ciMode == CliCiMode.AzurePipelines && flowSpecified)
+        {
+            throw CreateUsageError(
+                "error: login --ci azure-pipelines cannot be combined with another "
+                    + "identity-flow option.");
+        }
+
+        return new CliInvocation(
+            CliCommand.Login,
+            null,
+            ciMode,
+            DryRun: false,
+            HelpText: null)
+        {
+            AuthOptions = authOptions,
+        };
+    }
+
+    private static CliInvocation ParseLogout(IReadOnlyList<string> args)
+    {
+        if (ContainsStandaloneHelpToken(args))
+        {
+            ThrowIfAnyValuelessOptionHasAssignedValue(args);
+            return CliInvocation.CreateHelp(BuildLogoutHelp());
+        }
+
+        foreach (string token in args)
+        {
+            ThrowIfValuelessOptionHasAssignedValue(token);
+            if (IsHelpToken(token))
+            {
+                return CliInvocation.CreateHelp(BuildLogoutHelp());
+            }
+
+            if (IsOptionToken(token))
+            {
+                throw CreateUnknownOptionError(token);
+            }
+
+            throw CreateUsageError(
+                "error: logout does not accept positional arguments. "
+                + $"Run '{CommandName} logout --help' for usage.");
+        }
+
+        return new CliInvocation(
+            CliCommand.Logout,
+            null,
+            CliCiMode.None,
+            DryRun: false,
+            HelpText: null);
     }
 
     private static CliInvocation ParseDoctor(IReadOnlyList<string> args)
@@ -720,6 +882,93 @@ internal static class CliApplication
         };
     }
 
+    private static bool TryParseStringOption(
+        IReadOnlyList<string> args,
+        ref int index,
+        string optionName,
+        out string value)
+    {
+        string token = args[index];
+        int assignmentIndex = GetOptionAssignmentIndex(token);
+        if (assignmentIndex >= 0
+            && string.Equals(token[..assignmentIndex], optionName, StringComparison.Ordinal))
+        {
+            string? assignedValue = GetOptionValue(token);
+            if (string.IsNullOrWhiteSpace(assignedValue))
+            {
+                throw CreateUsageError($"error: option '{optionName}' requires a value.");
+            }
+
+            value = assignedValue;
+            return true;
+        }
+
+        if (string.Equals(token, optionName, StringComparison.Ordinal))
+        {
+            if (index + 1 >= args.Count
+                || IsOptionToken(args[index + 1])
+                || string.IsNullOrWhiteSpace(args[index + 1]))
+            {
+                throw CreateUsageError($"error: option '{optionName}' requires a value.");
+            }
+
+            index++;
+            value = args[index];
+            return true;
+        }
+
+        value = string.Empty;
+        return false;
+    }
+
+    private static bool TryParseLoginFlowOption(
+        string token,
+        ref bool flowSpecified,
+        out CliAuthOptions authOptions)
+    {
+        authOptions = new CliAuthOptions();
+        IdentityFlow? flow = GetOptionName(token) switch
+        {
+            "--browser" => IdentityFlow.InteractiveBrowser,
+            "--device-code" => IdentityFlow.DeviceCode,
+            "--service-principal" => IdentityFlow.ServicePrincipal,
+            "--managed-identity" => IdentityFlow.ManagedIdentity,
+            "--workload-identity" => IdentityFlow.WorkloadIdentityFederation,
+            _ => null,
+        };
+
+        if (flow is null)
+        {
+            return false;
+        }
+
+        if (GetOptionAssignmentIndex(token) >= 0)
+        {
+            throw CreateUsageError(
+                $"error: option '{SanitizeOptionToken(token)}' does not accept a value.");
+        }
+
+        if (flowSpecified)
+        {
+            throw CreateUsageError("error: login accepts only one identity-flow option.");
+        }
+
+        flowSpecified = true;
+        authOptions = new CliAuthOptions
+        {
+            IdentityFlow = flow.Value,
+            DeferredFlowName = GetDeferredFlowName(flow.Value),
+        };
+        return true;
+    }
+
+    private static string? GetDeferredFlowName(IdentityFlow flow)
+    {
+        return IdentityFlowPolicy.GetMvpState(flow) == IdentityFlowState.Deferred
+            ? GetIdentityFlowText(flow)
+            : null;
+    }
+
     private static CredentialEcosystem ParseEcosystem(string token)
     {
         return token switch
@@ -825,10 +1074,10 @@ internal static class CliApplication
             $"  {CommandName} <command> [options]",
             string.Empty,
             "Commands:",
-            "  status                       Show deterministic Phase 10 shell status.",
-            "  doctor                       Run Git and active NuGet adapter checks.",
-            "  login                        Phase 10 stub; not implemented yet.",
-            "  logout                       Phase 10 stub; not implemented yet.",
+            "  status                       Show deterministic Phase 14.1 shell status.",
+            "  doctor                       Run adapter and auth policy checks.",
+            "  login                        Run accepted MVP authentication orchestration.",
+            "  logout                       Clear product-owned authentication state.",
             "  configure <ecosystem>        Git/NuGet --ci none applies; others dry-run.",
             "  unconfigure <ecosystem>      Git/NuGet --ci none removes; others dry-run.",
             string.Empty,
@@ -837,6 +1086,8 @@ internal static class CliApplication
             string.Empty,
             "Examples:",
             $"  {CommandName} status",
+            $"  {CommandName} login --device-code",
+            $"  {CommandName} login --ci azure-pipelines",
             $"  {CommandName} status --ci azure-pipelines",
             $"  {CommandName} configure git --dry-run",
             $"  {CommandName} unconfigure npm --dry-run");
@@ -882,22 +1133,46 @@ internal static class CliApplication
             $"  {CommandName} doctor [--help]",
             string.Empty,
             "Status:",
-            "  Run safe deterministic Git checks and active Phase 10 NuGet checks.",
+            "  Run safe deterministic adapter and Phase 14.1 auth policy checks.",
             string.Empty,
             "Options:",
             "  -h, --help                   Show help.");
     }
 
-    private static string BuildPhaseStubHelp(CliCommand command)
+    private static string BuildLoginHelp()
     {
-        string commandName = GetCommandName(command);
         return JoinLines(
-            $"{CommandName} {commandName}",
+            $"{CommandName} login",
             "Usage:",
-            $"  {CommandName} {commandName} [--help]",
+            $"  {CommandName} login [--browser|--device-code|--pat <value>]",
+            $"  {CommandName} login --ci azure-pipelines",
+            string.Empty,
+            "Accepted MVP flows:",
+            "  --browser                    Use interactive browser authentication.",
+            "  --device-code                Use device-code authentication.",
+            "  --pat <value>                Explicit PAT compatibility; never persisted.",
+            "  --ci azure-pipelines         Use SYSTEM_ACCESSTOKEN without persistence.",
+            string.Empty,
+            "Deferred service identity flows:",
+            "  --service-principal",
+            "  --managed-identity",
+            "  --workload-identity",
+            string.Empty,
+            "Options:",
+            "  --account <name>             Optional account hint.",
+            "  --tenant <id>                Optional tenant hint.",
+            "  -h, --help                   Show help.");
+    }
+
+    private static string BuildLogoutHelp()
+    {
+        return JoinLines(
+            $"{CommandName} logout",
+            "Usage:",
+            $"  {CommandName} logout [--help]",
             string.Empty,
             "Status:",
-            "  Phase 10 stub only. This command is not implemented yet.",
+            "  Clears product-owned authentication state only.",
             string.Empty,
             "Options:",
             "  -h, --help                   Show help.");
@@ -913,9 +1188,44 @@ internal static class CliApplication
             "status-shell: ready",
             "environment-probing: disabled",
             "persistent-cache: disabled",
+            "persistent-derived-credentials: disabled",
+            "accepted-identity-flows: browser, device-code, pat, azure-pipelines",
+            "deferred-identity-flows: service-principal, managed-identity, workload-identity",
             "dry-run-rendering: enabled",
-            "mutating-commands: git-and-nuget",
+            "mutating-commands: git-nuget-auth",
             $"supported-ecosystems: {string.Join(", ", SupportedEcosystems)}");
+    }
+
+    private static string BuildLoginOutput(
+        CliInvocation invocation,
+        AuthPhase14LoginResult loginResult)
+    {
+        CredentialResult credentialResult = loginResult.CredentialResult;
+        return JoinLines(
+            "command: login",
+            $"phase: {PhaseName}",
+            $"ci-mode: {GetCiModeText(invocation.CiMode)}",
+            $"identity-flow: {GetIdentityFlowText(loginResult.IdentityFlow)}",
+            $"status: {credentialResult.Status.ToString().ToLowerInvariant()}",
+            $"account: {credentialResult.Account ?? "unselected"}",
+            $"tenant: {credentialResult.Tenant ?? "default"}",
+            "credential-material: issued-not-printed",
+            "persistent-derived-credentials: "
+                + (loginResult.PersistentDerivedCredentialsStored ? "stored" : "disabled"),
+            "plaintext-fallback: disabled");
+    }
+
+    private static string BuildLogoutOutput(
+        CliInvocation invocation,
+        AuthPhase14LogoutResult logoutResult)
+    {
+        return JoinLines(
+            "command: logout",
+            $"phase: {PhaseName}",
+            $"ci-mode: {GetCiModeText(invocation.CiMode)}",
+            "persistent-derived-credentials-removed: "
+                + (logoutResult.PersistentDerivedCredentialsRemoved ? "yes" : "none"),
+            "plaintext-fallback: disabled");
     }
 
     private static string BuildDryRunOutput(CliInvocation invocation)
@@ -1113,6 +1423,10 @@ internal static class CliApplication
                 + GetLocalShellHelperShorthandStatusText(doctorResult),
             "protocol-payload: "
                 + (doctorResult.ProtocolPayloadCaptured ? "captured-not-printed" : "not-captured"),
+            "auth-accepted-identity-flows: browser, device-code, pat, azure-pipelines",
+            "auth-deferred-identity-flows: service-principal, managed-identity, workload-identity",
+            "auth-persistent-derived-credentials: disabled",
+            "auth-plaintext-fallback: disabled",
         ];
 
         if (nuGetDoctorResult is not null)
@@ -1261,6 +1575,12 @@ internal static class CliApplication
         return new NuGetPhase10VerticalSliceService(runtimeOptions?.NuGetPhase10Options);
     }
 
+    private static AuthPhase14VerticalSliceService CreateAuthPhase14VerticalSliceService(
+        CliRuntimeOptions? runtimeOptions)
+    {
+        return new AuthPhase14VerticalSliceService(runtimeOptions?.AuthPhase14Options);
+    }
+
     private static string GetPlannedActionText(ConfigurationPlannedChange change)
     {
         ArgumentNullException.ThrowIfNull(change);
@@ -1396,6 +1716,21 @@ internal static class CliApplication
             CredentialEcosystem.Python => "python",
             CredentialEcosystem.Npm => "npm",
             _ => throw new InvalidOperationException("Unsupported ecosystem."),
+        };
+    }
+
+    private static string GetIdentityFlowText(IdentityFlow flow)
+    {
+        return flow switch
+        {
+            IdentityFlow.InteractiveBrowser => "browser",
+            IdentityFlow.DeviceCode => "device-code",
+            IdentityFlow.PatCompatibility => "pat",
+            IdentityFlow.AzurePipelinesSystemAccessToken => "azure-pipelines",
+            IdentityFlow.ServicePrincipal => "service-principal",
+            IdentityFlow.ManagedIdentity => "managed-identity",
+            IdentityFlow.WorkloadIdentityFederation => "workload-identity",
+            _ => "unsupported",
         };
     }
 
@@ -1590,6 +1925,8 @@ internal sealed record CliInvocation(
     bool DryRun,
     string? HelpText)
 {
+    public CliAuthOptions AuthOptions { get; init; } = new();
+
     public string CommandName => CliApplicationCommandNames.Get(Command);
 
     public static CliInvocation CreateHelp(string helpText)
@@ -1602,6 +1939,19 @@ internal sealed record CliInvocation(
             DryRun: false,
             HelpText: helpText);
     }
+}
+
+internal sealed record CliAuthOptions
+{
+    public IdentityFlow IdentityFlow { get; init; } = IdentityFlow.InteractiveBrowser;
+
+    public string? AccountHint { get; init; }
+
+    public string? TenantHint { get; init; }
+
+    public bool ExplicitPatMaterialProvided { get; init; }
+
+    public string? DeferredFlowName { get; init; }
 }
 
 internal enum CliCommand
@@ -1645,6 +1995,8 @@ internal sealed record CliRuntimeOptions
     public GitPhase8VerticalSliceOptions? GitPhase8Options { get; init; }
 
     public NuGetPhase10VerticalSliceOptions? NuGetPhase10Options { get; init; }
+
+    public AuthPhase14VerticalSliceOptions? AuthPhase14Options { get; init; }
 }
 
 internal sealed class CliUsageException : Exception

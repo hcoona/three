@@ -25,10 +25,10 @@ public sealed class CliApplicationTests
                   azureauth-credprovider <command> [options]
 
                 Commands:
-                  status                       Show deterministic Phase 10 shell status.
-                  doctor                       Run Git and active NuGet adapter checks.
-                  login                        Phase 10 stub; not implemented yet.
-                  logout                       Phase 10 stub; not implemented yet.
+                  status                       Show deterministic Phase 14.1 shell status.
+                  doctor                       Run adapter and auth policy checks.
+                  login                        Run accepted MVP authentication orchestration.
+                  logout                       Clear product-owned authentication state.
                   configure <ecosystem>        Git/NuGet --ci none applies; others dry-run.
                   unconfigure <ecosystem>      Git/NuGet --ci none removes; others dry-run.
 
@@ -37,6 +37,8 @@ public sealed class CliApplicationTests
 
                 Examples:
                   azureauth-credprovider status
+                  azureauth-credprovider login --device-code
+                  azureauth-credprovider login --ci azure-pipelines
                   azureauth-credprovider status --ci azure-pipelines
                   azureauth-credprovider configure git --dry-run
                   azureauth-credprovider unconfigure npm --dry-run
@@ -120,13 +122,16 @@ public sealed class CliApplicationTests
                 """
                 command: status
                 product: azureauth-credprovider
-                phase: 10-nuget-adapter
+                phase: 14.1-auth-orchestration
                 ci-mode: none
                 status-shell: ready
                 environment-probing: disabled
                 persistent-cache: disabled
+                persistent-derived-credentials: disabled
+                accepted-identity-flows: browser, device-code, pat, azure-pipelines
+                deferred-identity-flows: service-principal, managed-identity, workload-identity
                 dry-run-rendering: enabled
-                mutating-commands: git-and-nuget
+                mutating-commands: git-nuget-auth
                 supported-ecosystems: git, nuget, python, npm
                 """),
             result.StdOut);
@@ -151,14 +156,167 @@ public sealed class CliApplicationTests
                 """
                 command: status
                 product: azureauth-credprovider
-                phase: 10-nuget-adapter
+                phase: 14.1-auth-orchestration
                 ci-mode: azure-pipelines
                 status-shell: ready
                 environment-probing: disabled
                 persistent-cache: disabled
+                persistent-derived-credentials: disabled
+                accepted-identity-flows: browser, device-code, pat, azure-pipelines
+                deferred-identity-flows: service-principal, managed-identity, workload-identity
                 dry-run-rendering: enabled
-                mutating-commands: git-and-nuget
+                mutating-commands: git-nuget-auth
                 supported-ecosystems: git, nuget, python, npm
+                """),
+            result.StdOut);
+        Assert.Equal(string.Empty, result.StdErr);
+    }
+
+    [Theory]
+    [InlineData("--browser", "browser")]
+    [InlineData("--device-code", "device-code")]
+    public void LoginAcceptedInteractiveFlowsWriteSafeOutput(
+        string flowOption,
+        string expectedFlow)
+    {
+        CommandResult result = Invoke(
+            "login",
+            flowOption,
+            "--account",
+            "Alice@Example",
+            "--tenant",
+            "TenantA");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(
+            Normalize(
+                $$"""
+                command: login
+                phase: 14.1-auth-orchestration
+                ci-mode: none
+                identity-flow: {{expectedFlow}}
+                status: success
+                account: alice@example
+                tenant: tenanta
+                credential-material: issued-not-printed
+                persistent-derived-credentials: disabled
+                plaintext-fallback: disabled
+                """),
+            result.StdOut);
+        Assert.Equal(string.Empty, result.StdErr);
+        Assert.DoesNotContain("fake-token-", result.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain("fake-secret-", result.StdOut, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LoginPatCompatibilityRequiresExplicitPatAndNeverEchoesIt()
+    {
+        const string Secret = "super-secret-pat";
+
+        CommandResult result = Invoke("login", "--pat", Secret);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("identity-flow: pat\n", result.StdOut, StringComparison.Ordinal);
+        Assert.Contains(
+            "persistent-derived-credentials: disabled\n",
+            result.StdOut,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(Secret, result.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain(Secret, result.StdErr, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LoginPatCompatibilityWithoutValueReturnsUsageError()
+    {
+        CommandResult result = Invoke("login", "--pat");
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Equal(string.Empty, result.StdOut);
+        Assert.Equal("error: option '--pat' requires a value.\n", result.StdErr);
+    }
+
+    [Fact]
+    public void LoginAzurePipelinesRequiresExplicitCiTokenEnvironment()
+    {
+        CommandResult result = InvokeWithRuntime(
+            CreateAuthRuntimeWithEnvironment(new Dictionary<string, string>()),
+            "login",
+            "--ci",
+            "azure-pipelines");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Equal(string.Empty, result.StdOut);
+        Assert.Equal(
+            "error: Azure Pipelines system access token is unavailable in the environment.\n",
+            result.StdErr);
+    }
+
+    [Fact]
+    public void LoginAzurePipelinesUsesTokenWithoutPrintingOrPersistingIt()
+    {
+        const string Secret = "system-access-token";
+        CommandResult result = InvokeWithRuntime(
+            CreateAuthRuntimeWithEnvironment(
+                new Dictionary<string, string>
+                {
+                    [AuthPhase14VerticalSliceService.AzurePipelinesSystemAccessTokenVariable] =
+                        Secret,
+                }),
+            "login",
+            "--ci",
+            "azure-pipelines");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(
+            Normalize(
+                """
+                command: login
+                phase: 14.1-auth-orchestration
+                ci-mode: azure-pipelines
+                identity-flow: azure-pipelines
+                status: success
+                account: build-service@phase14
+                tenant: phase14-tenant
+                credential-material: issued-not-printed
+                persistent-derived-credentials: disabled
+                plaintext-fallback: disabled
+                """),
+            result.StdOut);
+        Assert.Equal(string.Empty, result.StdErr);
+        Assert.DoesNotContain(Secret, result.StdOut, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("--service-principal", "service-principal")]
+    [InlineData("--managed-identity", "managed-identity")]
+    [InlineData("--workload-identity", "workload-identity")]
+    public void LoginDeferredServiceIdentityFlowsReportDeferred(
+        string flowOption,
+        string flowName)
+    {
+        CommandResult result = Invoke("login", flowOption);
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Equal(string.Empty, result.StdOut);
+        Assert.Equal(
+            $"error: identity flow '{flowName}' is deferred for MVP.\n",
+            result.StdErr);
+    }
+
+    [Fact]
+    public void LogoutWritesSafeOutput()
+    {
+        CommandResult result = Invoke("logout");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(
+            Normalize(
+                """
+                command: logout
+                phase: 14.1-auth-orchestration
+                ci-mode: none
+                persistent-derived-credentials-removed: none
+                plaintext-fallback: disabled
                 """),
             result.StdOut);
         Assert.Equal(string.Empty, result.StdErr);
@@ -1965,18 +2123,6 @@ public sealed class CliApplicationTests
         Assert.Equal(expectedError, result.StdErr);
     }
 
-    [Theory]
-    [InlineData("login")]
-    [InlineData("logout")]
-    public void StubCommandsReturnNotImplementedErrors(string command)
-    {
-        CommandResult result = Invoke(command);
-
-        Assert.Equal(1, result.ExitCode);
-        Assert.Equal(string.Empty, result.StdOut);
-        Assert.Equal($"error: {command} is not implemented in phase 10.\n", result.StdErr);
-    }
-
     [Fact]
     public void UnknownCommandReturnsDeterministicUsageError()
     {
@@ -2238,7 +2384,7 @@ public sealed class CliApplicationTests
     public void NotImplementedPathReturnsExitCodeWhenStderrWriterThrows()
     {
         int exitCode = CliApplication.Run(
-            ["login"],
+            ["login", "--service-principal"],
             new StringWriter(new StringBuilder()),
             new ThrowingTextWriter());
 
@@ -2686,7 +2832,7 @@ public sealed class CliApplicationTests
                       azureauth-credprovider doctor [--help]
 
                     Status:
-                      Run safe deterministic Git checks and active Phase 10 NuGet checks.
+                      Run safe deterministic adapter and Phase 14.1 auth policy checks.
 
                     Options:
                       -h, --help                   Show help.
@@ -2695,12 +2841,23 @@ public sealed class CliApplicationTests
                     """
                     azureauth-credprovider login
                     Usage:
-                      azureauth-credprovider login [--help]
+                      azureauth-credprovider login [--browser|--device-code|--pat <value>]
+                      azureauth-credprovider login --ci azure-pipelines
 
-                    Status:
-                      Phase 10 stub only. This command is not implemented yet.
+                    Accepted MVP flows:
+                      --browser                    Use interactive browser authentication.
+                      --device-code                Use device-code authentication.
+                      --pat <value>                Explicit PAT compatibility; never persisted.
+                      --ci azure-pipelines         Use SYSTEM_ACCESSTOKEN without persistence.
+
+                    Deferred service identity flows:
+                      --service-principal
+                      --managed-identity
+                      --workload-identity
 
                     Options:
+                      --account <name>             Optional account hint.
+                      --tenant <id>                Optional tenant hint.
                       -h, --help                   Show help.
                     """,
                 "logout" =>
@@ -2710,7 +2867,7 @@ public sealed class CliApplicationTests
                       azureauth-credprovider logout [--help]
 
                     Status:
-                      Phase 10 stub only. This command is not implemented yet.
+                      Clears product-owned authentication state only.
 
                     Options:
                       -h, --help                   Show help.
@@ -2732,7 +2889,7 @@ public sealed class CliApplicationTests
         [
             $"command: {command}",
             $"ecosystem: {ecosystem}",
-            "phase: 10-nuget-adapter",
+            "phase: 14.1-auth-orchestration",
             $"ci-mode: {ciMode}",
             $"scope: {GetExpectedScope(ciMode)}",
             "mutates-state: no",
@@ -2754,7 +2911,7 @@ public sealed class CliApplicationTests
             """
             command: configure
             ecosystem: git
-            phase: 10-nuget-adapter
+            phase: 14.1-auth-orchestration
             ci-mode: none
             scope: user
             mutates-state: no
@@ -2774,7 +2931,7 @@ public sealed class CliApplicationTests
             """
             command: configure
             ecosystem: nuget
-            phase: 10-nuget-adapter
+            phase: 14.1-auth-orchestration
             ci-mode: none
             scope: user
             mutates-state: no
@@ -2803,7 +2960,7 @@ public sealed class CliApplicationTests
                 [
                     $"command: {command}",
                     "ecosystem: git",
-                    "phase: 10-nuget-adapter",
+                    "phase: 14.1-auth-orchestration",
                     "ci-mode: none",
                     "scope: user",
                     "mutates-state: yes",
@@ -2828,7 +2985,7 @@ public sealed class CliApplicationTests
                 "\n",
                 [
                     "command: doctor",
-                    "phase: 10-nuget-adapter",
+                    "phase: 14.1-auth-orchestration",
                     $"configuration-plan: {(configurationPlanValid ? "pass" : "fail")}",
                     $"owned-git-entries: {(ownedGitEntriesPresent ? "present" : "absent")}",
                     $"ownership-manifest: {(ownershipManifestPresent ? "present" : "absent")}",
@@ -2840,6 +2997,11 @@ public sealed class CliApplicationTests
                     "git-credential-helper-erase: pass",
                     "local-shell-helper-shorthand: " + (localShellSuccess ? "pass" : "fail"),
                     "protocol-payload: captured-not-printed",
+                    "auth-accepted-identity-flows: browser, device-code, pat, azure-pipelines",
+                    "auth-deferred-identity-flows: "
+                        + "service-principal, managed-identity, workload-identity",
+                    "auth-persistent-derived-credentials: disabled",
+                    "auth-plaintext-fallback: disabled",
                 ]));
     }
 
@@ -2870,6 +3032,19 @@ public sealed class CliApplicationTests
             exitCode,
             stdout.ToString(),
             stderr.ToString());
+    }
+
+    private static CliRuntimeOptions CreateAuthRuntimeWithEnvironment(
+        Dictionary<string, string> environment)
+    {
+        return new CliRuntimeOptions
+        {
+            AuthPhase14Options = new AuthPhase14VerticalSliceOptions
+            {
+                EnvironmentVariableReader = name =>
+                    environment.TryGetValue(name, out string? value) ? value : null,
+            },
+        };
     }
 
     private static CommandResult InvokeWithStandardInput(
