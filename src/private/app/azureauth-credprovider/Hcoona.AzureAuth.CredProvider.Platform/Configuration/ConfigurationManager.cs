@@ -317,6 +317,10 @@ public sealed class ConfigurationManager : IConfigurationManager
                         operation,
                         cancellationToken
                     );
+                ContainerRollbackSnapshot? containerSnapshot =
+                    plan.TemporaryContainer is null
+                        ? null
+                        : CaptureContainerRollbackSnapshot(executionFileSystem, plan);
                 var completedWrites = new Stack<FileRollbackSnapshot>();
                 if (plan.TemporaryContainer is null)
                 {
@@ -425,6 +429,20 @@ public sealed class ConfigurationManager : IConfigurationManager
                         manifestPath,
                         preparation.PreparedOwnershipManifest
                     );
+                    if (
+                        operation == ConfigurationPlanOperation.Remove
+                        && preparation.DeleteManifest
+                        && containerSnapshot is not null
+                    )
+                    {
+                        DeleteTemporaryContainerAfterFullRemove(
+                            executionFileSystem,
+                            plan,
+                            manifestPath,
+                            containerSnapshot
+                        );
+                    }
+
                     return preparation.PreparedOwnershipManifest;
                 }
                 catch (Exception exception)
@@ -470,6 +488,14 @@ public sealed class ConfigurationManager : IConfigurationManager
                             finalManifestRollbackUnsafeDueToStaleRetainedProof,
                             failure
                         );
+                        if (containerSnapshot is not null)
+                        {
+                            DeleteTemporaryContainerAfterRollback(
+                                executionFileSystem,
+                                plan,
+                                containerSnapshot
+                            );
+                        }
                     }
                     catch (Exception rollbackException)
                         when (
@@ -989,6 +1015,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             violation ??= GetFilesystemBackedPhysicalTargetKindSamePathConflictViolation(plan);
             violation ??= GetReservedInternalPlanningPhysicalTargetPathViolation(plan);
             violation ??= GetNpmrcStaticWriterPlanningValidationViolation(plan, fileSystem);
+            violation ??= GetYarnrcStaticWriterPlanningValidationViolation(plan, fileSystem);
             violation ??= GetPhase4DPhysicalScaffoldPlanningViolation(fileSystem, plan);
             violation ??= GetGitConfigStaticWriterPlanningValidationViolation(
                 plan,
@@ -1151,7 +1178,9 @@ public sealed class ConfigurationManager : IConfigurationManager
             ? Path.IsPathFullyQualified
             : fileSystem.IsPathFullyQualified;
         return GetNpmrcPhysicalTargetEntriesPathViolation(
-            manifest.Entries.Where(entry => entry.TargetKind == ConfigurationTargetKind.Npmrc),
+            manifest.Entries.Where(entry =>
+                entry.TargetKind is ConfigurationTargetKind.Npmrc or ConfigurationTargetKind.Yarnrc
+            ),
             isPathFullyQualified
         );
     }
@@ -1208,6 +1237,12 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
 
         violation = GetNpmrcStaticWriterPlanningValidationViolation(plan);
+        if (violation is not null)
+        {
+            return violation;
+        }
+
+        violation = GetYarnrcStaticWriterPlanningValidationViolation(plan);
         if (violation is not null)
         {
             return violation;
@@ -1708,6 +1743,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             !plan.Changes.Any(change =>
                 change.TargetKind is ConfigurationTargetKind.GitConfig
                     or ConfigurationTargetKind.Npmrc
+                    or ConfigurationTargetKind.Yarnrc
                     or ConfigurationTargetKind.NuGetPluginLayout
             )
         )
@@ -1726,6 +1762,7 @@ public sealed class ConfigurationManager : IConfigurationManager
         if (
             change.TargetKind is ConfigurationTargetKind.GitConfig
                 or ConfigurationTargetKind.Npmrc
+                or ConfigurationTargetKind.Yarnrc
                 or ConfigurationTargetKind.NuGetPluginLayout
         )
         {
@@ -1739,7 +1776,8 @@ public sealed class ConfigurationManager : IConfigurationManager
 
             if (change.TargetKind != ConfigurationTargetKind.GitConfig)
             {
-                return change.TargetKind == ConfigurationTargetKind.Npmrc
+                return change.TargetKind
+                    is ConfigurationTargetKind.Npmrc or ConfigurationTargetKind.Yarnrc
                     && !IsValueWritingOperation(change.Operation)
                     ? canonicalizedChange with { IsSecretValue = false }
                     : canonicalizedChange;
@@ -1772,6 +1810,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             !plan.Changes.Any(change =>
                 change.TargetKind is ConfigurationTargetKind.GitConfig
                     or ConfigurationTargetKind.Npmrc
+                    or ConfigurationTargetKind.Yarnrc
                     or ConfigurationTargetKind.NuGetPluginLayout
             )
         )
@@ -1793,6 +1832,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             change.TargetKind
                 is not ConfigurationTargetKind.GitConfig
                 and not ConfigurationTargetKind.Npmrc
+                and not ConfigurationTargetKind.Yarnrc
                 and not ConfigurationTargetKind.NuGetPluginLayout
         )
         {
@@ -1801,14 +1841,16 @@ public sealed class ConfigurationManager : IConfigurationManager
 
         ConfigurationChange canonicalizedChange = change with
         {
-            TargetPathOrName = change.TargetKind == ConfigurationTargetKind.Npmrc
+            TargetPathOrName = change.TargetKind
+                is ConfigurationTargetKind.Npmrc or ConfigurationTargetKind.Yarnrc
                 ? CreateNoFilesystemPhysicalPathIdentity(change.TargetPathOrName)
                 : CreatePlanningPhysicalPathIdentity(change),
         };
 
         if (change.TargetKind != ConfigurationTargetKind.GitConfig)
         {
-            return change.TargetKind == ConfigurationTargetKind.Npmrc
+            return change.TargetKind
+                is ConfigurationTargetKind.Npmrc or ConfigurationTargetKind.Yarnrc
                 && !IsValueWritingOperation(change.Operation)
                 ? canonicalizedChange with { IsSecretValue = false }
                 : canonicalizedChange;
@@ -1977,6 +2019,100 @@ public sealed class ConfigurationManager : IConfigurationManager
         return null;
     }
 
+    private static string? GetYarnrcStaticWriterPlanningValidationViolation(
+        ConfigurationChangePlan plan,
+        IFileSystem? fileSystem = null
+    )
+    {
+        foreach (
+            ConfigurationChange change in plan.Changes.Where(change =>
+                change.TargetKind == ConfigurationTargetKind.Yarnrc
+            )
+        )
+        {
+            string? violation = YarnrcPhysicalTargetWriter.GetPlanningValidationViolation(
+                change,
+                plan.Manifest.ResourceIdentity
+            );
+            if (violation is not null)
+            {
+                return violation;
+            }
+        }
+
+        string? batchViolation = GetYarnrcMixedOperationBatchViolation(plan);
+        if (batchViolation is not null)
+        {
+            return batchViolation;
+        }
+
+        return GetYarnrcPhysicalTargetRequestShapeViolation(plan, fileSystem);
+    }
+
+    private static string? GetYarnrcMixedOperationBatchViolation(ConfigurationChangePlan plan)
+    {
+        ConfigurationChange[] yarnrcChanges = plan
+            .Changes.Where(change => change.TargetKind == ConfigurationTargetKind.Yarnrc)
+            .ToArray();
+        if (yarnrcChanges.Length <= 1)
+        {
+            return null;
+        }
+
+        bool hasValueWritingChanges = yarnrcChanges.Any(change =>
+            IsValueWritingOperation(change.Operation)
+        );
+        bool hasRemoveChanges = yarnrcChanges.Any(
+            change => change.Operation == ConfigurationChangeOperation.Remove
+        );
+        return hasValueWritingChanges && hasRemoveChanges
+            ? "Protocol violation: Yarnrc physical writer does not support mixed value-writing "
+                + "and remove batches."
+            : null;
+    }
+
+    private static string? GetYarnrcPhysicalTargetRequestShapeViolation(
+        ConfigurationChangePlan plan,
+        IFileSystem? fileSystem = null
+    )
+    {
+        ConfigurationChange[] yarnrcChanges = plan
+            .Changes.Where(change => change.TargetKind == ConfigurationTargetKind.Yarnrc)
+            .ToArray();
+        if (yarnrcChanges.Length <= 1)
+        {
+            return null;
+        }
+
+        string firstPath = CreateDispatchPhysicalPathIdentity(fileSystem, yarnrcChanges[0]);
+        if (
+            yarnrcChanges
+                .Skip(1)
+                .Any(change =>
+                    !ConfigurationPathIdentityComparer.Instance.Equals(
+                        CreateDispatchPhysicalPathIdentity(fileSystem, change),
+                        firstPath
+                    )
+                )
+        )
+        {
+            return "Protocol violation: Yarnrc physical writer supports only one normalized "
+                + "physical file path per plan.";
+        }
+
+        if (
+            yarnrcChanges
+                .GroupBy(change => change.Key, StringComparer.Ordinal)
+                .Any(group => group.Count() > 1)
+        )
+        {
+            return "Protocol violation: Yarnrc physical writer supports only one change per "
+                + "canonical key.";
+        }
+
+        return null;
+    }
+
     private static void ValidateProjectedPhysicalTargetManifestForReturn(
         ConfigurationOwnershipManifest? manifest
     )
@@ -2008,7 +2144,9 @@ public sealed class ConfigurationManager : IConfigurationManager
             manifest.Entries.Where(entry => IsValueWritingOperation(entry.Operation))
         );
         string? npmrcPathViolation = GetNpmrcPhysicalTargetEntriesPathViolation(
-            manifest.Entries.Where(entry => entry.TargetKind == ConfigurationTargetKind.Npmrc),
+            manifest.Entries.Where(entry =>
+                entry.TargetKind is ConfigurationTargetKind.Npmrc or ConfigurationTargetKind.Yarnrc
+            ),
             Path.IsPathFullyQualified
         );
         if (npmrcPathViolation is not null)
@@ -2026,8 +2164,8 @@ public sealed class ConfigurationManager : IConfigurationManager
         ArgumentNullException.ThrowIfNull(isPathFullyQualified);
 
         return entries.Any(entry => !isPathFullyQualified(entry.TargetPathOrName))
-            ? "Configuration ownership manifest conflict: Npmrc physical target entries must "
-                + "use fully qualified target paths."
+            ? "Configuration ownership manifest conflict: Npmrc/Yarnrc physical target entries "
+                + "must use fully qualified target paths."
             : null;
     }
 
@@ -2075,18 +2213,20 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
 
         return manifest
-            .Entries.Where(entry => entry.TargetKind == ConfigurationTargetKind.Npmrc)
+            .Entries.Where(entry =>
+                entry.TargetKind is ConfigurationTargetKind.Npmrc or ConfigurationTargetKind.Yarnrc
+            )
             .Select(entry =>
                 CreateEntryKey(
-                    ConfigurationTargetKind.Npmrc,
+                    entry.TargetKind,
                     CreatePhysicalPathIdentity(fileSystem, entry.TargetPathOrName),
                     CanonicalizePhysicalTargetManifestKey(entry.TargetKind, entry.Key)
                 )
             )
             .GroupBy(key => key, GetEntryMergeKeyComparer())
             .Any(group => group.Count() > 1)
-            ? "Configuration ownership manifest conflict: Npmrc retained ownership proofs must "
-                + "be unique per canonical physical key."
+            ? "Configuration ownership manifest conflict: Npmrc/Yarnrc retained ownership proofs "
+                + "must be unique per canonical physical key."
             : null;
     }
 
@@ -2123,6 +2263,7 @@ public sealed class ConfigurationManager : IConfigurationManager
         if (
             entry.TargetKind != ConfigurationTargetKind.GitConfig
             && entry.TargetKind != ConfigurationTargetKind.Npmrc
+            && entry.TargetKind != ConfigurationTargetKind.Yarnrc
         )
         {
             return entry;
@@ -3871,6 +4012,11 @@ public sealed class ConfigurationManager : IConfigurationManager
             .Select(change => CreatePhysicalPathIdentity(fileSystem, change.TargetPathOrName))
             .Distinct(ConfigurationPathIdentityComparer.Instance)
             .ToArray();
+        string[] expectedYarnrcTargetPaths = plan
+            .Changes.Where(change => change.TargetKind == ConfigurationTargetKind.Yarnrc)
+            .Select(change => CreatePhysicalPathIdentity(fileSystem, change.TargetPathOrName))
+            .Distinct(ConfigurationPathIdentityComparer.Instance)
+            .ToArray();
         string[] expectedNuGetPluginLayoutTargetRootPaths = plan
             .Changes.Where(change =>
                 change.TargetKind == ConfigurationTargetKind.NuGetPluginLayout
@@ -3892,6 +4038,10 @@ public sealed class ConfigurationManager : IConfigurationManager
         );
         var expectedNpmrcTargetPathSet = new HashSet<string>(
             expectedNpmrcTargetPaths,
+            ConfigurationPathIdentityComparer.Instance
+        );
+        var expectedYarnrcTargetPathSet = new HashSet<string>(
+            expectedYarnrcTargetPaths,
             ConfigurationPathIdentityComparer.Instance
         );
         var expectedNuGetPluginLayoutTargetRootPathSet = new HashSet<string>(
@@ -3959,6 +4109,18 @@ public sealed class ConfigurationManager : IConfigurationManager
                     reportedMutationException ??= new InvalidOperationException(
                         "Configuration physical target writer reported a completed file mutation "
                             + "for an unrelated Npmrc target path."
+                    );
+                    continue;
+                }
+            }
+
+            if (expectedYarnrcTargetPaths.Length > 0)
+            {
+                if (!expectedYarnrcTargetPathSet.Contains(normalizedMutationPath))
+                {
+                    reportedMutationException ??= new InvalidOperationException(
+                        "Configuration physical target writer reported a completed file mutation "
+                            + "for an unrelated Yarnrc target path."
                     );
                     continue;
                 }
@@ -4071,6 +4233,17 @@ public sealed class ConfigurationManager : IConfigurationManager
                 throw new InvalidOperationException(
                     "Configuration physical target writer did not report a completed file "
                         + "mutation or observation for every Npmrc target path."
+                );
+            }
+        }
+
+        foreach (string expectedPath in expectedYarnrcTargetPaths)
+        {
+            if (!mutationsByNormalizedPath.ContainsKey(expectedPath))
+            {
+                throw new InvalidOperationException(
+                    "Configuration physical target writer did not report a completed file "
+                        + "mutation or observation for every Yarnrc target path."
                 );
             }
         }
@@ -4264,6 +4437,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             .Entries.Where(entry =>
                 entry.TargetKind is ConfigurationTargetKind.GitConfig
                     or ConfigurationTargetKind.Npmrc
+                    or ConfigurationTargetKind.Yarnrc
                     or ConfigurationTargetKind.NuGetPluginLayout
                     or ConfigurationTargetKind.PythonKeyringBackend
                     or ConfigurationTargetKind.KeyringShim
@@ -4571,12 +4745,19 @@ public sealed class ConfigurationManager : IConfigurationManager
                     plan.Changes,
                     ConfigurationPathIdentityComparer.Instance
                 );
-            if (!supportedGitConfigBatch && !supportedNpmrcBatch)
+            bool supportedYarnrcBatch =
+                plan.Changes.All(change => change.TargetKind == ConfigurationTargetKind.Yarnrc)
+                && AllChangesTargetSameNormalizedPhysicalPath(
+                    fileSystem,
+                    plan.Changes,
+                    ConfigurationPathIdentityComparer.Instance
+                );
+            if (!supportedGitConfigBatch && !supportedNpmrcBatch && !supportedYarnrcBatch)
             {
                 throw new NotSupportedException(
                     $"Configuration {operationDescription} currently supports dispatching only "
-                        + "one 4D physical target change per plan, except for GitConfig or Npmrc "
-                        + "batches that target the same normalized physical path."
+                        + "one 4D physical target change per plan, except for GitConfig, Npmrc, "
+                        + "or Yarnrc batches that target the same normalized physical path."
                 );
             }
         }
@@ -5002,7 +5183,9 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
 
         string? npmrcPathViolation = GetNpmrcPhysicalTargetEntriesPathViolation(
-            nonCiPhysicalEntries.Where(entry => entry.TargetKind == ConfigurationTargetKind.Npmrc),
+            nonCiPhysicalEntries.Where(entry =>
+                entry.TargetKind is ConfigurationTargetKind.Npmrc or ConfigurationTargetKind.Yarnrc
+            ),
             fileSystem.IsPathFullyQualified
         );
         if (npmrcPathViolation is not null)
@@ -5083,6 +5266,7 @@ public sealed class ConfigurationManager : IConfigurationManager
         targetKind is
             ConfigurationTargetKind.GitConfig
                 or ConfigurationTargetKind.Npmrc
+                or ConfigurationTargetKind.Yarnrc
                 or ConfigurationTargetKind.NuGetPluginLayout
                 or ConfigurationTargetKind.PythonKeyringBackend
                 or ConfigurationTargetKind.KeyringShim;
@@ -6584,7 +6768,10 @@ public sealed class ConfigurationManager : IConfigurationManager
     private static bool IsRollbackAdoptablePhysicalTargetKind(
         ConfigurationTargetKind targetKind
     ) =>
-        targetKind is ConfigurationTargetKind.GitConfig or ConfigurationTargetKind.Npmrc;
+        targetKind
+            is ConfigurationTargetKind.GitConfig
+                or ConfigurationTargetKind.Npmrc
+                or ConfigurationTargetKind.Yarnrc;
 
     private static ConfigurationChange[] GetPhysicalTargetChangesAffectedByPhysicalSnapshot(
         IFileSystem fileSystem,
@@ -6668,7 +6855,10 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
 
         ConfigurationOwnershipManifestEntry matchingCurrentEntry = matchingCurrentEntries[0];
-        if (change.TargetKind == ConfigurationTargetKind.Npmrc && change.IsSecretValue)
+        if (
+            change.IsSecretValue
+            && change.TargetKind is ConfigurationTargetKind.Npmrc or ConfigurationTargetKind.Yarnrc
+        )
         {
             return matchingCurrentEntry.IsSecretValue;
         }
@@ -7065,7 +7255,11 @@ public sealed class ConfigurationManager : IConfigurationManager
             )
         )
         {
-            DeleteExistingTemporaryContainerIfOnlyArtifactsRemain(fileSystem, containerSnapshot);
+            DeleteExistingTemporaryContainerIfOnlyArtifactsRemain(
+                fileSystem,
+                containerSnapshot,
+                CreateRemovedTargetFileSet(fileSystem, plan)
+            );
             return;
         }
 
@@ -7200,7 +7394,8 @@ public sealed class ConfigurationManager : IConfigurationManager
 
     private static void DeleteExistingTemporaryContainerIfOnlyArtifactsRemain(
         IFileSystem fileSystem,
-        ContainerRollbackSnapshot containerSnapshot
+        ContainerRollbackSnapshot containerSnapshot,
+        IReadOnlySet<string>? emptyRemovedTargetFiles = null
     )
     {
         if (
@@ -7233,6 +7428,7 @@ public sealed class ConfigurationManager : IConfigurationManager
             files.Any(file =>
                 !IsKnownTemporaryContainerArtifact(file)
                 && !IsIgnorableInternalFileSystemArtifact(fileSystem, file)
+                && !IsSafeEmptyRemovedTargetFile(fileSystem, file, emptyRemovedTargetFiles)
             )
         )
         {
@@ -7271,6 +7467,42 @@ public sealed class ConfigurationManager : IConfigurationManager
         }
 
         fileSystem.DeleteDirectory(containerSnapshot.Path, recursive: true);
+    }
+
+    private static HashSet<string> CreateRemovedTargetFileSet(
+        IFileSystem fileSystem,
+        ConfigurationChangePlan plan
+    ) =>
+        plan
+            .Changes.Where(change => change.Operation == ConfigurationChangeOperation.Remove)
+            .Select(change => fileSystem.GetFullPath(change.TargetPathOrName))
+            .ToHashSet(GetPathIdentityComparer());
+
+    private static bool IsSafeEmptyRemovedTargetFile(
+        IFileSystem fileSystem,
+        string path,
+        IReadOnlySet<string>? emptyRemovedTargetFiles
+    )
+    {
+        if (
+            emptyRemovedTargetFiles is null
+            || !emptyRemovedTargetFiles.Contains(path)
+            || !IsSafeFileSystemArtifact(fileSystem, path)
+        )
+        {
+            return false;
+        }
+
+        try
+        {
+            return fileSystem is IFileSystemFileLength fileLength
+                && fileLength.GetFileLength(path) == 0;
+        }
+        catch (Exception exception)
+            when (exception is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            return false;
+        }
     }
 
     private static void DeleteRollbackCreatedContainerContents(
@@ -8500,6 +8732,7 @@ public sealed class ConfigurationManager : IConfigurationManager
         targetKind
             is ConfigurationTargetKind.GitConfig
                 or ConfigurationTargetKind.Npmrc
+                or ConfigurationTargetKind.Yarnrc
                 or ConfigurationTargetKind.NuGetPluginLayout
                 or ConfigurationTargetKind.PythonKeyringBackend
                 or ConfigurationTargetKind.KeyringShim;
@@ -8509,6 +8742,7 @@ public sealed class ConfigurationManager : IConfigurationManager
     ) =>
         targetKind is ConfigurationTargetKind.GitConfig
             or ConfigurationTargetKind.Npmrc
+            or ConfigurationTargetKind.Yarnrc
             or ConfigurationTargetKind.NuGetPluginLayout
             or ConfigurationTargetKind.PythonKeyringBackend
             or ConfigurationTargetKind.KeyringShim;

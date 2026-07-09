@@ -1,9 +1,14 @@
+using System.Security.Cryptography;
+using System.Text;
+using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 using Hcoona.AzureAuth.CredProvider.Platform.Tests.TestDoubles;
 using Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
 using Xunit;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 
+[Collection("ConfigurationManagerExecution")]
 public sealed class YarnPhase13VerticalSliceServiceTests
 {
     [Fact]
@@ -59,11 +64,535 @@ public sealed class YarnPhase13VerticalSliceServiceTests
         Assert.Equal("scoped", scopedDeclaration.ResourceIdentity.Feed);
         Assert.Equal(scopedDeclaration.RegistryUrl.AbsoluteUri, scopedDeclaration.NpmRegistriesKey);
         Assert.True(result.AzureArtifactsYarnEndpointCanonicalizationSuccess);
-        Assert.False(result.WritesSupported);
+        Assert.True(result.WritesSupported);
         Assert.Contains("Phase 13B", result.UnsupportedWriteMessage, StringComparison.Ordinal);
         Assert.Contains("phase-1.4-accepted", result.WriteGateStatus, StringComparison.Ordinal);
         Assert.False(result.ForbiddenAuthIdentConflictDetected);
         AssertNoFilesystemMutationCalls(fileSystem.Calls);
+    }
+
+    [Fact]
+    public void CreateUserCredentialPlanTargetsUserYarnrcAndWritesAuthPair()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.yarnrc.yml",
+            "npmRegistryServer: 'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/'\n"
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+        YarnPhase13RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+
+        ConfigurationChangePlan plan = service.CreateUserCredentialPlan(
+            new YarnPhase13CredentialPlanRequest
+            {
+                Declaration = declaration,
+                AuthToken = "short-lived-token",
+            }
+        );
+
+        Assert.Equal(ConfigurationScope.User, plan.Scope);
+        Assert.True(plan.ContainsCredentialMaterial);
+        Assert.Null(plan.TemporaryContainer);
+        Assert.Equal("yarn", plan.Manifest.SafeMetadata["ecosystem"]);
+        Assert.Equal(declaration.Key, plan.Manifest.SafeMetadata["registry-key"]);
+        Assert.Equal(
+            ConfigurationDeclarationPreservation.NotApplicable,
+            plan.DeclarationPreservation
+        );
+        ConfigurationChange alwaysAuthChange = Assert.Single(
+            plan.Changes,
+            static change => change.Key.EndsWith(".npmAlwaysAuth", StringComparison.Ordinal)
+        );
+        ConfigurationChange authTokenChange = Assert.Single(
+            plan.Changes,
+            static change => change.Key.EndsWith(".npmAuthToken", StringComparison.Ordinal)
+        );
+        Assert.Equal("/home/alice/.yarnrc.yml", alwaysAuthChange.TargetPathOrName);
+        Assert.Equal(ConfigurationTargetKind.Yarnrc, alwaysAuthChange.TargetKind);
+        Assert.Equal(ConfigurationChangeOperation.Set, alwaysAuthChange.Operation);
+        Assert.False(alwaysAuthChange.IsSecretValue);
+        Assert.Equal("true", alwaysAuthChange.Value);
+        Assert.Equal("/home/alice/.yarnrc.yml", authTokenChange.TargetPathOrName);
+        Assert.True(authTokenChange.IsSecretValue);
+        Assert.Equal("short-lived-token", authTokenChange.Value);
+        Assert.Equal(authTokenChange.Key, plan.Manifest.EntrySelector);
+        Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
+        Assert.True(new ConfigurationManager().ValidatePlan(plan).IsValid);
+    }
+
+    [Fact]
+    public async Task UserCredentialPlanAppliesAndRemovesThroughConfigurationManager()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        CreateDirectory(fileSystem, "/state");
+        fileSystem.WriteAllText(
+            "/workspace/.yarnrc.yml",
+            "npmRegistryServer: 'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/'\n"
+        );
+        fileSystem.WriteAllText("/home/alice/.yarnrc.yml", "# user config\n");
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+        YarnPhase13RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+        ConfigurationChangePlan applyPlan = service.CreateUserCredentialPlan(
+            new YarnPhase13CredentialPlanRequest
+            {
+                Declaration = declaration,
+                AuthToken = "short-lived-token",
+            }
+        );
+        const string manifestPath = "/state/phase13-yarn-user-manifest.json";
+        var manager = new ConfigurationManager(
+            fileSystem,
+            manifestPath,
+            new ConfigurationPhysicalTargetWriterDispatcher(fileSystem)
+        );
+
+        ConfigurationPlanResult applyResult = await manager.ApplyAsync(
+            applyPlan,
+            TestContext.Current.CancellationToken
+        );
+        string manifestJson = fileSystem.ReadAllText(manifestPath);
+        string appliedYarnrc = fileSystem.ReadAllText("/home/alice/.yarnrc.yml");
+        ConfigurationOwnershipManifestEntry[] ownedEntries =
+            (applyResult.OwnershipManifest?.Entries ?? []).ToArray();
+        ConfigurationChangePlan removePlan = applyPlan with
+        {
+            Manifest = applyPlan.Manifest with
+            {
+                ResourceIdentity = null,
+                PreviousOwnedEntryHash = "sha256:" + ComputeSha256(manifestJson),
+            },
+            Changes = applyPlan
+                .Changes.Select(change => change with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = GetPreviousOwnedEntryMetadata(
+                        ownedEntries,
+                        change.Key
+                    ),
+                })
+                .ToArray(),
+        };
+
+        ConfigurationPlanResult removeResult = await manager.RemoveAsync(
+            removePlan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Applied, applyResult.State);
+        Assert.Equal(2, ownedEntries.Length);
+        Assert.Contains("npmAlwaysAuth: true", appliedYarnrc);
+        Assert.Contains("npmAuthToken: 'short-lived-token'", appliedYarnrc);
+        Assert.DoesNotContain("short-lived-token", manifestJson, StringComparison.Ordinal);
+        Assert.Equal(ConfigurationPlanState.Applied, removeResult.State);
+        Assert.Equal("# user config\n", fileSystem.ReadAllText("/home/alice/.yarnrc.yml"));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task UserCredentialPlanDryRunRejectsUnsupportedExistingNpmRegistriesIndentation()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        CreateDirectory(fileSystem, "/state");
+        fileSystem.WriteAllText(
+            "/workspace/.yarnrc.yml",
+            "npmRegistryServer: 'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/'\n"
+        );
+        fileSystem.WriteAllText(
+            "/home/alice/.yarnrc.yml",
+            """
+            npmRegistries:
+                'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/':
+                    npmAuthToken: 'existing-token'
+            """
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+        ConfigurationChangePlan plan = service.CreateUserCredentialPlan(
+            new YarnPhase13CredentialPlanRequest
+            {
+                Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                AuthToken = "short-lived-token",
+            }
+        );
+        var manager = new ConfigurationManager(
+            fileSystem,
+            "/state/phase13-yarn-unsupported-shape-manifest.json",
+            new ConfigurationPhysicalTargetWriterDispatcher(fileSystem)
+        );
+
+        NotSupportedException exception = await Assert.ThrowsAsync<NotSupportedException>(
+            async () => await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("indentation", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "short-lived-token",
+            fileSystem.ReadAllText("/home/alice/.yarnrc.yml")
+        );
+    }
+
+    [Fact]
+    public void CreateCiTemporaryCredentialPlanUsesTemporaryHomeActivation()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        fileSystem.WriteAllText(
+            "/workspace/.yarnrc.yml",
+            "npmRegistryServer: 'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/'\n"
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+        YarnPhase13RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+
+        ConfigurationChangePlan plan = service.CreateCiTemporaryCredentialPlan(
+            new YarnPhase13CredentialPlanRequest
+            {
+                Declaration = declaration,
+                AuthToken = "short-lived-token",
+                TemporaryHomePath = "/tmp/azureauth-yarn-home",
+            }
+        );
+
+        Assert.Equal(ConfigurationScope.CiTemporary, plan.Scope);
+        Assert.Equal(
+            ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible,
+            plan.DeclarationPreservation
+        );
+        Assert.NotNull(plan.TemporaryContainer);
+        Assert.Equal(
+            ConfigurationTemporaryContainerKind.TemporaryHome,
+            plan.TemporaryContainer.Kind
+        );
+        Assert.Equal("/tmp/azureauth-yarn-home", plan.TemporaryContainer.ProductOwnedPath);
+        Assert.NotNull(plan.TemporaryContainer.ActivationEnvironment);
+        Assert.Equal("posix", plan.TemporaryContainer.ActivationEnvironment.Platform);
+        Assert.Equal(
+            "/tmp/azureauth-yarn-home",
+            plan.TemporaryContainer.ActivationEnvironment.SetVariables["HOME"]
+        );
+        Assert.DoesNotContain(
+            "USERPROFILE",
+            plan.TemporaryContainer.ActivationEnvironment.SetVariables.Keys
+        );
+        Assert.Empty(plan.TemporaryContainer.ActivationEnvironment.ClearVariables);
+        Assert.All(
+            plan.Changes,
+            static change =>
+                Assert.Equal("/tmp/azureauth-yarn-home/.yarnrc.yml", change.TargetPathOrName)
+        );
+        Assert.True(new ConfigurationManager().ValidatePlan(plan).IsValid);
+    }
+
+    [Fact]
+    public void CreateCiTemporaryCredentialPlanRejectsAuthIdentConflictInExistingTemporaryHome()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/tmp/azureauth-yarn-home");
+        fileSystem.WriteAllText(
+            "/workspace/.yarnrc.yml",
+            "npmRegistryServer: 'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/'\n"
+        );
+        fileSystem.WriteAllText(
+            "/tmp/azureauth-yarn-home/.yarnrc.yml",
+            """
+            npmRegistries:
+              'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/':
+                npmAuthIdent: 'user:password'
+            """
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateCiTemporaryCredentialPlan(
+                new YarnPhase13CredentialPlanRequest
+                {
+                    Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                    AuthToken = "short-lived-token",
+                    TemporaryHomePath = "/tmp/azureauth-yarn-home",
+                }
+            )
+        );
+
+        Assert.Contains("npmAuthIdent", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateUserCredentialPlanRejectsAuthIdentConflictInCustomTargetYarnrc()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/custom");
+        fileSystem.WriteAllText(
+            "/workspace/.yarnrc.yml",
+            "npmRegistryServer: 'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/'\n"
+        );
+        fileSystem.WriteAllText(
+            "/custom/.yarnrc.yml",
+            """
+            npmRegistries:
+              'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/':
+                npmAuthIdent: 'user:password'
+            """
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateUserCredentialPlan(
+                new YarnPhase13CredentialPlanRequest
+                {
+                    Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                    AuthToken = "short-lived-token",
+                    TargetYarnrcPath = "/custom/.yarnrc.yml",
+                }
+            )
+        );
+
+        Assert.Contains("npmAuthIdent", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CiTemporaryCredentialPlanAppliesAndRemoveDeletesTemporaryHome()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/tmp");
+        CreateDirectory(fileSystem, "/state");
+        fileSystem.WriteAllText(
+            "/workspace/.yarnrc.yml",
+            "npmRegistryServer: 'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/'\n"
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+        ConfigurationChangePlan applyPlan = service.CreateCiTemporaryCredentialPlan(
+            new YarnPhase13CredentialPlanRequest
+            {
+                Declaration = Assert.Single(service.DiscoverRegistryDeclarations()),
+                AuthToken = "short-lived-token",
+                TemporaryHomePath = "/tmp/azureauth-yarn-home",
+            }
+        );
+        const string manifestPath = "/state/phase13-yarn-ci-manifest.json";
+        var manager = new ConfigurationManager(
+            fileSystem,
+            manifestPath,
+            new ConfigurationPhysicalTargetWriterDispatcher(fileSystem)
+        );
+
+        ConfigurationPlanResult applyResult = await manager.ApplyAsync(
+            applyPlan,
+            TestContext.Current.CancellationToken
+        );
+        string manifestJson = fileSystem.ReadAllText(manifestPath);
+        ConfigurationOwnershipManifestEntry[] ownedEntries =
+            (applyResult.OwnershipManifest?.Entries ?? []).ToArray();
+        ConfigurationChangePlan removePlan = applyPlan with
+        {
+            Manifest = applyPlan.Manifest with
+            {
+                ResourceIdentity = null,
+                PreviousOwnedEntryHash = "sha256:" + ComputeSha256(manifestJson),
+            },
+            Changes = applyPlan
+                .Changes.Select(change => change with
+                {
+                    Operation = ConfigurationChangeOperation.Remove,
+                    Value = null,
+                    PreviousOwnedEntryMetadata = GetPreviousOwnedEntryMetadata(
+                        ownedEntries,
+                        change.Key
+                    ),
+                })
+                .ToArray(),
+        };
+
+        ConfigurationPlanResult removeResult = await manager.RemoveAsync(
+            removePlan,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ConfigurationPlanState.Applied, applyResult.State);
+        Assert.Equal(ConfigurationPlanState.Applied, removeResult.State);
+        Assert.False(fileSystem.DirectoryExists("/tmp/azureauth-yarn-home"));
+        Assert.False(fileSystem.FileExists("/tmp/azureauth-yarn-home/.yarnrc.yml"));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public void CreateCiTemporaryCredentialPlanRejectsUserOnlyRegistryDeclaration()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/home/alice/.yarnrc.yml",
+            "npmRegistryServer: 'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/'\n"
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+        YarnPhase13RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateCiTemporaryCredentialPlan(
+                new YarnPhase13CredentialPlanRequest
+                {
+                    Declaration = declaration,
+                    AuthToken = "short-lived-token",
+                    TemporaryHomePath = "/tmp/azureauth-yarn-home",
+                }
+            )
+        );
+
+        Assert.Contains("registry declaration to remain visible", exception.Message);
+    }
+
+    [Fact]
+    public void CreateCiTemporaryCredentialPlanRejectsYarnRcFilenameOverride()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        var environment = new EnvironmentVariables(
+            new Dictionary<string, string?>
+            {
+                ["YARN_RC_FILENAME"] = ".selected.yarnrc.yml",
+            }
+        );
+        fileSystem.WriteAllText(
+            "/workspace/.selected.yarnrc.yml",
+            "npmRegistryServer: 'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/'\n"
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                EnvironmentVariableReader = environment.Get,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+        YarnPhase13RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateCiTemporaryCredentialPlan(
+                new YarnPhase13CredentialPlanRequest
+                {
+                    Declaration = declaration,
+                    AuthToken = "short-lived-token",
+                    TemporaryHomePath = "/tmp/azureauth-yarn-home",
+                }
+            )
+        );
+
+        Assert.Contains("YARN_RC_FILENAME", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateUserCredentialPlanRejectsScopedNpmAuthIdentConflict()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CreateDirectory(fileSystem, "/workspace");
+        CreateDirectory(fileSystem, "/home/alice");
+        fileSystem.WriteAllText(
+            "/workspace/.yarnrc.yml",
+            """
+            npmScopes:
+              scope:
+                npmRegistryServer: 'https://pkgs.dev.azure.com/org/_packaging/scoped/npm/registry/'
+                npmAuthIdent: 'user:password'
+            """
+        );
+        var service = new YarnPhase13VerticalSliceService(
+            new YarnPhase13VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                WorkspaceDirectoryPath = "/workspace",
+                UserHomeDirectoryPath = "/home/alice",
+            }
+        );
+        YarnPhase13RegistryDeclaration declaration = Assert.Single(
+            service.DiscoverRegistryDeclarations()
+        );
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateUserCredentialPlan(
+                new YarnPhase13CredentialPlanRequest
+                {
+                    Declaration = declaration,
+                    AuthToken = "short-lived-token",
+                }
+            )
+        );
+
+        Assert.Contains("npmAuthIdent", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -288,6 +817,24 @@ public sealed class YarnPhase13VerticalSliceServiceTests
                         or nameof(InMemoryFileSystem.DeleteDirectory)
                         or nameof(InMemoryFileSystem.AddSymbolicLink)
         );
+    }
+
+    private static string GetPreviousOwnedEntryMetadata(
+        IReadOnlyList<ConfigurationOwnershipManifestEntry> ownedEntries,
+        string key
+    )
+    {
+        ConfigurationOwnershipManifestEntry entry = Assert.Single(
+            ownedEntries,
+            entry => string.Equals(entry.Key, key, StringComparison.Ordinal)
+        );
+        return entry.PlannedValueSha256 ?? "previous-yarnrc-secret-remove-entry";
+    }
+
+    private static string ComputeSha256(string value)
+    {
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     private sealed class EnvironmentVariables

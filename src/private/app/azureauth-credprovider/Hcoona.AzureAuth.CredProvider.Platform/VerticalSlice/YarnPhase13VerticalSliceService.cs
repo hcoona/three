@@ -32,6 +32,17 @@ public sealed record YarnPhase13RegistryDeclaration
     public required string NpmRegistriesKey { get; init; }
 }
 
+public sealed record YarnPhase13CredentialPlanRequest
+{
+    public required YarnPhase13RegistryDeclaration Declaration { get; init; }
+
+    public required string AuthToken { get; init; }
+
+    public string? TargetYarnrcPath { get; init; }
+
+    public string? TemporaryHomePath { get; init; }
+}
+
 public sealed record YarnPhase13AuthIdentConflict
 {
     public required string SourcePath { get; init; }
@@ -80,10 +91,14 @@ public sealed class YarnPhase13VerticalSliceService
 {
     private const string WorkspaceYarnrcFileName = ".yarnrc.yml";
     private const string YarnRcFilenameEnvironmentVariable = "YARN_RC_FILENAME";
-    private const string WriteGateStatusValue = "phase-1.4-accepted; writes-deferred-to-phase-13b";
+    private const string ProductId = "azureauth-credprovider";
+    private const string ProductVersion = "phase13";
+    private const string ManifestId = "phase13-yarnrc-credential";
+    private const string ConfigurePlanId = "phase13-yarnrc-credential-plan";
+    private const string ConfigureChangeSetId = "phase13-yarnrc-credential-changeset";
+    private const string WriteGateStatusValue = "phase-1.4-accepted; writes-supported-by-phase-13b";
     private const string UnsupportedWriteMessageValue =
-        "Yarn writes are not supported by Phase 13A read-only diagnostics; "
-        + "Phase 13B owns Yarn configuration-manager write plans.";
+        "Yarn writes are supported by Phase 13B configuration-manager write plans.";
 
     private readonly Func<string, string?> environmentVariableReader;
     private readonly IFileSystem fileSystem;
@@ -122,6 +137,59 @@ public sealed class YarnPhase13VerticalSliceService
             : [];
     }
 
+    public ConfigurationChangePlan CreateUserCredentialPlan(
+        YarnPhase13CredentialPlanRequest request
+    )
+    {
+        ValidateCredentialPlanRequest(request);
+        string targetYarnrcPath = fileSystem.GetFullPath(
+            NullIfWhiteSpace(request.TargetYarnrcPath) ?? ResolveUserYarnrcPath()
+        );
+        ThrowIfForbiddenAuthIdentConflictExists(request.Declaration, targetYarnrcPath);
+
+        return CreateCredentialPlan(
+            request,
+            targetYarnrcPath,
+            ConfigurationScope.User,
+            temporaryContainer: null,
+            ConfigurationDeclarationPreservation.NotApplicable
+        );
+    }
+
+    public ConfigurationChangePlan CreateCiTemporaryCredentialPlan(
+        YarnPhase13CredentialPlanRequest request
+    )
+    {
+        ValidateCredentialPlanRequest(request);
+        ThrowIfCiTemporaryPlanWouldHideRegistryDeclaration(request.Declaration);
+        ThrowIfCiTemporaryPlanWouldBeBypassedByYarnRcFilenameOverride();
+        string temporaryHomePath =
+            NullIfWhiteSpace(request.TemporaryHomePath)
+            ?? throw new ArgumentException(
+                "CI temporary Yarn plans require a product-owned temporary HOME path.",
+                nameof(request)
+            );
+        temporaryHomePath = fileSystem.GetFullPath(temporaryHomePath);
+        string targetYarnrcPath = fileSystem.GetFullPath(
+            Path.Combine(temporaryHomePath, WorkspaceYarnrcFileName)
+        );
+        ThrowIfForbiddenAuthIdentConflictExists(request.Declaration, targetYarnrcPath);
+        var temporaryContainer = new ConfigurationTemporaryContainer
+        {
+            Kind = ConfigurationTemporaryContainerKind.TemporaryHome,
+            ProductOwnedPath = temporaryHomePath,
+            ActivationEnvironment = CreateTemporaryHomeActivationEnvironment(temporaryHomePath),
+        };
+
+        return CreateCredentialPlan(
+            request,
+            targetYarnrcPath,
+            ConfigurationScope.CiTemporary,
+            temporaryContainer,
+            ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible
+        );
+    }
+
     public ValueTask<YarnPhase13DoctorResult> RunDoctorAsync(
         CancellationToken cancellationToken = default
     )
@@ -147,7 +215,7 @@ public sealed class YarnPhase13VerticalSliceService
                     CheckAzureArtifactsYarnEndpointCanonicalization(),
                 WriteGateStatus = WriteGateStatusValue,
                 UnsupportedWriteMessage = UnsupportedWriteMessageValue,
-                WritesSupported = false,
+                WritesSupported = true,
             }
         );
     }
@@ -222,12 +290,224 @@ public sealed class YarnPhase13VerticalSliceService
         return declarations.ToArray();
     }
 
-    private List<YarnPhase13AuthIdentConflict> DiscoverAuthIdentConflicts()
+    private void ThrowIfCiTemporaryPlanWouldBeBypassedByYarnRcFilenameOverride()
+    {
+        if (GetYarnRcFilenameOverride() is not null)
+        {
+            throw new InvalidOperationException(
+                "CI temporary Yarn plans do not support YARN_RC_FILENAME because Yarn would "
+                    + "bypass the product-owned temporary HOME/.yarnrc.yml target."
+            );
+        }
+    }
+
+    private void ThrowIfCiTemporaryPlanWouldHideRegistryDeclaration(
+        YarnPhase13RegistryDeclaration declaration
+    )
+    {
+        string userYarnrcPath = ResolveUserYarnrcPath();
+        if (PathsEqual(declaration.SourcePath, userYarnrcPath))
+        {
+            throw new InvalidOperationException(
+                "CI temporary Yarn auth-only plans require the registry declaration to remain "
+                    + "visible outside the replaced HOME. Copying hidden declarations into "
+                    + "temporary Yarnrc files is a separate Phase 13B follow-up."
+            );
+        }
+    }
+
+    private void ThrowIfForbiddenAuthIdentConflictExists(
+        YarnPhase13RegistryDeclaration declaration,
+        params string[] additionalYarnrcPaths
+    )
+    {
+        foreach (
+            YarnPhase13AuthIdentConflict conflict in DiscoverAuthIdentConflicts(
+                additionalYarnrcPaths
+            )
+        )
+        {
+            if (
+                AuthIdentConflictAppliesToDeclaration(conflict, declaration)
+            )
+            {
+                throw new InvalidOperationException(
+                    "Yarn npmAuthIdent entries conflict with product-owned npmAuthToken plans."
+                );
+            }
+        }
+    }
+
+    private static bool AuthIdentConflictAppliesToDeclaration(
+        YarnPhase13AuthIdentConflict conflict,
+        YarnPhase13RegistryDeclaration declaration
+    )
+    {
+        if (
+            string.Equals(
+                NormalizeComparableRegistryKey(conflict.RegistryKey),
+                NormalizeComparableRegistryKey(declaration.NpmRegistriesKey),
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return true;
+        }
+
+        if (string.Equals(conflict.RegistryKey, "<global>", StringComparison.Ordinal))
+        {
+            return declaration.Scope is null;
+        }
+
+        if (declaration.Scope is not null)
+        {
+            return string.Equals(
+                conflict.RegistryKey,
+                "npmScopes." + declaration.Scope,
+                StringComparison.Ordinal
+            );
+        }
+
+        return false;
+    }
+
+    private static ConfigurationChangePlan CreateCredentialPlan(
+        YarnPhase13CredentialPlanRequest request,
+        string targetYarnrcPath,
+        ConfigurationScope scope,
+        ConfigurationTemporaryContainer? temporaryContainer,
+        ConfigurationDeclarationPreservation declarationPreservation
+    )
+    {
+        string authTokenKey = CreateNpmRegistriesAuthKey(
+            request.Declaration.NpmRegistriesKey,
+            "npmAuthToken"
+        );
+        string alwaysAuthKey = CreateNpmRegistriesAuthKey(
+            request.Declaration.NpmRegistriesKey,
+            "npmAlwaysAuth"
+        );
+        return ConfigurationChangePlanPolicy.Create(
+            ConfigurePlanId,
+            ConfigureChangeSetId,
+            ProductId,
+            scope,
+            new ConfigurationManifestMetadata
+            {
+                ManifestId = ManifestId,
+                OwnerProductId = ProductId,
+                EntrySelector = authTokenKey,
+                ResourceIdentity = request.Declaration.ResourceIdentity,
+                ProductVersion = ProductVersion,
+                SafeMetadata = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["ecosystem"] = "yarn",
+                    ["registry-key"] = request.Declaration.Key,
+                },
+            },
+            [
+                CreateYarnrcChange(targetYarnrcPath, alwaysAuthKey, "true", isSecretValue: false),
+                CreateYarnrcChange(
+                    targetYarnrcPath,
+                    authTokenKey,
+                    request.AuthToken,
+                    isSecretValue: true
+                ),
+            ],
+            temporaryContainer: temporaryContainer,
+            declarationPreservation: declarationPreservation,
+            containsCredentialMaterial: true
+        );
+    }
+
+    private static ConfigurationChange CreateYarnrcChange(
+        string targetYarnrcPath,
+        string key,
+        string value,
+        bool isSecretValue
+    ) =>
+        new()
+        {
+            Operation = ConfigurationChangeOperation.Set,
+            TargetKind = ConfigurationTargetKind.Yarnrc,
+            TargetPathOrName = targetYarnrcPath,
+            Key = key,
+            Value = value,
+            IsSecretValue = isSecretValue,
+            RequiresOwnershipRecord = true,
+        };
+
+    private static string CreateNpmRegistriesAuthKey(string npmRegistriesKey, string leafKey) =>
+        "npmRegistries." + npmRegistriesKey + "." + leafKey;
+
+    private static void ValidateCredentialPlanRequest(YarnPhase13CredentialPlanRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.Declaration);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.AuthToken);
+        if (
+            request.AuthToken.Contains('\r', StringComparison.Ordinal)
+            || request.AuthToken.Contains('\n', StringComparison.Ordinal)
+        )
+        {
+            throw new ArgumentException(
+                "The Yarn npmAuthToken value must not contain CR or LF.",
+                nameof(request)
+            );
+        }
+    }
+
+    private static ConfigurationActivationEnvironment CreateTemporaryHomeActivationEnvironment(
+        string temporaryHomePath
+    )
+    {
+        if (IsWindowsDrivePath(temporaryHomePath) || IsWindowsUncPath(temporaryHomePath))
+        {
+            return new ConfigurationActivationEnvironment
+            {
+                Platform = "windows",
+                SetVariables = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["USERPROFILE"] = temporaryHomePath,
+                    ["HOME"] = temporaryHomePath,
+                },
+                ClearVariables = ["HOMEDRIVE", "HOMEPATH"],
+            };
+        }
+
+        return new ConfigurationActivationEnvironment
+        {
+            Platform = "posix",
+            SetVariables = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["HOME"] = temporaryHomePath,
+            },
+            ClearVariables = [],
+        };
+    }
+
+    private List<YarnPhase13AuthIdentConflict> DiscoverAuthIdentConflicts(
+        params string[] additionalYarnrcPaths
+    )
     {
         var conflicts = new List<YarnPhase13AuthIdentConflict>();
-        foreach (string yarnrcPath in GetReadableYarnrcPaths())
+        var seenPaths = new List<string>();
+        foreach (
+            string yarnrcPath in GetReadableYarnrcPaths()
+                .Concat(additionalYarnrcPaths.Where(path => !string.IsNullOrWhiteSpace(path)))
+        )
         {
-            AddAuthIdentConflicts(yarnrcPath, conflicts);
+            string fullPath = fileSystem.GetFullPath(yarnrcPath);
+            if (
+                !fileSystem.FileExists(fullPath)
+                || seenPaths.Any(seenPath => PathsEqual(seenPath, fullPath))
+            )
+            {
+                continue;
+            }
+
+            seenPaths.Add(fullPath);
+            AddAuthIdentConflicts(fullPath, conflicts);
         }
 
         return conflicts;
@@ -662,6 +942,24 @@ public sealed class YarnPhase13VerticalSliceService
     private static string NormalizeScopeName(string scopeName) =>
         scopeName.StartsWith('@') ? scopeName[1..] : scopeName;
 
+    private static string NormalizeComparableRegistryKey(string registryKey)
+    {
+        if (
+            Uri.TryCreate(registryKey, UriKind.Absolute, out Uri? uri)
+            && string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            return uri.AbsoluteUri;
+        }
+
+        if (registryKey.StartsWith("//", StringComparison.Ordinal))
+        {
+            return "https:" + registryKey;
+        }
+
+        return registryKey;
+    }
+
     private bool PathsEqual(string left, string right)
     {
         string normalizedLeft = fileSystem.GetFullPath(left);
@@ -691,6 +989,10 @@ public sealed class YarnPhase13VerticalSliceService
         && path[1] == ':'
         && (path[2] == '\\' || path[2] == '/')
         && char.IsAsciiLetter(path[0]);
+
+    private static bool IsWindowsUncPath(string path) =>
+        path.StartsWith(@"\\", StringComparison.Ordinal)
+        || path.StartsWith("//", StringComparison.Ordinal);
 
     private static bool IsYamlNullOrEmpty(string? value) =>
         UnquoteYamlScalar(value) is not { Length: > 0 };

@@ -47,6 +47,7 @@ internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
     private readonly NuGetPluginLayoutPhysicalTargetWriter nuGetPluginLayoutWriter =
         new(fileSystem);
     private readonly PythonKeyringPhysicalTargetWriter pythonKeyringWriter = new(fileSystem);
+    private readonly YarnrcPhysicalTargetWriter yarnrcWriter = new(fileSystem);
 
     public bool RejectSecretGitConfigValueWritesBeforeManifestPreclaim => true;
 
@@ -65,6 +66,9 @@ internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
                 break;
             case ConfigurationTargetKind.Npmrc:
                 npmrcWriter.Write(request, cancellationToken);
+                break;
+            case ConfigurationTargetKind.Yarnrc:
+                yarnrcWriter.Write(request, cancellationToken);
                 break;
             case ConfigurationTargetKind.NuGetPluginLayout:
                 nuGetPluginLayoutWriter.Write(request, cancellationToken);
@@ -99,6 +103,9 @@ internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
             case ConfigurationTargetKind.Npmrc:
                 npmrcWriter.Validate(request, cancellationToken);
                 break;
+            case ConfigurationTargetKind.Yarnrc:
+                yarnrcWriter.Validate(request, cancellationToken);
+                break;
             case ConfigurationTargetKind.NuGetPluginLayout:
                 nuGetPluginLayoutWriter.Validate(request, cancellationToken);
                 break;
@@ -125,6 +132,7 @@ internal sealed class ConfigurationPhysicalTargetWriterDispatcher(
         npmrcWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
         nuGetPluginLayoutWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
         pythonKeyringWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
+        yarnrcWriter.ValidateRetainedOwnershipProofs(ownershipProofs, cancellationToken);
     }
 }
 

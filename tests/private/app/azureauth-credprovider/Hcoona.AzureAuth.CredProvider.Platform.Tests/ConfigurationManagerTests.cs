@@ -22,6 +22,10 @@ public sealed class ConfigurationManagerTests
         "//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_authToken";
     private const string MismatchedNpmrcSecretAuthTokenSelector =
         "//pkgs.dev.azure.com/org/_packaging/otherfeed/npm/registry/:_authToken";
+    private const string CanonicalYarnRegistry =
+        "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/";
+    private const string CanonicalYarnAlwaysAuthSelector =
+        "npmRegistries." + CanonicalYarnRegistry + ".npmAlwaysAuth";
 
     private static readonly ConfigurationTargetKind[] NonPhase4DPhysicalTargetKindValues =
     [
@@ -3757,7 +3761,7 @@ public sealed class ConfigurationManagerTests
         Assert.False(result.IsValid);
         Assert.NotNull(result.Violation);
         Assert.Contains(
-            "does not support mixing 4D physical configuration targets with other target kinds",
+            "supports dispatching only one 4D physical target kind per plan",
             result.Violation,
             StringComparison.Ordinal
         );
@@ -3765,7 +3769,7 @@ public sealed class ConfigurationManagerTests
             await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
         );
         Assert.Contains(
-            "does not support mixing 4D physical configuration targets with other target kinds",
+            "supports dispatching only one 4D physical target kind per plan",
             exception.Message,
             StringComparison.Ordinal
         );
@@ -3908,7 +3912,7 @@ public sealed class ConfigurationManagerTests
         Assert.False(result.IsValid);
         Assert.NotNull(result.Violation);
         Assert.Contains(
-            "does not support mixing 4D physical configuration targets with other target kinds",
+            "supports dispatching only one 4D physical target kind per plan",
             result.Violation,
             StringComparison.Ordinal
         );
@@ -3916,7 +3920,7 @@ public sealed class ConfigurationManagerTests
             await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
         );
         Assert.Contains(
-            "does not support mixing 4D physical configuration targets with other target kinds",
+            "supports dispatching only one 4D physical target kind per plan",
             exception.Message,
             StringComparison.Ordinal
         );
@@ -5463,10 +5467,18 @@ public sealed class ConfigurationManagerTests
                 StringComparison.Ordinal
             );
         }
+        else if (unsupportedTargetKind == ConfigurationTargetKind.Yarnrc)
+        {
+            Assert.Contains(
+                "Yarnrc retained ownership proof does not match any existing file",
+                exception.Message,
+                StringComparison.Ordinal
+            );
+        }
         else
         {
             Assert.Contains(
-                "registered retained-proof validator",
+                "CI temporary file entries",
                 exception.Message,
                 StringComparison.Ordinal
             );
@@ -5526,10 +5538,18 @@ public sealed class ConfigurationManagerTests
                 StringComparison.Ordinal
             );
         }
+        else if (unsupportedTargetKind == ConfigurationTargetKind.Yarnrc)
+        {
+            Assert.Contains(
+                "Yarnrc retained ownership proof does not match any existing file",
+                exception.Message,
+                StringComparison.Ordinal
+            );
+        }
         else
         {
             Assert.Contains(
-                "registered retained-proof validator",
+                "CI temporary file entries",
                 exception.Message,
                 StringComparison.Ordinal
             );
@@ -5936,6 +5956,35 @@ public sealed class ConfigurationManagerTests
         Assert.Equal(ConfigurationTargetKind.Npmrc, entry.TargetKind);
         Assert.Equal(targetPath, entry.TargetPathOrName);
         Assert.Equal("physical-target", entry.Key);
+    }
+
+    [Fact]
+    public async Task FilesystemBackedApplyRejectsYarnrcDispatcherMissingCompletedMutation()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string manifestPath = "/state/yarnrc-missing-mutation-manifest.json";
+        const string targetPath = "/config/yarnrc-missing-mutation/.yarnrc.yml";
+        var dispatcher = new CallbackPhysicalTargetWriterDispatcher(
+            static (_, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return ValueTask.CompletedTask;
+            }
+        );
+        var manager = new ConfigurationManager(fileSystem, manifestPath, dispatcher);
+        ConfigurationChangePlan plan = CreatePhysicalTargetPlan(
+            ConfigurationTargetKind.Yarnrc,
+            targetPath
+        );
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await manager.ApplyAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("every Yarnrc target path", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dispatcher.Requests);
+        Assert.False(fileSystem.FileExists(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
     }
 
     [Fact]
@@ -11820,7 +11869,7 @@ public sealed class ConfigurationManagerTests
         );
 
         Assert.Contains(
-            "registered retained-proof validator",
+            "CI temporary file entries",
             exception.Message,
             StringComparison.Ordinal
         );
@@ -12365,7 +12414,7 @@ public sealed class ConfigurationManagerTests
         );
 
         Assert.Contains(
-            "registered retained-proof validator",
+            "CI temporary file entries",
             exception.Message,
             StringComparison.Ordinal
         );
@@ -14016,7 +14065,7 @@ public sealed class ConfigurationManagerTests
     }
 
     [Fact]
-    public async Task FilesystemBackedDryRunRejectsCiTemporaryPlanWithNonCiTemporaryFileTarget()
+    public async Task FilesystemBackedDryRunRejectsCiTemporaryYarnrcPlanWithUnsupportedKey()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath = "/state/non-ci-temporary-file-target-dry-run-manifest.json";
@@ -14052,12 +14101,20 @@ public sealed class ConfigurationManagerTests
                 ConfigurationDeclarationPreservation.CompleteMergedTemporaryConfig
         );
 
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
         var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
             await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
         );
 
+        Assert.False(validationResult.IsValid);
+        Assert.NotNull(validationResult.Violation);
         Assert.Contains(
-            "supports only CI temporary file targets",
+            "supports only npmRegistries auth token keys",
+            validationResult.Violation,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "supports only npmRegistries auth token keys",
             exception.Message,
             StringComparison.Ordinal
         );
@@ -14067,8 +14124,147 @@ public sealed class ConfigurationManagerTests
     }
 
     [Fact]
-    public async Task
-        ApplyAsyncReportsTargetKindErrorForNonCiTemporaryFileWithUnsupportedOperation()
+    public async Task FilesystemBackedDryRunRejectsYarnrcTargetWithExistingNpmAuthIdent()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string containerPath = "/config/yarn-auth-ident-target";
+        const string targetPath = "/config/yarn-auth-ident-target/.yarnrc.yml";
+        const string manifestPath = "/state/yarn-auth-ident-target-manifest.json";
+        fileSystem.CreateDirectory(containerPath);
+        fileSystem.WriteAllText(
+            targetPath,
+            """
+            npmRegistries:
+              'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/':
+                npmAuthIdent: 'user:password'
+            """
+        );
+        var manager = new ConfigurationManager(
+            fileSystem,
+            manifestPath,
+            new ConfigurationPhysicalTargetWriterDispatcher(fileSystem)
+        );
+        ConfigurationChangePlan plan = ConfigurationChangePlanPolicy.Create(
+            "plan-yarn-auth-ident-target",
+            "changeset-yarn-auth-ident-target",
+            "azureauth-credprovider",
+            ConfigurationScope.CiTemporary,
+            new ConfigurationManifestMetadata
+            {
+                ManifestId = "manifest-yarn-auth-ident-target",
+                OwnerProductId = "azureauth-credprovider",
+                EntrySelector = CanonicalYarnAlwaysAuthSelector,
+                ProductVersion = "0.0.0-test",
+            },
+            [CreateYarnrcFileChange(targetPath)],
+            temporaryContainer: CreateTemporaryHomeContainer(containerPath),
+            declarationPreservation:
+                ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible
+        );
+
+        ConfigurationPlanValidationResult validationResult = manager.ValidatePlan(plan);
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.True(validationResult.IsValid);
+        Assert.Contains("npmAuthIdent", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("npmAlwaysAuth", fileSystem.ReadAllText(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunRejectsYarnrcTargetWithTopLevelNpmAuthIdent()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string containerPath = "/config/yarn-global-auth-ident-target";
+        const string targetPath = "/config/yarn-global-auth-ident-target/.yarnrc.yml";
+        const string manifestPath = "/state/yarn-global-auth-ident-target-manifest.json";
+        fileSystem.CreateDirectory(containerPath);
+        fileSystem.WriteAllText(targetPath, "npmAuthIdent: 'user:password'\n");
+        var manager = new ConfigurationManager(
+            fileSystem,
+            manifestPath,
+            new ConfigurationPhysicalTargetWriterDispatcher(fileSystem)
+        );
+        ConfigurationChangePlan plan = ConfigurationChangePlanPolicy.Create(
+            "plan-yarn-global-auth-ident-target",
+            "changeset-yarn-global-auth-ident-target",
+            "azureauth-credprovider",
+            ConfigurationScope.CiTemporary,
+            new ConfigurationManifestMetadata
+            {
+                ManifestId = "manifest-yarn-global-auth-ident-target",
+                OwnerProductId = "azureauth-credprovider",
+                EntrySelector = CanonicalYarnAlwaysAuthSelector,
+                ProductVersion = "0.0.0-test",
+            },
+            [CreateYarnrcFileChange(targetPath)],
+            temporaryContainer: CreateTemporaryHomeContainer(containerPath),
+            declarationPreservation:
+                ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible
+        );
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("npmAuthIdent", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("npmAuthIdent: 'user:password'\n", fileSystem.ReadAllText(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task FilesystemBackedDryRunRejectsYarnrcTargetWithApplicableScopedNpmAuthIdent()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        const string containerPath = "/config/yarn-scoped-auth-ident-target";
+        const string targetPath = "/config/yarn-scoped-auth-ident-target/.yarnrc.yml";
+        const string manifestPath = "/state/yarn-scoped-auth-ident-target-manifest.json";
+        fileSystem.CreateDirectory(containerPath);
+        fileSystem.WriteAllText(
+            targetPath,
+            """
+            npmScopes:
+              scope:
+                npmRegistryServer: 'https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/'
+                npmAuthIdent: 'user:password'
+            """
+        );
+        var manager = new ConfigurationManager(
+            fileSystem,
+            manifestPath,
+            new ConfigurationPhysicalTargetWriterDispatcher(fileSystem)
+        );
+        ConfigurationChangePlan plan = ConfigurationChangePlanPolicy.Create(
+            "plan-yarn-scoped-auth-ident-target",
+            "changeset-yarn-scoped-auth-ident-target",
+            "azureauth-credprovider",
+            ConfigurationScope.CiTemporary,
+            new ConfigurationManifestMetadata
+            {
+                ManifestId = "manifest-yarn-scoped-auth-ident-target",
+                OwnerProductId = "azureauth-credprovider",
+                EntrySelector = CanonicalYarnAlwaysAuthSelector,
+                ProductVersion = "0.0.0-test",
+            },
+            [CreateYarnrcFileChange(targetPath)],
+            temporaryContainer: CreateTemporaryHomeContainer(containerPath),
+            declarationPreservation:
+                ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible
+        );
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await manager.DryRunAsync(plan, TestContext.Current.CancellationToken)
+        );
+
+        Assert.Contains("npmAuthIdent", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("npmAlwaysAuth", fileSystem.ReadAllText(targetPath));
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task ApplyAsyncReportsOperationErrorForCiTemporaryYarnrcWithUnsupportedOperation()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         const string manifestPath =
@@ -14110,11 +14306,10 @@ public sealed class ConfigurationManagerTests
         );
 
         Assert.Contains(
-            "supports only CI temporary file targets",
+            "supports only value-writing 4D physical target changes",
             exception.Message,
             StringComparison.Ordinal
         );
-        Assert.DoesNotContain("operations only", exception.Message, StringComparison.Ordinal);
         Assert.Empty(fileSystem.Files);
         Assert.False(fileSystem.FileExists(manifestPath));
     }
@@ -17806,7 +18001,7 @@ public sealed class ConfigurationManagerTests
                 {
                     Operation = ConfigurationChangeOperation.Set,
                     TargetKind = ConfigurationTargetKind.Yarnrc,
-                    Key = "nodeLinker",
+                    Key = CanonicalYarnAlwaysAuthSelector,
                 },
             ],
         };
@@ -18120,7 +18315,7 @@ public sealed class ConfigurationManagerTests
                     TargetKind = targetKind,
                     TargetPathOrName = targetPath,
                     Key = CreatePhysicalTargetKey(targetKind),
-                    Value = "planned-value",
+                    Value = targetKind == ConfigurationTargetKind.Yarnrc ? "true" : "planned-value",
                     RequiresOwnershipRecord = true,
                     PreserveDeclarationsAndComments = true,
                 },
@@ -18192,7 +18387,7 @@ public sealed class ConfigurationManagerTests
             TargetKind = targetKind,
             TargetPathOrName = targetPath,
             Key = CreatePhysicalTargetKey(targetKind),
-            Value = "planned-value",
+            Value = targetKind == ConfigurationTargetKind.Yarnrc ? "true" : "planned-value",
             RequiresOwnershipRecord = true,
             PreserveDeclarationsAndComments = true,
         };
@@ -18280,9 +18475,12 @@ public sealed class ConfigurationManagerTests
         };
 
     private static string CreatePhysicalTargetKey(ConfigurationTargetKind targetKind) =>
-        targetKind == ConfigurationTargetKind.GitConfig
-            ? "credential.helper"
-            : "physical-target";
+        targetKind switch
+        {
+            ConfigurationTargetKind.GitConfig => "credential.helper",
+            ConfigurationTargetKind.Yarnrc => CanonicalYarnAlwaysAuthSelector,
+            _ => "physical-target",
+        };
 
     private static ConfigurationChange CreateYarnrcFileChange(string targetPath) =>
         new()
@@ -18290,8 +18488,8 @@ public sealed class ConfigurationManagerTests
             Operation = ConfigurationChangeOperation.Set,
             TargetKind = ConfigurationTargetKind.Yarnrc,
             TargetPathOrName = targetPath,
-            Key = "nodeLinker",
-            Value = "node-modules",
+            Key = CanonicalYarnAlwaysAuthSelector,
+            Value = "true",
             RequiresOwnershipRecord = true,
             IsSecretValue = false,
             PreserveDeclarationsAndComments = true,
