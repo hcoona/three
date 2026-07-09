@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
@@ -99,6 +100,29 @@ internal static class FakeAdapterDiscoveryScaffold
         return placements;
     }
 
+    public static IReadOnlyList<FakeAdapterPlacement> RemovePlacements(
+        FakeAdapterMaterializationContext context
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(context.Layout);
+        ArgumentNullException.ThrowIfNull(context.FileSystem);
+
+        EnsureRealFileSystemMaterializationIsRejected(context);
+        EnsureLayoutRootsAreSafeForMaterialization(context.Layout);
+        FakeAdapterPlacement[] placements = ProjectPlacements(context.Layout)
+            .Select(placement => ValidatePlacementForMaterialization(placement, context.Layout))
+            .ToArray();
+        EnsurePlacementPathsAreFullyQualifiedForFileSystem(placements, context);
+        EnsureMaterializationPlacementsDoNotHaveWrongKindConflicts(placements, context);
+        foreach (FakeAdapterPlacement placement in placements.Reverse())
+        {
+            RemovePlacementCore(placement, context);
+        }
+
+        return placements;
+    }
+
     public static FakeAdapterPlacement MaterializePlacement(
         FakeAdapterSurface surface,
         FakeAdapterMaterializationContext context
@@ -141,6 +165,49 @@ internal static class FakeAdapterDiscoveryScaffold
         MaterializePlacementCore(projectedPlacement, context);
         return projectedPlacement;
     }
+
+    public static FakeAdapterPlacement RemovePlacement(
+        FakeAdapterSurface surface,
+        FakeAdapterMaterializationContext context
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(context.Layout);
+        ArgumentNullException.ThrowIfNull(context.FileSystem);
+        ValidateSurface(surface);
+
+        EnsureRealFileSystemMaterializationIsRejected(context);
+        EnsureRelevantLayoutRootsAreSafeForMaterialization(surface, context.Layout);
+        FakeAdapterPlacement placement = ProjectPlacement(surface, context.Layout);
+        return RemovePlacement(placement, context);
+    }
+
+    public static FakeAdapterPlacement RemovePlacement(
+        FakeAdapterPlacement placement,
+        FakeAdapterMaterializationContext context
+    )
+    {
+        ArgumentNullException.ThrowIfNull(placement);
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(context.Layout);
+        ArgumentNullException.ThrowIfNull(context.FileSystem);
+
+        EnsureRealFileSystemMaterializationIsRejected(context);
+        EnsureRelevantLayoutRootsAreSafeForMaterialization(placement.Surface, context.Layout);
+        FakeAdapterPlacement projectedPlacement = ValidatePlacementForMaterialization(
+            placement,
+            context.Layout
+        );
+        EnsurePlacementPathsAreFullyQualifiedForFileSystem([projectedPlacement], context);
+        EnsureMaterializationPlacementDoesNotHaveWrongKindConflicts(
+            projectedPlacement,
+            CreateMaterializationProbeContext(context),
+            context.Layout.Platform
+        );
+        RemovePlacementCore(projectedPlacement, context);
+        return projectedPlacement;
+    }
+
 
     public static IReadOnlyList<FakeAdapterProbeResult> ProbePlacements(
         FakeAdapterDiscoveryContext context
@@ -371,6 +438,60 @@ internal static class FakeAdapterDiscoveryScaffold
             default:
                 throw new InvalidOperationException("Unknown fake adapter artifact kind.");
         }
+    }
+
+    private static void RemovePlacementCore(
+        FakeAdapterPlacement placement,
+        FakeAdapterMaterializationContext context
+    )
+    {
+        switch (placement.ArtifactKind)
+        {
+            case FakeAdapterArtifactKind.File:
+                RemoveFilePlacementCore(placement, context);
+                break;
+            case FakeAdapterArtifactKind.Directory:
+                throw new InvalidOperationException(
+                    "Fake adapter scaffold removal only supports file artifacts."
+                );
+            case FakeAdapterArtifactKind.Missing:
+                throw new InvalidOperationException(
+                    "Fake adapter placements must remove file or directory artifacts."
+                );
+            default:
+                throw new InvalidOperationException("Unknown fake adapter artifact kind.");
+        }
+    }
+
+    private static void RemoveFilePlacementCore(
+        FakeAdapterPlacement placement,
+        FakeAdapterMaterializationContext context
+    )
+    {
+        string deterministicContents = BuildDeterministicArtifactContents(
+            placement,
+            context.Layout.Platform
+        );
+        FakeAdapterExistingFileMaterializationState existingFileState =
+            GetExistingFileMaterializationState(
+                placement,
+                context,
+                deterministicContents,
+                validateExecutableTrustedParentDirectories: false
+            );
+        EnsureExistingFileRemovalStateIsAllowed(placement, existingFileState);
+        if (existingFileState == FakeAdapterExistingFileMaterializationState.Missing)
+        {
+            return;
+        }
+
+        EnsureMaterializationPathCanBeSafelyMutated(placement, context);
+        context.FileSystem.DeleteFile(
+            placement.ArtifactPath,
+            FileMutationExpectation.Existing(ComputeSha256(Utf8NoBom.GetBytes(
+                deterministicContents
+            )))
+        );
     }
 
     private static FakeAdapterPlacement ProjectGitHelperPlacement(
@@ -1261,13 +1382,7 @@ internal static class FakeAdapterDiscoveryScaffold
         FakeAdapterMaterializationContext context
     )
     {
-        FakeAdapterDiscoveryContext probeContext = new()
-        {
-            Layout = context.Layout,
-            IsPathFullyQualified = context.FileSystem.IsPathFullyQualified,
-            FileExists = context.FileSystem.FileExists,
-            DirectoryExists = context.FileSystem.DirectoryExists,
-        };
+        FakeAdapterDiscoveryContext probeContext = CreateMaterializationProbeContext(context);
 
         foreach (FakeAdapterPlacement placement in placements)
         {
@@ -1306,6 +1421,19 @@ internal static class FakeAdapterDiscoveryScaffold
                 EnsureConditionalFileMutationSupportForScaffoldCreation(placement, context);
             }
         }
+    }
+
+    private static FakeAdapterDiscoveryContext CreateMaterializationProbeContext(
+        FakeAdapterMaterializationContext context
+    )
+    {
+        return new FakeAdapterDiscoveryContext
+        {
+            Layout = context.Layout,
+            IsPathFullyQualified = context.FileSystem.IsPathFullyQualified,
+            FileExists = context.FileSystem.FileExists,
+            DirectoryExists = context.FileSystem.DirectoryExists,
+        };
     }
 
     private static FakeAdapterExistingFileMaterializationState GetExistingFileMaterializationState(
@@ -1491,6 +1619,36 @@ internal static class FakeAdapterDiscoveryScaffold
                         + $"'{placement.Surface}' "
                         + $"because file '{placement.ArtifactPath}' already exists but does not "
                         + "have the expected scaffold executable mode."
+                );
+            default:
+                throw new InvalidOperationException(
+                    "Unknown fake adapter existing-file materialization state."
+                );
+        }
+    }
+
+    private static void EnsureExistingFileRemovalStateIsAllowed(
+        FakeAdapterPlacement placement,
+        FakeAdapterExistingFileMaterializationState existingFileState
+    )
+    {
+        switch (existingFileState)
+        {
+            case FakeAdapterExistingFileMaterializationState.Missing:
+            case FakeAdapterExistingFileMaterializationState.MatchesExpectedFakeArtifact:
+                return;
+            case FakeAdapterExistingFileMaterializationState.MismatchedContents:
+                throw new InvalidOperationException(
+                    "Fake adapter removal rejects projected placement "
+                        + $"'{placement.Surface}' "
+                        + $"because file '{placement.ArtifactPath}' has non-scaffold contents."
+                );
+            case FakeAdapterExistingFileMaterializationState.MismatchedExecutableMode:
+                throw new InvalidOperationException(
+                    "Fake adapter removal rejects projected placement "
+                        + $"'{placement.Surface}' "
+                        + $"because file '{placement.ArtifactPath}' does not have the expected "
+                        + "scaffold executable mode."
                 );
             default:
                 throw new InvalidOperationException(
@@ -1948,6 +2106,12 @@ internal static class FakeAdapterDiscoveryScaffold
                 }",
             ]
         ) + "\n";
+
+    private static string ComputeSha256(byte[] value)
+    {
+        byte[] hash = SHA256.HashData(value);
+        return Convert.ToHexString(hash).ToLower(CultureInfo.InvariantCulture);
+    }
 
     private static string NormalizePathForDeterministicArtifactContents(
         ConfigurationLayoutPlatform platform,

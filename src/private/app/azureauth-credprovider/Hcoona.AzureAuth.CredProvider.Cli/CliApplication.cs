@@ -13,7 +13,7 @@ namespace Hcoona.AzureAuth.CredProvider.Cli;
 internal static class CliApplication
 {
     private const string CommandName = "azureauth-credprovider";
-    private const string PhaseName = "14.3-doctor-cleanup";
+    private const string PhaseName = "15-end-to-end-hardening";
     private const int SuccessExitCode = 0;
     private const int NotImplementedExitCode = 1;
     private const int UsageExitCode = 2;
@@ -116,6 +116,7 @@ internal static class CliApplication
                     runtimeOptions),
                 CliCommand.Doctor => HandleDoctor(invocation, stdout, runtimeOptions),
                 CliCommand.Cleanup => HandleCleanup(invocation, stdout, stderr, runtimeOptions),
+                CliCommand.Acceptance => HandleAcceptance(invocation, stdout),
                 CliCommand.Login => HandleLogin(invocation, stdout, stderr, runtimeOptions),
                 CliCommand.Logout => HandleLogout(invocation, stdout),
                 _ => throw new InvalidOperationException("Unsupported CLI command."),
@@ -471,6 +472,16 @@ internal static class CliApplication
             : NotImplementedExitCode;
     }
 
+    private static int HandleAcceptance(CliInvocation invocation, TextWriter stdout)
+    {
+        ReleaseHardeningPhase15MatrixResult result =
+            ReleaseHardeningPhase15VerticalSliceService.Evaluate();
+        WriteText(stdout, BuildAcceptanceOutput(invocation, result));
+        return result.MvpLocalAcceptancePassed && !result.BlockingFailuresPresent
+            ? SuccessExitCode
+            : NotImplementedExitCode;
+    }
+
     private static int HandleCleanup(
         CliInvocation invocation,
         TextWriter stdout,
@@ -595,6 +606,7 @@ internal static class CliApplication
             CliCommand.Status => ParseStatus(remainingArgs),
             CliCommand.Doctor => ParseDoctor(remainingArgs),
             CliCommand.Cleanup => ParseCleanup(remainingArgs),
+            CliCommand.Acceptance => ParseAcceptance(remainingArgs),
             CliCommand.Login => ParseLogin(remainingArgs),
             CliCommand.Logout => ParseLogout(remainingArgs),
             CliCommand.Configure => ParseConfigurationCommand(CliCommand.Configure, remainingArgs),
@@ -821,6 +833,40 @@ internal static class CliApplication
 
         return new CliInvocation(
             CliCommand.Doctor,
+            null,
+            CliCiMode.None,
+            DryRun: false,
+            HelpText: null);
+    }
+
+    private static CliInvocation ParseAcceptance(IReadOnlyList<string> args)
+    {
+        if (ContainsStandaloneHelpToken(args))
+        {
+            ThrowIfAnyValuelessOptionHasAssignedValue(args);
+            return CliInvocation.CreateHelp(BuildAcceptanceHelp());
+        }
+
+        foreach (string token in args)
+        {
+            ThrowIfValuelessOptionHasAssignedValue(token);
+            if (IsHelpToken(token))
+            {
+                return CliInvocation.CreateHelp(BuildAcceptanceHelp());
+            }
+
+            if (IsOptionToken(token))
+            {
+                throw CreateUnknownOptionError(token);
+            }
+
+            throw CreateUsageError(
+                "error: acceptance does not accept positional arguments. "
+                + $"Run '{CommandName} acceptance --help' for usage.");
+        }
+
+        return new CliInvocation(
+            CliCommand.Acceptance,
             null,
             CliCiMode.None,
             DryRun: false,
@@ -1173,6 +1219,8 @@ internal static class CliApplication
                 CliCommand.Doctor,
             { } value when string.Equals(value, "cleanup", StringComparison.OrdinalIgnoreCase) =>
                 CliCommand.Cleanup,
+            { } value when string.Equals(value, "acceptance", StringComparison.OrdinalIgnoreCase) =>
+                CliCommand.Acceptance,
             { } value when string.Equals(value, "login", StringComparison.OrdinalIgnoreCase) =>
                 CliCommand.Login,
             { } value when string.Equals(value, "logout", StringComparison.OrdinalIgnoreCase) =>
@@ -1253,9 +1301,10 @@ internal static class CliApplication
             $"  {CommandName} <command> [options]",
             string.Empty,
             "Commands:",
-            "  status                       Show deterministic Phase 14.3 shell status.",
+            "  status                       Show deterministic Phase 15 hardening status.",
             "  doctor                       Run aggregate adapter, config, and auth checks.",
             "  cleanup [ecosystem]          Clean product-owned temporary CI state.",
+            "  acceptance                   Render Phase 15 hardening matrix.",
             "  login                        Run accepted MVP authentication orchestration.",
             "  logout                       Clear product-owned authentication state.",
             "  configure <ecosystem>        Apply supported configuration plans.",
@@ -1270,6 +1319,7 @@ internal static class CliApplication
             $"  {CommandName} login --ci azure-pipelines",
             $"  {CommandName} status --ci azure-pipelines",
             $"  {CommandName} configure git --dry-run",
+            $"  {CommandName} acceptance",
             $"  {CommandName} cleanup --ci azure-pipelines",
             $"  {CommandName} unconfigure npm --dry-run");
     }
@@ -1344,6 +1394,21 @@ internal static class CliApplication
             "  -h, --help                   Show help.");
     }
 
+    private static string BuildAcceptanceHelp()
+    {
+        return JoinLines(
+            $"{CommandName} acceptance",
+            "Usage:",
+            $"  {CommandName} acceptance [--help]",
+            string.Empty,
+            "Status:",
+            "  Render the executable Phase 15 release-hardening acceptance matrix.",
+            "  Deferred rows are not accepted support claims.",
+            string.Empty,
+            "Options:",
+            "  -h, --help                   Show help.");
+    }
+
     private static string BuildLoginHelp()
     {
         return JoinLines(
@@ -1399,6 +1464,43 @@ internal static class CliApplication
             "dry-run-rendering: enabled",
             "mutating-commands: git-nuget-auth-config-cleanup",
             $"supported-ecosystems: {string.Join(", ", SupportedEcosystems)}");
+    }
+
+    private static string BuildAcceptanceOutput(
+        CliInvocation invocation,
+        ReleaseHardeningPhase15MatrixResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        List<string> lines =
+        [
+            $"command: {invocation.CommandName}",
+            $"phase: {PhaseName}",
+            "mvp-local-acceptance: " + (result.MvpLocalAcceptancePassed ? "pass" : "fail"),
+            "full-release-evidence: "
+                + (result.FullReleaseEvidenceComplete ? "complete" : "deferred"),
+            "blocking-checks: " + (result.BlockingFailuresPresent ? "present" : "none"),
+            "deferred-non-mvp: " + JoinCheckIds(
+                result.Checks,
+                ReleaseHardeningPhase15CheckStatus.DeferredNonMvp),
+            "deferred-release-evidence: " + JoinCheckIds(
+                result.Checks,
+                ReleaseHardeningPhase15CheckStatus.DeferredReleaseEvidence),
+        ];
+
+        foreach (ReleaseHardeningPhase15Check check in result.Checks)
+        {
+            lines.Add($"{check.Id}: {GetPhase15CheckStatusText(check.Status)}");
+            lines.Add($"{check.Id}-area: {check.Area}");
+            lines.Add($"{check.Id}-required-for-mvp: {GetYesNo(check.RequiredForMvp)}");
+            lines.Add(
+                $"{check.Id}-required-for-full-release: "
+                    + GetYesNo(check.RequiredForFullRelease));
+            lines.Add($"{check.Id}-evidence: {check.Evidence}");
+        }
+
+        lines.Add("note: credential material is not printed");
+        lines.Add("note: deferred rows are not accepted support claims");
+        return JoinLines(lines);
     }
 
     private static string BuildLoginOutput(
@@ -2124,6 +2226,32 @@ internal static class CliApplication
         return cleanupResult.Ecosystems.All(static result => !result.TemporaryContainerPresent);
     }
 
+    private static string JoinCheckIds(
+        IEnumerable<ReleaseHardeningPhase15Check> checks,
+        ReleaseHardeningPhase15CheckStatus status)
+    {
+        string[] checkIds = checks.Where(check => check.Status == status)
+            .Select(static check => check.Id)
+            .ToArray();
+        return checkIds.Length == 0 ? "none" : string.Join(", ", checkIds);
+    }
+
+    private static string GetPhase15CheckStatusText(
+        ReleaseHardeningPhase15CheckStatus status)
+    {
+        return status switch
+        {
+            ReleaseHardeningPhase15CheckStatus.Pass => "pass",
+            ReleaseHardeningPhase15CheckStatus.DeferredNonMvp => "deferred-non-mvp",
+            ReleaseHardeningPhase15CheckStatus.DeferredReleaseEvidence =>
+                "deferred-release-evidence",
+            ReleaseHardeningPhase15CheckStatus.Blocked => "blocked",
+            _ => throw new InvalidOperationException("Unsupported Phase 15 check status."),
+        };
+    }
+
+    private static string GetYesNo(bool value) => value ? "yes" : "no";
+
     private static bool ShouldEmitConfigurationPhase14Remediation(
         ConfigurationPhase14EcosystemDoctorResult doctorResult)
     {
@@ -2478,10 +2606,11 @@ internal enum CliCommand
     Status = 2,
     Doctor = 3,
     Cleanup = 4,
-    Login = 5,
-    Logout = 6,
-    Configure = 7,
-    Unconfigure = 8,
+    Acceptance = 5,
+    Login = 6,
+    Logout = 7,
+    Configure = 8,
+    Unconfigure = 9,
 }
 
 internal enum CliCiMode
@@ -2499,6 +2628,7 @@ internal static class CliApplicationCommandNames
             CliCommand.Status => "status",
             CliCommand.Doctor => "doctor",
             CliCommand.Cleanup => "cleanup",
+            CliCommand.Acceptance => "acceptance",
             CliCommand.Login => "login",
             CliCommand.Logout => "logout",
             CliCommand.Configure => "configure",

@@ -276,6 +276,76 @@ public sealed class InstallerDiscoveryScaffoldTests
     [InlineData(nameof(ConfigurationLayoutPlatform.Windows))]
     [InlineData(nameof(ConfigurationLayoutPlatform.Linux))]
     [InlineData(nameof(ConfigurationLayoutPlatform.MacOs))]
+    public void RemovePlacementsAfterMaterializeMakesAllArtifactsMissing(
+        string platformName
+    )
+    {
+        ConfigurationLayoutPlatform platform =
+            Enum.Parse<ConfigurationLayoutPlatform>(platformName);
+        ConfigurationLayoutProjectionContext layout = CreateLayout(platform);
+        var fileSystem = CreateMaterializationFileSystem(platform);
+        var context = new FakeAdapterMaterializationContext
+        {
+            Layout = layout,
+            FileSystem = fileSystem,
+        };
+
+        IReadOnlyList<FakeAdapterPlacement> placements =
+            FakeAdapterDiscoveryScaffold.MaterializePlacements(context);
+
+        IReadOnlyList<FakeAdapterPlacement> removedPlacements =
+            FakeAdapterDiscoveryScaffold.RemovePlacements(context);
+        Dictionary<FakeAdapterSurface, FakeAdapterProbeResult> results =
+            FakeAdapterDiscoveryScaffold
+                .ProbePlacements(CreateTopologyAwareDiscoveryContext(layout, fileSystem))
+                .ToDictionary(result => result.Surface);
+
+        Assert.Equal(placements, removedPlacements);
+        AssertExpectedSurfaceSet(results.Keys);
+        foreach (FakeAdapterSurface surface in ExpectedSurfaces)
+        {
+            Assert.False(fileSystem.FileExists(placements.Single(
+                placement => placement.Surface == surface
+            ).ArtifactPath));
+            AssertResult(
+                results,
+                surface,
+                FakeAdapterProbeStatus.Missing,
+                FakeAdapterArtifactKind.Missing
+            );
+        }
+    }
+
+    [Fact]
+    public void RemovePlacementsRejectsMismatchedScaffoldFileWithoutDeletingIt()
+    {
+        ConfigurationLayoutProjectionContext layout =
+            CreateLayout(ConfigurationLayoutPlatform.Linux);
+        var fileSystem = CreateMaterializationFileSystem(ConfigurationLayoutPlatform.Linux);
+        var context = new FakeAdapterMaterializationContext
+        {
+            Layout = layout,
+            FileSystem = fileSystem,
+        };
+        FakeAdapterPlacement placement = FakeAdapterDiscoveryScaffold.MaterializePlacement(
+            FakeAdapterSurface.GitHelper,
+            context
+        );
+        fileSystem.WriteAllText(placement.ArtifactPath, "not the scaffold");
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            FakeAdapterDiscoveryScaffold.RemovePlacements(context)
+        );
+
+        Assert.Contains("non-scaffold contents", exception.Message, StringComparison.Ordinal);
+        Assert.True(fileSystem.FileExists(placement.ArtifactPath));
+        Assert.Equal("not the scaffold", fileSystem.ReadAllText(placement.ArtifactPath));
+    }
+
+    [Theory]
+    [InlineData(nameof(ConfigurationLayoutPlatform.Windows))]
+    [InlineData(nameof(ConfigurationLayoutPlatform.Linux))]
+    [InlineData(nameof(ConfigurationLayoutPlatform.MacOs))]
     public void MaterializePlacementsUsesDeterministicPathsAndContents(
         string platformName
     )

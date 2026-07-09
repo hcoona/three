@@ -25,9 +25,10 @@ public sealed class CliApplicationTests
                   azureauth-credprovider <command> [options]
 
                 Commands:
-                  status                       Show deterministic Phase 14.3 shell status.
+                  status                       Show deterministic Phase 15 hardening status.
                   doctor                       Run aggregate adapter, config, and auth checks.
                   cleanup [ecosystem]          Clean product-owned temporary CI state.
+                  acceptance                   Render Phase 15 hardening matrix.
                   login                        Run accepted MVP authentication orchestration.
                   logout                       Clear product-owned authentication state.
                   configure <ecosystem>        Apply supported configuration plans.
@@ -42,6 +43,7 @@ public sealed class CliApplicationTests
                   azureauth-credprovider login --ci azure-pipelines
                   azureauth-credprovider status --ci azure-pipelines
                   azureauth-credprovider configure git --dry-run
+                  azureauth-credprovider acceptance
                   azureauth-credprovider cleanup --ci azure-pipelines
                   azureauth-credprovider unconfigure npm --dry-run
                 """),
@@ -55,6 +57,7 @@ public sealed class CliApplicationTests
     [InlineData("unconfigure")]
     [InlineData("doctor")]
     [InlineData("cleanup")]
+    [InlineData("acceptance")]
     [InlineData("login")]
     [InlineData("logout")]
     public void CommandHelpWritesGoldenText(string command)
@@ -72,6 +75,7 @@ public sealed class CliApplicationTests
     [InlineData("unconfigure", "python", "-h", "unexpected")]
     [InlineData("doctor", null, "--help", "--bogus")]
     [InlineData("cleanup", "npm", "-h", "unexpected")]
+    [InlineData("acceptance", null, "-h", "unexpected")]
     [InlineData("login", null, "-h", "unexpected")]
     [InlineData("logout", null, "--help", "--bogus")]
     public void HelpShortCircuitsInvalidTrailingTokens(
@@ -126,7 +130,7 @@ public sealed class CliApplicationTests
                 """
                 command: status
                 product: azureauth-credprovider
-                phase: 14.3-doctor-cleanup
+                phase: 15-end-to-end-hardening
                 ci-mode: none
                 status-shell: ready
                 environment-probing: disabled
@@ -140,6 +144,49 @@ public sealed class CliApplicationTests
                 """),
             result.StdOut);
         Assert.Equal(string.Empty, result.StdErr);
+    }
+
+    [Fact]
+    public void AcceptanceWritesEvidenceBackedMvpMatrixWithoutOverclaimingDeferredRows()
+    {
+        CommandResult result = Invoke("acceptance");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains(
+            "phase: 15-end-to-end-hardening\n",
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.Contains("mvp-local-acceptance: pass\n", result.StdOut, StringComparison.Ordinal);
+        Assert.Contains(
+            "full-release-evidence: deferred\n",
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.Contains("blocking-checks: none\n", result.StdOut, StringComparison.Ordinal);
+        Assert.Contains(
+            "git-for-windows-helper-discovery: deferred-non-mvp\n",
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "remote-windows-first-platform-acceptance: deferred-release-evidence\n",
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "fake-adapter-installer-uninstaller-scaffold: pass\n",
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "note: deferred rows are not accepted support claims\n",
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(string.Empty, result.StdErr);
+        Assert.DoesNotContain("fake-token-", result.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain("system-token", result.StdOut, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -160,7 +207,7 @@ public sealed class CliApplicationTests
                 """
                 command: status
                 product: azureauth-credprovider
-                phase: 14.3-doctor-cleanup
+                phase: 15-end-to-end-hardening
                 ci-mode: azure-pipelines
                 status-shell: ready
                 environment-probing: disabled
@@ -196,7 +243,7 @@ public sealed class CliApplicationTests
             Normalize(
                 $$"""
                 command: login
-                phase: 14.3-doctor-cleanup
+                phase: 15-end-to-end-hardening
                 ci-mode: none
                 identity-flow: {{expectedFlow}}
                 status: success
@@ -275,7 +322,7 @@ public sealed class CliApplicationTests
             Normalize(
                 """
                 command: login
-                phase: 14.3-doctor-cleanup
+                phase: 15-end-to-end-hardening
                 ci-mode: azure-pipelines
                 identity-flow: azure-pipelines
                 status: success
@@ -317,7 +364,7 @@ public sealed class CliApplicationTests
             Normalize(
                 """
                 command: logout
-                phase: 14.3-doctor-cleanup
+                phase: 15-end-to-end-hardening
                 ci-mode: none
                 persistent-derived-credentials-removed: none
                 plaintext-fallback: disabled
@@ -2126,7 +2173,7 @@ public sealed class CliApplicationTests
                     """
                     command: configure
                     ecosystem: npm
-                    phase: 14.3-doctor-cleanup
+                    phase: 15-end-to-end-hardening
                     ci-mode: none
                     scope: user
                     mutates-state: yes
@@ -2176,7 +2223,7 @@ public sealed class CliApplicationTests
                 """
                 command: cleanup
                 ecosystem: all
-                phase: 14.3-doctor-cleanup
+                phase: 15-end-to-end-hardening
                 ci-mode: azure-pipelines
                 scope: ci-temporary
                 mutates-state: no
@@ -2219,7 +2266,7 @@ public sealed class CliApplicationTests
                     """
                     command: cleanup
                     ecosystem: npm
-                    phase: 14.3-doctor-cleanup
+                    phase: 15-end-to-end-hardening
                     ci-mode: azure-pipelines
                     scope: ci-temporary
                     mutates-state: yes
@@ -2268,7 +2315,7 @@ public sealed class CliApplicationTests
                     """
                     command: cleanup
                     ecosystem: npm
-                    phase: 14.3-doctor-cleanup
+                    phase: 15-end-to-end-hardening
                     ci-mode: azure-pipelines
                     scope: ci-temporary
                     mutates-state: yes
@@ -2856,6 +2903,7 @@ public sealed class CliApplicationTests
             { ["configure", "git", "--bogus", "--help"], "configure" },
             { ["unconfigure", "python", "--ci", "--help"], "unconfigure" },
             { ["doctor", "--bogus", "--help"], "doctor" },
+            { ["acceptance", "--bogus", "--help"], "acceptance" },
             { ["login", "unexpected", "-h"], "login" },
             { ["logout", "--bogus", "--help"], "logout" },
         };
@@ -2869,6 +2917,8 @@ public sealed class CliApplicationTests
             { ["status", "--dry-run:", "-h"] },
             { ["doctor", "--help", "--dry-run="] },
             { ["doctor", "--dry-run:", "-h"] },
+            { ["acceptance", "--help", "--dry-run="] },
+            { ["acceptance", "--dry-run:", "-h"] },
             { ["login", "--help", "--dry-run="] },
             { ["login", "--dry-run:", "-h"] },
             { ["logout", "--help", "--dry-run="] },
@@ -2892,6 +2942,11 @@ public sealed class CliApplicationTests
                 ["doctor", "unexpected"],
                 "error: doctor does not accept positional arguments. "
                     + "Run 'azureauth-credprovider doctor --help' for usage.\n"
+            },
+            {
+                ["acceptance", "unexpected"],
+                "error: acceptance does not accept positional arguments. "
+                    + "Run 'azureauth-credprovider acceptance --help' for usage.\n"
             },
             {
                 ["login", "unexpected"],
@@ -2932,6 +2987,10 @@ public sealed class CliApplicationTests
             },
             {
                 ["doctor", "--bogus"],
+                "error: option '--bogus' is not supported for this command.\n"
+            },
+            {
+                ["acceptance", "--bogus"],
                 "error: option '--bogus' is not supported for this command.\n"
             },
             {
@@ -3057,6 +3116,19 @@ public sealed class CliApplicationTests
                     + """
                       -h, --help                   Show help.
                     """,
+                "acceptance" =>
+                    """
+                    azureauth-credprovider acceptance
+                    Usage:
+                      azureauth-credprovider acceptance [--help]
+
+                    Status:
+                      Render the executable Phase 15 release-hardening acceptance matrix.
+                      Deferred rows are not accepted support claims.
+
+                    Options:
+                      -h, --help                   Show help.
+                    """,
                 "login" =>
                     """
                     azureauth-credprovider login
@@ -3109,7 +3181,7 @@ public sealed class CliApplicationTests
         [
             $"command: {command}",
             $"ecosystem: {ecosystem}",
-            "phase: 14.3-doctor-cleanup",
+            "phase: 15-end-to-end-hardening",
             $"ci-mode: {ciMode}",
             $"scope: {GetExpectedScope(ciMode)}",
             "mutates-state: no",
@@ -3131,7 +3203,7 @@ public sealed class CliApplicationTests
             """
             command: configure
             ecosystem: git
-            phase: 14.3-doctor-cleanup
+            phase: 15-end-to-end-hardening
             ci-mode: none
             scope: user
             mutates-state: no
@@ -3151,7 +3223,7 @@ public sealed class CliApplicationTests
             """
             command: configure
             ecosystem: nuget
-            phase: 14.3-doctor-cleanup
+            phase: 15-end-to-end-hardening
             ci-mode: none
             scope: user
             mutates-state: no
@@ -3180,7 +3252,7 @@ public sealed class CliApplicationTests
                 [
                     $"command: {command}",
                     "ecosystem: git",
-                    "phase: 14.3-doctor-cleanup",
+                    "phase: 15-end-to-end-hardening",
                     "ci-mode: none",
                     "scope: user",
                     "mutates-state: yes",
@@ -3205,7 +3277,7 @@ public sealed class CliApplicationTests
                 "\n",
                 [
                     "command: doctor",
-                    "phase: 14.3-doctor-cleanup",
+                    "phase: 15-end-to-end-hardening",
                     $"configuration-plan: {(configurationPlanValid ? "pass" : "fail")}",
                     $"owned-git-entries: {(ownedGitEntriesPresent ? "present" : "absent")}",
                     $"ownership-manifest: {(ownershipManifestPresent ? "present" : "absent")}",
