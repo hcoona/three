@@ -100,8 +100,8 @@ SHA_B = "b" * 64
 SHA_C = "c" * 64
 SIGNER_WORKFLOW = "hcoona/three/.github/workflows/release-orchestrate.yml"
 CHECKOUT_ACTION = "actions/checkout@v7"
-SETUP_UV_ACTION = "astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39"
-SETUP_UV_ACTION_WITH_VERSION_COMMENT = f"{SETUP_UV_ACTION} # v8.2.0"
+SETUP_UV_ACTION = "astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3"
+SETUP_UV_ACTION_WITH_VERSION_COMMENT = f"{SETUP_UV_ACTION} # v8.3.0"
 RUBY_SETUP_ACTION_WITH_VERSION_COMMENT = (
     "ruby/setup-ruby@d45b1a4e94b71acab930e56e79c6aa188764e7f9 # v1.316.0"
 )
@@ -110,6 +110,9 @@ RUBYGEMS_CREDENTIALS_ACTION_WITH_VERSION_COMMENT = (
     "rubygems/configure-rubygems-credentials@"
     "dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0"
 )
+CODEQL_ACTION_DIGEST = "99df26d4f13ea111d4ec1a7dddef6063f76b97e9"
+PREVIOUS_CODEQL_ACTION_DIGEST = "54f647b7e1bb85c95cddabcd46b0c578ec92bc1a"
+CODEQL_ACTION_VERSION = "v4"
 FORBIDDEN_FAIL_CLOSED_OUTPUTS = {
     "release-plan.json",
     "execution-sets.json",
@@ -16270,6 +16273,60 @@ def test_release_resolve_workflow_uses_safe_git_target_validation() -> None:
         "Release target must not start with '-': ${target_input}" in resolve_run
     )
     assert "git rev-list -n1" not in resolve_run
+
+
+def test_codeql_workflows_pin_same_upstream_digest_across_root_and_nested() -> (
+    None
+):
+    """Root and nested CodeQL workflows must upgrade CodeQL actions together."""
+    expected_actions_by_workflow = {
+        ".github/workflows/codeql.yml": {
+            "github/codeql-action/analyze",
+            "github/codeql-action/autobuild",
+            "github/codeql-action/init",
+            "github/codeql-action/upload-sarif",
+        },
+        "src/public/lib/hexo-renderer-asciidoc/.github/workflows/codeql.yml": {
+            "github/codeql-action/analyze",
+            "github/codeql-action/autobuild",
+            "github/codeql-action/init",
+        },
+    }
+    codeql_uses_pattern = re.compile(
+        r"^uses: (github/codeql-action/[A-Za-z0-9_-]+)@([0-9a-f]{40}) # (v\d+)$"
+    )
+    combined_codeql_workflow_text = "\n".join(
+        (REPO_ROOT / workflow_path).read_text(encoding="utf-8")
+        for workflow_path in expected_actions_by_workflow
+    )
+
+    assert PREVIOUS_CODEQL_ACTION_DIGEST not in combined_codeql_workflow_text
+
+    for workflow_path, expected_actions in expected_actions_by_workflow.items():
+        observed_actions: set[str] = set()
+        workflow_text = (REPO_ROOT / workflow_path).read_text(encoding="utf-8")
+        for line_number, line in enumerate(
+            workflow_text.splitlines(),
+            start=1,
+        ):
+            stripped = line.strip()
+            if not stripped.startswith("uses: github/codeql-action/"):
+                continue
+            match = codeql_uses_pattern.fullmatch(stripped)
+            assert match is not None, (
+                f"{workflow_path}:{line_number}: {stripped}"
+            )
+            action_name, digest, version = match.groups()
+
+            observed_actions.add(action_name)
+            assert digest == CODEQL_ACTION_DIGEST, (
+                f"{workflow_path}:{line_number}: {stripped}"
+            )
+            assert version == CODEQL_ACTION_VERSION, (
+                f"{workflow_path}:{line_number}: {stripped}"
+            )
+
+        assert observed_actions == expected_actions
 
 
 def test_workflow_action_pins_are_consistent() -> None:

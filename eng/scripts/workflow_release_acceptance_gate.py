@@ -452,6 +452,8 @@ MANDATORY_TEST_NODEIDS = (
     "tests/test_workflow_release_control.py::"
     "test_ci_validate_workflow_passes_actionlint_gate",
     "tests/test_workflow_release_control.py::"
+    "test_codeql_workflows_pin_same_upstream_digest_across_root_and_nested",
+    "tests/test_workflow_release_control.py::"
     "test_acceptance_gate_rejects_option_like_nodeids_and_uses_separator",
     "tests/test_workflow_release_control.py::"
     "test_acceptance_gate_rejects_duplicate_same_column_evidence",
