@@ -41,33 +41,33 @@
       },
       "Microsoft.SemanticKernel": {
         "type": "Direct",
-        "requested": "[1.77.0, )",
-        "resolved": "1.77.0",
-        "contentHash": "A8HtEy+gKpOFPPS/IiJAcFIHbP0l6qAMKtg9bxw6cJJMUasWhLyU0weKi6FaL3V5lLuqU+sI0dEtD9fFnoBPpg==",
+        "requested": "[1.78.0, )",
+        "resolved": "1.78.0",
+        "contentHash": "LDYMrdRSxX923KKAnniai1//2j2IkHmHfkPV8PfO2xS+m+4+sD8gaYywFRQGDJWzrZqzPK2JKKG1ID3g3h94jw==",
         "dependencies": {
-          "Microsoft.SemanticKernel.Connectors.AzureOpenAI": "1.77.0",
-          "Microsoft.SemanticKernel.Core": "1.77.0"
+          "Microsoft.SemanticKernel.Connectors.AzureOpenAI": "1.78.0",
+          "Microsoft.SemanticKernel.Core": "1.78.0"
         }
       },
       "Microsoft.SemanticKernel.Connectors.AzureOpenAI": {
         "type": "Direct",
-        "requested": "[1.77.0, )",
-        "resolved": "1.77.0",
-        "contentHash": "or5jro29W9/Jgq9iJ5FqyIzBUBjnUs2Somw52qToWfbNrS0Mb3c764sOyNmBxflZG9fVzW8SChCSsvFXuZJU5Q==",
+        "requested": "[1.78.0, )",
+        "resolved": "1.78.0",
+        "contentHash": "zTynOu7xgUfVT+i9gizCdCcWlGrAuqNoVWnKLglYi93oMQehFVZ93Uh2FVdflDzDX8mvn2QvcZSTa0Zl9g37eQ==",
         "dependencies": {
           "Azure.AI.OpenAI": "2.9.0-beta.1",
-          "Microsoft.SemanticKernel.Connectors.OpenAI": "1.77.0",
-          "Microsoft.SemanticKernel.Core": "1.77.0"
+          "Microsoft.SemanticKernel.Connectors.OpenAI": "1.78.0",
+          "Microsoft.SemanticKernel.Core": "1.78.0"
         }
       },
       "Microsoft.SemanticKernel.Connectors.OpenAI": {
         "type": "Direct",
-        "requested": "[1.77.0, )",
-        "resolved": "1.77.0",
-        "contentHash": "HZKfJ0+gUIRm91KElKvZIUtGH+ezUx0Y3YZnZGUvSdeIHhE65Bse1RMP2d2F4YqxiPBQT9/95Tb8aSPRFFu7Aw==",
+        "requested": "[1.78.0, )",
+        "resolved": "1.78.0",
+        "contentHash": "e+5WNvoDPmd/ZmpWJnBv2QMJ6tP/ueVVWgh/r0sAKQk1gd+gDdxz9sc41UU1Lb7Qd/bDJwClkzp/4AZ2wc7UNg==",
         "dependencies": {
           "Microsoft.Extensions.AI.OpenAI": "10.5.0",
-          "Microsoft.SemanticKernel.Core": "1.77.0",
+          "Microsoft.SemanticKernel.Core": "1.78.0",
           "OpenAI": "2.10.0"
         }
       },
@@ -394,8 +394,8 @@
       },
       "Microsoft.SemanticKernel.Abstractions": {
         "type": "Transitive",
-        "resolved": "1.77.0",
-        "contentHash": "8aobJHE0hI01iVh+gJvCuqC9Ygjf+B5xeLefScUp0Y5xfWbvNfQpmsxuihG7Xyg2RFXQHOpC0lYe/qw8wMbOrA==",
+        "resolved": "1.78.0",
+        "contentHash": "NARo67NbGWyA2d6KChx+Sw2CcgzzzMJ+5I1YljHtFecX6ynvvnRCuFa0fS8XuqT5Elk7DAHF82pcELkP3g160w==",
         "dependencies": {
           "Microsoft.Bcl.HashCode": "1.1.1",
           "Microsoft.Extensions.AI": "10.5.0",
@@ -404,11 +404,11 @@
       },
       "Microsoft.SemanticKernel.Core": {
         "type": "Transitive",
-        "resolved": "1.77.0",
-        "contentHash": "o02MBl/gg+f5qbFzuFNcEfkj8RovXF9vwvGhmPAwpxBMHmMaiW4zkbPit2fwSNFgsekbHB4T+u9bochJx6/mYQ==",
+        "resolved": "1.78.0",
+        "contentHash": "l3UgcTnEZL0sqqgxlhmDOrxbbJyqEH8ZxT2oQVvUc3Z2EMadh8Iv3KFxf/pfXLt4KB40Fs/C0TmRByWTg4c0KA==",
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "10.0.2",
-          "Microsoft.SemanticKernel.Abstractions": "1.77.0",
+          "Microsoft.SemanticKernel.Abstractions": "1.78.0",
           "System.Numerics.Tensors": "10.0.6"
         }
       },
