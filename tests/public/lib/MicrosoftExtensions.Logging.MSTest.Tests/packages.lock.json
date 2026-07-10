@@ -170,8 +170,8 @@
       },
       "Microsoft.Testing.Platform": {
         "type": "Transitive",
-        "resolved": "2.2.3",
-        "contentHash": "LhM1/Qoi8Ams5QcD4r3f09CSOono9iQr3NEJQItFtyzWB55nWTgEOsVqXqMWWWIwk3nkPqc+XfnlJmp8xUI5fg=="
+        "resolved": "2.3.0",
+        "contentHash": "gsmLQaUN3Ddh0S4B0x0Q7IfBue7FNytJ8Bjec1JPad+9vqwIQvkgUS6fgmAJX/o3POu2xVbVbcaGhMV/2Ov9pg=="
       },
       "Microsoft.TestPlatform.ObjectModel": {
         "type": "Transitive",
@@ -192,11 +192,11 @@
       },
       "Microsoft.Testing.Platform.MSBuild": {
         "type": "CentralTransitive",
-        "requested": "[2.2.3, )",
-        "resolved": "2.2.3",
-        "contentHash": "Q22jJYJLx4srTinsAuoCskqmzjrBJC8YeGJMHHIcrf1dQeHoEZ7wsqDzTlENkMoke2qfufF7U+9u58nlZunH/Q==",
+        "requested": "[2.3.0, )",
+        "resolved": "2.3.0",
+        "contentHash": "L4faLBD6qxkW2VfF/OG/wktm4D8auBfvR2DZNwhjA4vOR4K+Vr1FiRMy4UtRYJZWgOXjwyNMfB+B7FJBchDqZQ==",
         "dependencies": {
-          "Microsoft.Testing.Platform": "2.2.3"
+          "Microsoft.Testing.Platform": "2.3.0"
         }
       },
       "System.IO.Hashing": {
