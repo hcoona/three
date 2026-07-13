@@ -138,6 +138,9 @@ url_api = "https://api.github.com/repos/hadolint/hadolint/releases/assets/295944
 version = "0.11.0"
 backend = "github:koalaman/shellcheck"
 
+[tools."github:koalaman/shellcheck".options]
+asset_pattern = "shellcheck-*.zip"
+
 [tools."github:koalaman/shellcheck"."platforms.linux-arm64"]
 checksum = "sha256:68a8133197a50beb8803f8d42f9908d1af1c5540d4bb05fdfca8c1fa47decefc"
 url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.aarch64.tar.gz"
@@ -352,68 +355,82 @@ version = "0.3.5"
 backend = "pipx:prek"
 
 [[tools.pkl]]
-version = "0.31.1"
+version = "0.32.0"
 backend = "aqua:apple/pkl"
 
 [tools.pkl."platforms.linux-arm64"]
-checksum = "sha256:7ef10e743daa921fb94ae7bdb9ec6986f362bf250c55814b9ea2aeb13f2d083e"
-url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-linux-aarch64"
+checksum = "sha256:b1ba7ef5dec9287f8f843ce563911eba822fed5789a5baab8cc712615a9dbaf0"
+url = "https://github.com/apple/pkl/releases/download/0.32.0/pkl-linux-aarch64"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/470498156"
 
 [tools.pkl."platforms.linux-arm64-musl"]
-checksum = "sha256:7ef10e743daa921fb94ae7bdb9ec6986f362bf250c55814b9ea2aeb13f2d083e"
-url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-linux-aarch64"
+checksum = "sha256:b1ba7ef5dec9287f8f843ce563911eba822fed5789a5baab8cc712615a9dbaf0"
+url = "https://github.com/apple/pkl/releases/download/0.32.0/pkl-linux-aarch64"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/470498156"
 
 [tools.pkl."platforms.linux-x64"]
-checksum = "sha256:618f13955d755cafbfe8c9cba1d27635848cd49dbc6abffd398d2751db1231bf"
-url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-linux-amd64"
+checksum = "sha256:15e7e7375c28b8542b3d13fe35bccaeb7b9542114008998708385489885f41e7"
+url = "https://github.com/apple/pkl/releases/download/0.32.0/pkl-linux-amd64"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/470498153"
 
 [tools.pkl."platforms.linux-x64-musl"]
-checksum = "sha256:618f13955d755cafbfe8c9cba1d27635848cd49dbc6abffd398d2751db1231bf"
-url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-linux-amd64"
+checksum = "sha256:15e7e7375c28b8542b3d13fe35bccaeb7b9542114008998708385489885f41e7"
+url = "https://github.com/apple/pkl/releases/download/0.32.0/pkl-linux-amd64"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/470498153"
 
 [tools.pkl."platforms.macos-arm64"]
-checksum = "sha256:1b6a5438d9624cd2798a7530721bbbfa27ef72efe5c878a1b6c546c6e7ca0e8f"
-url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-macos-aarch64"
+checksum = "sha256:fb891856705f3dcb8589c74999e01ded3eeb6b77ad5c6a95c02579a848c13928"
+url = "https://github.com/apple/pkl/releases/download/0.32.0/pkl-macos-aarch64"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/470498155"
 
 [tools.pkl."platforms.macos-x64"]
-checksum = "sha256:22123ed4ae4c03afa8c54c69f77f0bec39b0fa0f67b09d6d148e0a376a2a471d"
-url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-macos-amd64"
+checksum = "sha256:190ad63fec4f81f40e75dba8d6309033dd30e51b3e042db3b846f67c7ab46e3d"
+url = "https://github.com/apple/pkl/releases/download/0.32.0/pkl-macos-amd64"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/470498183"
 
 [tools.pkl."platforms.windows-x64"]
-checksum = "sha256:a8834481667325b44c539dbb758d7365a16389070f343c04b639bbe525ede013"
-url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-windows-amd64.exe"
+checksum = "sha256:61c40e940d5e61a0c54cc6bdef6ff26d44f02aeccd19fa0407125dc617dba030"
+url = "https://github.com/apple/pkl/releases/download/0.32.0/pkl-windows-amd64.exe"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/470498222"
 
 [[tools.pnpm]]
-version = "10.34.4"
+version = "10.34.5"
 backend = "aqua:pnpm/pnpm"
 
 [tools.pnpm."platforms.linux-arm64"]
-checksum = "sha256:ce2d6fab96baf07e42ebf6d567251de4c4c4afb370321167758e76c135340c0e"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.4/pnpm-linux-arm64"
+checksum = "sha256:22391362c31edf522fd698d0b43d38fe9228e28d5b5e32124ffd0038fb60f9f0"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.5/pnpm-linux-arm64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/472419173"
 
 [tools.pnpm."platforms.linux-arm64-musl"]
-checksum = "sha256:ce2d6fab96baf07e42ebf6d567251de4c4c4afb370321167758e76c135340c0e"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.4/pnpm-linux-arm64"
+checksum = "sha256:22391362c31edf522fd698d0b43d38fe9228e28d5b5e32124ffd0038fb60f9f0"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.5/pnpm-linux-arm64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/472419173"
 
 [tools.pnpm."platforms.linux-x64"]
-checksum = "sha256:e02c01738ce850754cf00111fd97bec24de550e1e963690486f02d9dae1a2193"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.4/pnpm-linux-x64"
+checksum = "sha256:69a535476f407fb0f64427913c2b592ca2ed6bf93f92e2cb82a32349e31f36eb"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.5/pnpm-linux-x64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/472419171"
 
 [tools.pnpm."platforms.linux-x64-musl"]
-checksum = "sha256:e02c01738ce850754cf00111fd97bec24de550e1e963690486f02d9dae1a2193"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.4/pnpm-linux-x64"
+checksum = "sha256:69a535476f407fb0f64427913c2b592ca2ed6bf93f92e2cb82a32349e31f36eb"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.5/pnpm-linux-x64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/472419171"
 
 [tools.pnpm."platforms.macos-arm64"]
-checksum = "sha256:b7cb7383c51fe78d10d6e81f96ed4f512f9e756be6edd781dac174f42476a9f8"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.4/pnpm-macos-arm64"
+checksum = "sha256:888389e8dd5ed45279043c1d3383c0942a8248b3d29ce614b302f468191f7659"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.5/pnpm-macos-arm64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/472419170"
 
 [tools.pnpm."platforms.macos-x64"]
-checksum = "sha256:dd1b9ef5011e20ecad56383b8b650b19b9827575da88ba0aac9ef3600f8a349e"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.4/pnpm-macos-x64"
+checksum = "sha256:4deaaaf1c0246fc4230f6450959f932dbc2abfd2686f8515dabf97b0717cb9b1"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.5/pnpm-macos-x64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/472419168"
 
 [tools.pnpm."platforms.windows-x64"]
-checksum = "sha256:e1b959b96e26fea7b8f46004d586327b418c8a3611c4bff7942ffc7401b2114a"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.4/pnpm-win-x64.exe"
+checksum = "sha256:fa9f420f55723453aaa99a98ca720e9d0e9f58cc808953669927bf15a95b4542"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.5/pnpm-win-x64.exe"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/472419169"
 
 [[tools.powershell]]
 version = "7.5.4"
@@ -519,43 +536,8 @@ checksum = "sha256:124510b94b6baa3380d051fdf4650eaa80a302c876d611e9dba0b2e18d874
 url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-pc-windows-msvc.zip"
 
 [[tools.ruby]]
-version = "3.3.10"
+version = "3.3.11"
 backend = "core:ruby"
-
-[tools.ruby.options]
-compile = "false"
-precompiled_url = "jdx/ruby"
-ruby_build_repo = "https://github.com/rbenv/ruby-build.git"
-ruby_install = "false"
-
-[tools.ruby."platforms.linux-arm64"]
-checksum = "sha256:982d8df48b923561ceb0a8c64df5f403328cead310ad4a4bfbdac3d2b254cd1c"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10-4/ruby-3.3.10.arm64_linux.tar.gz"
-provenance = "github-attestations"
-
-[tools.ruby."platforms.linux-arm64-musl"]
-checksum = "sha256:982d8df48b923561ceb0a8c64df5f403328cead310ad4a4bfbdac3d2b254cd1c"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10-4/ruby-3.3.10.arm64_linux.tar.gz"
-provenance = "github-attestations"
-
-[tools.ruby."platforms.linux-x64"]
-checksum = "sha256:0050e0ed55f1c2b98cd488008d36d7ccfddab86ba3f165f13e76a2398b6116d2"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10-4/ruby-3.3.10.x86_64_linux.tar.gz"
-provenance = "github-attestations"
-
-[tools.ruby."platforms.linux-x64-musl"]
-checksum = "sha256:0050e0ed55f1c2b98cd488008d36d7ccfddab86ba3f165f13e76a2398b6116d2"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10-4/ruby-3.3.10.x86_64_linux.tar.gz"
-provenance = "github-attestations"
-
-[tools.ruby."platforms.macos-arm64"]
-checksum = "sha256:4c2de8c0ea3ba222578bd5d5f9b6a4d88bef23050c79e1347b63252bcdf64584"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10-4/ruby-3.3.10.macos.tar.gz"
-provenance = "github-attestations"
-
-[tools.ruby."platforms.macos-x64"]
-checksum = "sha256:b555baa467a306cfc8e6c6ed24d0d27b27e9a1bed1d91d95509859eac6b0e928"
-url = "https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.10.tar.gz"
 
 [[tools.taplo]]
 version = "0.10.0"
@@ -563,9 +545,11 @@ backend = "aqua:tamasfe/taplo"
 
 [tools.taplo."platforms.linux-arm64"]
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-aarch64.gz"
+url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257322597"
 
 [tools.taplo."platforms.linux-arm64-musl"]
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-aarch64.gz"
+url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257322597"
 
 [tools.taplo."platforms.linux-x64"]
 checksum = "blake3:4871fab0e60275a1eb46e7190726e144f56c9a9527f59b0d1da5a042baead8e2"
@@ -573,15 +557,19 @@ url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86
 
 [tools.taplo."platforms.linux-x64-musl"]
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz"
+url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257322600"
 
 [tools.taplo."platforms.macos-arm64"]
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-aarch64.gz"
+url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257323110"
 
 [tools.taplo."platforms.macos-x64"]
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-x86_64.gz"
+url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257323116"
 
 [tools.taplo."platforms.windows-x64"]
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x86_64.zip"
+url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257323062"
 
 [[tools.typos]]
 version = "1.44.0"
