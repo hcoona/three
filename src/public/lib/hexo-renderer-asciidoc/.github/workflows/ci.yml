@@ -26,7 +26,7 @@ jobs:
           fetch-depth: 0
 
       - name: Mise Install Tools
-        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4
         with:
           experimental: true
           install_args: 'hk pkl typos go:github.com/B1NARY-GR0UP/nwa'
