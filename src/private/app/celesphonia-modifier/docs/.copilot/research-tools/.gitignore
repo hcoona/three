@@ -1,0 +1,13 @@
+# Research-only decoder outputs can contain private save data.
+# Keep the decoder source tracked. Do not commit research inputs or generated artifacts.
+!save-research-decoder.js
+
+decoded/
+*.rpgsave
+*.bak
+analysis-report.json
+source-manifest.json
+database-index.json
+steam_autocloud.vdf
+steam_autocloud*.vdf
+*.json
