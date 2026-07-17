@@ -1,17 +1,18 @@
 # Atlas V0 A0 Scope Review
 
-**Status:** Awaiting project-leader decision
+**Status:** Approved
+
+**Decision:** Project leader approved A0 on July 17, 2026
 
 **Decision authority:** Project leader
 
 **Governing contract:** `../plans/atlas-v0-a0-research-contract.md`
 
-## 1. Decision requested
+## 1. Decision recorded
 
-Approve or reject the finite Atlas V0 research boundary. This review does not ask the project
-leader to inspect hundreds of files individually or verify implementation details. It asks
-whether the selected corpus, exclusions, privacy controls, quality bar, and narrowing authority
-are appropriate for the preliminary comprehensive survey.
+The project leader approved the finite Atlas V0 research boundary after reviewing the corpus,
+exclusions, fingerprint scope, privacy controls, quality bar, residual uncertainty, and narrowing
+authority.
 
 Approval completes A0 and permits A1 to begin under its separately persisted plan and acceptance
 criteria. Approval does not qualify the preservation snapshot, authorize decoding before A3,
@@ -178,8 +179,8 @@ Private evidence:
 The private intake has 21 included saves, 496 included definitions, 84 explicit exclusions, and
 no unsupported, unreadable, scope-narrowed, or unresolved candidate status.
 
-## 9. Recommendation
+## 9. Decision
 
-Approve A0. The denominator is finite, exclusions are explicit and reversible, private evidence
-is isolated, Agent egress is structurally constrained, and later scope narrowing remains a human
-decision.
+A0 is approved. The denominator is finite, exclusions are explicit and reversible, private
+evidence is isolated, Agent egress is structurally constrained, and later scope narrowing remains
+a human decision.

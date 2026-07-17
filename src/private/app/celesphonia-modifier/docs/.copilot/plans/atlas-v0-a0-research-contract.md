@@ -1,6 +1,8 @@
 # Atlas V0 A0 Research Contract
 
-**Status:** Awaiting project-leader corpus confirmation
+**Status:** Approved and complete
+
+**Decision:** Project leader approved the A0 scope on July 17, 2026
 
 **Governing plan:** `atlas-v0-execution-plan.md`, Increment A0
 
@@ -342,9 +344,9 @@ Repository tests may not use:
 - private fingerprints or hashes; or
 - generated artifacts that cannot be independently classified as safe.
 
-## 12. Human confirmation gate
+## 12. Human confirmation record
 
-Before A0 can complete and before A1 or A2 begins, the project leader must confirm:
+The project leader approved:
 
 1. the 21-input save denominator, both inspected save roots, and two excluded
    `steam_autocloud.vdf` entries;
@@ -355,9 +357,10 @@ Before A0 can complete and before A1 or A2 begins, the project leader must confi
 6. zero opaque structural gaps for the baseline; and
 7. that later narrowing requires another explicit decision.
 
-The confirmation approves research scope only. It does not authorize copying until the A2
-identity checks exist, except for the preservation-only process in section 6.1 under separate
-explicit project-leader direction. It does not authorize decoding, semantic claims, or writes.
+This approval completes A0 and approves research scope only. It does not authorize copying until
+the A2 identity checks exist, except for the preservation-only process in section 6.1 under
+separate explicit project-leader direction. It does not authorize decoding, semantic claims, or
+writes.
 
 ## 13. Resume procedure
 

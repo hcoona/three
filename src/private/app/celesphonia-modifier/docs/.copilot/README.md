@@ -19,9 +19,9 @@ solution entries, or package references under this root.
   evidence model, privacy boundary, human value selection, and focused semantic research.
 - `plans/atlas-v0-execution-plan.md` defines the C# implementation policy and measurable
   acceptance criteria for each Atlas v0 increment.
-- `plans/atlas-v0-a0-research-contract.md` records the current finite corpus, definition,
-  privacy, redaction, Agent-egress, artifact-lifecycle, and handoff contract awaiting user
-  confirmation.
+- `plans/atlas-v0-a0-research-contract.md` records the approved finite corpus, definition,
+  privacy, redaction, Agent-egress, artifact-lifecycle, and handoff contract for completed
+  increment A0.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -30,8 +30,8 @@ solution entries, or package references under this root.
 
 ## Current gate evidence
 
-- `reviews/atlas-v0-a0-scope-review.md` is the repository-safe decision brief for the pending
-  Atlas V0 A0 project-leader confirmation.
+- `reviews/atlas-v0-a0-scope-review.md` is the repository-safe record of the approved Atlas V0 A0
+  project-leader decision.
 
 ## Historical and supporting artifacts
 
