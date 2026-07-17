@@ -20,8 +20,8 @@ solution entries, or package references under this root.
 - `plans/atlas-v0-execution-plan.md` defines the C# implementation policy and measurable
   acceptance criteria for each Atlas v0 increment.
 - `plans/atlas-v0-a0-research-contract.md` records the approved finite corpus, definition,
-  privacy, redaction, Agent-egress, artifact-lifecycle, and handoff contract for completed
-  increment A0.
+  privacy, redaction, Agent-egress, artifact-lifecycle, and handoff contract for increment A0.
+  Human scope approval alone does not establish increment completion.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -32,6 +32,8 @@ solution entries, or package references under this root.
 
 - `reviews/atlas-v0-a0-scope-review.md` is the repository-safe record of the approved Atlas V0 A0
   project-leader decision.
+- `reviews/atlas-v0-a0-release-gate.md` is created only after an exact committed A0 candidate
+  receives an independent `No findings` result. That record establishes A0 completion.
 
 ## Historical and supporting artifacts
 
