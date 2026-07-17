@@ -8,10 +8,11 @@
 
 ## 1. Purpose
 
-This plan turns `save-semantic-atlas-plan.md` into finite execution increments. An increment
-does not begin until its acceptance criteria are recorded and testable. Completion means that
-all criteria pass or the project leader explicitly narrows or stops the increment; effort alone
-is not progress evidence.
+This plan turns `save-semantic-atlas-plan.md` into finite execution increments. An increment does
+not begin until its acceptance criteria are recorded and testable. Completion means that all
+criteria pass or the project leader explicitly narrows or stops the increment, and the independent
+release gate in `project-operating-model.md` reports no findings. Effort alone is not progress
+evidence.
 
 ## 2. Technology decision
 
@@ -62,7 +63,9 @@ Every increment must satisfy:
 8. documentation and schemas change before or with behavior, never after an undocumented
    format change; and
 9. any scope narrowing names the excluded item, evidence, consequence, approver, and revisit
-   condition.
+   condition; and
+10. an independent subagent reviews the complete increment and reports no findings after any
+    required repair and re-review iterations.
 
 Any privacy leak, mutation of an original save, unexplained nondeterminism, silent structural
 omission, or unapproved scope narrowing is a stop condition.
@@ -114,8 +117,9 @@ exist.
   regions.
 - Unsupported, unreadable, excluded, or opaque in-scope content blocks Atlas v0 unless the
   project leader approves an explicit scope narrowing.
-- Locator segments use a closed policy: fixed schema-safe keys and numeric indexes may remain
-  literal; every unknown or dynamic segment receives a deterministic survey-local alias.
+- Locator segments use a closed policy. The `atlas-schema-key-allowlist/v1` literal-key allowlist is
+  empty, so every key receives a deterministic survey-local alias. Only schema-defined non-key
+  tokens and numeric indexes may remain literal.
 - The private artifact inventory records custody, purpose, last-use milestone, expiry, cleanup
   action, and verification method.
 - Agent input is limited to a schema-validated redacted envelope. Raw or decoded saves, private

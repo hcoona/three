@@ -30,6 +30,7 @@
         "artifactClass",
         "purpose",
         "custodianRole",
+        "lineageAliases",
         "lastUseMilestone",
         "expiryCondition",
         "plannedDisposition",

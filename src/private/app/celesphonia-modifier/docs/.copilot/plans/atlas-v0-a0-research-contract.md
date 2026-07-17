@@ -1,6 +1,6 @@
 # Atlas V0 A0 Research Contract
 
-**Status:** Approved and complete
+**Status:** Scope approved; completion controlled by the independent release gate
 
 **Decision:** Project leader approved the A0 scope on July 17, 2026
 
@@ -187,7 +187,7 @@ cannot establish writable compatibility. A2 must revalidate it with Windows file
 link/reparse checks or create a new qualified immutable copy.
 
 The private completion manifest conforms to
-`schemas/atlas-v0/preservation-snapshot-manifest.schema.json`. The final directory name plus that
+`../schemas/atlas-v0/preservation-snapshot-manifest.schema.json`. The final directory name plus that
 manifest is the completion marker; an `.incomplete` directory is never a usable snapshot.
 
 ## 7. Private artifact lifecycle
@@ -204,6 +204,16 @@ Every private artifact inventory entry records:
 - planned disposition;
 - current status; and
 - verification method.
+
+An artifact alias identifies one custody object: immutable bytes or a directory snapshot, or one
+revision-managed logical record at a canonical private path. A revision-managed record retains its
+alias when its manifest revision changes; separately retained historical bytes receive a new
+alias.
+
+`lineageAliases` lists only direct inventoried inputs or predecessors from which the entry was
+derived. Direction is derived artifact to source or successor revision to predecessor revision.
+The list is empty when no inventoried predecessor exists. Self-reference, dependent references,
+and cycles are prohibited.
 
 The lifecycle classes are:
 
@@ -231,8 +241,17 @@ Only these segment classes may enter a committed raw locator:
 - document-role tokens defined by the schema;
 - numeric array indexes;
 - JsonEx markers `@`, `@c`, `@a`, and `@r`;
-- keys in a versioned schema-safe allowlist; and
-- survey-local aliases for every other key.
+- keys in the versioned schema-safe allowlist; and
+- survey-local aliases for every key not present in that allowlist.
+
+The schema-safe key allowlist is `atlas-schema-key-allowlist/v1`. It contains zero keys. Therefore,
+no source key may enter a committed locator or Agent envelope literally under v1; every key uses a
+`schema-key-NNNNNN` or `dynamic-key-NNNNNN` survey-local alias.
+
+A future non-empty allowlist requires a persisted contract revision, explicit project-leader
+approval, a corresponding closed schema representation, and positive and negative conformance
+vectors. Absence of an allowlist entry always means aliasing, never an operator judgment that a key
+looks safe.
 
 Unknown or dynamic keys never pass through literally. They receive an alias such as
 `dynamic-key-000001`. Alias assignment is deterministic within the survey and uses a private
@@ -326,6 +345,10 @@ Logs retain only envelope alias, schema version, Agent identity, model identity,
 non-sensitive size or timing metadata. The annotation population and maximum pass count are
 frozen before Agent execution.
 
+Operational and private-derived Agent envelopes remain private and never enter Git. Hand-authored
+synthetic Agent-envelope conformance vectors are not operational envelopes, contain no
+private-derived data, and may be committed only under the test-data policy below.
+
 ## 11. Test-data policy
 
 Repository tests may use:
@@ -334,7 +357,8 @@ Repository tests may use:
 - synthetic malformed and boundary fixtures;
 - reference codec vectors that contain no game or user data;
 - generated structural graphs; and
-- redacted canonical-record fixtures.
+- redacted canonical-record fixtures; and
+- hand-authored synthetic Agent-envelope conformance vectors.
 
 Repository tests may not use:
 
@@ -357,23 +381,33 @@ The project leader approved:
 6. zero opaque structural gaps for the baseline; and
 7. that later narrowing requires another explicit decision.
 
-This approval completes A0 and approves research scope only. It does not authorize copying until
-the A2 identity checks exist, except for the preservation-only process in section 6.1 under
-separate explicit project-leader direction. It does not authorize decoding, semantic claims, or
-writes.
+This approval satisfies A0's required human confirmation and approves research scope only. A0
+completes, and A1 becomes eligible to begin, only after the independent release gate reviews an
+exact committed candidate and its repository-safe record is persisted. Approval does not authorize
+copying until the A2 identity checks exist, except for the preservation-only process in section 6.1
+under separate explicit project-leader direction. It does not authorize decoding, semantic claims,
+or writes.
 
-## 13. Resume procedure
+## 13. A0 release handoff and reopening
 
-Another contributor resumes A0 by:
+After the independent release gate passes, another contributor continues from completed A0 by:
 
-1. checking out the shared branch containing this contract;
+1. checking out the shared branch containing this contract and
+   `../reviews/atlas-v0-a0-release-gate.md`;
 2. reading `project-operating-model.md`, `save-semantic-atlas-plan.md`, and
    `atlas-v0-execution-plan.md`;
 3. verifying the persisted plan commit and clean worktree;
-4. locating the exact private manifests and preservation snapshots under the tracked project's
-   ignored `.private\atlas-v0` workspace;
-5. rerunning read-only discovery and comparing names, roles, group counts, and reparse status;
-6. recording any difference as a new manifest revision; and
-7. requesting project-leader confirmation before changing A0 to done.
+4. locating the approved `atlas-intake/v2` revision 3 manifest and preservation snapshot under the
+   tracked project's ignored `.private\atlas-v0` workspace;
+5. treating the preservation snapshot as `preservation-unqualified` until A2 revalidates it; and
+6. beginning A1 only from its separately committed and pushed execution plan.
+
+The contributor verifies the release record's candidate commit, tree, first-parent relationship,
+and changed-path restriction before relying on the A0 completion claim.
+
+Reopen A0 if the installed game, either candidate save root, corpus denominator, redaction policy,
+privacy boundary, schema, or approval record changes. A reopened A0 records a new manifest
+revision, obtains any required project-leader confirmation, and passes the independent increment
+release gate again before returning to `done`.
 
 Do not rely on conversation history or session task state as the only handoff.

@@ -290,3 +290,34 @@ committed and pushed to the shared branch. The persisted handoff must include:
 If review changes any of those items, persist the revised plan before execution continues.
 Local-only plans, conversation history, and session task state are not sufficient handoff
 artifacts.
+
+## 17. Independent Increment Release Gate
+
+An execution increment remains `in_progress` after its outputs and acceptance checks complete. It
+may move to `done`, and the next increment may begin, only after an independent subagent reviews
+the complete release candidate against its persisted plan and reports no findings.
+
+The review covers outputs, acceptance evidence, safety and privacy boundaries, regression risk,
+and handoff completeness. Every finding, including a non-blocking or documentation finding, must
+be resolved or handled through an explicitly approved and persisted scope change. The resulting
+completion state is then reviewed again. This loop continues until the independent reviewer
+returns `No findings`.
+
+The repository-safe release-gate record must contain:
+
+- increment identifier and final outcome;
+- full candidate commit and Git tree identifiers;
+- governing plan path and persisted plan commit;
+- reviewed path set and acceptance criteria;
+- reviewer role or subagent identifier plus an independence attestation;
+- every review iteration, finding disposition, and final `No findings` result;
+- validation commands or procedures and their outcomes; and
+- any private evidence represented only by repository-safe aliases and aggregate facts.
+
+The reviewed candidate must be committed before the final review. The release-record commit must
+use that candidate as its first parent and change only the release-gate record. Handoff verification
+must reject the record if the candidate identifiers, parent relationship, or changed-path
+restriction do not match. Any other change creates a new candidate and invalidates the prior
+result.
+
+Project-leader approval does not waive this gate.

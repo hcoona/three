@@ -8,15 +8,20 @@
 
 **Governing contract:** `../plans/atlas-v0-a0-research-contract.md`
 
+**Approved manifest:** `atlas-intake/v2`, `survey-000001`, revision 3
+
+**Decision reference:** `commit:3610d5e2`
+
 ## 1. Decision recorded
 
 The project leader approved the finite Atlas V0 research boundary after reviewing the corpus,
 exclusions, fingerprint scope, privacy controls, quality bar, residual uncertainty, and narrowing
 authority.
 
-Approval completes A0 and permits A1 to begin under its separately persisted plan and acceptance
-criteria. Approval does not qualify the preservation snapshot, authorize decoding before A3,
-accept any semantic claim, or authorize writes to original user data.
+Approval satisfies A0's human-confirmation criterion. A0 completes and A1 becomes eligible only
+after an exact committed candidate passes the independent release gate and its repository-safe
+record is persisted. Approval does not qualify the preservation snapshot, authorize decoding
+before A3, accept any semantic claim, or authorize writes to original user data.
 
 ## 2. Save corpus
 
@@ -41,8 +46,7 @@ The enabled relocation plugin selects the deployment-root `save` directory. The 
 `www\save` directory contains no save input, but it remains inspected so a future path or content
 change cannot be missed.
 
-**Decision point:** Is this frozen 21-save set the correct baseline for the first comprehensive
-survey?
+**Approved outcome:** The frozen 21-save set is the baseline for the first comprehensive survey.
 
 ## 3. Installed-definition corpus
 
@@ -84,8 +88,8 @@ outside the 580-candidate
 definition universe under the frozen extension and root rules. The survey is comprehensive for
 the approved save-semantic candidate universe, not for every byte in the installation.
 
-**Decision point:** Is this 496-file inclusion set, with 84 explicit exclusions, broad enough for
-the preliminary comprehensive survey?
+**Approved outcome:** The 496-file inclusion set and 84 explicit exclusions define the preliminary
+comprehensive survey.
 
 ## 4. Fingerprint evidence
 
@@ -106,8 +110,8 @@ equivalent profile metadata are neither needed nor retained.
 Fingerprint evidence identifies the exact researched environment. It does not establish that an
 edit operation is safe or authorize writes.
 
-**Decision point:** Is this fingerprint scope sufficient to identify the baseline and detect
-later compatibility drift?
+**Approved outcome:** The fingerprint scope is sufficient to identify the approved baseline and
+detect later compatibility drift.
 
 ## 5. Privacy and Agent boundary
 
@@ -116,19 +120,21 @@ Private material remains under the Git-ignored
 private manifests, hashes, immutable save copies, and later decoded or evidence artifacts.
 
 Private-derived canonical records must pass schema and redaction validation before entering
-repository history. Agent envelopes must pass schema validation before Agent use, remain private,
-and never enter Git. Human-authored safe summaries, such as this brief, are reviewed separately.
-Raw or decoded saves, save values, private paths, hashes, installed source text, personal SteamID
-values, account identifiers, profile or cloud metadata, and uncontrolled prompts or transcripts
-are prohibited. The approved public application ID and build identifier remain allowed game
-identifiers.
+repository history. Operational and private-derived Agent envelopes must pass schema validation
+before Agent use, remain private, and never enter Git. Hand-authored synthetic conformance vectors
+may be committed under the contract's test-data policy because they contain no private-derived
+data and are never used for Agent execution. Human-authored safe summaries, such as this brief,
+are reviewed separately. Raw or decoded saves, save values, private paths, hashes, installed source
+text, personal SteamID values, account identifiers, profile or cloud metadata, and uncontrolled
+prompts or transcripts are prohibited. The approved public application ID and build identifier
+remain allowed game identifiers.
 
 Agents may receive only a schema-validated envelope containing strict aliases, typed locator
 segments, structural shapes, numeric source coordinates, enumerated relations, and evidence
 tags. The schema does not provide free-form fields for paths, source excerpts, hashes, or save
 values.
 
-**Decision point:** Is this privacy boundary acceptable for the project?
+**Approved outcome:** The privacy boundary is accepted for Atlas V0.
 
 ## 6. Completeness and narrowing authority
 
@@ -140,8 +146,8 @@ No Agent agreement, heuristic, correlation, or source reference can silently pro
 claim to accepted truth. Operation authority remains separate and requires exact operation-level
 evidence.
 
-**Decision point:** Should zero gaps remain the default, with the project leader retaining sole
-authority to approve later narrowing?
+**Approved outcome:** Zero gaps remains the default. Only the project leader may approve later
+narrowing through a persisted scope revision.
 
 ## 7. What remains uncertain after approval
 
@@ -167,6 +173,8 @@ Repository-safe evidence:
 - `../schemas/atlas-v0/corpus-intake-manifest.schema.json`
 - `../schemas/atlas-v0/private-artifact-inventory.schema.json`
 - `../schemas/atlas-v0/agent-egress-envelope.schema.json`
+- `../schemas/atlas-v0/test-data/agent-egress-envelope.valid.json`
+- `../schemas/atlas-v0/test-data/agent-egress-envelope.invalid-*.json`
 - `../schemas/atlas-v0/preservation-snapshot-manifest.schema.json`
 
 Private evidence:
@@ -181,6 +189,7 @@ no unsupported, unreadable, scope-narrowed, or unresolved candidate status.
 
 ## 9. Decision
 
-A0 is approved. The denominator is finite, exclusions are explicit and reversible, private
-evidence is isolated, Agent egress is structurally constrained, and later scope narrowing remains
-a human decision.
+The A0 scope is approved. The denominator is finite, exclusions are explicit and reversible,
+private evidence is isolated, Agent egress is structurally constrained, and later scope narrowing
+remains a human decision. Phase completion is controlled by the exact-candidate independent
+release gate.

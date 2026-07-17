@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "atlas-agent-envelope/v1",
+  "envelopeAlias": "agent-envelope-000001",
+  "surveyAlias": "survey-12345678901234567",
+  "taskKind": "blind-review",
+  "populationItemAlias": "population-item-000001",
+  "fingerprintAliases": ["fingerprint-000001"],
+  "observationReferences": ["observation-00000001"],
+  "typedLocatorPatterns": [
+    {
+      "locatorAlias": "locator-pattern-000001",
+      "segments": [
+        {
+          "kind": "document-role",
+          "role": "slot-save"
+        }
+      ]
+    }
+  ],
+  "structuralShapes": [
+    {
+      "shapeAlias": "structural-shape-000001",
+      "nodeKind": "object",
+      "childCountBucket": "zero",
+      "traits": []
+    }
+  ],
+  "sourceFacts": [],
+  "evidenceTags": ["unknown"],
+  "prohibitedContentAttestation": true
+}

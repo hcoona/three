@@ -28,7 +28,7 @@
     },
     "surveyAlias": {
       "type": "string",
-      "pattern": "^survey-[a-z0-9-]+$"
+      "pattern": "^survey-[0-9]{6}$"
     },
     "taskKind": {
       "enum": ["semantic-author", "blind-review", "mechanical-correction"]
