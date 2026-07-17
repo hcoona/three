@@ -102,11 +102,16 @@
             "required": ["artifactClass"]
           },
           "then": {
+            "properties": {
+              "qualification": {
+                "enum": ["preservation-unqualified", "a2-qualified"]
+              }
+            },
             "required": ["qualification"]
           },
           "else": {
-            "not": {
-              "required": ["qualification"]
+            "properties": {
+              "qualification": false
             }
           }
         }

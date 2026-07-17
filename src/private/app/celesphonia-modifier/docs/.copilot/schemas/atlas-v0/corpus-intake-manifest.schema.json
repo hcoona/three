@@ -131,11 +131,18 @@
             "required": ["role"]
           },
           "then": {
+            "properties": {
+              "slotNumber": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              }
+            },
             "required": ["slotNumber"]
           },
           "else": {
-            "not": {
-              "required": ["slotNumber"]
+            "properties": {
+              "slotNumber": false
             }
           }
         },
@@ -280,6 +287,16 @@
             "required": ["status"]
           },
           "then": {
+            "properties": {
+              "confirmedByRole": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]+$"
+              },
+              "decisionReference": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
             "required": ["confirmedByRole", "decisionReference"]
           }
         }
