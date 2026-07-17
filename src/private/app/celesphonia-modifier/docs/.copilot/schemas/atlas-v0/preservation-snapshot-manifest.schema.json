@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hcoona:three:celesphonia-modifier:atlas-v0:preservation-snapshot-manifest:v1",
+  "title": "Atlas V0 Preservation Snapshot Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "snapshotId",
+    "captureStatus",
+    "qualification",
+    "authorizationReference",
+    "sourceRootAlias",
+    "capturedAtUtc",
+    "finalizedAtUtc",
+    "sourceDirectoryEntriesBefore",
+    "sourceDirectoryEntriesAfter",
+    "includedFiles",
+    "excludedEntries",
+    "verification"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "atlas-preservation-snapshot/v1"
+    },
+    "snapshotId": {
+      "type": "string",
+      "pattern": "^save-snapshot-[0-9]{8}T[0-9]{6}Z$"
+    },
+    "captureStatus": {
+      "const": "complete"
+    },
+    "qualification": {
+      "const": "preservation-unqualified"
+    },
+    "authorizationReference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceRootAlias": {
+      "type": "string",
+      "pattern": "^live-save-root-[0-9]{4}$"
+    },
+    "capturedAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finalizedAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sourceDirectoryEntriesBefore": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/directoryEntry"
+      },
+      "uniqueItems": true
+    },
+    "sourceDirectoryEntriesAfter": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/directoryEntry"
+      },
+      "uniqueItems": true
+    },
+    "includedFiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/includedFile"
+      },
+      "uniqueItems": true
+    },
+    "excludedEntries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/excludedEntry"
+      },
+      "uniqueItems": true
+    },
+    "verification": {
+      "$ref": "#/$defs/verification"
+    }
+  },
+  "$defs": {
+    "directoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relativePath", "entryType", "isReparsePoint"],
+      "properties": {
+        "relativePath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entryType": {
+          "enum": ["file", "directory", "other"]
+        },
+        "isReparsePoint": {
+          "type": "boolean"
+        }
+      }
+    },
+    "includedFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relativePath",
+        "sourceLengthBefore",
+        "sourceLastWriteTimeUtcBefore",
+        "sourceSha256Before",
+        "sourceLengthAfter",
+        "sourceLastWriteTimeUtcAfter",
+        "sourceSha256After",
+        "copyLength",
+        "copySha256",
+        "copyReadOnly"
+      ],
+      "properties": {
+        "relativePath": {
+          "type": "string",
+          "pattern": "^[^/\\\\]+\\.rpgsave$"
+        },
+        "sourceLengthBefore": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sourceLastWriteTimeUtcBefore": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sourceSha256Before": {
+          "$ref": "#/$defs/sha256"
+        },
+        "sourceLengthAfter": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sourceLastWriteTimeUtcAfter": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sourceSha256After": {
+          "$ref": "#/$defs/sha256"
+        },
+        "copyLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "copySha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "copyReadOnly": {
+          "const": true
+        }
+      }
+    },
+    "excludedEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relativePath", "reason"],
+      "properties": {
+        "relativePath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "enum": ["steam-autocloud", "not-rpgsave"]
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gameProcessAbsent",
+        "directorySetUnchanged",
+        "sourceFilesUnchanged",
+        "copyHashesMatch",
+        "allCopiesReadOnly"
+      ],
+      "properties": {
+        "gameProcessAbsent": {
+          "const": true
+        },
+        "directorySetUnchanged": {
+          "const": true
+        },
+        "sourceFilesUnchanged": {
+          "const": true
+        },
+        "copyHashesMatch": {
+          "const": true
+        },
+        "allCopiesReadOnly": {
+          "const": true
+        }
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[A-F0-9]{64}$"
+    }
+  }
+}

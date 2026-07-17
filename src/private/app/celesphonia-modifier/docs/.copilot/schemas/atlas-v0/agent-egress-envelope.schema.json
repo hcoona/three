@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hcoona:three:celesphonia-modifier:atlas-v0:agent-egress-envelope:v1",
+  "title": "Atlas V0 Agent Egress Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "envelopeAlias",
+    "surveyAlias",
+    "taskKind",
+    "populationItemAlias",
+    "fingerprintAliases",
+    "observationReferences",
+    "typedLocatorPatterns",
+    "structuralShapes",
+    "sourceFacts",
+    "evidenceTags",
+    "prohibitedContentAttestation"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "atlas-agent-envelope/v1"
+    },
+    "envelopeAlias": {
+      "type": "string",
+      "pattern": "^agent-envelope-[0-9]{6}$"
+    },
+    "surveyAlias": {
+      "type": "string",
+      "pattern": "^survey-[a-z0-9-]+$"
+    },
+    "taskKind": {
+      "enum": ["semantic-author", "blind-review", "mechanical-correction"]
+    },
+    "populationItemAlias": {
+      "type": "string",
+      "pattern": "^population-item-[0-9]{6}$"
+    },
+    "fingerprintAliases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^fingerprint-[0-9]{6}$"
+      },
+      "uniqueItems": true
+    },
+    "observationReferences": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^observation-[0-9]{8}$"
+      },
+      "uniqueItems": true
+    },
+    "typedLocatorPatterns": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/typedLocatorPattern"
+      },
+      "uniqueItems": true
+    },
+    "structuralShapes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/structuralShape"
+      },
+      "uniqueItems": true
+    },
+    "sourceFacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/sourceFact"
+      },
+      "uniqueItems": true
+    },
+    "evidenceTags": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": ["observed-structure", "source-linked", "cross-save-correlated", "unknown"]
+      },
+      "uniqueItems": true
+    },
+    "prohibitedContentAttestation": {
+      "const": true
+    }
+  },
+  "$defs": {
+    "typedLocatorPattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locatorAlias", "segments"],
+      "properties": {
+        "locatorAlias": {
+          "type": "string",
+          "pattern": "^locator-pattern-[0-9]{6}$"
+        },
+        "segments": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/locatorSegment"
+          }
+        }
+      }
+    },
+    "locatorSegment": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "role"],
+          "properties": {
+            "kind": {
+              "const": "document-role"
+            },
+            "role": {
+              "enum": ["slot-save", "global-save", "config-save", "definition-source"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "index"],
+          "properties": {
+            "kind": {
+              "const": "array-index"
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "marker"],
+          "properties": {
+            "kind": {
+              "const": "jsonex-marker"
+            },
+            "marker": {
+              "enum": ["@", "@c", "@a", "@r"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "keyAlias"],
+          "properties": {
+            "kind": {
+              "const": "key-alias"
+            },
+            "keyAlias": {
+              "type": "string",
+              "pattern": "^(schema-key|dynamic-key)-[0-9]{6}$"
+            }
+          }
+        }
+      ]
+    },
+    "structuralShape": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shapeAlias", "nodeKind", "childCountBucket", "traits"],
+      "properties": {
+        "shapeAlias": {
+          "type": "string",
+          "pattern": "^structural-shape-[0-9]{6}$"
+        },
+        "nodeKind": {
+          "enum": ["object", "array", "string", "number", "boolean", "null", "jsonex-identity", "jsonex-reference"]
+        },
+        "childCountBucket": {
+          "enum": ["zero", "one", "two-to-four", "five-to-sixteen", "seventeen-plus"]
+        },
+        "traits": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "optional",
+              "repeated",
+              "identity-bearing",
+              "reference-bearing",
+              "varies-across-corpus",
+              "constant-across-corpus"
+            ]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "sourceFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["factAlias", "sourceAlias", "coordinate", "relation", "argumentDescriptors"],
+      "properties": {
+        "factAlias": {
+          "type": "string",
+          "pattern": "^source-fact-[0-9]{6}$"
+        },
+        "sourceAlias": {
+          "type": "string",
+          "pattern": "^definition-source-[0-9]{6}$"
+        },
+        "coordinate": {
+          "$ref": "#/$defs/sourceCoordinate"
+        },
+        "relation": {
+          "enum": [
+            "reads-locator",
+            "writes-locator",
+            "declares-parameter",
+            "defines-default",
+            "registers-save-hook",
+            "invokes-codec",
+            "relocates-save-path",
+            "unknown-relation"
+          ]
+        },
+        "argumentDescriptors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/argumentDescriptor"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "sourceCoordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lineStart", "lineEnd"],
+      "properties": {
+        "lineStart": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "lineEnd": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "columnStart": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "columnEnd": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "argumentDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["argumentAlias", "valueKind"],
+      "properties": {
+        "argumentAlias": {
+          "type": "string",
+          "pattern": "^safe-argument-[0-9]{6}$"
+        },
+        "valueKind": {
+          "enum": ["identifier", "integer", "number", "boolean", "null", "string", "compound"]
+        }
+      }
+    }
+  }
+}

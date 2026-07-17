@@ -1,0 +1,289 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hcoona:three:celesphonia-modifier:atlas-v0:corpus-intake-manifest:v1",
+  "title": "Atlas V0 Corpus Intake Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "surveyAlias",
+    "manifestRevision",
+    "discoveredSaveDirectoryEntryCount",
+    "includedSaveCount",
+    "saveEntries",
+    "discoveredDefinitionEntryCount",
+    "includedDefinitionCount",
+    "definitionGroups",
+    "definitionEntries",
+    "validation",
+    "confirmation"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "atlas-intake/v1"
+    },
+    "surveyAlias": {
+      "type": "string",
+      "pattern": "^survey-[a-z0-9-]+$"
+    },
+    "manifestRevision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "discoveredSaveDirectoryEntryCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "includedSaveCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "saveEntries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/saveEntry"
+      },
+      "uniqueItems": true
+    },
+    "discoveredDefinitionEntryCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "includedDefinitionCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "definitionGroups": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/definitionGroup"
+      },
+      "uniqueItems": true
+    },
+    "definitionEntries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/definitionEntry"
+      },
+      "uniqueItems": true
+    },
+    "validation": {
+      "$ref": "#/$defs/validation"
+    },
+    "confirmation": {
+      "$ref": "#/$defs/confirmation"
+    }
+  },
+  "$defs": {
+    "saveEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceAlias", "relativePath", "role", "decision", "entryType", "isReparsePoint"],
+      "properties": {
+        "sourceAlias": {
+          "type": "string",
+          "pattern": "^save-source-[0-9]{4}$"
+        },
+        "relativePath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "enum": ["slot", "global", "config", "steam-autocloud", "other"]
+        },
+        "slotNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "decision": {
+          "enum": [
+            "include-save",
+            "exclude-steam-autocloud",
+            "exclude-nonsave",
+            "unsupported",
+            "unreadable",
+            "scope-narrowed"
+          ]
+        },
+        "reasonCode": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "entryType": {
+          "enum": ["file", "directory", "other"]
+        },
+        "isReparsePoint": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "slot"
+              }
+            },
+            "required": ["role"]
+          },
+          "then": {
+            "required": ["slotNumber"]
+          },
+          "else": {
+            "not": {
+              "required": ["slotNumber"]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "steam-autocloud"
+              }
+            },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "decision": {
+                "const": "exclude-steam-autocloud"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "definitionGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["groupId", "selectionRule", "discoveredCount", "decision"],
+      "properties": {
+        "groupId": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "selectionRule": {
+          "type": "string",
+          "minLength": 1
+        },
+        "discoveredCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "decision": {
+          "enum": ["include", "exclude", "unsupported", "unreadable", "scope-narrowed"]
+        },
+        "reasonCode": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$"
+        }
+      }
+    },
+    "definitionEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceAlias", "relativePath", "groupId", "decision", "entryType", "isReparsePoint"],
+      "properties": {
+        "sourceAlias": {
+          "type": "string",
+          "pattern": "^definition-source-[0-9]{6}$"
+        },
+        "relativePath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "groupId": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "decision": {
+          "enum": ["include", "exclude", "unsupported", "unreadable", "scope-narrowed"]
+        },
+        "reasonCode": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "entryType": {
+          "enum": ["file", "directory", "other"]
+        },
+        "isReparsePoint": {
+          "type": "boolean"
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "aliasesUnique",
+        "relativePathsUnique",
+        "saveCountsReconciled",
+        "definitionCountsReconciled",
+        "rolesAndDecisionsConsistent",
+        "groupMembershipReconciled"
+      ],
+      "properties": {
+        "method": {
+          "enum": ["manual-a0", "atlas-tool"]
+        },
+        "aliasesUnique": {
+          "const": true
+        },
+        "relativePathsUnique": {
+          "const": true
+        },
+        "saveCountsReconciled": {
+          "const": true
+        },
+        "definitionCountsReconciled": {
+          "const": true
+        },
+        "rolesAndDecisionsConsistent": {
+          "const": true
+        },
+        "groupMembershipReconciled": {
+          "const": true
+        }
+      }
+    },
+    "confirmation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "enum": ["pending", "approved", "rejected", "superseded"]
+        },
+        "confirmedByRole": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "decisionReference": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "approved"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["confirmedByRole", "decisionReference"]
+          }
+        }
+      ]
+    }
+  }
+}

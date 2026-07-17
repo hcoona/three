@@ -1,0 +1,4 @@
+# This directory contains private local research data.
+# Never commit saves, decoded data, hashes, manifests, or generated evidence.
+*
+!.gitignore

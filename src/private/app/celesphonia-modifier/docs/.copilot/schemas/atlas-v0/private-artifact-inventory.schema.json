@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hcoona:three:celesphonia-modifier:atlas-v0:private-artifact-inventory:v1",
+  "title": "Atlas V0 Private Artifact Inventory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "surveyAlias", "artifacts"],
+  "properties": {
+    "schemaVersion": {
+      "const": "atlas-private-inventory/v1"
+    },
+    "surveyAlias": {
+      "type": "string",
+      "pattern": "^survey-[a-z0-9-]+$"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifact"
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactAlias",
+        "artifactClass",
+        "purpose",
+        "custodianRole",
+        "lastUseMilestone",
+        "expiryCondition",
+        "plannedDisposition",
+        "status",
+        "verificationMethod"
+      ],
+      "properties": {
+        "artifactAlias": {
+          "type": "string",
+          "pattern": "^private-artifact-[0-9]{6}$"
+        },
+        "artifactClass": {
+          "enum": [
+            "live-discovery",
+            "save-copy",
+            "definition-copy",
+            "decoded-save",
+            "private-evidence",
+            "agent-envelope",
+            "private-provenance",
+            "preservation-manifest",
+            "cleanup-record"
+          ]
+        },
+        "qualification": {
+          "enum": ["preservation-unqualified", "a2-qualified"]
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1
+        },
+        "custodianRole": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "lineageAliases": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "lastUseMilestone": {
+          "enum": ["A2", "A3", "A4", "A5", "A6", "A7", "A8", "post-A8-appeal"]
+        },
+        "expiryCondition": {
+          "type": "string",
+          "minLength": 1
+        },
+        "plannedDisposition": {
+          "enum": ["delete", "retain-private", "supersede", "not-applicable"]
+        },
+        "status": {
+          "enum": ["planned", "present", "last-use-complete", "deletion-pending", "deleted", "retained", "blocked"]
+        },
+        "verificationMethod": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "artifactClass": {
+                "const": "save-copy"
+              }
+            },
+            "required": ["artifactClass"]
+          },
+          "then": {
+            "required": ["qualification"]
+          },
+          "else": {
+            "not": {
+              "required": ["qualification"]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

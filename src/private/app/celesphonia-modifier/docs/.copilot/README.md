@@ -2,7 +2,7 @@
 
 > **Warning**
 > `research-tools/save-research-decoder.js` is a research-only tool.
-> Run it only on copies of saves outside this repository.
+> Run it only on immutable copies in the ignored `.private/` workspace.
 > Its inputs and outputs can contain private save data and must never be committed.
 
 This folder contains Copilot-assisted planning, remediation, and research artifacts for the
@@ -19,6 +19,9 @@ solution entries, or package references under this root.
   evidence model, privacy boundary, human value selection, and focused semantic research.
 - `plans/atlas-v0-execution-plan.md` defines the C# implementation policy and measurable
   acceptance criteria for each Atlas v0 increment.
+- `plans/atlas-v0-a0-research-contract.md` records the current finite corpus, definition,
+  privacy, redaction, Agent-egress, artifact-lifecycle, and handoff contract awaiting user
+  confirmation.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -42,9 +45,9 @@ normative perspective taxonomy.
 
 - `research/game-and-save-format-summary.md` is a non-sensitive supporting summary derived from
   the main plan.
-- `research-tools/save-research-decoder.js` is a research-only source copy for private,
-  out-of-repo analysis. Do not place live saves in this repository, and do not commit any
-  generated outputs.
+- `research-tools/save-research-decoder.js` is a research-only source copy for private analysis.
+  Use only immutable copies in the ignored `.private/` workspace, never the live save directory,
+  and do not commit generated outputs.
 
 ## Document lifecycle
 
@@ -73,5 +76,9 @@ and real save values.
 
 Commit only schema-validated, redacted Atlas records and safe generated views. Keep source
 research inputs, temporary decoded outputs, and retained E2/E3 evidence in protected working
-storage outside the repository. See `plans/save-semantic-atlas-plan.md` for the authoritative
-research and evidence boundary.
+storage excluded from repository history. See `plans/save-semantic-atlas-plan.md` for the
+authoritative research and evidence boundary.
+
+The local `src/private/app/celesphonia-modifier/.private/` workspace is inside the checkout for
+handoff convenience but is fully Git-ignored and remains private working storage. Its contents
+are never repository artifacts.
