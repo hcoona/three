@@ -539,6 +539,9 @@ url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15
 version = "3.3.11"
 backend = "core:ruby"
 
+[tools.ruby."platforms.windows-x64"]
+checksum = "blake3:9efb8e918d8cd40fc271425e7f95230abbc01658db6b9f12794763b312e4b6be"
+
 [[tools.taplo]]
 version = "0.10.0"
 backend = "aqua:tamasfe/taplo"
