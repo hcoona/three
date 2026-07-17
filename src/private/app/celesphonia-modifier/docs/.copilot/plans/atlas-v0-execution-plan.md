@@ -431,6 +431,8 @@ experiment, or manual game action in A6. Every population item must end as
 - All private-evidence-dependent reviews finish before cleanup.
 - The final cleanup removes decoded temporary content and records verified disposition for every
   private artifact.
+- Cleanup and its attestation finish before the exact A8 release candidate is committed for
+  independent review.
 - No E2 or E3 authority is issued merely because Atlas v0 is complete.
 
 ### Stop conditions

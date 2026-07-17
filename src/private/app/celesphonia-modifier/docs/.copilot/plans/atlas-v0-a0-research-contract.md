@@ -217,18 +217,20 @@ and cycles are prohibited.
 
 The lifecycle classes are:
 
-| Class                                 | Last use                                  | Disposition                                                                    |
-| ------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------ |
-| Live discovery metadata               | A2 copy verification                      | Retain private manifest; never copy content into Git                           |
-| Immutable save copies                 | A8 private repeatability review           | Delete after A8 acceptance                                                     |
-| Included definition copies            | A6 source-correlation review              | Delete after A8 acceptance                                                     |
-| Decoded save data                     | A6 private evidence and A8 privacy review | Delete after A8 acceptance                                                     |
-| Private correlation evidence          | A8 evidence audit                         | Delete after A8 unless selected focused research retains it under a new policy |
-| Agent envelopes                       | A8 Agent-egress audit                     | Delete after A8 acceptance                                                     |
-| Private provenance and cleanup record | A8 acceptance                             | Retain through the Atlas snapshot appeal period defined before A8              |
+| Class                                 | Last use                                  | Disposition                                                                                    |
+| ------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Live discovery metadata               | A2 copy verification                      | Retain private manifest; never copy content into Git                                           |
+| Immutable save copies                 | A8 private repeatability review           | Delete during A8 final cleanup, before release review                                          |
+| Included definition copies            | A6 source-correlation review              | Delete during A8 final cleanup, before release review                                          |
+| Decoded save data                     | A6 private evidence and A8 privacy review | Delete during A8 final cleanup, before release review                                          |
+| Private correlation evidence          | A8 evidence audit                         | Delete during A8 final cleanup unless a new approved policy retains it                         |
+| Agent envelopes                       | A8 Agent-egress audit                     | Delete during A8 final cleanup, before release review                                          |
+| Private provenance and cleanup record | A8 final cleanup                          | Retain through the Atlas snapshot appeal period, whose duration is defined before A8 execution |
 
 No cleanup occurs merely because an earlier increment completes. A8 performs one final reviewed
-cleanup after every private-evidence-dependent check.
+cleanup after every private-evidence-dependent check and before the A8 release candidate is
+committed for independent review. The cleanup attestation is part of that candidate, so A8
+acceptance never depends on a post-acceptance deletion.
 
 ## 8. Deny-by-default redaction policy
 

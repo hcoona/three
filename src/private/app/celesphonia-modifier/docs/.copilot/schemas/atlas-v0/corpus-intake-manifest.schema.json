@@ -358,7 +358,7 @@
         },
         "decisionReference": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^commit:[0-9a-f]{40}$"
         }
       },
       "allOf": [
@@ -379,7 +379,7 @@
               },
               "decisionReference": {
                 "type": "string",
-                "minLength": 1
+                "pattern": "^commit:[0-9a-f]{40}$"
               }
             },
             "required": ["confirmedByRole", "decisionReference"]

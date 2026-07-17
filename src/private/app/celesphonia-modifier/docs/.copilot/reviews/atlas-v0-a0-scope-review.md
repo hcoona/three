@@ -10,7 +10,7 @@
 
 **Approved manifest:** `atlas-intake/v2`, `survey-000001`, revision 3
 
-**Decision reference:** `commit:3610d5e2`
+**Decision reference:** `commit:3610d5e2a69073672bda665eed25a545a141c06b`
 
 ## 1. Decision recorded
 
