@@ -1,9 +1,22 @@
 # Celesphonia Modifier: Product, UX, and Technical Plan
 
-**Status:** Final v5 transaction-metadata and bootstrap-certification implementation plan; writable release remains gated by Phase 0 evidence  
-**Target:** Private WinUI 3 desktop application for Windows  
-**Verified baseline:** Magical Girl Celesphonia v1.05, Steam App ID 1786790, Steam build 13624401, database `versionId` 2444532  
+**Status:** Active v5 technical baseline; partially superseded as described below
+
+**Target:** Private WinUI 3 desktop application for Windows
+
+**Verified baseline:** Magical Girl Celesphonia v1.05, Steam App ID 1786790,
+Steam build 13624401, database `versionId` 2444532
+
 **Plan date:** July 15, 2026
+
+> **Progression authority**
+> `project-operating-model.md` governs investment, sequencing, staffing, gates, and scope cuts.
+> `save-semantic-atlas-plan.md` governs the comprehensive preliminary semantic survey.
+> Where this document's older `6+1`, Phase 0, or broad-domain assumptions conflict with those
+> plans, the newer operating and Atlas plans take precedence.
+>
+> The product, UX, transaction, recovery, compatibility, and test requirements in this document
+> remain active unless a newer normative document explicitly replaces a specific requirement.
 
 ## 1. Executive direction
 
@@ -130,12 +143,12 @@ Manual read-only selection is restricted to regular `global.rpgsave`, `config.rp
 
 ### 3.2 Read-only sessions, operation binding, and immutable baselines
 
-| State | Meaning | Allowed behavior |
-|---|---|---|
-| Unrecognized | Game identity is absent or ambiguous. | Refuse catalog binding; show folder-validation help only. |
-| Recognized, catalog unavailable | Game identity is known, but no safe save directory or bounded parse path is available. | Installation diagnostics and manual read-only directory selection. |
-| Recognized read-only | Safe bounded cataloging is possible, but writable compatibility is unknown, newer, modded, incomplete, or failed. | Slot catalog, safe previews, read-only summaries, original-byte export, and redacted diagnostics. |
-| Operation-capable installation | Recognition, adapter/fingerprint, paths, profiles, stores, and common safety gates are available. | Permit only an operation-specific `TransactionPlan` whose own preconditions pass. This state alone does not authorize Save, RestoreSlot, or ReconcilePair. |
+| State                           | Meaning                                                                                                           | Allowed behavior                                                                                                                                           |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unrecognized                    | Game identity is absent or ambiguous.                                                                             | Refuse catalog binding; show folder-validation help only.                                                                                                  |
+| Recognized, catalog unavailable | Game identity is known, but no safe save directory or bounded parse path is available.                            | Installation diagnostics and manual read-only directory selection.                                                                                         |
+| Recognized read-only            | Safe bounded cataloging is possible, but writable compatibility is unknown, newer, modded, incomplete, or failed. | Slot catalog, safe previews, read-only summaries, original-byte export, and redacted diagnostics.                                                          |
+| Operation-capable installation  | Recognition, adapter/fingerprint, paths, profiles, stores, and common safety gates are available.                 | Permit only an operation-specific `TransactionPlan` whose own preconditions pass. This state alone does not authorize Save, RestoreSlot, or ReconcilePair. |
 
 `RecognizedInstallation` is never accepted directly by Save, RestoreSlot, ReconcilePair, or an edit operation. `IWritableBindingFactory` establishes common live-installation authority: recognized installation, resolved active save directory, compatible adapter/fingerprint, qualified live/backup volume profiles, app-owned transaction/backup/state stores, process/path/capacity facts, and the ability to capture complete actual participant observations and build profile-qualified future-role constraints. `ITransactionOperationPlanner` then proves one operation's preconditions; generic binding rules MUST NOT silently impose Save-only congruence on RestoreSlot or ReconcilePair.
 
@@ -208,13 +221,13 @@ Permission, disk, or conflict states may offer export only to a non-active direc
 
 `ISchemaAdapterRegistry` selects from a versioned `CompatibilityFingerprint`, not `system._versionId` alone.
 
-| Component | Required evidence |
-|---|---|
-| Game identity | Steam App ID; Steam `buildid` when applicable; `Game.exe` file/product version and local SHA-256; `package.json` name, version, and main entry; RPG Maker/NW.js probes; installed-language evidence; resolved install root. |
-| Database identity | `System.json` `versionId`; local hashes for operation-relevant files; adapter-defined semantic probes over nonlocalized IDs, types, EXP curves, learnings, equipment types, limits, note/meta tags, and every field used by the operation. |
-| Plugin identity | Ordered enabled-plugin list, enabled flag, name, discovered version, local script hash, normalized parameter hash, and operation relevance. Save-path relocation is always relevant. |
-| Save graph identity | Required roots, node types, wrapper shapes, identity/reference validity, required path types, duplicate-value relationships, and operation-specific graph probes. |
-| Adapter capability | Capability ID, evidence-packet ID, required evidence class, fingerprint dependencies, allowed paths, validators, serializer requirements, and release status. |
+| Component           | Required evidence                                                                                                                                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Game identity       | Steam App ID; Steam `buildid` when applicable; `Game.exe` file/product version and local SHA-256; `package.json` name, version, and main entry; RPG Maker/NW.js probes; installed-language evidence; resolved install root.                |
+| Database identity   | `System.json` `versionId`; local hashes for operation-relevant files; adapter-defined semantic probes over nonlocalized IDs, types, EXP curves, learnings, equipment types, limits, note/meta tags, and every field used by the operation. |
+| Plugin identity     | Ordered enabled-plugin list, enabled flag, name, discovered version, local script hash, normalized parameter hash, and operation relevance. Save-path relocation is always relevant.                                                       |
+| Save graph identity | Required roots, node types, wrapper shapes, identity/reference validity, required path types, duplicate-value relationships, and operation-specific graph probes.                                                                          |
+| Adapter capability  | Capability ID, evidence-packet ID, required evidence class, fingerprint dependencies, allowed paths, validators, serializer requirements, and release status.                                                                              |
 
 Localized or byte-different data is accepted only when a versioned compatible probe proves every field used by the operation is semantically equivalent. Matching a version number, file name, or user confirmation is insufficient.
 
@@ -226,12 +239,12 @@ Full component hashes remain local compatibility material. They are not exported
 
 Writable compatibility is evaluated only after installation recognition. Common compatibility proves game/build, plugins/parameters, database dependencies, document structure/losslessness, adapter capability, volume profiles, paths, stores, and versioned transaction infrastructure. Final write authority is operation-specific:
 
-| Operation/mode | Required current-pair condition | Baseline/source | Candidate/postcondition |
-|---|---|---|---|
-| `Save` | Exactly congruent and fully valid. | Unchanged writable Open/Reload baseline and at least one E3 semantic slot edit. | Slot from the semantic change set; global from post-edit slot plus current lossless global; allowlisted pair. |
-| `RestoreSlot` | May be incongruent; current global remains losslessly safe. | Fresh `RestoreStart`; verified compatible editor backup slot; eligible Conflict target if resolving. | Congruent/valid candidate pair; selected current-global leaves only. |
-| `ReconcilePair/RepairSelectedGlobalEntry` | May be incongruent but exactly diagnosable from current live pair. | Fresh `ReconcileStart`; no foreign/standalone/historical slot. | Slot `NoOp`, global `Replace`; selected entry only; congruent result. |
-| `ReconcilePair/AdoptCongruentCurrentPair` | Already exactly congruent and valid. | Fresh `ReconcileStart`; required unresolved terminal Conflict linkage. | Both `NoOp`; verified archive, `Committed`, mirror `InSync`, durable resolution completion. |
+| Operation/mode                            | Required current-pair condition                                    | Baseline/source                                                                                      | Candidate/postcondition                                                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `Save`                                    | Exactly congruent and fully valid.                                 | Unchanged writable Open/Reload baseline and at least one E3 semantic slot edit.                      | Slot from the semantic change set; global from post-edit slot plus current lossless global; allowlisted pair. |
+| `RestoreSlot`                             | May be incongruent; current global remains losslessly safe.        | Fresh `RestoreStart`; verified compatible editor backup slot; eligible Conflict target if resolving. | Congruent/valid candidate pair; selected current-global leaves only.                                          |
+| `ReconcilePair/RepairSelectedGlobalEntry` | May be incongruent but exactly diagnosable from current live pair. | Fresh `ReconcileStart`; no foreign/standalone/historical slot.                                       | Slot `NoOp`, global `Replace`; selected entry only; congruent result.                                         |
+| `ReconcilePair/AdoptCongruentCurrentPair` | Already exactly congruent and valid.                               | Fresh `ReconcileStart`; required unresolved terminal Conflict linkage.                               | Both `NoOp`; verified archive, `Committed`, mirror `InSync`, durable resolution completion.                   |
 
 Every operation also requires fresh complete actual observations at its race gates, exact equality to immutable observations where no filesystem mutation should have occurred, and satisfaction of profile-qualified constraints where a mutation has occurred or is projected. Capability/derivation rules, allowlists, volume profiles, and process/capacity/journal/ledger preconditions remain mandatory. A failed operation probe disables that operation; it does not become a generic rule that makes another operation impossible. There is no **Try anyway**, manual-path, warning, confirmation, timestamp-only, imported-file, or **Use current as baseline** bypass.
 
@@ -248,24 +261,24 @@ Malformed class-marker or wrapper structure remains a parser error.
 
 ### 4.4 Evidence confidence
 
-| Class | Meaning | Production write policy |
-|---|---|---|
-| E0 — Unknown | Path, authority, coupling, or behavior is unknown or contradictory. | Read-only. |
-| E1 — Structurally mapped | Paths and types are observed, but runtime authority or side effects are unproven. | Read-only. |
-| E2 — Behavior verified | Controlled before/after saves and in-game checks prove behavior on one fingerprint, but release regression coverage is incomplete. | Test builds only. |
-| E3 — Release-qualified | E2 plus exact dependency fingerprinting, boundary/coupling tests, lossless diff tests, committed-result validation, disposable-copy game smoke tests, and review approval. | Writable only on the qualified fingerprint. |
+| Class                    | Meaning                                                                                                                                                                    | Production write policy                     |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| E0 — Unknown             | Path, authority, coupling, or behavior is unknown or contradictory.                                                                                                        | Read-only.                                  |
+| E1 — Structurally mapped | Paths and types are observed, but runtime authority or side effects are unproven.                                                                                          | Read-only.                                  |
+| E2 — Behavior verified   | Controlled before/after saves and in-game checks prove behavior on one fingerprint, but release regression coverage is incomplete.                                         | Test builds only.                           |
+| E3 — Release-qualified   | E2 plus exact dependency fingerprinting, boundary/coupling tests, lossless diff tests, committed-result validation, disposable-copy game smoke tests, and review approval. | Writable only on the qualified fingerprint. |
 
 Only E3 operations are writable. Confirmation, backup availability, and user expertise do not promote E0–E2 evidence.
 
 ### 4.5 Impact and blast radius
 
-| Tier | Meaning | UX after E3 qualification |
-|---|---|---|
-| I0 — None | Read-only inspection. | No confirmation. |
-| I1 — Localized | Small reversible change with no known cross-domain effect. | Inline review and normal Save. |
-| I2 — Coupled | Multiple leaves, database constraints, or a secondary document must stay synchronized. | Prominent review; explicit confirmation for decreases/removals or nonobvious consequences. |
-| I3 — Broad | Character build, progression, irreversible choice, or many derived values may change. | Blocking confirmation and dedicated restore guidance; normally post-MVP. |
-| I4 — Prohibited | Arbitrary graph/script/event manipulation or no safe semantic boundary. | Never writable. |
+| Tier            | Meaning                                                                                | UX after E3 qualification                                                                  |
+| --------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| I0 — None       | Read-only inspection.                                                                  | No confirmation.                                                                           |
+| I1 — Localized  | Small reversible change with no known cross-domain effect.                             | Inline review and normal Save.                                                             |
+| I2 — Coupled    | Multiple leaves, database constraints, or a secondary document must stay synchronized. | Prominent review; explicit confirmation for decreases/removals or nonobvious consequences. |
+| I3 — Broad      | Character build, progression, irreversible choice, or many derived values may change.  | Blocking confirmation and dedicated restore guidance; normally post-MVP.                   |
+| I4 — Prohibited | Arbitrary graph/script/event manipulation or no safe semantic boundary.                | Never writable.                                                                            |
 
 Impact controls UX; it does not establish evidence.
 
@@ -338,29 +351,29 @@ It cannot be added by inserting config into the two-document writer.
 
 All limits come from a versioned `ParserLimitProfile`. Production profiles are compiled or signed release data and cannot be raised by normal users.
 
-| Limit | Required enforcement |
-|---|---|
-| Compressed bytes | Check metadata and actual bytes while reading; reject before allocating beyond the cap. |
-| Decompressed bytes | Count UTF-8 output incrementally and stop before appending beyond the cap. |
-| Nesting depth | Reject before allocating the next object/array above the cap. |
-| Node count | Count every scalar, object, array, and property value before materialization. |
-| Identity/reference counts | Check before insertion; reject duplicates/dangling references independently. |
-| Arrays | Cap array count, total elements, and largest array; grow storage in checked bounded increments. |
-| Wall-clock | Apply separate cancellation deadlines to decode, parse, graph resolution, and validation. |
-| Memory | Account for retained text, graph objects, tables, and temporary buffers; reject before excess allocation. |
+| Limit                     | Required enforcement                                                                                      |
+| ------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Compressed bytes          | Check metadata and actual bytes while reading; reject before allocating beyond the cap.                   |
+| Decompressed bytes        | Count UTF-8 output incrementally and stop before appending beyond the cap.                                |
+| Nesting depth             | Reject before allocating the next object/array above the cap.                                             |
+| Node count                | Count every scalar, object, array, and property value before materialization.                             |
+| Identity/reference counts | Check before insertion; reject duplicates/dangling references independently.                              |
+| Arrays                    | Cap array count, total elements, and largest array; grow storage in checked bounded increments.           |
+| Wall-clock                | Apply separate cancellation deadlines to decode, parse, graph resolution, and validation.                 |
+| Memory                    | Account for retained text, graph objects, tables, and temporary buffers; reject before excess allocation. |
 
 Concrete limits remain non-production until measured on the minimum supported benchmark baseline and representative worst-case corpus.
 
 #### Minimum benchmark baseline
 
-| Dimension | Required baseline |
-|---|---|
-| CPU | x64 Intel Core i5-8250U-class or AMD Ryzen 5 3500U-class machine, with at least 4 physical cores and 8 logical processors, no faster than the selected reference machine. Record model, microcode, cores, and power plan. |
-| RAM | 8 GiB installed. Loaded runs begin with at least 2 GiB available; the page file is not hosted on storage faster than the measured application volume. |
-| Storage | Local NTFS SATA SSD. Do not use an NVMe-only baseline, RAM disk, network share, compressed/encrypted test folder, or warmed synthetic filesystem. Record model, firmware, free space, and allocation unit. |
-| OS/runtime | Oldest Windows build claimed by the release, x64, fully patched; shipped self-contained .NET/Windows App SDK; Release `win-x64`; no debugger. If build 17763 remains supported, calibrate it or explicitly raise the support floor. |
-| Security/background | Microsoft Defender real-time protection enabled. OS update, indexing rebuild, backup, and full-scan bursts invalidate and repeat the run rather than increasing limits. |
-| Concurrent load | Run idle and standardized loaded profiles. The loaded profile occupies one logical processor and reserves memory until 2–3 GiB remains. Record generator/version, affinity, and achieved load. |
+| Dimension           | Required baseline                                                                                                                                                                                                                   |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CPU                 | x64 Intel Core i5-8250U-class or AMD Ryzen 5 3500U-class machine, with at least 4 physical cores and 8 logical processors, no faster than the selected reference machine. Record model, microcode, cores, and power plan.           |
+| RAM                 | 8 GiB installed. Loaded runs begin with at least 2 GiB available; the page file is not hosted on storage faster than the measured application volume.                                                                               |
+| Storage             | Local NTFS SATA SSD. Do not use an NVMe-only baseline, RAM disk, network share, compressed/encrypted test folder, or warmed synthetic filesystem. Record model, firmware, free space, and allocation unit.                          |
+| OS/runtime          | Oldest Windows build claimed by the release, x64, fully patched; shipped self-contained .NET/Windows App SDK; Release `win-x64`; no debugger. If build 17763 remains supported, calibrate it or explicitly raise the support floor. |
+| Security/background | Microsoft Defender real-time protection enabled. OS update, indexing rebuild, backup, and full-scan bursts invalidate and repeat the run rather than increasing limits.                                                             |
+| Concurrent load     | Run idle and standardized loaded profiles. The loaded profile occupies one logical processor and reserves memory until 2–3 GiB remains. Record generator/version, affinity, and achieved load.                                      |
 
 The published minimum hardware requirement is no lower than this baseline; a faster developer machine cannot substitute.
 
@@ -520,9 +533,9 @@ The top-level `ShellFrame` owns navigation. There is no persistent `NavigationVi
 - Memory Engrams
 - Equipment & Outfits
 - Inventory & Currency
-  - Ordinary Items
-  - Special Items
-  - Currency
+    - Ordinary Items
+    - Special Items
+    - Currency
 - Missions & Titles
 - Collections
 - Difficulty
@@ -533,7 +546,7 @@ The hierarchy is shallow. Drag/drop and multi-selection are disabled.
 
 ### 7.3 Menus
 
-**File**
+#### File
 
 - Open installation or slot (`Ctrl+O`)
 - Close document
@@ -543,20 +556,20 @@ The hierarchy is shallow. Drag/drop and multi-selection are disabled.
 - Settings
 - Exit
 
-**Edit**
+#### Edit
 
 - Undo (`Ctrl+Z`)
 - Redo (`Ctrl+Y`)
 - Revert field
 - Revert all changes
 
-**View**
+#### View
 
 - Review (`Ctrl+H`)
 - Validate (`Ctrl+Shift+V`)
 - Find in current collection (`Ctrl+F`)
 
-**Help**
+#### Help
 
 - Safety Guide
 - Export redacted diagnostics
@@ -651,7 +664,7 @@ Restore is blocked by incompatible backup slot, corrupt/unsupported current glob
 1. **Repair selected preview entry** (`RepairSelectedGlobalEntry`): slot `NoOp`, global `Replace`, `MutatingPair`. It may start incongruent when the current slot exactly proves a selected-entry-only repair and current global is losslessly safe. No slot stage exists.
 2. **Keep congruent current pair** (`AdoptCongruentCurrentPair`): both `NoOp`, `ResolutionOnly`. The pair is already exactly congruent/valid and `resolvesTransactionId` names one eligible unresolved terminal Conflict.
 
-Both modes capture `ReconcileStart`, preserve/verify both live participants in the archive-first baseline/`PreResolutionEvidence` before `Prepared`, and use a new immutable transaction. Reconcile never accepts a foreign/standalone/historical slot, replaces the slot, normalizes unrelated global data, or repairs an unparseable global.
+Both modes capture `ReconcileStart`, preserve/verify both live participants in the archive-first baseline/`PreResolutionEvidence` before `Prepared`, and use a new immutable transaction. Reconcile never accepts a foreign/standalone/historical slot, replaces the slot, normalizes unrelated global data, or repairs an unparsable global.
 
 All-`NoOp` adoption MUST NOT return through a no-change shortcut. It durably records mirrored `ResolutionAttemptOpened`, synchronized `ResolverInitializationIntent`, archive bootstrap/verification, `Prepared`, `SlotSatisfied(NoOp)`, `GlobalSatisfied(NoOp)`, `Verified`, authoritative `Committed`, transaction/resolution-ledger/execution synchronization, `ResolutionAttemptClosed(CommittedResolved)`, `ResolutionCompleted`, and terminal retirement. The old Conflict journal remains immutable; the resolution ledger carries its lifecycle.
 
@@ -704,12 +717,12 @@ WorkspaceGrid
    └─ ContextPresenter
 ```
 
-| Window width | State | Layout | Context mode control |
-|---|---|---|---|
-| `>=1180` epx | `ExpandedThreePane` | Columns `296, 1, *, 1, 320`; Context may close to zero. | Measured capability; nominal 320 epx does not guarantee fit. |
-| `1008–1179` epx | `WideTwoPane` | Columns `280, 1, *`; Context replaces Detail with **Back to editor**. | Measure actual replacement-region width. |
-| `720–1007` epx | `MediumTwoPane` | Columns `248, 1, *`; Context replaces Detail; forms one column. | Measure actual replacement-region width. |
-| `640–719` epx | `CompactSinglePane` | One `*`; exactly one region visible; Detail/Context have Back. | Measure actual full-width Context route. |
+| Window width    | State               | Layout                                                                | Context mode control                                         |
+| --------------- | ------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `>=1180` epx    | `ExpandedThreePane` | Columns `296, 1, *, 1, 320`; Context may close to zero.               | Measured capability; nominal 320 epx does not guarantee fit. |
+| `1008–1179` epx | `WideTwoPane`       | Columns `280, 1, *`; Context replaces Detail with **Back to editor**. | Measure actual replacement-region width.                     |
+| `720–1007` epx  | `MediumTwoPane`     | Columns `248, 1, *`; Context replaces Detail; forms one column.       | Measure actual replacement-region width.                     |
+| `640–719` epx   | `CompactSinglePane` | One `*`; exactly one region visible; Detail/Context have Back.        | Measure actual full-width Context route.                     |
 
 `VisualStateManager` positions Context; it never selects the mode control. Use `SelectorBar` only when real localized/text-scaled desired width plus padding/safety fits `ContextPresenter.ActualWidth` without clipping/scrolling; otherwise use visible-label **View** `ComboBox`. At 225% in the fixed 320 epx column, ComboBox is expected unless post-layout measurement proves fit.
 
@@ -736,14 +749,14 @@ Either control updates `SelectedContextMode`; the state synchronizes both contro
 
 Never wrap `ListView`, `GridView`, or `TreeView` in another `ScrollViewer`.
 
-| Region | Sole vertical scroll owner | Horizontal behavior |
-|---|---|---|
-| Explorer | `TreeView` internal scroller | No horizontal page scrolling; labels wrap to two lines, then trim with UIA/tooltip full text. |
-| Normal detail form | One `ScrollViewer` inside `DetailPresenter` | Disabled; labels wrap and controls stretch. |
-| Inventory/collection detail | Body `ListView` | Disabled; header and filters stay outside the list. |
-| Context mode | Active mode's `ListView` | Disabled; findings wrap. |
-| Slot picker | Slot `ListView` | Disabled; templates reflow before metadata stops fitting. |
-| Start, Settings, Recovery | One page-level `ScrollViewer` each | Disabled. |
+| Region                      | Sole vertical scroll owner                  | Horizontal behavior                                                                           |
+| --------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Explorer                    | `TreeView` internal scroller                | No horizontal page scrolling; labels wrap to two lines, then trim with UIA/tooltip full text. |
+| Normal detail form          | One `ScrollViewer` inside `DetailPresenter` | Disabled; labels wrap and controls stretch.                                                   |
+| Inventory/collection detail | Body `ListView`                             | Disabled; header and filters stay outside the list.                                           |
+| Context mode                | Active mode's `ListView`                    | Disabled; findings wrap.                                                                      |
+| Slot picker                 | Slot `ListView`                             | Disabled; templates reflow before metadata stops fitting.                                     |
+| Start, Settings, Recovery   | One page-level `ScrollViewer` each          | Disabled.                                                                                     |
 
 `BreadcrumbBar` is a single-line horizontal navigation control and never wraps. Bind through `ItemsSource`, with the current location last. When space is insufficient, standard control behavior collapses leftmost items into an ellipsis; activating it opens the built-in flyout in path order. Do not add a horizontal scrollbar or custom wrapping template, replace the ellipsis, or reproduce the flyout.
 
@@ -792,11 +805,11 @@ Metadata priority:
 3. Modified time.
 4. Playtime.
 
-| Width | Presentation |
-|---|---|
-| `>=1008` epx | Header plus row columns: Slot `72`, Preview `*`, Playtime `120`, Modified `164`, Status `152`. |
-| `720–1007` epx | Header hidden; two-line full-width row/card. Status moves to its own line at high text scale. |
-| `640–719` epx | One-column card: slot/preview, full status, modified time, playtime; each may wrap. |
+| Width          | Presentation                                                                                   |
+| -------------- | ---------------------------------------------------------------------------------------------- |
+| `>=1008` epx   | Header plus row columns: Slot `72`, Preview `*`, Playtime `120`, Modified `164`, Status `152`. |
+| `720–1007` epx | Header hidden; two-line full-width row/card. Status moves to its own line at high text scale.  |
+| `640–719` epx  | One-column card: slot/preview, full status, modified time, playtime; each may wrap.            |
 
 Status is never color-only. Missing and unsupported slots remain focusable so their explanation can be read. The accessible item name includes all metadata even when the visual template condenses it. Arrow keys select; `Enter` opens only when allowed. Returning restores selected and first-visible slots.
 
@@ -821,16 +834,16 @@ Before changing mode-control presentation, determine whether focus is inside the
 
 UIA names the active control with localized **Review view**; Combo retains visible **View** header. Inactive is collapsed outside measurement. Measurement-only Selector is Raw, disabled, nonfocusable, and silent. Presentation changes raise no mode announcement; user mode changes update the Context heading and raise exactly one polite announcement. Exactly one of `ContextModeSelector`/`ContextModeCombo` is in UIA Control view/tab order after layout.
 
-| State | F6 order |
-|---|---|
-| Expanded, Context open | chrome -> Explorer -> Detail -> Context -> status -> chrome |
-| Expanded, Context closed | chrome -> Explorer -> Detail -> status -> chrome |
-| Two-pane Detail | chrome -> Explorer -> Detail -> status -> chrome |
-| Two-pane Context | chrome -> Explorer -> Context -> status -> chrome |
-| Compact Explorer | chrome -> Explorer -> status -> chrome |
-| Compact Detail | chrome -> Detail -> status -> chrome |
-| Compact Context | chrome -> Context header/mode/list -> status -> chrome |
-| Settings | chrome/back -> Settings content -> chrome/back |
+| State                    | F6 order                                                    |
+| ------------------------ | ----------------------------------------------------------- |
+| Expanded, Context open   | chrome -> Explorer -> Detail -> Context -> status -> chrome |
+| Expanded, Context closed | chrome -> Explorer -> Detail -> status -> chrome            |
+| Two-pane Detail          | chrome -> Explorer -> Detail -> status -> chrome            |
+| Two-pane Context         | chrome -> Explorer -> Context -> status -> chrome           |
+| Compact Explorer         | chrome -> Explorer -> status -> chrome                      |
+| Compact Detail           | chrome -> Detail -> status -> chrome                        |
+| Compact Context          | chrome -> Context header/mode/list -> status -> chrome      |
+| Settings                 | chrome/back -> Settings content -> chrome/back              |
 
 `Shift+F6` reverses order. Collapsed/measurement-only controls cannot receive focus.
 
@@ -925,13 +938,13 @@ The Expanded mode row is conditional: measured fit renders `[Changes] [Validatio
 
 `SettingsPage` is one full-width page in `ShellFrame`, opened from **File > Settings** or compact Menu/More. It has Back, one vertical `ScrollViewer`, a 760 epx maximum content width, and Toolkit `SettingsCard`/`SettingsExpander`.
 
-| Setting | Control | Behavior |
-|---|---|---|
-| Remember recent paths | `ToggleSwitch` | Immediate; turning off does not delete existing entries. |
-| Clear recent paths | `Button` | Confirmation names what is cleared. |
-| Show Mature Status | `ToggleSwitch` | Immediate; if hidden while active, navigate to Overview. |
-| Diagnostics detail | redacted-level `ComboBox` | Immediate; no full-value/full-path option. |
-| Check for updates | `Button` | Opens the fixed HTTPS release page in the browser. |
+| Setting               | Control                   | Behavior                                                 |
+| --------------------- | ------------------------- | -------------------------------------------------------- |
+| Remember recent paths | `ToggleSwitch`            | Immediate; turning off does not delete existing entries. |
+| Clear recent paths    | `Button`                  | Confirmation names what is cleared.                      |
+| Show Mature Status    | `ToggleSwitch`            | Immediate; if hidden while active, navigate to Overview. |
+| Diagnostics detail    | redacted-level `ComboBox` | Immediate; no full-value/full-path option.               |
+| Check for updates     | `Button`                  | Opens the fixed HTTPS release page in the browser.       |
 
 MVP has no editable backup count, byte cap, **Apply retention**, bulk cleanup, or retention dialog. Section 11.12 selects the newest 20 valid committed editor sets subject to protection; Section 11.14 executes deletion only through the crash-resumable retention ledger. There is no MVP byte cap.
 
@@ -964,36 +977,36 @@ No UI layer collapses these into one enum or infers one projection from another.
 
 Friendly classifications use complete actual observations plus the applicable comparison mode, never hash-only authorization:
 
-| Classification | Required fact | Visible wording |
-|---|---|---|
-| `BaselineVerified` | Fresh actual tuple exactly equals the immutable baseline observation because no mutation is expected. | **Opened version is live — verified at {local time}.** |
-| `CandidateVerified` | Fresh actual tuple equals the durable post-forward observed record and satisfies the candidate-live `ExpectedRoleConstraint`. | **Edited candidate is live — verified at {local time}.** |
-| `OtherVerified` | Any deterministic field/relationship or qualified OS-field predicate fails. | **A different version is live — automatic recovery will not overwrite it.** |
-| `Missing` | A role constrained present is actually absent. | **The live file is missing.** |
-| `Unreadable` | Role cannot be safely opened/read. | **The live file could not be read.** |
-| `Unverified` | Required observation/profile/constraint fact is unavailable. | **The live file's current state could not be verified.** |
+| Classification      | Required fact                                                                                                                 | Visible wording                                                             |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `BaselineVerified`  | Fresh actual tuple exactly equals the immutable baseline observation because no mutation is expected.                         | **Opened version is live — verified at {local time}.**                      |
+| `CandidateVerified` | Fresh actual tuple equals the durable post-forward observed record and satisfies the candidate-live `ExpectedRoleConstraint`. | **Edited candidate is live — verified at {local time}.**                    |
+| `OtherVerified`     | Any deterministic field/relationship or qualified OS-field predicate fails.                                                   | **A different version is live — automatic recovery will not overwrite it.** |
+| `Missing`           | A role constrained present is actually absent.                                                                                | **The live file is missing.**                                               |
+| `Unreadable`        | Role cannot be safely opened/read.                                                                                            | **The live file could not be read.**                                        |
+| `Unverified`        | Required observation/profile/constraint fact is unavailable.                                                                  | **The live file's current state could not be verified.**                    |
 
 Rollback/stage/evidence/archive cards use complete actual observations and named constraint results. No raw hash, ID, path, tuple, or save value appears. **No replacement was attempted** requires zero invocation intent/evidence; **The save was reversed** requires terminal `RolledBack`, satisfaction of the qualified projected-restoration constraints, and durable actual restored observations; **Backup verified** requires `ArchiveVerified`; **Stage verified** requires a matching durable `StageBuildIntent` and `StageVerified`; **Transaction evidence was preserved** requires verified ownership and complete observations. Generic **originals intact**, **files intact**, **nothing changed**, **timestamps restored**, **safely reversed**, and unqualified **backup available** are prohibited.
 
-| State | Presentation/actions | Announcement |
-|---|---|---|
-| Archive bootstrap in progress | **Creating and verifying the baseline backup before changes.** | Polite progress. |
-| `CancelledBeforePrepared`/`FailedBeforePrepared` | State no replacement was attempted, the bootstrap outcome, and cleanup/protection status. | Assertive facts. |
-| `PreInitializationCanceled`/`PreInitializationFailed` | State resolver initialization did not reach a replacement-capable journal, no replacement/live mutation occurred, and show draft-artifact retirement status; original Conflict remains unresolved. | Assertive facts. |
-| `IntegrityBlocked` attempt closure | **Resolution attempt closed because integrity could not be proven; evidence is protected and the original Conflict remains unresolved.** | Assertive; no retry until compatible recovery. |
-| Pre-replacement incomplete ownership/observation proof | **Backup or stage preparation could not be verified; no automatic cleanup was performed.** | Assertive; name roles. |
-| Any Other/missing/unreadable actual observation or failed constraint | **Changed outside this editor** or Recovery; no error-category safety inference. | Assertive. |
-| Nonterminal after replacement/invocation | Recovery page with logical prefix, replica states, actual-observation/constraint cards, authorized actions. | Assertive. |
-| `Verified` | **Both intended files and the verified baseline backup are ready; finishing commit.** Never offer rollback. | Assertive maintenance. |
-| terminal + stable mirror lag | **Transaction is terminal — stable journal replica repair required.** Never rollback/downgrade. | Assertive maintenance. |
-| terminal + retirement pending | **Transaction complete; temporary recovery files are being retired.** | Polite progress or assertive if blocked. |
-| valid retired execution replica | **Temporary recovery journal retired — its absence is expected.** | No warning. |
-| Divergent journals | **Journal replicas diverged — recovery required.** | Assertive; no auto-repair. |
-| Unresolved Conflict | **Recovery requires a decision.** Offer only eligible Restore, global repair, or adoption. | Assertive; focus heading. |
-| failed resolution closure | State exact outcome and **Original Conflict remains unresolved**; show retry prerequisites. | Assertive. |
-| all-`NoOp` adoption completed | **Current pair adopted and prior Conflict resolved.** | Polite once after `ResolutionCompleted`. |
-| Retention blocked | **Backup retention is blocked; no backup data was deleted automatically.** | Assertive when relevant. |
-| Save success | **Reload saved files**/**Close**; `CommittedBaselineConsumed`. | Polite. |
+| State                                                                | Presentation/actions                                                                                                                                                                               | Announcement                                   |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| Archive bootstrap in progress                                        | **Creating and verifying the baseline backup before changes.**                                                                                                                                     | Polite progress.                               |
+| `CancelledBeforePrepared`/`FailedBeforePrepared`                     | State no replacement was attempted, the bootstrap outcome, and cleanup/protection status.                                                                                                          | Assertive facts.                               |
+| `PreInitializationCanceled`/`PreInitializationFailed`                | State resolver initialization did not reach a replacement-capable journal, no replacement/live mutation occurred, and show draft-artifact retirement status; original Conflict remains unresolved. | Assertive facts.                               |
+| `IntegrityBlocked` attempt closure                                   | **Resolution attempt closed because integrity could not be proven; evidence is protected and the original Conflict remains unresolved.**                                                           | Assertive; no retry until compatible recovery. |
+| Pre-replacement incomplete ownership/observation proof               | **Backup or stage preparation could not be verified; no automatic cleanup was performed.**                                                                                                         | Assertive; name roles.                         |
+| Any Other/missing/unreadable actual observation or failed constraint | **Changed outside this editor** or Recovery; no error-category safety inference.                                                                                                                   | Assertive.                                     |
+| Nonterminal after replacement/invocation                             | Recovery page with logical prefix, replica states, actual-observation/constraint cards, authorized actions.                                                                                        | Assertive.                                     |
+| `Verified`                                                           | **Both intended files and the verified baseline backup are ready; finishing commit.** Never offer rollback.                                                                                        | Assertive maintenance.                         |
+| terminal + stable mirror lag                                         | **Transaction is terminal — stable journal replica repair required.** Never rollback/downgrade.                                                                                                    | Assertive maintenance.                         |
+| terminal + retirement pending                                        | **Transaction complete; temporary recovery files are being retired.**                                                                                                                              | Polite progress or assertive if blocked.       |
+| valid retired execution replica                                      | **Temporary recovery journal retired — its absence is expected.**                                                                                                                                  | No warning.                                    |
+| Divergent journals                                                   | **Journal replicas diverged — recovery required.**                                                                                                                                                 | Assertive; no auto-repair.                     |
+| Unresolved Conflict                                                  | **Recovery requires a decision.** Offer only eligible Restore, global repair, or adoption.                                                                                                         | Assertive; focus heading.                      |
+| failed resolution closure                                            | State exact outcome and **Original Conflict remains unresolved**; show retry prerequisites.                                                                                                        | Assertive.                                     |
+| all-`NoOp` adoption completed                                        | **Current pair adopted and prior Conflict resolved.**                                                                                                                                              | Polite once after `ResolutionCompleted`.       |
+| Retention blocked                                                    | **Backup retention is blocked; no backup data was deleted automatically.**                                                                                                                         | Assertive when relevant.                       |
+| Save success                                                         | **Reload saved files**/**Close**; `CommittedBaselineConsumed`.                                                                                                                                     | Polite.                                        |
 
 Resolution wording is exact:
 
@@ -1020,21 +1033,21 @@ Below 720 epx, card fields stack, action buttons are full-width and vertical, de
 
 Primary action is derived from fresh classifications:
 
-| Observation/constraint/ledger condition | Primary action |
-|---|---|
-| Nonterminal `Prepared`, exact unchanged pre-forward observations, zero intents/evidence | **Finish abort** / verified cleanup. |
-| `SlotSatisfied`, durable slot post-forward observation satisfying its constraint and exact unchanged global pre-observation | **Resume global** only when all gates pass; otherwise authorized rollback. |
-| `GlobalSatisfied`, durable intended observations satisfying both constraints and archive proof | **Resume verification**. |
-| `Verified`, durable intended observations satisfying both constraints and archive proof | **Finish commit**; never rollback. |
-| `RollbackPending`, qualified rollback prerequisites and current actual observations | **Resume rollback**. |
-| Terminal Conflict, current pair exact congruent/valid, eligible linkage | **Keep congruent current pair** (new all-`NoOp` reconciliation). |
-| Incongruent pair with exact current-slot selected-entry repair | **Repair selected preview entry**. |
-| Eligible verified editor backup selected | **Restore selected backup**. |
-| Terminal transaction authority with exact transaction-mirror prefix lag | **Repair transaction journal replica**. |
-| Resolution ledger with exact mirror prefix lag | **Repair resolution ledger replica**. |
-| Closed pre-initialization attempt with valid draft-retirement progress | **Finish resolution draft retirement**. |
-| Terminal transaction with valid retirement intent/progress | **Resume temporary recovery-file retirement**. |
-| `IntegrityBlocked`/`ProtectedIntegrityBlocked`, any Other/Missing/Unreadable/Unverified observation, failed constraint, divergent/authoritative-unreadable replica, or blocked ledger | Diagnostics/Support actions only; no automatic mutation or generic retry. |
+| Observation/constraint/ledger condition                                                                                                                                               | Primary action                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Nonterminal `Prepared`, exact unchanged pre-forward observations, zero intents/evidence                                                                                               | **Finish abort** / verified cleanup.                                       |
+| `SlotSatisfied`, durable slot post-forward observation satisfying its constraint and exact unchanged global pre-observation                                                           | **Resume global** only when all gates pass; otherwise authorized rollback. |
+| `GlobalSatisfied`, durable intended observations satisfying both constraints and archive proof                                                                                        | **Resume verification**.                                                   |
+| `Verified`, durable intended observations satisfying both constraints and archive proof                                                                                               | **Finish commit**; never rollback.                                         |
+| `RollbackPending`, qualified rollback prerequisites and current actual observations                                                                                                   | **Resume rollback**.                                                       |
+| Terminal Conflict, current pair exact congruent/valid, eligible linkage                                                                                                               | **Keep congruent current pair** (new all-`NoOp` reconciliation).           |
+| Incongruent pair with exact current-slot selected-entry repair                                                                                                                        | **Repair selected preview entry**.                                         |
+| Eligible verified editor backup selected                                                                                                                                              | **Restore selected backup**.                                               |
+| Terminal transaction authority with exact transaction-mirror prefix lag                                                                                                               | **Repair transaction journal replica**.                                    |
+| Resolution ledger with exact mirror prefix lag                                                                                                                                        | **Repair resolution ledger replica**.                                      |
+| Closed pre-initialization attempt with valid draft-retirement progress                                                                                                                | **Finish resolution draft retirement**.                                    |
+| Terminal transaction with valid retirement intent/progress                                                                                                                            | **Resume temporary recovery-file retirement**.                             |
+| `IntegrityBlocked`/`ProtectedIntegrityBlocked`, any Other/Missing/Unreadable/Unverified observation, failed constraint, divergent/authoritative-unreadable replica, or blocked ledger | Diagnostics/Support actions only; no automatic mutation or generic retry.  |
 
 The summary is one visible assertive live region raised after fresh classifications bind. Participant cards are named groups in slot/global order; archive/attempt/retirement evidence follows, then actions in matching tab order. Progress is polite; a new Conflict or retirement/retention block is assertive; terminal bootstrap/Aborted/RolledBack results are polite and focus the result heading. `Esc` cannot dismiss blocking Recovery and `Alt+Left` remains disabled.
 
@@ -1052,38 +1065,38 @@ Principal IDs include `CmdMenu`, `CmdBack`, `CmdSave`, `CmdReview`, `CmdMore`, `
 
 ### 8.11 Combined responsive acceptance matrix
 
-| Window epx | Text scale | Language/theme | Required workspace state | Context mode-control expectation |
-|---|---:|---|---|---|
-| 1280×800 | 100% | English / Light | Expanded; Context 320 epx | Measure; Selector only when `requiredWidth <= 320`. |
-| 1280×800 | 225% | Simplified Chinese / Dark | Expanded; Context 320 epx | ComboBox expected unless recorded fit proof. |
-| 1180×720 | 225% | English / Light | Exact three-pane boundary | ComboBox expected unless recorded fit proof. |
-| 1179×720 | 225% | English / Dark | Context replaces Detail | Measure actual replacement width; do not reuse 320 result. |
-| 1008×720 | 225% | Simplified Chinese / Light | Slot-table boundary | Measure actual presenter independently. |
-| 1007×720 | 225% | Simplified Chinese / Dark | Slot-card boundary | Measure actual presenter independently. |
-| 720×480 | 225% | English / Contrast | Exact two-pane boundary | Measure after Contrast resources/layout. |
-| 719×480 | 225% | Simplified Chinese / Light | Compact Context route | Measure full route; breakpoint cannot force ComboBox. |
-| 640×480 | 100% | English / Light | Minimum baseline | Measure actual compact width. |
-| 640×480 | 225% | English / Contrast | Minimum/max scale/Contrast | No clipping or horizontal scroll. |
-| 640×480 | 225% | Simplified Chinese / Dark | Minimum/max scale/localization | Preserve selection/focus. |
+| Window epx | Text scale | Language/theme             | Required workspace state       | Context mode-control expectation                           |
+| ---------- | ---------: | -------------------------- | ------------------------------ | ---------------------------------------------------------- |
+| 1280×800   |       100% | English / Light            | Expanded; Context 320 epx      | Measure; Selector only when `requiredWidth <= 320`.        |
+| 1280×800   |       225% | Simplified Chinese / Dark  | Expanded; Context 320 epx      | ComboBox expected unless recorded fit proof.               |
+| 1180×720   |       225% | English / Light            | Exact three-pane boundary      | ComboBox expected unless recorded fit proof.               |
+| 1179×720   |       225% | English / Dark             | Context replaces Detail        | Measure actual replacement width; do not reuse 320 result. |
+| 1008×720   |       225% | Simplified Chinese / Light | Slot-table boundary            | Measure actual presenter independently.                    |
+| 1007×720   |       225% | Simplified Chinese / Dark  | Slot-card boundary             | Measure actual presenter independently.                    |
+| 720×480    |       225% | English / Contrast         | Exact two-pane boundary        | Measure after Contrast resources/layout.                   |
+| 719×480    |       225% | Simplified Chinese / Light | Compact Context route          | Measure full route; breakpoint cannot force ComboBox.      |
+| 640×480    |       100% | English / Light            | Minimum baseline               | Measure actual compact width.                              |
+| 640×480    |       225% | English / Contrast         | Minimum/max scale/Contrast     | No clipping or horizontal scroll.                          |
+| 640×480    |       225% | Simplified Chinese / Dark  | Minimum/max scale/localization | Preserve selection/focus.                                  |
 
 Each row records `selectorDesiredWidth`, `requiredWidth`, `availableWidth`, active presentation, selected logical mode, and focused automation ID before/after layout. Fail on inequality mismatch, lost selection/focus, duplicate tab stops/UIA controls, clipping, or horizontal scrolling.
 
-| Context width | Scale | Language | Theme | Assertion |
-|---:|---:|---|---|---|
-| 320 | 100% | English | Light | Presentation equals measured fit. |
-| 320 | 100% | Simplified Chinese | Dark | Presentation equals measured fit. |
-| 320 | 200% | English | Contrast | Measured fit; no clipping. |
-| 320 | 200% | Simplified Chinese | Light | Measured fit; no clipping. |
-| 320 | 225% | English | Dark | ComboBox unless recorded proof fits. |
-| 320 | 225% | Simplified Chinese | Contrast | ComboBox unless recorded proof fits. |
-| 520 | 100% | English | Dark | Presentation equals measured fit. |
-| 520 | 100% | Simplified Chinese | Contrast | Presentation equals measured fit. |
-| 520 | 200% | English | Light | Presentation equals measured fit. |
-| 520 | 200% | Simplified Chinese | Dark | Presentation equals measured fit. |
-| 520 | 225% | English | Contrast | Presentation equals measured fit. |
-| 520 | 225% | Simplified Chinese | Light | Presentation equals measured fit. |
-| 720 | 225% | English | Light | Wider-route fit measured independently. |
-| 720 | 225% | Simplified Chinese | Dark | Wider-route fit measured independently. |
+| Context width | Scale | Language           | Theme    | Assertion                               |
+| ------------: | ----: | ------------------ | -------- | --------------------------------------- |
+|           320 |  100% | English            | Light    | Presentation equals measured fit.       |
+|           320 |  100% | Simplified Chinese | Dark     | Presentation equals measured fit.       |
+|           320 |  200% | English            | Contrast | Measured fit; no clipping.              |
+|           320 |  200% | Simplified Chinese | Light    | Measured fit; no clipping.              |
+|           320 |  225% | English            | Dark     | ComboBox unless recorded proof fits.    |
+|           320 |  225% | Simplified Chinese | Contrast | ComboBox unless recorded proof fits.    |
+|           520 |  100% | English            | Dark     | Presentation equals measured fit.       |
+|           520 |  100% | Simplified Chinese | Contrast | Presentation equals measured fit.       |
+|           520 |  200% | English            | Light    | Presentation equals measured fit.       |
+|           520 |  200% | Simplified Chinese | Dark     | Presentation equals measured fit.       |
+|           520 |  225% | English            | Contrast | Presentation equals measured fit.       |
+|           520 |  225% | Simplified Chinese | Light    | Presentation equals measured fit.       |
+|           720 |  225% | English            | Light    | Wider-route fit measured independently. |
+|           720 |  225% | Simplified Chinese | Dark     | Wider-route fit measured independently. |
 
 Acceptance crosses below/at/above threshold, repeats 20 times without oscillation, preserves every mode across width/text/resource/theme/route changes, transfers focus only when focus was in replaced control, exposes one UIA Control-view element/tab stop, raises no presentation-only announcement, and raises one polite heading announcement for a user mode change. Queued measurement is ignored after close/navigation; subscriptions are disposed/re-registered once; reduced motion uses no animation.
 
@@ -1093,40 +1106,40 @@ All rows also prove 640×480 minimum, usable title bar, one vertical scroll owne
 
 ### 9.1 Domain presentation
 
-| Domain | MVP treatment |
-|---|---|
-| Overview | Read-only slot, playtime, save count, preview, modified time, fingerprint, and adapter status. |
-| Character | Read-only by default. HP/MP/SP is stretch only after E3. Transformation, states, and derived stats remain read-only. |
-| Progression | Read-only. No broad progression editor. |
-| Exploration Status | Read-only. Location and map/event state are never simple scalar edits. |
-| Combat & Skills | Read-only. |
-| Memory Engrams | Read-only in core MVP; Soul Ink and slot assignment require separate capabilities. |
-| Equipment & Outfits | Read-only until named E3 operations exist. |
-| Inventory & Currency | Gold is required E3 capability. Ordinary items are optional E3. Special/key/plugin items remain read-only. |
-| Missions & Titles | Read-only; never claim Steam achievement effects. |
-| Collections | Read-only until named repair capabilities exist. |
-| Difficulty | Read-only unless Easy–Very Hard independently reaches E3. Hell is unavailable. |
-| Mature Status | Hidden by default and read-only unless later privacy and evidence gates pass. |
-| Diagnostics | Read-only, bounded, and redacted; no raw JSON editor. |
+| Domain               | MVP treatment                                                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Overview             | Read-only slot, playtime, save count, preview, modified time, fingerprint, and adapter status.                       |
+| Character            | Read-only by default. HP/MP/SP is stretch only after E3. Transformation, states, and derived stats remain read-only. |
+| Progression          | Read-only. No broad progression editor.                                                                              |
+| Exploration Status   | Read-only. Location and map/event state are never simple scalar edits.                                               |
+| Combat & Skills      | Read-only.                                                                                                           |
+| Memory Engrams       | Read-only in core MVP; Soul Ink and slot assignment require separate capabilities.                                   |
+| Equipment & Outfits  | Read-only until named E3 operations exist.                                                                           |
+| Inventory & Currency | Gold is required E3 capability. Ordinary items are optional E3. Special/key/plugin items remain read-only.           |
+| Missions & Titles    | Read-only; never claim Steam achievement effects.                                                                    |
+| Collections          | Read-only until named repair capabilities exist.                                                                     |
+| Difficulty           | Read-only unless Easy–Very Hard independently reaches E3. Hell is unavailable.                                       |
+| Mature Status        | Hidden by default and read-only unless later privacy and evidence gates pass.                                        |
+| Diagnostics          | Read-only, bounded, and redacted; no raw JSON editor.                                                                |
 
 ### 9.2 Candidate operation matrix
 
-| Operation | Release position | Current / required evidence | Impact | Required gate |
-|---|---|---|---|---|
-| Gold | Core MVP | E1 / E3 | I2 | Prove zero, one, normal, maximum, increase, decrease, earn, spend, game save, and reload; validate `party._gold`, variable 215, integer/range, exact diff, and preview behavior. |
-| Ordinary inventory quantity | Optional core | E1 / E3 | I2 | Only adapter-classified nonspecial items; prove add, remove-to-zero, use, buy/sell, maximum, reload, container shape, exclusions, and per-item limit. |
-| Key/hidden/quest/plugin-special items | Post-MVP | E0 / E3 | I3 | Separate family capabilities proving acquisition/removal side effects, event dependencies, uniqueness, UI behavior, and plugin constraints. |
-| HP/MP/SP current values | Stretch | E1 / E3 | I2 | Change current values only; prove alive/dead, zero HP, states, transformations, equipment/state maxima, level changes, save/reload, SP rules, and undo. |
-| Easy–Very Hard difficulty | Stretch | E1 / E3 | I3 | Prove every transition, variables 4980/4978, switches 1994–1998, menu/combat behavior, save, and reload. |
-| Hell entry/exit/downgrade | Not offered | E1 / E3 plus product approval | I4 in MVP | No MVP control. Backup or typed confirmation is insufficient. |
-| Guided level/EXP | Deferred by default | E1 / E3 | I3 | Per actor/class evidence for EXP boundaries, skills, hooks, derived stats/resources, states/equipment effects, save, and reload. |
-| Soul Ink | Stretch | E1 / E3 | I2 | Prove authoritative field, mirrors, earn/spend, cap, engram effects, UI, save, reload, and relevant plugins. |
-| Other currency | Post-MVP | E0 / E3 | I2/I3 | Distinct named operation and packet. |
-| Equipment/outfit/durability | Post-MVP | E0 / E3 | I3 | Prove slot types, restrictions, ownership, transfer, two-handed/dual-wield, plugin slots, durability, outfits, and derived resources. |
-| Memory Engram inventory | Post-MVP | E0 / E3 | I3 | Prove acquisition/removal, uniqueness/stacking, plugin/database IDs, UI, and Soul Ink relationships. |
-| Memory Engram assignment | Post-MVP | E0 / E3 | I3 | Prove slots, duplicates, actor/form restrictions, granted effects, and hooks. |
-| Named story/quest/title/collection repair | Phase 3 | E0 / E3 | I3 | One transition per capability with prerequisites, consequences, menu/event behavior, next-event behavior, save/reload, and achievement review. |
-| Raw variables/switches/map/event/interpreter/JsonEx/script/plugin objects | Never | E0 / N/A | I4 | No expert-mode or confirmation bypass. |
+| Operation                                                                 | Release position    | Current / required evidence   | Impact    | Required gate                                                                                                                                                                    |
+| ------------------------------------------------------------------------- | ------------------- | ----------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gold                                                                      | Core MVP            | E1 / E3                       | I2        | Prove zero, one, normal, maximum, increase, decrease, earn, spend, game save, and reload; validate `party._gold`, variable 215, integer/range, exact diff, and preview behavior. |
+| Ordinary inventory quantity                                               | Optional core       | E1 / E3                       | I2        | Only adapter-classified nonspecial items; prove add, remove-to-zero, use, buy/sell, maximum, reload, container shape, exclusions, and per-item limit.                            |
+| Key/hidden/quest/plugin-special items                                     | Post-MVP            | E0 / E3                       | I3        | Separate family capabilities proving acquisition/removal side effects, event dependencies, uniqueness, UI behavior, and plugin constraints.                                      |
+| HP/MP/SP current values                                                   | Stretch             | E1 / E3                       | I2        | Change current values only; prove alive/dead, zero HP, states, transformations, equipment/state maxima, level changes, save/reload, SP rules, and undo.                          |
+| Easy–Very Hard difficulty                                                 | Stretch             | E1 / E3                       | I3        | Prove every transition, variables 4980/4978, switches 1994–1998, menu/combat behavior, save, and reload.                                                                         |
+| Hell entry/exit/downgrade                                                 | Not offered         | E1 / E3 plus product approval | I4 in MVP | No MVP control. Backup or typed confirmation is insufficient.                                                                                                                    |
+| Guided level/EXP                                                          | Deferred by default | E1 / E3                       | I3        | Per actor/class evidence for EXP boundaries, skills, hooks, derived stats/resources, states/equipment effects, save, and reload.                                                 |
+| Soul Ink                                                                  | Stretch             | E1 / E3                       | I2        | Prove authoritative field, mirrors, earn/spend, cap, engram effects, UI, save, reload, and relevant plugins.                                                                     |
+| Other currency                                                            | Post-MVP            | E0 / E3                       | I2/I3     | Distinct named operation and packet.                                                                                                                                             |
+| Equipment/outfit/durability                                               | Post-MVP            | E0 / E3                       | I3        | Prove slot types, restrictions, ownership, transfer, two-handed/dual-wield, plugin slots, durability, outfits, and derived resources.                                            |
+| Memory Engram inventory                                                   | Post-MVP            | E0 / E3                       | I3        | Prove acquisition/removal, uniqueness/stacking, plugin/database IDs, UI, and Soul Ink relationships.                                                                             |
+| Memory Engram assignment                                                  | Post-MVP            | E0 / E3                       | I3        | Prove slots, duplicates, actor/form restrictions, granted effects, and hooks.                                                                                                    |
+| Named story/quest/title/collection repair                                 | Phase 3             | E0 / E3                       | I3        | One transition per capability with prerequisites, consequences, menu/event behavior, next-event behavior, save/reload, and achievement review.                                   |
+| Raw variables/switches/map/event/interpreter/JsonEx/script/plugin objects | Never               | E0 / N/A                      | I4        | No expert-mode or confirmation bypass.                                                                                                                                           |
 
 Any missed row-specific gate leaves the operation read-only.
 
@@ -1462,40 +1475,40 @@ A longer/divergent/post-terminal mirror blocks mutation/retirement. Missing/unre
 
 `ParticipantDisposition` is `Replace`/`NoOp`; `TransactionDisposition` is `MutatingPair`/`ResolutionOnly`.
 
-| Operation | Slot | Global | Transaction | Allowed |
-|---|---|---|---|---|
-| Save | Replace | Replace | MutatingPair | Yes. |
-| Save | Replace | NoOp | MutatingPair | Yes. |
-| Save | NoOp | Replace | any | No; use Reconcile. |
-| Save | NoOp | NoOp | any | No transaction. |
-| RestoreSlot | Replace | Replace | MutatingPair | Yes. |
-| RestoreSlot | Replace | NoOp | MutatingPair | Yes. |
-| RestoreSlot | NoOp | Replace | MutatingPair | Yes; selected entry only. |
-| RestoreSlot | NoOp | NoOp | any | No; **Already matches**; linked adoption uses Reconcile. |
-| ReconcilePair | NoOp | Replace | MutatingPair | Yes; global repair. |
-| ReconcilePair | NoOp | NoOp | ResolutionOnly | Yes; linked adoption. |
-| ReconcilePair | Replace | either | any | Prohibited. |
-| any unlisted combination | any | any | any | Prohibited before bootstrap. |
+| Operation                | Slot    | Global  | Transaction    | Allowed                                                  |
+| ------------------------ | ------- | ------- | -------------- | -------------------------------------------------------- |
+| Save                     | Replace | Replace | MutatingPair   | Yes.                                                     |
+| Save                     | Replace | NoOp    | MutatingPair   | Yes.                                                     |
+| Save                     | NoOp    | Replace | any            | No; use Reconcile.                                       |
+| Save                     | NoOp    | NoOp    | any            | No transaction.                                          |
+| RestoreSlot              | Replace | Replace | MutatingPair   | Yes.                                                     |
+| RestoreSlot              | Replace | NoOp    | MutatingPair   | Yes.                                                     |
+| RestoreSlot              | NoOp    | Replace | MutatingPair   | Yes; selected entry only.                                |
+| RestoreSlot              | NoOp    | NoOp    | any            | No; **Already matches**; linked adoption uses Reconcile. |
+| ReconcilePair            | NoOp    | Replace | MutatingPair   | Yes; global repair.                                      |
+| ReconcilePair            | NoOp    | NoOp    | ResolutionOnly | Yes; linked adoption.                                    |
+| ReconcilePair            | Replace | either  | any            | Prohibited.                                              |
+| any unlisted combination | any     | any     | any            | Prohibited before bootstrap.                             |
 
 Byte-identical candidates normalize to `NoOp`; replacement is never metadata-only.
 
 Bootstrap progress remains separate from logical state. `BootstrapState=BootstrapBlocked` may support logical `BootstrapConflict`, but it is not itself a logical terminal append and does not describe backup lifetime or attempt closure.
 
-| Logical state | Meaning | Allowed next states |
-|---|---|---|
-| `Initializing` | Plan accepted; independent bootstrap may be in progress. | `Prepared`, `CancelledBeforePrepared`, `FailedBeforePrepared`, `BootstrapConflict` |
-| `CancelledBeforePrepared` | User cancelled before `Prepared`; no invocation exists. | Terminal |
-| `FailedBeforePrepared` | Operational failure before `Prepared`; no invocation exists. | Terminal |
-| `BootstrapConflict` | Bootstrap/archive/stage/root facts are unsafe. | Terminal blocked |
-| `Prepared` | Actual archive/stage observations, constraints, plan, and required replicas verify. | `SlotSatisfied`, `RollbackPending`, `Aborted`, `Conflict` |
-| `SlotSatisfied` | Slot `NoOp` equality or durable validated post-forward observation is proven. | `GlobalSatisfied`, `RollbackPending`, `Aborted`, `Conflict` |
-| `GlobalSatisfied` | Global disposition is proven by equality or durable validated post-forward observation. | `Verified`, `RollbackPending`, `Conflict` |
-| `Verified` | Intended actual observations satisfy constraints; pair, validation, and archive proof pass. | `Committed`, `Conflict` |
-| `Committed` | Authoritative terminal record is durable. | Terminal |
-| `RollbackPending` | An invocation may have occurred and qualified rollback is authorized. | `RolledBack`, `Conflict` |
-| `RolledBack` | Replace roles have durable validated restored observations; `NoOp` roles remain exact. | Terminal |
-| `Aborted` | `Prepared` existed; zero intents/evidence and exact unchanged observations are proven. | Terminal |
-| `Conflict` | Complete facts cannot authorize automatic action. | Terminal; resolution uses a new transaction |
+| Logical state             | Meaning                                                                                     | Allowed next states                                                                |
+| ------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `Initializing`            | Plan accepted; independent bootstrap may be in progress.                                    | `Prepared`, `CancelledBeforePrepared`, `FailedBeforePrepared`, `BootstrapConflict` |
+| `CancelledBeforePrepared` | User cancelled before `Prepared`; no invocation exists.                                     | Terminal                                                                           |
+| `FailedBeforePrepared`    | Operational failure before `Prepared`; no invocation exists.                                | Terminal                                                                           |
+| `BootstrapConflict`       | Bootstrap/archive/stage/root facts are unsafe.                                              | Terminal blocked                                                                   |
+| `Prepared`                | Actual archive/stage observations, constraints, plan, and required replicas verify.         | `SlotSatisfied`, `RollbackPending`, `Aborted`, `Conflict`                          |
+| `SlotSatisfied`           | Slot `NoOp` equality or durable validated post-forward observation is proven.               | `GlobalSatisfied`, `RollbackPending`, `Aborted`, `Conflict`                        |
+| `GlobalSatisfied`         | Global disposition is proven by equality or durable validated post-forward observation.     | `Verified`, `RollbackPending`, `Conflict`                                          |
+| `Verified`                | Intended actual observations satisfy constraints; pair, validation, and archive proof pass. | `Committed`, `Conflict`                                                            |
+| `Committed`               | Authoritative terminal record is durable.                                                   | Terminal                                                                           |
+| `RollbackPending`         | An invocation may have occurred and qualified rollback is authorized.                       | `RolledBack`, `Conflict`                                                           |
+| `RolledBack`              | Replace roles have durable validated restored observations; `NoOp` roles remain exact.      | Terminal                                                                           |
+| `Aborted`                 | `Prepared` existed; zero intents/evidence and exact unchanged observations are proven.      | Terminal                                                                           |
+| `Conflict`                | Complete facts cannot authorize automatic action.                                           | Terminal; resolution uses a new transaction                                        |
 
 Per-participant execution is separate:
 
@@ -1562,27 +1575,27 @@ Windows behavior references: <https://learn.microsoft.com/windows/win32/api/winb
 
 Recovery validates transaction and resolution-ledger replicas independently, derives bootstrap/logical/participant/attempt projections, preserves terminal prefixes, captures fresh complete actual tuples, verifies ownership/manifests/relationships/profiles, and authorizes only when one applicable constraint set matches.
 
-| Durable prefix/projection | Fresh observation/ledger fact | Required result |
-|---|---|---|
-| `ResolutionAttemptOpened`, no resolver transaction envelope | Reserved roots absent and no invocation/live-mutation evidence | Close `PreInitializationCanceled` or `PreInitializationFailed` under Section 11.13; original Conflict remains unresolved. |
-| transaction start before archive | Owned roots; no invocation possible | Resume or close pre-`Prepared` outcome; ambiguous ownership blocks. |
-| `ArchiveBuildStarted`, before `ArchiveVerified` | Marker/artifacts match allowed names and recorded actual observations | Resume verified archive artifact or close; no replacement. |
-| `StageBuildIntent`, stage missing | Expected-missing proof remains valid | Resume create/verify or close cancellation/failure. |
-| `StageBuildIntent`, stage present, no `StageVerified` | Exact candidate hash/length and create-time constraints pass after complete capture | Append/replicate `StageVerified`; otherwise `BootstrapConflict`. |
-| stage present without matching intent, or verified stage changed/extra/reparse/hard-linked | Ownership/constraint facts unsafe | `BootstrapConflict`; protect stage and related set; never trust/delete automatically. |
-| authoritative ahead | Destination absent or exact byte prefix | Exact suffix repair; dependent create/mutation/satisfaction forbidden until required sync. |
-| `Prepared`, zero invocation intents | Exact unchanged pre-forward observations and no replacement evidence | Append `Aborted`; all-NoOp ResolutionOnly continues to commit. |
-| `Prepared`, any invocation intent | Pre-forward still present | Never `Aborted`; guarded rollback classification or `Conflict`. |
-| `ForwardMutationObserved`, validation absent | Recorded actual tuple available and applicable constraint unambiguous | Append validation then satisfaction if it passes; otherwise `Conflict`. |
-| `SlotSatisfied` | Durable validated slot result; global exactly unchanged | Continue only if all gates pass; otherwise qualified rollback/`Conflict`. |
-| `GlobalSatisfied` | Durable actual intended pair satisfies constraints | Validate/archive proof, append `Verified`, then commit. |
-| `Verified` | Durable actual intended pair/constraints/archive proof pass | Append `Committed`; on safe proof failure append `Conflict` or remain blocked. Never abort/rollback. |
-| `RollbackPending` or rollback observation without validation | Durable actual rollback result available | Validate projected-restoration constraints; append `RolledBack` only after every role passes. |
-| nonterminal | Hash match but deterministic field/relationship or OS-field predicate differs | `Other`/`Conflict`. |
-| terminal + stable exact-prefix lag | Terminal remains immutable | Exact suffix repair; no downgrade. |
-| valid `RetirementCompleted` | Execution/temp artifacts absent | Expected `Retired`; exclude from health gating. |
-| payload absent + retention `Completed` | Stable history links manifest digest | Expected deletion; terminal unchanged. |
-| closed failed/blocked resolution attempt | Attempt artifact state and retry prerequisites classifiable | Keep original Conflict unresolved; retire/protect artifacts and expose retry only when Section 11.13 permits. |
+| Durable prefix/projection                                                                  | Fresh observation/ledger fact                                                       | Required result                                                                                                           |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `ResolutionAttemptOpened`, no resolver transaction envelope                                | Reserved roots absent and no invocation/live-mutation evidence                      | Close `PreInitializationCanceled` or `PreInitializationFailed` under Section 11.13; original Conflict remains unresolved. |
+| transaction start before archive                                                           | Owned roots; no invocation possible                                                 | Resume or close pre-`Prepared` outcome; ambiguous ownership blocks.                                                       |
+| `ArchiveBuildStarted`, before `ArchiveVerified`                                            | Marker/artifacts match allowed names and recorded actual observations               | Resume verified archive artifact or close; no replacement.                                                                |
+| `StageBuildIntent`, stage missing                                                          | Expected-missing proof remains valid                                                | Resume create/verify or close cancellation/failure.                                                                       |
+| `StageBuildIntent`, stage present, no `StageVerified`                                      | Exact candidate hash/length and create-time constraints pass after complete capture | Append/replicate `StageVerified`; otherwise `BootstrapConflict`.                                                          |
+| stage present without matching intent, or verified stage changed/extra/reparse/hard-linked | Ownership/constraint facts unsafe                                                   | `BootstrapConflict`; protect stage and related set; never trust/delete automatically.                                     |
+| authoritative ahead                                                                        | Destination absent or exact byte prefix                                             | Exact suffix repair; dependent create/mutation/satisfaction forbidden until required sync.                                |
+| `Prepared`, zero invocation intents                                                        | Exact unchanged pre-forward observations and no replacement evidence                | Append `Aborted`; all-NoOp ResolutionOnly continues to commit.                                                            |
+| `Prepared`, any invocation intent                                                          | Pre-forward still present                                                           | Never `Aborted`; guarded rollback classification or `Conflict`.                                                           |
+| `ForwardMutationObserved`, validation absent                                               | Recorded actual tuple available and applicable constraint unambiguous               | Append validation then satisfaction if it passes; otherwise `Conflict`.                                                   |
+| `SlotSatisfied`                                                                            | Durable validated slot result; global exactly unchanged                             | Continue only if all gates pass; otherwise qualified rollback/`Conflict`.                                                 |
+| `GlobalSatisfied`                                                                          | Durable actual intended pair satisfies constraints                                  | Validate/archive proof, append `Verified`, then commit.                                                                   |
+| `Verified`                                                                                 | Durable actual intended pair/constraints/archive proof pass                         | Append `Committed`; on safe proof failure append `Conflict` or remain blocked. Never abort/rollback.                      |
+| `RollbackPending` or rollback observation without validation                               | Durable actual rollback result available                                            | Validate projected-restoration constraints; append `RolledBack` only after every role passes.                             |
+| nonterminal                                                                                | Hash match but deterministic field/relationship or OS-field predicate differs       | `Other`/`Conflict`.                                                                                                       |
+| terminal + stable exact-prefix lag                                                         | Terminal remains immutable                                                          | Exact suffix repair; no downgrade.                                                                                        |
+| valid `RetirementCompleted`                                                                | Execution/temp artifacts absent                                                     | Expected `Retired`; exclude from health gating.                                                                           |
+| payload absent + retention `Completed`                                                     | Stable history links manifest digest                                                | Expected deletion; terminal unchanged.                                                                                    |
+| closed failed/blocked resolution attempt                                                   | Attempt artifact state and retry prerequisites classifiable                         | Keep original Conflict unresolved; retire/protect artifacts and expose retry only when Section 11.13 permits.             |
 
 Hash-only `B/C/X` is explanatory shorthand, never authorization. Adoption/global repair/Restore remain separate new transactions under their operation-specific gates.
 
@@ -1612,18 +1625,18 @@ Disposition =
 
 The immutable manifest is never rewritten; disposition is recorded in the retirement ledger or, when no resolver transaction/archive exists, in the mirrored resolution ledger and referenced by any later cleanup intent.
 
-| Outcome | Backup-set disposition and cleanup/protection |
-|---|---|
-| `Committed` | `CommittedBackup`; user-restorable when compatible; newest-20 selection. |
-| `PreInitializationCanceled`/`PreInitializationFailed` | `EphemeralPreInitialization`; normally `Content=NotCreated`; retry only after attempt-draft state is `ExpectedMissing` or `DraftRetired`. |
-| `CancelledBeforePrepared` | `EphemeralCancelled`; eligible after transaction retirement and exact ownership proof. |
-| `FailedBeforePrepared` | `EphemeralFailedBootstrap`; eligible after transaction retirement and exact ownership proof. |
-| `Aborted` | `EphemeralAborted`; eligible after retirement because zero invocation and exact unchanged observations are proven. |
-| `RolledBack` | `RolledBackAttempt`; protect at least 24 hours and while newest for the slot. |
-| unresolved `Conflict` | `UnresolvedConflictEvidence`; protected indefinitely. |
-| resolved `Conflict` | `ResolvedConflictEvidence`; eligible after `ResolutionCompleted`, retirement, and 24-hour/newest protection. |
-| `BootstrapConflict` or attempt `IntegrityBlocked` | `IntegrityBlockedEvidence`; protected until a compatible signed reader durably reclassifies integrity and completes required artifact retirement. |
-| transaction/attempt version block | `VersionBlockedEvidence`; protected until compatible safe reclassification. |
+| Outcome                                               | Backup-set disposition and cleanup/protection                                                                                                     |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Committed`                                           | `CommittedBackup`; user-restorable when compatible; newest-20 selection.                                                                          |
+| `PreInitializationCanceled`/`PreInitializationFailed` | `EphemeralPreInitialization`; normally `Content=NotCreated`; retry only after attempt-draft state is `ExpectedMissing` or `DraftRetired`.         |
+| `CancelledBeforePrepared`                             | `EphemeralCancelled`; eligible after transaction retirement and exact ownership proof.                                                            |
+| `FailedBeforePrepared`                                | `EphemeralFailedBootstrap`; eligible after transaction retirement and exact ownership proof.                                                      |
+| `Aborted`                                             | `EphemeralAborted`; eligible after retirement because zero invocation and exact unchanged observations are proven.                                |
+| `RolledBack`                                          | `RolledBackAttempt`; protect at least 24 hours and while newest for the slot.                                                                     |
+| unresolved `Conflict`                                 | `UnresolvedConflictEvidence`; protected indefinitely.                                                                                             |
+| resolved `Conflict`                                   | `ResolvedConflictEvidence`; eligible after `ResolutionCompleted`, retirement, and 24-hour/newest protection.                                      |
+| `BootstrapConflict` or attempt `IntegrityBlocked`     | `IntegrityBlockedEvidence`; protected until a compatible signed reader durably reclassifies integrity and completes required artifact retirement. |
+| transaction/attempt version block                     | `VersionBlockedEvidence`; protected until compatible safe reclassification.                                                                       |
 
 A failed or blocked resolution attempt never changes the target Conflict's backup disposition to resolved. Pre-initialization and ordinary canceled/failed/Aborted/RolledBack closures return toward retry only through their independent attempt-artifact and transaction-retirement states. A child `Conflict` set is protected until that child is resolved. Integrity/version blocks protect every referenced set and draft artifact.
 
@@ -1664,18 +1677,18 @@ Before resolver initialization creates a State transaction directory, execution 
 
 Every readable/classifiable attempt receives exactly one `ResolutionAttemptClosed`:
 
-| Outcome | Required proof | Original resolved? | Retry effect |
-|---|---|---:|---|
-| `PreInitializationCanceled` | User cancellation before a replacement-capable resolver journal; no invocation/live-mutation evidence; live observations exactly unchanged; every reserved draft path classified. | No | After draft state is `ExpectedMissing` or `DraftRetired`. |
-| `PreInitializationFailed` | Crash/operational failure before a replacement-capable resolver journal; same no-mutation and draft-classification proof. | No | After draft state is `ExpectedMissing` or `DraftRetired`, unless integrity blocked. |
-| `CancelledBeforePrepared` | Resolver bootstrap cancellation; zero intent/evidence; exact unchanged live observations. | No | After resolver transaction retirement. |
-| `FailedBeforePrepared` | Resolver bootstrap failure terminal; zero intent/evidence; safe facts. | No | After retirement unless blocked. |
-| `Aborted` | Resolver terminal `Aborted`; exact unchanged proof. | No | After retirement. |
-| `RolledBack` | Resolver terminal `RolledBack`; durable actual restored/evidence observations satisfy qualified restoration constraints. | No | After retirement and protection. |
-| `Conflict` | Resolver terminal `Conflict`. | No | Resolve newest child Conflict first. |
-| `IntegrityBlocked` | Resolver terminal `BootstrapConflict`, unknown/tampered draft, contradictory ownership/observation/constraint evidence, or another classifiable integrity failure. | No | No retry until compatible reclassification and all required draft/transaction artifact retirement complete. |
-| `VersionBlocked` | Ledger readable, but resolver/bootstrap semantics unsupported. | No | Compatible reclassification/retirement required. |
-| `CommittedResolved` | Resolver `Committed`, transaction and resolution replicas `InSync`, archive/stage/observation/constraint relationships valid, and required execution prefix synchronized. | Not until completion | Append target completion. |
+| Outcome                     | Required proof                                                                                                                                                                    |   Original resolved? | Retry effect                                                                                                |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------: | ----------------------------------------------------------------------------------------------------------- |
+| `PreInitializationCanceled` | User cancellation before a replacement-capable resolver journal; no invocation/live-mutation evidence; live observations exactly unchanged; every reserved draft path classified. |                   No | After draft state is `ExpectedMissing` or `DraftRetired`.                                                   |
+| `PreInitializationFailed`   | Crash/operational failure before a replacement-capable resolver journal; same no-mutation and draft-classification proof.                                                         |                   No | After draft state is `ExpectedMissing` or `DraftRetired`, unless integrity blocked.                         |
+| `CancelledBeforePrepared`   | Resolver bootstrap cancellation; zero intent/evidence; exact unchanged live observations.                                                                                         |                   No | After resolver transaction retirement.                                                                      |
+| `FailedBeforePrepared`      | Resolver bootstrap failure terminal; zero intent/evidence; safe facts.                                                                                                            |                   No | After retirement unless blocked.                                                                            |
+| `Aborted`                   | Resolver terminal `Aborted`; exact unchanged proof.                                                                                                                               |                   No | After retirement.                                                                                           |
+| `RolledBack`                | Resolver terminal `RolledBack`; durable actual restored/evidence observations satisfy qualified restoration constraints.                                                          |                   No | After retirement and protection.                                                                            |
+| `Conflict`                  | Resolver terminal `Conflict`.                                                                                                                                                     |                   No | Resolve newest child Conflict first.                                                                        |
+| `IntegrityBlocked`          | Resolver terminal `BootstrapConflict`, unknown/tampered draft, contradictory ownership/observation/constraint evidence, or another classifiable integrity failure.                |                   No | No retry until compatible reclassification and all required draft/transaction artifact retirement complete. |
+| `VersionBlocked`            | Ledger readable, but resolver/bootstrap semantics unsupported.                                                                                                                    |                   No | Compatible reclassification/retirement required.                                                            |
+| `CommittedResolved`         | Resolver `Committed`, transaction and resolution replicas `InSync`, archive/stage/observation/constraint relationships valid, and required execution prefix synchronized.         | Not until completion | Append target completion.                                                                                   |
 
 Pre-initialization closure requires proving that no forward/rollback invocation intent exists in either resolution-ledger replica, any discovered transaction journal, or allowed live-side names; that no replacement/evidence role exists; and that fresh live actual observations exactly equal the attempt-open snapshot. `PreInitializationCanceled` additionally requires a durable user-cancellation request; otherwise a safe crash or operational initialization failure closes `PreInitializationFailed`. If any required fact is unavailable or contradictory, close `IntegrityBlocked` when the ledger is writable and the failure is classifiable; otherwise enter `ResolutionVersionBlocked` without unsafe mutation.
 
@@ -1712,13 +1725,13 @@ RetentionOperationState =
 
 `RetentionIntent` records policy/version, set/transaction/slot, ownership-evidence kind/hash (immutable manifest, or for an incomplete pre-`Prepared` set the verified bootstrap marker plus allowed-name/per-artifact observation records), source/tombstone paths, complete actual observation snapshot, count/bytes, disposition/protection, transaction-retirement, attempt-closure/attempt-artifact references, and proof no relationship protects the set.
 
-| Record | Meaning |
-|---|---|
-| `Renamed` | Source same-parent renamed and every actual observation revalidated. |
-| `ReadyToRemove` | Listed payload and its manifest/bootstrap ownership file deleted; tombstone empty. |
-| `Completed` | Empty tombstone removed; payload deletion is durably explained. |
-| `StoppedBeforeDestruction` | Revalidation failed before rename; content preserved. |
-| `RetentionRecoveryBlocked` | Post-rename facts unsafe; remainder preserved. |
+| Record                     | Meaning                                                                            |
+| -------------------------- | ---------------------------------------------------------------------------------- |
+| `Renamed`                  | Source same-parent renamed and every actual observation revalidated.               |
+| `ReadyToRemove`            | Listed payload and its manifest/bootstrap ownership file deleted; tombstone empty. |
+| `Completed`                | Empty tombstone removed; payload deletion is durably explained.                    |
+| `StoppedBeforeDestruction` | Revalidation failed before rename; content preserved.                              |
+| `RetentionRecoveryBlocked` | Post-rename facts unsafe; remainder preserved.                                     |
 
 Execution: revalidate; append/flush Intent; rename to `.deleting.<operationId>`; append `Renamed`; delete only files whose fresh actual tuples exactly equal the recorded retention snapshot; accept missing files only as an exact snapshot subset after `Renamed`; delete the immutable manifest or bootstrap ownership marker last; append `ReadyToRemove`; remove empty directory; append `Completed`.
 
@@ -1744,12 +1757,12 @@ Eligibility requires supported terminal transaction authority; stable transactio
 
 `RetirementIntent` records schema/ID, transaction, immutable terminal state/hash, stable journal actual tuples/prefix hash, execution actual tuple, every temporary sibling actual tuple and its `StageBuildIntent`/`StageVerified` or mutation-evidence relationship, archive/manifest or bootstrap ownership evidence, disposition, resolution/attempt-artifact status, quarantine path, and expected absences.
 
-| Record | Meaning |
-|---|---|
+| Record                 | Meaning                                                                                                               |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `ArtifactsQuarantined` | Every present temporary role was same-volume renamed into hidden quarantine and verified by fresh actual observation. |
-| `ArtifactsDeleted` | All listed quarantined files deleted; quarantine empty. |
-| `RetirementCompleted` | Empty quarantine removed; execution/temp artifacts durably retired. |
-| `RetirementBlocked` | Facts diverged; remaining data preserved. |
+| `ArtifactsDeleted`     | All listed quarantined files deleted; quarantine empty.                                                               |
+| `RetirementCompleted`  | Empty quarantine removed; execution/temp artifacts durably retired.                                                   |
+| `RetirementBlocked`    | Facts diverged; remaining data preserved.                                                                             |
 
 Execution: append Intent; create `.celesphonia-modifier.T.retiring`; require each exact recorded temporary role at original or quarantine, never both; rename/reobserve; append `ArtifactsQuarantined`; delete only matching quarantined files; append `ArtifactsDeleted`; remove empty quarantine; append `RetirementCompleted`.
 
@@ -1792,54 +1805,54 @@ Operation, archive, and stage timing:
 
 State, observation, and constraint invariants:
 
-10. Validate the complete bootstrap, stage-build, logical, participant, observation, and constraint-validation transition tables for every operation/disposition.
-11. Reject `Verified -> Aborted`, `Verified -> RollbackPending`, `Verified -> RolledBack`, `GlobalSatisfied -> Aborted`, `RollbackPending -> Aborted`, and `SlotSatisfied(Replace) -> Aborted`.
-12. Reject any `Aborted` chain containing any forward/rollback invocation intent or replacement evidence in any valid replica.
-13. Allow `Prepared -> Aborted` only with zero intents/evidence and exact unchanged pre-forward observations; allow `SlotSatisfied(NoOp) -> Aborted` only for pending global Replace under the same proof.
-14. All-`NoOp` resolution reaches `Verified -> Committed`; it never reaches `Aborted`.
-15. After each `ReplaceFileW`, assert flush/reopen and durable `ForwardMutationObserved` on all required replicas precede `ForwardConstraintValidated`, and both precede participant/satisfaction transitions. Apply the analogous ordering to rollback.
-16. Exact deterministic content/hash/length, volume/profile, qualified role identities, link count, reparse, security, attributes, and other profile-classified fields must pass. Byte-identical content with a failed deterministic relationship or predicate is `Other`.
-17. Vary actual creation/last-write/`ChangeTime` across qualified post-create/replace/rename/rollback outcomes. Assert the implementation records the actual values, applies only versioned profile predicates, and never requires a predicted future timestamp or original timestamp restoration.
-18. `RolledBack` requires durable post-rollback actual observations plus successful projected-restoration constraints and exact unchanged `NoOp` observations; reject any implementation that defines it by equality to the original volatile timestamp tuple.
-19. Swapped/duplicated/multiply-linked/extra/missing roles conflict even with matching bytes; every OS result is accepted only when exactly one applicable constraint set matches.
-20. Terminal bootstrap/Committed/RolledBack/Aborted/Conflict values and proof hashes remain immutable through later live changes, resolution, retirement, and retention.
+1. Validate the complete bootstrap, stage-build, logical, participant, observation, and constraint-validation transition tables for every operation/disposition.
+2. Reject `Verified -> Aborted`, `Verified -> RollbackPending`, `Verified -> RolledBack`, `GlobalSatisfied -> Aborted`, `RollbackPending -> Aborted`, and `SlotSatisfied(Replace) -> Aborted`.
+3. Reject any `Aborted` chain containing any forward/rollback invocation intent or replacement evidence in any valid replica.
+4. Allow `Prepared -> Aborted` only with zero intents/evidence and exact unchanged pre-forward observations; allow `SlotSatisfied(NoOp) -> Aborted` only for pending global Replace under the same proof.
+5. All-`NoOp` resolution reaches `Verified -> Committed`; it never reaches `Aborted`.
+6. After each `ReplaceFileW`, assert flush/reopen and durable `ForwardMutationObserved` on all required replicas precede `ForwardConstraintValidated`, and both precede participant/satisfaction transitions. Apply the analogous ordering to rollback.
+7. Exact deterministic content/hash/length, volume/profile, qualified role identities, link count, reparse, security, attributes, and other profile-classified fields must pass. Byte-identical content with a failed deterministic relationship or predicate is `Other`.
+8. Vary actual creation/last-write/`ChangeTime` across qualified post-create/replace/rename/rollback outcomes. Assert the implementation records the actual values, applies only versioned profile predicates, and never requires a predicted future timestamp or original timestamp restoration.
+9. `RolledBack` requires durable post-rollback actual observations plus successful projected-restoration constraints and exact unchanged `NoOp` observations; reject any implementation that defines it by equality to the original volatile timestamp tuple.
+10. Swapped/duplicated/multiply-linked/extra/missing roles conflict even with matching bytes; every OS result is accepted only when exactly one applicable constraint set matches.
+11. Terminal bootstrap/Committed/RolledBack/Aborted/Conflict values and proof hashes remain immutable through later live changes, resolution, retirement, and retention.
 
 Transaction and resolution replicas:
 
-21. Crash after each authoritative, stable-mirror, and execution append for every bootstrap/logical/observation/validation/terminal record; logical state and enabled repair/mutation match Section 11.
-22. No stage creation occurs until `StageBuildIntent` exists identically in all three transaction replicas; no forward/rollback `ReplaceFileW` occurs until its invocation intent exists identically in all three.
-23. No satisfaction/terminal transition occurs until the post-mutation actual observation and constraint-validation records are synchronized to all required transaction replicas.
-24. Exact-suffix repair copies original raw bytes only; longer/divergent/different-envelope/post-terminal mirror and unreadable authority preserve/block.
-25. Crash between authoritative and mirror appends for `ResolutionAttemptOpened`, `ResolverInitializationIntent`, every attempt closure, draft-retirement record, and `ResolutionCompleted`; resolution-ledger exact-suffix repair restores `InSync` without changing outcomes.
-26. `MirrorMissing` applies only to the named stable transaction or resolution mirror. Required execution absence/lag uses execution-replica states.
-27. Crash before/after `RetirementIntent`, quarantine creation, every artifact rename, `ArtifactsQuarantined`, each delete, `ArtifactsDeleted`, directory removal, and `RetirementCompleted`; startup follows exact resume rules.
-28. After valid `RetirementCompleted`, execution/stage/rollback/evidence absence is expected and excluded from replica-health/lifecycle gating.
-29. Original/quarantine both present, both absent before proof, observation mismatch, extra file, hard link, reparse, or unresolved relationship enters `RetirementBlocked` without deletion.
-30. Stable terminal journals plus actual-observation/constraint records, retirement completion, and archive or retention completion continue to prove history after payload deletion.
+1. Crash after each authoritative, stable-mirror, and execution append for every bootstrap/logical/observation/validation/terminal record; logical state and enabled repair/mutation match Section 11.
+2. No stage creation occurs until `StageBuildIntent` exists identically in all three transaction replicas; no forward/rollback `ReplaceFileW` occurs until its invocation intent exists identically in all three.
+3. No satisfaction/terminal transition occurs until the post-mutation actual observation and constraint-validation records are synchronized to all required transaction replicas.
+4. Exact-suffix repair copies original raw bytes only; longer/divergent/different-envelope/post-terminal mirror and unreadable authority preserve/block.
+5. Crash between authoritative and mirror appends for `ResolutionAttemptOpened`, `ResolverInitializationIntent`, every attempt closure, draft-retirement record, and `ResolutionCompleted`; resolution-ledger exact-suffix repair restores `InSync` without changing outcomes.
+6. `MirrorMissing` applies only to the named stable transaction or resolution mirror. Required execution absence/lag uses execution-replica states.
+7. Crash before/after `RetirementIntent`, quarantine creation, every artifact rename, `ArtifactsQuarantined`, each delete, `ArtifactsDeleted`, directory removal, and `RetirementCompleted`; startup follows exact resume rules.
+8. After valid `RetirementCompleted`, execution/stage/rollback/evidence absence is expected and excluded from replica-health/lifecycle gating.
+9. Original/quarantine both present, both absent before proof, observation mismatch, extra file, hard link, reparse, or unresolved relationship enters `RetirementBlocked` without deletion.
+10. Stable terminal journals plus actual-observation/constraint records, retirement completion, and archive or retention completion continue to prove history after payload deletion.
 
 Resolution attempts:
 
-31. Crash after `ResolutionAttemptOpened` on either resolution-ledger replica and before resolver initialization. With all reserved paths missing, no invocation/live mutation, and exact unchanged live observations, close idempotently as `PreInitializationCanceled` only when a durable cancellation request exists, otherwise `PreInitializationFailed`; never leave a classifiable attempt `AttemptOpen`.
-32. Inject crashes before/after `ResolverInitializationIntent`, each draft root creation, `ResolverDraftObserved`, resolver journal envelope, `TransactionStarted`, `ArchiveBuildStarted`, every `StageBuildIntent`, stage creation, `StageVerified`, archive creation step, and `Prepared`; classify attempt, transaction/bootstrap, draft artifacts, backup disposition, and retry eligibility independently.
-33. Unknown/tampered pre-initialization draft, resolver `BootstrapConflict`, contradictory ownership/observation/constraint evidence, or other classifiable integrity failure closes `IntegrityBlocked`, protects/quarantines artifacts, and leaves the original Conflict unresolved.
-34. Assert every readable/classifiable attempt receives exactly one closure among `PreInitializationCanceled`, `PreInitializationFailed`, cancellation/failure, Aborted, RolledBack, Conflict, IntegrityBlocked, VersionBlocked, or CommittedResolved. Closed failed/blocked attempts are never `AttemptOpen`.
-35. Only `CommittedResolved` plus durable `ResolutionCompleted` marks the original Conflict resolved.
-36. Crash after resolver `Committed`, after `CommittedResolved`, and before `ResolutionCompleted`; startup appends only missing idempotent records after full relationship/archive/stage/observation/constraint and replica revalidation.
-37. Pre-initialization/cancellation/failure/Aborted/RolledBack permits retry only after attempt-draft and resolver-transaction retirement prerequisites pass. Conflict requires resolving the child. IntegrityBlocked requires compatible safe reclassification and retirement. VersionBlocked requires compatible recovery.
-38. Crash across `AttemptDraftRetirementIntent`, quarantine, each rename/delete, and `AttemptDraftRetired`; both/neither/unexpected/tampered draft facts enter `ProtectedIntegrityBlocked` without reopening the attempt.
-39. Upgrade/repair/uninstall and clean-install recovery distinguish open attempt, closed awaiting draft/transaction retirement, child Conflict, IntegrityBlocked, VersionBlocked, and resolved target; every blocked state preserves all references.
-40. Unknown/corrupt resolution authority or divergent resolution-ledger replicas protect all references and block resolution/retention/lifecycle.
+1. Crash after `ResolutionAttemptOpened` on either resolution-ledger replica and before resolver initialization. With all reserved paths missing, no invocation/live mutation, and exact unchanged live observations, close idempotently as `PreInitializationCanceled` only when a durable cancellation request exists, otherwise `PreInitializationFailed`; never leave a classifiable attempt `AttemptOpen`.
+2. Inject crashes before/after `ResolverInitializationIntent`, each draft root creation, `ResolverDraftObserved`, resolver journal envelope, `TransactionStarted`, `ArchiveBuildStarted`, every `StageBuildIntent`, stage creation, `StageVerified`, archive creation step, and `Prepared`; classify attempt, transaction/bootstrap, draft artifacts, backup disposition, and retry eligibility independently.
+3. Unknown/tampered pre-initialization draft, resolver `BootstrapConflict`, contradictory ownership/observation/constraint evidence, or other classifiable integrity failure closes `IntegrityBlocked`, protects/quarantines artifacts, and leaves the original Conflict unresolved.
+4. Assert every readable/classifiable attempt receives exactly one closure among `PreInitializationCanceled`, `PreInitializationFailed`, cancellation/failure, Aborted, RolledBack, Conflict, IntegrityBlocked, VersionBlocked, or CommittedResolved. Closed failed/blocked attempts are never `AttemptOpen`.
+5. Only `CommittedResolved` plus durable `ResolutionCompleted` marks the original Conflict resolved.
+6. Crash after resolver `Committed`, after `CommittedResolved`, and before `ResolutionCompleted`; startup appends only missing idempotent records after full relationship/archive/stage/observation/constraint and replica revalidation.
+7. Pre-initialization/cancellation/failure/Aborted/RolledBack permits retry only after attempt-draft and resolver-transaction retirement prerequisites pass. Conflict requires resolving the child. IntegrityBlocked requires compatible safe reclassification and retirement. VersionBlocked requires compatible recovery.
+8. Crash across `AttemptDraftRetirementIntent`, quarantine, each rename/delete, and `AttemptDraftRetired`; both/neither/unexpected/tampered draft facts enter `ProtectedIntegrityBlocked` without reopening the attempt.
+9. Upgrade/repair/uninstall and clean-install recovery distinguish open attempt, closed awaiting draft/transaction retirement, child Conflict, IntegrityBlocked, VersionBlocked, and resolved target; every blocked state preserves all references.
+10. Unknown/corrupt resolution authority or divergent resolution-ledger replicas protect all references and block resolution/retention/lifecycle.
 
 Backup retention and lifecycle:
 
-41. Validate State/Backup/ledger roots against reparse, owner/DACL, link count, identity, profile, and escaping paths.
-42. Crash before/after retention Intent, rename, `Renamed`, each deletion, `ReadyToRemove`, directory removal, and `Completed`; startup closes the source-absent/exact-tombstone rename gap.
-43. Both paths, neither before rename proof, unknown extra, reparse, hard link, or observation/relationship mismatch enters `RetentionRecoveryBlocked`.
-44. Retention never selects State journals/ledgers, attempt drafts, transaction-retirement quarantine, unresolved/protected/version/integrity-blocked data, game `.bak`, or active selections.
-45. Retention deletion never produces stable `MirrorMissing` and never changes logical terminal state or attempt closure.
-46. Test every released transaction/archive-bootstrap/archive-manifest/resolution/attempt-draft/retirement/retention schema at every state and torn-record position.
-47. Upgrade/repair/uninstall classifies every bootstrap, logical, transaction-replica, resolution-ledger-replica, execution-retirement, attempt, attempt-artifact, backup-disposition, transaction-retirement, and retention state.
-48. Controlled end-to-end vectors cover Save, Restore rows, global repair, all-`NoOp` adoption, forward observation/constraint validation, rollback without timestamp-equality assumptions, every failed/blocked resolution closure, successful retry, retirement, payload deletion, restart, and later lifecycle preflight.
+1. Validate State/Backup/ledger roots against reparse, owner/DACL, link count, identity, profile, and escaping paths.
+2. Crash before/after retention Intent, rename, `Renamed`, each deletion, `ReadyToRemove`, directory removal, and `Completed`; startup closes the source-absent/exact-tombstone rename gap.
+3. Both paths, neither before rename proof, unknown extra, reparse, hard link, or observation/relationship mismatch enters `RetentionRecoveryBlocked`.
+4. Retention never selects State journals/ledgers, attempt drafts, transaction-retirement quarantine, unresolved/protected/version/integrity-blocked data, game `.bak`, or active selections.
+5. Retention deletion never produces stable `MirrorMissing` and never changes logical terminal state or attempt closure.
+6. Test every released transaction/archive-bootstrap/archive-manifest/resolution/attempt-draft/retirement/retention schema at every state and torn-record position.
+7. Upgrade/repair/uninstall classifies every bootstrap, logical, transaction-replica, resolution-ledger-replica, execution-retirement, attempt, attempt-artifact, backup-disposition, transaction-retirement, and retention state.
+8. Controlled end-to-end vectors cover Save, Restore rows, global repair, all-`NoOp` adoption, forward observation/constraint validation, rollback without timestamp-equality assumptions, every failed/blocked resolution closure, successful retry, retirement, payload deletion, restart, and later lifecycle preflight.
 
 ### 12.4 Application and UI tests
 
@@ -1886,18 +1899,18 @@ Sign application/installer with trusted timestamp; install per-user under `%LOCA
 
 Before binary/registration mutation they require the app closed; validate only app-owned roots without following reparse points; classify bootstrap, logical terminality, transaction-journal replica sync, resolution-ledger replica sync, execution retirement, resolution targets/attempt closures/draft artifacts, backup dispositions, transaction retirement, retention recovery, and schema support; and log only redacted counts/versions/categories.
 
-| Condition | Upgrade/update | Same-version repair | Uninstall |
-|---|---|---|---|
-| Every transaction/bootstrap terminal; transaction and resolution stable replicas `InSync`; execution replicas `Retired`; attempts closed; attempt drafts `ExpectedMissing`/`DraftRetired`; no unresolved Conflict/version/integrity block; ledgers readable and no retirement/retention in progress | Proceed. | Proceed. | Proceed; preserve backups/settings unless separately selected. |
-| Readable nonterminal transaction, `AttemptOpen`, unresolved Conflict, or child Conflict | Block before mutation; offer **Open recovery**/**Cancel**. | Restore same signed binaries only; preserve state/force Recovery. | Block. |
-| Closed failed attempt awaiting attempt-draft or resolver-transaction retirement | Block until the applicable retirement completes; original Conflict remains unresolved and becomes retryable only afterward. | Repair binaries only; preserve all state. | Block. |
-| Closed `IntegrityBlocked`, `BootstrapConflict`, `ProtectedIntegrityBlocked`, or version-blocked attempt | Only an explicitly compatible signed upgrade under a compatibility manifest may proceed after its recovery binary is installed/launchable; preserve all evidence. | Repair binaries only; preserve all data. | Block. |
-| Transaction, attempt-draft, or retention retirement operation in progress | Block until verified resume reaches its completed state or safe pre-destruction stop. | Repair binaries only; preserve ledger/quarantine/tombstone. | Block. |
-| Terminal transaction or resolution ledger `AuthoritativeAhead`/stable `MirrorMissing` exact-repairable | Block normal lifecycle until exact suffix repair reaches `InSync`. | May repair binaries but not transaction/resolution data; launch Recovery. | Block. |
-| Valid `RetirementCompleted` with execution replica absent | Expected; do not gate as missing replica. | Proceed if all other gates pass. | Proceed if all other gates pass. |
-| Payload absent with matching retention `Completed` | Expected historical deletion; do not reclassify transaction/replica health. | Proceed if all other gates pass. | Proceed if all other gates pass. |
-| Divergent/authoritative-unreadable transaction or resolution journal, `RetirementBlocked`, or `RetentionRecoveryBlocked` | Block with no override except an explicitly compatible signed recovery upgrade. | Repair binaries only; preserve all state. | Block. |
-| Resolved Conflict with valid `CommittedResolved`, `ResolutionCompleted`, both stable replica sets `InSync`, and required retirements complete | Proceed. | Proceed. | Proceed. |
+| Condition                                                                                                                                                                                                                                                                                           | Upgrade/update                                                                                                                                                    | Same-version repair                                                       | Uninstall                                                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Every transaction/bootstrap terminal; transaction and resolution stable replicas `InSync`; execution replicas `Retired`; attempts closed; attempt drafts `ExpectedMissing`/`DraftRetired`; no unresolved Conflict/version/integrity block; ledgers readable and no retirement/retention in progress | Proceed.                                                                                                                                                          | Proceed.                                                                  | Proceed; preserve backups/settings unless separately selected. |
+| Readable nonterminal transaction, `AttemptOpen`, unresolved Conflict, or child Conflict                                                                                                                                                                                                             | Block before mutation; offer **Open recovery**/**Cancel**.                                                                                                        | Restore same signed binaries only; preserve state/force Recovery.         | Block.                                                         |
+| Closed failed attempt awaiting attempt-draft or resolver-transaction retirement                                                                                                                                                                                                                     | Block until the applicable retirement completes; original Conflict remains unresolved and becomes retryable only afterward.                                       | Repair binaries only; preserve all state.                                 | Block.                                                         |
+| Closed `IntegrityBlocked`, `BootstrapConflict`, `ProtectedIntegrityBlocked`, or version-blocked attempt                                                                                                                                                                                             | Only an explicitly compatible signed upgrade under a compatibility manifest may proceed after its recovery binary is installed/launchable; preserve all evidence. | Repair binaries only; preserve all data.                                  | Block.                                                         |
+| Transaction, attempt-draft, or retention retirement operation in progress                                                                                                                                                                                                                           | Block until verified resume reaches its completed state or safe pre-destruction stop.                                                                             | Repair binaries only; preserve ledger/quarantine/tombstone.               | Block.                                                         |
+| Terminal transaction or resolution ledger `AuthoritativeAhead`/stable `MirrorMissing` exact-repairable                                                                                                                                                                                              | Block normal lifecycle until exact suffix repair reaches `InSync`.                                                                                                | May repair binaries but not transaction/resolution data; launch Recovery. | Block.                                                         |
+| Valid `RetirementCompleted` with execution replica absent                                                                                                                                                                                                                                           | Expected; do not gate as missing replica.                                                                                                                         | Proceed if all other gates pass.                                          | Proceed if all other gates pass.                               |
+| Payload absent with matching retention `Completed`                                                                                                                                                                                                                                                  | Expected historical deletion; do not reclassify transaction/replica health.                                                                                       | Proceed if all other gates pass.                                          | Proceed if all other gates pass.                               |
+| Divergent/authoritative-unreadable transaction or resolution journal, `RetirementBlocked`, or `RetentionRecoveryBlocked`                                                                                                                                                                            | Block with no override except an explicitly compatible signed recovery upgrade.                                                                                   | Repair binaries only; preserve all state.                                 | Block.                                                         |
+| Resolved Conflict with valid `CommittedResolved`, `ResolutionCompleted`, both stable replica sets `InSync`, and required retirements complete                                                                                                                                                       | Proceed.                                                                                                                                                          | Proceed.                                                                  | Proceed.                                                       |
 
 Normal upgrade/downgrade requires target reader support for every observed schema and constraint semantics; generic upgrade over unsupported state is blocked. No Ignore/Force/cleanup exists. Stable transaction/resolution history and all State ledgers are preserved byte-for-byte. Referenced live/archive/stage/draft artifacts remain protected unless their durable retirement/retention completion already proves deliberate absence. Installer failure rolls back installer-owned changes only. Clean install discovering preserved state launches Recovery and closes any classifiable pre-initialization attempt before offering a retry.
 
@@ -1963,30 +1976,30 @@ Batch writes, full save-set restore, arbitrary expert editing, and automatic upd
 
 ### 15.1 Fixed decisions
 
-| Decision | MVP direction | Evidence required to change |
-|---|---|---|
-| Shell | Start + catalog + document editor; no persistent NavigationView | Frequent independent peer workflows. |
-| Document count | One open slot | Proven compare/multi-slot need and isolated safety. |
-| Recognition/write support | Separate; operation-capable binding is not operation authorization | Reviewed binding redesign. |
-| Operation preconditions | Save, RestoreSlot, and ReconcilePair use their own proven preconditions | New safety review and full matrices. |
-| Session baseline | Immutable actual observations; Open/Reload/new Restore/Reconcile only; Save never rebases | Separate transaction review. |
-| Dispositions | Exact Section 11.7 matrix, including Restore/Reconcile slot NoOp + global Replace and linked all-NoOp adoption | Schema/algorithm/evidence review. |
-| Participant evidence | `ObservedParticipantTuple` is complete actual fact; `ExpectedRoleConstraint` is future/projected requirement; hashes never authorize alone | New qualified profile/version. |
-| Windows metadata | Deterministic fields/relationships compare exactly; volatile OS-assigned timestamps are recorded and checked by qualified predicates, never predicted or claimed restored | New measured profile and full failure matrix. |
-| Archive/stage timing | Archive actual observations precede `Prepared`; every stage has synchronized `StageBuildIntent` before creation and durable `StageVerified` before `Prepared` | New certified write/recovery design. |
-| Journal replicas | Stable transaction authoritative/mirror, stable resolution-ledger authoritative/mirror, and required temporary execution replica; terminal/draft retirement is external and durable | New durable replica design. |
-| State machines | Bootstrap/stage, logical, participant, transaction/resolution replica, execution, resolution target/attempt/draft, backup, transaction-retirement, and retention projections remain distinct | Backward-compatible reviewed product-state redesign. |
-| Conflict resolution | Immutable Conflict, exactly one closure per readable/classifiable attempt including pre-initialization and integrity block, and success-only durable `ResolutionCompleted` | Backward-compatible reviewed schema. |
-| Retention | Fixed 20-set payload selection after terminal retirement; State journals/ledgers and attempt drafts are never payload | Later previewed configurable policy/compaction design. |
-| Writable volume | Qualified local fixed NTFS, stable IDs/flush/ReplaceFileW, single-link, and per-field constraint semantics | New profile/full failure matrix. |
-| Current pair | Congruent before editing/Save/adoption; Restore/global repair use their own candidate preconditions | No warning bypass. |
-| Global handling | Current lossless global; selected-entry leaves only; historical global excluded | Separate full-set design. |
-| Standalone files | Diagnostics/export-only; exact-live reopen only | Imported replacement unsupported. |
-| Context mode control | Measured SelectorBar capability with visible-label ComboBox fallback, independent of breakpoint | Future standard reflow control with no clipping/selection/accessibility regression. |
-| Raw editing/Hell | Unavailable | Separate E3/product safety approval. |
-| Language | Windows preference; en-US neutral and zh-Hans shipped | Future localization decision. |
-| Packaging/updates | Signed per-user Inno; manual browser update with full state preflight | Validated deployment/updater redesign. |
-| Game art | Never shipped | No exception. |
+| Decision                  | MVP direction                                                                                                                                                                                | Evidence required to change                                                         |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Shell                     | Start + catalog + document editor; no persistent NavigationView                                                                                                                              | Frequent independent peer workflows.                                                |
+| Document count            | One open slot                                                                                                                                                                                | Proven compare/multi-slot need and isolated safety.                                 |
+| Recognition/write support | Separate; operation-capable binding is not operation authorization                                                                                                                           | Reviewed binding redesign.                                                          |
+| Operation preconditions   | Save, RestoreSlot, and ReconcilePair use their own proven preconditions                                                                                                                      | New safety review and full matrices.                                                |
+| Session baseline          | Immutable actual observations; Open/Reload/new Restore/Reconcile only; Save never rebases                                                                                                    | Separate transaction review.                                                        |
+| Dispositions              | Exact Section 11.7 matrix, including Restore/Reconcile slot NoOp + global Replace and linked all-NoOp adoption                                                                               | Schema/algorithm/evidence review.                                                   |
+| Participant evidence      | `ObservedParticipantTuple` is complete actual fact; `ExpectedRoleConstraint` is future/projected requirement; hashes never authorize alone                                                   | New qualified profile/version.                                                      |
+| Windows metadata          | Deterministic fields/relationships compare exactly; volatile OS-assigned timestamps are recorded and checked by qualified predicates, never predicted or claimed restored                    | New measured profile and full failure matrix.                                       |
+| Archive/stage timing      | Archive actual observations precede `Prepared`; every stage has synchronized `StageBuildIntent` before creation and durable `StageVerified` before `Prepared`                                | New certified write/recovery design.                                                |
+| Journal replicas          | Stable transaction authoritative/mirror, stable resolution-ledger authoritative/mirror, and required temporary execution replica; terminal/draft retirement is external and durable          | New durable replica design.                                                         |
+| State machines            | Bootstrap/stage, logical, participant, transaction/resolution replica, execution, resolution target/attempt/draft, backup, transaction-retirement, and retention projections remain distinct | Backward-compatible reviewed product-state redesign.                                |
+| Conflict resolution       | Immutable Conflict, exactly one closure per readable/classifiable attempt including pre-initialization and integrity block, and success-only durable `ResolutionCompleted`                   | Backward-compatible reviewed schema.                                                |
+| Retention                 | Fixed 20-set payload selection after terminal retirement; State journals/ledgers and attempt drafts are never payload                                                                        | Later previewed configurable policy/compaction design.                              |
+| Writable volume           | Qualified local fixed NTFS, stable IDs/flush/ReplaceFileW, single-link, and per-field constraint semantics                                                                                   | New profile/full failure matrix.                                                    |
+| Current pair              | Congruent before editing/Save/adoption; Restore/global repair use their own candidate preconditions                                                                                          | No warning bypass.                                                                  |
+| Global handling           | Current lossless global; selected-entry leaves only; historical global excluded                                                                                                              | Separate full-set design.                                                           |
+| Standalone files          | Diagnostics/export-only; exact-live reopen only                                                                                                                                              | Imported replacement unsupported.                                                   |
+| Context mode control      | Measured SelectorBar capability with visible-label ComboBox fallback, independent of breakpoint                                                                                              | Future standard reflow control with no clipping/selection/accessibility regression. |
+| Raw editing/Hell          | Unavailable                                                                                                                                                                                  | Separate E3/product safety approval.                                                |
+| Language                  | Windows preference; en-US neutral and zh-Hans shipped                                                                                                                                        | Future localization decision.                                                       |
+| Packaging/updates         | Signed per-user Inno; manual browser update with full state preflight                                                                                                                        | Validated deployment/updater redesign.                                              |
+| Game art                  | Never shipped                                                                                                                                                                                | No exception.                                                                       |
 
 ### 15.2 Tracked research tasks
 
@@ -2039,16 +2052,16 @@ A production release additionally requires approved parser/profile measurements;
 
 This v5 plan integrates the prior product/WinUI/transaction reviews and the final metadata, stage-bootstrap, and resolution-attempt certification findings as one normative design. The selected protocol separates actual observations from future constraints, requires durable candidate proof before stage creation, closes every readable/classifiable resolution attempt, and keeps bootstrap, logical, replica, attempt, backup, retirement, and retention lifecycles independent. Obsolete claims of exact future Windows timestamp tuples or exact timestamp restoration have been removed.
 
-| Final finding | Normative closure |
-|---|---|
-| Impossible exact future metadata tuples | Sections 1.1, 3.2, 4.2, 6.4–6.5, 8.9–8.10, 10.3–10.5, 11.1–11.4/11.7–11.10, 12.3–12.5, 14–16 separate `ObservedParticipantTuple` from `ExpectedRoleConstraint`, durably record actual mutation results, and make volatile timestamps profile predicates. |
-| Durable candidate proof before stage creation | Sections 1.1, 6.4, 10.4, 11.3–11.8, 12.3, 14–16 require synchronized `StageBuildIntent`, create-new/flush/reopen validation, `StageVerified`, `Prepared` references, and protected `BootstrapConflict` for unknown/tampered stages. |
-| Complete resolution-attempt bootstrap closure | Sections 6.4, 8.9–8.10, 11.1/11.6/11.10–11.15, 12.3–12.5, 13.2, 14–16 define `PreInitializationCanceled`, `PreInitializationFailed`, `IntegrityBlocked`, draft-artifact retirement/protection, startup closure, retry eligibility, and lifecycle gates. |
-| Holistic independent state models | Sections 8.9, 11.1/11.5–11.15, 12.3–12.4, 13.2, 14–16 keep bootstrap/stage, logical, participant, transaction/resolution replicas, execution, attempt/draft, backup, retirement, and retention projections distinct. |
-| Operation-specific preconditions and complete dispositions | Sections 3.2, 4.2, 5.2, 6.3–6.4, 7.8–7.9, 10.4, 11.2/11.7–11.8, 12.3. |
-| Slot NoOp + global Replace and all-NoOp resolution | Sections 5.2, 7.8–7.9, 11.7–11.8; all-NoOp writes the full durable resolution sequence. |
-| Stable journals and deliberate execution/draft retirement | Sections 1.1, 8.9, 10.3–10.4, 11.3/11.6/11.10–11.15, 12.3, 13.2. |
-| Backup disposition and crash-resumable retention | Sections 6.4, 11.12/11.14–11.15, 12.3, 13.2, 14–16. |
-| Cross-version terminal history after payload deletion | Sections 11.1/11.6/11.10/11.14–11.15, 12.3, 13.2, 16. |
-| Measured Context mode control | Sections 8.2/8.6–8.11, 12.4, 14–16. |
-| Privacy | No private save values, paths, hashes, IDs, or proprietary assets are added to UI, logs, exported artifacts, fixtures, or this plan. |
+| Final finding                                              | Normative closure                                                                                                                                                                                                                                        |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Impossible exact future metadata tuples                    | Sections 1.1, 3.2, 4.2, 6.4–6.5, 8.9–8.10, 10.3–10.5, 11.1–11.4/11.7–11.10, 12.3–12.5, 14–16 separate `ObservedParticipantTuple` from `ExpectedRoleConstraint`, durably record actual mutation results, and make volatile timestamps profile predicates. |
+| Durable candidate proof before stage creation              | Sections 1.1, 6.4, 10.4, 11.3–11.8, 12.3, 14–16 require synchronized `StageBuildIntent`, create-new/flush/reopen validation, `StageVerified`, `Prepared` references, and protected `BootstrapConflict` for unknown/tampered stages.                      |
+| Complete resolution-attempt bootstrap closure              | Sections 6.4, 8.9–8.10, 11.1/11.6/11.10–11.15, 12.3–12.5, 13.2, 14–16 define `PreInitializationCanceled`, `PreInitializationFailed`, `IntegrityBlocked`, draft-artifact retirement/protection, startup closure, retry eligibility, and lifecycle gates.  |
+| Holistic independent state models                          | Sections 8.9, 11.1/11.5–11.15, 12.3–12.4, 13.2, 14–16 keep bootstrap/stage, logical, participant, transaction/resolution replicas, execution, attempt/draft, backup, retirement, and retention projections distinct.                                     |
+| Operation-specific preconditions and complete dispositions | Sections 3.2, 4.2, 5.2, 6.3–6.4, 7.8–7.9, 10.4, 11.2/11.7–11.8, 12.3.                                                                                                                                                                                    |
+| Slot NoOp + global Replace and all-NoOp resolution         | Sections 5.2, 7.8–7.9, 11.7–11.8; all-NoOp writes the full durable resolution sequence.                                                                                                                                                                  |
+| Stable journals and deliberate execution/draft retirement  | Sections 1.1, 8.9, 10.3–10.4, 11.3/11.6/11.10–11.15, 12.3, 13.2.                                                                                                                                                                                         |
+| Backup disposition and crash-resumable retention           | Sections 6.4, 11.12/11.14–11.15, 12.3, 13.2, 14–16.                                                                                                                                                                                                      |
+| Cross-version terminal history after payload deletion      | Sections 11.1/11.6/11.10/11.14–11.15, 12.3, 13.2, 16.                                                                                                                                                                                                    |
+| Measured Context mode control                              | Sections 8.2/8.6–8.11, 12.4, 14–16.                                                                                                                                                                                                                      |
+| Privacy                                                    | No private save values, paths, hashes, IDs, or proprietary assets are added to UI, logs, exported artifacts, fixtures, or this plan.                                                                                                                     |

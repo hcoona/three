@@ -13,8 +13,13 @@ solution entries, or package references under this root.
 
 ## Normative baseline
 
-- `plans/celesphonia-modifier-plan.md` is the implementation-ready product and technical
-  plan for this future project root.
+- `plans/project-operating-model.md` governs investment, sequencing, accountability, gates,
+  staffing, scope cuts, supported life, and deferred decisions.
+- `plans/save-semantic-atlas-plan.md` governs the comprehensive preliminary save survey,
+  evidence model, privacy boundary, human value selection, and focused semantic research.
+- `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
+  test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
+  with its older progression assumptions.
 - `plans/project-perspective-map.md` is the normative first-level decision-perspective
   taxonomy used before workstream design.
 
@@ -39,11 +44,32 @@ normative perspective taxonomy.
   out-of-repo analysis. Do not place live saves in this repository, and do not commit any
   generated outputs.
 
+## Document lifecycle
+
+Use lifecycle markings before moving files:
+
+- **Active normative:** Governs the decisions in its declared scope.
+- **Active subordinate:** Remains applicable, but a newer normative document controls
+  progression or resolves conflicts.
+- **Partially superseded:** Keeps valid content in place and names the exact replacement and
+  superseded scope in a prominent banner.
+- **Historical supporting:** Preserves review, remediation, or adjudication provenance but does
+  not govern current work.
+- **Archived:** Has no remaining operative content.
+
+Do not move a partially superseded document into `archive/`; doing so would hide still-valid
+requirements and break stable references. If a document becomes fully superseded, move it under
+`archive/`, retain its original title and date, and add a top-level banner linking to its
+replacement. Never archive merely because a document is old.
+
 ## Privacy exclusions
 
 This repository copy intentionally excludes live or historical saves, decoded save JSON,
-analysis reports, manifests, database indexes, Steam cloud metadata, raw game files, extracted
-game data, save hashes or fingerprints, account metadata, and real save values.
+private evidence payloads, private input provenance, database indexes, Steam cloud metadata,
+raw game files, extracted game data, save hashes or private fingerprints, account metadata,
+and real save values.
 
-Keep all research inputs and outputs in private working copies outside the repository. See
-`plans/celesphonia-modifier-plan.md` for the authoritative plan and detailed evidence gates.
+Commit only schema-validated, redacted Atlas records and safe generated views. Keep source
+research inputs, temporary decoded outputs, and retained E2/E3 evidence in protected working
+storage outside the repository. See `plans/save-semantic-atlas-plan.md` for the authoritative
+research and evidence boundary.
