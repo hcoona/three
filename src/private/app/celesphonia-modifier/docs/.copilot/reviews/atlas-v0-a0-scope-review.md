@@ -19,14 +19,15 @@ accept any semantic claim, or authorize writes to original user data.
 
 ## 2. Save corpus
 
-The frozen discovery denominator has 22 directory entries:
+The frozen discovery denominator has 23 entries across both RPG Maker candidate save roots:
 
-| Decision | Entries                 | Count |
-| -------- | ----------------------- | ----: |
-| Include  | Slot saves 1-7 and 9-20 |    19 |
-| Include  | `global.rpgsave`        |     1 |
-| Include  | `config.rpgsave`        |     1 |
-| Exclude  | `steam_autocloud.vdf`   |     1 |
+| Root                   | Decision | Entries                 | Count |
+| ---------------------- | -------- | ----------------------- | ----: |
+| Deployment-root `save` | Include  | Slot saves 1-7 and 9-20 |    19 |
+| Deployment-root `save` | Include  | `global.rpgsave`        |     1 |
+| Deployment-root `save` | Include  | `config.rpgsave`        |     1 |
+| Deployment-root `save` | Exclude  | `steam_autocloud.vdf`   |     1 |
+| Standard `www\save`    | Exclude  | `steam_autocloud.vdf`   |     1 |
 
 Slot 8 is absent and is not treated as a missing input. Sparse slot numbering is valid.
 
@@ -35,12 +36,16 @@ copies and excludes Steam cloud metadata. Its qualification remains
 `preservation-unqualified`; A2 must perform the formal Windows identity, link, reparse, and copy
 qualification checks.
 
+The enabled relocation plugin selects the deployment-root `save` directory. The standard
+`www\save` directory contains no save input, but it remains inspected so a future path or content
+change cannot be missed.
+
 **Decision point:** Is this frozen 21-save set the correct baseline for the first comprehensive
 survey?
 
 ## 3. Installed-definition corpus
 
-The finite definition candidate denominator has 544 files: 496 included and 48 excluded.
+The RPG Maker MV definition candidate denominator has 580 files: 496 included and 84 excluded.
 
 | Group                       | Decision | Count | Rationale                                                       |
 | --------------------------- | -------- | ----: | --------------------------------------------------------------- |
@@ -50,42 +55,52 @@ The finite definition candidate denominator has 544 files: 496 included and 48 e
 | Plugin scripts              | Include  |   157 | Covers game-specific saved fields and interpretation            |
 | `lz-string.js`              | Include  |     1 | Provides the save compression compatibility oracle              |
 | Other JavaScript libraries  | Exclude  |     5 | Rendering, media, and performance behavior                      |
-| Auxiliary data probes       | Exclude  |    43 | Unreferenced asset notes and Visual Studio state                |
+| Auxiliary data probes       | Exclude  |    44 | Asset notes, IDE state, and an unreferenced authoring workbook  |
+| Detached DLC probe          | Exclude  |    35 | Unreferenced HTML and image gallery files                       |
 
 All six JavaScript libraries are loaded by `index.html`. Static dependency review found that the
 five excluded libraries are used for rendering, video, or performance monitoring rather than
 save encoding or semantics.
 
-Dependency closure over all 165 included engine and plugin scripts found only JSON inputs rooted
-under `www\data`, which is already fully included. No included script names a CSV, TXT, XML,
-YAML, or YML input. The auxiliary probes are 41 text files adjacent to image assets and two
-Visual Studio state files; none is referenced by included runtime code.
+RPG Maker-specific closure found:
+
+- both package manifests have no injected or dependency scripts;
+- all 14 scripts named by `index.html` are classified;
+- every configured plugin file exists;
+- seven unlisted plugin files remain included conservatively;
+- no plugin subdirectory, other JavaScript location, or `node_modules` exists;
+- all runtime data loads resolve to the included `www\data` JSON files;
+- the single XLSX file under `www\data` is an unreferenced authoring workbook whose runtime JSON
+  has a later timestamp; and
+- the detached DLC folder is an HTML and image gallery with no runtime reference to its folder or
+  entry point found.
 
 If later evidence links an excluded file to save encoding or semantics, the file must be reopened
 through an explicit scope revision. It cannot be silently ignored.
 
-Installed binaries, media, fonts, images, and other asset classes are outside the 544-candidate
+Installed binaries, runtime packages, CSS, fonts, audio, movies, and ordinary image assets are
+outside the 580-candidate
 definition universe under the frozen extension and root rules. The survey is comprehensive for
 the approved save-semantic candidate universe, not for every byte in the installation.
 
-**Decision point:** Is this 496-file inclusion set, with 48 explicit exclusions, broad enough for
+**Decision point:** Is this 496-file inclusion set, with 84 explicit exclusions, broad enough for
 the preliminary comprehensive survey?
 
 ## 4. Fingerprint evidence
 
 Private compatibility fingerprints will cover:
 
-- Steam App ID and observed build metadata;
+- the public Steam application ID and public `buildid`;
 - `Game.exe`;
-- both package files;
-- `www\data\System.json`;
-- `www\js\plugins.js`;
-- every included plugin script;
-- the save-path relocation definition; and
+- every one of the 496 included definition files; and
 - Atlas tool, schema, redaction-policy, and configuration digests.
 
 Full hashes, paths, file identities, and plugin parameters remain private. Repository-safe
 records use only survey and fingerprint aliases.
+
+The public application ID and public `buildid` identify the game build, not the player. Raw Steam
+manifest contents, personal SteamID values, account IDs, cloud-account identifiers, and
+equivalent profile metadata are neither needed nor retained.
 
 Fingerprint evidence identifies the exact researched environment. It does not establish that an
 edit operation is safe or authorize writes.
@@ -102,8 +117,10 @@ private manifests, hashes, immutable save copies, and later decoded or evidence 
 Private-derived canonical records must pass schema and redaction validation before entering
 repository history. Agent envelopes must pass schema validation before Agent use, remain private,
 and never enter Git. Human-authored safe summaries, such as this brief, are reviewed separately.
-Raw or decoded saves, save values, private paths, hashes, installed source text, Steam metadata,
-and uncontrolled prompts or transcripts are prohibited.
+Raw or decoded saves, save values, private paths, hashes, installed source text, personal SteamID
+values, account identifiers, profile or cloud metadata, and uncontrolled prompts or transcripts
+are prohibited. The approved public application ID and build identifier remain allowed game
+identifiers.
 
 Agents may receive only a schema-validated envelope containing strict aliases, typed locator
 segments, structural shapes, numeric source coordinates, enumerated relations, and evidence
@@ -158,7 +175,7 @@ Private evidence:
 - `survey-000001\intake\private-provenance.json`
 - the completed preservation snapshot and its manifest
 
-The private intake has 21 included saves, 496 included definitions, 48 explicit exclusions, and
+The private intake has 21 included saves, 496 included definitions, 84 explicit exclusions, and
 no unsupported, unreadable, scope-narrowed, or unresolved candidate status.
 
 ## 9. Recommendation

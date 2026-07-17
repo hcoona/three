@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:hcoona:three:celesphonia-modifier:atlas-v0:corpus-intake-manifest:v1",
+  "$id": "urn:hcoona:three:celesphonia-modifier:atlas-v0:corpus-intake-manifest:v2",
   "title": "Atlas V0 Corpus Intake Manifest",
   "type": "object",
   "additionalProperties": false,
@@ -8,6 +8,7 @@
     "schemaVersion",
     "surveyAlias",
     "manifestRevision",
+    "saveRoots",
     "discoveredSaveDirectoryEntryCount",
     "includedSaveCount",
     "saveEntries",
@@ -20,7 +21,7 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": "atlas-intake/v1"
+      "const": "atlas-intake/v2"
     },
     "surveyAlias": {
       "type": "string",
@@ -29,6 +30,43 @@
     "manifestRevision": {
       "type": "integer",
       "minimum": 1
+    },
+    "saveRoots": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/saveRoot"
+      },
+      "uniqueItems": true,
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "properties": {
+              "locationRole": {
+                "const": "deployment-root-save"
+              }
+            },
+            "required": ["locationRole"]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "properties": {
+              "locationRole": {
+                "const": "web-root-save"
+              }
+            },
+            "required": ["locationRole"]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
     },
     "discoveredSaveDirectoryEntryCount": {
       "type": "integer",
@@ -78,14 +116,49 @@
     }
   },
   "$defs": {
+    "saveRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rootAlias", "locationRole", "activity", "decision", "observedEntryCount", "isReparsePoint"],
+      "properties": {
+        "rootAlias": {
+          "type": "string",
+          "pattern": "^save-root-[0-9]{4}$"
+        },
+        "locationRole": {
+          "enum": ["deployment-root-save", "web-root-save"]
+        },
+        "activity": {
+          "enum": ["active", "inactive"]
+        },
+        "decision": {
+          "enum": ["include-save-root", "exclude-no-save-inputs", "unsupported", "unreadable", "scope-narrowed"]
+        },
+        "observedEntryCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reasonCode": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "isReparsePoint": {
+          "type": "boolean"
+        }
+      }
+    },
     "saveEntry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sourceAlias", "relativePath", "role", "decision", "entryType", "isReparsePoint"],
+      "required": ["sourceAlias", "rootAlias", "relativePath", "role", "decision", "entryType", "isReparsePoint"],
       "properties": {
         "sourceAlias": {
           "type": "string",
           "pattern": "^save-source-[0-9]{4}$"
+        },
+        "rootAlias": {
+          "type": "string",
+          "pattern": "^save-root-[0-9]{4}$"
         },
         "relativePath": {
           "type": "string",
@@ -229,7 +302,10 @@
       "required": [
         "method",
         "aliasesUnique",
-        "relativePathsUnique",
+        "saveLocatorsUnique",
+        "definitionRelativePathsUnique",
+        "saveRootMembershipReconciled",
+        "saveRootCountsReconciled",
         "saveCountsReconciled",
         "definitionCountsReconciled",
         "rolesAndDecisionsConsistent",
@@ -242,7 +318,16 @@
         "aliasesUnique": {
           "const": true
         },
-        "relativePathsUnique": {
+        "saveLocatorsUnique": {
+          "const": true
+        },
+        "definitionRelativePathsUnique": {
+          "const": true
+        },
+        "saveRootMembershipReconciled": {
+          "const": true
+        },
+        "saveRootCountsReconciled": {
           "const": true
         },
         "saveCountsReconciled": {

@@ -19,29 +19,32 @@ repository records only rules, counts, aliases, and safe summaries.
 ## 2. Starting point
 
 - Persisted plan commit: `1a715130af30e1aafa9af41b9add4c555a399a3a`.
-- Game baseline: Magical Girl Celesphonia v1.05, Steam App ID `1786790`, observed Steam build
-  `13624401`, database `versionId` `2444532`.
+- Game baseline: Magical Girl Celesphonia v1.05, public Steam application ID `1786790`, public
+  `buildid` `13624401`, database `versionId` `2444532`.
 - Discovery root: the previously confirmed installed game root.
-- Active save rule: `<install>\save`, not `<install>\www\save`.
+- Active save rule: the enabled relocation plugin selects `<install>\save`.
+- Secondary save-root rule: inspect the standard `<install>\www\save` location and terminally
+  classify every entry even when it is inactive.
 - Discovery is read-only and does not compute or publish content hashes.
 
 ## 3. Finite live-save discovery manifest
 
-The July 17, 2026 read-only discovery found:
+The July 17, 2026 read-only discovery found 23 entries across two candidate save roots:
 
-| Class                 | Count | Decision |
-| --------------------- | ----: | -------- |
-| Existing slot saves   |    19 | Include  |
-| `global.rpgsave`      |     1 | Include  |
-| `config.rpgsave`      |     1 | Include  |
-| `steam_autocloud.vdf` |     1 | Exclude  |
-| Unexpected entries    |     0 | None     |
+| Root                 | Class                 | Count | Decision |
+| -------------------- | --------------------- | ----: | -------- |
+| `<install>\save`     | Existing slot saves   |    19 | Include  |
+| `<install>\save`     | `global.rpgsave`      |     1 | Include  |
+| `<install>\save`     | `config.rpgsave`      |     1 | Include  |
+| `<install>\save`     | `steam_autocloud.vdf` |     1 | Exclude  |
+| `<install>\www\save` | `steam_autocloud.vdf` |     1 | Exclude  |
+| Both roots           | Unexpected entries    |     0 | None     |
 
 Present slots are 1 through 7 and 9 through 20. Slot 8 is absent. Sparse numbering is valid and
 does not create an expected input.
 
-The exact private manifest must contain one entry for every live directory entry. Each entry has
-one terminal intake decision:
+The exact private manifest records both save roots and contains one entry for every encountered
+directory entry. Each entry has one terminal intake decision:
 
 - `include-save`;
 - `exclude-steam-autocloud`;
@@ -50,57 +53,75 @@ one terminal intake decision:
 - `unreadable`; or
 - `scope-narrowed`.
 
-The 21 included save inputs are the baseline denominator. Any later directory difference creates
-a new discovery manifest and requires confirmation before copy.
+The 21 included save inputs are the baseline denominator. The web-root save directory contains no
+save input and is inactive for this baseline, but its excluded Steam metadata remains accounted
+for. Any later difference in either save root creates a new discovery manifest and requires
+confirmation before copy.
 
 ## 4. Finite installed-definition manifest
 
-The preliminary definition candidate set contains 544 terminally classified files: 496 included
-and 48 excluded.
+The RPG Maker MV deployment review contains 580 terminally classified definition candidates: 496
+included and 84 excluded.
 
-| Group                       | Selection rule                                                 | Decision | Count | Purpose                                      |
-| --------------------------- | -------------------------------------------------------------- | -------- | ----: | -------------------------------------------- |
-| Root package                | `<install>\package.json`                                       | Include  |     1 | Runtime and package identity                 |
-| Web package                 | `<install>\www\package.json`                                   | Include  |     1 | Game entry identity                          |
-| Web entry                   | `<install>\www\index.html`                                     | Include  |     1 | Script-loading context                       |
-| Game data                   | `<install>\www\data\*.json`                                    | Include  |   327 | Database, map, and plugin definitions        |
-| Engine scripts              | `<install>\www\js\*.js`                                        | Include  |     8 | RPG Maker and game bootstrap behavior        |
-| Plugin scripts              | `<install>\www\js\plugins\*.js`                                | Include  |   157 | Plugin-defined save semantics                |
-| Codec reference             | `<install>\www\js\libs\lz-string.js`                           | Include  |     1 | Save compression oracle                      |
-| Non-semantic runtime libs   | Other `<install>\www\js\libs\*.js`                             | Exclude  |     5 | Rendering, media, and performance libraries  |
-| Auxiliary definition probes | Other `www\**\*.{json,csv,txt,xml,yaml,yml}` outside game data | Exclude  |    43 | Unreferenced asset notes and IDE state files |
+| Group                       | Selection rule                                                                             | Decision | Count | Purpose                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------------ | -------- | ----: | -------------------------------------------------------------- |
+| Root package                | `<install>\package.json`                                                                   | Include  |     1 | Runtime and package identity                                   |
+| Web package                 | `<install>\www\package.json`                                                               | Include  |     1 | Game entry identity                                            |
+| Web entry                   | `<install>\www\index.html`                                                                 | Include  |     1 | Script-loading context                                         |
+| Game data                   | `<install>\www\data\*.json`                                                                | Include  |   327 | Database, map, and plugin definitions                          |
+| Engine scripts              | `<install>\www\js\*.js`                                                                    | Include  |     8 | RPG Maker and game bootstrap behavior                          |
+| Plugin scripts              | `<install>\www\js\plugins\*.js`                                                            | Include  |   157 | Plugin-defined save semantics                                  |
+| Codec reference             | `<install>\www\js\libs\lz-string.js`                                                       | Include  |     1 | Save compression oracle                                        |
+| Non-semantic runtime libs   | Other `<install>\www\js\libs\*.js`                                                         | Exclude  |     5 | Rendering, media, and performance libraries                    |
+| Auxiliary definition probes | `www\**\*.{json,csv,txt,xml,yaml,yml,xlsx}` minus every file selected by a preceding group | Exclude  |    44 | Asset notes, IDE state, and an unreferenced authoring workbook |
+| Detached DLC probe          | `<install>\Celesphonia Cosplay DLC 2\**\*`                                                 | Exclude  |    35 | Unreferenced HTML and media gallery files                      |
 
 All six library scripts are loaded by `index.html`. Static references confirm that the five
 excluded libraries provide rendering, media, or performance behavior rather than save encoding
 or semantics. An observed semantic dependency from an included source reopens an excluded
 library through explicit scope review.
 
-Static dependency closure over every included engine and plugin script found only JSON data
-loads rooted under `www\data`. Every named or constructed JSON input is already selected by the
-game-data rule. No included script names a CSV, TXT, XML, YAML, or YML input. The 43 auxiliary
-probes consist of 41 unreferenced text files adjacent to image assets and two unreferenced Visual
-Studio state files.
+The RPG Maker MV deployment closure also established:
 
-The exact private definition manifest records all 544 included and excluded candidates. Other
-installed binaries, media, fonts, and image assets are outside the definition candidate universe
-by the frozen extension and root rules. New files, new external-load evidence, or changed
+- both package manifests use only their expected HTML entry point and declare no injected,
+  `node-main`, package dependency, or development dependency script;
+- all 14 `index.html` script references exist and have an explicit include or exclude decision;
+- `www\data` is flat and contains 327 runtime JSON files plus one unreferenced XLSX authoring
+  workbook whose corresponding runtime JSON has a later timestamp;
+- `plugins.js` has no configured plugin file missing, while all seven unlisted plugin files remain
+  conservatively included;
+- there are no plugin subdirectories, other JavaScript locations, or deployed `node_modules`;
+- literal external data loads resolve only under `www\data`;
+- the only non-built-in module-style reference is a rendering dependency inside an unlisted
+  filter file; and
+- the detached DLC folder contains only HTML and image files, with no runtime reference to its
+  folder or entry point found.
+
+No included script names a CSV, TXT, XML, YAML, YML, or XLSX runtime input. The 44 auxiliary
+probes consist of 41 unreferenced text files adjacent to image assets, two unreferenced Visual
+Studio state files, and the unreferenced XLSX authoring workbook.
+
+The exact private definition manifest records all 580 included and excluded candidates. Standard
+deployed binaries, runtime packages, CSS, fonts, audio, movies, and ordinary image assets remain
+outside the definition candidate universe. New files, new external-load evidence, or changed
 selection rules create a new manifest revision.
 
 ## 5. Fingerprint evidence scope
 
 Private fingerprint evidence will use:
 
-- Steam App ID and build metadata;
+- the public Steam application ID and public `buildid`;
 - `Game.exe`;
-- both package files;
-- `www\data\System.json`;
-- `www\js\plugins.js`;
-- every included plugin script;
-- the save-path relocation definition; and
+- every one of the 496 included definition files; and
 - the Atlas tool, schema, redaction-policy, and configuration digests.
 
 Full hashes, source paths, file identities, and plugin parameters remain in private provenance.
 Committed Atlas records use only safe survey and fingerprint aliases.
+
+The public application ID and public `buildid` identify the game build, not the player. Raw Steam
+manifest contents, personal SteamID values, account IDs, cloud-account identifiers, profile
+paths, and equivalent account metadata are unnecessary, must not be retained, and must never
+enter repository records or Agent envelopes.
 
 ## 6. Private workspace
 
@@ -233,7 +254,7 @@ Committed outputs may not contain:
 - decoded documents;
 - private paths or hashes;
 - copied game text or source excerpts;
-- account metadata;
+- personal SteamID values, account IDs, cloud-account identifiers, or other account metadata;
 - narrative state; or
 - prompt or model transcripts containing prohibited material.
 
@@ -325,8 +346,9 @@ Repository tests may not use:
 
 Before A0 can complete and before A1 or A2 begins, the project leader must confirm:
 
-1. the 21-input save denominator and exclusion of `steam_autocloud.vdf`;
-2. the 496 included definition files, 48 explicit exclusions, and frozen selection rules;
+1. the 21-input save denominator, both inspected save roots, and two excluded
+   `steam_autocloud.vdf` entries;
+2. the 496 included definition files, 84 explicit exclusions, and frozen selection rules;
 3. the fingerprint evidence scope;
 4. the repository-local, fully Git-ignored private workspace;
 5. the redaction and Agent-egress policies;
