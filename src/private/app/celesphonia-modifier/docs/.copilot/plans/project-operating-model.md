@@ -273,3 +273,20 @@ The following are not missing planning decisions:
 - whether the product should ever move beyond personal and private use.
 
 Atlas v0 and later controlled experiments must provide the evidence for those decisions.
+
+## 16. Plan Persistence and Handoff Gate
+
+No execution increment may move from `pending` to `in_progress` until its current plan is
+committed and pushed to the shared branch. The persisted handoff must include:
+
+- scope and explicit exclusions;
+- measurable acceptance criteria and stop conditions;
+- dependencies and current status;
+- expected repository-safe and private outputs;
+- authority and user-confirmation points;
+- unresolved risks or disagreements; and
+- the command or procedure another contributor uses to resume.
+
+If review changes any of those items, persist the revised plan before execution continues.
+Local-only plans, conversation history, and session task state are not sufficient handoff
+artifacts.

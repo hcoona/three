@@ -17,6 +17,8 @@ solution entries, or package references under this root.
   staffing, scope cuts, supported life, and deferred decisions.
 - `plans/save-semantic-atlas-plan.md` governs the comprehensive preliminary save survey,
   evidence model, privacy boundary, human value selection, and focused semantic research.
+- `plans/atlas-v0-execution-plan.md` defines the C# implementation policy and measurable
+  acceptance criteria for each Atlas v0 increment.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.

@@ -6,6 +6,10 @@
 
 **Write authority:** None
 
+> **Execution authority**
+> `atlas-v0-execution-plan.md` defines the C# implementation boundary, increments, acceptance
+> criteria, and stop conditions for Atlas v0.
+
 ## 1. Research decision
 
 Use a breadth-first, then depth-first process:
@@ -20,12 +24,14 @@ observed structure and marks unexplained semantics as unknown.
 
 ## 2. Corpus and evidence boundary
 
-The preliminary survey covers immutable, read-only copies of:
+Before copying, the project leader confirms a finite live-save discovery manifest, exact
+fingerprint scope, and finite installed-definition roots and file-selection rules. The
+preliminary survey then covers immutable, read-only copies of:
 
 - every existing `fileN.rpgsave`;
 - `global.rpgsave`;
 - `config.rpgsave`; and
-- readable installed-game definitions needed to interpret structure.
+- every included readable installed-game definition in that confirmed manifest.
 
 Never:
 
@@ -44,15 +50,20 @@ experiments occur only after human value selection.
 Atlas v0 is complete relative to its declared corpus, fingerprint, scanner, and schema when:
 
 1. every expected corpus input has a scan result;
-2. every reachable decoded node is traversed;
-3. every observed path, type, wrapper, identity, reference, and structural variant is recorded;
-4. every parser failure or opaque region is an explicit gap;
-5. input and structure denominators reconcile;
-6. every observation is semantically known, disputed, or unknown;
-7. committed records pass redaction validation; and
-8. temporary decoded content is deleted and cleanup is attested.
+2. every valid in-scope baseline save decodes successfully unless the project leader approves a
+   recorded scope narrowing;
+3. every reachable decoded node is traversed;
+4. every observed path, type, wrapper, identity, reference, and structural variant is recorded;
+5. token, graph, scanner-visitation, input, and installed-definition denominators independently
+   reconcile;
+6. the in-scope baseline has zero opaque structural gaps;
+7. every observation is semantically independently supported, disputed, or unknown;
+8. committed records pass deny-by-default structural redaction validation; and
+9. temporary decoded content is deleted after all Atlas v0 private-evidence-dependent reviews
+   and cleanup is attested.
 
-Unknown semantics do not block completion.
+Unknown semantics do not block completion. Unsupported, unreadable, excluded, or opaque
+in-scope content does block completion until the project leader narrows the declared scope.
 
 This preliminary personal survey has no standalone calendar deadline. Its finite boundary is
 the confirmed corpus and the structural completion rule above. Later focused research and
@@ -84,6 +95,16 @@ Agents may:
 - independently support, challenge, or request evidence; and
 - propose the next discriminating experiment.
 
+Agents receive only a schema-validated redacted envelope. Raw or decoded saves, private values,
+private paths, private hashes, copied installed source, and uncontrolled prompt or log retention
+are prohibited. Source reasoning uses safe coordinates and deterministic extracted facts by
+default.
+
+Atlas v0 Agent work uses a frozen deterministic annotation population. Each eligible item
+receives no more than one author pass and one blind independent review pass. Items without safe
+evidence candidates remain unknown without an Agent call. Agent agreement never becomes
+accepted truth; it is recorded only as independently supported.
+
 Agents may not:
 
 - use majority voting;
@@ -95,6 +116,8 @@ Agents may not:
 Human work is limited to:
 
 - confirming corpus and fingerprint scope;
+- confirming the exact discovery and installed-definition manifests before copy;
+- approving any scope narrowing;
 - selecting valuable domains;
 - approving a targeted experiment;
 - resolving a dispute only when a selected operation depends on it; and
@@ -145,8 +168,9 @@ A `Concept` is a revisable possible meaning:
 
 Create concepts lazily. Do not create one for every node.
 
-The internal key exists only for references and revision stability. It must never become a
-heading, filename, URL, breadcrumb, capability key, or visible Atlas path.
+The internal key exists only for references and revision stability. No internal key
+representation may become a heading, filename, URL, breadcrumb, capability key, semantic label,
+or visible Atlas path.
 
 ### 5.4 Claims
 
@@ -273,9 +297,10 @@ Generated projections include:
 
 Generated projections are disposable and must not become competing sources of truth.
 
-Atlas v0 decoded private data exists only in a local temporary workspace. Delete it after the
-survey is accepted. Commit only the scanner, method, schemas, redacted canonical Atlas, and safe
-generated documentation chosen for review.
+Atlas v0 decoded private data exists only in a local temporary workspace. Keep each private
+artifact only through its declared last-use review, then perform one final verified cleanup
+before Atlas v0 acceptance. Commit only the scanner, method, schemas, redacted canonical Atlas,
+and safe generated documentation chosen for review.
 
 Later E2 or E3 before-and-after saves, runtime traces, and exact private fingerprints required
 to audit an active operation remain protected outside Git until its support and appeal window
