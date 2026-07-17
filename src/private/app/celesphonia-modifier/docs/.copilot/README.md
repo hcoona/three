@@ -28,6 +28,11 @@ solution entries, or package references under this root.
 - `plans/project-perspective-map.md` is the normative first-level decision-perspective
   taxonomy used before workstream design.
 
+## Current gate evidence
+
+- `reviews/atlas-v0-a0-scope-review.md` is the repository-safe decision brief for the pending
+  Atlas V0 A0 project-leader confirmation.
+
 ## Historical and supporting artifacts
 
 - `reviews/engineering-plan-remediation.md`
