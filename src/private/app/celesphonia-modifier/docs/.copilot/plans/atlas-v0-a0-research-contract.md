@@ -55,24 +55,36 @@ a new discovery manifest and requires confirmation before copy.
 
 ## 4. Finite installed-definition manifest
 
-The preliminary definition scope contains 496 files:
+The preliminary definition candidate set contains 544 terminally classified files: 496 included
+and 48 excluded.
 
-| Group           | Selection rule                       | Count | Purpose                               |
-| --------------- | ------------------------------------ | ----: | ------------------------------------- |
-| Root package    | `<install>\package.json`             |     1 | Runtime and package identity          |
-| Web package     | `<install>\www\package.json`         |     1 | Game entry identity                   |
-| Web entry       | `<install>\www\index.html`           |     1 | Script-loading context                |
-| Game data       | `<install>\www\data\*.json`          |   327 | Database and map definitions          |
-| Engine scripts  | `<install>\www\js\*.js`              |     8 | RPG Maker and game bootstrap behavior |
-| Plugin scripts  | `<install>\www\js\plugins\*.js`      |   157 | Plugin-defined save semantics         |
-| Codec reference | `<install>\www\js\libs\lz-string.js` |     1 | Save compression oracle               |
+| Group                       | Selection rule                                                 | Decision | Count | Purpose                                      |
+| --------------------------- | -------------------------------------------------------------- | -------- | ----: | -------------------------------------------- |
+| Root package                | `<install>\package.json`                                       | Include  |     1 | Runtime and package identity                 |
+| Web package                 | `<install>\www\package.json`                                   | Include  |     1 | Game entry identity                          |
+| Web entry                   | `<install>\www\index.html`                                     | Include  |     1 | Script-loading context                       |
+| Game data                   | `<install>\www\data\*.json`                                    | Include  |   327 | Database, map, and plugin definitions        |
+| Engine scripts              | `<install>\www\js\*.js`                                        | Include  |     8 | RPG Maker and game bootstrap behavior        |
+| Plugin scripts              | `<install>\www\js\plugins\*.js`                                | Include  |   157 | Plugin-defined save semantics                |
+| Codec reference             | `<install>\www\js\libs\lz-string.js`                           | Include  |     1 | Save compression oracle                      |
+| Non-semantic runtime libs   | Other `<install>\www\js\libs\*.js`                             | Exclude  |     5 | Rendering, media, and performance libraries  |
+| Auxiliary definition probes | Other `www\**\*.{json,csv,txt,xml,yaml,yml}` outside game data | Exclude  |    43 | Unreferenced asset notes and IDE state files |
 
-The other five current `www\js\libs\*.js` files are excluded because they implement rendering,
-media, or platform behavior rather than save encoding or semantics. An observed dependency from
-an included source may reopen one file through explicit scope review.
+All six library scripts are loaded by `index.html`. Static references confirm that the five
+excluded libraries provide rendering, media, or performance behavior rather than save encoding
+or semantics. An observed semantic dependency from an included source reopens an excluded
+library through explicit scope review.
 
-The exact private definition manifest records every included and excluded file. The pattern set
-is frozen for this survey. New files or changed selection rules create a new manifest revision.
+Static dependency closure over every included engine and plugin script found only JSON data
+loads rooted under `www\data`. Every named or constructed JSON input is already selected by the
+game-data rule. No included script names a CSV, TXT, XML, YAML, or YML input. The 43 auxiliary
+probes consist of 41 unreferenced text files adjacent to image assets and two unreferenced Visual
+Studio state files.
+
+The exact private definition manifest records all 544 included and excluded candidates. Other
+installed binaries, media, fonts, and image assets are outside the definition candidate universe
+by the frozen extension and root rules. New files, new external-load evidence, or changed
+selection rules create a new manifest revision.
 
 ## 5. Fingerprint evidence scope
 
@@ -107,8 +119,8 @@ The survey directory layout is:
 ```text
 <survey-alias>\
   intake\
-    discovery-manifest.json
-    definition-manifest.json
+    corpus-intake-manifest.json
+    private-artifact-inventory.json
     private-provenance.json
   copies\
     saves\
@@ -314,7 +326,7 @@ Repository tests may not use:
 Before A0 can complete and before A1 or A2 begins, the project leader must confirm:
 
 1. the 21-input save denominator and exclusion of `steam_autocloud.vdf`;
-2. the 496-file installed-definition selection rules;
+2. the 496 included definition files, 48 explicit exclusions, and frozen selection rules;
 3. the fingerprint evidence scope;
 4. the repository-local, fully Git-ignored private workspace;
 5. the redaction and Agent-egress policies;
