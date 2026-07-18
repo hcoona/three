@@ -284,8 +284,12 @@ explicitly creates a new output.
 These BCL checks reject ordinary visible junctions and symbolic links. They do not close a hostile
 time-of-check/time-of-use race, which remains accepted by section 2.
 
-All source roots are pairwise disjoint from the workspace: neither may contain the other. The
-incomplete and final copy paths are nonexistent siblings under one survey-local `copies` parent.
+All source roots are pairwise disjoint from the workspace: neither may contain the other. On a fresh
+copy attempt, the incomplete and final paths are nonexistent siblings under one survey-local
+`copies` parent. On restart, the recovery matrix is inspected before fresh-attempt nonexistence
+checks. The final path must be absent immediately before renaming a complete `.incomplete`
+directory.
+
 The incomplete leaf is the final leaf plus `.incomplete`. Every manifest relative path is canonical,
 contains no root, drive, empty segment, `.` segment, or `..` segment, and combines under exactly one
 bound source root.
@@ -495,11 +499,11 @@ The inventory uses `a2-qualified` only for save-copy entries because the existin
 property to save copies.
 
 The copy receipt uses `atlas-copy-receipt/v1`. It contains the survey alias, receipt alias, profile,
-approved-state digest, approved manifest digest, source-root-map digest, copy-plan digest, decision
-reference, approved-manifest artifact alias, final relative copy root, public identifiers, private
-game-executable SHA-256, exact save and definition counts, and one entry per copy-plan source. Each
-entry contains destination artifact alias, source alias, artifact class, destination-relative path,
-source length, source-last-write UTC value, and SHA-256.
+copy-request digest, approved-state digest, approved manifest digest, source-root-map digest,
+copy-plan digest, decision reference, approved-manifest artifact alias, final relative copy root,
+public identifiers, private game-executable SHA-256, exact save and definition counts, and one entry
+per copy-plan source. Each entry contains destination artifact alias, source alias, artifact class,
+destination-relative path, source length, source-last-write UTC value, and SHA-256.
 
 Receipt, qualified state, and inventory agree only when every copy-plan and receipt entry has
 exactly one inventory entry with the same destination artifact alias and class, status `present`,
@@ -780,6 +784,8 @@ Direct tests cover:
 - interruption at each private-document publication and inventory-replacement seam;
 - provisional receipt/inventory states, sole state-3 qualification, and standard-output failure
   after qualification;
+- successful restart before rename, after rename, after inventory replacement, and after receipt
+  publication, asserting no source opens and exact rename-inventory-receipt-state ordering;
 - refusal to use an incomplete or mismatched final snapshot;
 - no live-source deletion, modification, decode, or scan;
 - stable two-pass locator aliases and every literal bypass;
@@ -921,8 +927,10 @@ recorded in review documents, not emitted by a command.
 The only counts permitted in Git are: save denominator 23, included saves 21, excluded Steam
 metadata 2, definition denominator 580, included definitions 496, excluded definitions 84, copy
 successes 21 and 496, copy failures 0, unsupported/unreadable 0, unexplained preflight artifacts 0,
-and deletions 0. The only safe difference categories are root set, denominator, selection rule,
-public build, unsupported/unreadable, or no difference. Every name and every other count is private.
+invalid inventory rows 0, and deletions 0. `Invalid inventory rows` is the strict validation result
+for the state-3-bound inventory, not a workspace census. The only safe difference categories are
+root set, denominator, selection rule, public build, unsupported/unreadable, or no difference.
+Every name and every other count is private.
 
 The plan-review record path is `../reviews/atlas-v0-a2-plan-review.md`. It binds:
 
