@@ -487,7 +487,9 @@ After committing an implementation candidate, run from the repository root:
 
 ```powershell
 $planBase = "cdde3a0427765c9f2b969e3e678550e4f7d78edb"
-$base = "<verified-plan-review-record-commit>"
+$baseInput = "<verified-plan-review-record-commit>"
+$base = git rev-parse --verify "$baseInput^{commit}"
+if ($LASTEXITCODE -ne 0) { throw "Could not resolve the full plan-review record commit." }
 $planPath = "src/private/app/celesphonia-modifier/docs/.copilot/plans/" +
   "agent-workflow-institutionalization-plan.md"
 $indexPath = "src/private/app/celesphonia-modifier/docs/.copilot/README.md"
@@ -584,7 +586,9 @@ plan-review record, reviewed staged blob, and record-reviewer identifiers, then 
 
 ```powershell
 $planBase = "cdde3a0427765c9f2b969e3e678550e4f7d78edb"
-$base = "<verified-plan-review-record-commit>"
+$baseInput = "<verified-plan-review-record-commit>"
+$base = git rev-parse --verify "$baseInput^{commit}"
+if ($LASTEXITCODE -ne 0) { throw "Could not resolve the full plan-review record commit." }
 $reviewedRecordBlob = "<full-reviewed-staged-blob-identifier>"
 $recordReviewer = "<fresh-record-review-subagent-identifier>"
 $planPath = "src/private/app/celesphonia-modifier/docs/.copilot/plans/" +
