@@ -37,6 +37,10 @@ solution entries, or package references under this root.
   project-leader decision.
 - `reviews/atlas-v0-a0-release-gate.md` is created only after an exact committed A0 candidate
   receives an independent `No findings` result. That record establishes A0 completion.
+- `reviews/atlas-v0-a1-plan-review.md` is created only after the exact A1 plan receives an
+  independent `No findings` result. That record authorizes A1 implementation.
+- `reviews/atlas-v0-a1-release-gate.md` is created only after an exact committed A1 implementation
+  receives an independent `No findings` result. That record establishes A1 completion.
 
 ## Historical and supporting artifacts
 
