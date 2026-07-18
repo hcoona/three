@@ -9,6 +9,18 @@ public sealed class AtlasProcessSmokeTests
     private static readonly byte[] ExpectedSurvey =
         "{\"schemaVersion\":\"atlas-empty-survey/v1\",\"observations\":[]}\n"u8.ToArray();
 
+    private static readonly byte[] ExpectedHelp =
+    [
+        .. "Usage:\n"u8,
+        .. "  celesphonia-atlas empty-survey\n"u8,
+        .. "\n"u8,
+        .. "Commands:\n"u8,
+        .. "  empty-survey  Write a deterministic empty Atlas survey.\n"u8,
+        .. "\n"u8,
+        .. "Options:\n"u8,
+        .. "  -h, --help  Show help.\n"u8,
+    ];
+
     [Fact]
     public async Task EmptySurveyProcessWritesExactBytes()
     {
@@ -27,6 +39,17 @@ public sealed class AtlasProcessSmokeTests
         Assert.Equal(2, result.ExitCode);
         Assert.Empty(result.StandardOutput);
         Assert.Equal("Invalid arguments.\n"u8.ToArray(), result.StandardError);
+    }
+
+    [Fact]
+    public async Task HelpProcessWritesExactLfBytes()
+    {
+        ProcessResult result = await RunAsync("--help");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(ExpectedHelp, result.StandardOutput);
+        Assert.DoesNotContain((byte)'\r', result.StandardOutput);
+        Assert.Empty(result.StandardError);
     }
 
     private static async Task<ProcessResult> RunAsync(params string[] args)

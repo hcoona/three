@@ -10,19 +10,16 @@ public sealed class AtlasCliApplicationTests
         "{\"schemaVersion\":\"atlas-empty-survey/v1\",\"observations\":[]}\n"u8.ToArray();
 
     private static readonly byte[] ExpectedHelp =
-        """
-        Usage:
-          celesphonia-atlas empty-survey
-
-        Commands:
-          empty-survey  Write a deterministic empty Atlas survey.
-
-        Options:
-          -h, --help  Show help.
-        """u8
-            .ToArray()
-            .Append((byte)'\n')
-            .ToArray();
+    [
+        .. "Usage:\n"u8,
+        .. "  celesphonia-atlas empty-survey\n"u8,
+        .. "\n"u8,
+        .. "Commands:\n"u8,
+        .. "  empty-survey  Write a deterministic empty Atlas survey.\n"u8,
+        .. "\n"u8,
+        .. "Options:\n"u8,
+        .. "  -h, --help  Show help.\n"u8,
+    ];
 
     public static TheoryData<string> HelpArgumentLines =>
         new()

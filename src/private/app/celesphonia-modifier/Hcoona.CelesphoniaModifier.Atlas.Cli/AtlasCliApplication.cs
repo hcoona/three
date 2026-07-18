@@ -11,19 +11,16 @@ internal static class AtlasCliApplication
     internal const int IoErrorExitCode = 4;
 
     private static readonly byte[] HelpBytes =
-        """
-        Usage:
-          celesphonia-atlas empty-survey
-
-        Commands:
-          empty-survey  Write a deterministic empty Atlas survey.
-
-        Options:
-          -h, --help  Show help.
-        """u8
-            .ToArray()
-            .Append((byte)'\n')
-            .ToArray();
+    [
+        .. "Usage:\n"u8,
+        .. "  celesphonia-atlas empty-survey\n"u8,
+        .. "\n"u8,
+        .. "Commands:\n"u8,
+        .. "  empty-survey  Write a deterministic empty Atlas survey.\n"u8,
+        .. "\n"u8,
+        .. "Options:\n"u8,
+        .. "  -h, --help  Show help.\n"u8,
+    ];
 
     private static readonly byte[] InvalidArgumentsBytes = "Invalid arguments.\n"u8.ToArray();
     private static readonly byte[] CanceledBytes = "Operation canceled.\n"u8.ToArray();
