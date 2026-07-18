@@ -458,9 +458,9 @@ $requiredHeadings = @(
   '## Private-evidence statement',
   '## Execution decision'
 )
-foreach ($heading in $requiredHeadings) {
-  $headingCount = @($recordLines | Where-Object { $_ -ceq $heading }).Count
-  if ($headingCount -ne 1) { throw "Required record section count is not one: $heading" }
+$actualHeadings = @($recordLines | Where-Object { $_ -match '^## ' })
+if (Compare-Object $requiredHeadings $actualHeadings -CaseSensitive -SyncWindow 0) {
+  throw "Plan-review record sections are missing, reordered, duplicated, or undeclared."
 }
 mise exec -- hk check --check --no-progress --from-ref $planCandidate --to-ref $record
 if ($LASTEXITCODE -ne 0) { throw "HK rejected the plan-review record." }
@@ -578,8 +578,26 @@ src/private/app/celesphonia-modifier/docs/AGENTS.md
 ```
 
 After exact `No findings` for the implementation candidate, create and stage the release record.
-Apply the same sole-staged-change, staged-blob, fresh independent record review, iterative
-remediation, and unchanged-blob requirements used for the plan-review record.
+Verify it with this procedure:
+
+```powershell
+$recordPath = "src/private/app/celesphonia-modifier/docs/.copilot/reviews/" +
+  "agent-workflow-institutionalization-release-gate.md"
+$staged = @(git diff --cached --no-renames --name-status HEAD)
+if ($LASTEXITCODE -ne 0) { throw "Could not enumerate staged release-record changes." }
+if (Compare-Object @("A`t$recordPath") $staged -CaseSensitive) {
+  throw "The staged release record is not the sole added path."
+}
+$unstaged = @(git diff --no-renames --name-status)
+if ($LASTEXITCODE -ne 0 -or $unstaged) { throw "Tracked unstaged changes exist." }
+$reviewedRecordBlob = git rev-parse ":$recordPath"
+if ($LASTEXITCODE -ne 0) { throw "Could not resolve the staged release-record blob." }
+```
+
+Give a fresh independent subagent that exact staged blob, its blob identifier, the implementation
+candidate, and all governing inputs. Resolve every finding and repeat until the record reviewer
+returns exact `No findings`. Re-run the procedure after each remediation and do not change the final
+reviewed staged blob afterward.
 
 Commit the reviewed blob unchanged. In a fresh PowerShell process, supply only the verified
 plan-review record, reviewed staged blob, and record-reviewer identifiers, then run:
@@ -695,9 +713,9 @@ $requiredHeadings = @(
   '## Private-evidence statement',
   '## Execution decision'
 )
-foreach ($heading in $requiredHeadings) {
-  $headingCount = @($recordLines | Where-Object { $_ -ceq $heading }).Count
-  if ($headingCount -ne 1) { throw "Required record section count is not one: $heading" }
+$actualHeadings = @($recordLines | Where-Object { $_ -match '^## ' })
+if (Compare-Object $requiredHeadings $actualHeadings -CaseSensitive -SyncWindow 0) {
+  throw "Release-record sections are missing, reordered, duplicated, or undeclared."
 }
 mise exec -- hk check --check --no-progress --from-ref $candidate --to-ref $record
 if ($LASTEXITCODE -ne 0) { throw "HK rejected the release record." }
