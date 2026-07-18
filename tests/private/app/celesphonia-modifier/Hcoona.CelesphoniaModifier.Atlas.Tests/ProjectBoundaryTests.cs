@@ -7,14 +7,20 @@ public sealed class ProjectBoundaryTests
 {
     private static readonly string[] ExpectedLibraryFiles =
     [
+        "AtlasDiscovery.cs",
+        "AtlasIntakeContracts.cs",
         "EmptyAtlasSurvey.cs",
         "Hcoona.CelesphoniaModifier.Atlas.csproj",
+        "LocatorSegmentRedactor.cs",
+        "PrivateArtifactLifecycle.cs",
         "packages.lock.json",
+        "TrustedLocalCopy.cs",
     ];
 
     private static readonly string[] ExpectedCliFiles =
     [
         "AtlasCliApplication.cs",
+        "AtlasCliOperations.cs",
         "Hcoona.CelesphoniaModifier.Atlas.Cli.csproj",
         "packages.lock.json",
         "Program.cs",
@@ -23,11 +29,29 @@ public sealed class ProjectBoundaryTests
     private static readonly string[] ExpectedTestFiles =
     [
         "AtlasCliApplicationTests.cs",
+        "AtlasDiscoveryTests.cs",
+        "AtlasIntakeContractTests.cs",
         "AtlasProcessSmokeTests.cs",
         "EmptyAtlasSurveyTests.cs",
         "Hcoona.CelesphoniaModifier.Atlas.Tests.csproj",
+        "LocatorSegmentRedactorTests.cs",
         "packages.lock.json",
+        "PrivateArtifactLifecycleTests.cs",
         "ProjectBoundaryTests.cs",
+        "TrustedLocalCopyTests.cs",
+    ];
+
+    private static readonly string[] ExpectedSchemaFiles =
+    [
+        "agent-egress-envelope.schema.json",
+        "cleanup-preflight-report.schema.json",
+        "copy-plan.schema.json",
+        "copy-receipt.schema.json",
+        "corpus-intake-manifest.schema.json",
+        "intake-state.schema.json",
+        "private-artifact-inventory.schema.json",
+        "preservation-snapshot-manifest.schema.json",
+        "source-root-map.schema.json",
     ];
 
     private static readonly string[] ExpectedTestPackages =
@@ -111,6 +135,9 @@ public sealed class ProjectBoundaryTests
         Assert.Equal(
             ExpectedTestFiles.Order(StringComparer.Ordinal),
             GetFileNames(paths.TestDirectory));
+        Assert.Equal(
+            ExpectedSchemaFiles.Order(StringComparer.Ordinal),
+            GetFileNames(paths.SchemaDirectory));
     }
 
     [Fact]
@@ -146,8 +173,12 @@ public sealed class ProjectBoundaryTests
             readme,
             StringComparison.Ordinal);
         Assert.Contains(
-            "The A1 C# foundation contains one reusable library, one thin CLI, "
-            + "and one test project.",
+            "The A2 C# intake and safety harness extends the existing reusable library, thin CLI, "
+            + "and test",
+            readme,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "copy qualification, lifecycle preflight, and synthetic validation",
             readme,
             StringComparison.Ordinal);
     }
@@ -202,7 +233,8 @@ public sealed class ProjectBoundaryTests
         string LibraryProject,
         string CliProject,
         string TestProject,
-        string Readme)
+        string Readme,
+        string SchemaDirectory)
     {
         public static ProjectPaths Create()
         {
@@ -241,7 +273,8 @@ public sealed class ProjectBoundaryTests
                 Path.Combine(
                     testDirectory,
                     "Hcoona.CelesphoniaModifier.Atlas.Tests.csproj"),
-                Path.Combine(projectRoot, "docs", ".copilot", "README.md"));
+                Path.Combine(projectRoot, "docs", ".copilot", "README.md"),
+                Path.Combine(projectRoot, "docs", ".copilot", "schemas", "atlas-v0"));
         }
 
         private static string FindRepositoryRoot()

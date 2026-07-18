@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hcoona:three:celesphonia-modifier:atlas-v0:intake-state:v1",
+  "title": "Atlas V0 Intake State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "surveyAlias",
+    "stateRevision",
+    "phase",
+    "stateArtifactAlias",
+    "steamAppId",
+    "buildId",
+    "inventorySha256",
+    "documentBindings",
+    "artifactBindings"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "atlas-intake-state/v1"
+    },
+    "surveyAlias": {
+      "$ref": "#/$defs/surveyAlias"
+    },
+    "stateRevision": {
+      "enum": [1, 2, 3, 4]
+    },
+    "phase": {
+      "enum": ["discovered", "approved", "qualified", "preflighted"]
+    },
+    "stateArtifactAlias": {
+      "$ref": "#/$defs/artifactAlias"
+    },
+    "steamAppId": {
+      "const": 1786790
+    },
+    "buildId": {
+      "const": 13624401
+    },
+    "inventorySha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "decisionCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "finalCopyRootRelativePath": {
+      "$ref": "#/$defs/canonicalRelativePath"
+    },
+    "documentBindings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/binding"
+      },
+      "uniqueItems": true
+    },
+    "artifactBindings": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "$ref": "#/$defs/binding"
+      },
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "stateRevision": {
+            "const": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "phase": {
+            "const": "discovered"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stateRevision": {
+            "enum": [2, 3, 4]
+          }
+        }
+      },
+      "then": {
+        "required": ["decisionCommit"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stateRevision": {
+            "enum": [3, 4]
+          }
+        }
+      },
+      "then": {
+        "required": ["finalCopyRootRelativePath"]
+      }
+    }
+  ],
+  "$defs": {
+    "surveyAlias": {
+      "type": "string",
+      "pattern": "^survey-[a-z0-9-]+$"
+    },
+    "artifactAlias": {
+      "type": "string",
+      "pattern": "^private-artifact-[0-9]{6}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "canonicalRelativePath": {
+      "type": "string",
+      "pattern": "^(?![/.])(?!.*//)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?:[^:/\\\\]+/)*[^:/\\\\]+$"
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "artifactAlias", "relativePath", "sha256"],
+      "properties": {
+        "role": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "artifactAlias": {
+          "$ref": "#/$defs/artifactAlias"
+        },
+        "relativePath": {
+          "$ref": "#/$defs/canonicalRelativePath"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}

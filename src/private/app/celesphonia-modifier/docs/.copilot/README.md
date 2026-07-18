@@ -8,8 +8,10 @@
 This folder contains Copilot-assisted planning, remediation, and research artifacts for the
 future Celesphonia Modifier project root.
 
-The A1 C# foundation contains one reusable library, one thin CLI, and one test project. It has no
-save discovery, decoding, semantic, write, WinUI, network, or private-data behavior.
+The A2 C# intake and safety harness extends the existing reusable library, thin CLI, and test
+project. It adds strict private request contracts, metadata-only intake discovery, trusted-local
+copy qualification, lifecycle preflight, and synthetic validation while still excluding decoding,
+semantic scanning, write authority, WinUI, network access, and private data from Git.
 
 ## Normative baseline
 

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hcoona:three:celesphonia-modifier:atlas-v0:source-root-map:v1",
+  "title": "Atlas V0 Source Root Map",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "surveyAlias",
+    "manifestRevision",
+    "steamAppId",
+    "buildId",
+    "saveRoots",
+    "definitionRootPath",
+    "gameExecutablePath"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "atlas-source-root-map/v1"
+    },
+    "surveyAlias": {
+      "$ref": "#/$defs/surveyAlias"
+    },
+    "manifestRevision": {
+      "const": 4
+    },
+    "steamAppId": {
+      "const": 1786790
+    },
+    "buildId": {
+      "const": 13624401
+    },
+    "saveRoots": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/saveRoot"
+      },
+      "uniqueItems": true
+    },
+    "definitionRootPath": {
+      "type": "string",
+      "minLength": 3
+    },
+    "gameExecutablePath": {
+      "type": "string",
+      "minLength": 3
+    }
+  },
+  "$defs": {
+    "surveyAlias": {
+      "type": "string",
+      "pattern": "^survey-[a-z0-9-]+$"
+    },
+    "rootAlias": {
+      "type": "string",
+      "pattern": "^save-root-[0-9]{4}$"
+    },
+    "saveRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rootAlias", "locationRole", "absolutePath"],
+      "properties": {
+        "rootAlias": {
+          "$ref": "#/$defs/rootAlias"
+        },
+        "locationRole": {
+          "enum": ["deployment-root-save", "web-root-save"]
+        },
+        "absolutePath": {
+          "type": "string",
+          "minLength": 3
+        }
+      }
+    }
+  }
+}

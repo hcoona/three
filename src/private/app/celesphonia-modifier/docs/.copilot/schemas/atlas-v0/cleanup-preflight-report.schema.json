@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hcoona:three:celesphonia-modifier:atlas-v0:cleanup-preflight-report:v1",
+  "title": "Atlas V0 Cleanup Preflight Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "surveyAlias",
+    "reportArtifactAlias",
+    "inventorySha256",
+    "proposedMilestone",
+    "results"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "atlas-cleanup-preflight/v1"
+    },
+    "surveyAlias": {
+      "$ref": "#/$defs/surveyAlias"
+    },
+    "reportArtifactAlias": {
+      "$ref": "#/$defs/artifactAlias"
+    },
+    "inventorySha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "proposedMilestone": {
+      "enum": ["A2", "A3", "A4", "A5", "A6", "A7", "A8", "post-A8-appeal"]
+    },
+    "results": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/result"
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "surveyAlias": {
+      "type": "string",
+      "pattern": "^survey-[a-z0-9-]+$"
+    },
+    "artifactAlias": {
+      "type": "string",
+      "pattern": "^private-artifact-[0-9]{6}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactAlias",
+        "artifactClass",
+        "status",
+        "plannedDisposition",
+        "lastUseMilestone",
+        "expiryCondition",
+        "result"
+      ],
+      "properties": {
+        "artifactAlias": {
+          "$ref": "#/$defs/artifactAlias"
+        },
+        "artifactClass": {
+          "enum": [
+            "live-discovery",
+            "save-copy",
+            "definition-copy",
+            "private-evidence",
+            "private-provenance",
+            "cleanup-record"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "plannedDisposition": {
+          "enum": ["delete", "retain-private", "supersede", "not-applicable"]
+        },
+        "lastUseMilestone": {
+          "enum": ["A2", "A3", "A4", "A5", "A6", "A7", "A8", "post-A8-appeal"]
+        },
+        "expiryCondition": {
+          "type": "string",
+          "pattern": "^after:[A-Za-z0-9-]+$"
+        },
+        "result": {
+          "enum": [
+            "blocked-status",
+            "blocked-disposition",
+            "blocked-before-last-use",
+            "indeterminate-expiry",
+            "eligible-for-human-review"
+          ]
+        }
+      }
+    }
+  }
+}

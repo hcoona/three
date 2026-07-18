@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using Hcoona.CelesphoniaModifier.Atlas;
 using Xunit;
 
 namespace Hcoona.CelesphoniaModifier.Atlas.Tests;
@@ -9,13 +10,21 @@ public sealed class AtlasProcessSmokeTests
     private static readonly byte[] ExpectedSurvey =
         "{\"schemaVersion\":\"atlas-empty-survey/v1\",\"observations\":[]}\n"u8.ToArray();
 
-    private static readonly byte[] ExpectedHelp =
+    private static readonly byte[] ExpectedGlobalHelp =
     [
         .. "Usage:\n"u8,
         .. "  celesphonia-atlas empty-survey\n"u8,
+        .. "  celesphonia-atlas intake-discover <request-file>\n"u8,
+        .. "  celesphonia-atlas intake-confirm <request-file>\n"u8,
+        .. "  celesphonia-atlas intake-copy <request-file>\n"u8,
+        .. "  celesphonia-atlas cleanup-preflight <request-file>\n"u8,
         .. "\n"u8,
         .. "Commands:\n"u8,
-        .. "  empty-survey  Write a deterministic empty Atlas survey.\n"u8,
+        .. "  empty-survey       Write a deterministic empty Atlas survey.\n"u8,
+        .. "  intake-discover    Discover the approved Atlas intake scope.\n"u8,
+        .. "  intake-confirm     Confirm an approved Atlas intake manifest.\n"u8,
+        .. "  intake-copy        Create qualified Atlas research snapshots.\n"u8,
+        .. "  cleanup-preflight  Report private-artifact cleanup eligibility.\n"u8,
         .. "\n"u8,
         .. "Options:\n"u8,
         .. "  -h, --help  Show help.\n"u8,
@@ -32,6 +41,86 @@ public sealed class AtlasProcessSmokeTests
     }
 
     [Fact]
+    public async Task HelpProcessWritesExactLfBytes()
+    {
+        ProcessResult result = await RunAsync("--help");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(ExpectedGlobalHelp, result.StandardOutput);
+        Assert.DoesNotContain((byte)'\r', result.StandardOutput);
+        Assert.Empty(result.StandardError);
+    }
+
+    [Fact]
+    public async Task DiscoveryProcessWritesExactSuccessBytes()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+
+        ProcessResult result = await RunAsync(
+            "intake-discover",
+            workspace.Layout.CanonicalDiscoverRequestPath);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal("Intake discovery completed.\n"u8.ToArray(), result.StandardOutput);
+        Assert.Empty(result.StandardError);
+    }
+
+    [Fact]
+    public async Task ApprovalProcessWritesExactDiagnostic()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        AtlasIntakeDiscoveryRequest discoveryRequest = workspace.CreateDiscoveryRequest();
+        workspace.WriteRequest(discoveryRequest);
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+        AtlasIntakeConfirmationRequest confirmRequest = workspace.CreateConfirmationRequest();
+        confirmRequest = confirmRequest with
+        {
+            ExpectedDiscoveredStateSha256 = new string('0', 64),
+        };
+        workspace.WriteRequest(confirmRequest);
+
+        ProcessResult result = await RunAsync(
+            "intake-confirm",
+            workspace.Layout.CanonicalConfirmRequestPath);
+
+        Assert.Equal(6, result.ExitCode);
+        Assert.Empty(result.StandardOutput);
+        Assert.Equal("Approval required.\n"u8.ToArray(), result.StandardError);
+    }
+
+    [Fact]
+    public async Task SafetyProcessWritesExactDiagnostic()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        AtlasIntakeDiscoveryRequest request = workspace.CreateDiscoveryRequest() with
+        {
+            WorkspaceRoot = Path.Combine(workspace.ProjectRoot, "wrong", "workspace"),
+        };
+        workspace.WriteRequest(request);
+
+        ProcessResult result = await RunAsync(
+            "intake-discover",
+            workspace.Layout.CanonicalDiscoverRequestPath);
+
+        Assert.Equal(5, result.ExitCode);
+        Assert.Empty(result.StandardOutput);
+        Assert.Equal("Safety check failed.\n"u8.ToArray(), result.StandardError);
+    }
+
+    [Fact]
+    public async Task IoProcessWritesExactDiagnostic()
+    {
+        string missingRequestPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json");
+        ProcessResult result = await RunAsync("intake-discover", missingRequestPath);
+
+        Assert.Equal(4, result.ExitCode);
+        Assert.Empty(result.StandardOutput);
+        Assert.Equal("I/O failure.\n"u8.ToArray(), result.StandardError);
+    }
+
+    [Fact]
     public async Task InvalidProcessArgumentsUseFixedDiagnostic()
     {
         ProcessResult result = await RunAsync("--version");
@@ -39,17 +128,6 @@ public sealed class AtlasProcessSmokeTests
         Assert.Equal(2, result.ExitCode);
         Assert.Empty(result.StandardOutput);
         Assert.Equal("Invalid arguments.\n"u8.ToArray(), result.StandardError);
-    }
-
-    [Fact]
-    public async Task HelpProcessWritesExactLfBytes()
-    {
-        ProcessResult result = await RunAsync("--help");
-
-        Assert.Equal(0, result.ExitCode);
-        Assert.Equal(ExpectedHelp, result.StandardOutput);
-        Assert.DoesNotContain((byte)'\r', result.StandardOutput);
-        Assert.Empty(result.StandardError);
     }
 
     private static async Task<ProcessResult> RunAsync(params string[] args)

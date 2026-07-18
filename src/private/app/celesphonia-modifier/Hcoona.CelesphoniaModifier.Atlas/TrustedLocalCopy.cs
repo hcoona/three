@@ -1,0 +1,1126 @@
+using System.Buffers;
+using System.Security.Cryptography;
+
+namespace Hcoona.CelesphoniaModifier.Atlas;
+
+public static class TrustedLocalCopy
+{
+    public static ValueTask CopyAsync(
+        string requestPath,
+        CancellationToken cancellationToken = default) =>
+        CopyAsync(requestPath, AtlasIoSeams.Default, cancellationToken);
+
+    internal static async ValueTask CopyAsync(
+        string requestPath,
+        AtlasIoSeams io,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestPath);
+        ArgumentNullException.ThrowIfNull(io);
+
+        AtlasLoadedDocument<AtlasIntakeCopyRequest> loadedRequest =
+            await AtlasIntakeContracts.ReadCopyRequestAsync(requestPath, cancellationToken)
+                .ConfigureAwait(false);
+        AtlasIntakeCopyRequest request = loadedRequest.Document;
+        AtlasWorkspaceLayout layout = AtlasIntakeContracts.CreateWorkspaceLayout(
+            request.ProjectRoot,
+            request.WorkspaceRoot,
+            request.SurveyAlias);
+        AtlasDiscovery.ValidatePrivateWorkspace(layout, io);
+        ValidateCopyCanonicalPaths(loadedRequest.AbsolutePath, request, layout, io);
+
+        if (await AtlasDiscovery.TryReturnCompletedPhaseAsync(
+                layout.CanonicalQualifiedStatePath,
+                AtlasIntakeContracts.QualifiedStateRevision,
+                io,
+                cancellationToken)
+            .ConfigureAwait(false)
+            || await AtlasDiscovery.TryReturnCompletedPhaseAsync(
+                layout.CanonicalPreflightedStatePath,
+                AtlasIntakeContracts.PreflightedStateRevision,
+                io,
+                cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        if (!io.FileExists(layout.CanonicalApprovedStatePath))
+        {
+            throw new AtlasApprovalException("The approved state is required.");
+        }
+
+        AtlasLoadedDocument<AtlasIntakeStateDocument> approvedState =
+            await AtlasIntakeContracts.ReadStateAsync(
+                    request.ApprovedStatePath,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        if (approvedState.Document.StateRevision != AtlasIntakeContracts.ApprovedStateRevision)
+        {
+            throw new AtlasApprovalException("The approved state revision is invalid.");
+        }
+
+        AtlasDiscovery.EnsureDigestMatches(
+            request.ExpectedApprovedStateSha256,
+            approvedState.Sha256,
+            static () => new AtlasApprovalException("The approved state digest is invalid."));
+        if (!StringComparer.Ordinal.Equals(
+                approvedState.Document.DecisionCommit,
+                request.DecisionCommit))
+        {
+            throw new AtlasApprovalException(
+                "The decision commit does not match state revision 2.");
+        }
+
+        AtlasDocumentBinding approvedManifestBinding =
+            AtlasIntakeContracts.GetRequiredDocumentBinding(
+                approvedState.Document,
+                AtlasIntakeContracts.ApprovedManifestRole);
+        AtlasDocumentBinding sourceRootMapBinding =
+            AtlasIntakeContracts.GetRequiredDocumentBinding(
+                approvedState.Document,
+                AtlasIntakeContracts.SourceRootMapRole);
+        AtlasDocumentBinding copyPlanBinding =
+            AtlasIntakeContracts.GetRequiredDocumentBinding(
+                approvedState.Document,
+                AtlasIntakeContracts.CopyPlanRole);
+
+        AtlasLoadedDocument<AtlasCorpusIntakeManifest> approvedManifest =
+            await AtlasIntakeContracts.ReadManifestAsync(
+                    request.ApprovedManifestPath,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        AtlasLoadedDocument<AtlasSourceRootMapDocument> sourceRootMap =
+            await AtlasIntakeContracts.ReadSourceRootMapAsync(
+                    request.SourceRootMapPath,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        AtlasLoadedDocument<AtlasCopyPlanDocument> copyPlan =
+            await AtlasIntakeContracts.ReadCopyPlanAsync(
+                    request.CopyPlanPath,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+        AtlasDiscovery.EnsureStateDocumentMatchesBinding(approvedManifest, approvedManifestBinding);
+        AtlasDiscovery.EnsureStateDocumentMatchesBinding(sourceRootMap, sourceRootMapBinding);
+        AtlasDiscovery.EnsureStateDocumentMatchesBinding(copyPlan, copyPlanBinding);
+
+        if (approvedManifest.Document.ManifestRevision
+                != AtlasIntakeContracts.ApprovedManifestRevision
+            || !StringComparer.Ordinal.Equals(
+                approvedManifest.Document.Confirmation.Status,
+                AtlasIntakeContracts.ApprovedConfirmationStatus)
+            || !StringComparer.Ordinal.Equals(
+                approvedManifest.Document.Confirmation.DecisionReference,
+                AtlasIntakeContracts.ApprovalDecisionReferencePrefix + request.DecisionCommit))
+        {
+            throw new AtlasApprovalException("The approved manifest is invalid.");
+        }
+
+        PhaseInventoryContext inventoryContext = await LoadPhaseInventoryAsync(
+                layout.CanonicalInventoryPath,
+                layout.CanonicalQualifiedInventoryBackupPath,
+                request.ExpectedInventorySha256,
+                io,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        CopyPhaseAliases aliases = ResolveCopyAliases(
+            inventoryContext,
+            copyPlan.Document);
+
+        string finalReceiptPath = layout.CanonicalCopyReceiptPath;
+        string finalReceiptStagingPath = AtlasDiscovery.GetStagingPath(
+            finalReceiptPath,
+            AtlasIntakeContracts.QualifiedPhase);
+        string incompleteReceiptStagingPath = Path.Combine(
+            layout.CanonicalIncompleteCopyPath,
+            Path.GetFileName(finalReceiptStagingPath));
+
+        if (io.DirectoryExists(layout.CanonicalFinalCopyPath)
+            || io.DirectoryExists(layout.CanonicalIncompleteCopyPath))
+        {
+            if (await TryRecoverCopyFinalizationAsync(
+                    loadedRequest,
+                    request,
+                    layout,
+                    approvedState,
+                    approvedManifest,
+                    sourceRootMap,
+                    copyPlan,
+                    inventoryContext,
+                    aliases,
+                    finalReceiptPath,
+                    finalReceiptStagingPath,
+                    incompleteReceiptStagingPath,
+                    io,
+                    cancellationToken)
+                .ConfigureAwait(false))
+            {
+                return;
+            }
+        }
+
+        if (io.DirectoryExists(layout.CanonicalFinalCopyPath)
+            || io.DirectoryExists(layout.CanonicalIncompleteCopyPath))
+        {
+            throw new AtlasSafetyException(
+                "An unfinished copy directory requires human inspection.");
+        }
+
+        CopyValidationContext validation = ValidateCurrentSourcesAgainstManifest(
+            approvedManifest.Document,
+            sourceRootMap.Document,
+            copyPlan.Document,
+            io);
+        io.CreateDirectory(Path.GetDirectoryName(layout.CanonicalIncompleteCopyPath)!);
+        io.CreateDirectory(layout.CanonicalIncompleteCopyPath);
+
+        bool renamedToFinal = false;
+        try
+        {
+            List<AtlasCopyReceiptEntry> receiptEntries = [];
+            foreach (ResolvedCopySource source in validation.IncludedSources
+                         .OrderBy(
+                             static source => source.CopyPlanEntry.SourceAlias,
+                             StringComparer.Ordinal))
+            {
+                string destinationPath = Path.Combine(
+                    layout.CanonicalIncompleteCopyPath,
+                    source.CopyPlanEntry.DestinationRelativePath.Replace(
+                        '/',
+                        Path.DirectorySeparatorChar));
+                io.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+                receiptEntries.Add(
+                    await CopySourceFileAsync(
+                            source,
+                            destinationPath,
+                            io,
+                            cancellationToken)
+                        .ConfigureAwait(false));
+            }
+
+            string gameExecutableSha256 = await HashTrackedSourceAsync(
+                    sourceRootMap.Document.GameExecutablePath,
+                    io,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            _ = ValidateCurrentSourcesAgainstManifest(
+                approvedManifest.Document,
+                sourceRootMap.Document,
+                copyPlan.Document,
+                io);
+
+            AtlasCopyReceiptDocument stagedReceipt = CreateCopyReceipt(
+                loadedRequest.Sha256,
+                request,
+                approvedState,
+                approvedManifest,
+                sourceRootMap,
+                copyPlan,
+                aliases,
+                gameExecutableSha256,
+                receiptEntries);
+            byte[] stagedReceiptBytes = AtlasIntakeContracts.SerializeCopyReceipt(stagedReceipt);
+            _ = await AtlasDiscovery.EnsureDeterministicFileAsync(
+                    incompleteReceiptStagingPath,
+                    AtlasIntakeContracts.QualifiedPhase,
+                    stagedReceiptBytes,
+                    io,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (io.DirectoryExists(layout.CanonicalFinalCopyPath))
+            {
+                throw new AtlasSafetyException("The final copy path must not exist before rename.");
+            }
+
+            io.MoveDirectory(layout.CanonicalIncompleteCopyPath, layout.CanonicalFinalCopyPath);
+            renamedToFinal = true;
+            finalReceiptStagingPath = Path.Combine(
+                layout.CanonicalFinalCopyPath,
+                Path.GetFileName(incompleteReceiptStagingPath));
+
+            AtlasPrivateArtifactInventoryDocument replacementInventory = CreateQualifiedInventory(
+                inventoryContext.PriorInventory.Document,
+                approvedManifestBinding.ArtifactAlias,
+                copyPlan.Document,
+                aliases,
+                finalReceiptPath);
+            byte[] replacementInventoryBytes =
+                AtlasIntakeContracts.SerializeInventory(replacementInventory);
+            InventoryReplaceResult inventoryReplace =
+                await AtlasDiscovery.EnsureInventoryReplaceAsync(
+                        layout.CanonicalInventoryPath,
+                        layout.CanonicalQualifiedInventoryBackupPath,
+                        AtlasIntakeContracts.QualifiedPhase,
+                        inventoryContext.PriorInventory.Bytes,
+                        replacementInventoryBytes,
+                        io,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+            io.MoveFile(finalReceiptStagingPath, finalReceiptPath);
+            AtlasIntakeStateDocument state3 = CreateQualifiedState(
+                request,
+                layout,
+                approvedState,
+                approvedManifestBinding,
+                sourceRootMapBinding,
+                copyPlanBinding,
+                aliases,
+                loadedRequest.Sha256,
+                inventoryReplace.BackupSha256,
+                inventoryReplace.ReplacementSha256,
+                AtlasIntakeContracts.ComputeSha256Hex(stagedReceiptBytes));
+            byte[] stateBytes = AtlasIntakeContracts.SerializeState(state3);
+            _ = await AtlasDiscovery.EnsureDeterministicFileAsync(
+                    layout.CanonicalQualifiedStatePath,
+                    AtlasIntakeContracts.QualifiedPhase,
+                    stateBytes,
+                    io,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            if (!renamedToFinal && io.DirectoryExists(layout.CanonicalIncompleteCopyPath))
+            {
+                TryDeleteOwnedIncompleteDirectory(layout.CanonicalIncompleteCopyPath, io);
+            }
+
+            throw;
+        }
+    }
+
+    internal static void ValidateCopyCanonicalPaths(
+        string requestPath,
+        AtlasIntakeCopyRequest request,
+        AtlasWorkspaceLayout layout,
+        AtlasIoSeams io)
+    {
+        AtlasDiscovery.ValidateCanonicalRequestFile(
+            requestPath,
+            layout.CanonicalCopyRequestPath,
+            layout.WorkspaceRoot,
+            io);
+        AtlasDiscovery.ValidateExistingOrdinaryFile(request.ApprovedStatePath, io);
+        AtlasDiscovery.ValidateExistingOrdinaryFile(request.ApprovedManifestPath, io);
+        AtlasDiscovery.ValidateExistingOrdinaryFile(request.SourceRootMapPath, io);
+        AtlasDiscovery.ValidateExistingOrdinaryFile(request.CopyPlanPath, io);
+        AtlasDiscovery.ValidateExistingOrdinaryFile(request.InventoryPath, io);
+        AtlasDiscovery.ValidateCreateNewOutputDirectory(
+            request.StateRevisionDirectory,
+            layout.WorkspaceRoot,
+            io);
+        AtlasDiscovery.ValidateCreateNewOutputFile(
+            request.ApprovedStatePath,
+            layout.CanonicalApprovedStatePath,
+            layout.WorkspaceRoot,
+            io,
+            requireExisting: true);
+        AtlasDiscovery.ValidateCreateNewOutputFile(
+            request.ApprovedManifestPath,
+            layout.CanonicalApprovedManifestPath,
+            layout.WorkspaceRoot,
+            io,
+            requireExisting: true);
+        AtlasDiscovery.ValidateCreateNewOutputFile(
+            request.SourceRootMapPath,
+            layout.CanonicalSourceRootMapPath,
+            layout.WorkspaceRoot,
+            io,
+            requireExisting: true);
+        AtlasDiscovery.ValidateCreateNewOutputFile(
+            request.CopyPlanPath,
+            layout.CanonicalCopyPlanPath,
+            layout.WorkspaceRoot,
+            io,
+            requireExisting: true);
+        AtlasDiscovery.ValidateCreateNewOutputFile(
+            request.InventoryPath,
+            layout.CanonicalInventoryPath,
+            layout.WorkspaceRoot,
+            io,
+            requireExisting: true);
+        if (!AtlasIntakeContracts.PathEquals(
+                request.IncompleteCopyPath,
+                layout.CanonicalIncompleteCopyPath)
+            || !AtlasIntakeContracts.PathEquals(
+                request.FinalCopyPath,
+                layout.CanonicalFinalCopyPath))
+        {
+            throw new AtlasSafetyException("The copy directory paths are invalid.");
+        }
+
+        if (!StringComparer.OrdinalIgnoreCase.Equals(
+                Path.GetDirectoryName(request.IncompleteCopyPath),
+                Path.GetDirectoryName(request.FinalCopyPath))
+            || !StringComparer.OrdinalIgnoreCase.Equals(
+                Path.GetFileName(request.IncompleteCopyPath),
+                Path.GetFileName(request.FinalCopyPath) + ".incomplete"))
+        {
+            throw new AtlasSafetyException("The incomplete copy path is invalid.");
+        }
+
+        AtlasDiscovery.ValidateCreateNewOutputDirectory(
+            layout.CopiesDirectory,
+            layout.WorkspaceRoot,
+            io);
+        AtlasDiscovery.ValidateCreateNewOutputFile(
+            request.InventoryBackupPath,
+            layout.CanonicalQualifiedInventoryBackupPath,
+            layout.WorkspaceRoot,
+            io,
+            allowExistingOutput: true);
+    }
+
+    internal static async ValueTask<bool> TryRecoverCopyFinalizationAsync(
+        AtlasLoadedDocument<AtlasIntakeCopyRequest> loadedRequest,
+        AtlasIntakeCopyRequest request,
+        AtlasWorkspaceLayout layout,
+        AtlasLoadedDocument<AtlasIntakeStateDocument> approvedState,
+        AtlasLoadedDocument<AtlasCorpusIntakeManifest> approvedManifest,
+        AtlasLoadedDocument<AtlasSourceRootMapDocument> sourceRootMap,
+        AtlasLoadedDocument<AtlasCopyPlanDocument> copyPlan,
+        PhaseInventoryContext inventoryContext,
+        CopyPhaseAliases aliases,
+        string finalReceiptPath,
+        string finalReceiptStagingPath,
+        string incompleteReceiptStagingPath,
+        AtlasIoSeams io,
+        CancellationToken cancellationToken)
+    {
+        bool hasIncomplete = io.DirectoryExists(layout.CanonicalIncompleteCopyPath);
+        bool hasFinal = io.DirectoryExists(layout.CanonicalFinalCopyPath);
+        if (hasIncomplete && hasFinal)
+        {
+            throw new AtlasSafetyException("Unexpected copy directories require human inspection.");
+        }
+
+        if (hasIncomplete)
+        {
+            if (!HasCompleteCopySet(
+                    layout.CanonicalIncompleteCopyPath,
+                    copyPlan.Document,
+                    incompleteReceiptStagingPath,
+                    io))
+            {
+                throw new AtlasSafetyException("The incomplete copy directory is unusable.");
+            }
+
+            io.MoveDirectory(layout.CanonicalIncompleteCopyPath, layout.CanonicalFinalCopyPath);
+            hasIncomplete = false;
+            hasFinal = true;
+            finalReceiptStagingPath = Path.Combine(
+                layout.CanonicalFinalCopyPath,
+                Path.GetFileName(incompleteReceiptStagingPath));
+        }
+
+        if (!hasFinal)
+        {
+            return false;
+        }
+
+        string receiptStagingPathToUse = io.FileExists(finalReceiptStagingPath)
+            ? finalReceiptStagingPath
+            : finalReceiptPath;
+        if (!io.FileExists(receiptStagingPathToUse)
+            || !HasCompleteCopySet(
+                layout.CanonicalFinalCopyPath,
+                copyPlan.Document,
+                receiptStagingPathToUse,
+                io))
+        {
+            throw new AtlasSafetyException("The final copy directory is unusable.");
+        }
+
+        AtlasLoadedDocument<AtlasCopyReceiptDocument> receipt = await LoadReceiptAsync(
+                receiptStagingPathToUse,
+                cancellationToken)
+            .ConfigureAwait(false);
+        ValidateReceiptAgainstBindings(
+            loadedRequest.Sha256,
+            request,
+            approvedState,
+            approvedManifest,
+            sourceRootMap,
+            copyPlan,
+            aliases,
+            receipt.Document);
+        ValidateCopiedFilesAgainstReceipt(
+            layout.CanonicalFinalCopyPath,
+            receipt.Document,
+            io,
+            cancellationToken);
+
+        AtlasPrivateArtifactInventoryDocument replacementInventory = CreateQualifiedInventory(
+            inventoryContext.PriorInventory.Document,
+            AtlasIntakeContracts.GetRequiredDocumentBinding(
+                approvedState.Document,
+                AtlasIntakeContracts.ApprovedManifestRole).ArtifactAlias,
+            copyPlan.Document,
+            aliases,
+            finalReceiptPath);
+        byte[] replacementInventoryBytes =
+            AtlasIntakeContracts.SerializeInventory(replacementInventory);
+        InventoryReplaceResult inventoryReplace = await AtlasDiscovery.EnsureInventoryReplaceAsync(
+                layout.CanonicalInventoryPath,
+                layout.CanonicalQualifiedInventoryBackupPath,
+                AtlasIntakeContracts.QualifiedPhase,
+                inventoryContext.PriorInventory.Bytes,
+                replacementInventoryBytes,
+                io,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (StringComparer.OrdinalIgnoreCase.Equals(
+                receiptStagingPathToUse,
+                finalReceiptStagingPath))
+        {
+            io.MoveFile(finalReceiptStagingPath, finalReceiptPath);
+        }
+
+        AtlasIntakeStateDocument state3 = CreateQualifiedState(
+            request,
+            layout,
+            approvedState,
+            AtlasIntakeContracts.GetRequiredDocumentBinding(
+                approvedState.Document,
+                AtlasIntakeContracts.ApprovedManifestRole),
+            AtlasIntakeContracts.GetRequiredDocumentBinding(
+                approvedState.Document,
+                AtlasIntakeContracts.SourceRootMapRole),
+            AtlasIntakeContracts.GetRequiredDocumentBinding(
+                approvedState.Document,
+                AtlasIntakeContracts.CopyPlanRole),
+            aliases,
+            loadedRequest.Sha256,
+            inventoryReplace.BackupSha256,
+            inventoryReplace.ReplacementSha256,
+            receipt.Sha256);
+        byte[] stateBytes = AtlasIntakeContracts.SerializeState(state3);
+        _ = await AtlasDiscovery.EnsureDeterministicFileAsync(
+                layout.CanonicalQualifiedStatePath,
+                AtlasIntakeContracts.QualifiedPhase,
+                stateBytes,
+                io,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return true;
+    }
+
+    internal static AtlasCopyReceiptDocument CreateCopyReceipt(
+        string requestSha256,
+        AtlasIntakeCopyRequest request,
+        AtlasLoadedDocument<AtlasIntakeStateDocument> approvedState,
+        AtlasLoadedDocument<AtlasCorpusIntakeManifest> approvedManifest,
+        AtlasLoadedDocument<AtlasSourceRootMapDocument> sourceRootMap,
+        AtlasLoadedDocument<AtlasCopyPlanDocument> copyPlan,
+        CopyPhaseAliases aliases,
+        string gameExecutableSha256,
+        IReadOnlyList<AtlasCopyReceiptEntry> receiptEntries) =>
+        new()
+        {
+            SchemaVersion = AtlasIntakeContracts.CopyReceiptSchemaVersion,
+            SurveyAlias = request.SurveyAlias,
+            ReceiptArtifactAlias = aliases.ReceiptAlias,
+            Profile = AtlasIntakeContracts.TrustedLocalFilesystemProfile,
+            CopyRequestSha256 = requestSha256,
+            ApprovedStateSha256 = approvedState.Sha256,
+            ApprovedManifestSha256 = approvedManifest.Sha256,
+            SourceRootMapSha256 = sourceRootMap.Sha256,
+            CopyPlanSha256 = copyPlan.Sha256,
+            DecisionReference = AtlasIntakeContracts.ApprovalDecisionReferencePrefix
+                + request.DecisionCommit,
+            ApprovedManifestArtifactAlias = AtlasIntakeContracts.GetRequiredDocumentBinding(
+                approvedState.Document,
+                AtlasIntakeContracts.ApprovedManifestRole).ArtifactAlias,
+            FinalCopyRootRelativePath = AtlasIntakeContracts.SaveSnapshotRelativeRoot,
+            SteamAppId = AtlasIntakeContracts.ExactSteamAppId,
+            BuildId = AtlasIntakeContracts.ExactBuildId,
+            GameExecutableSha256 = gameExecutableSha256,
+            SaveCount = receiptEntries.Count(entry =>
+                StringComparer.Ordinal.Equals(
+                    entry.ArtifactClass,
+                    AtlasIntakeContracts.SaveCopyArtifactClass)),
+            DefinitionCount = receiptEntries.Count(entry =>
+                StringComparer.Ordinal.Equals(
+                    entry.ArtifactClass,
+                    AtlasIntakeContracts.DefinitionCopyArtifactClass)),
+            Entries = [.. receiptEntries.OrderBy(
+                static entry => entry.SourceAlias,
+                StringComparer.Ordinal)],
+        };
+
+    internal static AtlasIntakeStateDocument CreateQualifiedState(
+        AtlasIntakeCopyRequest request,
+        AtlasWorkspaceLayout layout,
+        AtlasLoadedDocument<AtlasIntakeStateDocument> approvedState,
+        AtlasDocumentBinding approvedManifestBinding,
+        AtlasDocumentBinding sourceRootMapBinding,
+        AtlasDocumentBinding copyPlanBinding,
+        CopyPhaseAliases aliases,
+        string requestSha256,
+        string backupSha256,
+        string inventorySha256,
+        string receiptSha256) =>
+        new()
+        {
+            SchemaVersion = AtlasIntakeContracts.IntakeStateSchemaVersion,
+            SurveyAlias = request.SurveyAlias,
+            StateRevision = AtlasIntakeContracts.QualifiedStateRevision,
+            Phase = AtlasIntakeContracts.QualifiedPhase,
+            StateArtifactAlias = aliases.StateAlias,
+            SteamAppId = AtlasIntakeContracts.ExactSteamAppId,
+            BuildId = AtlasIntakeContracts.ExactBuildId,
+            InventorySha256 = inventorySha256,
+            DecisionCommit = request.DecisionCommit,
+            FinalCopyRootRelativePath = AtlasIntakeContracts.SaveSnapshotRelativeRoot,
+            DocumentBindings =
+            [
+                AtlasDiscovery.CreateDocumentBinding(
+                    AtlasIntakeContracts.PredecessorStateRole,
+                    approvedState.Document.StateArtifactAlias,
+                    approvedState.AbsolutePath,
+                    layout,
+                    approvedState.Sha256),
+                approvedManifestBinding,
+                sourceRootMapBinding,
+                copyPlanBinding,
+                new AtlasDocumentBinding
+                {
+                    Role = AtlasIntakeContracts.CopyReceiptRole,
+                    ArtifactAlias = aliases.ReceiptAlias,
+                    RelativePath = AtlasIntakeContracts.ToSurveyRelativePath(
+                        layout.WorkspaceRoot,
+                        layout.CanonicalCopyReceiptPath),
+                    Sha256 = receiptSha256,
+                },
+            ],
+            ArtifactBindings =
+            [
+                new AtlasArtifactBinding
+                {
+                    Role = AtlasIntakeContracts.CopyRequestRole,
+                    ArtifactAlias = aliases.RequestAlias,
+                    RelativePath = AtlasIntakeContracts.ToSurveyRelativePath(
+                        layout.WorkspaceRoot,
+                        layout.CanonicalCopyRequestPath),
+                    Sha256 = requestSha256,
+                },
+                new AtlasArtifactBinding
+                {
+                    Role = AtlasIntakeContracts.QualifiedInventoryBackupRole,
+                    ArtifactAlias = aliases.InventoryBackupAlias,
+                    RelativePath = AtlasIntakeContracts.ToSurveyRelativePath(
+                        layout.WorkspaceRoot,
+                        layout.CanonicalQualifiedInventoryBackupPath),
+                    Sha256 = backupSha256,
+                },
+            ],
+        };
+
+    internal static AtlasPrivateArtifactInventoryDocument CreateQualifiedInventory(
+        AtlasPrivateArtifactInventoryDocument priorInventory,
+        string approvedManifestArtifactAlias,
+        AtlasCopyPlanDocument copyPlan,
+        CopyPhaseAliases aliases,
+        string receiptPath)
+    {
+        List<AtlasPrivateArtifactEntry> destinationEntries = [];
+        foreach (AtlasCopyPlanEntry entry in copyPlan.Entries)
+        {
+            bool isSave = StringComparer.Ordinal.Equals(
+                entry.ArtifactClass,
+                AtlasIntakeContracts.SaveCopyArtifactClass);
+            destinationEntries.Add(AtlasDiscovery.CreateArtifactEntry(
+                entry.DestinationArtifactAlias,
+                entry.ArtifactClass,
+                $"snapshot-copy:{entry.SourceAlias}",
+                [approvedManifestArtifactAlias],
+                isSave ? "A8" : "A6",
+                AtlasIntakeContracts.DeleteDisposition,
+                $"{AtlasIntakeContracts.TrustedLocalFilesystemProfile};"
+                + $"receipt:{aliases.ReceiptAlias}",
+                qualification: isSave ? "a2-qualified" : null));
+        }
+
+        return priorInventory with
+        {
+            Artifacts =
+            [
+                .. priorInventory.Artifacts,
+                AtlasDiscovery.CreateArtifactEntry(
+                    aliases.RequestAlias,
+                    AtlasIntakeContracts.PrivateEvidenceArtifactClass,
+                    AtlasIntakeContracts.CopyRequestPurpose,
+                    [],
+                    "A8",
+                    AtlasIntakeContracts.DeleteDisposition,
+                    "atlas-cli:intake-copy"),
+                .. destinationEntries,
+                AtlasDiscovery.CreateArtifactEntry(
+                    aliases.ReceiptAlias,
+                    AtlasIntakeContracts.PrivateProvenanceArtifactClass,
+                    AtlasIntakeContracts.CopyReceiptPurpose,
+                    [approvedManifestArtifactAlias],
+                    "A8",
+                    AtlasIntakeContracts.RetainPrivateDisposition,
+                    AtlasIntakeContracts.CopyReceiptSchemaVersion),
+                AtlasDiscovery.CreateArtifactEntry(
+                    aliases.StateAlias,
+                    AtlasIntakeContracts.PrivateProvenanceArtifactClass,
+                    AtlasIntakeContracts.State3Purpose,
+                    [aliases.ReceiptAlias],
+                    "A8",
+                    AtlasIntakeContracts.RetainPrivateDisposition,
+                    AtlasIntakeContracts.IntakeStateSchemaVersion),
+                AtlasDiscovery.CreateArtifactEntry(
+                    aliases.InventoryBackupAlias,
+                    AtlasIntakeContracts.PrivateProvenanceArtifactClass,
+                    AtlasIntakeContracts.QualifiedInventoryBackupPurpose,
+                    [aliases.RequestAlias],
+                    "A8",
+                    AtlasIntakeContracts.RetainPrivateDisposition,
+                    "inventory-backup:qualified"),
+            ],
+        };
+    }
+
+    internal static void ValidateReceiptAgainstBindings(
+        string requestSha256,
+        AtlasIntakeCopyRequest request,
+        AtlasLoadedDocument<AtlasIntakeStateDocument> approvedState,
+        AtlasLoadedDocument<AtlasCorpusIntakeManifest> approvedManifest,
+        AtlasLoadedDocument<AtlasSourceRootMapDocument> sourceRootMap,
+        AtlasLoadedDocument<AtlasCopyPlanDocument> copyPlan,
+        CopyPhaseAliases aliases,
+        AtlasCopyReceiptDocument receipt)
+    {
+        if (!StringComparer.Ordinal.Equals(
+                receipt.SchemaVersion,
+                AtlasIntakeContracts.CopyReceiptSchemaVersion)
+            || !StringComparer.Ordinal.Equals(receipt.ReceiptArtifactAlias, aliases.ReceiptAlias)
+            || !StringComparer.Ordinal.Equals(receipt.CopyRequestSha256, requestSha256)
+            || !StringComparer.Ordinal.Equals(receipt.ApprovedStateSha256, approvedState.Sha256)
+            || !StringComparer.Ordinal.Equals(
+                receipt.ApprovedManifestSha256,
+                approvedManifest.Sha256)
+            || !StringComparer.Ordinal.Equals(receipt.SourceRootMapSha256, sourceRootMap.Sha256)
+            || !StringComparer.Ordinal.Equals(receipt.CopyPlanSha256, copyPlan.Sha256)
+            || !StringComparer.Ordinal.Equals(
+                receipt.DecisionReference,
+                AtlasIntakeContracts.ApprovalDecisionReferencePrefix + request.DecisionCommit)
+            || !StringComparer.Ordinal.Equals(
+                receipt.FinalCopyRootRelativePath,
+                AtlasIntakeContracts.SaveSnapshotRelativeRoot))
+        {
+            throw new AtlasSafetyException(
+                "The copy receipt does not match the approved bindings.");
+        }
+
+        Dictionary<string, AtlasCopyPlanEntry> planEntries = copyPlan.Document.Entries.ToDictionary(
+            static entry => entry.SourceAlias,
+            StringComparer.Ordinal);
+        if (receipt.Entries.Length != planEntries.Count)
+        {
+            throw new AtlasSafetyException("The copy receipt entry set is incomplete.");
+        }
+
+        foreach (AtlasCopyReceiptEntry entry in receipt.Entries)
+        {
+            if (!planEntries.TryGetValue(entry.SourceAlias, out AtlasCopyPlanEntry? planEntry)
+                || !StringComparer.Ordinal.Equals(
+                    entry.DestinationArtifactAlias,
+                    planEntry.DestinationArtifactAlias)
+                || !StringComparer.Ordinal.Equals(entry.ArtifactClass, planEntry.ArtifactClass)
+                || !StringComparer.Ordinal.Equals(
+                    entry.DestinationRelativePath,
+                    planEntry.DestinationRelativePath))
+            {
+                throw new AtlasSafetyException("The copy receipt does not match the copy plan.");
+            }
+        }
+    }
+
+    internal static void ValidateCopiedFilesAgainstReceipt(
+        string finalCopyPath,
+        AtlasCopyReceiptDocument receipt,
+        AtlasIoSeams io,
+        CancellationToken cancellationToken)
+    {
+        foreach (AtlasCopyReceiptEntry entry in receipt.Entries)
+        {
+            string destinationPath = Path.Combine(
+                finalCopyPath,
+                entry.DestinationRelativePath.Replace('/', Path.DirectorySeparatorChar));
+            if (!io.FileExists(destinationPath))
+            {
+                throw new AtlasSafetyException("A planned copy is missing.");
+            }
+
+            string sha256 = HashFile(destinationPath, io, cancellationToken);
+            long length = io.GetLength(destinationPath);
+            FileAttributes attributes = io.GetAttributes(destinationPath);
+            if (!StringComparer.Ordinal.Equals(entry.SourceSha256, sha256)
+                || entry.SourceLength != length
+                || (attributes & FileAttributes.ReadOnly) == 0)
+            {
+                throw new AtlasSafetyException("A staged copy does not validate.");
+            }
+        }
+    }
+
+    internal static bool HasCompleteCopySet(
+        string copyRoot,
+        AtlasCopyPlanDocument copyPlan,
+        string receiptEvidencePath,
+        AtlasIoSeams io)
+    {
+        if (!io.FileExists(receiptEvidencePath))
+        {
+            return false;
+        }
+
+        return copyPlan.Entries.All(entry =>
+            io.FileExists(
+                Path.Combine(
+                    copyRoot,
+                    entry.DestinationRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+    }
+
+    internal static CopyValidationContext ValidateCurrentSourcesAgainstManifest(
+        AtlasCorpusIntakeManifest manifest,
+        AtlasSourceRootMapDocument sourceRootMap,
+        AtlasCopyPlanDocument copyPlan,
+        AtlasIoSeams io)
+    {
+        AtlasDiscovery.DiscoveredManifest discovered = AtlasDiscovery.DiscoverCurrentManifest(
+            new AtlasIntakeDiscoveryRequest
+            {
+                SurveyAlias = manifest.SurveyAlias,
+                SaveRoots =
+                [
+                    .. sourceRootMap.SaveRoots.Select(binding => new AtlasRequestSaveRoot
+                    {
+                        LocationRole = binding.LocationRole,
+                        Path = binding.AbsolutePath,
+                    }),
+                ],
+                DefinitionRoot = sourceRootMap.DefinitionRootPath,
+            },
+            manifest,
+            io);
+        if (!StringComparer.Ordinal.Equals(
+                discovered.PendingManifest.SchemaVersion,
+                manifest.SchemaVersion)
+            || discovered.PendingManifest.SaveEntries.Length != manifest.SaveEntries.Length
+            || discovered.PendingManifest.DefinitionEntries.Length
+                != manifest.DefinitionEntries.Length)
+        {
+            throw new AtlasSafetyException("The source directories changed.");
+        }
+
+        Dictionary<string, AtlasManifestSaveEntry> saveEntries = manifest.SaveEntries.ToDictionary(
+            static entry => entry.SourceAlias,
+            StringComparer.Ordinal);
+        Dictionary<string, AtlasManifestDefinitionEntry> definitionEntries =
+            manifest.DefinitionEntries.ToDictionary(
+                static entry => entry.SourceAlias,
+                StringComparer.Ordinal);
+        Dictionary<string, string> saveRootPaths = sourceRootMap.SaveRoots.ToDictionary(
+            static binding => binding.RootAlias,
+            static binding => binding.AbsolutePath,
+            StringComparer.Ordinal);
+        List<ResolvedCopySource> includedSources = [];
+        foreach (AtlasCopyPlanEntry planEntry in copyPlan.Entries)
+        {
+            if (StringComparer.Ordinal.Equals(
+                    planEntry.ArtifactClass,
+                    AtlasIntakeContracts.SaveCopyArtifactClass))
+            {
+                AtlasManifestSaveEntry manifestEntry = saveEntries[planEntry.SourceAlias];
+                string absolutePath = Path.Combine(
+                    saveRootPaths[manifestEntry.RootAlias],
+                    manifestEntry.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+                includedSources.Add(new ResolvedCopySource(planEntry, absolutePath));
+            }
+            else
+            {
+                AtlasManifestDefinitionEntry manifestEntry =
+                    definitionEntries[planEntry.SourceAlias];
+                string absolutePath = Path.Combine(
+                    sourceRootMap.DefinitionRootPath,
+                    manifestEntry.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+                includedSources.Add(new ResolvedCopySource(planEntry, absolutePath));
+            }
+        }
+
+        return new CopyValidationContext(includedSources);
+    }
+
+    internal static async ValueTask<AtlasCopyReceiptEntry> CopySourceFileAsync(
+        ResolvedCopySource source,
+        string destinationPath,
+        AtlasIoSeams io,
+        CancellationToken cancellationToken)
+    {
+        AtlasDiscovery.ValidateExistingOrdinaryFile(source.AbsolutePath, io);
+        using Stream sourceStream = io.OpenFile(
+            source.AbsolutePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            FileOptions.SequentialScan);
+        long sourceLength = sourceStream.Length;
+        DateTimeOffset sourceLastWriteTimeUtc = io.GetLastWriteTimeUtc(source.AbsolutePath);
+
+        using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(81920);
+        long bytesCopied = 0;
+        {
+            using Stream destinationStream = io.OpenFile(
+                destinationPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                FileOptions.None);
+
+            try
+            {
+                while (true)
+                {
+                    int read = await sourceStream.ReadAsync(buffer, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (read == 0)
+                    {
+                        break;
+                    }
+
+                    bytesCopied += read;
+                    hash.AppendData(buffer, 0, read);
+                    await destinationStream.WriteAsync(
+                            buffer.AsMemory(0, read),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                await AtlasDiscovery.FlushAsync(destinationStream, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+        string sourceSha256 = Convert.ToHexStringLower(hash.GetHashAndReset());
+        string destinationSha256 = HashFile(destinationPath, io, cancellationToken);
+        long destinationLength = io.GetLength(destinationPath);
+        DateTimeOffset sourceLastWriteAfter = io.GetLastWriteTimeUtc(source.AbsolutePath);
+        if (bytesCopied != sourceLength
+            || destinationLength != sourceLength
+            || !StringComparer.Ordinal.Equals(sourceSha256, destinationSha256)
+            || sourceStream.Length != sourceLength
+            || sourceLastWriteAfter != sourceLastWriteTimeUtc)
+        {
+            throw new AtlasSafetyException("The copied file did not remain stable.");
+        }
+
+        io.SetAttributes(
+            destinationPath,
+            io.GetAttributes(destinationPath) | FileAttributes.ReadOnly);
+        return new AtlasCopyReceiptEntry
+        {
+            DestinationArtifactAlias = source.CopyPlanEntry.DestinationArtifactAlias,
+            SourceAlias = source.CopyPlanEntry.SourceAlias,
+            ArtifactClass = source.CopyPlanEntry.ArtifactClass,
+            DestinationRelativePath = source.CopyPlanEntry.DestinationRelativePath,
+            SourceLength = sourceLength,
+            SourceLastWriteTimeUtc = sourceLastWriteTimeUtc,
+            SourceSha256 = sourceSha256,
+        };
+    }
+
+    internal static async ValueTask<string> HashTrackedSourceAsync(
+        string absolutePath,
+        AtlasIoSeams io,
+        CancellationToken cancellationToken)
+    {
+        AtlasDiscovery.ValidateExistingOrdinaryFile(absolutePath, io);
+        using Stream sourceStream = io.OpenFile(
+            absolutePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            FileOptions.SequentialScan);
+        long sourceLength = sourceStream.Length;
+        DateTimeOffset sourceLastWriteTimeUtc = io.GetLastWriteTimeUtc(absolutePath);
+        using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(81920);
+        long bytesRead = 0;
+        try
+        {
+            while (true)
+            {
+                int read = await sourceStream.ReadAsync(buffer, cancellationToken)
+                    .ConfigureAwait(false);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                bytesRead += read;
+                hash.AppendData(buffer, 0, read);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        if (bytesRead != sourceLength
+            || sourceStream.Length != sourceLength
+            || io.GetLastWriteTimeUtc(absolutePath) != sourceLastWriteTimeUtc)
+        {
+            throw new AtlasSafetyException("The tracked source changed while it was hashed.");
+        }
+
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
+    }
+
+    internal static string HashFile(
+        string absolutePath,
+        AtlasIoSeams io,
+        CancellationToken cancellationToken)
+    {
+        using Stream stream = io.OpenFile(
+            absolutePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            FileOptions.SequentialScan);
+        return Convert.ToHexStringLower(SHA256.HashData(stream));
+    }
+
+    internal static async ValueTask<AtlasLoadedDocument<AtlasCopyReceiptDocument>> LoadReceiptAsync(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        return await AtlasIntakeContracts.ReadCopyReceiptAsync(path, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static PhaseInventoryContext ResolvePhaseInventoryFromCurrent(
+        AtlasLoadedDocument<AtlasPrivateArtifactInventoryDocument> priorInventory) =>
+        new(priorInventory, priorInventory);
+
+    internal static async ValueTask<PhaseInventoryContext> LoadPhaseInventoryAsync(
+        string inventoryPath,
+        string backupPath,
+        string expectedPriorSha256,
+        AtlasIoSeams io,
+        CancellationToken cancellationToken)
+    {
+        AtlasLoadedDocument<AtlasPrivateArtifactInventoryDocument> currentInventory =
+            await AtlasIntakeContracts.ReadInventoryAsync(inventoryPath, cancellationToken)
+                .ConfigureAwait(false);
+        if (StringComparer.Ordinal.Equals(currentInventory.Sha256, expectedPriorSha256))
+        {
+            return new PhaseInventoryContext(currentInventory, currentInventory);
+        }
+
+        if (!io.FileExists(backupPath))
+        {
+            throw new AtlasSafetyException(
+                "The inventory digest does not match the expected state.");
+        }
+
+        AtlasLoadedDocument<AtlasPrivateArtifactInventoryDocument> backupInventory =
+            await AtlasIntakeContracts.ReadInventoryAsync(backupPath, cancellationToken)
+                .ConfigureAwait(false);
+        if (!StringComparer.Ordinal.Equals(backupInventory.Sha256, expectedPriorSha256))
+        {
+            throw new AtlasSafetyException("The inventory backup does not match the prior state.");
+        }
+
+        return new PhaseInventoryContext(backupInventory, currentInventory);
+    }
+
+    internal static CopyPhaseAliases ResolveCopyAliases(
+        PhaseInventoryContext inventoryContext,
+        AtlasCopyPlanDocument copyPlan)
+    {
+        string? requestAlias = TryFindPhaseAlias(
+            inventoryContext.CurrentInventory.Document,
+            AtlasIntakeContracts.CopyRequestPurpose);
+        string? receiptAlias = TryFindPhaseAlias(
+            inventoryContext.CurrentInventory.Document,
+            AtlasIntakeContracts.CopyReceiptPurpose);
+        string? stateAlias = TryFindPhaseAlias(
+            inventoryContext.CurrentInventory.Document,
+            AtlasIntakeContracts.State3Purpose);
+        string? backupAlias = TryFindPhaseAlias(
+            inventoryContext.CurrentInventory.Document,
+            AtlasIntakeContracts.QualifiedInventoryBackupPurpose);
+        if (requestAlias is not null
+            || receiptAlias is not null
+            || stateAlias is not null
+            || backupAlias is not null)
+        {
+            if (requestAlias is null
+                || receiptAlias is null
+                || stateAlias is null
+                || backupAlias is null)
+            {
+                throw new AtlasSafetyException("The qualified inventory is incomplete.");
+            }
+
+            return new CopyPhaseAliases(requestAlias, receiptAlias, stateAlias, backupAlias);
+        }
+
+        int nextOrdinal = Math.Max(
+            AtlasDiscovery.GetMaximumArtifactOrdinal(inventoryContext.PriorInventory.Document),
+            AtlasDiscovery.GetMaximumArtifactOrdinal(copyPlan))
+            + 1;
+        return new CopyPhaseAliases(
+            AtlasIntakeContracts.FormatArtifactAlias(nextOrdinal++),
+            AtlasIntakeContracts.FormatArtifactAlias(nextOrdinal++),
+            AtlasIntakeContracts.FormatArtifactAlias(nextOrdinal++),
+            AtlasIntakeContracts.FormatArtifactAlias(nextOrdinal));
+    }
+
+    internal static string? TryFindPhaseAlias(
+        AtlasPrivateArtifactInventoryDocument inventory,
+        string purpose)
+    {
+        return inventory.Artifacts
+            .SingleOrDefault(artifact => StringComparer.Ordinal.Equals(artifact.Purpose, purpose))
+            ?.ArtifactAlias;
+    }
+
+    internal static void TryDeleteOwnedIncompleteDirectory(string path, AtlasIoSeams io)
+    {
+        try
+        {
+            AtlasDiscovery.ValidateExistingOrdinaryDirectory(path, io);
+            io.DeleteDirectory(path, true);
+        }
+        catch
+        {
+        }
+    }
+}
+
+internal sealed record ResolvedCopySource(AtlasCopyPlanEntry CopyPlanEntry, string AbsolutePath);
+
+internal sealed record CopyValidationContext(IReadOnlyList<ResolvedCopySource> IncludedSources);
+
+internal sealed record CopyPhaseAliases(
+    string RequestAlias,
+    string ReceiptAlias,
+    string StateAlias,
+    string InventoryBackupAlias);
+
+internal sealed record PhaseInventoryContext(
+    AtlasLoadedDocument<AtlasPrivateArtifactInventoryDocument> PriorInventory,
+    AtlasLoadedDocument<AtlasPrivateArtifactInventoryDocument> CurrentInventory);
