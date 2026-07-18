@@ -25,6 +25,7 @@ public static class AtlasDiscovery
         AtlasLoadedDocument<AtlasIntakeDiscoveryRequest> loadedRequest =
             await AtlasIntakeContracts.ReadDiscoveryRequestAsync(
                     requestPath,
+                    io,
                     cancellationToken)
                 .ConfigureAwait(false);
         AtlasIntakeDiscoveryRequest request = loadedRequest.Document;
@@ -196,6 +197,7 @@ public static class AtlasDiscovery
         AtlasLoadedDocument<AtlasIntakeConfirmationRequest> loadedRequest =
             await AtlasIntakeContracts.ReadConfirmationRequestAsync(
                     requestPath,
+                    io,
                     cancellationToken)
                 .ConfigureAwait(false);
         AtlasIntakeConfirmationRequest request = loadedRequest.Document;
@@ -2455,17 +2457,57 @@ public static class AtlasDiscovery
         string purpose)
     {
         AtlasPrivateArtifactEntry[] matches = inventory.Artifacts
-            .Where(artifact =>
-                StringComparer.Ordinal.Equals(
-                    artifact.ArtifactClass,
-                    AtlasIntakeContracts.LiveDiscoveryArtifactClass)
-                && StringComparer.Ordinal.Equals(artifact.Purpose, purpose))
+            .Where(artifact => StringComparer.Ordinal.Equals(artifact.Purpose, purpose))
             .ToArray();
-        return matches.Length switch
+        if (matches.Length != 1)
         {
-            1 => matches[0].ArtifactAlias,
-            _ => throw new AtlasSafetyException("The manifest artifact alias is ambiguous."),
-        };
+            throw new AtlasSafetyException("The manifest artifact row is invalid.");
+        }
+
+        AtlasPrivateArtifactEntry match = matches[0];
+        if (StringComparer.Ordinal.Equals(
+                purpose,
+                AtlasIntakeContracts.ManifestRevision3Purpose))
+        {
+            ValidateBaselineManifestArtifact(match);
+        }
+        else if (!StringComparer.Ordinal.Equals(
+                     match.ArtifactClass,
+                     AtlasIntakeContracts.LiveDiscoveryArtifactClass))
+        {
+            throw new AtlasSafetyException("The manifest artifact row is invalid.");
+        }
+
+        return match.ArtifactAlias;
+    }
+
+    private static void ValidateBaselineManifestArtifact(AtlasPrivateArtifactEntry artifact)
+    {
+        if (!StringComparer.Ordinal.Equals(
+                artifact.ArtifactClass,
+                AtlasIntakeContracts.LiveDiscoveryArtifactClass)
+            || !StringComparer.Ordinal.Equals(
+                artifact.Purpose,
+                AtlasIntakeContracts.ManifestRevision3Purpose)
+            || !StringComparer.Ordinal.Equals(
+                artifact.CustodianRole,
+                AtlasIntakeContracts.ProjectLeaderRole)
+            || artifact.LineageAliases.Length != 0
+            || !StringComparer.Ordinal.Equals(artifact.LastUseMilestone, "A2")
+            || !StringComparer.Ordinal.Equals(artifact.ExpiryCondition, "after:A2")
+            || !StringComparer.Ordinal.Equals(
+                artifact.PlannedDisposition,
+                AtlasIntakeContracts.RetainPrivateDisposition)
+            || !StringComparer.Ordinal.Equals(
+                artifact.Status,
+                AtlasIntakeContracts.PresentArtifactStatus)
+            || artifact.Qualification is not null
+            || !StringComparer.Ordinal.Equals(
+                artifact.VerificationMethod,
+                $"{AtlasIntakeContracts.IntakeManifestSchemaVersion};r000003"))
+        {
+            throw new AtlasSafetyException("The baseline manifest artifact row is invalid.");
+        }
     }
 
     internal static int GetMaximumArtifactOrdinal(
@@ -3089,6 +3131,11 @@ public static class AtlasDiscovery
         IEnumerable<string> excludedDirectories,
         AtlasIoSeams io)
     {
+        foreach (AtlasManifestDefinitionGroup definitionGroup in definitionGroups)
+        {
+            _ = SplitDefinitionSelectionRule(definitionGroup.SelectionRule);
+        }
+
         List<AtlasManifestDefinitionEntry> results = [];
         HashSet<string> seenPaths = new(StringComparer.OrdinalIgnoreCase);
         string[] excludedRoots = excludedDirectories
@@ -3168,7 +3215,6 @@ public static class AtlasDiscovery
         IReadOnlyList<AtlasManifestDefinitionGroup> definitionGroups,
         string relativePath)
     {
-        AtlasManifestDefinitionGroup? match = null;
         foreach (AtlasManifestDefinitionGroup definitionGroup in definitionGroups)
         {
             if (!MatchesDefinitionSelectionRule(definitionGroup.SelectionRule, relativePath))
@@ -3176,15 +3222,10 @@ public static class AtlasDiscovery
                 continue;
             }
 
-            if (match is not null)
-            {
-                throw new AtlasSafetyException("The definition selection rules are ambiguous.");
-            }
-
-            match = definitionGroup;
+            return definitionGroup;
         }
 
-        return match;
+        return null;
     }
 
     private static bool MatchesDefinitionSelectionRule(string selectionRule, string relativePath)
@@ -3207,7 +3248,80 @@ public static class AtlasDiscovery
             throw new AtlasSafetyException("The definition selection rule is invalid.");
         }
 
+        foreach (string segment in segments)
+        {
+            ValidateDefinitionSelectionRuleSegment(segment);
+        }
+
         return segments;
+    }
+
+    private static void ValidateDefinitionSelectionRuleSegment(string segment)
+    {
+        if (StringComparer.Ordinal.Equals(segment, "**"))
+        {
+            return;
+        }
+
+        if (segment.Contains("**", StringComparison.Ordinal))
+        {
+            throw new AtlasSafetyException("The definition selection rule is invalid.");
+        }
+
+        bool inBrace = false;
+        bool sawBraceContent = false;
+        bool lastWasComma = false;
+        foreach (char character in segment)
+        {
+            if (character is '?' or '[' or ']')
+            {
+                throw new AtlasSafetyException("The definition selection rule is invalid.");
+            }
+
+            if (character == '{')
+            {
+                if (inBrace)
+                {
+                    throw new AtlasSafetyException("The definition selection rule is invalid.");
+                }
+
+                inBrace = true;
+                sawBraceContent = false;
+                lastWasComma = false;
+                continue;
+            }
+
+            if (character == '}')
+            {
+                if (!inBrace || !sawBraceContent || lastWasComma)
+                {
+                    throw new AtlasSafetyException("The definition selection rule is invalid.");
+                }
+
+                inBrace = false;
+                continue;
+            }
+
+            if (character == ',')
+            {
+                if (!inBrace || !sawBraceContent)
+                {
+                    throw new AtlasSafetyException("The definition selection rule is invalid.");
+                }
+
+                sawBraceContent = false;
+                lastWasComma = true;
+                continue;
+            }
+
+            sawBraceContent = true;
+            lastWasComma = false;
+        }
+
+        if (inBrace)
+        {
+            throw new AtlasSafetyException("The definition selection rule is invalid.");
+        }
     }
 
     private static bool MatchesDefinitionSelectionRule(
@@ -3264,6 +3378,59 @@ public static class AtlasDiscovery
     }
 
     private static bool MatchesDefinitionSelectionRuleSegment(
+        string ruleSegment,
+        string pathSegment)
+    {
+        foreach (string expandedSegment in ExpandDefinitionSelectionRuleSegment(ruleSegment))
+        {
+            if (MatchesDefinitionSelectionRulePattern(expandedSegment, pathSegment))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static List<string> ExpandDefinitionSelectionRuleSegment(string ruleSegment)
+    {
+        List<string> expansions = [string.Empty];
+        for (int index = 0; index < ruleSegment.Length; index++)
+        {
+            if (ruleSegment[index] != '{')
+            {
+                for (int expansionIndex = 0; expansionIndex < expansions.Count; expansionIndex++)
+                {
+                    expansions[expansionIndex] += ruleSegment[index];
+                }
+
+                continue;
+            }
+
+            int closeIndex = ruleSegment.IndexOf('}', index + 1);
+            if (closeIndex < 0)
+            {
+                throw new AtlasSafetyException("The definition selection rule is invalid.");
+            }
+
+            string[] options = ruleSegment[(index + 1)..closeIndex]
+                .Split(',', StringSplitOptions.None);
+            if (options.Any(static option => option.Length == 0))
+            {
+                throw new AtlasSafetyException("The definition selection rule is invalid.");
+            }
+
+            expansions =
+            [
+                .. expansions.SelectMany(prefix => options.Select(option => prefix + option)),
+            ];
+            index = closeIndex;
+        }
+
+        return expansions;
+    }
+
+    private static bool MatchesDefinitionSelectionRulePattern(
         string ruleSegment,
         string pathSegment)
     {

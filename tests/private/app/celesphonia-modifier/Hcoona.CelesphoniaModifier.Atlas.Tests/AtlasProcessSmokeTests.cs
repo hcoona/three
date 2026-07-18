@@ -110,10 +110,41 @@ public sealed class AtlasProcessSmokeTests
     }
 
     [Fact]
-    public async Task IoProcessWritesExactDiagnostic()
+    public async Task MissingRequestProcessUsesInvalidDiagnostic()
     {
-        string missingRequestPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json");
+        string missingRequestPath = Path.Combine(
+            Path.GetTempPath(),
+            "atlas-a2-missing-request",
+            Guid.NewGuid().ToString("N"),
+            "src",
+            "private",
+            "app",
+            "celesphonia-modifier",
+            ".private",
+            "atlas-v0",
+            AtlasSyntheticWorkspace.SurveyAlias,
+            AtlasIntakeContracts.GetCanonicalRequestRelativePath("discover")
+                .Replace('/', Path.DirectorySeparatorChar));
         ProcessResult result = await RunAsync("intake-discover", missingRequestPath);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Empty(result.StandardOutput);
+        Assert.Equal("Invalid arguments.\n"u8.ToArray(), result.StandardError);
+    }
+
+    [Fact]
+    public async Task LockedValidatedRequestProcessWritesExactIoDiagnostic()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        using FileStream lockStream = new(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            FileMode.Open,
+            FileAccess.ReadWrite,
+            FileShare.None);
+
+        ProcessResult result = await RunAsync(
+            "intake-discover",
+            workspace.Layout.CanonicalDiscoverRequestPath);
 
         Assert.Equal(4, result.ExitCode);
         Assert.Empty(result.StandardOutput);

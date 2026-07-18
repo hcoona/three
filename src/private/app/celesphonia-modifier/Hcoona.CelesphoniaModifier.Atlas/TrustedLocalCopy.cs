@@ -19,7 +19,10 @@ public static class TrustedLocalCopy
         ArgumentNullException.ThrowIfNull(io);
 
         AtlasLoadedDocument<AtlasIntakeCopyRequest> loadedRequest =
-            await AtlasIntakeContracts.ReadCopyRequestAsync(requestPath, cancellationToken)
+            await AtlasIntakeContracts.ReadCopyRequestAsync(
+                    requestPath,
+                    io,
+                    cancellationToken)
                 .ConfigureAwait(false);
         AtlasIntakeCopyRequest request = loadedRequest.Document;
         AtlasWorkspaceLayout layout = AtlasIntakeContracts.CreateWorkspaceLayout(
@@ -344,8 +347,11 @@ public static class TrustedLocalCopy
         {
             if (!renamedToFinal && io.DirectoryExists(layout.CanonicalIncompleteCopyPath))
             {
-                bool preserveRecoverableIncomplete =
-                    await CanRecoverIncompleteCopyDirectoryAsync(
+                CancellationToken recoveryToken = cancellationToken.IsCancellationRequested
+                    ? CancellationToken.None
+                    : cancellationToken;
+                IncompleteCopyEvidenceState incompleteState =
+                    await ClassifyIncompleteCopyDirectoryAsync(
                             loadedRequest.Sha256,
                             request,
                             layout,
@@ -356,9 +362,9 @@ public static class TrustedLocalCopy
                             aliases,
                             incompleteReceiptStagingPath,
                             io,
-                            cancellationToken)
+                            recoveryToken)
                         .ConfigureAwait(false);
-                if (!preserveRecoverableIncomplete)
+                if (incompleteState == IncompleteCopyEvidenceState.PartialOwned)
                 {
                     TryDeleteOwnedIncompleteDirectory(layout.CanonicalIncompleteCopyPath, io);
                 }
@@ -530,7 +536,8 @@ public static class TrustedLocalCopy
         }
     }
 
-    internal static async ValueTask<bool> CanRecoverIncompleteCopyDirectoryAsync(
+    internal static async ValueTask<IncompleteCopyEvidenceState>
+        ClassifyIncompleteCopyDirectoryAsync(
         string requestSha256,
         AtlasIntakeCopyRequest request,
         AtlasWorkspaceLayout layout,
@@ -551,9 +558,24 @@ public static class TrustedLocalCopy
                     incompleteReceiptStagingPath,
                     io))
             {
-                return false;
+                return IncompleteCopyEvidenceState.PartialOwned;
             }
+        }
+        catch (OperationCanceledException)
+        {
+            return IncompleteCopyEvidenceState.Canceled;
+        }
+        catch (Exception exception) when (IsIncompleteEvidenceIoFailure(exception))
+        {
+            return IncompleteCopyEvidenceState.IoIndeterminate;
+        }
+        catch (AtlasSafetyException)
+        {
+            return IncompleteCopyEvidenceState.Complete;
+        }
 
+        try
+        {
             AtlasLoadedDocument<AtlasCopyReceiptDocument> incompleteReceipt =
                 await LoadReceiptAsync(incompleteReceiptStagingPath, cancellationToken)
                     .ConfigureAwait(false);
@@ -571,11 +593,19 @@ public static class TrustedLocalCopy
                 incompleteReceipt.Document,
                 io,
                 cancellationToken);
-            return true;
+            return IncompleteCopyEvidenceState.Recoverable;
         }
-        catch
+        catch (OperationCanceledException)
         {
-            return false;
+            return IncompleteCopyEvidenceState.Canceled;
+        }
+        catch (Exception exception) when (IsIncompleteEvidenceIoFailure(exception))
+        {
+            return IncompleteCopyEvidenceState.IoIndeterminate;
+        }
+        catch (AtlasSafetyException)
+        {
+            return IncompleteCopyEvidenceState.Complete;
         }
     }
 
@@ -1412,6 +1442,12 @@ public static class TrustedLocalCopy
                 .ConfigureAwait(false);
         if (StringComparer.Ordinal.Equals(currentInventory.Sha256, expectedPriorSha256))
         {
+            if (io.FileExists(backupPath))
+            {
+                throw new AtlasSafetyException(
+                    "The prior inventory must not retain a phase backup.");
+            }
+
             return new PhaseInventoryContext(currentInventory, currentInventory);
         }
 
@@ -1491,6 +1527,12 @@ public static class TrustedLocalCopy
         };
     }
 
+    private static bool IsIncompleteEvidenceIoFailure(Exception exception) =>
+        exception is IOException
+            or UnauthorizedAccessException
+            or ObjectDisposedException
+            or NotSupportedException;
+
     internal static void TryDeleteOwnedIncompleteDirectory(string path, AtlasIoSeams io)
     {
         try
@@ -1513,6 +1555,15 @@ internal sealed record CopyPhaseAliases(
     string ReceiptAlias,
     string StateAlias,
     string InventoryBackupAlias);
+
+internal enum IncompleteCopyEvidenceState
+{
+    PartialOwned,
+    Complete,
+    Recoverable,
+    Canceled,
+    IoIndeterminate,
+}
 
 internal sealed record PhaseInventoryContext(
     AtlasLoadedDocument<AtlasPrivateArtifactInventoryDocument> PriorInventory,

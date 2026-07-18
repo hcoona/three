@@ -54,6 +54,35 @@ public sealed class TrustedLocalCopyTests
     }
 
     [Fact]
+    public async Task CopyAsyncRejectsPreExistingInventoryBackupBeforeSourceAccess()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareApprovedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        await File.WriteAllBytesAsync(
+            workspace.Layout.CanonicalQualifiedInventoryBackupPath,
+            await File.ReadAllBytesAsync(
+                workspace.Layout.CanonicalInventoryPath,
+                TestContext.Current.CancellationToken),
+            TestContext.Current.CancellationToken);
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            openFile: (path, mode, access, share, options) =>
+                mode == FileMode.Open
+                    && access == FileAccess.Read
+                    && AtlasDiscovery.ContainsPath(workspace.GameRootPath, path)
+                    ? throw new InvalidOperationException("Source access is not expected.")
+                    : AtlasIoSeams.Default.OpenFile(path, mode, access, share, options));
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => TrustedLocalCopy.CopyAsync(
+                workspace.Layout.CanonicalCopyRequestPath,
+                io,
+                TestContext.Current.CancellationToken).AsTask());
+        Assert.False(Directory.Exists(workspace.Layout.CanonicalIncompleteCopyPath));
+        Assert.False(Directory.Exists(workspace.Layout.CanonicalFinalCopyPath));
+    }
+
+    [Fact]
     public async Task
         ValidateCurrentSourcesAgainstManifestRejectsInactiveReparseRootBeforeEnumeration()
     {
@@ -202,6 +231,53 @@ public sealed class TrustedLocalCopyTests
     }
 
     [Fact]
+    public async Task
+        CopyAsyncPreservesRecoverableIncompleteDirectoryWhenCallerCanceledBeforeRename()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareApprovedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        using CancellationTokenSource source = new();
+        bool cancelled = false;
+        AtlasIoSeams failingIo = AtlasTestSupport.CreateIo(
+            moveDirectory: (currentSource, destination) =>
+            {
+                if (!cancelled
+                    && AtlasIntakeContracts.PathEquals(
+                        destination,
+                        workspace.Layout.CanonicalFinalCopyPath))
+                {
+                    cancelled = true;
+                    source.Cancel();
+                    throw new OperationCanceledException(source.Token);
+                }
+
+                AtlasIoSeams.Default.MoveDirectory(currentSource, destination);
+            });
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => TrustedLocalCopy.CopyAsync(
+                workspace.Layout.CanonicalCopyRequestPath,
+                failingIo,
+                source.Token).AsTask());
+
+        Assert.True(Directory.Exists(workspace.Layout.CanonicalIncompleteCopyPath));
+        Assert.False(Directory.Exists(workspace.Layout.CanonicalFinalCopyPath));
+
+        int liveSourceOpenCount = 0;
+        await TrustedLocalCopy.CopyAsync(
+            workspace.Layout.CanonicalCopyRequestPath,
+            AtlasTestSupport.CreateSourceReadCountingIo(
+                workspace,
+                () => liveSourceOpenCount++),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, liveSourceOpenCount);
+        Assert.False(Directory.Exists(workspace.Layout.CanonicalIncompleteCopyPath));
+        Assert.True(File.Exists(workspace.Layout.CanonicalQualifiedStatePath));
+    }
+
+    [Fact]
     public async Task CopyAsyncRecoversAfterRenameWithoutReopeningSources()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
@@ -274,6 +350,53 @@ public sealed class TrustedLocalCopyTests
         Assert.True(Directory.Exists(workspace.Layout.CanonicalFinalCopyPath));
         Assert.False(File.Exists(workspace.Layout.CanonicalQualifiedStatePath));
         Assert.False(File.Exists(workspace.Layout.CanonicalCopyReceiptPath));
+
+        int liveSourceOpenCount = 0;
+        await TrustedLocalCopy.CopyAsync(
+            workspace.Layout.CanonicalCopyRequestPath,
+            AtlasTestSupport.CreateSourceReadCountingIo(
+                workspace,
+                () => liveSourceOpenCount++),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, liveSourceOpenCount);
+        Assert.True(File.Exists(workspace.Layout.CanonicalCopyReceiptPath));
+        Assert.True(File.Exists(workspace.Layout.CanonicalQualifiedStatePath));
+    }
+
+    [Fact]
+    public async Task CopyAsyncRecoversAfterCancellationDuringReceiptPromotion()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareApprovedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        using CancellationTokenSource source = new();
+        bool cancelled = false;
+        AtlasIoSeams failingIo = AtlasTestSupport.CreateIo(
+            moveFile: (currentSource, destination) =>
+            {
+                if (!cancelled
+                    && AtlasIntakeContracts.PathEquals(
+                        destination,
+                        workspace.Layout.CanonicalCopyReceiptPath))
+                {
+                    cancelled = true;
+                    source.Cancel();
+                    throw new OperationCanceledException(source.Token);
+                }
+
+                AtlasIoSeams.Default.MoveFile(currentSource, destination);
+            });
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => TrustedLocalCopy.CopyAsync(
+                workspace.Layout.CanonicalCopyRequestPath,
+                failingIo,
+                source.Token).AsTask());
+
+        Assert.True(Directory.Exists(workspace.Layout.CanonicalFinalCopyPath));
+        Assert.False(File.Exists(workspace.Layout.CanonicalCopyReceiptPath));
+        Assert.False(File.Exists(workspace.Layout.CanonicalQualifiedStatePath));
 
         int liveSourceOpenCount = 0;
         await TrustedLocalCopy.CopyAsync(
@@ -631,6 +754,91 @@ public sealed class TrustedLocalCopyTests
                 workspace.Layout.CanonicalCopyRequestPath,
                 failingIo,
                 TestContext.Current.CancellationToken).AsTask());
+    }
+
+    [Fact]
+    public async Task CopyAsyncPreservesOriginalFailureWhenOwnedIncompleteDeleteFails()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareApprovedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        string priorInventorySha256 =
+            AtlasSyntheticWorkspace.ComputeSha256(workspace.Layout.CanonicalInventoryPath);
+        int trackedSourceOpenCount = 0;
+        AtlasIoSeams failingIo = AtlasTestSupport.CreateIo(
+            openFile: (path, mode, access, share, options) =>
+            {
+                if (mode == FileMode.Open
+                    && access == FileAccess.Read
+                    && AtlasDiscovery.ContainsPath(workspace.GameRootPath, path))
+                {
+                    trackedSourceOpenCount++;
+                    if (trackedSourceOpenCount == 2)
+                    {
+                        throw new IOException("synthetic tracked source failure");
+                    }
+                }
+
+                return AtlasIoSeams.Default.OpenFile(path, mode, access, share, options);
+            },
+            deleteDirectory: (path, recursive) =>
+            {
+                if (AtlasIntakeContracts.PathEquals(
+                        path,
+                        workspace.Layout.CanonicalIncompleteCopyPath))
+                {
+                    throw new IOException("synthetic incomplete delete failure");
+                }
+
+                AtlasIoSeams.Default.DeleteDirectory(path, recursive);
+            });
+
+        IOException exception = await Assert.ThrowsAsync<IOException>(
+            () => TrustedLocalCopy.CopyAsync(
+                workspace.Layout.CanonicalCopyRequestPath,
+                failingIo,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal("synthetic tracked source failure", exception.Message);
+        Assert.True(Directory.Exists(workspace.Layout.CanonicalIncompleteCopyPath));
+        Assert.False(Directory.Exists(workspace.Layout.CanonicalFinalCopyPath));
+        Assert.False(File.Exists(workspace.Layout.CanonicalCopyReceiptPath));
+        Assert.False(File.Exists(workspace.Layout.CanonicalQualifiedStatePath));
+        Assert.False(File.Exists(workspace.Layout.CanonicalQualifiedInventoryBackupPath));
+        Assert.Equal(
+            priorInventorySha256,
+            AtlasSyntheticWorkspace.ComputeSha256(workspace.Layout.CanonicalInventoryPath));
+        Assert.True(File.Exists(Path.Combine(
+            workspace.DefinitionRootPath,
+            "www",
+            "data",
+            "definition-000001.json")));
+
+        AtlasLoadedDocument<AtlasCopyPlanDocument> copyPlan =
+            await AtlasIntakeContracts.ReadCopyPlanAsync(
+                workspace.Layout.CanonicalCopyPlanPath,
+                TestContext.Current.CancellationToken);
+        string incompleteReceiptPath = Path.Combine(
+            workspace.Layout.CanonicalIncompleteCopyPath,
+            Path.GetFileName(AtlasDiscovery.GetStagingPath(
+                workspace.Layout.CanonicalCopyReceiptPath,
+                AtlasIntakeContracts.QualifiedPhase)));
+        Assert.False(TrustedLocalCopy.HasCompleteCopySet(
+            workspace.Layout.CanonicalIncompleteCopyPath,
+            copyPlan.Document,
+            incompleteReceiptPath,
+            AtlasIoSeams.Default));
+
+        int liveSourceOpenCount = 0;
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => TrustedLocalCopy.CopyAsync(
+                workspace.Layout.CanonicalCopyRequestPath,
+                AtlasTestSupport.CreateSourceReadCountingIo(
+                    workspace,
+                    () => liveSourceOpenCount++),
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(0, liveSourceOpenCount);
     }
 
     [Fact]

@@ -8,6 +8,19 @@ namespace Hcoona.CelesphoniaModifier.Atlas.Tests;
 
 public sealed class AtlasIntakeContractTests
 {
+    public static TheoryData<string> RequestOperationNames
+    {
+        get
+        {
+            TheoryData<string> data = [];
+            data.Add("discover");
+            data.Add("confirm");
+            data.Add("copy");
+            data.Add("cleanup-preflight");
+            return data;
+        }
+    }
+
     [Fact]
     public async Task DiscoveryRequestRejectsDuplicatePropertyOnly()
     {
@@ -142,6 +155,94 @@ public sealed class AtlasIntakeContractTests
 
         Assert.Throws<AtlasSafetyException>(() =>
             AtlasDiscovery.ValidateExistingOrdinaryDirectory(@"Q:\synthetic", removableIo));
+    }
+
+    [Theory]
+    [InlineData("discover.json")]
+    [InlineData(@"\\server\share\discover.json")]
+    [InlineData(@"\\?\Q:\discover.json")]
+    [InlineData(@"Q:\invalid:path\discover.json")]
+    public async Task DiscoveryRequestRejectsInvalidPathSyntaxBeforeReading(string requestPath)
+    {
+        int readCount = 0;
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            readAllBytesAsync: (_, _) =>
+            {
+                readCount++;
+                return ValueTask.FromResult(Array.Empty<byte>());
+            });
+
+        await Assert.ThrowsAsync<AtlasRequestException>(
+            () => AtlasIntakeContracts.ReadDiscoveryRequestAsync(
+                requestPath,
+                io,
+                TestContext.Current.CancellationToken).AsTask());
+        Assert.Equal(0, readCount);
+    }
+
+    [Fact]
+    public async Task DiscoveryRequestRejectsDirectoryAndReparsePathBeforeReading()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        File.Delete(workspace.Layout.CanonicalDiscoverRequestPath);
+        Directory.CreateDirectory(workspace.Layout.CanonicalDiscoverRequestPath);
+        int readCount = 0;
+        AtlasIoSeams directoryIo = AtlasTestSupport.CreateIo(
+            readAllBytesAsync: (_, _) =>
+            {
+                readCount++;
+                return ValueTask.FromResult(Array.Empty<byte>());
+            });
+
+        await Assert.ThrowsAsync<AtlasRequestException>(
+            () => AtlasIntakeContracts.ReadDiscoveryRequestAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                directoryIo,
+                TestContext.Current.CancellationToken).AsTask());
+        Assert.Equal(0, readCount);
+
+        Directory.Delete(workspace.Layout.CanonicalDiscoverRequestPath);
+        workspace.WriteRequest(workspace.CreateDiscoveryRequest());
+        AtlasIoSeams reparseIo = AtlasTestSupport.CreateIo(
+            readAllBytesAsync: (_, _) =>
+            {
+                readCount++;
+                return ValueTask.FromResult(Array.Empty<byte>());
+            },
+            getAttributes: path =>
+                AtlasIntakeContracts.PathEquals(path, workspace.Layout.CanonicalDiscoverRequestPath)
+                    ? FileAttributes.ReparsePoint
+                    : AtlasIoSeams.Default.GetAttributes(path));
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasIntakeContracts.ReadDiscoveryRequestAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                reparseIo,
+                TestContext.Current.CancellationToken).AsTask());
+        Assert.Equal(0, readCount);
+    }
+
+    [Theory]
+    [MemberData(nameof(RequestOperationNames))]
+    public async Task OperationsRejectMissingCanonicalRequestPathBeforeReading(
+        string commandName)
+    {
+        int readCount = 0;
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            readAllBytesAsync: (_, _) =>
+            {
+                readCount++;
+                return ValueTask.FromResult(Array.Empty<byte>());
+            });
+        string requestPath = CreateMissingCanonicalRequestPath(commandName);
+
+        await Assert.ThrowsAsync<AtlasRequestException>(
+            () => RunRequestOperationAsync(
+                commandName,
+                requestPath,
+                io,
+                TestContext.Current.CancellationToken).AsTask());
+        Assert.Equal(0, readCount);
     }
 
     [Fact]
@@ -1256,6 +1357,37 @@ public sealed class AtlasIntakeContractTests
             workspace.Layout.CanonicalCleanupPreflightRequestPath,
             TestContext.Current.CancellationToken);
     }
+
+    private static ValueTask RunRequestOperationAsync(
+        string commandName,
+        string requestPath,
+        AtlasIoSeams io,
+        CancellationToken cancellationToken) =>
+        commandName switch
+        {
+            "discover" => AtlasDiscovery.DiscoverAsync(requestPath, io, cancellationToken),
+            "confirm" => AtlasDiscovery.ConfirmAsync(requestPath, io, cancellationToken),
+            "copy" => TrustedLocalCopy.CopyAsync(requestPath, io, cancellationToken),
+            "cleanup-preflight" => PrivateArtifactLifecycle.CleanupPreflightAsync(
+                requestPath,
+                io,
+                cancellationToken),
+            _ => throw new InvalidOperationException("Unsupported request operation."),
+        };
+
+    private static string CreateMissingCanonicalRequestPath(string commandName) => Path.Combine(
+        Path.GetTempPath(),
+        "atlas-a2-missing-request",
+        Guid.NewGuid().ToString("N"),
+        "src",
+        "private",
+        "app",
+        "celesphonia-modifier",
+        ".private",
+        "atlas-v0",
+        AtlasSyntheticWorkspace.SurveyAlias,
+        AtlasIntakeContracts.GetCanonicalRequestRelativePath(commandName)
+            .Replace('/', Path.DirectorySeparatorChar));
 
     private sealed record StrictReaderCase(
         string Name,

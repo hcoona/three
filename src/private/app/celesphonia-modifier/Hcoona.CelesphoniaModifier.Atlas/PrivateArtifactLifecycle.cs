@@ -18,6 +18,7 @@ public static class PrivateArtifactLifecycle
         AtlasLoadedDocument<AtlasCleanupPreflightRequest> loadedRequest =
             await AtlasIntakeContracts.ReadCleanupPreflightRequestAsync(
                     requestPath,
+                    io,
                     cancellationToken)
                 .ConfigureAwait(false);
         AtlasCleanupPreflightRequest request = loadedRequest.Document;

@@ -7,6 +7,78 @@ namespace Hcoona.CelesphoniaModifier.Atlas.Tests;
 
 public sealed class AtlasDiscoveryTests
 {
+    public static TheoryData<
+        string,
+        Func<AtlasPrivateArtifactInventoryDocument, AtlasPrivateArtifactInventoryDocument>>
+        InvalidBaselineManifestRows
+    {
+        get
+        {
+            TheoryData<
+                string,
+                Func<AtlasPrivateArtifactInventoryDocument,
+                    AtlasPrivateArtifactInventoryDocument>> data = [];
+            data.Add(
+                "missing",
+                static inventory => ReplaceBaselineManifestArtifact(
+                    inventory,
+                    artifact => artifact with
+                    {
+                        Purpose = AtlasIntakeContracts.ManifestRevision4Purpose,
+                    }));
+            data.Add(
+                "wrong-class",
+                static inventory => ReplaceBaselineManifestArtifact(
+                    inventory,
+                    artifact => artifact with
+                    {
+                        ArtifactClass = AtlasIntakeContracts.PrivateEvidenceArtifactClass,
+                    }));
+            data.Add(
+                "deleted",
+                static inventory => ReplaceBaselineManifestArtifact(
+                    inventory,
+                    artifact => artifact with
+                    {
+                        Status = AtlasIntakeContracts.DeletedArtifactStatus,
+                    }));
+            data.Add(
+                "blocked",
+                static inventory => ReplaceBaselineManifestArtifact(
+                    inventory,
+                    artifact => artifact with
+                    {
+                        Status = AtlasIntakeContracts.BlockedArtifactStatus,
+                    }));
+            data.Add(
+                "wrong-disposition",
+                static inventory => ReplaceBaselineManifestArtifact(
+                    inventory,
+                    artifact => artifact with
+                    {
+                        PlannedDisposition = AtlasIntakeContracts.DeleteDisposition,
+                    }));
+            data.Add(
+                "expired",
+                static inventory => ReplaceBaselineManifestArtifact(
+                    inventory,
+                    artifact => artifact with
+                    {
+                        LastUseMilestone = "A8",
+                        ExpiryCondition = "after:A8",
+                    }));
+            data.Add(
+                "wrong-verification",
+                static inventory => ReplaceBaselineManifestArtifact(
+                    inventory,
+                    artifact => artifact with
+                    {
+                        VerificationMethod = AtlasIntakeContracts.ManualA0ValidationMethod,
+                    }));
+            return data;
+        }
+    }
+
     [Fact]
     public async Task DiscoverAsyncPublishesPendingManifestRootMapCopyPlanAndState()
     {
@@ -289,6 +361,216 @@ public sealed class AtlasDiscoveryTests
     }
 
     [Fact]
+    public void EnumerateDefinitionEntriesRejectsNovelExtensionMatchedBySingleSegmentAllRule()
+    {
+        string definitionRoot = CreateTemporaryDirectory();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(definitionRoot, "content"));
+            File.WriteAllText(
+                Path.Combine(definitionRoot, "content", "known.json"),
+                "{}",
+                Encoding.UTF8);
+            File.WriteAllText(
+                Path.Combine(definitionRoot, "content", "novel.bin"),
+                "bin",
+                Encoding.UTF8);
+            AtlasManifestDefinitionGroup[] groups =
+            [
+                CreateDefinitionGroup(
+                    "all-files",
+                    "content/*",
+                    AtlasIntakeContracts.IncludeDefinitionDecision),
+            ];
+            Dictionary<string, AtlasManifestDefinitionEntry> baselineEntries =
+                CreateDefinitionEntryMap(
+                    CreateDefinitionEntry(
+                        "definition-source-000001",
+                        "content/known.json",
+                        "all-files",
+                        AtlasIntakeContracts.IncludeDefinitionDecision));
+
+            Assert.Throws<AtlasSafetyException>(() =>
+                AtlasDiscovery.EnumerateDefinitionEntries(
+                    definitionRoot,
+                    groups,
+                    baselineEntries,
+                    [],
+                    AtlasIoSeams.Default));
+        }
+        finally
+        {
+            Directory.Delete(definitionRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void EnumerateDefinitionEntriesSupportsBraceAlternationSlashNormalizationAndCase()
+    {
+        string definitionRoot = CreateTemporaryDirectory();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(definitionRoot, "www", "nested"));
+            string[] relativePaths =
+            [
+                "www/root.json",
+                "www/root.csv",
+                "www/root.txt",
+                "www/nested/root.xml",
+                "www/nested/root.yaml",
+                "www/nested/root.yml",
+                "www/nested/root.xlsx",
+            ];
+            foreach (string relativePath in relativePaths)
+            {
+                File.WriteAllText(
+                    Path.Combine(
+                        definitionRoot,
+                        relativePath.Replace('/', Path.DirectorySeparatorChar)),
+                    relativePath,
+                    Encoding.UTF8);
+            }
+
+            AtlasManifestDefinitionGroup[] groups =
+            [
+                CreateDefinitionGroup(
+                    "auxiliary",
+                    @"www\**\*.{JSON,csv,TXT,xml,yaml,yml,xlsx}",
+                    AtlasIntakeContracts.ExcludeDefinitionDecision),
+            ];
+            Dictionary<string, AtlasManifestDefinitionEntry> baselineEntries =
+                CreateDefinitionEntryMap(
+                    relativePaths.Select((path, index) =>
+                        CreateDefinitionEntry(
+                            $"definition-source-{index + 1:000000}",
+                            path,
+                            "auxiliary",
+                            AtlasIntakeContracts.ExcludeDefinitionDecision)).ToArray());
+
+            List<AtlasManifestDefinitionEntry> entries = AtlasDiscovery.EnumerateDefinitionEntries(
+                definitionRoot,
+                groups,
+                baselineEntries,
+                [],
+                AtlasIoSeams.Default);
+
+            Assert.Equal(
+                relativePaths.OrderBy(static path => path, StringComparer.Ordinal).ToArray(),
+                entries.Select(entry => entry.RelativePath)
+                    .OrderBy(static path => path, StringComparer.Ordinal)
+                    .ToArray());
+        }
+        finally
+        {
+            Directory.Delete(definitionRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void EnumerateDefinitionEntriesUsesFirstMatchingGroupForOverlap()
+    {
+        string definitionRoot = CreateTemporaryDirectory();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(definitionRoot, "content"));
+            File.WriteAllText(
+                Path.Combine(definitionRoot, "content", "entry.json"),
+                "{}",
+                Encoding.UTF8);
+            File.WriteAllText(
+                Path.Combine(definitionRoot, "content", "entry.txt"),
+                "note",
+                Encoding.UTF8);
+            AtlasManifestDefinitionGroup[] groups =
+            [
+                CreateDefinitionGroup(
+                    "included-json",
+                    "content/*.json",
+                    AtlasIntakeContracts.IncludeDefinitionDecision),
+                CreateDefinitionGroup(
+                    "excluded-structured",
+                    "content/*.{json,txt}",
+                    AtlasIntakeContracts.ExcludeDefinitionDecision),
+            ];
+            Dictionary<string, AtlasManifestDefinitionEntry> baselineEntries =
+                CreateDefinitionEntryMap(
+                    CreateDefinitionEntry(
+                        "definition-source-000001",
+                        "content/entry.json",
+                        "included-json",
+                        AtlasIntakeContracts.IncludeDefinitionDecision),
+                    CreateDefinitionEntry(
+                        "definition-source-000002",
+                        "content/entry.txt",
+                        "excluded-structured",
+                        AtlasIntakeContracts.ExcludeDefinitionDecision));
+
+            List<AtlasManifestDefinitionEntry> entries = AtlasDiscovery.EnumerateDefinitionEntries(
+                definitionRoot,
+                groups,
+                baselineEntries,
+                [],
+                AtlasIoSeams.Default);
+
+            Assert.Equal(2, entries.Count);
+            Assert.Equal(
+                "included-json",
+                entries.Single(entry => entry.RelativePath == "content/entry.json").GroupId);
+            Assert.Equal(
+                "excluded-structured",
+                entries.Single(entry => entry.RelativePath == "content/entry.txt").GroupId);
+        }
+        finally
+        {
+            Directory.Delete(definitionRoot, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("content/***.json")]
+    [InlineData("content/?.json")]
+    [InlineData("content/*.{json,}")]
+    [InlineData("content/*.{json,txt")]
+    public void EnumerateDefinitionEntriesRejectsInvalidSelectionRuleGrammar(string selectionRule)
+    {
+        string definitionRoot = CreateTemporaryDirectory();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(definitionRoot, "content"));
+            File.WriteAllText(
+                Path.Combine(definitionRoot, "content", "entry.json"),
+                "{}",
+                Encoding.UTF8);
+            AtlasManifestDefinitionGroup[] groups =
+            [
+                CreateDefinitionGroup(
+                    "invalid",
+                    selectionRule,
+                    AtlasIntakeContracts.IncludeDefinitionDecision),
+            ];
+            Dictionary<string, AtlasManifestDefinitionEntry> baselineEntries =
+                CreateDefinitionEntryMap(
+                    CreateDefinitionEntry(
+                        "definition-source-000001",
+                        "content/entry.json",
+                        "invalid",
+                        AtlasIntakeContracts.IncludeDefinitionDecision));
+
+            Assert.Throws<AtlasSafetyException>(() =>
+                AtlasDiscovery.EnumerateDefinitionEntries(
+                    definitionRoot,
+                    groups,
+                    baselineEntries,
+                    [],
+                    AtlasIoSeams.Default));
+        }
+        finally
+        {
+            Directory.Delete(definitionRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task DiscoverAsyncRejectsUnexpectedSurveyAliasInBaselineManifest()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
@@ -303,6 +585,21 @@ public sealed class AtlasDiscoveryTests
         workspace.WriteRequest(workspace.CreateDiscoveryRequest());
 
         await Assert.ThrowsAsync<AtlasApprovalException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidBaselineManifestRows))]
+    public async Task DiscoverAsyncRejectsInvalidBaselineManifestArtifactRow(
+        string _,
+        Func<AtlasPrivateArtifactInventoryDocument, AtlasPrivateArtifactInventoryDocument> mutate)
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        workspace.UpdateInventory(mutate);
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
             () => AtlasDiscovery.DiscoverAsync(
                 workspace.Layout.CanonicalDiscoverRequestPath,
                 TestContext.Current.CancellationToken).AsTask());
@@ -664,6 +961,21 @@ public sealed class AtlasDiscoveryTests
         entries.ToDictionary(
             static entry => AtlasIntakeContracts.NormalizeRelativePath(entry.RelativePath),
             StringComparer.OrdinalIgnoreCase);
+
+    private static AtlasPrivateArtifactInventoryDocument ReplaceBaselineManifestArtifact(
+        AtlasPrivateArtifactInventoryDocument inventory,
+        Func<AtlasPrivateArtifactEntry, AtlasPrivateArtifactEntry> mutate) => inventory with
+        {
+            Artifacts =
+            [
+                .. inventory.Artifacts.Select(artifact =>
+                    StringComparer.Ordinal.Equals(
+                        artifact.Purpose,
+                        AtlasIntakeContracts.ManifestRevision3Purpose)
+                        ? mutate(artifact)
+                        : artifact),
+            ],
+        };
 
     private static string CreateTemporaryDirectory()
     {

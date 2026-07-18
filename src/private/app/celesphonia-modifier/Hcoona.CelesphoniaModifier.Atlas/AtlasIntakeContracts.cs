@@ -185,40 +185,76 @@ public static class AtlasIntakeContracts
         ReadDiscoveryRequestAsync(
         string requestPath,
         CancellationToken cancellationToken = default) =>
+        ReadDiscoveryRequestAsync(requestPath, AtlasIoSeams.Default, cancellationToken);
+
+    internal static ValueTask<AtlasLoadedDocument<AtlasIntakeDiscoveryRequest>>
+        ReadDiscoveryRequestAsync(
+        string requestPath,
+        AtlasIoSeams io,
+        CancellationToken cancellationToken = default) =>
         ReadRequestAsync(
             requestPath,
+            "discover",
             JsonContext.AtlasIntakeDiscoveryRequest,
             static request => ValidateDiscoveryRequest(request),
+            io,
             cancellationToken);
 
     internal static ValueTask<AtlasLoadedDocument<AtlasIntakeConfirmationRequest>>
         ReadConfirmationRequestAsync(
         string requestPath,
         CancellationToken cancellationToken = default) =>
+        ReadConfirmationRequestAsync(requestPath, AtlasIoSeams.Default, cancellationToken);
+
+    internal static ValueTask<AtlasLoadedDocument<AtlasIntakeConfirmationRequest>>
+        ReadConfirmationRequestAsync(
+        string requestPath,
+        AtlasIoSeams io,
+        CancellationToken cancellationToken = default) =>
         ReadRequestAsync(
             requestPath,
+            "confirm",
             JsonContext.AtlasIntakeConfirmationRequest,
             static request => ValidateConfirmationRequest(request),
+            io,
             cancellationToken);
 
     internal static ValueTask<AtlasLoadedDocument<AtlasIntakeCopyRequest>>
         ReadCopyRequestAsync(
         string requestPath,
         CancellationToken cancellationToken = default) =>
+        ReadCopyRequestAsync(requestPath, AtlasIoSeams.Default, cancellationToken);
+
+    internal static ValueTask<AtlasLoadedDocument<AtlasIntakeCopyRequest>>
+        ReadCopyRequestAsync(
+        string requestPath,
+        AtlasIoSeams io,
+        CancellationToken cancellationToken = default) =>
         ReadRequestAsync(
             requestPath,
+            "copy",
             JsonContext.AtlasIntakeCopyRequest,
             static request => ValidateCopyRequest(request),
+            io,
             cancellationToken);
 
     internal static ValueTask<AtlasLoadedDocument<AtlasCleanupPreflightRequest>>
         ReadCleanupPreflightRequestAsync(
         string requestPath,
         CancellationToken cancellationToken = default) =>
+        ReadCleanupPreflightRequestAsync(requestPath, AtlasIoSeams.Default, cancellationToken);
+
+    internal static ValueTask<AtlasLoadedDocument<AtlasCleanupPreflightRequest>>
+        ReadCleanupPreflightRequestAsync(
+        string requestPath,
+        AtlasIoSeams io,
+        CancellationToken cancellationToken = default) =>
         ReadRequestAsync(
             requestPath,
+            "cleanup-preflight",
             JsonContext.AtlasCleanupPreflightRequest,
             static request => ValidateCleanupPreflightRequest(request),
+            io,
             cancellationToken);
 
     internal static ValueTask<AtlasLoadedDocument<AtlasCorpusIntakeManifest>> ReadManifestAsync(
@@ -508,6 +544,16 @@ public static class AtlasIntakeContracts
         return new AtlasWorkspaceLayout(normalizedProjectRoot, expectedWorkspaceRoot, surveyAlias);
     }
 
+    internal static void ValidateRequestFilePathBeforeRead(
+        string requestPath,
+        string commandName,
+        AtlasIoSeams io)
+    {
+        ValidateAbsoluteDosPath(requestPath, nameof(requestPath));
+        ValidateCanonicalRequestPath(requestPath, commandName);
+        ValidateExistingRequestFilePath(requestPath, io);
+    }
+
     internal static void ValidateAbsoluteDosPath(string path, string parameterName)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -549,6 +595,150 @@ public static class AtlasIntakeContracts
             throw new AtlasRequestException(
                 $"The path '{parameterName}' is not a valid DOS path.",
                 exception);
+        }
+    }
+
+    private static void ValidateCanonicalRequestPath(string requestPath, string commandName)
+    {
+        string normalizedPath = NormalizePath(requestPath);
+        if (!StringComparer.OrdinalIgnoreCase.Equals(requestPath, normalizedPath))
+        {
+            throw new AtlasRequestException("The request path must be canonical.");
+        }
+
+        string requestFileName = commandName switch
+        {
+            "discover" => "discover.json",
+            "confirm" => "confirm.json",
+            "copy" => "copy.json",
+            "cleanup-preflight" => "cleanup-preflight.json",
+            _ => throw new AtlasSafetyException("The command name is invalid."),
+        };
+
+        string? requestsDirectory = Path.GetDirectoryName(normalizedPath);
+        string? intakeDirectory = requestsDirectory is null
+            ? null
+            : Path.GetDirectoryName(requestsDirectory);
+        string? workspaceRoot = intakeDirectory is null
+            ? null
+            : Path.GetDirectoryName(intakeDirectory);
+        if (requestsDirectory is null
+            || intakeDirectory is null
+            || workspaceRoot is null
+            || !StringComparer.OrdinalIgnoreCase.Equals(
+                Path.GetFileName(normalizedPath),
+                requestFileName)
+            || !StringComparer.OrdinalIgnoreCase.Equals(
+                Path.GetFileName(requestsDirectory),
+                "requests")
+            || !StringComparer.OrdinalIgnoreCase.Equals(
+                Path.GetFileName(intakeDirectory),
+                "intake")
+            || !IsCanonicalRequestWorkspaceRoot(workspaceRoot))
+        {
+            throw new AtlasSafetyException("The request path is not canonical.");
+        }
+    }
+
+    private static bool IsCanonicalRequestWorkspaceRoot(string workspaceRoot)
+    {
+        string normalizedWorkspaceRoot = NormalizePath(workspaceRoot);
+        string root = Path.GetPathRoot(normalizedWorkspaceRoot)
+            ?? throw new AtlasSafetyException("The request path root is invalid.");
+        string[] segments = normalizedWorkspaceRoot[root.Length..]
+            .Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
+        string[] expectedSegments =
+        [
+            "src",
+            "private",
+            "app",
+            "celesphonia-modifier",
+            ".private",
+            "atlas-v0",
+            ExactSurveyAlias,
+        ];
+        if (segments.Length < expectedSegments.Length)
+        {
+            return false;
+        }
+
+        int offset = segments.Length - expectedSegments.Length;
+        for (int index = 0; index < expectedSegments.Length; index++)
+        {
+            if (!StringComparer.OrdinalIgnoreCase.Equals(
+                    segments[offset + index],
+                    expectedSegments[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void ValidateExistingRequestFilePath(string requestPath, AtlasIoSeams io)
+    {
+        string normalizedPath = NormalizePath(requestPath);
+        EnsureRequestPathUsesFixedDrive(normalizedPath, io);
+        string root = Path.GetPathRoot(normalizedPath)
+            ?? throw new AtlasRequestException("The request path root is invalid.");
+        ValidateRequestPathComponent(root, io, expectDirectory: true);
+        string[] segments = normalizedPath[root.Length..]
+            .Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
+        string current = root;
+        for (int index = 0; index < segments.Length; index++)
+        {
+            string next = Path.Combine(current, segments[index]);
+            bool exists = io.FileExists(next) || io.DirectoryExists(next);
+            if (!exists)
+            {
+                throw new AtlasRequestException("The request path does not exist.");
+            }
+
+            ValidateRequestPathComponent(
+                next,
+                io,
+                expectDirectory: index != segments.Length - 1);
+            current = next;
+        }
+    }
+
+    private static void ValidateRequestPathComponent(
+        string path,
+        AtlasIoSeams io,
+        bool expectDirectory)
+    {
+        FileAttributes attributes = io.GetAttributes(path);
+        if ((attributes & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new AtlasSafetyException("Reparse points are not allowed.");
+        }
+
+        if ((attributes & FileAttributes.Device) != 0)
+        {
+            throw new AtlasSafetyException("Device paths are not allowed.");
+        }
+
+        bool isDirectory = (attributes & FileAttributes.Directory) != 0;
+        if (expectDirectory && !isDirectory)
+        {
+            throw new AtlasRequestException("A request path component is not a directory.");
+        }
+
+        if (!expectDirectory && isDirectory)
+        {
+            throw new AtlasRequestException("The request path must be a file.");
+        }
+    }
+
+    private static void EnsureRequestPathUsesFixedDrive(string path, AtlasIoSeams io)
+    {
+        string root = Path.GetPathRoot(NormalizePath(path))
+            ?? throw new AtlasRequestException("The request path root is invalid.");
+        AtlasDriveInfo drive = io.GetDriveInfo(root);
+        if (!drive.IsReady || drive.DriveType != DriveType.Fixed)
+        {
+            throw new AtlasSafetyException("The request path must use a ready fixed drive.");
         }
     }
 
@@ -616,16 +806,20 @@ public static class AtlasIntakeContracts
 
     private static async ValueTask<AtlasLoadedDocument<TDocument>> ReadRequestAsync<TDocument>(
         string requestPath,
+        string commandName,
         JsonTypeInfo<TDocument> typeInfo,
         Action<TDocument> validator,
+        AtlasIoSeams io,
         CancellationToken cancellationToken)
         where TDocument : class
     {
+        ValidateRequestFilePathBeforeRead(requestPath, commandName, io);
         AtlasLoadedDocument<TDocument> document = await ReadDocumentAsync(
                 requestPath,
                 typeInfo,
                 validator,
                 static message => new AtlasRequestException(message),
+                io,
                 cancellationToken)
             .ConfigureAwait(false);
         return document;
@@ -645,6 +839,25 @@ public static class AtlasIntakeContracts
         ArgumentNullException.ThrowIfNull(exceptionFactory);
 
         byte[] bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
+        TDocument document = ParseDocument(bytes, typeInfo, validator, exceptionFactory);
+        return new AtlasLoadedDocument<TDocument>(
+            NormalizePath(path),
+            bytes,
+            ComputeSha256Hex(bytes),
+            document);
+    }
+
+    private static async ValueTask<AtlasLoadedDocument<TDocument>> ReadDocumentAsync<TDocument>(
+        string path,
+        JsonTypeInfo<TDocument> typeInfo,
+        Action<TDocument> validator,
+        Func<string, Exception> exceptionFactory,
+        AtlasIoSeams io,
+        CancellationToken cancellationToken)
+        where TDocument : class
+    {
+        ArgumentNullException.ThrowIfNull(io);
+        byte[] bytes = await io.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
         TDocument document = ParseDocument(bytes, typeInfo, validator, exceptionFactory);
         return new AtlasLoadedDocument<TDocument>(
             NormalizePath(path),
