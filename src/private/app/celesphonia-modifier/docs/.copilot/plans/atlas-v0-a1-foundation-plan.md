@@ -44,7 +44,24 @@ The repository provides:
 
 No package version, traversal file, solution file, or root build property should change in A1.
 
-## 3. Exact project layout
+## 3. Risks, limitations, and disagreements
+
+Unresolved disagreements: None.
+
+Accepted residual limitations:
+
+- A1 does not inject an operating-system Ctrl+C event. It exercises `Program.Main` startup and
+  shutdown in subprocess tests, directly tests caller-token propagation, and requires review of
+  handler registration, `Cancel = true`, cancellation, and `finally` removal.
+- The subprocess smoke test is Windows-only because repository policy builds C# projects on
+  Windows. It launches the generated `.exe` apphost directly.
+- The versioned smoke document is not a canonical Atlas observation schema. A later plan must
+  define that schema independently.
+
+If any limitation prevents an acceptance criterion from being measured, A1 stops and this plan is
+revised before implementation continues.
+
+## 4. Exact project layout
 
 A1 creates these projects:
 
@@ -70,10 +87,38 @@ Project identities are:
 | CLI     | `Hcoona.CelesphoniaModifier.Atlas.Cli`   | `celesphonia-atlas`                      |
 | Tests   | `Hcoona.CelesphoniaModifier.Atlas.Tests` | `Hcoona.CelesphoniaModifier.Atlas.Tests` |
 
+The implementation candidate contains exactly this new tracked file manifest:
+
+Library directory:
+
+- `Hcoona.CelesphoniaModifier.Atlas.csproj`;
+- `packages.lock.json`; and
+- `EmptyAtlasSurvey.cs`.
+
+CLI directory:
+
+- `Hcoona.CelesphoniaModifier.Atlas.Cli.csproj`;
+- `packages.lock.json`;
+- `Program.cs`; and
+- `AtlasCliApplication.cs`.
+
+Test directory:
+
+- `Hcoona.CelesphoniaModifier.Atlas.Tests.csproj`;
+- `packages.lock.json`;
+- `EmptyAtlasSurveyTests.cs`;
+- `AtlasCliApplicationTests.cs`;
+- `AtlasProcessSmokeTests.cs`; and
+- `ProjectBoundaryTests.cs`.
+
+Test-only streams and other helpers are private nested types in their owning test file. No other
+tracked file is permitted under the three project directories. Ignored `bin` and `obj` outputs are
+not candidate files.
+
 The root traversal already discovers all three projects. A1 does not add a nested solution or
 project traversal file.
 
-## 4. Dependency direction
+## 5. Dependency direction
 
 The permitted dependency graph is:
 
@@ -89,7 +134,7 @@ Hcoona.CelesphoniaModifier.Atlas.Tests
 The library:
 
 - has no `ProjectReference`;
-- has no `PackageReference`;
+- declares no project-local `PackageReference`;
 - uses only .NET Base Class Library APIs;
 - does not depend on `System.CommandLine`;
 - does not reference the CLI, WinUI, Windows App SDK, JavaScript, an Agent SDK, or a network
@@ -99,7 +144,7 @@ The library:
 The CLI:
 
 - references only the Atlas library as a project;
-- has no `PackageReference`;
+- declares no project-local `PackageReference`;
 - binds command-line input, maps results to output channels and exit codes, and handles Ctrl+C;
 - contains no save discovery, codec, graph, schema interpretation, or write semantics; and
 - exposes internals only to the test assembly through `InternalsVisibleTo`.
@@ -110,7 +155,7 @@ The test project:
 - uses synthetic in-memory inputs and repository-safe project metadata; and
 - never reads game-derived or private data.
 
-Its exact `PackageReference` set is:
+Its exact direct `PackageReference` set is:
 
 - `Microsoft.NET.Test.Sdk`;
 - `Microsoft.Testing.Extensions.CodeCoverage`;
@@ -122,7 +167,11 @@ Its exact `PackageReference` set is:
 No other test package is permitted. The test project sets `MSTestAnalysisMode` to `None`, matching
 the repository's xUnit v3 projects.
 
-## 5. Project properties
+Repository-wide `GlobalPackageReference` items inherited from `Directory.Build.props` remain
+allowed build infrastructure. "No package reference" in this plan means no project-local direct
+declaration. Boundary tests inspect direct project XML separately from inherited global packages.
+
+## 6. Project properties
 
 Every project sets:
 
@@ -137,12 +186,18 @@ The CLI additionally sets:
 ```xml
 <OutputType>Exe</OutputType>
 <AssemblyName>celesphonia-atlas</AssemblyName>
+<UseAppHost>true</UseAppHost>
 ```
 
 Root analysis and warnings-as-errors settings remain inherited. A1 does not suppress analyzers,
 lower warning severity, enable unsafe code, or relax nullable checks.
 
-## 6. Empty-survey document contract
+The test project emits one `AssemblyMetadataAttribute` named `AtlasCliAppHostPath`. Its value is the
+absolute Windows path to the CLI project's
+`bin\$(Configuration)\$(TargetFramework)\celesphonia-atlas.exe`. Process smoke tests read this
+metadata and fail if the apphost is absent.
+
+## 7. Empty-survey document contract
 
 The document version is:
 
@@ -180,7 +235,7 @@ A1 deliberately does not add a formal JSON Schema or a JSON Schema validator. Th
 JSON-shape tests define its A1 contract. A later increment must introduce a separately reviewed
 canonical Atlas schema rather than silently broadening this smoke document.
 
-## 7. Minimal library contract
+## 8. Minimal library contract
 
 The library exposes only the A1 operation surface:
 
@@ -206,14 +261,14 @@ Behavior:
 - the token is passed to the asynchronous stream write;
 - all 60 bytes are submitted in one `WriteAsync` call;
 - cancellation and stream failures propagate to the caller;
-- the method writes the exact bytes from section 6;
+- the method writes the exact bytes from section 7;
 - the method does not flush, close, or dispose the caller-owned stream; and
 - the method performs no file, console, environment, network, or private-workspace access.
 
 No interface, dependency-injection registration, repository abstraction, options type, result
 hierarchy, or general serializer abstraction is introduced in A1.
 
-## 8. CLI contract
+## 9. CLI contract
 
 The executable name is `celesphonia-atlas`. A1 supports one operation:
 
@@ -257,9 +312,9 @@ operation seam; no global mutable hook, interface, container, or service locator
 exit. The internal application performs exact argument matching and invokes the operation
 delegate.
 
-### 8.1 Output channels
+### 9.1 Output channels
 
-- Successful `empty-survey`: stdout receives the exact bytes from section 6; stderr is empty.
+- Successful `empty-survey`: stdout receives the exact bytes from section 7; stderr is empty.
 - Help: stdout receives the exact help bytes below; stderr is empty.
 - Invalid arguments: stdout is empty; stderr receives `Invalid arguments.` plus LF.
 - Cancellation: stdout is empty when canceled before writing; stderr receives
@@ -284,7 +339,7 @@ Options:
 The text has LF line endings and one final LF. Diagnostics never include exception messages, stack
 traces, argument tokens or values, environment values, or paths.
 
-### 8.2 Exit codes
+### 9.2 Exit codes
 
 | Code | Meaning                                  |
 | ---: | ---------------------------------------- |
@@ -296,7 +351,7 @@ traces, argument tokens or values, environment values, or paths.
 
 No failure path returns zero. Cancellation is not reported as an unexpected failure.
 
-### 8.3 Result precedence
+### 9.3 Result precedence
 
 The internal CLI application applies this order:
 
@@ -328,7 +383,7 @@ A stream may write a prefix before failing or observing cancellation. The CLI ca
 bytes. It returns 3 or 4 as classified above, emits the applicable terminal diagnostic when
 possible, and never emits or returns a success claim.
 
-### 8.4 Cancellation
+### 9.4 Cancellation
 
 `Program.Main` registers a `Console.CancelKeyPress` handler, sets `Cancel = true`, and cancels one
 owned `CancellationTokenSource`. The token flows through the internal CLI application into
@@ -339,14 +394,14 @@ The handler is removed in `finally`. Cancellation is not swallowed or converted 
 A1 introduces no asynchronous file or scan boundary. Future boundaries must accept and pass the
 same operation token before A1's cancellation criterion can remain satisfied.
 
-## 9. Test plan
+## 10. Test plan
 
 The test project adds focused tests in these groups.
 
-### 9.1 Library tests
+### 10.1 Library tests
 
 - `SchemaVersion` equals `atlas-empty-survey/v1`.
-- One write matches the exact byte sequence in section 6.
+- One write matches the exact byte sequence in section 7.
 - Repeated writes are byte-identical.
 - Output is valid JSON with exactly the required properties.
 - The output is 60 bytes and matches the documented hex sequence.
@@ -354,16 +409,19 @@ The test project adds focused tests in these groups.
 - A pre-canceled token throws `OperationCanceledException` before a write.
 - A pre-canceled write to a non-writable stream throws `OperationCanceledException`.
 - A non-writable and a disposed stream throw `NotSupportedException` when not canceled.
+- A stream whose `CanWrite` getter throws propagates that exception unchanged.
 - A stream that cancels during `WriteAsync` receives the caller's token.
 - A successful write makes exactly one stream-write call with all 60 bytes.
 - A stream failure propagates.
 - The writer leaves the destination open and does not flush it.
 
-### 9.2 CLI application tests
+### 10.2 CLI application tests
 
+- Null arguments, stdout, stderr, or injected operation throw `ArgumentNullException`.
 - `empty-survey` returns 0, writes exact stdout bytes, and leaves stderr empty.
 - Root and command help return 0 with exact help bytes and do not invoke the operation.
 - Missing, unknown, extra, and option-bearing input returns 2.
+- Case variants such as `EMPTY-SURVEY` and `--HELP` return 2.
 - `@file`, directives, version, terminators, and undeclared help aliases return 2 without file I/O.
 - Invalid input writes only `Invalid arguments.` plus LF and leaves stdout empty.
 - Help and invalid input take precedence over pre-cancellation.
@@ -371,34 +429,34 @@ The test project adds focused tests in these groups.
 - Caller-token and default-token cancellation map to 3 only when the caller token is requested.
 - Foreign-token or unsolicited cancellation maps to 1.
 - Partial-write cancellation returns 3 and makes no success claim.
-- Standard-output and standard-error failure precedence follows section 8.3.
+- Standard-output and standard-error failure precedence follows section 9.3.
 - Partial-write I/O failure returns 4 and makes no success claim.
 - An unexpected injected operation failure returns 1 without exception details.
 - A terminal diagnostic failure returns 4.
 - Output and error streams remain caller-owned.
 
-### 9.3 Process smoke tests
+### 10.3 Process smoke tests
 
 - A built `celesphonia-atlas.dll` process returns 0 for `empty-survey`.
-- Captured stdout bytes exactly match section 6 and captured stderr is empty.
+- Captured stdout bytes exactly match section 7 and captured stderr is empty.
 - An invalid-argument process returns 2, writes the fixed stderr bytes, and leaves stdout empty.
 - The process tests exercise `Program.Main`, console stream selection, and argument forwarding.
-- The process uses the test runner's `DOTNET_HOST_PATH` and fails if that host is unavailable.
+- The process launches the apphost path from `AtlasCliAppHostPath` and fails if it is unavailable.
 - Core library and CLI behavior remains covered by process-free tests.
 
-### 9.4 Boundary tests
+### 10.4 Boundary tests
 
-- The library project has no package or project reference.
-- The CLI project references the library and has no package reference.
+- The library project declares no project-local `PackageReference` or `ProjectReference`.
+- The CLI project declares the library reference and no project-local `PackageReference`.
 - The test project references both A1 production projects.
-- The test project has exactly the package set and asset metadata from section 4.
+- The test project has exactly the direct package set and asset metadata from section 5.
 - Core empty-survey behavior is exercised directly without starting a process.
 - No test reads the game installation, a live save directory, or `.private`.
 
 Project-file boundary assertions inspect repository-safe project metadata from paths derived from
 the test assembly location. They do not assume the current working directory.
 
-## 10. Implementation sequence
+## 11. Implementation sequence
 
 ### A1.1 Project scaffold
 
@@ -410,8 +468,8 @@ Acceptance:
 
 - all three projects are discovered by root traversal;
 - restore succeeds without package-version changes;
-- dependency direction matches section 4; and
-- both production projects compile with no package reference.
+- dependency direction matches section 5; and
+- both production projects compile with no project-local package reference.
 
 ### A1.2 Deterministic library operation
 
@@ -437,7 +495,7 @@ Acceptance:
 ### A1.4 Integrated validation
 
 Update `.copilot\README.md` so it no longer claims that no projects or package references exist.
-Run the traversal, locked restore, build, test, and smoke commands from section 11.
+Run the traversal, locked restore, build, format, test, and smoke commands from section 12.
 
 Acceptance:
 
@@ -451,29 +509,42 @@ Acceptance:
 The implementation candidate is compared with the pushed plan-review record commit. Its allowed
 paths are exactly:
 
-- `src\private\app\celesphonia-modifier\Hcoona.CelesphoniaModifier.Atlas\**`;
-- `src\private\app\celesphonia-modifier\Hcoona.CelesphoniaModifier.Atlas.Cli\**`;
-- `tests\private\app\celesphonia-modifier\Hcoona.CelesphoniaModifier.Atlas.Tests\**`; and
+- the file manifest in section 4, rooted at its declared source and test directories; and
 - `src\private\app\celesphonia-modifier\docs\.copilot\README.md`.
 
-Changing this plan, a governing plan, root build infrastructure, package versions, or any other
-path requires a new plan candidate and plan review before implementation continues.
+The candidate check rejects every additional tracked file, including an undeclared file inside an
+A1 project directory. Changing this plan, a governing plan, root build infrastructure, package
+versions, or any other path requires a new plan candidate and plan review before implementation
+continues.
 
 ### A1.5 Independent release gate
 
 The implementation candidate must descend from the pushed A1 plan-review record commit. Commit and
 push the exact candidate, then record its commit, tree, plan-review base commit, and changed paths.
-Rerun every section 11 check on that exact commit and require the tracked worktree to remain clean.
+Rerun every section 12 check on that exact commit and require the tracked worktree to remain clean.
 An independent subagent then reviews the full candidate against this plan, A0 privacy constraints,
 tests, and command output. Resolve every finding and repeat until the exact result is
 `No findings`.
 
 Persist `../reviews/atlas-v0-a1-release-gate.md` as the only change after the accepted candidate.
-The record includes candidate commit and tree, plan-review base, reviewed paths, acceptance
-evidence, reviewer identity and independence attestation, every iteration and finding disposition,
-the final result, first-parent requirement, and changed-path restriction.
+The record contains every operating-model field:
 
-## 11. Validation commands
+- increment identifier `A1` and final outcome;
+- candidate commit and tree;
+- governing-plan path and final persisted plan commit;
+- plan-review record commit and implementation diff base;
+- reviewed path set and acceptance criteria;
+- reviewer identity and independence attestation;
+- every review iteration, finding disposition, and final `No findings` result;
+- validation commands or procedures and their outcomes;
+- an explicit statement that A1 created and accessed no private evidence; and
+- first-parent and changed-path requirements.
+
+Commit only the release record, mechanically verify that its first parent is the reviewed candidate
+and that its diff contains only the release-record path, then push it. Verify the release-record
+commit equals upstream. Only after those checks may A1 move to `done` or A2 begin.
+
+## 12. Validation commands
 
 Run every .NET command from the repository root with the user-required wrapper and Windows paths.
 
@@ -524,6 +595,17 @@ Build the complete A1 graph:
 mise exec -- dotnet build $testProject --no-restore
 ```
 
+Verify formatting for all three projects:
+
+```powershell
+foreach ($project in @($libraryProject, $cliProject, $testProject)) {
+  mise exec -- dotnet format $project --no-restore --verify-no-changes
+  if ($LASTEXITCODE -ne 0) {
+    throw "Formatting validation failed."
+  }
+}
+```
+
 Run targeted tests:
 
 ```powershell
@@ -546,40 +628,40 @@ The observational command must display the compact object:
 It is not acceptance evidence by itself. `AtlasProcessSmokeTests` must launch the built CLI,
 capture raw stdout and stderr, and assert the exact bytes and exit codes.
 
-For clean-checkout acceptance, repeat traversal, locked restore, build, and test in a fresh
-worktree or CI checkout. Do not delete or reset the current shared worktree to simulate
+For clean-checkout acceptance, repeat traversal, locked restore, build, format, and test in a
+fresh worktree or CI checkout. Do not delete or reset the current shared worktree to simulate
 cleanliness.
 
-## 12. Increment acceptance criteria
+## 13. Increment acceptance criteria
 
 A1 is accepted only when:
 
-1. all outputs in section 3 exist;
-2. a clean checkout passes traversal, locked restore, build, and targeted tests;
+1. all outputs in section 4 exist;
+2. a clean checkout passes traversal, locked restore, build, format, and targeted tests;
 3. all projects use `$(CurrentTargetFramework)`, nullable, and implicit-usings conventions;
-4. the dependency graph exactly matches section 4;
+4. the dependency graph exactly matches section 5;
 5. the library has no CLI, WinUI, JavaScript, Agent, network, process, console, or environment
    dependency;
 6. the CLI contains only parsing, cancellation wiring, invocation, result presentation, and
    process exit;
 7. every asynchronous boundary receives the caller's cancellation token;
-8. the smoke command emits the exact schema-versioned bytes from section 6;
+8. the smoke command emits the exact schema-versioned bytes from section 7;
 9. core behavior is directly tested without process invocation;
-10. all failures are nonzero and follow the precedence and output rules in section 8;
+10. all failures are nonzero and follow the precedence and output rules in section 9;
 11. tests use only synthetic data and repository-safe project metadata;
 12. committed lock files reproduce restore without package-version drift;
 13. no original or copied save is read or modified;
 14. the implementation candidate is committed and pushed; and
 15. the independent release gate reports and persists `No findings`.
 
-## 13. Stop conditions
+## 14. Stop conditions
 
 Stop A1 and revise this plan before continuing if:
 
 - implementation requires a fourth production or test project;
 - any project path or dependency direction changes;
-- the library requires a package reference;
-- the CLI requires any package reference;
+- the library requires a project-local package reference;
+- the CLI requires any project-local package reference;
 - any save, game-installation, private-workspace, or network access appears;
 - a codec, scanner, graph model, semantic claim, writer, WinUI type, DI Host, or Agent abstraction
   is introduced;
@@ -592,7 +674,7 @@ Stop A1 and revise this plan before continuing if:
 - a test requires real game or user data; or
 - an independent reviewer has any unresolved finding.
 
-## 14. Expected outputs and exclusions
+## 15. Expected outputs and exclusions
 
 Repository-safe outputs:
 
@@ -615,7 +697,7 @@ Explicit exclusions:
 - telemetry, logging frameworks, configuration systems, DI hosting, and network services; and
 - AI, ML, Agent Framework, Copilot SDK, or external Agent runtime integration.
 
-## 15. Authority and change control
+## 16. Authority and change control
 
 The project leader may approve a material scope or dependency change. Copilot may resolve
 implementation details that preserve this plan's boundaries and measurable behavior.
@@ -628,7 +710,7 @@ name, output bytes, exit codes, privacy boundary, acceptance criteria, or stop c
 3. another independent no-findings plan review; and
 4. a new exact-plan review record before implementation resumes.
 
-## 16. Plan review and execution handoff
+## 17. Plan review and execution handoff
 
 Before implementation:
 
@@ -639,17 +721,20 @@ Before implementation:
 4. resolve every finding and repeat exact-candidate review until `No findings`;
 5. commit `../reviews/atlas-v0-a1-plan-review.md` as the only change after the accepted plan
    candidate;
-6. include in that record the plan commit and tree, governing documents, reviewed paths, reviewer
-   identity and independence attestation, every iteration and disposition, final result,
-   first-parent requirement, and changed-path restriction;
+6. include in that record increment `A1 plan`, execution-ready outcome, plan commit and tree,
+   governing documents, reviewed paths, reviewer identity and independence attestation, every
+   iteration and disposition, final result, private-evidence absence, first-parent requirement, and
+   changed-path restriction;
 7. verify its first parent and that it changes only the plan-review record;
-8. push the review record; and
-9. treat the pushed review record as repository authority to begin A1.
+8. push the review record;
+9. verify the review-record commit equals upstream; and
+10. treat the pushed review record as repository authority to begin A1.
 
-After step 9, an operational session todo may move from `pending` to `in_progress` without changing
-tracked files. Session state is not execution authority and does not modify the reviewed plan.
+After step 10, an operational session todo may move from `pending` to `in_progress` without
+changing tracked files. Session state is not execution authority and does not modify the reviewed
+plan.
 
 Another contributor resumes by checking out the shared branch and verifying the plan-review
-record. If the three A1 projects do not exist, start with A1.1. Run each section 11 command only
+record. If the three A1 projects do not exist, start with A1.1. Run each section 12 command only
 after its referenced project and lock files exist. If projects exist, start at the first incomplete
-sequence in section 10. Conversation history and session task state are not execution authority.
+sequence in section 11. Conversation history and session task state are not execution authority.
