@@ -166,7 +166,7 @@ exist.
 - Read-only live discovery command.
 - Human-reviewable discovery manifest.
 - Immutable-copy command and private provenance map.
-- File-identity, reparse-point, link-count, and copy-verification checks.
+- Trusted-local-filesystem preflight and copy-verification checks.
 - Private-workspace preflight and final-cleanup command.
 - Locator-segment redaction classifier.
 
@@ -175,9 +175,8 @@ exist.
 - Discovery runs before copying and enumerates every live save-directory entry.
 - The user approves the exact discovery manifest and installed-definition manifest before copy.
 - Live inputs are opened read-only and never used as scan inputs.
-- Windows file identity, final path, volume identity, link count, and reparse state prove that
-  every copy is a distinct regular file rather than a hard link, junction, symlink, or alias to
-  a live input.
+- Visible reparse checks, controlled roots, create-new destination semantics, source stability,
+  and private fidelity hashes qualify copies under `trusted-local-filesystem/v1`.
 - Private hashes verify byte-for-byte copy fidelity and remain outside Git.
 - Every discovered live file and installed definition reaches one terminal intake status.
 - `steam_autocloud.vdf` is always excluded.
@@ -187,7 +186,7 @@ exist.
 
 ### Stop conditions
 
-- File identity cannot distinguish a copy from a live alias.
+- The controlled workspace cannot satisfy the trusted-local-filesystem profile.
 - Any discovered source lacks a terminal status.
 - A dynamic locator segment can bypass deny-by-default aliasing.
 

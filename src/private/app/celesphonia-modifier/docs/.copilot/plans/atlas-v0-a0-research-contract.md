@@ -183,8 +183,8 @@ The snapshot:
 - records qualification as `preservation-unqualified`.
 
 The preservation snapshot cannot satisfy A2, cannot enter the Atlas corpus automatically, and
-cannot establish writable compatibility. A2 must revalidate it with Windows file identity and
-link/reparse checks or create a new qualified immutable copy.
+cannot establish writable compatibility. A2 creates a new qualified immutable copy under the
+separately approved trust profile; it does not promote this preservation snapshot.
 
 The private completion manifest conforms to
 `../schemas/atlas-v0/preservation-snapshot-manifest.schema.json`. The final directory name plus that

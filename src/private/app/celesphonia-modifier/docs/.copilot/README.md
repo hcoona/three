@@ -25,6 +25,9 @@ save discovery, decoding, semantic, write, WinUI, network, or private-data behav
 - `plans/atlas-v0-a1-foundation-plan.md` defines the exact three-project C# scaffold,
   deterministic empty-survey contract, command behavior, tests, validation, and release gate for
   increment A1.
+- `plans/atlas-v0-a2-intake-safety-plan.md` defines A2's trusted-local-filesystem intake,
+  human-approval boundary, copy qualification, locator redaction, lifecycle behavior, and staged
+  safety and release gates once its plan-review record authorizes implementation.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
