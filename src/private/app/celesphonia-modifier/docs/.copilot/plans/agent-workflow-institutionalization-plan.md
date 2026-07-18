@@ -174,6 +174,31 @@ The plan-review record must contain:
 - requirements that the record commit use the final plan candidate as its first parent and change
   only the plan-review record.
 
+The record begins with these exact machine-checkable fields:
+
+```text
+**Increment:** W0 plan
+**Outcome:** Execution ready
+**Final independent result:** `No findings`
+**Plan commit:** `<full-final-plan-commit>`
+**Plan tree:** `<full-final-plan-tree>`
+**Completed A1 baseline:** `<full-A1-release-record-commit>`
+**Governing plan:** `../plans/agent-workflow-institutionalization-plan.md`
+**Reviewed candidate path:** `../plans/agent-workflow-institutionalization-plan.md`
+**Reviewed candidate path:** `../README.md`
+**Reviewer independence:** Confirmed
+**Review iterations and finding dispositions:** Recorded
+**Acceptance decision:** Passed
+**Acceptance evidence:** Recorded
+**Validation decision:** Passed
+**Validation evidence:** Recorded
+**Private evidence:** None accessed or recorded.
+```
+
+The human-readable sections provide the complete governing-input list, acceptance evidence, review
+iterations, finding dispositions, validation outcomes, privacy explanation, and execution decision.
+The fixed fields bind their key claims mechanically; those sections provide their audit context.
+
 Plan authorization is accepted only when:
 
 1. the final plan candidate is a descendant of the completed A1 baseline and changes exactly this
@@ -213,6 +238,31 @@ W0 implementation may not begin before W0.1 completes.
 5. Mechanically verify the record locally, push it, then verify candidate and record reachability,
    tree, first parent, changed path, upstream equality, and a clean tracked worktree.
 
+The release record begins with these exact machine-checkable fields:
+
+```text
+**Increment:** W0 - Agent Workflow Institutionalization
+**Outcome:** Passed
+**Final independent result:** `No findings`
+**Candidate commit:** `<full-implementation-candidate-commit>`
+**Candidate tree:** `<full-implementation-candidate-tree>`
+**Governing plan:** `../plans/agent-workflow-institutionalization-plan.md`
+**Persisted plan commit:** `<full-final-plan-commit>`
+**Plan-review record and implementation diff base:** `<full-plan-review-record-commit>`
+**Reviewed candidate path:** `../../../AGENTS.md`
+**Reviewed candidate path:** `../../AGENTS.md`
+**Reviewer independence:** Confirmed
+**Review iterations and finding dispositions:** Recorded
+**Acceptance decision:** Passed
+**Acceptance evidence:** Recorded
+**Validation decision:** Passed
+**Validation evidence:** Recorded
+**Private evidence:** None accessed or recorded.
+```
+
+Its human-readable sections provide every remaining operating-model field and the audit context for
+the machine-checkable claims.
+
 ## 7. Acceptance criteria
 
 W0 is accepted only when:
@@ -251,7 +301,8 @@ $planTree = "<final-plan-candidate-tree>"
 $planPath = "src/private/app/celesphonia-modifier/docs/.copilot/plans/" +
   "agent-workflow-institutionalization-plan.md"
 $indexPath = "src/private/app/celesphonia-modifier/docs/.copilot/README.md"
-$expected = @($planPath, $indexPath) | Sort-Object -CaseSensitive
+$paths = @($planPath, $indexPath)
+$expectedChanges = @("A`t$planPath", "M`t$indexPath") | Sort-Object -CaseSensitive
 
 git merge-base --is-ancestor $planBase $planCandidate
 if ($LASTEXITCODE -ne 0) { throw "The plan candidate is not based on completed A1." }
@@ -263,10 +314,10 @@ $upstream = git rev-parse '@{u}'
 if ($LASTEXITCODE -ne 0 -or $upstream -ne $planCandidate) { throw "Plan is not published." }
 $status = git status --porcelain --untracked-files=no
 if ($LASTEXITCODE -ne 0 -or $status) { throw "Tracked worktree is not clean." }
-$actual = @(git diff --name-only $planBase $planCandidate)
+$actual = @(git diff --no-renames --name-status $planBase $planCandidate)
 if ($LASTEXITCODE -ne 0) { throw "Could not enumerate the plan candidate paths." }
 $actual = $actual | Sort-Object -CaseSensitive
-if (Compare-Object $expected $actual -CaseSensitive) {
+if (Compare-Object $expectedChanges $actual -CaseSensitive) {
   throw "The plan candidate changed an undeclared path."
 }
 
@@ -275,7 +326,7 @@ if ($LASTEXITCODE -ne 0) { throw "HK rejected the plan candidate." }
 git --no-pager diff --check $planBase $planCandidate
 if ($LASTEXITCODE -ne 0) { throw "Git rejected the plan candidate diff." }
 
-$violations = foreach ($path in $expected) {
+$violations = foreach ($path in $paths) {
   $lineNumber = 0
   Get-Content -LiteralPath $path | ForEach-Object {
     $lineNumber++
@@ -303,11 +354,33 @@ $parent = git rev-parse "$record^1"
 if ($LASTEXITCODE -ne 0 -or $parent -ne $planCandidate) {
   throw "The plan-review record has the wrong first parent."
 }
-$actual = @(git diff --name-only $planCandidate $record)
+$actual = @(git diff --no-renames --name-status $planCandidate $record)
 if ($LASTEXITCODE -ne 0) { throw "Could not enumerate the plan-review record paths." }
-if (Compare-Object @($recordPath) $actual -CaseSensitive) {
+if (Compare-Object @("A`t$recordPath") $actual -CaseSensitive) {
   throw "The plan-review record changed an undeclared path."
 }
+$recordLines = @(git show "${record}:$recordPath")
+if ($LASTEXITCODE -ne 0) { throw "Could not read the committed plan-review record." }
+$requiredRecordLines = @(
+  '**Increment:** W0 plan',
+  '**Outcome:** Execution ready',
+  '**Final independent result:** `No findings`',
+  ('**Plan commit:** `{0}`' -f $planCandidate),
+  ('**Plan tree:** `{0}`' -f $planTree),
+  ('**Completed A1 baseline:** `{0}`' -f $planBase),
+  '**Governing plan:** `../plans/agent-workflow-institutionalization-plan.md`',
+  '**Reviewed candidate path:** `../plans/agent-workflow-institutionalization-plan.md`',
+  '**Reviewed candidate path:** `../README.md`',
+  '**Reviewer independence:** Confirmed',
+  '**Review iterations and finding dispositions:** Recorded',
+  '**Acceptance decision:** Passed',
+  '**Acceptance evidence:** Recorded',
+  '**Validation decision:** Passed',
+  '**Validation evidence:** Recorded',
+  '**Private evidence:** None accessed or recorded.'
+)
+$missingRecordLines = @($requiredRecordLines | Where-Object { $recordLines -cnotcontains $_ })
+if ($missingRecordLines) { throw "The plan-review record has missing or incorrect binding fields." }
 mise exec -- hk check --check --no-progress --from-ref $planCandidate --to-ref $record
 if ($LASTEXITCODE -ne 0) { throw "HK rejected the plan-review record." }
 git --no-pager diff --check $planCandidate $record
@@ -337,7 +410,8 @@ $candidate = "<implementation-candidate-commit>"
 $candidateTree = "<implementation-candidate-tree>"
 $projectAgents = "src/private/app/celesphonia-modifier/AGENTS.md"
 $docsAgents = "src/private/app/celesphonia-modifier/docs/AGENTS.md"
-$expected = @($projectAgents, $docsAgents) | Sort-Object -CaseSensitive
+$paths = @($projectAgents, $docsAgents)
+$expectedChanges = @("A`t$projectAgents", "A`t$docsAgents") | Sort-Object -CaseSensitive
 
 git merge-base --is-ancestor $base $candidate
 if ($LASTEXITCODE -ne 0) { throw "The candidate is not based on the plan-review record." }
@@ -349,10 +423,10 @@ $upstream = git rev-parse '@{u}'
 if ($LASTEXITCODE -ne 0 -or $upstream -ne $candidate) { throw "Candidate is not published." }
 $status = git status --porcelain --untracked-files=no
 if ($LASTEXITCODE -ne 0 -or $status) { throw "Tracked worktree is not clean." }
-$actual = @(git diff --name-only $base $candidate)
+$actual = @(git diff --no-renames --name-status $base $candidate)
 if ($LASTEXITCODE -ne 0) { throw "Could not enumerate the implementation paths." }
 $actual = $actual | Sort-Object -CaseSensitive
-if (Compare-Object $expected $actual -CaseSensitive) {
+if (Compare-Object $expectedChanges $actual -CaseSensitive) {
   throw "The implementation candidate changed an undeclared path."
 }
 
@@ -361,7 +435,7 @@ if ($LASTEXITCODE -ne 0) { throw "HK rejected the implementation candidate." }
 git --no-pager diff --check $base $candidate
 if ($LASTEXITCODE -ne 0) { throw "Git rejected the implementation candidate diff." }
 
-$violations = foreach ($path in $expected) {
+$violations = foreach ($path in $paths) {
   $lineNumber = 0
   Get-Content -LiteralPath $path | ForEach-Object {
     $lineNumber++
@@ -384,9 +458,69 @@ src/private/app/celesphonia-modifier/AGENTS.md
 src/private/app/celesphonia-modifier/docs/AGENTS.md
 ```
 
-After exact `No findings`, validate and publish the release record with the plan-review record
-procedure above, substituting the implementation candidate for the parent and the declared release
-record path for `$recordPath`.
+After exact `No findings`, create the release record as the only child change and run:
+
+```powershell
+$planCandidate = "<final-plan-candidate-commit>"
+$base = "<verified-plan-review-record-commit>"
+$candidate = "<implementation-candidate-commit>"
+$candidateTree = "<implementation-candidate-tree>"
+$recordPath = "src/private/app/celesphonia-modifier/docs/.copilot/reviews/" +
+  "agent-workflow-institutionalization-release-gate.md"
+$record = git rev-parse HEAD
+if ($LASTEXITCODE -ne 0) { throw "Could not resolve the release record." }
+$parent = git rev-parse "$record^1"
+if ($LASTEXITCODE -ne 0 -or $parent -ne $candidate) {
+  throw "The release record has the wrong first parent."
+}
+$actual = @(git diff --no-renames --name-status $candidate $record)
+if ($LASTEXITCODE -ne 0) { throw "Could not enumerate the release-record paths." }
+if (Compare-Object @("A`t$recordPath") $actual -CaseSensitive) {
+  throw "The release record changed an undeclared path."
+}
+$recordLines = @(git show "${record}:$recordPath")
+if ($LASTEXITCODE -ne 0) { throw "Could not read the committed release record." }
+$requiredRecordLines = @(
+  '**Increment:** W0 - Agent Workflow Institutionalization',
+  '**Outcome:** Passed',
+  '**Final independent result:** `No findings`',
+  ('**Candidate commit:** `{0}`' -f $candidate),
+  ('**Candidate tree:** `{0}`' -f $candidateTree),
+  '**Governing plan:** `../plans/agent-workflow-institutionalization-plan.md`',
+  ('**Persisted plan commit:** `{0}`' -f $planCandidate),
+  ('**Plan-review record and implementation diff base:** `{0}`' -f $base),
+  '**Reviewed candidate path:** `../../../AGENTS.md`',
+  '**Reviewed candidate path:** `../../AGENTS.md`',
+  '**Reviewer independence:** Confirmed',
+  '**Review iterations and finding dispositions:** Recorded',
+  '**Acceptance decision:** Passed',
+  '**Acceptance evidence:** Recorded',
+  '**Validation decision:** Passed',
+  '**Validation evidence:** Recorded',
+  '**Private evidence:** None accessed or recorded.'
+)
+$missingRecordLines = @($requiredRecordLines | Where-Object { $recordLines -cnotcontains $_ })
+if ($missingRecordLines) { throw "The release record has missing or incorrect binding fields." }
+mise exec -- hk check --check --no-progress --from-ref $candidate --to-ref $record
+if ($LASTEXITCODE -ne 0) { throw "HK rejected the release record." }
+git --no-pager diff --check $candidate $record
+if ($LASTEXITCODE -ne 0) { throw "Git rejected the release-record diff." }
+$status = git status --porcelain --untracked-files=no
+if ($LASTEXITCODE -ne 0 -or $status) { throw "Tracked worktree is not clean." }
+
+git push
+if ($LASTEXITCODE -ne 0) { throw "Could not publish the release record." }
+$upstream = git rev-parse '@{u}'
+if ($LASTEXITCODE -ne 0 -or $upstream -ne $record) {
+  throw "The release record is not the published tip."
+}
+git merge-base --is-ancestor $candidate $upstream
+if ($LASTEXITCODE -ne 0) { throw "The candidate is not reachable from upstream." }
+git merge-base --is-ancestor $base $upstream
+if ($LASTEXITCODE -ne 0) { throw "The plan-review record is not reachable from upstream." }
+$status = git status --porcelain --untracked-files=no
+if ($LASTEXITCODE -ne 0 -or $status) { throw "Tracked worktree is not clean after publication." }
+```
 
 No .NET build or test is required because W0 changes only Markdown instructions. If a review
 requires a code, project, package, schema, or generated-file change, stop and revise this plan.
