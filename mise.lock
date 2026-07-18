@@ -246,9 +246,24 @@ url = "https://github.com/jdx/hk/releases/download/v1.38.0/hk-x86_64-pc-windows-
 version = "25.0.2"
 backend = "core:java"
 
+[tools.java.options]
+shorthand_vendor = "openjdk"
+
+[tools.java."platforms.linux-arm64"]
+checksum = "sha256:671208d205e70c9805da45a483f670d49dd64654990a7b7223ccffb2abb070dd"
+url = "https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_linux-aarch64_bin.tar.gz"
+
 [tools.java."platforms.linux-x64"]
 checksum = "sha256:555ce0821e4fe175ea50d54518cd6fbece9663c1998de529bc6ce429534457df"
 url = "https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_linux-x64_bin.tar.gz"
+
+[tools.java."platforms.macos-arm64"]
+checksum = "sha256:7581b0d1752cd5acbf39e286c03f07b6cd6c205b562eb2fe753ff0253cf4c1bf"
+url = "https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_macos-aarch64_bin.tar.gz"
+
+[tools.java."platforms.macos-x64"]
+checksum = "sha256:4ec2f4bc47b057fdf9cda07af27fae8f3605e90fa963d4240d63baeb46ede460"
+url = "https://download.java.net/java/GA/jdk25.0.2/b1e0dfa218384cb9959bdcb897162d4e/10/GPL/openjdk-25.0.2_macos-x64_bin.tar.gz"
 
 [tools.java."platforms.windows-x64"]
 checksum = "sha256:74784a0c07258f32d36e9224dd79187c566d831c30d47dc06888d4212087331d"
@@ -293,6 +308,41 @@ backend = "pipx:prek"
 [[tools.pkl]]
 version = "0.31.1"
 backend = "aqua:apple/pkl"
+
+[tools.pkl."platforms.linux-arm64"]
+checksum = "sha256:7ef10e743daa921fb94ae7bdb9ec6986f362bf250c55814b9ea2aeb13f2d083e"
+url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-linux-aarch64"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/382243722"
+
+[tools.pkl."platforms.linux-arm64-musl"]
+checksum = "sha256:7ef10e743daa921fb94ae7bdb9ec6986f362bf250c55814b9ea2aeb13f2d083e"
+url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-linux-aarch64"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/382243722"
+
+[tools.pkl."platforms.linux-x64"]
+checksum = "sha256:618f13955d755cafbfe8c9cba1d27635848cd49dbc6abffd398d2751db1231bf"
+url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-linux-amd64"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/382243718"
+
+[tools.pkl."platforms.linux-x64-musl"]
+checksum = "sha256:618f13955d755cafbfe8c9cba1d27635848cd49dbc6abffd398d2751db1231bf"
+url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-linux-amd64"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/382243718"
+
+[tools.pkl."platforms.macos-arm64"]
+checksum = "sha256:1b6a5438d9624cd2798a7530721bbbfa27ef72efe5c878a1b6c546c6e7ca0e8f"
+url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-macos-aarch64"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/382243720"
+
+[tools.pkl."platforms.macos-x64"]
+checksum = "sha256:22123ed4ae4c03afa8c54c69f77f0bec39b0fa0f67b09d6d148e0a376a2a471d"
+url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-macos-amd64"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/382243726"
+
+[tools.pkl."platforms.windows-x64"]
+checksum = "sha256:a8834481667325b44c539dbb758d7365a16389070f343c04b639bbe525ede013"
+url = "https://github.com/apple/pkl/releases/download/0.31.1/pkl-windows-amd64.exe"
+url_api = "https://api.github.com/repos/apple/pkl/releases/assets/382243744"
 
 [[tools.pnpm]]
 version = "10.34.1"
@@ -423,41 +473,53 @@ checksum = "sha256:124510b94b6baa3380d051fdf4650eaa80a302c876d611e9dba0b2e18d874
 url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-pc-windows-msvc.zip"
 
 [[tools.ruby]]
-version = "3.3.10"
+version = "3.3.12"
 backend = "core:ruby"
 
+[tools.ruby.options]
+compile = "false"
+precompiled_url = "jdx/ruby"
+ruby_build_repo = "https://github.com/rbenv/ruby-build.git"
+ruby_install = "false"
+
 [tools.ruby."platforms.linux-arm64"]
-checksum = "sha256:0265cb5f0626dd6ef20ef7043ed8dfb9daa38984793b26cadc8170653cc082e8"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.arm64_linux.tar.gz"
+checksum = "sha256:9778fc285dca3ae4ff19213355e549c30ba7fb02635338df342969017d5ac141"
+url = "https://github.com/jdx/ruby/releases/download/3.3.12-1/ruby-3.3.12.arm64_linux.tar.gz"
 provenance = "github-attestations"
 
 [tools.ruby."platforms.linux-arm64-musl"]
-checksum = "sha256:0265cb5f0626dd6ef20ef7043ed8dfb9daa38984793b26cadc8170653cc082e8"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.arm64_linux.tar.gz"
+checksum = "sha256:9778fc285dca3ae4ff19213355e549c30ba7fb02635338df342969017d5ac141"
+url = "https://github.com/jdx/ruby/releases/download/3.3.12-1/ruby-3.3.12.arm64_linux.tar.gz"
 provenance = "github-attestations"
 
 [tools.ruby."platforms.linux-x64"]
-checksum = "sha256:864b2f58f33d88f2d3c8130b2d50f3289796c1a2a0e0cc945253abd2d329796e"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.x86_64_linux.tar.gz"
+checksum = "sha256:9f85eb7bce31098ba8d81081e047c795ab161a785b163b30eb1ce973b0e6c186"
+url = "https://github.com/jdx/ruby/releases/download/3.3.12-1/ruby-3.3.12.x86_64_linux.tar.gz"
 provenance = "github-attestations"
 
 [tools.ruby."platforms.linux-x64-musl"]
-checksum = "sha256:864b2f58f33d88f2d3c8130b2d50f3289796c1a2a0e0cc945253abd2d329796e"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.x86_64_linux.tar.gz"
+checksum = "sha256:9f85eb7bce31098ba8d81081e047c795ab161a785b163b30eb1ce973b0e6c186"
+url = "https://github.com/jdx/ruby/releases/download/3.3.12-1/ruby-3.3.12.x86_64_linux.tar.gz"
 provenance = "github-attestations"
 
 [tools.ruby."platforms.macos-arm64"]
-checksum = "sha256:bdbfeceee5981e29a64c0d515a29755fad723ef17c259317af7976aedca22098"
-url = "https://github.com/jdx/ruby/releases/download/3.3.10/ruby-3.3.10.macos.tar.gz"
+checksum = "sha256:63d8668a5ff595fb82ee54328ee9c6166923967fedd1dbd7f2961099fd462da2"
+url = "https://github.com/jdx/ruby/releases/download/3.3.12-1/ruby-3.3.12.macos.tar.gz"
 provenance = "github-attestations"
 
 [tools.ruby."platforms.macos-x64"]
-checksum = "sha256:b555baa467a306cfc8e6c6ed24d0d27b27e9a1bed1d91d95509859eac6b0e928"
-url = "https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.10.tar.gz"
+checksum = "sha256:b06d63beae271933033e27f0a389bc582a009e7845357d44365c39de525a051b"
+url = "https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.12.tar.gz"
 
 [tools.ruby."platforms.windows-x64"]
-checksum = "sha256:80203102617b216dc0bcdcc8c21cc3889aa3fde7f15860e2e22ee5487480f694"
-url = "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-3.3.10-1/rubyinstaller-3.3.10-1-x64.7z"
+url = "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-3.3.12-1/rubyinstaller-3.3.12-1-x64.7z"
+
+[[tools.ruby]]
+version = "3.3.12"
+backend = "core:ruby"
+
+[tools.ruby."platforms.windows-x64"]
+url = "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-3.3.12-1/rubyinstaller-3.3.12-1-x64.7z"
 
 [[tools.taplo]]
 version = "0.10.0"
@@ -465,9 +527,11 @@ backend = "aqua:tamasfe/taplo"
 
 [tools.taplo."platforms.linux-arm64"]
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-aarch64.gz"
+url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257322597"
 
 [tools.taplo."platforms.linux-arm64-musl"]
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-aarch64.gz"
+url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257322597"
 
 [tools.taplo."platforms.linux-x64"]
 checksum = "blake3:4871fab0e60275a1eb46e7190726e144f56c9a9527f59b0d1da5a042baead8e2"
@@ -475,15 +539,19 @@ url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86
 
 [tools.taplo."platforms.linux-x64-musl"]
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz"
+url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257322600"
 
 [tools.taplo."platforms.macos-arm64"]
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-aarch64.gz"
+url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257323110"
 
 [tools.taplo."platforms.macos-x64"]
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-x86_64.gz"
+url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257323116"
 
 [tools.taplo."platforms.windows-x64"]
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x86_64.zip"
+url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257323062"
 
 [[tools.typos]]
 version = "1.44.0"
