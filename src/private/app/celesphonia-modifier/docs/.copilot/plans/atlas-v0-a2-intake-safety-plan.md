@@ -425,9 +425,10 @@ revision 5, differing from revision 4 only in revision and confirmation: `approv
 and publishes state revision 2 last. Copy trusts only revision 2 and revalidates every referenced
 document.
 
-This is a trusted human-operated gate, not a claim that the CLI proves Git authority. Any later
-discovery revision invalidates approval. The operator privately hashes the approved revision and
-places that digest in the copy request.
+This is a trusted human-operated gate, not a claim that the CLI proves Git authority. The operator
+privately hashes state revision 2 and places only that digest in the copy request. State revision 2
+binds the approved-manifest digest; the copy command rehashes the manifest and compares it with that
+binding.
 
 During copy, the tool hashes `Game.exe` under the same held-handle stability rules as copied files.
 Together with every included definition hash and the public identifiers, this establishes the
@@ -478,8 +479,10 @@ must not be consumed as qualification. The operation does not claim an atomic tr
 files. If state revision 3 exists and validates, persisted qualification is authoritative even when
 interruption or standard-output failure prevents a success message.
 
-An `.incomplete` directory or a byte mismatch requires human inspection and a separately approved
-retry or targeted removal. A2 never guesses or recursively removes an unexpected final directory.
+A partial or mismatched `.incomplete` directory requires human inspection and a separately approved
+fresh run or targeted removal. A complete request-owned directory with matching captured receipt is
+recoverable only under the matrix in section 12. A2 never guesses or recursively removes an
+unexpected final directory.
 
 On an ordinary pre-rename failure, cleanup attempts to remove only the request-bound, owned,
 non-reparse `.incomplete` directory. If removal fails, the command reports failure and leaves the
@@ -543,7 +546,8 @@ The recovery matrix is:
   continue;
 - missing deterministic control output, with no phase state: regenerate it from the same request;
 - complete request-owned `.incomplete` directory with every planned copy and staged receipt:
-  validate destination bytes and promote the captured receipt without rereading sources;
+  validate destination bytes and staged receipt, rename the directory to final, replace inventory,
+  publish the unchanged receipt, then publish state revision 3 without rereading sources;
 - final directory with every planned copy and staged receipt, before inventory replacement:
   validate destination bytes, then continue without rereading sources;
 - replaced inventory before receipt publication: require canonical SHA-256 to equal the calculated
