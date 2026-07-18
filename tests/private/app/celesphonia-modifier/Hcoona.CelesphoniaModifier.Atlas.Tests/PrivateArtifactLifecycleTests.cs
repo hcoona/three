@@ -215,6 +215,23 @@ public sealed class PrivateArtifactLifecycleTests
                 TestContext.Current.CancellationToken).AsTask());
     }
 
+    [Fact]
+    public async Task CleanupPreflightAsyncRejectsUnexpectedFutureStateArtifact()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareQualifiedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreatePreflightRequest());
+        await File.WriteAllTextAsync(
+            Path.Combine(workspace.Layout.StatesDirectory, "atlas-intake-state.r000005.json"),
+            "{}",
+            TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => PrivateArtifactLifecycle.CleanupPreflightAsync(
+                workspace.Layout.CanonicalCleanupPreflightRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+    }
+
     private static async Task PrepareQualifiedWorkspaceAsync(AtlasSyntheticWorkspace workspace)
     {
         await AtlasDiscovery.DiscoverAsync(

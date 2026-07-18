@@ -34,6 +34,7 @@ public static class AtlasDiscovery
             request.SurveyAlias);
         ValidatePrivateWorkspace(layout, io);
         ValidateDiscoveryCanonicalPaths(loadedRequest.AbsolutePath, request, layout, io);
+        ValidateCommandWorkspaceCensus(layout, AtlasIntakeContracts.DiscoveredStateRevision, io);
 
         if (await TryReturnValidatedDiscoveryAsync(
                 loadedRequest,
@@ -204,6 +205,7 @@ public static class AtlasDiscovery
             request.SurveyAlias);
         ValidatePrivateWorkspace(layout, io);
         ValidateConfirmationCanonicalPaths(loadedRequest.AbsolutePath, request, layout, io);
+        ValidateCommandWorkspaceCensus(layout, AtlasIntakeContracts.ApprovedStateRevision, io);
 
         if (await TryReturnValidatedConfirmationAsync(
                 loadedRequest,
@@ -1366,20 +1368,16 @@ public static class AtlasDiscovery
             layout.WorkspaceRoot,
             io,
             requireExisting: true);
-        ValidateCreateNewOutputDirectory(
+        ValidateCanonicalOutputDirectory(
             request.ManifestRevisionDirectory,
+            layout.ManifestRevisionDirectory,
             layout.WorkspaceRoot,
             io);
-        ValidateCreateNewOutputDirectory(
+        ValidateCanonicalOutputDirectory(
             request.StateRevisionDirectory,
+            layout.StatesDirectory,
             layout.WorkspaceRoot,
             io);
-        ValidateCreateNewOutputFile(
-            request.BaselineManifestPath,
-            layout.CanonicalBaselineManifestPath,
-            layout.WorkspaceRoot,
-            io,
-            requireExisting: true);
 
         ValidateSourceOutsideWorkspace(layout.WorkspaceRoot, request.SaveRoots[0].Path);
         ValidateSourceOutsideWorkspace(layout.WorkspaceRoot, request.SaveRoots[1].Path);
@@ -1409,14 +1407,6 @@ public static class AtlasDiscovery
         ValidateExistingOrdinaryFile(request.SourceRootMapPath, io);
         ValidateExistingOrdinaryFile(request.CopyPlanPath, io);
         ValidateExistingOrdinaryFile(request.InventoryPath, io);
-        ValidateCreateNewOutputDirectory(
-            request.ManifestRevisionDirectory,
-            layout.WorkspaceRoot,
-            io);
-        ValidateCreateNewOutputDirectory(
-            request.StateRevisionDirectory,
-            layout.WorkspaceRoot,
-            io);
         ValidateCreateNewOutputDirectory(
             layout.InventoryBackupsDirectory,
             layout.WorkspaceRoot,
@@ -1457,6 +1447,16 @@ public static class AtlasDiscovery
             layout.WorkspaceRoot,
             io,
             allowExistingOutput: true);
+        ValidateCanonicalOutputDirectory(
+            request.ManifestRevisionDirectory,
+            layout.ManifestRevisionDirectory,
+            layout.WorkspaceRoot,
+            io);
+        ValidateCanonicalOutputDirectory(
+            request.StateRevisionDirectory,
+            layout.StatesDirectory,
+            layout.WorkspaceRoot,
+            io);
     }
 
     internal static void ValidateCanonicalRequestFile(
@@ -1472,6 +1472,319 @@ public static class AtlasDiscovery
             throw new AtlasSafetyException("The request path is not canonical.");
         }
     }
+
+    internal static void ValidateCanonicalOutputDirectory(
+        string actualPath,
+        string expectedPath,
+        string workspaceRoot,
+        AtlasIoSeams io)
+    {
+        if (!AtlasIntakeContracts.PathEquals(actualPath, expectedPath))
+        {
+            throw new AtlasSafetyException("The canonical path is invalid.");
+        }
+
+        ValidateCreateNewOutputDirectory(actualPath, workspaceRoot, io);
+    }
+
+    internal static void ValidateCommandWorkspaceCensus(
+        AtlasWorkspaceLayout layout,
+        int targetStateRevision,
+        AtlasIoSeams io)
+    {
+        int completedStateRevision = GetHighestCompletedStateRevision(layout, io);
+        bool allowCurrentPhaseTransients = completedStateRevision == targetStateRevision - 1;
+        string targetPhase = AtlasIntakeContracts.GetPhaseName(targetStateRevision);
+
+        ValidateDirectoryEntryCensus(
+            layout.WorkspaceRoot,
+            [],
+            ["intake", "copies", "cleanup"],
+            io);
+
+        HashSet<string> intakeFiles = new(StringComparer.OrdinalIgnoreCase)
+        {
+            Path.GetFileName(layout.CanonicalBaselineManifestPath),
+            Path.GetFileName(layout.CanonicalInventoryPath),
+        };
+        if (completedStateRevision >= AtlasIntakeContracts.DiscoveredStateRevision
+            || (allowCurrentPhaseTransients
+                && targetStateRevision == AtlasIntakeContracts.DiscoveredStateRevision))
+        {
+            intakeFiles.Add(Path.GetFileName(layout.CanonicalSourceRootMapPath));
+            intakeFiles.Add(Path.GetFileName(layout.CanonicalCopyPlanPath));
+        }
+
+        if (allowCurrentPhaseTransients)
+        {
+            if (targetStateRevision == AtlasIntakeContracts.DiscoveredStateRevision)
+            {
+                intakeFiles.Add(Path.GetFileName(
+                    GetStagingPath(
+                        layout.CanonicalSourceRootMapPath,
+                        AtlasIntakeContracts.DiscoveredPhase)));
+                intakeFiles.Add(Path.GetFileName(
+                    GetStagingPath(
+                        layout.CanonicalCopyPlanPath,
+                        AtlasIntakeContracts.DiscoveredPhase)));
+            }
+
+            intakeFiles.Add(Path.GetFileName(
+                GetStagingPath(layout.CanonicalInventoryPath, targetPhase)));
+        }
+
+        ValidateDirectoryEntryCensus(
+            layout.IntakeDirectory,
+            intakeFiles,
+            ["requests", "manifest-revisions", "states", "inventory-backups"],
+            io);
+
+        HashSet<string> requestFiles = new(StringComparer.OrdinalIgnoreCase);
+        int highestRequestRevision = Math.Max(completedStateRevision, targetStateRevision);
+        for (int revision = AtlasIntakeContracts.DiscoveredStateRevision;
+             revision <= highestRequestRevision;
+             revision++)
+        {
+            requestFiles.Add(Path.GetFileName(GetCanonicalRequestPath(layout, revision)));
+        }
+
+        ValidateDirectoryEntryCensus(layout.RequestDirectory, requestFiles, [], io);
+
+        HashSet<string> manifestFiles = new(StringComparer.OrdinalIgnoreCase);
+        if (completedStateRevision >= AtlasIntakeContracts.DiscoveredStateRevision
+            || (allowCurrentPhaseTransients
+                && targetStateRevision == AtlasIntakeContracts.DiscoveredStateRevision))
+        {
+            manifestFiles.Add(Path.GetFileName(layout.CanonicalPendingManifestPath));
+            if (allowCurrentPhaseTransients
+                && targetStateRevision == AtlasIntakeContracts.DiscoveredStateRevision)
+            {
+                manifestFiles.Add(Path.GetFileName(
+                    GetStagingPath(
+                        layout.CanonicalPendingManifestPath,
+                        AtlasIntakeContracts.DiscoveredPhase)));
+            }
+        }
+
+        if (completedStateRevision >= AtlasIntakeContracts.ApprovedStateRevision
+            || (allowCurrentPhaseTransients
+                && targetStateRevision == AtlasIntakeContracts.ApprovedStateRevision))
+        {
+            manifestFiles.Add(Path.GetFileName(layout.CanonicalApprovedManifestPath));
+            if (allowCurrentPhaseTransients
+                && targetStateRevision == AtlasIntakeContracts.ApprovedStateRevision)
+            {
+                manifestFiles.Add(Path.GetFileName(
+                    GetStagingPath(
+                        layout.CanonicalApprovedManifestPath,
+                        AtlasIntakeContracts.ApprovedPhase)));
+            }
+        }
+
+        ValidateDirectoryEntryCensus(layout.ManifestRevisionDirectory, manifestFiles, [], io);
+
+        HashSet<string> stateFiles = new(StringComparer.OrdinalIgnoreCase);
+        for (int revision = AtlasIntakeContracts.DiscoveredStateRevision;
+             revision <= completedStateRevision;
+             revision++)
+        {
+            stateFiles.Add(Path.GetFileName(GetStatePath(layout, revision)));
+        }
+
+        if (allowCurrentPhaseTransients)
+        {
+            string currentStatePath = GetStatePath(layout, targetStateRevision);
+            stateFiles.Add(Path.GetFileName(currentStatePath));
+            stateFiles.Add(Path.GetFileName(GetStagingPath(currentStatePath, targetPhase)));
+        }
+
+        ValidateDirectoryEntryCensus(layout.StatesDirectory, stateFiles, [], io);
+
+        HashSet<string> inventoryBackupFiles = new(StringComparer.OrdinalIgnoreCase);
+        for (int revision = AtlasIntakeContracts.DiscoveredStateRevision;
+             revision <= completedStateRevision;
+             revision++)
+        {
+            inventoryBackupFiles.Add(Path.GetFileName(GetInventoryBackupPath(layout, revision)));
+        }
+
+        if (allowCurrentPhaseTransients)
+        {
+            inventoryBackupFiles.Add(Path.GetFileName(
+                GetInventoryBackupPath(layout, targetStateRevision)));
+        }
+
+        ValidateDirectoryEntryCensus(
+            layout.InventoryBackupsDirectory,
+            inventoryBackupFiles,
+            [],
+            io);
+
+        HashSet<string> cleanupFiles = new(StringComparer.OrdinalIgnoreCase);
+        if (completedStateRevision >= AtlasIntakeContracts.PreflightedStateRevision
+            || (allowCurrentPhaseTransients
+                && targetStateRevision == AtlasIntakeContracts.PreflightedStateRevision))
+        {
+            cleanupFiles.Add(Path.GetFileName(layout.CanonicalCleanupPreflightReportPath));
+        }
+
+        if (allowCurrentPhaseTransients
+            && targetStateRevision == AtlasIntakeContracts.PreflightedStateRevision)
+        {
+            cleanupFiles.Add(Path.GetFileName(
+                GetStagingPath(
+                    layout.CanonicalCleanupPreflightReportPath,
+                    AtlasIntakeContracts.PreflightedPhase)));
+        }
+
+        ValidateDirectoryEntryCensus(layout.CleanupDirectory, cleanupFiles, [], io);
+
+        ValidateCopyDirectoryNameCensus(
+            layout,
+            completedStateRevision,
+            allowCurrentPhaseTransients
+                && targetStateRevision == AtlasIntakeContracts.QualifiedStateRevision,
+            io);
+    }
+
+    private static void ValidateCopyDirectoryNameCensus(
+        AtlasWorkspaceLayout layout,
+        int completedStateRevision,
+        bool allowQualifiedPhaseTransients,
+        AtlasIoSeams io)
+    {
+        bool finalExistsAsDirectory = io.DirectoryExists(layout.CanonicalFinalCopyPath);
+        bool incompleteExistsAsDirectory = io.DirectoryExists(layout.CanonicalIncompleteCopyPath);
+        if (io.FileExists(layout.CanonicalFinalCopyPath) && !finalExistsAsDirectory)
+        {
+            throw new AtlasSafetyException("The final copy path is invalid.");
+        }
+
+        if (io.FileExists(layout.CanonicalIncompleteCopyPath) && !incompleteExistsAsDirectory)
+        {
+            throw new AtlasSafetyException("The incomplete copy path is invalid.");
+        }
+
+        HashSet<string> allowedDirectories = new(StringComparer.OrdinalIgnoreCase);
+        if (completedStateRevision >= AtlasIntakeContracts.QualifiedStateRevision
+            || allowQualifiedPhaseTransients)
+        {
+            allowedDirectories.Add(Path.GetFileName(layout.CanonicalFinalCopyPath));
+        }
+
+        if (allowQualifiedPhaseTransients)
+        {
+            allowedDirectories.Add(Path.GetFileName(layout.CanonicalIncompleteCopyPath));
+        }
+
+        ValidateDirectoryEntryCensus(layout.CopiesDirectory, [], allowedDirectories, io);
+        if (finalExistsAsDirectory && incompleteExistsAsDirectory)
+        {
+            throw new AtlasSafetyException("Unexpected copy directories require human inspection.");
+        }
+    }
+
+    private static void ValidateDirectoryEntryCensus(
+        string directoryPath,
+        IEnumerable<string> allowedFiles,
+        IEnumerable<string> allowedDirectories,
+        AtlasIoSeams io)
+    {
+        bool directoryExists = io.DirectoryExists(directoryPath);
+        if (!directoryExists)
+        {
+            if (io.FileExists(directoryPath))
+            {
+                throw new AtlasSafetyException("The directory path is invalid.");
+            }
+
+            return;
+        }
+
+        ValidateExistingOrdinaryDirectory(directoryPath, io);
+        HashSet<string> fileNames = allowedFiles.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> directoryNames = allowedDirectories.ToHashSet(
+            StringComparer.OrdinalIgnoreCase);
+        foreach (string entryPath in io.EnumerateFileSystemEntries(
+                     directoryPath,
+                     SearchOption.TopDirectoryOnly))
+        {
+            FileAttributes attributes = io.GetAttributes(entryPath);
+            if ((attributes & FileAttributes.ReparsePoint) != 0
+                || (attributes & FileAttributes.Device) != 0)
+            {
+                throw new AtlasSafetyException("A workspace output entry is reparse-backed.");
+            }
+
+            string entryName = Path.GetFileName(entryPath);
+            if ((attributes & FileAttributes.Directory) != 0)
+            {
+                if (!directoryNames.Contains(entryName))
+                {
+                    throw new AtlasSafetyException("The workspace output census is invalid.");
+                }
+
+                continue;
+            }
+
+            if (!fileNames.Contains(entryName))
+            {
+                throw new AtlasSafetyException("The workspace output census is invalid.");
+            }
+        }
+    }
+
+    private static int GetHighestCompletedStateRevision(
+        AtlasWorkspaceLayout layout,
+        AtlasIoSeams io)
+    {
+        for (int revision = AtlasIntakeContracts.PreflightedStateRevision;
+             revision >= AtlasIntakeContracts.DiscoveredStateRevision;
+             revision--)
+        {
+            if (io.FileExists(GetStatePath(layout, revision)))
+            {
+                return revision;
+            }
+        }
+
+        return 0;
+    }
+
+    private static string GetCanonicalRequestPath(AtlasWorkspaceLayout layout, int stateRevision) =>
+        stateRevision switch
+        {
+            AtlasIntakeContracts.DiscoveredStateRevision => layout.CanonicalDiscoverRequestPath,
+            AtlasIntakeContracts.ApprovedStateRevision => layout.CanonicalConfirmRequestPath,
+            AtlasIntakeContracts.QualifiedStateRevision => layout.CanonicalCopyRequestPath,
+            AtlasIntakeContracts.PreflightedStateRevision =>
+                layout.CanonicalCleanupPreflightRequestPath,
+            _ => throw new AtlasSafetyException("The intake-state revision is invalid."),
+        };
+
+    private static string GetStatePath(AtlasWorkspaceLayout layout, int stateRevision) =>
+        stateRevision switch
+        {
+            AtlasIntakeContracts.DiscoveredStateRevision => layout.CanonicalDiscoveredStatePath,
+            AtlasIntakeContracts.ApprovedStateRevision => layout.CanonicalApprovedStatePath,
+            AtlasIntakeContracts.QualifiedStateRevision => layout.CanonicalQualifiedStatePath,
+            AtlasIntakeContracts.PreflightedStateRevision => layout.CanonicalPreflightedStatePath,
+            _ => throw new AtlasSafetyException("The intake-state revision is invalid."),
+        };
+
+    private static string GetInventoryBackupPath(AtlasWorkspaceLayout layout, int stateRevision) =>
+        stateRevision switch
+        {
+            AtlasIntakeContracts.DiscoveredStateRevision =>
+                layout.CanonicalDiscoveredInventoryBackupPath,
+            AtlasIntakeContracts.ApprovedStateRevision =>
+                layout.CanonicalApprovedInventoryBackupPath,
+            AtlasIntakeContracts.QualifiedStateRevision =>
+                layout.CanonicalQualifiedInventoryBackupPath,
+            AtlasIntakeContracts.PreflightedStateRevision =>
+                layout.CanonicalPreflightedInventoryBackupPath,
+            _ => throw new AtlasSafetyException("The intake-state revision is invalid."),
+        };
 
     internal static void ValidateExistingOrdinaryDirectory(string path, AtlasIoSeams io)
     {
@@ -1506,6 +1819,10 @@ public static class AtlasDiscovery
             requireDirectoryLeaf: false);
         AtlasIntakeContracts.AssertContainsPath(workspaceRoot, path);
         EnsureFixedDrive(path, io);
+        if (io.FileExists(path) && !io.DirectoryExists(path))
+        {
+            throw new AtlasSafetyException("The directory path is invalid.");
+        }
     }
 
     internal static void ValidateCreateNewOutputFile(
@@ -1529,9 +1846,21 @@ public static class AtlasDiscovery
             requireDirectoryLeaf: false);
         AtlasIntakeContracts.AssertContainsPath(workspaceRoot, actualPath);
         EnsureFixedDrive(actualPath, io);
+        bool fileExists = io.FileExists(actualPath);
+        bool directoryExists = io.DirectoryExists(actualPath);
+        if (directoryExists)
+        {
+            throw new AtlasSafetyException("The file path is invalid.");
+        }
+
+        if (fileExists)
+        {
+            ValidateExistingOrdinaryFile(actualPath, io);
+        }
+
         if (!requireExisting
             && !allowExistingOutput
-            && (io.FileExists(actualPath) || io.DirectoryExists(actualPath)))
+            && (fileExists || directoryExists))
         {
             throw new AtlasSafetyException("The create-new output already exists.");
         }

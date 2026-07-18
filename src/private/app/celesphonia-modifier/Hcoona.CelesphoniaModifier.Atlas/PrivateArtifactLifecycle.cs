@@ -27,6 +27,10 @@ public static class PrivateArtifactLifecycle
             request.SurveyAlias);
         AtlasDiscovery.ValidatePrivateWorkspace(layout, io);
         ValidateCleanupPreflightCanonicalPaths(loadedRequest.AbsolutePath, request, layout, io);
+        AtlasDiscovery.ValidateCommandWorkspaceCensus(
+            layout,
+            AtlasIntakeContracts.PreflightedStateRevision,
+            io);
 
         if (await AtlasDiscovery.TryReturnValidatedPreflightAsync(
                 loadedRequest,
@@ -158,8 +162,9 @@ public static class PrivateArtifactLifecycle
             io);
         AtlasDiscovery.ValidateExistingOrdinaryFile(request.QualifiedStatePath, io);
         AtlasDiscovery.ValidateExistingOrdinaryFile(request.InventoryPath, io);
-        AtlasDiscovery.ValidateCreateNewOutputDirectory(
+        AtlasDiscovery.ValidateCanonicalOutputDirectory(
             request.StateRevisionDirectory,
+            layout.StatesDirectory,
             layout.WorkspaceRoot,
             io);
         AtlasDiscovery.ValidateCreateNewOutputFile(

@@ -97,6 +97,20 @@ public sealed class LocatorAliasMap
                 System.Globalization.CultureInfo.InvariantCulture));
         }
 
+        string[] sortedKeys = aliases.Keys
+            .OrderBy(static key => key, StringComparer.Ordinal)
+            .ToArray();
+        for (int index = 0; index < sortedKeys.Length; index++)
+        {
+            string expectedKey = sortedKeys[index];
+            string expectedAlias = $"{prefix}{index + 1:000000}";
+            if (!aliases.TryGetValue(expectedKey, out string? alias)
+                || !StringComparer.Ordinal.Equals(alias, expectedAlias))
+            {
+                throw new AtlasSafetyException("The locator alias map is invalid.");
+            }
+        }
+
         for (int ordinal = 1; ordinal <= aliases.Count; ordinal++)
         {
             if (!ordinals.Contains(ordinal))
@@ -183,8 +197,6 @@ public static class LocatorSegmentRedactor
         ArgumentNullException.ThrowIfNull(segments);
         ArgumentNullException.ThrowIfNull(aliasMap);
 
-        SortedSet<string> schemaKeys = new(StringComparer.Ordinal);
-        SortedSet<string> dynamicKeys = new(StringComparer.Ordinal);
         List<string> output = [];
         foreach (LocatorSegment segment in segments)
         {
@@ -201,11 +213,9 @@ public static class LocatorSegmentRedactor
                     break;
                 case LocatorSegmentKind.SchemaKey:
                     ValidateKey(segment.TextValue);
-                    schemaKeys.Add(segment.TextValue);
                     break;
                 case LocatorSegmentKind.DynamicKey:
                     ValidateKey(segment.TextValue);
-                    dynamicKeys.Add(segment.TextValue);
                     break;
                 default:
                     throw new AtlasSafetyException("The locator segment kind is invalid.");
@@ -224,38 +234,7 @@ public static class LocatorSegmentRedactor
             });
         }
 
-        ValidateAliasPopulation(aliasMap.SchemaKeyAliases, schemaKeys, "schema-key-");
-        ValidateAliasPopulation(aliasMap.DynamicKeyAliases, dynamicKeys, "dynamic-key-");
         return string.Join("/", output);
-    }
-
-    private static void ValidateAliasPopulation(
-        IReadOnlyDictionary<string, string> aliases,
-        SortedSet<string> expectedKeys,
-        string prefix)
-    {
-        if (aliases.Count != expectedKeys.Count)
-        {
-            throw new AtlasSafetyException("The locator alias map is invalid.");
-        }
-
-        string[] sortedKeys = expectedKeys
-            .OrderBy(static key => key, StringComparer.Ordinal)
-            .ToArray();
-        for (int index = 0; index < sortedKeys.Length; index++)
-        {
-            string expectedKey = sortedKeys[index];
-            if (!aliases.TryGetValue(expectedKey, out string? alias))
-            {
-                throw new AtlasSafetyException("The locator alias map is invalid.");
-            }
-
-            string expectedAlias = $"{prefix}{index + 1:000000}";
-            if (!StringComparer.Ordinal.Equals(alias, expectedAlias))
-            {
-                throw new AtlasSafetyException("The locator alias map is invalid.");
-            }
-        }
     }
 
     internal static void ValidateAliasValue(string alias, string prefix)

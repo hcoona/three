@@ -28,6 +28,10 @@ public static class TrustedLocalCopy
             request.SurveyAlias);
         AtlasDiscovery.ValidatePrivateWorkspace(layout, io);
         ValidateCopyCanonicalPaths(loadedRequest.AbsolutePath, request, layout, io);
+        AtlasDiscovery.ValidateCommandWorkspaceCensus(
+            layout,
+            AtlasIntakeContracts.QualifiedStateRevision,
+            io);
 
         if (await AtlasDiscovery.TryReturnValidatedCopyAsync(
                 loadedRequest,
@@ -138,6 +142,7 @@ public static class TrustedLocalCopy
         string incompleteReceiptStagingPath = Path.Combine(
             layout.CanonicalIncompleteCopyPath,
             Path.GetFileName(finalReceiptStagingPath));
+        ValidateCopyOutputCensus(layout, copyPlan.Document, io);
 
         if (io.DirectoryExists(layout.CanonicalFinalCopyPath)
             || io.DirectoryExists(layout.CanonicalIncompleteCopyPath))
@@ -170,6 +175,7 @@ public static class TrustedLocalCopy
                 "An unfinished copy directory requires human inspection.");
         }
 
+        ValidateFreshCopyOutputAbsence(layout, io);
         CopyValidationContext validation = ValidateCurrentSourcesAgainstManifest(
             approvedManifest.Document,
             sourceRootMap.Document,
@@ -232,6 +238,32 @@ public static class TrustedLocalCopy
                     io,
                     cancellationToken)
                 .ConfigureAwait(false);
+            AtlasLoadedDocument<AtlasCopyReceiptDocument> stagedReceiptEvidence =
+                await LoadReceiptAsync(incompleteReceiptStagingPath, cancellationToken)
+                    .ConfigureAwait(false);
+            ValidateReceiptAgainstBindings(
+                loadedRequest.Sha256,
+                request,
+                approvedState,
+                approvedManifest,
+                sourceRootMap,
+                copyPlan,
+                aliases,
+                stagedReceiptEvidence.Document);
+            if (!HasCompleteCopySet(
+                    layout.CanonicalIncompleteCopyPath,
+                    copyPlan.Document,
+                    incompleteReceiptStagingPath,
+                    io))
+            {
+                throw new AtlasSafetyException("The incomplete copy directory is unusable.");
+            }
+
+            ValidateCopiedFilesAgainstReceipt(
+                layout.CanonicalIncompleteCopyPath,
+                stagedReceiptEvidence.Document,
+                io,
+                cancellationToken);
 
             if (io.DirectoryExists(layout.CanonicalFinalCopyPath))
             {
@@ -243,6 +275,20 @@ public static class TrustedLocalCopy
             finalReceiptStagingPath = Path.Combine(
                 layout.CanonicalFinalCopyPath,
                 Path.GetFileName(incompleteReceiptStagingPath));
+            if (!HasCompleteCopySet(
+                    layout.CanonicalFinalCopyPath,
+                    copyPlan.Document,
+                    finalReceiptStagingPath,
+                    io))
+            {
+                throw new AtlasSafetyException("The final copy directory is unusable.");
+            }
+
+            ValidateCopiedFilesAgainstReceipt(
+                layout.CanonicalFinalCopyPath,
+                stagedReceiptEvidence.Document,
+                io,
+                cancellationToken);
 
             AtlasPrivateArtifactInventoryDocument replacementInventory = CreateQualifiedInventory(
                 inventoryContext.PriorInventory.Document,
@@ -297,7 +343,24 @@ public static class TrustedLocalCopy
         {
             if (!renamedToFinal && io.DirectoryExists(layout.CanonicalIncompleteCopyPath))
             {
-                TryDeleteOwnedIncompleteDirectory(layout.CanonicalIncompleteCopyPath, io);
+                bool preserveRecoverableIncomplete =
+                    await CanRecoverIncompleteCopyDirectoryAsync(
+                            loadedRequest.Sha256,
+                            request,
+                            layout,
+                            approvedState,
+                            approvedManifest,
+                            sourceRootMap,
+                            copyPlan,
+                            aliases,
+                            incompleteReceiptStagingPath,
+                            io,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                if (!preserveRecoverableIncomplete)
+                {
+                    TryDeleteOwnedIncompleteDirectory(layout.CanonicalIncompleteCopyPath, io);
+                }
             }
 
             throw;
@@ -320,8 +383,9 @@ public static class TrustedLocalCopy
         AtlasDiscovery.ValidateExistingOrdinaryFile(request.SourceRootMapPath, io);
         AtlasDiscovery.ValidateExistingOrdinaryFile(request.CopyPlanPath, io);
         AtlasDiscovery.ValidateExistingOrdinaryFile(request.InventoryPath, io);
-        AtlasDiscovery.ValidateCreateNewOutputDirectory(
+        AtlasDiscovery.ValidateCanonicalOutputDirectory(
             request.StateRevisionDirectory,
+            layout.StatesDirectory,
             layout.WorkspaceRoot,
             io);
         AtlasDiscovery.ValidateCreateNewOutputFile(
@@ -384,6 +448,134 @@ public static class TrustedLocalCopy
             layout.WorkspaceRoot,
             io,
             allowExistingOutput: true);
+    }
+
+    internal static void ValidateCopyOutputCensus(
+        AtlasWorkspaceLayout layout,
+        AtlasCopyPlanDocument copyPlan,
+        AtlasIoSeams io)
+    {
+        bool hasIncompleteDirectory = io.DirectoryExists(layout.CanonicalIncompleteCopyPath);
+        bool hasFinalDirectory = io.DirectoryExists(layout.CanonicalFinalCopyPath);
+        if (io.FileExists(layout.CanonicalIncompleteCopyPath) && !hasIncompleteDirectory)
+        {
+            throw new AtlasSafetyException("The incomplete copy path is invalid.");
+        }
+
+        if (io.FileExists(layout.CanonicalFinalCopyPath) && !hasFinalDirectory)
+        {
+            throw new AtlasSafetyException("The final copy path is invalid.");
+        }
+
+        if (hasIncompleteDirectory && hasFinalDirectory)
+        {
+            throw new AtlasSafetyException("Unexpected copy directories require human inspection.");
+        }
+
+        string finalReceiptStagingPath = AtlasDiscovery.GetStagingPath(
+            layout.CanonicalCopyReceiptPath,
+            AtlasIntakeContracts.QualifiedPhase);
+        string incompleteReceiptStagingPath = Path.Combine(
+            layout.CanonicalIncompleteCopyPath,
+            Path.GetFileName(finalReceiptStagingPath));
+        if (hasIncompleteDirectory
+            && !HasCompleteCopySet(
+                layout.CanonicalIncompleteCopyPath,
+                copyPlan,
+                incompleteReceiptStagingPath,
+                io))
+        {
+            throw new AtlasSafetyException("The incomplete copy directory is unusable.");
+        }
+
+        string finalReceiptPath = io.FileExists(finalReceiptStagingPath)
+            ? finalReceiptStagingPath
+            : layout.CanonicalCopyReceiptPath;
+        if (hasFinalDirectory
+            && !HasCompleteCopySet(
+                layout.CanonicalFinalCopyPath,
+                copyPlan,
+                finalReceiptPath,
+                io))
+        {
+            throw new AtlasSafetyException("The final copy directory is unusable.");
+        }
+    }
+
+    internal static void ValidateFreshCopyOutputAbsence(
+        AtlasWorkspaceLayout layout,
+        AtlasIoSeams io)
+    {
+        RejectExistingCopyOutput(
+            layout.CanonicalIncompleteCopyPath,
+            "The incomplete copy path exists.");
+        RejectExistingCopyOutput(layout.CanonicalFinalCopyPath, "The final copy path exists.");
+        return;
+
+        void RejectExistingCopyOutput(string path, string message)
+        {
+            if (!io.FileExists(path) && !io.DirectoryExists(path))
+            {
+                return;
+            }
+
+            AtlasDiscovery.ValidatePathComponents(
+                path,
+                io,
+                allowMissingLeaf: false,
+                requireFileLeaf: false,
+                requireDirectoryLeaf: false);
+            throw new AtlasSafetyException(message);
+        }
+    }
+
+    internal static async ValueTask<bool> CanRecoverIncompleteCopyDirectoryAsync(
+        string requestSha256,
+        AtlasIntakeCopyRequest request,
+        AtlasWorkspaceLayout layout,
+        AtlasLoadedDocument<AtlasIntakeStateDocument> approvedState,
+        AtlasLoadedDocument<AtlasCorpusIntakeManifest> approvedManifest,
+        AtlasLoadedDocument<AtlasSourceRootMapDocument> sourceRootMap,
+        AtlasLoadedDocument<AtlasCopyPlanDocument> copyPlan,
+        CopyPhaseAliases aliases,
+        string incompleteReceiptStagingPath,
+        AtlasIoSeams io,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!HasCompleteCopySet(
+                    layout.CanonicalIncompleteCopyPath,
+                    copyPlan.Document,
+                    incompleteReceiptStagingPath,
+                    io))
+            {
+                return false;
+            }
+
+            AtlasLoadedDocument<AtlasCopyReceiptDocument> incompleteReceipt =
+                await LoadReceiptAsync(incompleteReceiptStagingPath, cancellationToken)
+                    .ConfigureAwait(false);
+            ValidateReceiptAgainstBindings(
+                requestSha256,
+                request,
+                approvedState,
+                approvedManifest,
+                sourceRootMap,
+                copyPlan,
+                aliases,
+                incompleteReceipt.Document);
+            ValidateCopiedFilesAgainstReceipt(
+                layout.CanonicalIncompleteCopyPath,
+                incompleteReceipt.Document,
+                io,
+                cancellationToken);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     internal static async ValueTask<bool> TryRecoverCopyFinalizationAsync(

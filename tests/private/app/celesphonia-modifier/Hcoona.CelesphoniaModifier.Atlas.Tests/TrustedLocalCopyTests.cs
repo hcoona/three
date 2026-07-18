@@ -96,7 +96,7 @@ public sealed class TrustedLocalCopyTests
     }
 
     [Fact]
-    public async Task CopyAsyncFailsClosedAfterBeforeRenameFailure()
+    public async Task CopyAsyncRecoversFromCompletePreRenameDirectoryWithoutReopeningSources()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
         await PrepareApprovedWorkspaceAsync(workspace);
@@ -126,10 +126,17 @@ public sealed class TrustedLocalCopyTests
         Assert.True(Directory.Exists(workspace.Layout.CanonicalIncompleteCopyPath));
         Assert.False(Directory.Exists(workspace.Layout.CanonicalFinalCopyPath));
 
-        await Assert.ThrowsAsync<AtlasSafetyException>(
-            () => TrustedLocalCopy.CopyAsync(
-                workspace.Layout.CanonicalCopyRequestPath,
-                TestContext.Current.CancellationToken).AsTask());
+        int liveSourceOpenCount = 0;
+        await TrustedLocalCopy.CopyAsync(
+            workspace.Layout.CanonicalCopyRequestPath,
+            AtlasTestSupport.CreateSourceReadCountingIo(
+                workspace,
+                () => liveSourceOpenCount++),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, liveSourceOpenCount);
+        Assert.False(Directory.Exists(workspace.Layout.CanonicalIncompleteCopyPath));
+        Assert.True(File.Exists(workspace.Layout.CanonicalQualifiedStatePath));
     }
 
     [Fact]
@@ -161,6 +168,92 @@ public sealed class TrustedLocalCopyTests
 
         Assert.False(Directory.Exists(workspace.Layout.CanonicalIncompleteCopyPath));
         Assert.True(Directory.Exists(workspace.Layout.CanonicalFinalCopyPath));
+
+        int liveSourceOpenCount = 0;
+        await TrustedLocalCopy.CopyAsync(
+            workspace.Layout.CanonicalCopyRequestPath,
+            AtlasTestSupport.CreateSourceReadCountingIo(
+                workspace,
+                () => liveSourceOpenCount++),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, liveSourceOpenCount);
+        Assert.True(File.Exists(workspace.Layout.CanonicalQualifiedStatePath));
+    }
+
+    [Fact]
+    public async Task CopyAsyncRecoversAfterInventoryReplacementBeforeReceiptPublication()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareApprovedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        bool failed = false;
+        AtlasIoSeams failingIo = AtlasTestSupport.CreateIo(
+            moveFile: (source, destination) =>
+            {
+                if (!failed
+                    && AtlasIntakeContracts.PathEquals(
+                        destination,
+                        workspace.Layout.CanonicalCopyReceiptPath))
+                {
+                    failed = true;
+                    throw new IOException("synthetic pre-receipt publication failure");
+                }
+
+                AtlasIoSeams.Default.MoveFile(source, destination);
+            });
+
+        await Assert.ThrowsAsync<IOException>(
+            () => TrustedLocalCopy.CopyAsync(
+                workspace.Layout.CanonicalCopyRequestPath,
+                failingIo,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.True(Directory.Exists(workspace.Layout.CanonicalFinalCopyPath));
+        Assert.False(File.Exists(workspace.Layout.CanonicalQualifiedStatePath));
+        Assert.False(File.Exists(workspace.Layout.CanonicalCopyReceiptPath));
+
+        int liveSourceOpenCount = 0;
+        await TrustedLocalCopy.CopyAsync(
+            workspace.Layout.CanonicalCopyRequestPath,
+            AtlasTestSupport.CreateSourceReadCountingIo(
+                workspace,
+                () => liveSourceOpenCount++),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, liveSourceOpenCount);
+        Assert.True(File.Exists(workspace.Layout.CanonicalCopyReceiptPath));
+        Assert.True(File.Exists(workspace.Layout.CanonicalQualifiedStatePath));
+    }
+
+    [Fact]
+    public async Task CopyAsyncRecoversAfterCancellationBeforeStatePublication()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareApprovedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        bool cancelled = false;
+        AtlasIoSeams failingIo = AtlasTestSupport.CreateIo(
+            moveFile: (source, destination) =>
+            {
+                if (!cancelled
+                    && AtlasIntakeContracts.PathEquals(
+                        destination,
+                        workspace.Layout.CanonicalQualifiedStatePath))
+                {
+                    cancelled = true;
+                    throw new OperationCanceledException(
+                        "synthetic state publication cancellation");
+                }
+
+                AtlasIoSeams.Default.MoveFile(source, destination);
+            });
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => TrustedLocalCopy.CopyAsync(
+                workspace.Layout.CanonicalCopyRequestPath,
+                failingIo,
+                TestContext.Current.CancellationToken).AsTask());
 
         int liveSourceOpenCount = 0;
         await TrustedLocalCopy.CopyAsync(
@@ -282,6 +375,162 @@ public sealed class TrustedLocalCopyTests
                 io));
     }
 
+    [Fact]
+    public async Task CopyAsyncRejectsFreshOutputFileConflictsBeforeSourceAccess()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareApprovedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        await File.WriteAllTextAsync(
+            workspace.Layout.CanonicalFinalCopyPath,
+            "conflict",
+            TestContext.Current.CancellationToken);
+        int liveSourceOpenCount = 0;
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => TrustedLocalCopy.CopyAsync(
+                workspace.Layout.CanonicalCopyRequestPath,
+                AtlasTestSupport.CreateSourceReadCountingIo(
+                    workspace,
+                    () => liveSourceOpenCount++),
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(0, liveSourceOpenCount);
+
+        File.Delete(workspace.Layout.CanonicalFinalCopyPath);
+        await File.WriteAllTextAsync(
+            workspace.Layout.CanonicalIncompleteCopyPath,
+            "conflict",
+            TestContext.Current.CancellationToken);
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => TrustedLocalCopy.CopyAsync(
+                workspace.Layout.CanonicalCopyRequestPath,
+                AtlasTestSupport.CreateSourceReadCountingIo(
+                    workspace,
+                    () => liveSourceOpenCount++),
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(0, liveSourceOpenCount);
+    }
+
+    [Fact]
+    public async Task CopyAsyncRejectsOutOfPhaseCleanupArtifact()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareApprovedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        Directory.CreateDirectory(workspace.Layout.CleanupDirectory);
+        await File.WriteAllTextAsync(
+            workspace.Layout.CanonicalCleanupPreflightReportPath,
+            "{}",
+            TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => TrustedLocalCopy.CopyAsync(
+                workspace.Layout.CanonicalCopyRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+    }
+
+    [Fact]
+    public async Task CopyAsyncPropagatesSharingViolation()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareApprovedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        string firstTrackedSource = Path.Combine(workspace.DefinitionRootPath, "www", "data");
+        firstTrackedSource = Path.Combine(firstTrackedSource, "definition-000001.json");
+        AtlasIoSeams failingIo = AtlasTestSupport.CreateIo(
+            openFile: (path, mode, access, share, options) =>
+                AtlasIntakeContracts.PathEquals(path, firstTrackedSource)
+                    && mode == FileMode.Open
+                    && access == FileAccess.Read
+                    ? throw new IOException("synthetic sharing violation")
+                    : AtlasIoSeams.Default.OpenFile(path, mode, access, share, options));
+
+        await Assert.ThrowsAsync<IOException>(
+            () => TrustedLocalCopy.CopyAsync(
+                workspace.Layout.CanonicalCopyRequestPath,
+                failingIo,
+                TestContext.Current.CancellationToken).AsTask());
+    }
+
+    [Fact]
+    public async Task CopySourceFileAsyncRejectsShortReadFlushFailureAndHashMismatch()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareApprovedWorkspaceAsync(workspace);
+        AtlasLoadedDocument<AtlasCopyPlanDocument> copyPlan =
+            await AtlasIntakeContracts.ReadCopyPlanAsync(
+                workspace.Layout.CanonicalCopyPlanPath,
+                TestContext.Current.CancellationToken);
+        ResolvedCopySource source = new(
+            copyPlan.Document.Entries[0],
+            Path.Combine(
+                workspace.DefinitionRootPath,
+                "www",
+                "data",
+                "definition-000001.json"));
+
+        string shortReadDestination = Path.Combine(
+            workspace.Layout.CopiesDirectory,
+            "short-read",
+            "definition-000001.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(shortReadDestination)!);
+        AtlasIoSeams shortReadIo = AtlasTestSupport.CreateIo(
+            openFile: (path, mode, access, share, options) =>
+                AtlasIntakeContracts.PathEquals(path, source.AbsolutePath)
+                    && mode == FileMode.Open
+                    && access == FileAccess.Read
+                    ? new ShortReadStream(File.OpenRead(path))
+                    : AtlasIoSeams.Default.OpenFile(path, mode, access, share, options));
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => TrustedLocalCopy.CopySourceFileAsync(
+                source,
+                shortReadDestination,
+                shortReadIo,
+                TestContext.Current.CancellationToken).AsTask());
+
+        string flushFailureDestination = Path.Combine(
+            workspace.Layout.CopiesDirectory,
+            "flush-failure",
+            "definition-000001.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(flushFailureDestination)!);
+        AtlasIoSeams flushFailureIo = AtlasTestSupport.CreateIo(
+            openFile: (path, mode, access, share, options) =>
+                AtlasIntakeContracts.PathEquals(path, flushFailureDestination)
+                    && mode == FileMode.CreateNew
+                    && access == FileAccess.Write
+                    ? new FlushFailingStream(
+                        AtlasIoSeams.Default.OpenFile(path, mode, access, share, options))
+                    : AtlasIoSeams.Default.OpenFile(path, mode, access, share, options));
+        await Assert.ThrowsAsync<IOException>(
+            () => TrustedLocalCopy.CopySourceFileAsync(
+                source,
+                flushFailureDestination,
+                flushFailureIo,
+                TestContext.Current.CancellationToken).AsTask());
+
+        string mismatchedDestination = Path.Combine(
+            workspace.Layout.CopiesDirectory,
+            "hash-mismatch",
+            "definition-000001.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(mismatchedDestination)!);
+        AtlasIoSeams mismatchedIo = AtlasTestSupport.CreateIo(
+            openFile: (path, mode, access, share, options) =>
+                AtlasIntakeContracts.PathEquals(path, mismatchedDestination)
+                    && mode == FileMode.CreateNew
+                    && access == FileAccess.Write
+                    ? new CorruptingWriteStream(
+                        AtlasIoSeams.Default.OpenFile(path, mode, access, share, options))
+                    : AtlasIoSeams.Default.OpenFile(path, mode, access, share, options));
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => TrustedLocalCopy.CopySourceFileAsync(
+                source,
+                mismatchedDestination,
+                mismatchedIo,
+                TestContext.Current.CancellationToken).AsTask());
+    }
+
     private static async Task PrepareApprovedWorkspaceAsync(AtlasSyntheticWorkspace workspace)
     {
         await AtlasDiscovery.DiscoverAsync(
@@ -291,5 +540,108 @@ public sealed class TrustedLocalCopyTests
         await AtlasDiscovery.ConfirmAsync(
             workspace.Layout.CanonicalConfirmRequestPath,
             TestContext.Current.CancellationToken);
+    }
+
+    private sealed class ShortReadStream(Stream innerStream) : DelegatingStream(innerStream)
+    {
+        public override long Length => base.Length + 1;
+    }
+
+    private sealed class FlushFailingStream(Stream innerStream) : DelegatingStream(innerStream)
+    {
+        public override Task FlushAsync(CancellationToken cancellationToken) =>
+            Task.FromException(new IOException("synthetic flush failure"));
+
+        public override void Flush() => throw new IOException("synthetic flush failure");
+    }
+
+    private sealed class CorruptingWriteStream(Stream innerStream) : DelegatingStream(innerStream)
+    {
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            byte[] copy = buffer[offset..(offset + count)];
+            if (copy.Length > 0)
+            {
+                copy[0] ^= 0xFF;
+            }
+
+            InnerStream.Write(copy, 0, copy.Length);
+        }
+
+        public override async ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            byte[] copy = buffer.ToArray();
+            if (copy.Length > 0)
+            {
+                copy[0] ^= 0xFF;
+            }
+
+            await InnerStream.WriteAsync(copy, cancellationToken);
+        }
+    }
+
+    private abstract class DelegatingStream(Stream innerStream) : Stream
+    {
+        protected Stream InnerStream { get; } = innerStream;
+
+        public override bool CanRead => InnerStream.CanRead;
+
+        public override bool CanSeek => InnerStream.CanSeek;
+
+        public override bool CanWrite => InnerStream.CanWrite;
+
+        public override long Length => InnerStream.Length;
+
+        public override long Position
+        {
+            get => InnerStream.Position;
+            set => InnerStream.Position = value;
+        }
+
+        public override void Flush() => InnerStream.Flush();
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            InnerStream.Read(buffer, offset, count);
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            InnerStream.Seek(offset, origin);
+
+        public override void SetLength(long value) => InnerStream.SetLength(value);
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            InnerStream.Write(buffer, offset, count);
+
+        public override Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken) =>
+            InnerStream.ReadAsync(buffer, offset, count, cancellationToken);
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default) =>
+            InnerStream.ReadAsync(buffer, cancellationToken);
+
+        public override Task FlushAsync(CancellationToken cancellationToken) =>
+            InnerStream.FlushAsync(cancellationToken);
+
+        public override async ValueTask DisposeAsync()
+        {
+            await InnerStream.DisposeAsync();
+            await base.DisposeAsync();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                InnerStream.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
     }
 }

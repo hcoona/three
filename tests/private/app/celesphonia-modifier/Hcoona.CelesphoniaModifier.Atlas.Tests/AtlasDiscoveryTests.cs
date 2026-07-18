@@ -406,4 +406,57 @@ public sealed class AtlasDiscoveryTests
                 workspace.Layout.CanonicalConfirmRequestPath,
                 TestContext.Current.CancellationToken).AsTask());
     }
+
+    [Fact]
+    public async Task DiscoverAsyncRejectsNonCanonicalRevisionDirectory()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        AtlasIntakeDiscoveryRequest request = workspace.CreateDiscoveryRequest() with
+        {
+            ManifestRevisionDirectory = Path.Combine(workspace.Layout.IntakeDirectory, "alternate"),
+        };
+        workspace.WriteRequest(request);
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+    }
+
+    [Fact]
+    public async Task DiscoverAsyncRejectsUnexpectedRevisionArtifact()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        Directory.CreateDirectory(workspace.Layout.ManifestRevisionDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(
+                workspace.Layout.ManifestRevisionDirectory,
+                "corpus-intake-manifest.r000006.json"),
+            "{}",
+            TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+    }
+
+    [Fact]
+    public async Task ConfirmAsyncRejectsUnexpectedStateRevisionArtifact()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreateConfirmationRequest());
+        await File.WriteAllTextAsync(
+            Path.Combine(workspace.Layout.StatesDirectory, "atlas-intake-state.r000005.json"),
+            "{}",
+            TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.ConfirmAsync(
+                workspace.Layout.CanonicalConfirmRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+    }
 }

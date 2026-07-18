@@ -49,28 +49,51 @@ public sealed class LocatorSegmentRedactorTests
     }
 
     [Fact]
-    public void RedactRejectsForgedAliasPopulation()
+    public void RedactAllowsSubsetLocatorsAgainstCompleteAliasMap()
     {
-        LocatorAliasMap aliasMap = new(
-            new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["charlie"] = "dynamic-key-000001",
-            },
-            new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["alpha"] = "schema-key-000002",
-                ["beta"] = "schema-key-000001",
-            });
+        LocatorAliasMap aliasMap = LocatorSegmentRedactor.CreateAliasMap(
+            [
+                LocatorSegment.SchemaKey("beta"),
+                LocatorSegment.SchemaKey("alpha"),
+                LocatorSegment.DynamicKey("delta"),
+                LocatorSegment.DynamicKey("charlie"),
+            ]);
 
-        Assert.Throws<AtlasSafetyException>(() =>
+        Assert.Equal(
+            $"{AtlasIntakeContracts.CopyPlanRole}/schema-key-000001/dynamic-key-000002",
             LocatorSegmentRedactor.Redact(
                 [
                     LocatorSegment.DocumentRole(AtlasIntakeContracts.CopyPlanRole),
                     LocatorSegment.SchemaKey("alpha"),
+                    LocatorSegment.DynamicKey("delta"),
+                ],
+                aliasMap));
+        Assert.Equal(
+            "schema-key-000002/dynamic-key-000001",
+            LocatorSegmentRedactor.Redact(
+                [
                     LocatorSegment.SchemaKey("beta"),
                     LocatorSegment.DynamicKey("charlie"),
                 ],
                 aliasMap));
+        Assert.Throws<AtlasSafetyException>(() =>
+            LocatorSegmentRedactor.Redact([LocatorSegment.DynamicKey("echo")], aliasMap));
+    }
+
+    [Fact]
+    public void LocatorAliasMapRejectsForgedOrdering()
+    {
+        Assert.Throws<AtlasSafetyException>(() =>
+            new LocatorAliasMap(
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["charlie"] = "dynamic-key-000001",
+                },
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["alpha"] = "schema-key-000002",
+                    ["beta"] = "schema-key-000001",
+                }));
     }
 
     [Fact]

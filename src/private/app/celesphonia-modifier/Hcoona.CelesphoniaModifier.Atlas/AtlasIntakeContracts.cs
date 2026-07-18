@@ -437,7 +437,7 @@ public static class AtlasIntakeContracts
             return false;
         }
 
-        return !HasUnexpectedColon(value);
+        return !HasAnyColon(value);
     }
 
     internal static string FormatArtifactAlias(int ordinal) =>
@@ -534,7 +534,7 @@ public static class AtlasIntakeContracts
             throw new AtlasRequestException($"The path '{parameterName}' must be absolute.");
         }
 
-        if (HasUnexpectedColon(path))
+        if (HasColonBeyondDriveDesignator(path))
         {
             throw new AtlasRequestException(
                 $"The path '{parameterName}' contains an unexpected colon.");
@@ -792,12 +792,16 @@ public static class AtlasIntakeContracts
             PropertyNameCaseInsensitive = false,
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             ReadCommentHandling = JsonCommentHandling.Disallow,
+            RespectNullableAnnotations = true,
             UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
             WriteIndented = false,
         };
 
-    private static bool HasUnexpectedColon(string path) =>
-        path.AsSpan(2).Contains(':');
+    private static bool HasAnyColon(string path) =>
+        path.Contains(':', StringComparison.Ordinal);
+
+    private static bool HasColonBeyondDriveDesignator(string path) =>
+        path.Length > 2 && path.AsSpan(2).Contains(':');
 
     private static bool IsDirectorySeparator(char character) =>
         character == Path.DirectorySeparatorChar || character == Path.AltDirectorySeparatorChar;
@@ -1353,6 +1357,8 @@ public static class AtlasIntakeContracts
         }
 
         ValidateSurveyAlias(document.SurveyAlias);
+        ValidateOutputAbsoluteDosPath(document.DefinitionRootPath);
+        ValidateOutputAbsoluteDosPath(document.GameExecutablePath);
         HashSet<string> roles = new(StringComparer.Ordinal);
         HashSet<string> aliases = new(StringComparer.Ordinal);
         foreach (AtlasSourceRootBinding binding in document.SaveRoots)
@@ -1363,19 +1369,10 @@ public static class AtlasIntakeContracts
                 throw new AtlasValidationException();
             }
 
-            if (string.IsNullOrWhiteSpace(binding.AbsolutePath))
-            {
-                throw new AtlasValidationException();
-            }
+            ValidateOutputAbsoluteDosPath(binding.AbsolutePath);
         }
 
         if (!roles.Contains(DeploymentRootSaveRole) || !roles.Contains(WebRootSaveRole))
-        {
-            throw new AtlasValidationException();
-        }
-
-        if (string.IsNullOrWhiteSpace(document.DefinitionRootPath)
-            || string.IsNullOrWhiteSpace(document.GameExecutablePath))
         {
             throw new AtlasValidationException();
         }
@@ -1601,6 +1598,14 @@ public static class AtlasIntakeContracts
                 entry.DestinationRelativePath,
                 nameof(entry.DestinationRelativePath));
             ValidateLowerHexDigest(entry.SourceSha256, nameof(entry.SourceSha256));
+            if (entry.SourceLength < 0)
+            {
+                throw new AtlasValidationException();
+            }
+
+            ValidateUtcTimestamp(
+                entry.SourceLastWriteTimeUtc,
+                nameof(entry.SourceLastWriteTimeUtc));
             if (!aliases.Add(entry.DestinationArtifactAlias)
                 || !sourceAliases.Add(entry.SourceAlias)
                 || !destinations.Add(entry.DestinationRelativePath))
@@ -1777,7 +1782,7 @@ public static class AtlasIntakeContracts
     {
         if (string.IsNullOrWhiteSpace(value)
             || Path.IsPathRooted(value)
-            || HasUnexpectedColon(value))
+            || HasAnyColon(value))
         {
             throw new AtlasValidationException();
         }
@@ -2022,6 +2027,27 @@ public static class AtlasIntakeContracts
         }
     }
 
+    private static void ValidateOutputAbsoluteDosPath(string path)
+    {
+        try
+        {
+            ValidateAbsoluteDosPath(path, nameof(path));
+        }
+        catch (AtlasRequestException exception)
+        {
+            throw new AtlasValidationException("The JSON document is invalid.", exception);
+        }
+    }
+
+    private static void ValidateUtcTimestamp(DateTimeOffset value, string parameterName)
+    {
+        if (value == default || value.Offset != TimeSpan.Zero)
+        {
+            throw new AtlasValidationException(
+                $"The '{parameterName}' timestamp must be a non-default UTC value.");
+        }
+    }
+
     private static void EnsureAcyclicLineage(Dictionary<string, string[]> lineages)
     {
         HashSet<string> visiting = new(StringComparer.Ordinal);
@@ -2070,166 +2096,378 @@ public static class AtlasIntakeContracts
 
 public sealed record class AtlasIntakeDiscoveryRequest
 {
+    [JsonRequired]
     public string SchemaVersion { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string SurveyAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ProjectRoot { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string WorkspaceRoot { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string BaselineManifestPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ExpectedBaselineSha256 { get; init; } = string.Empty;
+
+    [JsonRequired]
     public int ExpectedBaselineRevision { get; init; }
+
+    [JsonRequired]
     public int NextManifestRevision { get; init; }
+
+    [JsonRequired]
     public string ManifestRevisionDirectory { get; init; } = string.Empty;
+
+    [JsonRequired]
     public AtlasRequestSaveRoot[] SaveRoots { get; init; } = [];
+
+    [JsonRequired]
     public string DefinitionRoot { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string GameExecutablePath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string SourceRootMapOutputPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string InventoryPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ExpectedInventorySha256 { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string InventoryBackupPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string CopyPlanOutputPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string StateRevisionDirectory { get; init; } = string.Empty;
+
+    [JsonRequired]
     public int ExpectedSteamAppId { get; init; }
+
+    [JsonRequired]
     public int ExpectedBuildId { get; init; }
 }
 
 public sealed record class AtlasIntakeConfirmationRequest
 {
+    [JsonRequired]
     public string SchemaVersion { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string SurveyAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ProjectRoot { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string WorkspaceRoot { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string DiscoveredStatePath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ExpectedDiscoveredStateSha256 { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string PendingManifestPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string SourceRootMapPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string CopyPlanPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string DecisionCommit { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ManifestRevisionDirectory { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string StateRevisionDirectory { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string InventoryPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ExpectedInventorySha256 { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string InventoryBackupPath { get; init; } = string.Empty;
 }
 
 public sealed record class AtlasIntakeCopyRequest
 {
+    [JsonRequired]
     public string SchemaVersion { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string SurveyAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ProjectRoot { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string WorkspaceRoot { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ApprovedStatePath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ExpectedApprovedStateSha256 { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ApprovedManifestPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string SourceRootMapPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string CopyPlanPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string DecisionCommit { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string IncompleteCopyPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string FinalCopyPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string StateRevisionDirectory { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string InventoryPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ExpectedInventorySha256 { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string InventoryBackupPath { get; init; } = string.Empty;
 }
 
 public sealed record class AtlasCleanupPreflightRequest
 {
+    [JsonRequired]
     public string SchemaVersion { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string SurveyAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ProjectRoot { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string WorkspaceRoot { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string QualifiedStatePath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ExpectedQualifiedStateSha256 { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string StateRevisionDirectory { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string InventoryPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ExpectedInventorySha256 { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string InventoryBackupPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ProposedMilestone { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ReportOutputPath { get; init; } = string.Empty;
 }
 
 public sealed record class AtlasRequestSaveRoot
 {
+    [JsonRequired]
     public string LocationRole { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string Path { get; init; } = string.Empty;
 }
 
 public sealed record class AtlasCorpusIntakeManifest
 {
+    [JsonRequired]
     public string SchemaVersion { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string SurveyAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public int ManifestRevision { get; init; }
+
+    [JsonRequired]
     public AtlasManifestSaveRoot[] SaveRoots { get; init; } = [];
+
+    [JsonRequired]
     public int DiscoveredSaveDirectoryEntryCount { get; init; }
+
+    [JsonRequired]
     public int IncludedSaveCount { get; init; }
+
+    [JsonRequired]
     public AtlasManifestSaveEntry[] SaveEntries { get; init; } = [];
+
+    [JsonRequired]
     public int DiscoveredDefinitionEntryCount { get; init; }
+
+    [JsonRequired]
     public int IncludedDefinitionCount { get; init; }
+
+    [JsonRequired]
     public AtlasManifestDefinitionGroup[] DefinitionGroups { get; init; } = [];
+
+    [JsonRequired]
     public AtlasManifestDefinitionEntry[] DefinitionEntries { get; init; } = [];
+
+    [JsonRequired]
     public AtlasManifestValidation Validation { get; init; } = new();
+
+    [JsonRequired]
     public AtlasManifestConfirmation Confirmation { get; init; } = new();
 }
 
 public sealed record class AtlasManifestSaveRoot
 {
+    [JsonRequired]
     public string RootAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string LocationRole { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string Activity { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string Decision { get; init; } = string.Empty;
+
+    [JsonRequired]
     public int ObservedEntryCount { get; init; }
     public string? ReasonCode { get; init; }
+
+    [JsonRequired]
     public bool IsReparsePoint { get; init; }
 }
 
 public sealed record class AtlasManifestSaveEntry
 {
+    [JsonRequired]
     public string SourceAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string RootAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string RelativePath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string Role { get; init; } = string.Empty;
     public int? SlotNumber { get; init; }
+
+    [JsonRequired]
     public string Decision { get; init; } = string.Empty;
     public string? ReasonCode { get; init; }
+
+    [JsonRequired]
     public string EntryType { get; init; } = string.Empty;
+
+    [JsonRequired]
     public bool IsReparsePoint { get; init; }
 }
 
 public sealed record class AtlasManifestDefinitionGroup
 {
+    [JsonRequired]
     public string GroupId { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string SelectionRule { get; init; } = string.Empty;
+
+    [JsonRequired]
     public int DiscoveredCount { get; init; }
+
+    [JsonRequired]
     public string Decision { get; init; } = string.Empty;
     public string? ReasonCode { get; init; }
 }
 
 public sealed record class AtlasManifestDefinitionEntry
 {
+    [JsonRequired]
     public string SourceAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string RelativePath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string GroupId { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string Decision { get; init; } = string.Empty;
     public string? ReasonCode { get; init; }
+
+    [JsonRequired]
     public string EntryType { get; init; } = string.Empty;
+
+    [JsonRequired]
     public bool IsReparsePoint { get; init; }
 }
 
 public sealed record class AtlasManifestValidation
 {
+    [JsonRequired]
     public string Method { get; init; } = string.Empty;
+
+    [JsonRequired]
     public bool AliasesUnique { get; init; }
+
+    [JsonRequired]
     public bool SaveLocatorsUnique { get; init; }
+
+    [JsonRequired]
     public bool DefinitionRelativePathsUnique { get; init; }
+
+    [JsonRequired]
     public bool SaveRootMembershipReconciled { get; init; }
+
+    [JsonRequired]
     public bool SaveRootCountsReconciled { get; init; }
+
+    [JsonRequired]
     public bool SaveCountsReconciled { get; init; }
+
+    [JsonRequired]
     public bool DefinitionCountsReconciled { get; init; }
+
+    [JsonRequired]
     public bool RolesAndDecisionsConsistent { get; init; }
+
+    [JsonRequired]
     public bool GroupMembershipReconciled { get; init; }
 }
 
 public sealed record class AtlasManifestConfirmation
 {
+    [JsonRequired]
     public string Status { get; init; } = string.Empty;
     public string? ConfirmedByRole { get; init; }
     public string? DecisionReference { get; init; }
@@ -2237,82 +2475,166 @@ public sealed record class AtlasManifestConfirmation
 
 public sealed record class AtlasPrivateArtifactInventoryDocument
 {
+    [JsonRequired]
     public string SchemaVersion { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string SurveyAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public AtlasPrivateArtifactEntry[] Artifacts { get; init; } = [];
 }
 
 public sealed record class AtlasPrivateArtifactEntry
 {
+    [JsonRequired]
     public string ArtifactAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ArtifactClass { get; init; } = string.Empty;
     public string? Qualification { get; init; }
+
+    [JsonRequired]
     public string Purpose { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string CustodianRole { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string[] LineageAliases { get; init; } = [];
+
+    [JsonRequired]
     public string LastUseMilestone { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ExpiryCondition { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string PlannedDisposition { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string Status { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string VerificationMethod { get; init; } = string.Empty;
 }
 
 public sealed record class AtlasSourceRootMapDocument
 {
+    [JsonRequired]
     public string SchemaVersion { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string SurveyAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public int ManifestRevision { get; init; }
+
+    [JsonRequired]
     public int SteamAppId { get; init; }
+
+    [JsonRequired]
     public int BuildId { get; init; }
+
+    [JsonRequired]
     public AtlasSourceRootBinding[] SaveRoots { get; init; } = [];
+
+    [JsonRequired]
     public string DefinitionRootPath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string GameExecutablePath { get; init; } = string.Empty;
 }
 
 public sealed record class AtlasSourceRootBinding
 {
+    [JsonRequired]
     public string RootAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string LocationRole { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string AbsolutePath { get; init; } = string.Empty;
 }
 
 public sealed record class AtlasCopyPlanDocument
 {
+    [JsonRequired]
     public string SchemaVersion { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string SurveyAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public int ManifestRevision { get; init; }
+
+    [JsonRequired]
     public AtlasCopyPlanEntry[] Entries { get; init; } = [];
 }
 
 public sealed record class AtlasCopyPlanEntry
 {
+    [JsonRequired]
     public string SourceAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string DestinationArtifactAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ArtifactClass { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string DestinationRelativePath { get; init; } = string.Empty;
 }
 
 public sealed record class AtlasIntakeStateDocument
 {
+    [JsonRequired]
     public string SchemaVersion { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string SurveyAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public int StateRevision { get; init; }
+
+    [JsonRequired]
     public string Phase { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string StateArtifactAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public int SteamAppId { get; init; }
+
+    [JsonRequired]
     public int BuildId { get; init; }
+
+    [JsonRequired]
     public string InventorySha256 { get; init; } = string.Empty;
     public string? DecisionCommit { get; init; }
     public string? FinalCopyRootRelativePath { get; init; }
+
+    [JsonRequired]
     public AtlasDocumentBinding[] DocumentBindings { get; init; } = [];
+
+    [JsonRequired]
     public AtlasArtifactBinding[] ArtifactBindings { get; init; } = [];
 }
 
 public abstract record class AtlasBindingBase
 {
+    [JsonRequired]
     public string Role { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ArtifactAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string RelativePath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string Sha256 { get; init; } = string.Empty;
 }
 
@@ -2322,55 +2644,127 @@ public sealed record class AtlasArtifactBinding : AtlasBindingBase;
 
 public sealed record class AtlasCopyReceiptDocument
 {
+    [JsonRequired]
     public string SchemaVersion { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string SurveyAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ReceiptArtifactAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string Profile { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string CopyRequestSha256 { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ApprovedStateSha256 { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ApprovedManifestSha256 { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string SourceRootMapSha256 { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string CopyPlanSha256 { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string DecisionReference { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ApprovedManifestArtifactAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string FinalCopyRootRelativePath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public int SteamAppId { get; init; }
+
+    [JsonRequired]
     public int BuildId { get; init; }
+
+    [JsonRequired]
     public string GameExecutableSha256 { get; init; } = string.Empty;
+
+    [JsonRequired]
     public int SaveCount { get; init; }
+
+    [JsonRequired]
     public int DefinitionCount { get; init; }
+
+    [JsonRequired]
     public AtlasCopyReceiptEntry[] Entries { get; init; } = [];
 }
 
 public sealed record class AtlasCopyReceiptEntry
 {
+    [JsonRequired]
     public string DestinationArtifactAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string SourceAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ArtifactClass { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string DestinationRelativePath { get; init; } = string.Empty;
+
+    [JsonRequired]
     public long SourceLength { get; init; }
+
+    [JsonRequired]
     public DateTimeOffset SourceLastWriteTimeUtc { get; init; }
+
+    [JsonRequired]
     public string SourceSha256 { get; init; } = string.Empty;
 }
 
 public sealed record class AtlasCleanupPreflightReportDocument
 {
+    [JsonRequired]
     public string SchemaVersion { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string SurveyAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ReportArtifactAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string InventorySha256 { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ProposedMilestone { get; init; } = string.Empty;
+
+    [JsonRequired]
     public AtlasCleanupPreflightResult[] Results { get; init; } = [];
 }
 
 public sealed record class AtlasCleanupPreflightResult
 {
+    [JsonRequired]
     public string ArtifactAlias { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ArtifactClass { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string Status { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string PlannedDisposition { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string LastUseMilestone { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string ExpiryCondition { get; init; } = string.Empty;
+
+    [JsonRequired]
     public string Result { get; init; } = string.Empty;
 }
 
