@@ -144,6 +144,151 @@ public sealed class AtlasDiscoveryTests
     }
 
     [Fact]
+    public void EnumerateDefinitionEntriesRejectsNovelExtensionMatchedByRecursiveAllRule()
+    {
+        string definitionRoot = CreateTemporaryDirectory();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(definitionRoot, "content"));
+            File.WriteAllText(
+                Path.Combine(definitionRoot, "content", "known.json"),
+                "{}",
+                Encoding.UTF8);
+            File.WriteAllText(
+                Path.Combine(definitionRoot, "content", "novel.bin"),
+                "bin",
+                Encoding.UTF8);
+            AtlasManifestDefinitionGroup[] groups =
+            [
+                CreateDefinitionGroup(
+                    "all-files",
+                    "content/**/*",
+                    AtlasIntakeContracts.IncludeDefinitionDecision),
+            ];
+            Dictionary<string, AtlasManifestDefinitionEntry> baselineEntries =
+                CreateDefinitionEntryMap(
+                    CreateDefinitionEntry(
+                        "definition-source-000001",
+                        "content/known.json",
+                        "all-files",
+                        AtlasIntakeContracts.IncludeDefinitionDecision));
+
+            Assert.Throws<AtlasSafetyException>(() =>
+                AtlasDiscovery.EnumerateDefinitionEntries(
+                    definitionRoot,
+                    groups,
+                    baselineEntries,
+                    [],
+                    AtlasIoSeams.Default));
+        }
+        finally
+        {
+            Directory.Delete(definitionRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void EnumerateDefinitionEntriesTreatsNonRecursiveRuleLiterally()
+    {
+        string definitionRoot = CreateTemporaryDirectory();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(definitionRoot, "content", "nested"));
+            File.WriteAllText(
+                Path.Combine(definitionRoot, "content", "root.json"),
+                "{}",
+                Encoding.UTF8);
+            File.WriteAllText(
+                Path.Combine(definitionRoot, "content", "nested", "child.json"),
+                "{}",
+                Encoding.UTF8);
+            AtlasManifestDefinitionGroup[] groups =
+            [
+                CreateDefinitionGroup(
+                    "root-only",
+                    "content/*.json",
+                    AtlasIntakeContracts.IncludeDefinitionDecision),
+            ];
+            Dictionary<string, AtlasManifestDefinitionEntry> baselineEntries =
+                CreateDefinitionEntryMap(
+                    CreateDefinitionEntry(
+                        "definition-source-000001",
+                        "content/root.json",
+                        "root-only",
+                        AtlasIntakeContracts.IncludeDefinitionDecision));
+
+            List<AtlasManifestDefinitionEntry> entries = AtlasDiscovery.EnumerateDefinitionEntries(
+                definitionRoot,
+                groups,
+                baselineEntries,
+                [],
+                AtlasIoSeams.Default);
+
+            Assert.Equal(
+                ["content/root.json"],
+                entries.Select(entry => entry.RelativePath).ToArray());
+        }
+        finally
+        {
+            Directory.Delete(definitionRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void EnumerateDefinitionEntriesTreatsRecursiveExtensionRuleLiterally()
+    {
+        string definitionRoot = CreateTemporaryDirectory();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(definitionRoot, "content", "nested"));
+            File.WriteAllText(
+                Path.Combine(definitionRoot, "content", "root.json"),
+                "{}",
+                Encoding.UTF8);
+            File.WriteAllText(
+                Path.Combine(definitionRoot, "content", "nested", "child.json"),
+                "{}",
+                Encoding.UTF8);
+            AtlasManifestDefinitionGroup[] groups =
+            [
+                CreateDefinitionGroup(
+                    "recursive-json",
+                    "content/**/*.json",
+                    AtlasIntakeContracts.IncludeDefinitionDecision),
+            ];
+            Dictionary<string, AtlasManifestDefinitionEntry> baselineEntries =
+                CreateDefinitionEntryMap(
+                    CreateDefinitionEntry(
+                        "definition-source-000001",
+                        "content/root.json",
+                        "recursive-json",
+                        AtlasIntakeContracts.IncludeDefinitionDecision),
+                    CreateDefinitionEntry(
+                        "definition-source-000002",
+                        "content/nested/child.json",
+                        "recursive-json",
+                        AtlasIntakeContracts.IncludeDefinitionDecision));
+
+            List<AtlasManifestDefinitionEntry> entries = AtlasDiscovery.EnumerateDefinitionEntries(
+                definitionRoot,
+                groups,
+                baselineEntries,
+                [],
+                AtlasIoSeams.Default);
+
+            Assert.Equal(
+                ["content/nested/child.json", "content/root.json"],
+                entries.Select(entry => entry.RelativePath)
+                    .OrderBy(static path => path, StringComparer.Ordinal)
+                    .ToArray());
+        }
+        finally
+        {
+            Directory.Delete(definitionRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task DiscoverAsyncRejectsUnexpectedSurveyAliasInBaselineManifest()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
@@ -218,6 +363,33 @@ public sealed class AtlasDiscoveryTests
                 workspace.Layout.CanonicalInventoryPath,
                 TestContext.Current.CancellationToken));
         Assert.False(File.Exists(workspace.Layout.CanonicalDiscoveredInventoryBackupPath));
+    }
+
+    [Fact]
+    public async Task DiscoverAsyncRejectsLeftoverInventoryStagingAfterCompletedReplacement()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+        File.Delete(workspace.Layout.CanonicalDiscoveredStatePath);
+        byte[] currentInventoryBytes = await File.ReadAllBytesAsync(
+            workspace.Layout.CanonicalInventoryPath,
+            TestContext.Current.CancellationToken);
+        string stagingPath = AtlasDiscovery.GetStagingPath(
+            workspace.Layout.CanonicalInventoryPath,
+            AtlasIntakeContracts.DiscoveredPhase);
+        await File.WriteAllBytesAsync(
+            stagingPath,
+            currentInventoryBytes,
+            TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.False(File.Exists(workspace.Layout.CanonicalDiscoveredStatePath));
     }
 
     [Fact]
@@ -458,5 +630,48 @@ public sealed class AtlasDiscoveryTests
             () => AtlasDiscovery.ConfirmAsync(
                 workspace.Layout.CanonicalConfirmRequestPath,
                 TestContext.Current.CancellationToken).AsTask());
+    }
+
+    private static AtlasManifestDefinitionGroup CreateDefinitionGroup(
+        string groupId,
+        string selectionRule,
+        string decision) =>
+        new()
+        {
+            GroupId = groupId,
+            SelectionRule = selectionRule,
+            DiscoveredCount = 0,
+            Decision = decision,
+        };
+
+    private static AtlasManifestDefinitionEntry CreateDefinitionEntry(
+        string sourceAlias,
+        string relativePath,
+        string groupId,
+        string decision) =>
+        new()
+        {
+            SourceAlias = sourceAlias,
+            RelativePath = relativePath,
+            GroupId = groupId,
+            Decision = decision,
+            EntryType = AtlasIntakeContracts.FileEntryType,
+            IsReparsePoint = false,
+        };
+
+    private static Dictionary<string, AtlasManifestDefinitionEntry> CreateDefinitionEntryMap(
+        params AtlasManifestDefinitionEntry[] entries) =>
+        entries.ToDictionary(
+            static entry => AtlasIntakeContracts.NormalizeRelativePath(entry.RelativePath),
+            StringComparer.OrdinalIgnoreCase);
+
+    private static string CreateTemporaryDirectory()
+    {
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            "atlas-a2-definition-rules",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        return path;
     }
 }

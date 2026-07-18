@@ -149,6 +149,28 @@ public sealed class AtlasCliApplicationTests
     }
 
     [Fact]
+    public async Task WhitespaceRequestPathIsRejectedBeforeDispatch()
+    {
+        bool invoked = false;
+        (int exitCode, byte[] standardOutput, byte[] standardError) = await RunAsync(
+            ["intake-discover", " "],
+            new DelegatingOperations
+            {
+                Discover = (_, _) =>
+                {
+                    invoked = true;
+                    return ValueTask.CompletedTask;
+                },
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.UsageErrorExitCode, exitCode);
+        Assert.Empty(standardOutput);
+        Assert.Equal("Invalid arguments.\n"u8.ToArray(), standardError);
+        Assert.False(invoked);
+    }
+
+    [Fact]
     public async Task IntakeDiscoverWritesFixedSuccessBytes()
     {
         string? observedPath = null;

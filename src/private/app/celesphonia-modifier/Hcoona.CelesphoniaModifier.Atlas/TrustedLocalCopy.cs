@@ -143,6 +143,7 @@ public static class TrustedLocalCopy
             layout.CanonicalIncompleteCopyPath,
             Path.GetFileName(finalReceiptStagingPath));
         ValidateCopyOutputCensus(layout, copyPlan.Document, io);
+        RequireRecoverableCopyStateBeforeSourceAccess(layout, inventoryContext, io);
 
         if (io.DirectoryExists(layout.CanonicalFinalCopyPath)
             || io.DirectoryExists(layout.CanonicalIncompleteCopyPath))
@@ -644,9 +645,24 @@ public static class TrustedLocalCopy
             return false;
         }
 
-        string receiptStagingPathToUse = io.FileExists(finalReceiptStagingPath)
-            ? finalReceiptStagingPath
-            : finalReceiptPath;
+        bool inventoryAlreadyReplaced = !StringComparer.Ordinal.Equals(
+            inventoryContext.CurrentInventory.Sha256,
+            inventoryContext.PriorInventory.Sha256);
+        string receiptStagingPathToUse;
+        if (io.FileExists(finalReceiptStagingPath))
+        {
+            receiptStagingPathToUse = finalReceiptStagingPath;
+        }
+        else
+        {
+            if (!inventoryAlreadyReplaced && io.FileExists(finalReceiptPath))
+            {
+                throw new AtlasSafetyException("The final copy directory is unusable.");
+            }
+
+            receiptStagingPathToUse = finalReceiptPath;
+        }
+
         if (!io.FileExists(receiptStagingPathToUse)
             || !HasCompleteCopySet(
                 layout.CanonicalFinalCopyPath,
@@ -1138,6 +1154,12 @@ public static class TrustedLocalCopy
         AtlasCopyPlanDocument copyPlan,
         AtlasIoSeams io)
     {
+        foreach (AtlasSourceRootBinding saveRoot in sourceRootMap.SaveRoots)
+        {
+            AtlasDiscovery.ValidateExistingOrdinaryDirectory(saveRoot.AbsolutePath, io);
+        }
+
+        AtlasDiscovery.ValidateExistingOrdinaryDirectory(sourceRootMap.DefinitionRootPath, io);
         AtlasDiscovery.DiscoveredManifest discovered = AtlasDiscovery.DiscoverCurrentManifest(
             new AtlasIntakeDiscoveryRequest
             {
@@ -1200,6 +1222,27 @@ public static class TrustedLocalCopy
         }
 
         return new CopyValidationContext(includedSources);
+    }
+
+    private static void RequireRecoverableCopyStateBeforeSourceAccess(
+        AtlasWorkspaceLayout layout,
+        PhaseInventoryContext inventoryContext,
+        AtlasIoSeams io)
+    {
+        if (StringComparer.Ordinal.Equals(
+                inventoryContext.CurrentInventory.Sha256,
+                inventoryContext.PriorInventory.Sha256))
+        {
+            return;
+        }
+
+        bool hasFinalDirectory = io.DirectoryExists(layout.CanonicalFinalCopyPath);
+        bool hasIncompleteDirectory = io.DirectoryExists(layout.CanonicalIncompleteCopyPath);
+        if (!hasFinalDirectory || hasIncompleteDirectory)
+        {
+            throw new AtlasSafetyException(
+                "The replaced inventory requires an exact recoverable final copy.");
+        }
     }
 
     internal static async ValueTask<AtlasCopyReceiptEntry> CopySourceFileAsync(

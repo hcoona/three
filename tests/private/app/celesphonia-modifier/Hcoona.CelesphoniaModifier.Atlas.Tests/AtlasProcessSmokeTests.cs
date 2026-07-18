@@ -130,6 +130,16 @@ public sealed class AtlasProcessSmokeTests
         Assert.Equal("Invalid arguments.\n"u8.ToArray(), result.StandardError);
     }
 
+    [Fact]
+    public async Task WhitespaceRequestPathUsesFixedDiagnostic()
+    {
+        ProcessResult result = await RunAsync("intake-discover", " ");
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Empty(result.StandardOutput);
+        Assert.Equal("Invalid arguments.\n"u8.ToArray(), result.StandardError);
+    }
+
     private static async Task<ProcessResult> RunAsync(params string[] args)
     {
         string appHostPath = GetAppHostPath();

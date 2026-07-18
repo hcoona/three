@@ -198,7 +198,7 @@ internal static class AtlasCliApplication
     {
         if (args.Length == 2
             && TryGetRequestCommandKind(args[0], out RequestCommandKind kind)
-            && !string.IsNullOrEmpty(args[1])
+            && !string.IsNullOrWhiteSpace(args[1])
             && !IsHelpToken(args[1]))
         {
             command = new RequestCommand(kind, args[1]);

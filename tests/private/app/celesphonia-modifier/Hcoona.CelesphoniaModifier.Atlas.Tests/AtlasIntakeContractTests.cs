@@ -9,72 +9,110 @@ namespace Hcoona.CelesphoniaModifier.Atlas.Tests;
 public sealed class AtlasIntakeContractTests
 {
     [Fact]
-    public async Task DiscoveryRequestRejectsDuplicateProperty()
+    public async Task DiscoveryRequestRejectsDuplicatePropertyOnly()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
-        string json = """
-            {
-              "schemaVersion":"atlas-intake-discovery-request/v1",
-              "schemaVersion":"atlas-intake-discovery-request/v1"
-            }
-            """;
-        await File.WriteAllTextAsync(
-            workspace.Layout.CanonicalDiscoverRequestPath,
-            json,
-            Encoding.UTF8,
+        await AssertDiscoveryRequestRawJsonRejectedAsync(
+            workspace,
+            json => json[..^1] + ",\"schemaVersion\":\"atlas-intake-discovery-request/v1\"}",
             TestContext.Current.CancellationToken);
-
-        await Assert.ThrowsAsync<AtlasRequestException>(
-            () => AtlasIntakeContracts.ReadDiscoveryRequestAsync(
-                workspace.Layout.CanonicalDiscoverRequestPath,
-                TestContext.Current.CancellationToken).AsTask());
     }
 
     [Fact]
-    public async Task DiscoveryRequestRejectsCommentsTrailingCommaAndTrailingJson()
+    public async Task DiscoveryRequestRejectsUnknownPropertyOnly()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
-        string json = """
-            {
-              "schemaVersion":"atlas-intake-discovery-request/v1", // comment
-            }
-            {}
-            """;
-        await File.WriteAllTextAsync(
+        await AssertRejectedDocumentMutationAsync(
             workspace.Layout.CanonicalDiscoverRequestPath,
-            json,
-            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadDiscoveryRequestAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasRequestException),
+            json => json["unknown"] = 1,
             TestContext.Current.CancellationToken);
-
-        await Assert.ThrowsAsync<AtlasRequestException>(
-            () => AtlasIntakeContracts.ReadDiscoveryRequestAsync(
-                workspace.Layout.CanonicalDiscoverRequestPath,
-                TestContext.Current.CancellationToken).AsTask());
     }
 
     [Fact]
-    public async Task DiscoveryRequestRejectsUnknownProperty()
+    public async Task DiscoveryRequestRejectsCommentOnly()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
-        AtlasIntakeDiscoveryRequest request = workspace.CreateDiscoveryRequest();
-        string json = Encoding.UTF8.GetString(AtlasIntakeContracts.SerializeRequest(request));
-        json = json[..^1] + ",\"unknown\":1}";
-        await File.WriteAllTextAsync(
-            workspace.Layout.CanonicalDiscoverRequestPath,
-            json,
-            Encoding.UTF8,
+        await AssertDiscoveryRequestRawJsonRejectedAsync(
+            workspace,
+            json =>
+                json.Replace(
+                    "\"surveyAlias\":\"survey-000001\",",
+                    "\"surveyAlias\":\"survey-000001\",/* comment */",
+                    StringComparison.Ordinal),
             TestContext.Current.CancellationToken);
-
-        await Assert.ThrowsAsync<AtlasRequestException>(
-            () => AtlasIntakeContracts.ReadDiscoveryRequestAsync(
-                workspace.Layout.CanonicalDiscoverRequestPath,
-                TestContext.Current.CancellationToken).AsTask());
     }
 
     [Fact]
-    public void CanonicalSurveyRelativePathRejectsColonsAndAcceptsSingleCharacterSegment()
+    public async Task DiscoveryRequestRejectsTrailingCommaOnly()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AssertDiscoveryRequestRawJsonRejectedAsync(
+            workspace,
+            json => json[..^1] + ",}",
+            TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task DiscoveryRequestRejectsTrailingJsonOnly()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AssertDiscoveryRequestRawJsonRejectedAsync(
+            workspace,
+            json => json + "{}",
+            TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task DiscoveryRequestRejectsMissingRequiredPropertyOnly()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadDiscoveryRequestAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasRequestException),
+            json => json.Remove("expectedBuildId"),
+            TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task DiscoveryRequestRejectsExplicitNullOnly()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadDiscoveryRequestAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasRequestException),
+            json => json["expectedBuildId"] = null,
+            TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task DiscoveryRequestRejectsNullCollectionElementOnly()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadDiscoveryRequestAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasRequestException),
+            json => ((JsonArray)json["saveRoots"]!)[0] = null,
+            TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public void CanonicalSurveyRelativePathMatchesSchemaRules()
     {
         Assert.True(AtlasIntakeContracts.IsCanonicalSurveyRelativePath("x"));
+        Assert.False(AtlasIntakeContracts.IsCanonicalSurveyRelativePath("x/"));
+        Assert.False(AtlasIntakeContracts.IsCanonicalSurveyRelativePath(@"x\"));
+        Assert.False(AtlasIntakeContracts.IsCanonicalSurveyRelativePath("x//y"));
+        Assert.False(AtlasIntakeContracts.IsCanonicalSurveyRelativePath("x/./y"));
+        Assert.False(AtlasIntakeContracts.IsCanonicalSurveyRelativePath("x/../y"));
         Assert.False(AtlasIntakeContracts.IsCanonicalSurveyRelativePath(":x"));
         Assert.False(AtlasIntakeContracts.IsCanonicalSurveyRelativePath("x:"));
         Assert.False(AtlasIntakeContracts.IsCanonicalSurveyRelativePath("C:foo"));
@@ -198,6 +236,34 @@ public sealed class AtlasIntakeContractTests
             await AssertReaderRejectsMutationsAsync(
                 contractCase,
                 JsonMutationKind.SetNull,
+                TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task StrictReadersRejectNullCollectionElementsAcrossContracts()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareWorkspaceThroughPreflightAsync(workspace);
+        foreach (DocumentMutationCase mutationCase in GetNullCollectionElementCases(workspace))
+        {
+            await AssertRejectedMutationCaseAsync(
+                mutationCase,
+                TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task StrictReadersRejectExplicitNullOptionalPropertiesAcrossContracts()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareWorkspaceThroughPreflightAsync(workspace);
+        IReadOnlyList<DocumentMutationCase> mutationCases =
+            GetExplicitNullOptionalPropertyCases(workspace);
+        foreach (DocumentMutationCase mutationCase in mutationCases)
+        {
+            await AssertRejectedMutationCaseAsync(
+                mutationCase,
                 TestContext.Current.CancellationToken);
         }
     }
@@ -915,6 +981,262 @@ public sealed class AtlasIntakeContractTests
                 typeof(AtlasSafetyException)),
         ];
 
+    private static IReadOnlyList<DocumentMutationCase> GetNullCollectionElementCases(
+        AtlasSyntheticWorkspace workspace) =>
+        [
+            new(
+                "discover-request.saveRoots[0]",
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadDiscoveryRequestAsync(path, cancellationToken)
+                        .AsTask(),
+                typeof(AtlasRequestException),
+                json => ((JsonArray)json["saveRoots"]!)[0] = null),
+            new(
+                "approved-manifest.saveRoots[0]",
+                workspace.Layout.CanonicalApprovedManifestPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadManifestAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasApprovalException),
+                json => ((JsonArray)json["saveRoots"]!)[0] = null),
+            new(
+                "approved-manifest.saveEntries[0]",
+                workspace.Layout.CanonicalApprovedManifestPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadManifestAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasApprovalException),
+                json => ((JsonArray)json["saveEntries"]!)[0] = null),
+            new(
+                "approved-manifest.definitionGroups[0]",
+                workspace.Layout.CanonicalApprovedManifestPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadManifestAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasApprovalException),
+                json => ((JsonArray)json["definitionGroups"]!)[0] = null),
+            new(
+                "approved-manifest.definitionEntries[0]",
+                workspace.Layout.CanonicalApprovedManifestPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadManifestAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasApprovalException),
+                json => ((JsonArray)json["definitionEntries"]!)[0] = null),
+            new(
+                "inventory.artifacts[0]",
+                workspace.Layout.CanonicalInventoryPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadInventoryAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasSafetyException),
+                json => ((JsonArray)json["artifacts"]!)[0] = null),
+            new(
+                "inventory.artifacts[*].lineageAliases[0]",
+                workspace.Layout.CanonicalInventoryPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadInventoryAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasSafetyException),
+                SetFirstLineageAliasElementToNull),
+            new(
+                "source-root-map.saveRoots[0]",
+                workspace.Layout.CanonicalSourceRootMapPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadSourceRootMapAsync(path, cancellationToken)
+                        .AsTask(),
+                typeof(AtlasSafetyException),
+                json => ((JsonArray)json["saveRoots"]!)[0] = null),
+            new(
+                "copy-plan.entries[0]",
+                workspace.Layout.CanonicalCopyPlanPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadCopyPlanAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasSafetyException),
+                json => ((JsonArray)json["entries"]!)[0] = null),
+            new(
+                "state-r4.documentBindings[0]",
+                workspace.Layout.CanonicalPreflightedStatePath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasApprovalException),
+                json => ((JsonArray)json["documentBindings"]!)[0] = null),
+            new(
+                "state-r4.artifactBindings[0]",
+                workspace.Layout.CanonicalPreflightedStatePath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasApprovalException),
+                json => ((JsonArray)json["artifactBindings"]!)[0] = null),
+            new(
+                "copy-receipt.entries[0]",
+                workspace.Layout.CanonicalCopyReceiptPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadCopyReceiptAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasSafetyException),
+                json => ((JsonArray)json["entries"]!)[0] = null),
+            new(
+                "cleanup-report.results[0]",
+                workspace.Layout.CanonicalCleanupPreflightReportPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadCleanupPreflightReportAsync(path, cancellationToken)
+                        .AsTask(),
+                typeof(AtlasSafetyException),
+                json => ((JsonArray)json["results"]!)[0] = null),
+        ];
+
+    private static IReadOnlyList<DocumentMutationCase> GetExplicitNullOptionalPropertyCases(
+        AtlasSyntheticWorkspace workspace) =>
+        [
+            new(
+                "pending-manifest.saveRoots[0].reasonCode",
+                workspace.Layout.CanonicalPendingManifestPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadManifestAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasApprovalException),
+                json => ((JsonObject)((JsonArray)json["saveRoots"]!)[0]!)["reasonCode"] = null),
+            new(
+                "approved-manifest.saveEntries[19].slotNumber",
+                workspace.Layout.CanonicalApprovedManifestPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadManifestAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasApprovalException),
+                json => ((JsonObject)((JsonArray)json["saveEntries"]!)[19]!)["slotNumber"] = null),
+            new(
+                "approved-manifest.saveEntries[19].reasonCode",
+                workspace.Layout.CanonicalApprovedManifestPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadManifestAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasApprovalException),
+                json => ((JsonObject)((JsonArray)json["saveEntries"]!)[19]!)["reasonCode"] = null),
+            new(
+                "approved-manifest.definitionGroups[0].reasonCode",
+                workspace.Layout.CanonicalApprovedManifestPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadManifestAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasApprovalException),
+                json =>
+                    ((JsonObject)((JsonArray)json["definitionGroups"]!)[0]!)["reasonCode"] = null),
+            new(
+                "approved-manifest.definitionEntries[0].reasonCode",
+                workspace.Layout.CanonicalApprovedManifestPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadManifestAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasApprovalException),
+                json =>
+                    ((JsonObject)((JsonArray)json["definitionEntries"]!)[0]!)["reasonCode"] = null),
+            new(
+                "pending-manifest.confirmation.confirmedByRole",
+                workspace.Layout.CanonicalPendingManifestPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadManifestAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasApprovalException),
+                json => ((JsonObject)json["confirmation"]!)["confirmedByRole"] = null),
+            new(
+                "pending-manifest.confirmation.decisionReference",
+                workspace.Layout.CanonicalPendingManifestPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadManifestAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasApprovalException),
+                json => ((JsonObject)json["confirmation"]!)["decisionReference"] = null),
+            new(
+                "inventory.artifacts[0].qualification",
+                workspace.Layout.CanonicalInventoryPath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadInventoryAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasSafetyException),
+                json => ((JsonObject)((JsonArray)json["artifacts"]!)[0]!)["qualification"] = null),
+            new(
+                "state-r1.decisionCommit",
+                workspace.Layout.CanonicalDiscoveredStatePath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasApprovalException),
+                json => json["decisionCommit"] = null),
+            new(
+                "state-r2.finalCopyRootRelativePath",
+                workspace.Layout.CanonicalApprovedStatePath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasApprovalException),
+                json => json["finalCopyRootRelativePath"] = null),
+            new(
+                "state-r3.decisionCommit",
+                workspace.Layout.CanonicalQualifiedStatePath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasApprovalException),
+                json => json["decisionCommit"] = null),
+            new(
+                "state-r4.finalCopyRootRelativePath",
+                workspace.Layout.CanonicalPreflightedStatePath,
+                static (path, cancellationToken) =>
+                    AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
+                typeof(AtlasApprovalException),
+                json => json["finalCopyRootRelativePath"] = null),
+        ];
+
+    private static async Task AssertRejectedMutationCaseAsync(
+        DocumentMutationCase mutationCase,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await AssertRejectedDocumentMutationAsync(
+                mutationCase.Path,
+                mutationCase.ReadAsync,
+                mutationCase.ExpectedExceptionType,
+                mutationCase.Mutate,
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidOperationException(
+                $"Mutation case '{mutationCase.Name}' failed.",
+                exception);
+        }
+    }
+
+    private static void SetFirstLineageAliasElementToNull(JsonObject json)
+    {
+        JsonArray artifacts = (JsonArray)json["artifacts"]!;
+        foreach (JsonNode? artifactNode in artifacts)
+        {
+            JsonObject artifact = artifactNode as JsonObject
+                ?? throw new InvalidOperationException("Expected an artifact object.");
+            JsonArray lineageAliases = (JsonArray)artifact["lineageAliases"]!;
+            if (lineageAliases.Count == 0)
+            {
+                continue;
+            }
+
+            lineageAliases[0] = null;
+            return;
+        }
+
+        throw new InvalidOperationException("Expected an artifact with lineage aliases.");
+    }
+
+    private static async Task AssertDiscoveryRequestRawJsonRejectedAsync(
+        AtlasSyntheticWorkspace workspace,
+        Func<string, string> mutate,
+        CancellationToken cancellationToken)
+    {
+        string json = Encoding.UTF8.GetString(
+            AtlasIntakeContracts.SerializeRequest(workspace.CreateDiscoveryRequest()));
+        string mutated = mutate(json);
+        Assert.NotEqual(json, mutated);
+        await WriteUtf8NoBomAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            mutated,
+            cancellationToken);
+        await Assert.ThrowsAsync<AtlasRequestException>(
+            () => AtlasIntakeContracts.ReadDiscoveryRequestAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                cancellationToken).AsTask());
+    }
+
+    private static Task WriteUtf8NoBomAsync(
+        string path,
+        string contents,
+        CancellationToken cancellationToken) =>
+        File.WriteAllTextAsync(path, contents, new UTF8Encoding(false), cancellationToken);
+
     private static async Task PrepareWorkspaceThroughPreflightAsync(
         AtlasSyntheticWorkspace workspace)
     {
@@ -940,6 +1262,13 @@ public sealed class AtlasIntakeContractTests
         string Path,
         Func<string, CancellationToken, Task> ReadAsync,
         Type ExpectedExceptionType);
+
+    private sealed record DocumentMutationCase(
+        string Name,
+        string Path,
+        Func<string, CancellationToken, Task> ReadAsync,
+        Type ExpectedExceptionType,
+        Action<JsonObject> Mutate);
 
     private sealed record JsonMutation(
         IReadOnlyList<JsonPropertyStep> Path,

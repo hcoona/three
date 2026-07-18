@@ -2639,6 +2639,12 @@ public static class AtlasDiscovery
         string currentSha256 = AtlasIntakeContracts.ComputeSha256Hex(currentBytes);
         if (StringComparer.Ordinal.Equals(currentSha256, replacementSha256))
         {
+            if (io.FileExists(stagingPath) || io.DirectoryExists(stagingPath))
+            {
+                throw new AtlasSafetyException(
+                    "The inventory replacement left unexpected staging content.");
+            }
+
             if (!io.FileExists(backupPath))
             {
                 throw new AtlasSafetyException("The inventory backup is missing.");
@@ -2909,6 +2915,7 @@ public static class AtlasDiscovery
                 StringComparer.OrdinalIgnoreCase);
         List<AtlasManifestDefinitionEntry> discoveredDefinitionEntries = EnumerateDefinitionEntries(
             request.DefinitionRoot,
+            baselineManifest.DefinitionGroups,
             baselineDefinitionEntries,
             baselineSaveRootPaths.Values,
             io);
@@ -3077,6 +3084,7 @@ public static class AtlasDiscovery
 
     internal static List<AtlasManifestDefinitionEntry> EnumerateDefinitionEntries(
         string definitionRoot,
+        IReadOnlyList<AtlasManifestDefinitionGroup> definitionGroups,
         Dictionary<string, AtlasManifestDefinitionEntry> baselineDefinitionEntries,
         IEnumerable<string> excludedDirectories,
         AtlasIoSeams io)
@@ -3087,9 +3095,6 @@ public static class AtlasDiscovery
             .Select(AtlasIntakeContracts.NormalizePath)
             .OrderBy(static path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        HashSet<string> relevantExtensions = baselineDefinitionEntries.Values
-            .Select(static entry => Path.GetExtension(entry.RelativePath).ToLowerInvariant())
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         EnumerateDirectory(definitionRoot);
         if (seenPaths.Count != baselineDefinitionEntries.Count)
         {
@@ -3126,8 +3131,10 @@ public static class AtlasDiscovery
 
                 string relativePath = AtlasIntakeContracts.NormalizeRelativePath(
                     Path.GetRelativePath(definitionRoot, entryPath));
-                if (!relevantExtensions.Contains(
-                        Path.GetExtension(relativePath).ToLowerInvariant()))
+                AtlasManifestDefinitionGroup? definitionGroup = TryGetDefinitionGroupForPath(
+                    definitionGroups,
+                    relativePath);
+                if (definitionGroup is null)
                 {
                     continue;
                 }
@@ -3139,6 +3146,7 @@ public static class AtlasDiscovery
                     throw new AtlasSafetyException("The definition discovery denominator changed.");
                 }
 
+                EnsureManifestDefinitionEntryMatchesBaseline(definitionGroup, baseline);
                 if (!seenPaths.Add(relativePath))
                 {
                     throw new AtlasSafetyException("The definition discovery denominator changed.");
@@ -3147,10 +3155,169 @@ public static class AtlasDiscovery
                 results.Add(baseline with
                 {
                     RelativePath = relativePath,
+                    GroupId = definitionGroup.GroupId,
+                    Decision = definitionGroup.Decision,
                     EntryType = AtlasIntakeContracts.FileEntryType,
                     IsReparsePoint = false,
                 });
             }
+        }
+    }
+
+    private static AtlasManifestDefinitionGroup? TryGetDefinitionGroupForPath(
+        IReadOnlyList<AtlasManifestDefinitionGroup> definitionGroups,
+        string relativePath)
+    {
+        AtlasManifestDefinitionGroup? match = null;
+        foreach (AtlasManifestDefinitionGroup definitionGroup in definitionGroups)
+        {
+            if (!MatchesDefinitionSelectionRule(definitionGroup.SelectionRule, relativePath))
+            {
+                continue;
+            }
+
+            if (match is not null)
+            {
+                throw new AtlasSafetyException("The definition selection rules are ambiguous.");
+            }
+
+            match = definitionGroup;
+        }
+
+        return match;
+    }
+
+    private static bool MatchesDefinitionSelectionRule(string selectionRule, string relativePath)
+    {
+        string[] ruleSegments = SplitDefinitionSelectionRule(selectionRule);
+        string[] pathSegments = AtlasIntakeContracts.NormalizeRelativePath(relativePath)
+            .Split('/', StringSplitOptions.None);
+        return MatchesDefinitionSelectionRule(ruleSegments, 0, pathSegments, 0);
+    }
+
+    private static string[] SplitDefinitionSelectionRule(string selectionRule)
+    {
+        string[] segments = AtlasIntakeContracts.SplitRelativePath(selectionRule);
+        if (segments.Any(segment =>
+                segment.Length == 0
+                || StringComparer.Ordinal.Equals(segment, ".")
+                || StringComparer.Ordinal.Equals(segment, "..")
+                || segment.Contains(':')))
+        {
+            throw new AtlasSafetyException("The definition selection rule is invalid.");
+        }
+
+        return segments;
+    }
+
+    private static bool MatchesDefinitionSelectionRule(
+        string[] ruleSegments,
+        int ruleIndex,
+        string[] pathSegments,
+        int pathIndex)
+    {
+        while (ruleIndex < ruleSegments.Length)
+        {
+            if (StringComparer.Ordinal.Equals(ruleSegments[ruleIndex], "**"))
+            {
+                while (ruleIndex + 1 < ruleSegments.Length
+                       && StringComparer.Ordinal.Equals(ruleSegments[ruleIndex + 1], "**"))
+                {
+                    ruleIndex++;
+                }
+
+                if (ruleIndex == ruleSegments.Length - 1)
+                {
+                    return true;
+                }
+
+                for (int candidateIndex = pathIndex;
+                     candidateIndex <= pathSegments.Length;
+                     candidateIndex++)
+                {
+                    if (MatchesDefinitionSelectionRule(
+                            ruleSegments,
+                            ruleIndex + 1,
+                            pathSegments,
+                            candidateIndex))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            if (pathIndex >= pathSegments.Length
+                || !MatchesDefinitionSelectionRuleSegment(
+                    ruleSegments[ruleIndex],
+                    pathSegments[pathIndex]))
+            {
+                return false;
+            }
+
+            ruleIndex++;
+            pathIndex++;
+        }
+
+        return pathIndex == pathSegments.Length;
+    }
+
+    private static bool MatchesDefinitionSelectionRuleSegment(
+        string ruleSegment,
+        string pathSegment)
+    {
+        int ruleIndex = 0;
+        int pathIndex = 0;
+        int starIndex = -1;
+        int matchIndex = -1;
+        while (pathIndex < pathSegment.Length)
+        {
+            if (ruleIndex < ruleSegment.Length
+                && char.ToUpperInvariant(ruleSegment[ruleIndex])
+                    == char.ToUpperInvariant(pathSegment[pathIndex]))
+            {
+                ruleIndex++;
+                pathIndex++;
+                continue;
+            }
+
+            if (ruleIndex < ruleSegment.Length && ruleSegment[ruleIndex] == '*')
+            {
+                starIndex = ruleIndex++;
+                matchIndex = pathIndex;
+                continue;
+            }
+
+            if (starIndex < 0)
+            {
+                return false;
+            }
+
+            ruleIndex = starIndex + 1;
+            pathIndex = ++matchIndex;
+        }
+
+        while (ruleIndex < ruleSegment.Length && ruleSegment[ruleIndex] == '*')
+        {
+            ruleIndex++;
+        }
+
+        return ruleIndex == ruleSegment.Length;
+    }
+
+    internal static void EnsureManifestDefinitionEntryMatchesBaseline(
+        AtlasManifestDefinitionGroup actualGroup,
+        AtlasManifestDefinitionEntry baseline)
+    {
+        if (!StringComparer.Ordinal.Equals(actualGroup.GroupId, baseline.GroupId)
+            || !StringComparer.Ordinal.Equals(actualGroup.Decision, baseline.Decision)
+            || !StringComparer.Ordinal.Equals(
+                baseline.EntryType,
+                AtlasIntakeContracts.FileEntryType)
+            || baseline.IsReparsePoint)
+        {
+            throw new AtlasSafetyException("The definition entry classification changed.");
         }
     }
 

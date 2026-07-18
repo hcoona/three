@@ -417,27 +417,24 @@ public static class AtlasIntakeContracts
             return false;
         }
 
-        if (value.Contains('\\', StringComparison.Ordinal))
+        if (value[0] is '/' or '.'
+            || value.Contains('\\', StringComparison.Ordinal)
+            || HasAnyColon(value))
         {
             return false;
         }
 
-        if (value.StartsWith('/')
-            || value.StartsWith('.'))
+        foreach (string segment in value.Split('/', StringSplitOptions.None))
         {
-            return false;
+            if (segment.Length == 0
+                || StringComparer.Ordinal.Equals(segment, ".")
+                || StringComparer.Ordinal.Equals(segment, ".."))
+            {
+                return false;
+            }
         }
 
-        if (value.Contains("//", StringComparison.Ordinal)
-            || value.Contains("/./", StringComparison.Ordinal)
-            || value.Contains("/../", StringComparison.Ordinal)
-            || value.EndsWith("/.", StringComparison.Ordinal)
-            || value.EndsWith("/..", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        return !HasAnyColon(value);
+        return true;
     }
 
     internal static string FormatArtifactAlias(int ordinal) =>
@@ -777,6 +774,8 @@ public static class AtlasIntakeContracts
 
                         break;
                     }
+                case JsonTokenType.Null:
+                    throw new JsonException("Explicit JSON null is not allowed.");
             }
         }
 
