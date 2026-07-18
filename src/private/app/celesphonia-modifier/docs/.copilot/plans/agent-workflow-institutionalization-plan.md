@@ -45,7 +45,8 @@ the persisted operating model into reusable principles:
 8. Every finding, including documentation and non-blocking findings, is resolved or covered by a
    separately approved and persisted scope change before re-review.
 9. Claims, review decisions, and release decisions bind to immutable candidates and evidence rather
-   than moving state. Detailed record mechanics remain in the operating model.
+   than moving state. Detailed record mechanics remain in the narrowest governing plan or operating
+   document.
 10. Document lifecycle uses explicit active, subordinate, superseded, historical, and archived
     states; age alone never causes archival.
 11. Detailed mechanics live in the narrowest authoritative plan or operating document. The
@@ -137,7 +138,8 @@ that principle concretely: an independent reviewer:
 
 - did not author or materially shape the artifact under review;
 - starts from a fresh subagent context for that review cycle;
-- receives the exact base, candidate commit, tree, governing plan, path set, and acceptance evidence;
+- receives the exact base, candidate commit, tree, governing plan, path set, and acceptance
+  evidence;
 - reads the persisted artifacts and complete diff rather than relying on a conversation summary;
 - reviews correctness, omissions, contradictions, safety, privacy, scope, validation, and handoff;
 - reports every actionable finding with evidence and remediation; and
@@ -159,7 +161,7 @@ procedures instead of embedding this W0-specific protocol.
    `docs/.copilot/README.md`.
 4. Resolve every finding and repeat with a fresh review context until `No findings`.
 5. Persist `../reviews/agent-workflow-institutionalization-plan-review.md` as the only child change,
-   then push and verify it.
+   verify it locally, push it, and verify the published state.
 
 The plan-review record must contain:
 
@@ -171,6 +173,22 @@ The plan-review record must contain:
 - plan validation procedures and outcomes; and
 - requirements that the record commit use the final plan candidate as its first parent and change
   only the plan-review record.
+
+Plan authorization is accepted only when:
+
+1. the final plan candidate is a descendant of the completed A1 baseline and changes exactly this
+   plan and its `.copilot` index;
+2. the recorded candidate tree equals the tree resolved directly from the final plan candidate;
+3. ref-bound HK and Git diff checks pass for the complete plan-candidate range;
+4. this plan and its index contain only English, repository-safe content, use LF with one final
+   newline, and have no line longer than 100 characters;
+5. a fresh independent reviewer reports exact `No findings` for the complete candidate;
+6. the plan-review record contains every required field above, has the final plan candidate as its
+   first parent, and changes only the declared record path; and
+7. the final plan candidate and record are reachable from upstream, the record equals the expected
+   upstream tip after its push, and the tracked worktree is clean.
+
+Section 8 defines the executable plan-candidate and record checks.
 
 The verified plan-review record commit becomes the implementation diff base.
 
@@ -190,9 +208,10 @@ W0 implementation may not begin before W0.1 completes.
 2. Give a fresh independent subagent the complete candidate and all governing inputs.
 3. Resolve every finding, commit and push a new candidate, and repeat with fresh context until
    `No findings`.
-4. Persist `../reviews/agent-workflow-institutionalization-release-gate.md` as the only child change.
-5. Mechanically verify candidate, tree, first parent, changed path, upstream equality, and clean
-   tracked worktree.
+4. Persist `../reviews/agent-workflow-institutionalization-release-gate.md` as the only child
+   change.
+5. Mechanically verify the record locally, push it, then verify candidate and record reachability,
+   tree, first parent, changed path, upstream equality, and a clean tracked worktree.
 
 ## 7. Acceptance criteria
 
@@ -201,8 +220,8 @@ W0 is accepted only when:
 1. both scoped `AGENTS.md` files exist at the exact paths in section 1;
 2. their instructions do not weaken or conflict with the root `AGENTS.md`;
 3. the two files collectively capture all eleven established principles in section 2 at the meta
-   level, with documentation lifecycle, provenance, authority, and indexing owned only by
-   `docs/AGENTS.md`;
+   level, with documentation authority, lifecycle, provenance, and indexing owned only by
+   `docs/AGENTS.md` while product and release authority remain at project scope;
 4. the documentation file defines durable authority, truth, provenance, lifecycle, privacy,
    navigation, validation, and review principles without duplicating detailed plans;
 5. instruction precedence between root, project, and documentation scopes is explicit;
@@ -221,22 +240,40 @@ W0 is accepted only when:
 
 ## 8. Validation procedures
 
-After committing an implementation candidate, run from the repository root:
+### Plan authorization
+
+After committing and pushing a plan candidate, run from the repository root:
 
 ```powershell
-$base = "<verified-plan-review-record-commit>"
-$candidate = git rev-parse HEAD
-$projectAgents = "src\private\app\celesphonia-modifier\AGENTS.md"
-$docsAgents = "src\private\app\celesphonia-modifier\docs\AGENTS.md"
-$expected = @($projectAgents, $docsAgents) | Sort-Object
-$actual = @(git diff --name-only $base $candidate) | Sort-Object
+$planBase = "<completed-A1-baseline-commit>"
+$planCandidate = "<final-plan-candidate-commit>"
+$planTree = "<final-plan-candidate-tree>"
+$planPath = "src/private/app/celesphonia-modifier/docs/.copilot/plans/" +
+  "agent-workflow-institutionalization-plan.md"
+$indexPath = "src/private/app/celesphonia-modifier/docs/.copilot/README.md"
+$expected = @($planPath, $indexPath) | Sort-Object -CaseSensitive
 
-if (Compare-Object $expected $actual) {
-  throw "The implementation candidate changed an undeclared path."
+git merge-base --is-ancestor $planBase $planCandidate
+if ($LASTEXITCODE -ne 0) { throw "The plan candidate is not based on completed A1." }
+$head = git rev-parse HEAD
+if ($LASTEXITCODE -ne 0 -or $head -ne $planCandidate) { throw "HEAD is not the plan candidate." }
+$resolvedTree = git rev-parse "$planCandidate^{tree}"
+if ($LASTEXITCODE -ne 0 -or $resolvedTree -ne $planTree) { throw "Plan tree mismatch." }
+$upstream = git rev-parse '@{u}'
+if ($LASTEXITCODE -ne 0 -or $upstream -ne $planCandidate) { throw "Plan is not published." }
+$status = git status --porcelain --untracked-files=no
+if ($LASTEXITCODE -ne 0 -or $status) { throw "Tracked worktree is not clean." }
+$actual = @(git diff --name-only $planBase $planCandidate)
+if ($LASTEXITCODE -ne 0) { throw "Could not enumerate the plan candidate paths." }
+$actual = $actual | Sort-Object -CaseSensitive
+if (Compare-Object $expected $actual -CaseSensitive) {
+  throw "The plan candidate changed an undeclared path."
 }
 
-mise exec -- hk check --check --no-progress --from-ref $base --to-ref $candidate
-git --no-pager diff --check $base $candidate
+mise exec -- hk check --check --no-progress --from-ref $planBase --to-ref $planCandidate
+if ($LASTEXITCODE -ne 0) { throw "HK rejected the plan candidate." }
+git --no-pager diff --check $planBase $planCandidate
+if ($LASTEXITCODE -ne 0) { throw "Git rejected the plan candidate diff." }
 
 $violations = foreach ($path in $expected) {
   $lineNumber = 0
@@ -248,8 +285,96 @@ $violations = foreach ($path in $expected) {
   }
 }
 if ($violations) {
-  throw "AGENTS.md lines exceed 100 characters: $($violations -join ', ')"
+  throw "Plan lines exceed 100 characters: $($violations -join ', ')"
 }
+$status = git status --porcelain --untracked-files=no
+if ($LASTEXITCODE -ne 0 -or $status) { throw "Validation changed the tracked worktree." }
+```
+
+After the final reviewer returns exact `No findings`, create the plan-review record as the only
+child change and run:
+
+```powershell
+$recordPath = "src/private/app/celesphonia-modifier/docs/.copilot/reviews/" +
+  "agent-workflow-institutionalization-plan-review.md"
+$record = git rev-parse HEAD
+if ($LASTEXITCODE -ne 0) { throw "Could not resolve the plan-review record." }
+$parent = git rev-parse "$record^1"
+if ($LASTEXITCODE -ne 0 -or $parent -ne $planCandidate) {
+  throw "The plan-review record has the wrong first parent."
+}
+$actual = @(git diff --name-only $planCandidate $record)
+if ($LASTEXITCODE -ne 0) { throw "Could not enumerate the plan-review record paths." }
+if (Compare-Object @($recordPath) $actual -CaseSensitive) {
+  throw "The plan-review record changed an undeclared path."
+}
+mise exec -- hk check --check --no-progress --from-ref $planCandidate --to-ref $record
+if ($LASTEXITCODE -ne 0) { throw "HK rejected the plan-review record." }
+git --no-pager diff --check $planCandidate $record
+if ($LASTEXITCODE -ne 0) { throw "Git rejected the plan-review record diff." }
+$status = git status --porcelain --untracked-files=no
+if ($LASTEXITCODE -ne 0 -or $status) { throw "Tracked worktree is not clean." }
+
+git push
+if ($LASTEXITCODE -ne 0) { throw "Could not publish the plan-review record." }
+$upstream = git rev-parse '@{u}'
+if ($LASTEXITCODE -ne 0 -or $upstream -ne $record) {
+  throw "The plan-review record is not the published tip."
+}
+git merge-base --is-ancestor $planCandidate $upstream
+if ($LASTEXITCODE -ne 0) { throw "The plan candidate is not reachable from upstream." }
+$status = git status --porcelain --untracked-files=no
+if ($LASTEXITCODE -ne 0 -or $status) { throw "Tracked worktree is not clean after publication." }
+```
+
+### Implementation candidate
+
+After committing an implementation candidate, run from the repository root:
+
+```powershell
+$base = "<verified-plan-review-record-commit>"
+$candidate = "<implementation-candidate-commit>"
+$candidateTree = "<implementation-candidate-tree>"
+$projectAgents = "src/private/app/celesphonia-modifier/AGENTS.md"
+$docsAgents = "src/private/app/celesphonia-modifier/docs/AGENTS.md"
+$expected = @($projectAgents, $docsAgents) | Sort-Object -CaseSensitive
+
+git merge-base --is-ancestor $base $candidate
+if ($LASTEXITCODE -ne 0) { throw "The candidate is not based on the plan-review record." }
+$head = git rev-parse HEAD
+if ($LASTEXITCODE -ne 0 -or $head -ne $candidate) { throw "HEAD is not the candidate." }
+$resolvedTree = git rev-parse "$candidate^{tree}"
+if ($LASTEXITCODE -ne 0 -or $resolvedTree -ne $candidateTree) { throw "Candidate tree mismatch." }
+$upstream = git rev-parse '@{u}'
+if ($LASTEXITCODE -ne 0 -or $upstream -ne $candidate) { throw "Candidate is not published." }
+$status = git status --porcelain --untracked-files=no
+if ($LASTEXITCODE -ne 0 -or $status) { throw "Tracked worktree is not clean." }
+$actual = @(git diff --name-only $base $candidate)
+if ($LASTEXITCODE -ne 0) { throw "Could not enumerate the implementation paths." }
+$actual = $actual | Sort-Object -CaseSensitive
+if (Compare-Object $expected $actual -CaseSensitive) {
+  throw "The implementation candidate changed an undeclared path."
+}
+
+mise exec -- hk check --check --no-progress --from-ref $base --to-ref $candidate
+if ($LASTEXITCODE -ne 0) { throw "HK rejected the implementation candidate." }
+git --no-pager diff --check $base $candidate
+if ($LASTEXITCODE -ne 0) { throw "Git rejected the implementation candidate diff." }
+
+$violations = foreach ($path in $expected) {
+  $lineNumber = 0
+  Get-Content -LiteralPath $path | ForEach-Object {
+    $lineNumber++
+    if ($_.Length -gt 100) {
+      "{0}:{1}" -f $path, $lineNumber
+    }
+  }
+}
+if ($violations) {
+  throw "Instruction lines exceed 100 characters: $($violations -join ', ')"
+}
+$status = git status --porcelain --untracked-files=no
+if ($LASTEXITCODE -ne 0 -or $status) { throw "Validation changed the tracked worktree." }
 ```
 
 The cumulative candidate diff from `$base` must contain exactly:
@@ -258,6 +383,10 @@ The cumulative candidate diff from `$base` must contain exactly:
 src/private/app/celesphonia-modifier/AGENTS.md
 src/private/app/celesphonia-modifier/docs/AGENTS.md
 ```
+
+After exact `No findings`, validate and publish the release record with the plan-review record
+procedure above, substituting the implementation candidate for the parent and the declared release
+record path for `$recordPath`.
 
 No .NET build or test is required because W0 changes only Markdown instructions. If a review
 requires a code, project, package, schema, or generated-file change, stop and revise this plan.
