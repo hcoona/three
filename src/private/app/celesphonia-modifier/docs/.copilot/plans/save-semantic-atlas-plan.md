@@ -6,6 +6,13 @@
 
 **Write authority:** None
 
+> **Conditional A2 amendment**
+> The qualified read-only snapshot wording below takes effect only when the exact
+> `atlas-v0-a2-intake-safety-plan.md` plan-review record is verified. Until then, it conveys no A2
+> implementation authority.
+
+<!-- Separate independent authority notices. -->
+
 > **Execution authority**
 > `atlas-v0-execution-plan.md` defines the C# implementation boundary, increments, acceptance
 > criteria, and stop conditions for Atlas v0.

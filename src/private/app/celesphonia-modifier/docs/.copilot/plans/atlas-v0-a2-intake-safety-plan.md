@@ -191,8 +191,8 @@ A0 policy inputs and are bound through every state and receipt. A different valu
 Manifest revisions are create-new files named
 `corpus-intake-manifest.rNNNNNN.json` in one survey-local private revision directory. Revision
 numbers increase by one without reuse. A2 accepts released A0 revision 3 as its only baseline,
-publishes pending revision 4, and publishes approved revision 5. Any other predecessor, existing
-target, or additional revision stops A2.
+publishes pending revision 4, and publishes approved revision 5. Any other predecessor or additional
+revision stops A2. An existing target is handled only by the recovery matrix in section 12.
 
 Discovery preserves every baseline `rootAlias` by location role and every `sourceAlias` by its
 root-or-group identity plus relative path. New aliases append after the greatest existing ordinal
@@ -223,12 +223,33 @@ The one-shot state sequence uses create-new files:
 - revision 3, phase `qualified`; and
 - revision 4, phase `preflighted`.
 
-Each state contains its predecessor-state digest, public identifiers, inventory digest, and role-to-
-document digest bindings. Revision 1 binds the A0 baseline, pending manifest, source-root map, copy
-plan, and discovery inventory. Revision 2 binds revision 1, approved manifest, approval-record
-commit, and confirmation inventory. Revision 3 binds revision 2, copy receipt, final inventory, and
-final relative snapshot root. Revision 4 binds revision 3, cleanup report, and final A2 inventory.
-Revision 1 has no predecessor.
+Each state contains its predecessor-state digest, public identifiers, inventory digest, and
+role-to-document digest bindings. Revision 1 binds the A0 baseline, pending manifest,
+source-root map, copy plan, and discovery inventory. Revision 2 binds revision 1, approved
+manifest, approval-record commit, and confirmation inventory. Revision 3 binds revision 2, copy
+receipt, final inventory, and final relative snapshot root. Revision 4 binds revision 3, cleanup
+report, and final A2 inventory. Revision 1 has no predecessor.
+
+Every state also binds each retained request and inventory backup created by its phase. Each
+artifact binding contains artifact alias, role, survey-relative path, and SHA-256. State filenames
+are exactly `intake/states/atlas-intake-state.r000001.json` through
+`intake/states/atlas-intake-state.r000004.json`.
+
+Other canonical survey-relative paths are:
+
+- `intake/corpus-intake-manifest.json` for released A0 revision 3;
+- `intake/manifest-revisions/corpus-intake-manifest.r000004.json` and `.r000005.json`;
+- `intake/source-root-map.json` and `intake/copy-plan.json`;
+- `intake/requests/{discover,confirm,copy,cleanup-preflight}.json`;
+- `intake/inventory-backups/private-artifact-inventory.<phase>.json`, where `<phase>` is
+  `discovered`, `approved`, `qualified`, or `preflighted`;
+- `copies/snapshot-a2-000001.incomplete` and `copies/snapshot-a2-000001`;
+- `copies/snapshot-a2-000001/copy-receipt.json`; and
+- `cleanup/a2-preflight.json`.
+
+Every request path must equal its corresponding canonical path after normalization. The fixed state
+paths and state artifact bindings let later increments locate and rehash retained evidence without
+adding paths to the inventory schema.
 
 Requests and operational outputs are private. Their C# types and synthetic examples are
 repository-safe; no real request or path enters Git.
@@ -305,6 +326,9 @@ Commands:
 Options:
   -h, --help  Show help.
 ```
+
+`empty-survey -h` and `empty-survey --help` continue to emit the exact A1 section 9.1 help bytes.
+Only root help changes to the global A2 text above.
 
 Success output is one fixed LF-terminated line:
 
@@ -438,10 +462,11 @@ sibling final directory. The canonical inventory is safely replaced with a reque
 and the validated staged receipt is published as the create-new `copy-receipt.json` completion
 signal in the final directory.
 
-A snapshot is `a2-qualified` only when state revision 3 validates its final copy receipt and
-canonical inventory. Receipt/inventory agreement without state revision 3 is a repairable partial
-publication, not qualification. The operation does not claim an atomic transaction across files.
-If state revision 3 exists and validates, persisted qualification is authoritative even when
+A snapshot is `a2-qualified` only when valid state revision 3 validates its final copy receipt and
+canonical inventory. State revision 3 is the sole qualification signal. Any `a2-qualified`
+inventory property and receipt that exist before state revision 3 are provisional prerequisites and
+must not be consumed as qualification. The operation does not claim an atomic transaction across
+files. If state revision 3 exists and validates, persisted qualification is authoritative even when
 interruption or standard-output failure prevents a success message.
 
 An `.incomplete` directory or a byte mismatch requires human inspection and a separately approved
@@ -501,6 +526,21 @@ when the canonical and backup digests match, and then publishes the state. Any m
 refusal. An existing valid phase state returns success without writing. A later phase without its
 required predecessor state is an approval refusal.
 
+The recovery matrix is:
+
+- valid state for the requested or a later phase: return that command's fixed success without write;
+- matching request-owned staging file or final output, with no phase state: validate and continue;
+- missing output, with no phase state: create it;
+- mismatching staging file, final output, inventory, backup, or state: safety refusal;
+- request-owned `.incomplete` directory: safety refusal pending human inspection and exact removal;
+- unowned staging or incomplete artifact: safety refusal with no removal; and
+- invocation whose required earlier state is absent: approval refusal.
+
+Staging names are deterministic canonical output names plus `.<phase>.staging`. Repair never
+overwrites, renames, or deletes an existing final. The exact same request bytes are required. After
+a later state exists, an earlier command recognizes completion through the state chain and does not
+recreate historical outputs.
+
 The five new private schemas are:
 
 - `atlas-source-root-map/v1`;
@@ -518,7 +558,7 @@ milestone, and one result per artifact.
 
 Every retained A2 artifact receives an inventory entry in the state-bound inventory:
 
-- manifest logical record and per-source metadata: `live-discovery`, A8, `retain-private`;
+- manifest revisions and per-source metadata: `live-discovery`, A2, `retain-private`;
 - request documents: `private-evidence`, A8, `delete`;
 - root map, copy plan, intake state, receipt, and inventory backups: `private-provenance`, A8,
   `retain-private`;
@@ -526,16 +566,22 @@ Every retained A2 artifact receives an inventory entry in the state-bound invent
 - definition snapshots: `definition-copy`, A6, `delete`; and
 - cleanup-preflight report: `cleanup-record`, A8, `retain-private`.
 
-Aliases allocate monotonically in operation order and remain stable across state revisions. Control
-artifacts name their direct predecessor or input aliases in `lineageAliases`. New A2 entries use
-`custodianRole: project-leader`, status `present`, the table's lifecycle values, and an
-`expiryCondition` token `after:<last-use-milestone>`. The manifest and intake state are
-revision-managed logical records and retain one alias across revisions; each retained inventory
+Aliases allocate monotonically in operation order. Control artifacts name their direct predecessor
+or input aliases in `lineageAliases`. New A2 entries use `custodianRole: project-leader`, status
+`present`, the lifecycle values above, and an `expiryCondition` token
+`after:<last-use-milestone>`.
+
+Retained manifest revisions 3, 4, and 5 and state revisions 1 through 4 each have distinct artifact
+aliases.
+
+Manifest revision 4 names revision 3 as its direct predecessor; revision 5 names revision 4. Each
+state after revision 1 names the prior state. No revision self-references. Every retained inventory
 backup receives its own alias.
 
-Within a phase, new aliases allocate in this fixed order: request; logical control documents in the
-order bound by that phase's state; inventory backup; then per-source metadata or destination entries
-in manifest `sourceAlias` order. An existing A0 logical manifest or inventory alias is reused.
+Within a phase, new aliases allocate in this fixed order: request; manifest revision when present;
+root map; copy plan; receipt or preflight report; state revision; inventory backup; then per-source
+metadata or destination entries in manifest `sourceAlias` order. Released A0 manifest revision 3
+keeps its existing alias; every new retained byte sequence gets a new alias.
 
 ## 13. Accepted residual risks
 
@@ -643,13 +689,11 @@ tests/private/app/celesphonia-modifier/Hcoona.CelesphoniaModifier.Atlas.Tests/
   ProjectBoundaryTests.cs
 ```
 
-Repository-safe implementation records:
+Repository-safe implementation-candidate documentation:
 
 ```text
 src/private/app/celesphonia-modifier/docs/.copilot/
   README.md
-  reviews/atlas-v0-a2-tool-safety-review.md
-  reviews/atlas-v0-a2-intake-approval.md
 ```
 
 New private-contract schemas:
@@ -667,6 +711,17 @@ No other production, test, project, package, lock, schema, traversal, configurat
 path changes occur in A2. A newly required path stops implementation and requires a reviewed plan
 revision.
 
+Record-only commits are outside the implementation candidate and may change exactly one listed
+path:
+
+```text
+src/private/app/celesphonia-modifier/docs/.copilot/reviews/
+  atlas-v0-a2-plan-review.md
+  atlas-v0-a2-tool-safety-review.md
+  atlas-v0-a2-intake-approval.md
+  atlas-v0-a2-release-gate.md
+```
+
 ## 17. Tests and execution stages
 
 All automated tests use only synthetic paths, manifests, bytes, keys, inventories, and temporary
@@ -680,11 +735,11 @@ Direct tests cover:
 - complete discovery accounting and every A0 terminal rule;
 - denial of stale, pending, rejected, superseded, or digest-mismatched manifests;
 - root-map, intake-state, copy-plan, artifact, lineage, and destination continuity;
-- per-file copy fidelity, destination read-only state, directory reconciliation, and final signals;
+- per-file copy fidelity, destination read-only state, directory reconciliation, and state signals;
 - deterministic injected sharing, short-read, flush, move, hash, cancellation, and cleanup failures;
 - interruption at each private-document publication and inventory-replacement seam;
-- persisted-state outcomes before, between, and after the two qualification signals, including
-  standard-output failure after qualification;
+- provisional receipt/inventory states, sole state-3 qualification, and standard-output failure
+  after qualification;
 - refusal to use an incomplete or mismatched final snapshot;
 - no live-source deletion, modification, decode, or scan;
 - stable two-pass locator aliases and every literal bypass;
@@ -755,12 +810,13 @@ A2 is accepted only when:
 9. live content is read only by copy and is never decoded or scanned;
 10. path checks reject every tested reparse, outside-root, non-fixed, malformed, or existing output;
 11. every destination uses create-new semantics and matches source length and SHA-256;
-12. every included source produces one qualified final copy or the operation fails;
+12. every included source produces one provisional verified copy before state revision 3;
 13. all 21 save copies and 496 definition copies have matching private provenance;
 14. source metadata remains stable while each handle is held and directory entry sets remain stable;
-15. qualification requires both a final copy receipt and canonical inventory agreement;
-16. interruption before joint agreement leaves an unusable partial state; joint agreement remains
-    qualified even if process success is not reported; no failure removes an unowned path;
+15. valid state revision 3 is the sole qualification signal and requires receipt/inventory
+    agreement;
+16. interruption before state revision 3 leaves an unusable partial state; valid state revision 3
+    remains authoritative if process success is not reported; no failure removes an unowned path;
 17. later-use revalidation is required because read-only snapshots are not immutable;
 18. locator redaction cannot emit or remap a literal source key;
 19. lifecycle preflight deletes nothing, reports every state-3 inventory artifact, adds only its
