@@ -25,8 +25,6 @@ save discovery, decoding, semantic, write, WinUI, network, or private-data behav
 - `plans/atlas-v0-a1-foundation-plan.md` defines the exact three-project C# scaffold,
   deterministic empty-survey contract, command behavior, tests, validation, and release gate for
   increment A1.
-- `plans/agent-workflow-institutionalization-plan.md` defines the exact scope, meta-principles,
-  validation, and release mechanics for project-level and documentation-level agent instructions.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -43,11 +41,15 @@ save discovery, decoding, semantic, write, WinUI, network, or private-data behav
   independent `No findings` result. That record authorizes A1 implementation.
 - `reviews/atlas-v0-a1-release-gate.md` is created only after an exact committed A1 implementation
   receives an independent `No findings` result. That record establishes A1 completion.
-- `reviews/agent-workflow-institutionalization-plan-review.md` is created only after the exact W0
-  plan receives an independent `No findings` result. That record authorizes instruction writing.
-- `reviews/agent-workflow-institutionalization-release-gate.md` is created only after the exact W0
-  instruction candidate receives an independent `No findings` result. That record establishes W0
-  completion.
+
+## Workflow-policy artifacts
+
+- `plans/agent-workflow-institutionalization-plan.md` governs W0 execution only when its plan-review
+  record is present and reports `No findings`.
+- When present, `reviews/agent-workflow-institutionalization-plan-review.md` binds the exact accepted
+  W0 plan and authorizes instruction writing.
+- When present, `reviews/agent-workflow-institutionalization-release-gate.md` binds the exact
+  accepted instruction candidate and establishes W0 completion.
 
 ## Historical and supporting artifacts
 

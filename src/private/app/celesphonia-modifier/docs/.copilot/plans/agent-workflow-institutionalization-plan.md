@@ -38,21 +38,26 @@ the persisted operating model into reusable principles:
    without conversation history. Governance remains proportional for small, local changes.
 5. Reusable work follows the project's declared implementation policy from the start. Exceptions
    are explicit, disposable, and carry no hidden migration assumption.
-6. Original and private data is separated from working data. Work uses preserved copies, minimizes
-   access, and keeps private material outside repository history.
-7. Every completed material increment remains in progress until a fresh independent subagent reviews the
-   full exact candidate and returns `No findings`.
+6. Original and private data is separated from working data. Work uses preserved copies in
+   protected, Git-ignored storage, minimizes access, and never operates on originals.
+7. Every completed material increment remains in progress until a fresh independent subagent
+   reviews the full exact candidate and returns `No findings`.
 8. Every finding, including documentation and non-blocking findings, is resolved or covered by a
    separately approved and persisted scope change before re-review.
-9. Review and release evidence binds exact commits, trees, paths, acceptance criteria, and
-   validation outcomes.
+9. Claims, review decisions, and release decisions bind to immutable candidates and evidence rather
+   than moving state. Detailed record mechanics remain in the operating model.
 10. Document lifecycle uses explicit active, subordinate, superseded, historical, and archived
     states; age alone never causes archival.
 11. Detailed mechanics live in the narrowest authoritative plan or operating document. The
     `AGENTS.md` files state principles and route agents to those details without duplicating them.
 
-The new instructions must preserve the root `AGENTS.md` requirements, including English repository
-artifacts, monorepo layout, MISE, HK, CPM, and Windows execution for C#.
+The two files collectively preserve these principles. The project file routes documentation work
+to the documentation file; it does not repeat documentation lifecycle, provenance, or indexing
+rules.
+
+The new instructions inherit the root `AGENTS.md` and refer to it instead of copying changing tool
+or layout snapshots. They must not broaden its Windows rule: C# projects use Windows runners in
+GitHub workflows.
 
 ## 3. Scope and exclusions
 
@@ -63,7 +68,7 @@ artifacts, monorepo layout, MISE, HK, CPM, and Windows execution for C#.
 - Documentation meta-principles for authority, truth, lifecycle, provenance, privacy, validation,
   and indexing in the `docs/` subtree.
 - Explicit instruction precedence and links to detailed normative documents.
-- Fresh-context independent review requirements for plans, exact candidates, and release records.
+- Fresh-context independent review requirements for material plans and exact candidates.
 
 ### Out of scope
 
@@ -78,6 +83,17 @@ artifacts, monorepo layout, MISE, HK, CPM, and Windows execution for C#.
 
 ## 4. Instruction allocation
 
+Instruction hierarchy is cumulative:
+
+1. The repository-root `AGENTS.md` applies first.
+2. The project `AGENTS.md` adds or narrows rules for the Celesphonia Modifier subtree.
+3. `docs/AGENTS.md` adds or narrows rules for the documentation subtree.
+4. A narrower file may not weaken or contradict a parent instruction.
+
+Normative plans and operating documents govern their declared subject matter, but they do not
+override the `AGENTS.md` instruction hierarchy. An agent stops and resolves any conflict instead of
+choosing whichever source is convenient.
+
 ### Project `AGENTS.md`
 
 The project-level instructions must cover:
@@ -90,7 +106,7 @@ The project-level instructions must cover:
 - original-data, private-data, and repository-boundary safety;
 - small integrated increments and validation against the actual outcome;
 - authorship and approval separation through clean-context independent review;
-- exact-candidate evidence and explicit release authority; and
+- immutable-candidate evidence and explicit release authority; and
 - escalation when scope, evidence, authority, or safety is materially uncertain.
 
 It must direct documentation work to `docs/AGENTS.md` rather than duplicating that file.
@@ -138,18 +154,35 @@ procedures instead of embedding this W0-specific protocol.
 
 1. Add this plan and index it in `docs/.copilot/README.md`.
 2. Commit and push the exact plan candidate.
-3. Give a fresh independent subagent the persisted plan and relevant governing documents.
+3. Give a fresh independent subagent the persisted plan, root `AGENTS.md`,
+   `project-operating-model.md`, and the lifecycle and privacy sections of
+   `docs/.copilot/README.md`.
 4. Resolve every finding and repeat with a fresh review context until `No findings`.
-5. Persist the plan-review record as the only child change, then push and verify it.
+5. Persist `../reviews/agent-workflow-institutionalization-plan-review.md` as the only child change,
+   then push and verify it.
+
+The plan-review record must contain:
+
+- the final plan candidate commit, tree, and completed A1 baseline;
+- this plan path and the complete governing-input list from step 3;
+- the reviewed path set and W0 plan acceptance criteria;
+- reviewer identity and independence attestation;
+- every review iteration, finding disposition, and final exact `No findings`;
+- plan validation procedures and outcomes; and
+- requirements that the record commit use the final plan candidate as its first parent and change
+  only the plan-review record.
+
+The verified plan-review record commit becomes the implementation diff base.
 
 W0 implementation may not begin before W0.1 completes.
 
 ### W0.2 Write scoped instructions
 
-1. Create the project `AGENTS.md`.
-2. Create `docs/AGENTS.md`.
-3. Check the files against the approved W0 plan, root instructions, and operating model.
-4. Validate formatting, links, privacy boundaries, and instruction hierarchy.
+1. Use the verified plan-review record commit as the implementation diff base.
+2. Create the project `AGENTS.md`.
+3. Create `docs/AGENTS.md`.
+4. Check the files against the approved W0 plan, root instructions, and operating model.
+5. Validate formatting, links, privacy boundaries, and instruction hierarchy.
 
 ### W0.3 Review and release
 
@@ -160,7 +193,6 @@ W0 implementation may not begin before W0.1 completes.
 4. Persist `../reviews/agent-workflow-institutionalization-release-gate.md` as the only child change.
 5. Mechanically verify candidate, tree, first parent, changed path, upstream equality, and clean
    tracked worktree.
-6. Give a final fresh independent subagent the release record and Git state for record verification.
 
 ## 7. Acceptance criteria
 
@@ -168,7 +200,9 @@ W0 is accepted only when:
 
 1. both scoped `AGENTS.md` files exist at the exact paths in section 1;
 2. their instructions do not weaken or conflict with the root `AGENTS.md`;
-3. the project file captures all eleven established principles in section 2 at the meta level;
+3. the two files collectively capture all eleven established principles in section 2 at the meta
+   level, with documentation lifecycle, provenance, authority, and indexing owned only by
+   `docs/AGENTS.md`;
 4. the documentation file defines durable authority, truth, provenance, lifecycle, privacy,
    navigation, validation, and review principles without duplicating detailed plans;
 5. instruction precedence between root, project, and documentation scopes is explicit;
@@ -180,23 +214,45 @@ W0 is accepted only when:
 11. EditorConfig, typo, Markdown lint, and Prettier checks pass;
 12. the implementation candidate changes exactly the two planned `AGENTS.md` paths;
 13. a fresh independent reviewer reports `No findings` for the full exact candidate;
-14. the release record contains every operating-model field and is the only child change;
-15. a fresh independent record reviewer reports `No findings`; and
-16. all commits are pushed and equal the shared branch upstream.
+14. the plan-review record binds the exact accepted plan and becomes the implementation diff base;
+15. the release record contains every operating-model field and is the only child change; and
+16. every required commit is reachable from upstream, while the expected tip equals upstream after
+    each required push.
 
 ## 8. Validation procedures
 
-From the repository root:
+After committing an implementation candidate, run from the repository root:
 
 ```powershell
+$base = "<verified-plan-review-record-commit>"
+$candidate = git rev-parse HEAD
 $projectAgents = "src\private\app\celesphonia-modifier\AGENTS.md"
 $docsAgents = "src\private\app\celesphonia-modifier\docs\AGENTS.md"
+$expected = @($projectAgents, $docsAgents) | Sort-Object
+$actual = @(git diff --name-only $base $candidate) | Sort-Object
 
-mise exec -- hk check --check --no-progress $projectAgents $docsAgents
-git --no-pager diff --check
+if (Compare-Object $expected $actual) {
+  throw "The implementation candidate changed an undeclared path."
+}
+
+mise exec -- hk check --check --no-progress --from-ref $base --to-ref $candidate
+git --no-pager diff --check $base $candidate
+
+$violations = foreach ($path in $expected) {
+  $lineNumber = 0
+  Get-Content -LiteralPath $path | ForEach-Object {
+    $lineNumber++
+    if ($_.Length -gt 100) {
+      "{0}:{1}" -f $path, $lineNumber
+    }
+  }
+}
+if ($violations) {
+  throw "AGENTS.md lines exceed 100 characters: $($violations -join ', ')"
+}
 ```
 
-Before implementation review, compare the committed candidate path set with:
+The cumulative candidate diff from `$base` must contain exactly:
 
 ```text
 src/private/app/celesphonia-modifier/AGENTS.md
@@ -219,7 +275,8 @@ Private outputs: none.
 
 The work may consult repository-safe session decisions and persisted project documents. It must not
 open, summarize, copy, or identify private workspace contents, saves, game files, hashes, account
-metadata, or private evidence.
+metadata, or private evidence. If private data ever becomes necessary in a later task, use
+preserved copies in protected, Git-ignored storage and never use originals.
 
 ## 10. Authority and stop conditions
 
