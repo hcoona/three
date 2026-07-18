@@ -22,6 +22,9 @@ solution entries, or package references under this root.
 - `plans/atlas-v0-a0-research-contract.md` records the approved finite corpus, definition,
   privacy, redaction, Agent-egress, artifact-lifecycle, and handoff contract for increment A0.
   Human scope approval alone does not establish increment completion.
+- `plans/atlas-v0-a1-foundation-plan.md` defines the exact three-project C# scaffold,
+  deterministic empty-survey contract, command behavior, tests, validation, and release gate for
+  increment A1.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
