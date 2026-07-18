@@ -161,8 +161,10 @@ Its exact direct `PackageReference` set is:
 - `Microsoft.Testing.Extensions.CodeCoverage`;
 - `Microsoft.Testing.Extensions.TrxReport`;
 - `xunit.v3.mtp-v2`;
-- `xunit.runner.visualstudio` with `PrivateAssets` and the repository-standard `IncludeAssets`; and
-- `coverlet.collector` with `PrivateAssets` and the repository-standard `IncludeAssets`.
+- `xunit.runner.visualstudio` with `PrivateAssets` set to `all` and `IncludeAssets` set to
+  `runtime; build; native; contentfiles; analyzers; buildtransitive`; and
+- `coverlet.collector` with `PrivateAssets` set to `all` and `IncludeAssets` set to
+  `runtime; build; native; contentfiles; analyzers; buildtransitive`.
 
 No other test package is permitted. The test project sets `MSTestAnalysisMode` to `None`, matching
 the repository's xUnit v3 projects.
@@ -437,7 +439,7 @@ The test project adds focused tests in these groups.
 
 ### 10.3 Process smoke tests
 
-- A built `celesphonia-atlas.dll` process returns 0 for `empty-survey`.
+- A built `celesphonia-atlas.exe` apphost process returns 0 for `empty-survey`.
 - Captured stdout bytes exactly match section 7 and captured stderr is empty.
 - An invalid-argument process returns 2, writes the fixed stderr bytes, and leaves stdout empty.
 - The process tests exercise `Program.Main`, console stream selection, and argument forwarding.
