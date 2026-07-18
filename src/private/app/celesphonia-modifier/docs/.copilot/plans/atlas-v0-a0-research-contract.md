@@ -152,8 +152,9 @@ The survey directory layout is:
     private-artifact-inventory.json
     private-provenance.json
   copies\
-    saves\
-    definitions\
+    <snapshot-alias>\
+      saves\
+      definitions\
   decoded\
   evidence\
   agent-envelopes\

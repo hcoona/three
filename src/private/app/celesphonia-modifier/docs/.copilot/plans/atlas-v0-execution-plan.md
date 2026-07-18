@@ -172,7 +172,7 @@ exist.
 - Human-reviewable discovery manifest.
 - Qualified read-only snapshot command and private provenance map.
 - Trusted-local-filesystem preflight and copy-verification checks.
-- Non-mutating private-workspace lifecycle preflight.
+- Non-deleting private-workspace lifecycle preflight.
 - Locator-segment redaction classifier.
 
 ### Acceptance criteria

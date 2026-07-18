@@ -93,12 +93,11 @@ human approval gate in section 10.
 - Metadata-only discovery for the two approved save-root roles.
 - Metadata-only discovery for the frozen installed-definition rules.
 - Existing `atlas-intake/v2` and `atlas-private-inventory/v1` contracts.
-- New private root-map, approval-binding, copy-plan, copy-receipt, locator-map, and cleanup-report
-  contracts.
+- New private root-map, intake-state, copy-plan, copy-receipt, and cleanup-report contracts.
 - Strict private request parsing with source-generated `System.Text.Json` metadata.
 - Trusted-local copy creation and private fidelity evidence.
 - Deterministic deny-by-default locator-key aliases.
-- Non-mutating private lifecycle preflight.
+- Non-deleting private lifecycle preflight.
 - Synthetic, repository-safe automated tests.
 - One human-operated private A2 run after exact manifest approval.
 
@@ -115,6 +114,7 @@ human approval gate in section 10.
 - Deleting retained corpus evidence or implementing final deletion in A2.
 - Crash-atomic updates across multiple files or directories.
 - Any real-save write or compatibility claim.
+- A second intake survey or reusable predecessor chain; either requires a new approved plan.
 
 Final deletion belongs to A8, when last-use authority exists. A2 only proves that lifecycle
 eligibility can be computed without mutation.
@@ -162,23 +162,21 @@ The exact command contracts are:
   `surveyAlias`, `workspaceRoot`, `baselineManifestPath`, `expectedBaselineSha256`,
   `expectedBaselineRevision`, `nextManifestRevision`, `manifestRevisionDirectory`, `saveRoots`,
   `definitionRoot`, `gameExecutablePath`, `sourceRootMapOutputPath`, `inventoryPath`,
-  `expectedInventorySha256`, `inventoryBackupPath`, `copyPlanOutputPath`,
-  `previousSourceRootMapPath`, `expectedPreviousSourceRootMapSha256`, `previousCopyPlanPath`, and
-  `expectedPreviousCopyPlanSha256`;
+  `expectedInventorySha256`, `inventoryBackupPath`, `copyPlanOutputPath`, `stateRevisionDirectory`,
+  `expectedSteamAppId`, and `expectedBuildId`;
 - `intake-confirm`, version `atlas-intake-confirmation-request/v1`: `schemaVersion`,
-  `surveyAlias`, `workspaceRoot`, `pendingManifestPath`, `expectedPendingSha256`,
-  `expectedPendingRevision`, `sourceRootMapPath`, `expectedSourceRootMapSha256`, `decisionCommit`,
-  `copyPlanPath`, `expectedCopyPlanSha256`, `predecessorApprovalBindingPath`,
-  `expectedPredecessorApprovalBindingSha256`, `approvalBindingOutputPath`, and
-  `manifestRevisionDirectory`;
+  `surveyAlias`, `workspaceRoot`, `discoveredStatePath`, `expectedDiscoveredStateSha256`,
+  `pendingManifestPath`, `sourceRootMapPath`, `copyPlanPath`, `decisionCommit`,
+  `manifestRevisionDirectory`, `stateRevisionDirectory`, `inventoryPath`,
+  `expectedInventorySha256`, and `inventoryBackupPath`;
 - `intake-copy`, version `atlas-intake-copy-request/v1`: `schemaVersion`, `surveyAlias`,
-  `workspaceRoot`, `approvedManifestPath`, `expectedApprovedSha256`,
-  `expectedApprovedRevision`, `approvalBindingPath`, `expectedApprovalBindingSha256`,
-  `sourceRootMapPath`, `copyPlanPath`, `priorCopyReceiptPath`,
-  `expectedPriorCopyReceiptSha256`, `decisionCommit`, `incompleteCopyPath`, `finalCopyPath`,
-  `inventoryPath`, `expectedInventorySha256`, and `inventoryBackupPath`; and
+  `workspaceRoot`, `approvedStatePath`, `expectedApprovedStateSha256`, `approvedManifestPath`,
+  `sourceRootMapPath`, `copyPlanPath`, `decisionCommit`, `incompleteCopyPath`, `finalCopyPath`,
+  `stateRevisionDirectory`, `inventoryPath`, `expectedInventorySha256`, and
+  `inventoryBackupPath`; and
 - `cleanup-preflight`, version `atlas-cleanup-preflight-request/v1`: `schemaVersion`,
-  `surveyAlias`, `workspaceRoot`, `inventoryPath`, `expectedInventorySha256`,
+  `surveyAlias`, `workspaceRoot`, `qualifiedStatePath`, `expectedQualifiedStateSha256`,
+  `stateRevisionDirectory`, `inventoryPath`, `expectedInventorySha256`, `inventoryBackupPath`,
   `proposedMilestone`, and `reportOutputPath`.
 
 `saveRoots` contains exactly two objects, one for each approved A0 location role. Each object has
@@ -187,49 +185,50 @@ Expected hashes are 64 lowercase hexadecimal characters. `decisionCommit` is a 4
 lowercase Git object identifier. `proposedMilestone` is an existing inventory milestone and is
 advisory because preflight cannot authorize deletion.
 
-The four predecessor path/hash pairs are explicit nullable pairs:
-
-- previous source-root map on the first A2 discovery;
-- previous copy plan on the first A2 discovery;
-- predecessor approval binding on the first A2 approval;
-- prior copy receipt on the first qualified A2 copy.
-
-Exactly both members or neither member is present. A later operation verifies the predecessor
-document, digest, survey, and revision before doing work; neither member may be null on a
-subsequent operation.
+`expectedSteamAppId` is exactly `1786790`; `expectedBuildId` is exactly `13624401`. They are public
+A0 policy inputs and are bound through every state and receipt. A different value reopens A0.
 
 Manifest revisions are create-new files named
 `corpus-intake-manifest.rNNNNNN.json` in one survey-local private revision directory. Revision
-numbers increase by one without reuse. On the first A2 discovery, the baseline is the released A0
-revision 3 manifest and the revision directory is empty. Later discovery uses the newest file in
-that directory as its baseline. The next revision must equal the baseline plus one, and the target
-must not exist. Confirmation applies the same rule. A new pending revision invalidates every earlier
-approval for copying.
+numbers increase by one without reuse. A2 accepts released A0 revision 3 as its only baseline,
+publishes pending revision 4, and publishes approved revision 5. Any other predecessor, existing
+target, or additional revision stops A2.
 
 Discovery preserves every baseline `rootAlias` by location role and every `sourceAlias` by its
 root-or-group identity plus relative path. New aliases append after the greatest existing ordinal
 in deterministic ordinal path order. An existing locator may never receive a new alias.
 
-The source-root map uses `atlas-source-root-map/v1` and contains only `schemaVersion`,
-`surveyAlias`, `discoveryRevision`, two `rootAlias`/absolute-path save bindings, and one absolute
-definition-root binding plus the absolute game-executable path. It is private. Confirmation and
-copy bind its exact SHA-256 alongside the manifest.
+The source-root map uses `atlas-source-root-map/v1` and contains `schemaVersion`, `surveyAlias`,
+discovery revision, public application and build identifiers, two `rootAlias`/absolute-path save
+bindings, one absolute definition-root binding, and the absolute game-executable path.
 
-Discovery compares supplied previous source-root-map and copy-plan documents before treating roots
-or mappings as unchanged. It publishes `atlas-copy-plan/v1`. The plan contains `schemaVersion`,
-survey and discovery revisions, its predecessor digest, and one entry per included manifest source.
-Each entry contains
-`sourceAlias`, inventoried `sourceArtifactAlias`, new `destinationArtifactAlias`, artifact class,
-and canonical destination-relative path.
+Discovery also publishes `atlas-copy-plan/v1`. The plan contains `schemaVersion`, survey and
+discovery revisions, and one entry per included manifest source. Each entry contains `sourceAlias`,
+inventoried `sourceArtifactAlias`, reserved `destinationArtifactAlias`, artifact class, and
+canonical destination-relative path.
 
 Artifact aliases allocate after the greatest ordinal in the bound inventory, in manifest
 `sourceAlias` order. Discovery creates one `live-discovery` inventory entry per included source with
-status `present`, and one destination entry with status `planned`. The destination's only
-`lineageAliases` member is the corresponding live-discovery artifact alias.
+status `present`. Destination aliases are only reserved by the copy plan; save-copy and
+definition-copy inventory entries do not exist until successful qualification.
 
 Save destinations are `saves/<sourceAlias>.rpgsave`. Definition destinations are
 `definitions/<sourceAlias><lowercase-source-extension>`. Source aliases are unique, allowed
 extensions are frozen by A0, and any duplicate destination is a safety failure.
+
+The one-shot state sequence uses create-new files:
+
+- `atlas-intake-state/v1`, revision 1, phase `discovered`;
+- revision 2, phase `approved`;
+- revision 3, phase `qualified`; and
+- revision 4, phase `preflighted`.
+
+Each state contains its predecessor-state digest, public identifiers, inventory digest, and role-to-
+document digest bindings. Revision 1 binds the A0 baseline, pending manifest, source-root map, copy
+plan, and discovery inventory. Revision 2 binds revision 1, approved manifest, approval-record
+commit, and confirmation inventory. Revision 3 binds revision 2, copy receipt, final inventory, and
+final relative snapshot root. Revision 4 binds revision 3, cleanup report, and final A2 inventory.
+Revision 1 has no predecessor.
 
 Requests and operational outputs are private. Their C# types and synthetic examples are
 repository-safe; no real request or path enters Git.
@@ -349,8 +348,9 @@ private path, source name, hash, value, count, exception message, or stack trace
 5. terminally classifies every candidate;
 6. preserves or assigns aliases under section 6;
 7. reconciles all root, group, included, excluded, unsupported, and unreadable counts;
-8. publishes one private source-root map and one pending `atlas-intake/v2` revision; and
-9. safely updates private live-discovery and planned-inventory records.
+8. publishes the source-root map, copy plan, and pending `atlas-intake/v2` revision;
+9. safely updates the inventory with discovery and control-artifact entries; and
+10. publishes intake-state revision 1 last as the authoritative discovery-completion signal.
 
 `steam_autocloud.vdf` is always `exclude-steam-autocloud`. A reparse-backed root or entry is
 `unsupported` and stops A2. Any root, denominator, selection-rule, or terminal-policy difference
@@ -365,11 +365,13 @@ project leader performs the private phase:
 2. verifies in the Steam client that application `1786790` still reports public build
    `13624401` and confirms that the installation was not manually altered;
 3. runs the reviewed source candidate from a clean checkout;
-4. opens the exact pending manifest, source-root map, and copy plan in a local editor;
-5. verifies their revisions, roots, mappings, decisions, counts, and private SHA-256 values;
+4. opens the exact pending manifest, source-root map, copy plan, and discovered state in a local
+   editor;
+5. verifies their revisions, roots, mappings, decisions, counts, bindings, and private SHA-256
+   values;
 6. reports only approved repository-safe aggregate counts and contract differences;
 7. explicitly approves or rejects that survey alias and revision;
-8. supplies all three private expected SHA-256 values only to local requests; and
+8. supplies the discovered-state SHA-256 only to the local confirmation request; and
 9. runs confirmation only after the approval record commit is pushed.
 
 The approval record at `../reviews/atlas-v0-a2-intake-approval.md` contains:
@@ -385,20 +387,11 @@ The approval record at `../reviews/atlas-v0-a2-intake-approval.md` contains:
 The record is independently reviewed as an exact staged blob, committed unchanged as the only child
 of the approved source-safety record, pushed, and verified for parent, path, content, and upstream.
 
-`intake-confirm` requires the exact private SHA-256 values reviewed by the project leader. It
-verifies the pending manifest is newest and `pending`, and that the source-root map and copy plan
-match its survey and discovery revision. It writes the next manifest revision, differing only in
-revision and confirmation: `approved`, `project-leader`, and the exact approval-record commit.
-
-It then publishes `atlas-intake-approval-binding/v1`, containing survey alias; pending and approved
-manifest revisions and digests; source-root-map revision and digest; copy-plan revision and digest;
-decision commit; and optional predecessor-approval-binding digest. Copy trusts only this closed
-binding and verifies every referenced private document against it.
-
-The approved revision and approval binding are a paired publication. If interruption publishes only
-one, neither authorizes copying. Re-running `intake-confirm` with the same request validates the
-existing member against deterministically regenerated counterpart bytes and publishes only the
-missing member. Any byte difference is a safety refusal; neither file is overwritten or deleted.
+`intake-confirm` verifies state revision 1 and every document digest it binds. It writes manifest
+revision 5, differing from revision 4 only in revision and confirmation: `approved`,
+`project-leader`, and the exact approval-record commit. It updates the control-artifact inventory
+and publishes state revision 2 last. Copy trusts only revision 2 and revalidates every referenced
+document.
 
 This is a trusted human-operated gate, not a claim that the CLI proves Git authority. Any later
 discovery revision invalidates approval. The operator privately hashes the approved revision and
@@ -409,17 +402,17 @@ Together with every included definition hash and the public identifiers, this es
 game-content portion of A0 fingerprint evidence. Atlas tool, schema, redaction-policy, and
 configuration digests remain outside A2 and are added to the final Atlas snapshot under A8.
 
-The first A2 copy has no prior receipt. Every later intake binds a prior receipt and compares its
-game executable and definition hashes before qualification. A changed public build,
-operator-reported local alteration, or fingerprint mismatch reopens A0. No private fingerprint
-enters the approval record or process output.
+This one-shot A2 run establishes the first qualified game-content fingerprint. A changed public
+build or operator-reported local alteration before this run reopens A0. Comparing a later
+installation requires a separately approved intake plan. No private fingerprint enters the
+approval record or process output.
 
 ## 11. Copy and qualification
 
-`intake-copy` accepts only the newest approved manifest revision and one approval binding. Manifest,
-source-root-map, copy-plan, survey, decision, revision, predecessor, and digest values must match
-that binding. The root map supplies the only absolute source paths and the copy plan supplies the
-only artifact and destination mapping; no ambient lookup or array-order pairing is permitted.
+`intake-copy` accepts only state revision 2. Manifest, source-root-map, copy-plan, survey, decision,
+revision, public identifier, and digest values must match that state. The root map supplies the only
+absolute source paths and the copy plan supplies the only artifact and destination mapping; no
+ambient lookup or array-order pairing is permitted.
 
 Before content access, it re-enumerates every source directory and requires exact agreement with
 the approved manifest. For each included source, it:
@@ -445,13 +438,14 @@ sibling final directory. The canonical inventory is safely replaced with a reque
 and the validated staged receipt is published as the create-new `copy-receipt.json` completion
 signal in the final directory.
 
-A snapshot is `a2-qualified` only when its final copy receipt and canonical inventory agree.
-Neither signal alone is usable. The operation does not claim an atomic transaction across those
-signals. If interruption leaves an `.incomplete` directory or only one final signal, later tools
-refuse it. If both signals agree, persisted qualification is authoritative even when interruption
-or standard-output failure prevents a success message. Recovery requires human inspection and a
-separately approved retry or targeted removal; A2 never guesses or recursively removes an
-unexpected final directory.
+A snapshot is `a2-qualified` only when state revision 3 validates its final copy receipt and
+canonical inventory. Receipt/inventory agreement without state revision 3 is a repairable partial
+publication, not qualification. The operation does not claim an atomic transaction across files.
+If state revision 3 exists and validates, persisted qualification is authoritative even when
+interruption or standard-output failure prevents a success message.
+
+An `.incomplete` directory or a byte mismatch requires human inspection and a separately approved
+retry or targeted removal. A2 never guesses or recursively removes an unexpected final directory.
 
 On an ordinary pre-rename failure, cleanup attempts to remove only the request-bound, owned,
 non-reparse `.incomplete` directory. If removal fails, the command reports failure and leaves the
@@ -463,20 +457,20 @@ destination-relative aliases, lengths, and SHA-256 values. Definition copies use
 The inventory uses `a2-qualified` only for save-copy entries because the existing schema limits that
 property to save copies.
 
-The copy receipt uses `atlas-copy-receipt/v1`. It contains the survey alias, receipt alias,
-profile, approval-binding digest, approved manifest digest, source-root-map digest, copy-plan
-digest, optional prior-receipt digest, decision reference, final relative copy root, public
-identifiers, private game-executable SHA-256, exact save and definition counts, and one entry per
-copy-plan source. Each entry contains both artifact aliases, source alias, artifact class,
-destination-relative path, source length, source-last-write UTC value, and SHA-256.
+The copy receipt uses `atlas-copy-receipt/v1`. It contains the survey alias, receipt alias, profile,
+approved-state digest, approved manifest digest, source-root-map digest, copy-plan digest, decision
+reference, final relative copy root, public identifiers, private game-executable SHA-256, exact save
+and definition counts, and one entry per copy-plan source. Each entry contains both artifact
+aliases, source alias, artifact class, destination-relative path, source length, source-last-write
+UTC value, and SHA-256.
 
-Receipt and inventory agree only when every copy-plan and receipt entry has exactly one inventory
-entry with the same destination artifact alias and class, status `present`, the declared source
-artifact as its only lineage member, and verification method
+Receipt, qualified state, and inventory agree only when every copy-plan and receipt entry has
+exactly one inventory entry with the same destination artifact alias and class, status `present`,
+the declared source artifact as its only lineage member, and verification method
 `trusted-local-filesystem/v1;receipt:<receipt-alias>`; save copies additionally have
-`a2-qualified`. Every corresponding planned entry transitions to `present`, no unrelated entry
-changes, and no extra A2 copy entry exists. Definitions are qualified by agreement, not by the
-save-only inventory property.
+`a2-qualified`. No destination entry exists before copy. Successful copy adds each destination as
+`present`, adds only the control entries declared below, and changes no unrelated entry. Definitions
+are qualified by agreement, not by the save-only inventory property.
 
 ## 12. Private document publication
 
@@ -500,21 +494,48 @@ that backup path, then reopens and validates the canonical file. It makes no cra
 If the canonical file or expected backup state is invalid, all tools refuse both and require human
 recovery. Backups remain inventoried private evidence through A2 release.
 
-The six new private schemas are:
+Each phase publishes its state revision last. Re-running the same phase request before that state
+exists is idempotent: the command validates each existing final output against deterministically
+regenerated bytes, creates only missing outputs, recognizes an already completed inventory replace
+when the canonical and backup digests match, and then publishes the state. Any mismatch is a safety
+refusal. An existing valid phase state returns success without writing. A later phase without its
+required predecessor state is an approval refusal.
+
+The five new private schemas are:
 
 - `atlas-source-root-map/v1`;
-- `atlas-intake-approval-binding/v1`;
+- `atlas-intake-state/v1`;
 - `atlas-copy-plan/v1`;
 - `atlas-copy-receipt/v1`;
-- `atlas-locator-alias-map/v1`; and
 - `atlas-cleanup-preflight/v1`.
 
 Their tracked JSON Schemas define closed local document shapes, property types, canonical relative
 path syntax, and alias patterns. BCL-only C# validators enforce alias uniqueness, census,
 predecessors, calculated digests, lineage, and every cross-field or cross-document invariant.
 
-The locator schema supports the first scanning increment. The cleanup report contains its schema
-version, survey alias, bound inventory digest, proposed milestone, and one result per artifact.
+The cleanup report contains its schema version, survey alias, bound inventory digest, proposed
+milestone, and one result per artifact.
+
+Every retained A2 artifact receives an inventory entry in the state-bound inventory:
+
+- manifest logical record and per-source metadata: `live-discovery`, A8, `retain-private`;
+- request documents: `private-evidence`, A8, `delete`;
+- root map, copy plan, intake state, receipt, and inventory backups: `private-provenance`, A8,
+  `retain-private`;
+- save snapshots: `save-copy`, A8, `delete`;
+- definition snapshots: `definition-copy`, A6, `delete`; and
+- cleanup-preflight report: `cleanup-record`, A8, `retain-private`.
+
+Aliases allocate monotonically in operation order and remain stable across state revisions. Control
+artifacts name their direct predecessor or input aliases in `lineageAliases`. New A2 entries use
+`custodianRole: project-leader`, status `present`, the table's lifecycle values, and an
+`expiryCondition` token `after:<last-use-milestone>`. The manifest and intake state are
+revision-managed logical records and retain one alias across revisions; each retained inventory
+backup receives its own alias.
+
+Within a phase, new aliases allocate in this fixed order: request; logical control documents in the
+order bound by that phase's state; inventory backup; then per-source metadata or destination entries
+in manifest `sourceAlias` order. An existing A0 logical manifest or inventory alias is reused.
 
 ## 13. Accepted residual risks
 
@@ -547,17 +568,29 @@ one:
 - `schema-key-NNNNNN`; or
 - `dynamic-key-NNNNNN`.
 
-A2 implements the redactor, locator-map schema, validators, and synthetic tests only. No real key is
-read and no private locator map is created in A2. The first scanning increment persists the map per
-survey, reuses it later, and refuses remaps or unseen keys until a new approved mapping revision
-exists. Source keys never enter Git or Agent input. Unknown or ambiguous kinds, conflicting
-mappings, range exhaustion, and attempted literal keys are safety failures.
+A2 implements the redactor and synthetic tests only. No real key is read, and no private map or map
+schema is created in A2. The first scanning increment defines and persists the map contract, reuses
+it later, and refuses remaps or unseen keys until a new approved mapping revision exists. Source
+keys never enter Git or Agent input. Unknown or ambiguous kinds, conflicting mappings, range
+exhaustion, and attempted literal keys are safety failures.
 
 ## 15. Lifecycle preflight
 
-`cleanup-preflight` reads `atlas-private-inventory/v1` and creates a new private report. It performs
-no deletion and no inventory update. For every artifact it reports the alias, status, last-use
-milestone, planned disposition, and whether the proposed milestone would make it eligible.
+`cleanup-preflight` requires valid state revision 3, reads its bound
+`atlas-private-inventory/v1`, and creates a new private report. It performs no deletion or workspace
+census. It strictly validates every bound inventory row and reports one of:
+
+- `blocked-status` unless status is `last-use-complete` or `deletion-pending`;
+- `blocked-disposition` unless disposition is `delete`;
+- `blocked-before-last-use` when the proposed milestone precedes last use;
+- `indeterminate-expiry` unless expiry is exactly `after:<last-use-milestone>`; or
+- `eligible-for-human-review` when none of the preceding results applies.
+
+Milestone order is `A2` through `A8`, then `post-A8-appeal`. The first matching result wins in the
+order above. An invalid inventory row fails the command rather than producing eligibility.
+
+After publishing the report, preflight adds exactly one `cleanup-record` inventory entry, safely
+replaces the inventory, and publishes state revision 4 last. No prior row changes.
 
 The proposed milestone is not deletion authority. A2 does not need artifact paths because it does
 not delete. Final cleanup, alias-to-path custody, deletion approval, and attestation are designed
@@ -626,8 +659,7 @@ src/private/app/celesphonia-modifier/docs/.copilot/schemas/atlas-v0/
   copy-plan.schema.json
   cleanup-preflight-report.schema.json
   copy-receipt.schema.json
-  intake-approval-binding.schema.json
-  locator-alias-map.schema.json
+  intake-state.schema.json
   source-root-map.schema.json
 ```
 
@@ -647,7 +679,7 @@ Direct tests cover:
 - DOS-path normalization, containment, fixed-drive policy, and component reparse refusal;
 - complete discovery accounting and every A0 terminal rule;
 - denial of stale, pending, rejected, superseded, or digest-mismatched manifests;
-- root-map, approval-binding, copy-plan, predecessor, artifact, and destination continuity;
+- root-map, intake-state, copy-plan, artifact, lineage, and destination continuity;
 - per-file copy fidelity, destination read-only state, directory reconciliation, and final signals;
 - deterministic injected sharing, short-read, flush, move, hash, cancellation, and cleanup failures;
 - interruption at each private-document publication and inventory-replacement seam;
@@ -656,7 +688,7 @@ Direct tests cover:
 - refusal to use an incomplete or mismatched final snapshot;
 - no live-source deletion, modification, decode, or scan;
 - stable two-pass locator aliases and every literal bypass;
-- non-mutating lifecycle eligibility;
+- non-deleting lifecycle eligibility and the exact state-4 inventory transition;
 - exact CLI grammar, help, bytes, precedence, result mapping, and path non-disclosure; and
 - exact project and dependency manifests.
 
@@ -689,11 +721,11 @@ A0. Any denominator or policy change reopens A0.
 
 Stop for explicit approval of the exact local pending manifest. Independently review, commit, push,
 and verify the repository-safe approval record. The project leader then runs `intake-confirm`
-locally. Rejection, an unsupported source, or a new pending revision stops copying.
+locally. Rejection, an unsupported source, or any unexpected revision stops copying.
 
 ### A2.3 Human-operated copy and preflight
 
-The project leader privately hashes the newest approved revision, creates the copy request, runs
+The project leader privately hashes intake-state revision 2, creates the copy request, runs
 `intake-copy`, and reports only repository-safe acceptance aggregates. Do not decode or scan the
 snapshots.
 
@@ -719,7 +751,7 @@ A2 is accepted only when:
 5. exactly 21 save inputs and 496 definitions are approved, or a reopened A0 releases a new scope;
 6. every source has exactly one terminal status and Steam cloud metadata is excluded;
 7. the project leader approves exact pending manifest bytes before confirmation or copy;
-8. the approved manifest is the newest create-new revision and its private digest matches;
+8. intake-state revision 2 binds approved manifest revision 5 and every private input digest;
 9. live content is read only by copy and is never decoded or scanned;
 10. path checks reject every tested reparse, outside-root, non-fixed, malformed, or existing output;
 11. every destination uses create-new semantics and matches source length and SHA-256;
@@ -731,13 +763,15 @@ A2 is accepted only when:
     qualified even if process success is not reported; no failure removes an unowned path;
 17. later-use revalidation is required because read-only snapshots are not immutable;
 18. locator redaction cannot emit or remap a literal source key;
-19. lifecycle preflight is non-mutating and reports every inventoried artifact;
+19. lifecycle preflight deletes nothing, reports every state-3 inventory artifact, adds only its
+    own inventory entry, and publishes state revision 4;
 20. no private path, hash, name, value, source text, request, or unapproved count enters process
     output or Git; section 20 lists the only repository-safe aggregate counts;
 21. every command result follows the declared fixed bytes, exit code, and A1 precedence;
 22. locked restore, build, formatting, targeted tests, apphost checks, and HK pass;
 23. source-safety review reports `No findings` before private discovery;
-24. cleanup preflight succeeds with zero unexplained artifacts and performs zero deletions;
+24. cleanup preflight reports every valid state-3 inventory row, reports zero invalid rows,
+    performs zero deletions, and publishes valid state revision 4;
 25. final independent review reports `No findings`; and
 26. the verified release record is the record-only child and shared branch tip.
 
@@ -810,7 +844,7 @@ record-only child, push it, and verify parent, path, content, and upstream.
 Expected private outputs are:
 
 - create-new pending and approved manifest revisions;
-- request documents, live-discovery metadata, approval bindings, and copy plans;
+- request documents, live-discovery metadata, intake states, and copy plans;
 - save and definition snapshots;
 - private receipts, inventory, and completion signals;
 - cleanup-preflight report; and
@@ -825,5 +859,5 @@ To resume A2:
 3. identify the first incomplete stage;
 4. do not enter the private phase without the exact source-safety record;
 5. leave private request creation, execution, manifest review, and hashing to the project leader;
-6. do not copy without the verified approval record and newest approved private revision; and
+6. do not copy without the verified approval record and valid intake-state revision 2; and
 7. infer neither private state nor authority from conversation history.
