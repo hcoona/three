@@ -34,16 +34,17 @@ the persisted operating model into reusable principles:
    Review must be comprehensive but must not expand scope merely to appear comprehensive.
 3. Outcomes, scope, exclusions, acceptance evidence, and stop conditions are explicit before
    material implementation begins.
-4. Planned or material work is persisted before execution so another contributor can resume
-   without conversation history. Governance remains proportional for small, local changes.
+4. Every work item designated as an execution increment follows the persisted-plan and handoff gate
+   before execution. Governance depth remains proportional for ordinary local work that is not a
+   formal execution increment.
 5. Reusable work follows the project's declared implementation policy from the start. Exceptions
    are explicit, disposable, and carry no hidden migration assumption.
 6. Original and private data is separated from working data. Agent, research, test, and evidence
    work uses preserved copies in protected, Git-ignored storage, minimizes access, and never
    operates on originals. Runtime writes to original user data require explicit governing safety
    authority.
-7. Every completed material increment remains in progress until a fresh independent subagent
-   reviews the full exact candidate and returns `No findings`.
+7. Every execution increment remains in progress until a fresh independent subagent reviews the
+   full exact candidate and returns `No findings`.
 8. Every finding, including documentation and non-blocking findings, is resolved or covered by a
    separately approved and persisted scope change before re-review.
 9. Claims, review decisions, and release decisions bind to immutable candidates and evidence rather
@@ -320,6 +321,12 @@ W0 is accepted only when:
 After committing and pushing a plan candidate, run from the repository root:
 
 ```powershell
+$gitRoot = git rev-parse --show-toplevel
+if ($LASTEXITCODE -ne 0) { throw "The current directory is not in the repository." }
+$gitRoot = $gitRoot.Replace("/", "\").TrimEnd("\")
+$currentDirectory = (Get-Location).Path.TrimEnd("\")
+if ($currentDirectory -ne $gitRoot) { throw "Run validation from the repository root." }
+$miseCommand = (Get-Command mise -CommandType Application -ErrorAction Stop).Source
 $planBase = "cdde3a0427765c9f2b969e3e678550e4f7d78edb"
 $planCandidate = git rev-parse HEAD
 if ($LASTEXITCODE -ne 0) { throw "Could not resolve the plan candidate." }
@@ -344,14 +351,16 @@ if (Compare-Object $expectedChanges $actual -CaseSensitive) {
   throw "The plan candidate changed an undeclared path."
 }
 
-mise exec -- hk check --check --no-progress --from-ref $planBase --to-ref $planCandidate
-if ($LASTEXITCODE -ne 0) { throw "HK rejected the plan candidate." }
+& $miseCommand exec -- hk check --check --no-progress --from-ref $planBase --to-ref $planCandidate
+if (-not $? -or $LASTEXITCODE -ne 0) { throw "HK rejected the plan candidate." }
 git --no-pager diff --check $planBase $planCandidate
 if ($LASTEXITCODE -ne 0) { throw "Git rejected the plan candidate diff." }
 
 $violations = foreach ($path in $paths) {
   $lineNumber = 0
-  Get-Content -LiteralPath $path | ForEach-Object {
+  $committedLines = @(git show "${planCandidate}:$path")
+  if ($LASTEXITCODE -ne 0) { throw "Could not read committed plan content: $path" }
+  $committedLines | ForEach-Object {
     $lineNumber++
     if ($_.Length -gt 100) {
       "{0}:{1}" -f $path, $lineNumber
@@ -391,6 +400,12 @@ Commit the reviewed blob unchanged. In a fresh PowerShell process, supply only t
 blob identifier and record-reviewer identifier, then run:
 
 ```powershell
+$gitRoot = git rev-parse --show-toplevel
+if ($LASTEXITCODE -ne 0) { throw "The current directory is not in the repository." }
+$gitRoot = $gitRoot.Replace("/", "\").TrimEnd("\")
+$currentDirectory = (Get-Location).Path.TrimEnd("\")
+if ($currentDirectory -ne $gitRoot) { throw "Run validation from the repository root." }
+$miseCommand = (Get-Command mise -CommandType Application -ErrorAction Stop).Source
 $planBase = "cdde3a0427765c9f2b969e3e678550e4f7d78edb"
 $reviewedRecordBlob = "<full-reviewed-staged-blob-identifier>"
 $recordReviewer = "<fresh-record-review-subagent-identifier>"
@@ -462,8 +477,8 @@ $actualHeadings = @($recordLines | Where-Object { $_ -match '^## ' })
 if (Compare-Object $requiredHeadings $actualHeadings -CaseSensitive -SyncWindow 0) {
   throw "Plan-review record sections are missing, reordered, duplicated, or undeclared."
 }
-mise exec -- hk check --check --no-progress --from-ref $planCandidate --to-ref $record
-if ($LASTEXITCODE -ne 0) { throw "HK rejected the plan-review record." }
+& $miseCommand exec -- hk check --check --no-progress --from-ref $planCandidate --to-ref $record
+if (-not $? -or $LASTEXITCODE -ne 0) { throw "HK rejected the plan-review record." }
 git --no-pager diff --check $planCandidate $record
 if ($LASTEXITCODE -ne 0) { throw "Git rejected the plan-review record diff." }
 $status = git status --porcelain --untracked-files=no
@@ -486,6 +501,12 @@ if ($LASTEXITCODE -ne 0 -or $status) { throw "Tracked worktree is not clean afte
 After committing an implementation candidate, run from the repository root:
 
 ```powershell
+$gitRoot = git rev-parse --show-toplevel
+if ($LASTEXITCODE -ne 0) { throw "The current directory is not in the repository." }
+$gitRoot = $gitRoot.Replace("/", "\").TrimEnd("\")
+$currentDirectory = (Get-Location).Path.TrimEnd("\")
+if ($currentDirectory -ne $gitRoot) { throw "Run validation from the repository root." }
+$miseCommand = (Get-Command mise -CommandType Application -ErrorAction Stop).Source
 $planBase = "cdde3a0427765c9f2b969e3e678550e4f7d78edb"
 $baseInput = "<verified-plan-review-record-commit>"
 $base = git rev-parse --verify "$baseInput^{commit}"
@@ -524,18 +545,50 @@ $planTree = git rev-parse "$planCandidate^{tree}"
 if ($LASTEXITCODE -ne 0) { throw "Could not resolve the persisted plan tree." }
 $planRecordLines = @(git show "${base}:$planRecordPath")
 if ($LASTEXITCODE -ne 0) { throw "Could not read the plan-review record." }
-$requiredPlanBindings = @(
+$actualPlanMetadata = @($planRecordLines | Where-Object { $_ -match '^\*\*[^*]+:\*\*' })
+$reviewerMetadata = @($actualPlanMetadata | Where-Object {
+    $_ -match '^\*\*Independent reviewer:\*\*'
+  })
+if ($reviewerMetadata.Count -ne 1 -or
+  $reviewerMetadata[0] -notmatch '^\*\*Independent reviewer:\*\* `[A-Za-z0-9][A-Za-z0-9._-]*`$') {
+  throw "The plan-review record has an invalid independent reviewer."
+}
+$expectedPlanMetadata = @(
+  '**Increment:** W0 plan',
+  '**Outcome:** Execution ready',
   '**Final independent result:** `No findings`',
   ('**Plan commit:** `{0}`' -f $planCandidate),
   ('**Plan tree:** `{0}`' -f $planTree),
   ('**Completed A1 baseline:** `{0}`' -f $planBase),
+  '**Governing plan:** `../plans/agent-workflow-institutionalization-plan.md`',
+  '**Reviewed candidate path:** `../plans/agent-workflow-institutionalization-plan.md`',
+  '**Reviewed candidate path:** `../README.md`',
+  $reviewerMetadata[0],
+  '**Reviewer independence:** Confirmed, including the staged record blob',
+  '**Review iterations and finding dispositions:** Recorded',
   '**Acceptance decision:** Passed',
-  '**Validation decision:** Passed'
+  '**Acceptance evidence:** Recorded',
+  '**Validation decision:** Passed',
+  '**Validation evidence:** Recorded',
+  '**Private evidence:** None accessed or recorded.'
 )
-$missingPlanBindings = @($requiredPlanBindings | Where-Object {
-    $planRecordLines -cnotcontains $_
-  })
-if ($missingPlanBindings) { throw "The implementation base is not a verified plan-review record." }
+if (Compare-Object $expectedPlanMetadata $actualPlanMetadata -CaseSensitive -SyncWindow 0) {
+  throw "The plan-review record metadata is incomplete or noncanonical."
+}
+$expectedPlanHeadings = @(
+  '## Exact-plan binding',
+  '## Reviewer independence',
+  '## Finding disposition',
+  '## Reviewed inputs and paths',
+  '## Acceptance evidence',
+  '## Validation evidence',
+  '## Private-evidence statement',
+  '## Execution decision'
+)
+$actualPlanHeadings = @($planRecordLines | Where-Object { $_ -match '^## ' })
+if (Compare-Object $expectedPlanHeadings $actualPlanHeadings -CaseSensitive -SyncWindow 0) {
+  throw "The plan-review record section set is incomplete or noncanonical."
+}
 git merge-base --is-ancestor $base $candidate
 if ($LASTEXITCODE -ne 0) { throw "The candidate is not based on the plan-review record." }
 $upstream = git rev-parse '@{u}'
@@ -549,14 +602,16 @@ if (Compare-Object $expectedChanges $actual -CaseSensitive) {
   throw "The implementation candidate changed an undeclared path."
 }
 
-mise exec -- hk check --check --no-progress --from-ref $base --to-ref $candidate
-if ($LASTEXITCODE -ne 0) { throw "HK rejected the implementation candidate." }
+& $miseCommand exec -- hk check --check --no-progress --from-ref $base --to-ref $candidate
+if (-not $? -or $LASTEXITCODE -ne 0) { throw "HK rejected the implementation candidate." }
 git --no-pager diff --check $base $candidate
 if ($LASTEXITCODE -ne 0) { throw "Git rejected the implementation candidate diff." }
 
 $violations = foreach ($path in $paths) {
   $lineNumber = 0
-  Get-Content -LiteralPath $path | ForEach-Object {
+  $committedLines = @(git show "${candidate}:$path")
+  if ($LASTEXITCODE -ne 0) { throw "Could not read committed instruction content: $path" }
+  $committedLines | ForEach-Object {
     $lineNumber++
     if ($_.Length -gt 100) {
       "{0}:{1}" -f $path, $lineNumber
@@ -603,6 +658,12 @@ Commit the reviewed blob unchanged. In a fresh PowerShell process, supply only t
 plan-review record, reviewed staged blob, and record-reviewer identifiers, then run:
 
 ```powershell
+$gitRoot = git rev-parse --show-toplevel
+if ($LASTEXITCODE -ne 0) { throw "The current directory is not in the repository." }
+$gitRoot = $gitRoot.Replace("/", "\").TrimEnd("\")
+$currentDirectory = (Get-Location).Path.TrimEnd("\")
+if ($currentDirectory -ne $gitRoot) { throw "Run validation from the repository root." }
+$miseCommand = (Get-Command mise -CommandType Application -ErrorAction Stop).Source
 $planBase = "cdde3a0427765c9f2b969e3e678550e4f7d78edb"
 $baseInput = "<verified-plan-review-record-commit>"
 $base = git rev-parse --verify "$baseInput^{commit}"
@@ -644,18 +705,50 @@ if (Compare-Object @("A`t$planRecordPath") $baseChanges -CaseSensitive) {
 }
 $planRecordLines = @(git show "${base}:$planRecordPath")
 if ($LASTEXITCODE -ne 0) { throw "Could not read the plan-review record." }
-$requiredPlanBindings = @(
+$actualPlanMetadata = @($planRecordLines | Where-Object { $_ -match '^\*\*[^*]+:\*\*' })
+$reviewerMetadata = @($actualPlanMetadata | Where-Object {
+    $_ -match '^\*\*Independent reviewer:\*\*'
+  })
+if ($reviewerMetadata.Count -ne 1 -or
+  $reviewerMetadata[0] -notmatch '^\*\*Independent reviewer:\*\* `[A-Za-z0-9][A-Za-z0-9._-]*`$') {
+  throw "The plan-review record has an invalid independent reviewer."
+}
+$expectedPlanMetadata = @(
+  '**Increment:** W0 plan',
+  '**Outcome:** Execution ready',
   '**Final independent result:** `No findings`',
   ('**Plan commit:** `{0}`' -f $planCandidate),
   ('**Plan tree:** `{0}`' -f $planTree),
   ('**Completed A1 baseline:** `{0}`' -f $planBase),
+  '**Governing plan:** `../plans/agent-workflow-institutionalization-plan.md`',
+  '**Reviewed candidate path:** `../plans/agent-workflow-institutionalization-plan.md`',
+  '**Reviewed candidate path:** `../README.md`',
+  $reviewerMetadata[0],
+  '**Reviewer independence:** Confirmed, including the staged record blob',
+  '**Review iterations and finding dispositions:** Recorded',
   '**Acceptance decision:** Passed',
-  '**Validation decision:** Passed'
+  '**Acceptance evidence:** Recorded',
+  '**Validation decision:** Passed',
+  '**Validation evidence:** Recorded',
+  '**Private evidence:** None accessed or recorded.'
 )
-$missingPlanBindings = @($requiredPlanBindings | Where-Object {
-    $planRecordLines -cnotcontains $_
-  })
-if ($missingPlanBindings) { throw "The base is not the verified plan-review record." }
+if (Compare-Object $expectedPlanMetadata $actualPlanMetadata -CaseSensitive -SyncWindow 0) {
+  throw "The plan-review record metadata is incomplete or noncanonical."
+}
+$expectedPlanHeadings = @(
+  '## Exact-plan binding',
+  '## Reviewer independence',
+  '## Finding disposition',
+  '## Reviewed inputs and paths',
+  '## Acceptance evidence',
+  '## Validation evidence',
+  '## Private-evidence statement',
+  '## Execution decision'
+)
+$actualPlanHeadings = @($planRecordLines | Where-Object { $_ -match '^## ' })
+if (Compare-Object $expectedPlanHeadings $actualPlanHeadings -CaseSensitive -SyncWindow 0) {
+  throw "The plan-review record section set is incomplete or noncanonical."
+}
 git merge-base --is-ancestor $base $candidate
 if ($LASTEXITCODE -ne 0) { throw "The candidate is not based on the plan-review record." }
 $candidateChanges = @(git diff --no-renames --name-status $base $candidate)
@@ -717,8 +810,8 @@ $actualHeadings = @($recordLines | Where-Object { $_ -match '^## ' })
 if (Compare-Object $requiredHeadings $actualHeadings -CaseSensitive -SyncWindow 0) {
   throw "Release-record sections are missing, reordered, duplicated, or undeclared."
 }
-mise exec -- hk check --check --no-progress --from-ref $candidate --to-ref $record
-if ($LASTEXITCODE -ne 0) { throw "HK rejected the release record." }
+& $miseCommand exec -- hk check --check --no-progress --from-ref $candidate --to-ref $record
+if (-not $? -or $LASTEXITCODE -ne 0) { throw "HK rejected the release record." }
 git --no-pager diff --check $candidate $record
 if ($LASTEXITCODE -ne 0) { throw "Git rejected the release-record diff." }
 $status = git status --porcelain --untracked-files=no
