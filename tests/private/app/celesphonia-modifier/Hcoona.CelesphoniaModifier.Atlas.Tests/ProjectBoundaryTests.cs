@@ -1,0 +1,238 @@
+using System.Xml.Linq;
+using Xunit;
+
+namespace Hcoona.CelesphoniaModifier.Atlas.Tests;
+
+public sealed class ProjectBoundaryTests
+{
+    private static readonly string[] ExpectedLibraryFiles =
+    [
+        "EmptyAtlasSurvey.cs",
+        "Hcoona.CelesphoniaModifier.Atlas.csproj",
+        "packages.lock.json",
+    ];
+
+    private static readonly string[] ExpectedCliFiles =
+    [
+        "AtlasCliApplication.cs",
+        "Hcoona.CelesphoniaModifier.Atlas.Cli.csproj",
+        "packages.lock.json",
+        "Program.cs",
+    ];
+
+    private static readonly string[] ExpectedTestFiles =
+    [
+        "AtlasCliApplicationTests.cs",
+        "AtlasProcessSmokeTests.cs",
+        "EmptyAtlasSurveyTests.cs",
+        "Hcoona.CelesphoniaModifier.Atlas.Tests.csproj",
+        "packages.lock.json",
+        "ProjectBoundaryTests.cs",
+    ];
+
+    private static readonly string[] ExpectedTestPackages =
+    [
+        "coverlet.collector",
+        "Microsoft.NET.Test.Sdk",
+        "Microsoft.Testing.Extensions.CodeCoverage",
+        "Microsoft.Testing.Extensions.TrxReport",
+        "xunit.runner.visualstudio",
+        "xunit.v3.mtp-v2",
+    ];
+
+    private const string ExpectedCliProjectReference =
+        @"$(AtlasCliRoot)\Hcoona.CelesphoniaModifier.Atlas.Cli.csproj";
+
+    private const string ExpectedLibraryProjectReference =
+        @"$(AtlasRoot)\Hcoona.CelesphoniaModifier.Atlas.csproj";
+
+    [Fact]
+    public void ProductionProjectDependenciesAreClosed()
+    {
+        ProjectPaths paths = ProjectPaths.Create();
+        XDocument library = XDocument.Load(paths.LibraryProject);
+        XDocument cli = XDocument.Load(paths.CliProject);
+
+        Assert.Empty(GetIncludes(library, "PackageReference"));
+        Assert.Empty(GetIncludes(library, "ProjectReference"));
+        Assert.Empty(GetIncludes(cli, "PackageReference"));
+        Assert.Equal(
+            [@"$(AtlasProject)\Hcoona.CelesphoniaModifier.Atlas.csproj"],
+            GetIncludes(cli, "ProjectReference"));
+        Assert.Equal(
+            @"..\Hcoona.CelesphoniaModifier.Atlas",
+            GetPropertyValue(cli, "AtlasProject"));
+    }
+
+    [Fact]
+    public void TestProjectDependenciesAreExact()
+    {
+        ProjectPaths paths = ProjectPaths.Create();
+        XDocument tests = XDocument.Load(paths.TestProject);
+
+        Assert.Equal(
+            ExpectedTestPackages.Order(StringComparer.Ordinal),
+            GetIncludes(tests, "PackageReference"));
+        Assert.Equal(
+            [
+                ExpectedCliProjectReference,
+                ExpectedLibraryProjectReference,
+            ],
+            GetIncludes(tests, "ProjectReference"));
+        Assert.Equal(
+            @"$(MSBuildThisFileDirectory)..\..\..\..\..",
+            GetPropertyValue(tests, "TestProjectRoot"));
+        Assert.Equal(
+            @"$(TestProjectRoot)\src\private\app\celesphonia-modifier",
+            GetPropertyValue(tests, "A1SourceRoot"));
+        Assert.Equal(
+            @"$(A1SourceRoot)\Hcoona.CelesphoniaModifier.Atlas",
+            GetPropertyValue(tests, "AtlasRoot"));
+        Assert.Equal(
+            @"$(A1SourceRoot)\Hcoona.CelesphoniaModifier.Atlas.Cli",
+            GetPropertyValue(tests, "AtlasCliRoot"));
+        AssertPackageAssets(tests, "coverlet.collector");
+        AssertPackageAssets(tests, "xunit.runner.visualstudio");
+    }
+
+    [Fact]
+    public void ProjectFileManifestIsExact()
+    {
+        ProjectPaths paths = ProjectPaths.Create();
+
+        Assert.Equal(
+            ExpectedLibraryFiles.Order(StringComparer.Ordinal),
+            GetFileNames(paths.LibraryDirectory));
+        Assert.Equal(
+            ExpectedCliFiles.Order(StringComparer.Ordinal),
+            GetFileNames(paths.CliDirectory));
+        Assert.Equal(
+            ExpectedTestFiles.Order(StringComparer.Ordinal),
+            GetFileNames(paths.TestDirectory));
+    }
+
+    [Fact]
+    public void ReadmeDescribesTheScaffoldedFoundation()
+    {
+        string readme = File.ReadAllText(ProjectPaths.Create().Readme);
+
+        Assert.DoesNotContain(
+            "No application project has been scaffolded here yet.",
+            readme,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "The A1 C# foundation contains one reusable library, one thin CLI, "
+            + "and one test project.",
+            readme,
+            StringComparison.Ordinal);
+    }
+
+    private static void AssertPackageAssets(XDocument project, string packageName)
+    {
+        XElement package = project
+            .Descendants()
+            .Single(element =>
+                element.Name.LocalName == "PackageReference"
+                && StringComparer.Ordinal.Equals(
+                    element.Attribute("Include")?.Value,
+                    packageName));
+        Assert.Equal("all", GetChildValue(package, "PrivateAssets"));
+        Assert.Equal(
+            "runtime; build; native; contentfiles; analyzers; buildtransitive",
+            GetChildValue(package, "IncludeAssets"));
+    }
+
+    private static string GetChildValue(XElement element, string childName) =>
+        element
+            .Elements()
+            .Single(child => child.Name.LocalName == childName)
+            .Value;
+
+    private static string GetPropertyValue(XDocument project, string propertyName) =>
+        project
+            .Descendants()
+            .Single(element => element.Name.LocalName == propertyName)
+            .Value;
+
+    private static string[] GetFileNames(string directory) =>
+        Directory
+            .EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly)
+            .Select(Path.GetFileName)
+            .Order(StringComparer.Ordinal)
+            .ToArray()!;
+
+    private static string[] GetIncludes(XDocument project, string itemName) =>
+        project
+            .Descendants()
+            .Where(element => element.Name.LocalName == itemName)
+            .Select(element => element.Attribute("Include")?.Value)
+            .Where(value => value is not null)
+            .Order(StringComparer.Ordinal)
+            .ToArray()!;
+
+    private sealed record ProjectPaths(
+        string LibraryDirectory,
+        string CliDirectory,
+        string TestDirectory,
+        string LibraryProject,
+        string CliProject,
+        string TestProject,
+        string Readme)
+    {
+        public static ProjectPaths Create()
+        {
+            string repositoryRoot = FindRepositoryRoot();
+            string projectRoot = Path.Combine(
+                repositoryRoot,
+                "src",
+                "private",
+                "app",
+                "celesphonia-modifier");
+            string testRoot = Path.Combine(
+                repositoryRoot,
+                "tests",
+                "private",
+                "app",
+                "celesphonia-modifier");
+            string libraryDirectory = Path.Combine(
+                projectRoot,
+                "Hcoona.CelesphoniaModifier.Atlas");
+            string cliDirectory = Path.Combine(
+                projectRoot,
+                "Hcoona.CelesphoniaModifier.Atlas.Cli");
+            string testDirectory = Path.Combine(
+                testRoot,
+                "Hcoona.CelesphoniaModifier.Atlas.Tests");
+            return new ProjectPaths(
+                libraryDirectory,
+                cliDirectory,
+                testDirectory,
+                Path.Combine(
+                    libraryDirectory,
+                    "Hcoona.CelesphoniaModifier.Atlas.csproj"),
+                Path.Combine(
+                    cliDirectory,
+                    "Hcoona.CelesphoniaModifier.Atlas.Cli.csproj"),
+                Path.Combine(
+                    testDirectory,
+                    "Hcoona.CelesphoniaModifier.Atlas.Tests.csproj"),
+                Path.Combine(projectRoot, "docs", ".copilot", "README.md"));
+        }
+
+        private static string FindRepositoryRoot()
+        {
+            DirectoryInfo? directory = new(AppContext.BaseDirectory);
+            while (directory is not null)
+            {
+                if (File.Exists(Path.Combine(directory.FullName, "dirs.proj")))
+                {
+                    return directory.FullName;
+                }
+
+                directory = directory.Parent;
+            }
+
+            throw new InvalidOperationException("Repository root was not found.");
+        }
+    }
+}

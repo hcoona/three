@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>$(CurrentTargetFramework)</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseAppHost>true</UseAppHost>
+
+    <AssemblyName>celesphonia-atlas</AssemblyName>
+    <RootNamespace>Hcoona.CelesphoniaModifier.Atlas.Cli</RootNamespace>
+    <AtlasProject>..\Hcoona.CelesphoniaModifier.Atlas</AtlasProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference
+      Include="$(AtlasProject)\Hcoona.CelesphoniaModifier.Atlas.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Hcoona.CelesphoniaModifier.Atlas.Tests" />
+  </ItemGroup>
+
+</Project>

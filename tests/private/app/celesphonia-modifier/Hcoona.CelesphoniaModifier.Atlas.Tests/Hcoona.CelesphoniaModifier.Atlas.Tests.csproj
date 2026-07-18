@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(CurrentTargetFramework)</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Hcoona.CelesphoniaModifier.Atlas.Tests</RootNamespace>
+    <MSTestAnalysisMode>None</MSTestAnalysisMode>
+
+    <TestProjectRoot>$(MSBuildThisFileDirectory)..\..\..\..\..</TestProjectRoot>
+    <A1SourceRoot>$(TestProjectRoot)\src\private\app\celesphonia-modifier</A1SourceRoot>
+    <AtlasRoot>$(A1SourceRoot)\Hcoona.CelesphoniaModifier.Atlas</AtlasRoot>
+    <AtlasCliRoot>$(A1SourceRoot)\Hcoona.CelesphoniaModifier.Atlas.Cli</AtlasCliRoot>
+    <CliBuild>$(AtlasCliRoot)\bin\$(Configuration)\$(TargetFramework)</CliBuild>
+    <CliAppHost>$(CliBuild)\celesphonia-atlas.exe</CliAppHost>
+    <CliAppHostFull>$([System.IO.Path]::GetFullPath('$(CliAppHost)'))</CliAppHostFull>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference
+      Include="$(AtlasRoot)\Hcoona.CelesphoniaModifier.Atlas.csproj" />
+    <ProjectReference
+      Include="$(AtlasCliRoot)\Hcoona.CelesphoniaModifier.Atlas.Cli.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="AtlasCliAppHostPath" Value="$(CliAppHostFull)" />
+  </ItemGroup>
+
+</Project>

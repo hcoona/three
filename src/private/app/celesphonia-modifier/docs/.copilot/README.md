@@ -8,8 +8,8 @@
 This folder contains Copilot-assisted planning, remediation, and research artifacts for the
 future Celesphonia Modifier project root.
 
-No application project has been scaffolded here yet. There are no source files, project files,
-solution entries, or package references under this root.
+The A1 C# foundation contains one reusable library, one thin CLI, and one test project. It has no
+save discovery, decoding, semantic, write, WinUI, network, or private-data behavior.
 
 ## Normative baseline
 
