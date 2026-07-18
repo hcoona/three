@@ -32,6 +32,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <TestingPlatformBuilderHook Remove="98058041-B5B6-4A75-9834-58E6DF796A22" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference
       Include="$(AtlasRoot)\Hcoona.CelesphoniaModifier.Atlas.csproj" />
     <ProjectReference
@@ -41,5 +45,16 @@
   <ItemGroup>
     <AssemblyMetadata Include="AtlasCliAppHostPath" Value="$(CliAppHostFull)" />
   </ItemGroup>
+
+  <Target Name="RejectTestingPlatformTelemetry" BeforeTargets="CoreCompile">
+    <ItemGroup>
+      <_A1TelemetryHook
+        Include="@(TestingPlatformBuilderHook)"
+        Condition="'%(TestingPlatformBuilderHook.DisplayName)' == 'Microsoft.Testing.Extensions.Telemetry'" />
+    </ItemGroup>
+    <Error
+      Condition="'@(_A1TelemetryHook)' != ''"
+      Text="Microsoft Testing Platform telemetry must remain disabled." />
+  </Target>
 
 </Project>

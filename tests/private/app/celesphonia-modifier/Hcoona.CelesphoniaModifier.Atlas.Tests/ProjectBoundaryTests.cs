@@ -46,6 +46,8 @@ public sealed class ProjectBoundaryTests
     private const string ExpectedLibraryProjectReference =
         @"$(AtlasRoot)\Hcoona.CelesphoniaModifier.Atlas.csproj";
 
+    private const string TelemetryHookId = "98058041-B5B6-4A75-9834-58E6DF796A22";
+
     [Fact]
     public void ProductionProjectDependenciesAreClosed()
     {
@@ -109,6 +111,29 @@ public sealed class ProjectBoundaryTests
         Assert.Equal(
             ExpectedTestFiles.Order(StringComparer.Ordinal),
             GetFileNames(paths.TestDirectory));
+    }
+
+    [Fact]
+    public void TestProjectRejectsTestingPlatformTelemetry()
+    {
+        XDocument tests = XDocument.Load(ProjectPaths.Create().TestProject);
+        XElement removal = tests
+            .Descendants()
+            .Single(element =>
+                element.Name.LocalName == "TestingPlatformBuilderHook"
+                && element.Attribute("Remove") is not null);
+        XElement guard = tests
+            .Descendants()
+            .Single(element =>
+                element.Name.LocalName == "Target"
+                && element.Attribute("Name")?.Value == "RejectTestingPlatformTelemetry");
+
+        Assert.Equal(TelemetryHookId, removal.Attribute("Remove")?.Value);
+        Assert.Equal("CoreCompile", guard.Attribute("BeforeTargets")?.Value);
+        Assert.Contains(
+            "Microsoft.Testing.Extensions.Telemetry",
+            guard.ToString(),
+            StringComparison.Ordinal);
     }
 
     [Fact]
