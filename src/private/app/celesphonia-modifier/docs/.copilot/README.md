@@ -46,8 +46,8 @@ save discovery, decoding, semantic, write, WinUI, network, or private-data behav
 
 - `plans/agent-workflow-institutionalization-plan.md` governs W0 execution only when its plan-review
   record is present and reports `No findings`.
-- When present, `reviews/agent-workflow-institutionalization-plan-review.md` binds the exact accepted
-  W0 plan and authorizes instruction writing.
+- When present, `reviews/agent-workflow-institutionalization-plan-review.md` binds the exact
+  accepted W0 plan and authorizes instruction writing.
 - When present, `reviews/agent-workflow-institutionalization-release-gate.md` binds the exact
   accepted instruction candidate and establishes W0 completion.
 
