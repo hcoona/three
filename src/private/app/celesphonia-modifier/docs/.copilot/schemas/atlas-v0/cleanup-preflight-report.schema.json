@@ -71,14 +71,16 @@
             "live-discovery",
             "save-copy",
             "definition-copy",
+            "decoded-save",
             "private-evidence",
+            "agent-envelope",
             "private-provenance",
+            "preservation-manifest",
             "cleanup-record"
           ]
         },
         "status": {
-          "type": "string",
-          "pattern": "^[a-z0-9-]+$"
+          "enum": ["planned", "present", "last-use-complete", "deletion-pending", "deleted", "retained", "blocked"]
         },
         "plannedDisposition": {
           "enum": ["delete", "retain-private", "supersede", "not-applicable"]
@@ -88,7 +90,7 @@
         },
         "expiryCondition": {
           "type": "string",
-          "pattern": "^after:[A-Za-z0-9-]+$"
+          "minLength": 1
         },
         "result": {
           "enum": [

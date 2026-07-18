@@ -29,17 +29,12 @@ public static class TrustedLocalCopy
         AtlasDiscovery.ValidatePrivateWorkspace(layout, io);
         ValidateCopyCanonicalPaths(loadedRequest.AbsolutePath, request, layout, io);
 
-        if (await AtlasDiscovery.TryReturnCompletedPhaseAsync(
-                layout.CanonicalQualifiedStatePath,
-                AtlasIntakeContracts.QualifiedStateRevision,
+        if (await AtlasDiscovery.TryReturnValidatedCopyAsync(
+                loadedRequest,
+                layout,
                 io,
                 cancellationToken)
-            .ConfigureAwait(false)
-            || await AtlasDiscovery.TryReturnCompletedPhaseAsync(
-                layout.CanonicalPreflightedStatePath,
-                AtlasIntakeContracts.PreflightedStateRevision,
-                io,
-                cancellationToken).ConfigureAwait(false))
+            .ConfigureAwait(false))
         {
             return;
         }
@@ -120,6 +115,14 @@ public static class TrustedLocalCopy
                 layout.CanonicalInventoryPath,
                 layout.CanonicalQualifiedInventoryBackupPath,
                 request.ExpectedInventorySha256,
+                io,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await AtlasDiscovery.ValidateApprovedStateAsync(
+                layout,
+                approvedState,
+                inventoryContext.PriorInventory,
+                new AtlasDiscovery.StateValidationExpectations(),
                 io,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -225,6 +228,7 @@ public static class TrustedLocalCopy
                     incompleteReceiptStagingPath,
                     AtlasIntakeContracts.QualifiedPhase,
                     stagedReceiptBytes,
+                    AtlasDiscovery.ReadCopyReceiptShaAsync,
                     io,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -259,7 +263,14 @@ public static class TrustedLocalCopy
                         cancellationToken)
                     .ConfigureAwait(false);
 
-            io.MoveFile(finalReceiptStagingPath, finalReceiptPath);
+            await AtlasDiscovery.MoveValidatedFileAsync(
+                    finalReceiptStagingPath,
+                    finalReceiptPath,
+                    AtlasIntakeContracts.ComputeSha256Hex(stagedReceiptBytes),
+                    AtlasDiscovery.ReadCopyReceiptShaAsync,
+                    io,
+                    cancellationToken)
+                .ConfigureAwait(false);
             AtlasIntakeStateDocument state3 = CreateQualifiedState(
                 request,
                 layout,
@@ -277,6 +288,7 @@ public static class TrustedLocalCopy
                     layout.CanonicalQualifiedStatePath,
                     AtlasIntakeContracts.QualifiedPhase,
                     stateBytes,
+                    AtlasDiscovery.ReadStateShaAsync,
                     io,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -408,6 +420,25 @@ public static class TrustedLocalCopy
                 throw new AtlasSafetyException("The incomplete copy directory is unusable.");
             }
 
+            AtlasLoadedDocument<AtlasCopyReceiptDocument> incompleteReceipt =
+                await LoadReceiptAsync(
+                        incompleteReceiptStagingPath,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            ValidateReceiptAgainstBindings(
+                loadedRequest.Sha256,
+                request,
+                approvedState,
+                approvedManifest,
+                sourceRootMap,
+                copyPlan,
+                aliases,
+                incompleteReceipt.Document);
+            ValidateCopiedFilesAgainstReceipt(
+                layout.CanonicalIncompleteCopyPath,
+                incompleteReceipt.Document,
+                io,
+                cancellationToken);
             io.MoveDirectory(layout.CanonicalIncompleteCopyPath, layout.CanonicalFinalCopyPath);
             hasIncomplete = false;
             hasFinal = true;
@@ -477,7 +508,14 @@ public static class TrustedLocalCopy
                 receiptStagingPathToUse,
                 finalReceiptStagingPath))
         {
-            io.MoveFile(finalReceiptStagingPath, finalReceiptPath);
+            await AtlasDiscovery.MoveValidatedFileAsync(
+                    finalReceiptStagingPath,
+                    finalReceiptPath,
+                    receipt.Sha256,
+                    AtlasDiscovery.ReadCopyReceiptShaAsync,
+                    io,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
         AtlasIntakeStateDocument state3 = CreateQualifiedState(
@@ -503,6 +541,7 @@ public static class TrustedLocalCopy
                 layout.CanonicalQualifiedStatePath,
                 AtlasIntakeContracts.QualifiedPhase,
                 stateBytes,
+                AtlasDiscovery.ReadStateShaAsync,
                 io,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -642,7 +681,9 @@ public static class TrustedLocalCopy
                 AtlasIntakeContracts.DeleteDisposition,
                 $"{AtlasIntakeContracts.TrustedLocalFilesystemProfile};"
                 + $"receipt:{aliases.ReceiptAlias}",
-                qualification: isSave ? "a2-qualified" : null));
+                qualification: isSave
+                    ? AtlasIntakeContracts.A2QualifiedSaveQualification
+                    : null));
         }
 
         return priorInventory with
@@ -697,9 +738,33 @@ public static class TrustedLocalCopy
         CopyPhaseAliases aliases,
         AtlasCopyReceiptDocument receipt)
     {
+        AtlasDocumentBinding approvedManifestBinding =
+            AtlasIntakeContracts.GetRequiredDocumentBinding(
+                approvedState.Document,
+                AtlasIntakeContracts.ApprovedManifestRole);
+        AtlasDiscovery.ValidateSourceRootMapAgainstManifest(
+            sourceRootMap.Document,
+            approvedManifest.Document);
+        AtlasDiscovery.ValidateCopyPlanAgainstManifest(
+            copyPlan.Document,
+            approvedManifest.Document);
         if (!StringComparer.Ordinal.Equals(
                 receipt.SchemaVersion,
                 AtlasIntakeContracts.CopyReceiptSchemaVersion)
+            || !StringComparer.Ordinal.Equals(receipt.SurveyAlias, request.SurveyAlias)
+            || !StringComparer.Ordinal.Equals(
+                receipt.SurveyAlias,
+                approvedState.Document.SurveyAlias)
+            || !StringComparer.Ordinal.Equals(
+                receipt.SurveyAlias,
+                approvedManifest.Document.SurveyAlias)
+            || !StringComparer.Ordinal.Equals(
+                receipt.SurveyAlias,
+                sourceRootMap.Document.SurveyAlias)
+            || !StringComparer.Ordinal.Equals(receipt.SurveyAlias, copyPlan.Document.SurveyAlias)
+            || !StringComparer.Ordinal.Equals(
+                receipt.Profile,
+                AtlasIntakeContracts.TrustedLocalFilesystemProfile)
             || !StringComparer.Ordinal.Equals(receipt.ReceiptArtifactAlias, aliases.ReceiptAlias)
             || !StringComparer.Ordinal.Equals(receipt.CopyRequestSha256, requestSha256)
             || !StringComparer.Ordinal.Equals(receipt.ApprovedStateSha256, approvedState.Sha256)
@@ -709,11 +774,16 @@ public static class TrustedLocalCopy
             || !StringComparer.Ordinal.Equals(receipt.SourceRootMapSha256, sourceRootMap.Sha256)
             || !StringComparer.Ordinal.Equals(receipt.CopyPlanSha256, copyPlan.Sha256)
             || !StringComparer.Ordinal.Equals(
+                receipt.ApprovedManifestArtifactAlias,
+                approvedManifestBinding.ArtifactAlias)
+            || !StringComparer.Ordinal.Equals(
                 receipt.DecisionReference,
                 AtlasIntakeContracts.ApprovalDecisionReferencePrefix + request.DecisionCommit)
             || !StringComparer.Ordinal.Equals(
                 receipt.FinalCopyRootRelativePath,
-                AtlasIntakeContracts.SaveSnapshotRelativeRoot))
+                AtlasIntakeContracts.SaveSnapshotRelativeRoot)
+            || receipt.SteamAppId != AtlasIntakeContracts.ExactSteamAppId
+            || receipt.BuildId != AtlasIntakeContracts.ExactBuildId)
         {
             throw new AtlasSafetyException(
                 "The copy receipt does not match the approved bindings.");
@@ -727,6 +797,8 @@ public static class TrustedLocalCopy
             throw new AtlasSafetyException("The copy receipt entry set is incomplete.");
         }
 
+        int saveCount = 0;
+        int definitionCount = 0;
         foreach (AtlasCopyReceiptEntry entry in receipt.Entries)
         {
             if (!planEntries.TryGetValue(entry.SourceAlias, out AtlasCopyPlanEntry? planEntry)
@@ -740,6 +812,33 @@ public static class TrustedLocalCopy
             {
                 throw new AtlasSafetyException("The copy receipt does not match the copy plan.");
             }
+
+            if (StringComparer.Ordinal.Equals(
+                    entry.ArtifactClass,
+                    AtlasIntakeContracts.SaveCopyArtifactClass))
+            {
+                saveCount++;
+            }
+            else if (StringComparer.Ordinal.Equals(
+                entry.ArtifactClass,
+                AtlasIntakeContracts.DefinitionCopyArtifactClass))
+            {
+                definitionCount++;
+            }
+            else
+            {
+                throw new AtlasSafetyException("The copy receipt does not match the copy plan.");
+            }
+        }
+
+        if (receipt.SaveCount != approvedManifest.Document.IncludedSaveCount
+            || receipt.SaveCount != AtlasIntakeContracts.ExactIncludedSaveCount
+            || receipt.DefinitionCount != approvedManifest.Document.IncludedDefinitionCount
+            || receipt.DefinitionCount != AtlasIntakeContracts.ExactIncludedDefinitionCount
+            || saveCount != receipt.SaveCount
+            || definitionCount != receipt.DefinitionCount)
+        {
+            throw new AtlasSafetyException("The copy receipt counts are invalid.");
         }
     }
 
@@ -754,10 +853,7 @@ public static class TrustedLocalCopy
             string destinationPath = Path.Combine(
                 finalCopyPath,
                 entry.DestinationRelativePath.Replace('/', Path.DirectorySeparatorChar));
-            if (!io.FileExists(destinationPath))
-            {
-                throw new AtlasSafetyException("A planned copy is missing.");
-            }
+            AtlasDiscovery.ValidateExistingOrdinaryFile(destinationPath, io);
 
             string sha256 = HashFile(destinationPath, io, cancellationToken);
             long length = io.GetLength(destinationPath);
@@ -777,16 +873,71 @@ public static class TrustedLocalCopy
         string receiptEvidencePath,
         AtlasIoSeams io)
     {
+        AtlasDiscovery.ValidateExistingOrdinaryDirectory(copyRoot, io);
         if (!io.FileExists(receiptEvidencePath))
         {
             return false;
         }
 
-        return copyPlan.Entries.All(entry =>
-            io.FileExists(
-                Path.Combine(
-                    copyRoot,
-                    entry.DestinationRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        AtlasDiscovery.ValidateExistingOrdinaryFile(receiptEvidencePath, io);
+        if (!AtlasDiscovery.ContainsPath(copyRoot, receiptEvidencePath))
+        {
+            throw new AtlasSafetyException("The receipt path is outside the copy root.");
+        }
+
+        HashSet<string> expectedFiles = copyPlan.Entries
+            .Select(entry => Path.Combine(
+                copyRoot,
+                entry.DestinationRelativePath.Replace('/', Path.DirectorySeparatorChar)))
+            .Append(receiptEvidencePath)
+            .Select(AtlasIntakeContracts.NormalizePath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> expectedDirectories = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string expectedFile in expectedFiles)
+        {
+            string? directory = Path.GetDirectoryName(expectedFile);
+            while (!string.IsNullOrEmpty(directory)
+                   && !AtlasIntakeContracts.PathEquals(directory, copyRoot))
+            {
+                expectedDirectories.Add(AtlasIntakeContracts.NormalizePath(directory));
+                directory = Path.GetDirectoryName(directory);
+            }
+        }
+
+        HashSet<string> actualFiles = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> actualDirectories = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string entryPath in io.EnumerateFileSystemEntries(
+                     copyRoot,
+                     SearchOption.AllDirectories))
+        {
+            FileAttributes attributes = io.GetAttributes(entryPath);
+            if ((attributes & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new AtlasSafetyException("A recovered copy path is reparse-backed.");
+            }
+
+            string normalizedEntry = AtlasIntakeContracts.NormalizePath(entryPath);
+            if ((attributes & FileAttributes.Directory) != 0)
+            {
+                actualDirectories.Add(normalizedEntry);
+                if (!expectedDirectories.Contains(normalizedEntry))
+                {
+                    throw new AtlasSafetyException(
+                        "The recovered copy set has unexpected content.");
+                }
+
+                continue;
+            }
+
+            actualFiles.Add(normalizedEntry);
+            if (!expectedFiles.Contains(normalizedEntry))
+            {
+                throw new AtlasSafetyException("The recovered copy set has unexpected content.");
+            }
+        }
+
+        return expectedFiles.SetEquals(actualFiles)
+            && expectedDirectories.SetEquals(actualDirectories);
     }
 
     internal static CopyValidationContext ValidateCurrentSourcesAgainstManifest(
@@ -1093,9 +1244,16 @@ public static class TrustedLocalCopy
         AtlasPrivateArtifactInventoryDocument inventory,
         string purpose)
     {
-        return inventory.Artifacts
-            .SingleOrDefault(artifact => StringComparer.Ordinal.Equals(artifact.Purpose, purpose))
-            ?.ArtifactAlias;
+        string[] matches = inventory.Artifacts
+            .Where(artifact => StringComparer.Ordinal.Equals(artifact.Purpose, purpose))
+            .Select(static artifact => artifact.ArtifactAlias)
+            .ToArray();
+        return matches.Length switch
+        {
+            0 => null,
+            1 => matches[0],
+            _ => throw new AtlasSafetyException("The phase alias is ambiguous."),
+        };
     }
 
     internal static void TryDeleteOwnedIncompleteDirectory(string path, AtlasIoSeams io)

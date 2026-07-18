@@ -28,9 +28,9 @@ public static class PrivateArtifactLifecycle
         AtlasDiscovery.ValidatePrivateWorkspace(layout, io);
         ValidateCleanupPreflightCanonicalPaths(loadedRequest.AbsolutePath, request, layout, io);
 
-        if (await AtlasDiscovery.TryReturnCompletedPhaseAsync(
-                layout.CanonicalPreflightedStatePath,
-                AtlasIntakeContracts.PreflightedStateRevision,
+        if (await AtlasDiscovery.TryReturnValidatedPreflightAsync(
+                loadedRequest,
+                layout,
                 io,
                 cancellationToken)
             .ConfigureAwait(false))
@@ -86,6 +86,15 @@ public static class PrivateArtifactLifecycle
                 inventoryContext.CurrentInventory);
         }
 
+        await AtlasDiscovery.ValidateQualifiedStateAsync(
+                layout,
+                qualifiedState,
+                inventoryContext.PriorInventory,
+                new AtlasDiscovery.StateValidationExpectations(),
+                io,
+                cancellationToken)
+            .ConfigureAwait(false);
+
         PreflightPhaseAliases aliases = ResolvePreflightAliases(inventoryContext);
         AtlasCleanupPreflightReportDocument report = CreateCleanupReport(
             request,
@@ -96,6 +105,7 @@ public static class PrivateArtifactLifecycle
                 layout.CanonicalCleanupPreflightReportPath,
                 AtlasIntakeContracts.PreflightedPhase,
                 reportBytes,
+                AtlasDiscovery.ReadCleanupReportShaAsync,
                 io,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -129,6 +139,7 @@ public static class PrivateArtifactLifecycle
                 layout.CanonicalPreflightedStatePath,
                 AtlasIntakeContracts.PreflightedPhase,
                 stateBytes,
+                AtlasDiscovery.ReadStateShaAsync,
                 io,
                 cancellationToken)
             .ConfigureAwait(false);

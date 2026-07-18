@@ -10,7 +10,7 @@ public sealed class LocatorSegmentRedactorTests
     {
         LocatorSegment[] segments =
         [
-            LocatorSegment.DocumentRole("document-root"),
+            LocatorSegment.DocumentRole(AtlasIntakeContracts.CopyPlanRole),
             LocatorSegment.SchemaKey("beta"),
             LocatorSegment.SchemaKey("alpha"),
             LocatorSegment.DynamicKey("delta"),
@@ -27,7 +27,7 @@ public sealed class LocatorSegmentRedactorTests
         Assert.Equal("dynamic-key-000001", aliasMap.DynamicKeyAliases["charlie"]);
         Assert.Equal("dynamic-key-000002", aliasMap.DynamicKeyAliases["delta"]);
         Assert.Equal(
-            "document-root/schema-key-000002/schema-key-000001/"
+            $"{AtlasIntakeContracts.CopyPlanRole}/schema-key-000002/schema-key-000001/"
             + "dynamic-key-000002/dynamic-key-000001/2/@",
             redacted);
     }
@@ -35,18 +35,73 @@ public sealed class LocatorSegmentRedactorTests
     [Fact]
     public void RedactRejectsMissingAliasAndInvalidLiteral()
     {
-        LocatorAliasMap aliasMap = new()
-        {
-            SchemaKeyAliases = new Dictionary<string, string>(StringComparer.Ordinal),
-            DynamicKeyAliases = new Dictionary<string, string>(StringComparer.Ordinal),
-        };
+        LocatorAliasMap aliasMap = new(
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            new Dictionary<string, string>(StringComparer.Ordinal));
 
         Assert.Throws<AtlasSafetyException>(() =>
             LocatorSegmentRedactor.Redact([LocatorSegment.SchemaKey("alpha")], aliasMap));
         Assert.Throws<AtlasSafetyException>(() =>
             LocatorSegmentRedactor.Redact(
-                [LocatorSegment.DocumentRole("Not Safe")],
+                [LocatorSegment.DocumentRole("document-root")],
                 LocatorSegmentRedactor.CreateAliasMap(
-                    [LocatorSegment.DocumentRole("document-root")])));
+                    [LocatorSegment.DocumentRole(AtlasIntakeContracts.CopyPlanRole)])));
+    }
+
+    [Fact]
+    public void RedactRejectsForgedAliasPopulation()
+    {
+        LocatorAliasMap aliasMap = new(
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["charlie"] = "dynamic-key-000001",
+            },
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["alpha"] = "schema-key-000002",
+                ["beta"] = "schema-key-000001",
+            });
+
+        Assert.Throws<AtlasSafetyException>(() =>
+            LocatorSegmentRedactor.Redact(
+                [
+                    LocatorSegment.DocumentRole(AtlasIntakeContracts.CopyPlanRole),
+                    LocatorSegment.SchemaKey("alpha"),
+                    LocatorSegment.SchemaKey("beta"),
+                    LocatorSegment.DynamicKey("charlie"),
+                ],
+                aliasMap));
+    }
+
+    [Fact]
+    public void LocatorAliasMapCopiesCallerDictionaries()
+    {
+        Dictionary<string, string> dynamicAliases = new(StringComparer.Ordinal)
+        {
+            ["charlie"] = "dynamic-key-000001",
+        };
+        Dictionary<string, string> schemaAliases = new(StringComparer.Ordinal)
+        {
+            ["alpha"] = "schema-key-000001",
+        };
+        LocatorAliasMap aliasMap = new(dynamicAliases, schemaAliases);
+
+        dynamicAliases["charlie"] = "dynamic-key-000099";
+        schemaAliases["alpha"] = "schema-key-000099";
+
+        Assert.Equal("dynamic-key-000001", aliasMap.DynamicKeyAliases["charlie"]);
+        Assert.Equal("schema-key-000001", aliasMap.SchemaKeyAliases["alpha"]);
+    }
+
+    [Fact]
+    public void LocatorAliasMapRejectsLiteralAliasValues()
+    {
+        Assert.Throws<AtlasSafetyException>(() =>
+            new LocatorAliasMap(
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["charlie"] = "charlie",
+                },
+                new Dictionary<string, string>(StringComparer.Ordinal)));
     }
 }

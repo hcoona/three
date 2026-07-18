@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Hcoona.CelesphoniaModifier.Atlas;
 using Xunit;
 
@@ -97,154 +98,281 @@ public sealed class AtlasIntakeContractTests
     }
 
     [Fact]
+    public async Task PrivateWorkspaceGitIgnoreAllowsOnlyExactNormalizedPolicy()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await File.WriteAllTextAsync(
+            workspace.Layout.PrivateGitIgnorePath,
+            "*\r\n!.gitignore\r\n",
+            new UTF8Encoding(false),
+            TestContext.Current.CancellationToken);
+
+        AtlasDiscovery.ValidatePrivateWorkspace(workspace.Layout, AtlasIoSeams.Default);
+
+        string[] invalidPolicies =
+        [
+            "*\n!.gitignore\n!snapshot/\n",
+            "*\n!.gitignore\n# comment\n",
+            "*\n!.gitignore\n\n",
+        ];
+
+        foreach (string invalidPolicy in invalidPolicies)
+        {
+            await File.WriteAllTextAsync(
+                workspace.Layout.PrivateGitIgnorePath,
+                invalidPolicy,
+                new UTF8Encoding(false),
+                TestContext.Current.CancellationToken);
+
+            Assert.Throws<AtlasSafetyException>(() =>
+                AtlasDiscovery.ValidatePrivateWorkspace(
+                    workspace.Layout,
+                    AtlasIoSeams.Default));
+        }
+
+        AtlasIoSeams bomIo = AtlasTestSupport.CreateIo(
+            readAllText: _ => "\uFEFF*\n!.gitignore\n");
+        Assert.Throws<AtlasSafetyException>(() =>
+            AtlasDiscovery.ValidatePrivateWorkspace(workspace.Layout, bomIo));
+    }
+
+    [Fact]
     public async Task OutputSchemasCoverSerializedTopLevelProperties()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
-        byte[] sourceRootMapBytes = AtlasIntakeContracts.SerializeSourceRootMap(
-            new AtlasSourceRootMapDocument
-            {
-                SchemaVersion = AtlasIntakeContracts.SourceRootMapSchemaVersion,
-                SurveyAlias = AtlasSyntheticWorkspace.SurveyAlias,
-                ManifestRevision = AtlasIntakeContracts.PendingManifestRevision,
-                SteamAppId = AtlasIntakeContracts.ExactSteamAppId,
-                BuildId = AtlasIntakeContracts.ExactBuildId,
-                SaveRoots =
-                [
-                    new AtlasSourceRootBinding
-                    {
-                        RootAlias = "save-root-0001",
-                        LocationRole = AtlasIntakeContracts.DeploymentRootSaveRole,
-                        AbsolutePath = workspace.SaveRootPath,
-                    },
-                    new AtlasSourceRootBinding
-                    {
-                        RootAlias = "save-root-0002",
-                        LocationRole = AtlasIntakeContracts.WebRootSaveRole,
-                        AbsolutePath = workspace.WebSaveRootPath,
-                    },
-                ],
-                DefinitionRootPath = workspace.DefinitionRootPath,
-                GameExecutablePath = workspace.GameExecutablePath,
-            });
-        byte[] copyPlanBytes = AtlasIntakeContracts.SerializeCopyPlan(
-            new AtlasCopyPlanDocument
-            {
-                SchemaVersion = AtlasIntakeContracts.CopyPlanSchemaVersion,
-                SurveyAlias = AtlasSyntheticWorkspace.SurveyAlias,
-                ManifestRevision = AtlasIntakeContracts.PendingManifestRevision,
-                Entries =
-                [
-                    new AtlasCopyPlanEntry
-                    {
-                        SourceAlias = "save-source-0001",
-                        DestinationArtifactAlias = "private-artifact-000011",
-                        ArtifactClass = AtlasIntakeContracts.SaveCopyArtifactClass,
-                        DestinationRelativePath = "saves/save-source-0001.rpgsave",
-                    },
-                ],
-            });
-        byte[] stateBytes = AtlasIntakeContracts.SerializeState(
-            new AtlasIntakeStateDocument
-            {
-                SchemaVersion = AtlasIntakeContracts.IntakeStateSchemaVersion,
-                SurveyAlias = AtlasSyntheticWorkspace.SurveyAlias,
-                StateRevision = 1,
-                Phase = AtlasIntakeContracts.DiscoveredPhase,
-                StateArtifactAlias = "private-artifact-000014",
-                SteamAppId = AtlasIntakeContracts.ExactSteamAppId,
-                BuildId = AtlasIntakeContracts.ExactBuildId,
-                InventorySha256 = new string('a', 64),
-                DocumentBindings =
-                [
-                    new AtlasDocumentBinding
-                    {
-                        Role = AtlasIntakeContracts.BaselineManifestRole,
-                        ArtifactAlias = AtlasSyntheticWorkspace.BaselineManifestArtifactAlias,
-                        RelativePath = "intake/corpus-intake-manifest.json",
-                        Sha256 = new string('b', 64),
-                    },
-                ],
-                ArtifactBindings =
-                [
-                    new AtlasArtifactBinding
-                    {
-                        Role = AtlasIntakeContracts.DiscoveredRequestRole,
-                        ArtifactAlias = "private-artifact-000011",
-                        RelativePath = "intake/requests/discover.json",
-                        Sha256 = new string('c', 64),
-                    },
-                    new AtlasArtifactBinding
-                    {
-                        Role = AtlasIntakeContracts.DiscoveredInventoryBackupRole,
-                        ArtifactAlias = "private-artifact-000015",
-                        RelativePath =
-                            "intake/inventory-backups/private-artifact-inventory.discovered.json",
-                        Sha256 = new string('d', 64),
-                    },
-                ],
-            });
-        byte[] receiptBytes = AtlasIntakeContracts.SerializeCopyReceipt(
-            new AtlasCopyReceiptDocument
-            {
-                SchemaVersion = AtlasIntakeContracts.CopyReceiptSchemaVersion,
-                SurveyAlias = AtlasSyntheticWorkspace.SurveyAlias,
-                ReceiptArtifactAlias = "private-artifact-000020",
-                Profile = AtlasIntakeContracts.TrustedLocalFilesystemProfile,
-                CopyRequestSha256 = new string('1', 64),
-                ApprovedStateSha256 = new string('2', 64),
-                ApprovedManifestSha256 = new string('3', 64),
-                SourceRootMapSha256 = new string('4', 64),
-                CopyPlanSha256 = new string('5', 64),
-                DecisionReference = "commit:" + new string('a', 40),
-                ApprovedManifestArtifactAlias = "private-artifact-000016",
-                FinalCopyRootRelativePath = AtlasIntakeContracts.SaveSnapshotRelativeRoot,
-                SteamAppId = AtlasIntakeContracts.ExactSteamAppId,
-                BuildId = AtlasIntakeContracts.ExactBuildId,
-                GameExecutableSha256 = new string('6', 64),
-                SaveCount = 1,
-                DefinitionCount = 0,
-                Entries =
-                [
-                    new AtlasCopyReceiptEntry
-                    {
-                        DestinationArtifactAlias = "private-artifact-000017",
-                        SourceAlias = "save-source-0001",
-                        ArtifactClass = AtlasIntakeContracts.SaveCopyArtifactClass,
-                        DestinationRelativePath = "saves/save-source-0001.rpgsave",
-                        SourceLength = 1,
-                        SourceLastWriteTimeUtc = DateTimeOffset.UnixEpoch,
-                        SourceSha256 = new string('7', 64),
-                    },
-                ],
-            });
-        byte[] reportBytes = AtlasIntakeContracts.SerializeCleanupPreflightReport(
-            new AtlasCleanupPreflightReportDocument
-            {
-                SchemaVersion = AtlasIntakeContracts.CleanupPreflightReportSchemaVersion,
-                SurveyAlias = AtlasSyntheticWorkspace.SurveyAlias,
-                ReportArtifactAlias = "private-artifact-000030",
-                InventorySha256 = new string('8', 64),
-                ProposedMilestone = "A8",
-                Results =
-                [
-                    new AtlasCleanupPreflightResult
-                    {
-                        ArtifactAlias = "private-artifact-000017",
-                        ArtifactClass = AtlasIntakeContracts.SaveCopyArtifactClass,
-                        Status = AtlasIntakeContracts.PresentArtifactStatus,
-                        PlannedDisposition = AtlasIntakeContracts.DeleteDisposition,
-                        LastUseMilestone = "A8",
-                        ExpiryCondition = "after:A8",
-                        Result = "blocked-status",
-                    },
-                ],
-            });
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreateConfirmationRequest());
+        await AtlasDiscovery.ConfirmAsync(
+            workspace.Layout.CanonicalConfirmRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        await TrustedLocalCopy.CopyAsync(
+            workspace.Layout.CanonicalCopyRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreatePreflightRequest());
+        await PrivateArtifactLifecycle.CleanupPreflightAsync(
+            workspace.Layout.CanonicalCleanupPreflightRequestPath,
+            TestContext.Current.CancellationToken);
+
+        byte[] sourceRootMapBytes = await File.ReadAllBytesAsync(
+            workspace.Layout.CanonicalSourceRootMapPath,
+            TestContext.Current.CancellationToken);
+        byte[] copyPlanBytes = await File.ReadAllBytesAsync(
+            workspace.Layout.CanonicalCopyPlanPath,
+            TestContext.Current.CancellationToken);
+        byte[] stateBytes = await File.ReadAllBytesAsync(
+            workspace.Layout.CanonicalPreflightedStatePath,
+            TestContext.Current.CancellationToken);
+        byte[] receiptBytes = await File.ReadAllBytesAsync(
+            workspace.Layout.CanonicalCopyReceiptPath,
+            TestContext.Current.CancellationToken);
+        byte[] reportBytes = await File.ReadAllBytesAsync(
+            workspace.Layout.CanonicalCleanupPreflightReportPath,
+            TestContext.Current.CancellationToken);
 
         AssertSchemaHasTopLevelProperties("source-root-map.schema.json", sourceRootMapBytes);
         AssertSchemaHasTopLevelProperties("copy-plan.schema.json", copyPlanBytes);
         AssertSchemaHasTopLevelProperties("intake-state.schema.json", stateBytes);
         AssertSchemaHasTopLevelProperties("copy-receipt.schema.json", receiptBytes);
         AssertSchemaHasTopLevelProperties("cleanup-preflight-report.schema.json", reportBytes);
+    }
+
+    [Fact]
+    public async Task PipelineUsesExactApprovedCensus()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreateConfirmationRequest());
+        await AtlasDiscovery.ConfirmAsync(
+            workspace.Layout.CanonicalConfirmRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        await TrustedLocalCopy.CopyAsync(
+            workspace.Layout.CanonicalCopyRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreatePreflightRequest());
+        await PrivateArtifactLifecycle.CleanupPreflightAsync(
+            workspace.Layout.CanonicalCleanupPreflightRequestPath,
+            TestContext.Current.CancellationToken);
+
+        AtlasLoadedDocument<AtlasCorpusIntakeManifest> pendingManifest =
+            await AtlasIntakeContracts.ReadManifestAsync(
+                workspace.Layout.CanonicalPendingManifestPath,
+                TestContext.Current.CancellationToken);
+        AtlasLoadedDocument<AtlasCopyPlanDocument> copyPlan =
+            await AtlasIntakeContracts.ReadCopyPlanAsync(
+                workspace.Layout.CanonicalCopyPlanPath,
+                TestContext.Current.CancellationToken);
+        AtlasLoadedDocument<AtlasCopyReceiptDocument> receipt =
+            await AtlasIntakeContracts.ReadCopyReceiptAsync(
+                workspace.Layout.CanonicalCopyReceiptPath,
+                TestContext.Current.CancellationToken);
+        AtlasLoadedDocument<AtlasCleanupPreflightReportDocument> report =
+            await AtlasIntakeContracts.ReadCleanupPreflightReportAsync(
+                workspace.Layout.CanonicalCleanupPreflightReportPath,
+                TestContext.Current.CancellationToken);
+        AtlasLoadedDocument<AtlasPrivateArtifactInventoryDocument> preflightBackup =
+            await AtlasIntakeContracts.ReadInventoryAsync(
+                workspace.Layout.CanonicalPreflightedInventoryBackupPath,
+                TestContext.Current.CancellationToken);
+        AtlasLoadedDocument<AtlasPrivateArtifactInventoryDocument> inventory =
+            await AtlasIntakeContracts.ReadInventoryAsync(
+                workspace.Layout.CanonicalInventoryPath,
+                TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            AtlasIntakeContracts.ExactSaveEntryCount,
+            pendingManifest.Document.SaveEntries.Length);
+        Assert.Equal(
+            AtlasIntakeContracts.ExactIncludedSaveCount,
+            pendingManifest.Document.IncludedSaveCount);
+        Assert.Equal(
+            AtlasIntakeContracts.ExactDefinitionEntryCount,
+            pendingManifest.Document.DefinitionEntries.Length);
+        Assert.Equal(
+            AtlasIntakeContracts.ExactIncludedDefinitionCount,
+            pendingManifest.Document.IncludedDefinitionCount);
+        Assert.Equal(
+            AtlasIntakeContracts.ExactIncludedSaveCount
+            + AtlasIntakeContracts.ExactIncludedDefinitionCount,
+            copyPlan.Document.Entries.Length);
+        Assert.Equal(copyPlan.Document.Entries.Length, receipt.Document.Entries.Length);
+        Assert.Equal(
+            preflightBackup.Document.Artifacts.Length,
+            report.Document.Results.Length);
+        Assert.Equal(
+            preflightBackup.Document.Artifacts.Length + 4,
+            inventory.Document.Artifacts.Length);
+    }
+
+    [Fact]
+    public async Task InventoryReadRejectsInvalidLifecycleRows()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        byte[] originalBytes = await File.ReadAllBytesAsync(
+            workspace.Layout.CanonicalInventoryPath,
+            TestContext.Current.CancellationToken);
+
+        await AssertRejectedInventoryMutationAsync(
+            originalBytes,
+            workspace.Layout.CanonicalInventoryPath,
+            json =>
+                ((JsonObject)((JsonArray)json["artifacts"]!)[0]!)["artifactClass"]
+                    = "invalid-class");
+        await AssertRejectedInventoryMutationAsync(
+            originalBytes,
+            workspace.Layout.CanonicalInventoryPath,
+            json =>
+                ((JsonObject)((JsonArray)json["artifacts"]!)[0]!)["status"] = "unknown-status");
+        await AssertRejectedInventoryMutationAsync(
+            originalBytes,
+            workspace.Layout.CanonicalInventoryPath,
+            json =>
+                ((JsonObject)((JsonArray)json["artifacts"]!)[0]!)["plannedDisposition"]
+                    = "retain-public");
+        await AssertRejectedInventoryMutationAsync(
+            originalBytes,
+            workspace.Layout.CanonicalInventoryPath,
+            json => ((JsonObject)((JsonArray)json["artifacts"]!)[0]!)["expiryCondition"] = "");
+        await AssertRejectedInventoryMutationAsync(
+            originalBytes,
+            workspace.Layout.CanonicalInventoryPath,
+            json =>
+                ((JsonObject)((JsonArray)json["artifacts"]!)[0]!)["lineageAliases"] =
+                    new JsonArray(AtlasSyntheticWorkspace.BaselineManifestArtifactAlias));
+        await AssertRejectedInventoryMutationAsync(
+            originalBytes,
+            workspace.Layout.CanonicalInventoryPath,
+            json =>
+            {
+                JsonArray artifacts = (JsonArray)json["artifacts"]!;
+                artifacts.Add(new JsonObject
+                {
+                    ["artifactAlias"] = "private-artifact-999999",
+                    ["artifactClass"] = AtlasIntakeContracts.SaveCopyArtifactClass,
+                    ["purpose"] = "snapshot-copy:save-source-0001",
+                    ["custodianRole"] = AtlasIntakeContracts.ProjectLeaderRole,
+                    ["lineageAliases"] =
+                        new JsonArray(AtlasSyntheticWorkspace.BaselineManifestArtifactAlias),
+                    ["lastUseMilestone"] = "A8",
+                    ["expiryCondition"] = "after:A8",
+                    ["plannedDisposition"] = AtlasIntakeContracts.DeleteDisposition,
+                    ["status"] = AtlasIntakeContracts.PresentArtifactStatus,
+                    ["verificationMethod"] =
+                        AtlasIntakeContracts.TrustedLocalFilesystemProfile
+                        + ";receipt:private-artifact-999998",
+                    ["qualification"] = null,
+                });
+            });
+    }
+
+    [Fact]
+    public async Task CleanupReportSchemaMatchesRuntimeValues()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        AtlasLoadedDocument<AtlasPrivateArtifactInventoryDocument> inventory =
+            await AtlasIntakeContracts.ReadInventoryAsync(
+                workspace.Layout.CanonicalInventoryPath,
+                TestContext.Current.CancellationToken);
+        AtlasCleanupPreflightRequest request = new()
+        {
+            SchemaVersion = AtlasIntakeContracts.CleanupPreflightRequestSchemaVersion,
+            SurveyAlias = AtlasSyntheticWorkspace.SurveyAlias,
+            ProposedMilestone = "A8",
+        };
+        AtlasCleanupPreflightReportDocument report = PrivateArtifactLifecycle.CreateCleanupReport(
+            request,
+            inventory.Document with
+            {
+                Artifacts =
+                [
+                    inventory.Document.Artifacts[0] with
+                    {
+                        Status = AtlasIntakeContracts.LastUseCompleteArtifactStatus,
+                        LastUseMilestone = "A8",
+                        PlannedDisposition = AtlasIntakeContracts.DeleteDisposition,
+                        ExpiryCondition = "later",
+                    },
+                ],
+            },
+            "private-artifact-000099");
+        _ = AtlasIntakeContracts.SerializeCleanupPreflightReport(report);
+
+        using JsonDocument schema = JsonDocument.Parse(File.ReadAllBytes(
+            AtlasSyntheticWorkspace.GetSchemaPath("cleanup-preflight-report.schema.json")));
+        JsonElement properties = schema.RootElement
+            .GetProperty("$defs")
+            .GetProperty("result")
+            .GetProperty("properties");
+        HashSet<string> artifactClasses = GetEnumValues(properties.GetProperty("artifactClass"));
+        HashSet<string> statuses = GetEnumValues(properties.GetProperty("status"));
+        HashSet<string> dispositions = GetEnumValues(properties.GetProperty("plannedDisposition"));
+        HashSet<string> milestones = GetEnumValues(properties.GetProperty("lastUseMilestone"));
+        HashSet<string> results = GetEnumValues(properties.GetProperty("result"));
+
+        Assert.Equal(
+            "string",
+            properties.GetProperty("expiryCondition").GetProperty("type").GetString());
+        Assert.Equal(
+            1,
+            properties.GetProperty("expiryCondition").GetProperty("minLength").GetInt32());
+        Assert.Contains("indeterminate-expiry", results);
+        Assert.All(
+            report.Results,
+            result =>
+            {
+                Assert.Contains(result.ArtifactClass, artifactClasses);
+                Assert.Contains(result.Status, statuses);
+                Assert.Contains(result.PlannedDisposition, dispositions);
+                Assert.Contains(result.LastUseMilestone, milestones);
+                Assert.Contains(result.Result, results);
+                Assert.False(string.IsNullOrWhiteSpace(result.ExpiryCondition));
+            });
+        Assert.Equal("indeterminate-expiry", report.Results[0].Result);
     }
 
     private static void AssertSchemaHasTopLevelProperties(string schemaName, byte[] documentBytes)
@@ -264,6 +392,32 @@ public sealed class AtlasIntakeContractTests
             documentPropertyNames,
             propertyName => Assert.Contains(propertyName, propertyNames));
     }
+
+    private static async Task AssertRejectedInventoryMutationAsync(
+        byte[] originalBytes,
+        string inventoryPath,
+        Action<JsonObject> mutate)
+    {
+        JsonNode? node = JsonNode.Parse(originalBytes);
+        JsonObject json = node as JsonObject
+            ?? throw new InvalidOperationException("Expected a JSON object.");
+        mutate(json);
+        await AtlasTestSupport.WriteJsonAsync(
+            inventoryPath,
+            json,
+            TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasIntakeContracts.ReadInventoryAsync(
+                inventoryPath,
+                TestContext.Current.CancellationToken).AsTask());
+    }
+
+    private static HashSet<string> GetEnumValues(JsonElement schemaProperty) =>
+        schemaProperty.GetProperty("enum")
+            .EnumerateArray()
+            .Select(static value => value.GetString()!)
+            .ToHashSet(StringComparer.Ordinal);
 }
 
 internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
@@ -520,33 +674,32 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
         Directory.CreateDirectory(SaveRootPath);
         Directory.CreateDirectory(WebSaveRootPath);
         Directory.CreateDirectory(Path.Combine(DefinitionRootPath, "www", "data"));
-        Directory.CreateDirectory(Path.Combine(DefinitionRootPath, "www", "js"));
+        Directory.CreateDirectory(Path.Combine(DefinitionRootPath, "www", "notes"));
 
         await File.WriteAllTextAsync(
             Layout.PrivateGitIgnorePath,
             "*\n!.gitignore\n",
             new UTF8Encoding(false),
             TestContext.Current.CancellationToken);
-        await File.WriteAllBytesAsync(
-            Path.Combine(SaveRootPath, "file1.rpgsave"),
-            [1, 2, 3],
-            TestContext.Current.CancellationToken);
+        foreach (int slot in Enumerable.Range(1, 19))
+        {
+            await File.WriteAllBytesAsync(
+                Path.Combine(SaveRootPath, $"file{slot}.rpgsave"),
+                [(byte)slot],
+                TestContext.Current.CancellationToken);
+        }
+
         await File.WriteAllBytesAsync(
             Path.Combine(SaveRootPath, "global.rpgsave"),
-            [4, 5],
+            [20],
             TestContext.Current.CancellationToken);
         await File.WriteAllBytesAsync(
             Path.Combine(SaveRootPath, "config.rpgsave"),
-            [6],
+            [21],
             TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(
             Path.Combine(SaveRootPath, "steam_autocloud.vdf"),
             "steam",
-            Encoding.UTF8,
-            TestContext.Current.CancellationToken);
-        await File.WriteAllTextAsync(
-            Path.Combine(SaveRootPath, "notes.txt"),
-            "notes",
             Encoding.UTF8,
             TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(
@@ -559,21 +712,35 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
             "Game",
             Encoding.UTF8,
             TestContext.Current.CancellationToken);
-        await File.WriteAllTextAsync(
-            Path.Combine(DefinitionRootPath, "www", "data", "System.json"),
-            "{}",
-            Encoding.UTF8,
-            TestContext.Current.CancellationToken);
-        await File.WriteAllTextAsync(
-            Path.Combine(DefinitionRootPath, "www", "js", "plugins.js"),
-            "[]",
-            Encoding.UTF8,
-            TestContext.Current.CancellationToken);
-        await File.WriteAllTextAsync(
-            Path.Combine(DefinitionRootPath, "www", "notes.txt"),
-            "notes",
-            Encoding.UTF8,
-            TestContext.Current.CancellationToken);
+        foreach (int index in Enumerable.Range(
+                     1,
+                     AtlasIntakeContracts.ExactIncludedDefinitionCount))
+        {
+            await File.WriteAllTextAsync(
+                Path.Combine(
+                    DefinitionRootPath,
+                    "www",
+                    "data",
+                    $"definition-{index:000000}.json"),
+                "{}",
+                Encoding.UTF8,
+                TestContext.Current.CancellationToken);
+        }
+
+        foreach (int index in Enumerable.Range(
+                     1,
+                     AtlasIntakeContracts.ExactExcludedDefinitionCount))
+        {
+            await File.WriteAllTextAsync(
+                Path.Combine(
+                    DefinitionRootPath,
+                    "www",
+                    "notes",
+                    $"excluded-{index:000000}.txt"),
+                "excluded",
+                Encoding.UTF8,
+                TestContext.Current.CancellationToken);
+        }
 
         AtlasCorpusIntakeManifest baselineManifest = CreateBaselineManifest();
         AtlasPrivateArtifactInventoryDocument inventory = CreateBaselineInventory();
@@ -608,50 +775,24 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
         ],
     };
 
-    private static AtlasCorpusIntakeManifest CreateBaselineManifest() => new()
+    private static AtlasCorpusIntakeManifest CreateBaselineManifest()
     {
-        SchemaVersion = AtlasIntakeContracts.IntakeManifestSchemaVersion,
-        SurveyAlias = SurveyAlias,
-        ManifestRevision = AtlasIntakeContracts.BaselineManifestRevision,
-        SaveRoots =
+        AtlasManifestSaveEntry[] saveEntries =
         [
-            new AtlasManifestSaveRoot
+            .. Enumerable.Range(1, 19).Select(index => new AtlasManifestSaveEntry
             {
+                SourceAlias = $"save-source-{index:0000}",
                 RootAlias = "save-root-0001",
-                LocationRole = AtlasIntakeContracts.DeploymentRootSaveRole,
-                Activity = "active",
-                Decision = AtlasIntakeContracts.IncludeSaveRootDecision,
-                ObservedEntryCount = 5,
-                IsReparsePoint = false,
-            },
-            new AtlasManifestSaveRoot
-            {
-                RootAlias = "save-root-0002",
-                LocationRole = AtlasIntakeContracts.WebRootSaveRole,
-                Activity = "inactive",
-                Decision = AtlasIntakeContracts.ExcludeNoSaveInputsDecision,
-                ObservedEntryCount = 1,
-                IsReparsePoint = false,
-            },
-        ],
-        DiscoveredSaveDirectoryEntryCount = 6,
-        IncludedSaveCount = 3,
-        SaveEntries =
-        [
-            new AtlasManifestSaveEntry
-            {
-                SourceAlias = "save-source-0001",
-                RootAlias = "save-root-0001",
-                RelativePath = "file1.rpgsave",
+                RelativePath = $"file{index}.rpgsave",
                 Role = AtlasIntakeContracts.SlotSaveRole,
-                SlotNumber = 1,
+                SlotNumber = index,
                 Decision = AtlasIntakeContracts.IncludeSaveDecision,
                 EntryType = AtlasIntakeContracts.FileEntryType,
                 IsReparsePoint = false,
-            },
+            }),
             new AtlasManifestSaveEntry
             {
-                SourceAlias = "save-source-0002",
+                SourceAlias = "save-source-0020",
                 RootAlias = "save-root-0001",
                 RelativePath = "global.rpgsave",
                 Role = AtlasIntakeContracts.GlobalSaveRole,
@@ -661,7 +802,7 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
             },
             new AtlasManifestSaveEntry
             {
-                SourceAlias = "save-source-0003",
+                SourceAlias = "save-source-0021",
                 RootAlias = "save-root-0001",
                 RelativePath = "config.rpgsave",
                 Role = AtlasIntakeContracts.ConfigSaveRole,
@@ -671,17 +812,7 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
             },
             new AtlasManifestSaveEntry
             {
-                SourceAlias = "save-source-0004",
-                RootAlias = "save-root-0001",
-                RelativePath = "notes.txt",
-                Role = AtlasIntakeContracts.OtherSaveRole,
-                Decision = AtlasIntakeContracts.ExcludeNonSaveDecision,
-                EntryType = AtlasIntakeContracts.FileEntryType,
-                IsReparsePoint = false,
-            },
-            new AtlasManifestSaveEntry
-            {
-                SourceAlias = "save-source-0005",
+                SourceAlias = "save-source-0022",
                 RootAlias = "save-root-0001",
                 RelativePath = "steam_autocloud.vdf",
                 Role = AtlasIntakeContracts.SteamAutoCloudSaveRole,
@@ -691,7 +822,7 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
             },
             new AtlasManifestSaveEntry
             {
-                SourceAlias = "save-source-0006",
+                SourceAlias = "save-source-0023",
                 RootAlias = "save-root-0002",
                 RelativePath = "steam_autocloud.vdf",
                 Role = AtlasIntakeContracts.SteamAutoCloudSaveRole,
@@ -699,81 +830,100 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
                 EntryType = AtlasIntakeContracts.FileEntryType,
                 IsReparsePoint = false,
             },
-        ],
-        DiscoveredDefinitionEntryCount = 3,
-        IncludedDefinitionCount = 2,
-        DefinitionGroups =
+        ];
+        AtlasManifestDefinitionEntry[] definitionEntries =
         [
-            new AtlasManifestDefinitionGroup
-            {
-                GroupId = "data",
-                SelectionRule = "www/data/*.json",
-                DiscoveredCount = 1,
-                Decision = "include",
-            },
-            new AtlasManifestDefinitionGroup
-            {
-                GroupId = "scripts",
-                SelectionRule = "www/js/*.js",
-                DiscoveredCount = 1,
-                Decision = "include",
-            },
-            new AtlasManifestDefinitionGroup
-            {
-                GroupId = "auxiliary",
-                SelectionRule = "www/*.txt",
-                DiscoveredCount = 1,
-                Decision = "exclude",
-            },
-        ],
-        DefinitionEntries =
-        [
-            new AtlasManifestDefinitionEntry
-            {
-                SourceAlias = "definition-source-000001",
-                RelativePath = "www/data/System.json",
-                GroupId = "data",
-                Decision = "include",
-                EntryType = AtlasIntakeContracts.FileEntryType,
-                IsReparsePoint = false,
-            },
-            new AtlasManifestDefinitionEntry
-            {
-                SourceAlias = "definition-source-000002",
-                RelativePath = "www/js/plugins.js",
-                GroupId = "scripts",
-                Decision = "include",
-                EntryType = AtlasIntakeContracts.FileEntryType,
-                IsReparsePoint = false,
-            },
-            new AtlasManifestDefinitionEntry
-            {
-                SourceAlias = "definition-source-000003",
-                RelativePath = "www/notes.txt",
-                GroupId = "auxiliary",
-                Decision = "exclude",
-                EntryType = AtlasIntakeContracts.FileEntryType,
-                IsReparsePoint = false,
-            },
-        ],
-        Validation = new AtlasManifestValidation
+            .. Enumerable.Range(1, AtlasIntakeContracts.ExactIncludedDefinitionCount).Select(
+                index => new AtlasManifestDefinitionEntry
+                {
+                    SourceAlias = $"definition-source-{index:000000}",
+                    RelativePath = $"www/data/definition-{index:000000}.json",
+                    GroupId = "data",
+                    Decision = AtlasIntakeContracts.IncludeDefinitionDecision,
+                    EntryType = AtlasIntakeContracts.FileEntryType,
+                    IsReparsePoint = false,
+                }),
+            .. Enumerable.Range(1, AtlasIntakeContracts.ExactExcludedDefinitionCount).Select(
+                index => new AtlasManifestDefinitionEntry
+                {
+                    SourceAlias =
+                        "definition-source-"
+                        + $"{AtlasIntakeContracts.ExactIncludedDefinitionCount + index:000000}",
+                    RelativePath = $"www/notes/excluded-{index:000000}.txt",
+                    GroupId = "auxiliary",
+                    Decision = AtlasIntakeContracts.ExcludeDefinitionDecision,
+                    EntryType = AtlasIntakeContracts.FileEntryType,
+                    IsReparsePoint = false,
+                }),
+        ];
+        return new AtlasCorpusIntakeManifest
         {
-            Method = AtlasIntakeContracts.ManualA0ValidationMethod,
-            AliasesUnique = true,
-            SaveLocatorsUnique = true,
-            DefinitionRelativePathsUnique = true,
-            SaveRootMembershipReconciled = true,
-            SaveRootCountsReconciled = true,
-            SaveCountsReconciled = true,
-            DefinitionCountsReconciled = true,
-            RolesAndDecisionsConsistent = true,
-            GroupMembershipReconciled = true,
-        },
-        Confirmation = new AtlasManifestConfirmation
-        {
-            Status = AtlasIntakeContracts.ApprovedConfirmationStatus,
-            ConfirmedByRole = AtlasIntakeContracts.ProjectLeaderRole,
-            DecisionReference = "commit:" + ApprovalCommit,
-        },
-    };
+            SchemaVersion = AtlasIntakeContracts.IntakeManifestSchemaVersion,
+            SurveyAlias = SurveyAlias,
+            ManifestRevision = AtlasIntakeContracts.BaselineManifestRevision,
+            SaveRoots =
+            [
+                new AtlasManifestSaveRoot
+                {
+                    RootAlias = "save-root-0001",
+                    LocationRole = AtlasIntakeContracts.DeploymentRootSaveRole,
+                    Activity = AtlasIntakeContracts.ActiveSaveRootActivity,
+                    Decision = AtlasIntakeContracts.IncludeSaveRootDecision,
+                    ObservedEntryCount = 22,
+                    IsReparsePoint = false,
+                },
+                new AtlasManifestSaveRoot
+                {
+                    RootAlias = "save-root-0002",
+                    LocationRole = AtlasIntakeContracts.WebRootSaveRole,
+                    Activity = AtlasIntakeContracts.InactiveSaveRootActivity,
+                    Decision = AtlasIntakeContracts.ExcludeNoSaveInputsDecision,
+                    ObservedEntryCount = 1,
+                    IsReparsePoint = false,
+                },
+            ],
+            DiscoveredSaveDirectoryEntryCount = AtlasIntakeContracts.ExactSaveEntryCount,
+            IncludedSaveCount = AtlasIntakeContracts.ExactIncludedSaveCount,
+            SaveEntries = saveEntries,
+            DiscoveredDefinitionEntryCount = AtlasIntakeContracts.ExactDefinitionEntryCount,
+            IncludedDefinitionCount = AtlasIntakeContracts.ExactIncludedDefinitionCount,
+            DefinitionGroups =
+            [
+                new AtlasManifestDefinitionGroup
+                {
+                    GroupId = "data",
+                    SelectionRule = "www/data/*.json",
+                    DiscoveredCount = AtlasIntakeContracts.ExactIncludedDefinitionCount,
+                    Decision = AtlasIntakeContracts.IncludeDefinitionDecision,
+                },
+                new AtlasManifestDefinitionGroup
+                {
+                    GroupId = "auxiliary",
+                    SelectionRule = "www/notes/*.txt",
+                    DiscoveredCount = AtlasIntakeContracts.ExactExcludedDefinitionCount,
+                    Decision = AtlasIntakeContracts.ExcludeDefinitionDecision,
+                },
+            ],
+            DefinitionEntries = definitionEntries,
+            Validation = new AtlasManifestValidation
+            {
+                Method = AtlasIntakeContracts.ManualA0ValidationMethod,
+                AliasesUnique = true,
+                SaveLocatorsUnique = true,
+                DefinitionRelativePathsUnique = true,
+                SaveRootMembershipReconciled = true,
+                SaveRootCountsReconciled = true,
+                SaveCountsReconciled = true,
+                DefinitionCountsReconciled = true,
+                RolesAndDecisionsConsistent = true,
+                GroupMembershipReconciled = true,
+            },
+            Confirmation = new AtlasManifestConfirmation
+            {
+                Status = AtlasIntakeContracts.ApprovedConfirmationStatus,
+                ConfirmedByRole = AtlasIntakeContracts.ProjectLeaderRole,
+                DecisionReference = "commit:" + ApprovalCommit,
+            },
+        };
+    }
 }

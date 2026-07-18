@@ -28,8 +28,15 @@ public static class AtlasIntakeContracts
     public const string IncompleteSaveSnapshotRelativeRoot = "copies/snapshot-a2-000001.incomplete";
     public const string ProjectLeaderRole = "project-leader";
     public const string ApprovalDecisionReferencePrefix = "commit:";
+    public const string ExactSurveyAlias = "survey-000001";
     public const int ExactSteamAppId = 1786790;
     public const int ExactBuildId = 13624401;
+    public const int ExactSaveEntryCount = 23;
+    public const int ExactIncludedSaveCount = 21;
+    public const int ExactExcludedSteamMetadataCount = 2;
+    public const int ExactDefinitionEntryCount = 580;
+    public const int ExactIncludedDefinitionCount = 496;
+    public const int ExactExcludedDefinitionCount = 84;
     public const int MaxJsonDepth = 32;
     public const int BaselineManifestRevision = 3;
     public const int PendingManifestRevision = 4;
@@ -60,14 +67,26 @@ public static class AtlasIntakeContracts
     internal const string LiveDiscoveryArtifactClass = "live-discovery";
     internal const string SaveCopyArtifactClass = "save-copy";
     internal const string DefinitionCopyArtifactClass = "definition-copy";
+    internal const string DecodedSaveArtifactClass = "decoded-save";
     internal const string PrivateEvidenceArtifactClass = "private-evidence";
+    internal const string AgentEnvelopeArtifactClass = "agent-envelope";
     internal const string PrivateProvenanceArtifactClass = "private-provenance";
+    internal const string PreservationManifestArtifactClass = "preservation-manifest";
     internal const string CleanupRecordArtifactClass = "cleanup-record";
+    internal const string PlannedArtifactStatus = "planned";
     internal const string PresentArtifactStatus = "present";
     internal const string LastUseCompleteArtifactStatus = "last-use-complete";
     internal const string DeletionPendingArtifactStatus = "deletion-pending";
+    internal const string DeletedArtifactStatus = "deleted";
+    internal const string RetainedArtifactStatus = "retained";
+    internal const string BlockedArtifactStatus = "blocked";
     internal const string DeleteDisposition = "delete";
     internal const string RetainPrivateDisposition = "retain-private";
+    internal const string SupersedeDisposition = "supersede";
+    internal const string NotApplicableDisposition = "not-applicable";
+    internal const string PreservationUnqualifiedSaveQualification =
+        "preservation-unqualified";
+    internal const string A2QualifiedSaveQualification = "a2-qualified";
     internal const string AtlasToolValidationMethod = "atlas-tool";
     internal const string ManualA0ValidationMethod = "manual-a0";
     internal const string GlobalSaveRole = "global";
@@ -75,6 +94,10 @@ public static class AtlasIntakeContracts
     internal const string SlotSaveRole = "slot";
     internal const string SteamAutoCloudSaveRole = "steam-autocloud";
     internal const string OtherSaveRole = "other";
+    internal const string ActiveSaveRootActivity = "active";
+    internal const string InactiveSaveRootActivity = "inactive";
+    internal const string IncludeDefinitionDecision = "include";
+    internal const string ExcludeDefinitionDecision = "exclude";
     internal const string FileEntryType = "file";
     internal const string DirectoryEntryType = "directory";
     internal const string OtherEntryType = "other";
@@ -116,6 +139,47 @@ public static class AtlasIntakeContracts
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private static readonly AtlasJsonContext JsonContext = new(JsonOptions);
+    private static readonly HashSet<string> AllowedInventoryArtifactClasses =
+        new(StringComparer.Ordinal)
+        {
+            LiveDiscoveryArtifactClass,
+            SaveCopyArtifactClass,
+            DefinitionCopyArtifactClass,
+            DecodedSaveArtifactClass,
+            PrivateEvidenceArtifactClass,
+            AgentEnvelopeArtifactClass,
+            PrivateProvenanceArtifactClass,
+            PreservationManifestArtifactClass,
+            CleanupRecordArtifactClass,
+        };
+    private static readonly HashSet<string> AllowedInventoryStatuses =
+        new(StringComparer.Ordinal)
+        {
+            PlannedArtifactStatus,
+            PresentArtifactStatus,
+            LastUseCompleteArtifactStatus,
+            DeletionPendingArtifactStatus,
+            DeletedArtifactStatus,
+            RetainedArtifactStatus,
+            BlockedArtifactStatus,
+        };
+    private static readonly HashSet<string> AllowedInventoryDispositions =
+        new(StringComparer.Ordinal)
+        {
+            DeleteDisposition,
+            RetainPrivateDisposition,
+            SupersedeDisposition,
+            NotApplicableDisposition,
+        };
+    private static readonly HashSet<string> AllowedCleanupPreflightResults =
+        new(StringComparer.Ordinal)
+        {
+            "blocked-status",
+            "blocked-disposition",
+            "blocked-before-last-use",
+            "indeterminate-expiry",
+            "eligible-for-human-review",
+        };
 
     internal static ValueTask<AtlasLoadedDocument<AtlasIntakeDiscoveryRequest>>
         ReadDiscoveryRequestAsync(
@@ -231,26 +295,47 @@ public static class AtlasIntakeContracts
             cancellationToken);
 
     internal static byte[] SerializeManifest(AtlasCorpusIntakeManifest manifest) =>
-        SerializeDocument(manifest, JsonContext.AtlasCorpusIntakeManifest);
+        SerializeDocument(
+            manifest,
+            JsonContext.AtlasCorpusIntakeManifest,
+            static document => ValidateManifest(document));
 
     internal static byte[] SerializeInventory(AtlasPrivateArtifactInventoryDocument inventory) =>
-        SerializeDocument(inventory, JsonContext.AtlasPrivateArtifactInventoryDocument);
+        SerializeDocument(
+            inventory,
+            JsonContext.AtlasPrivateArtifactInventoryDocument,
+            static document => ValidateInventory(document));
 
     internal static byte[] SerializeSourceRootMap(AtlasSourceRootMapDocument document) =>
-        SerializeDocument(document, JsonContext.AtlasSourceRootMapDocument);
+        SerializeDocument(
+            document,
+            JsonContext.AtlasSourceRootMapDocument,
+            static candidate => ValidateSourceRootMap(candidate));
 
     internal static byte[] SerializeCopyPlan(AtlasCopyPlanDocument document) =>
-        SerializeDocument(document, JsonContext.AtlasCopyPlanDocument);
+        SerializeDocument(
+            document,
+            JsonContext.AtlasCopyPlanDocument,
+            static candidate => ValidateCopyPlan(candidate));
 
     internal static byte[] SerializeState(AtlasIntakeStateDocument document) =>
-        SerializeDocument(document, JsonContext.AtlasIntakeStateDocument);
+        SerializeDocument(
+            document,
+            JsonContext.AtlasIntakeStateDocument,
+            static candidate => ValidateState(candidate));
 
     internal static byte[] SerializeCopyReceipt(AtlasCopyReceiptDocument document) =>
-        SerializeDocument(document, JsonContext.AtlasCopyReceiptDocument);
+        SerializeDocument(
+            document,
+            JsonContext.AtlasCopyReceiptDocument,
+            static candidate => ValidateCopyReceipt(candidate));
 
     internal static byte[] SerializeCleanupPreflightReport(
         AtlasCleanupPreflightReportDocument document) =>
-        SerializeDocument(document, JsonContext.AtlasCleanupPreflightReportDocument);
+        SerializeDocument(
+            document,
+            JsonContext.AtlasCleanupPreflightReportDocument,
+            static candidate => ValidateCleanupPreflightReport(candidate));
 
     internal static byte[] SerializeRequest(AtlasIntakeDiscoveryRequest request) =>
         SerializeDocument(request, JsonContext.AtlasIntakeDiscoveryRequest);
@@ -472,23 +557,9 @@ public static class AtlasIntakeContracts
 
     internal static void ValidateSurveyAlias(string value)
     {
-        if (string.IsNullOrWhiteSpace(value)
-            || !value.StartsWith("survey-", StringComparison.Ordinal)
-            || value.Length == "survey-".Length)
+        if (!StringComparer.Ordinal.Equals(value, ExactSurveyAlias))
         {
             throw new AtlasRequestException("The surveyAlias is invalid.");
-        }
-
-        for (int index = "survey-".Length; index < value.Length; index++)
-        {
-            char character = value[index];
-            if (!(
-                    IsLowerAsciiLetter(character)
-                    || char.IsAsciiDigit(character)
-                    || character == '-'))
-            {
-                throw new AtlasRequestException("The surveyAlias is invalid.");
-            }
         }
     }
 
@@ -617,13 +688,45 @@ public static class AtlasIntakeContracts
 
     private static byte[] SerializeDocument<TDocument>(
         TDocument document,
-        JsonTypeInfo<TDocument> typeInfo)
+        JsonTypeInfo<TDocument> typeInfo,
+        Action<TDocument>? validator = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(typeInfo);
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(document, typeInfo);
         EnsureStrictObjectJson(bytes);
+        if (validator is not null)
+        {
+            ValidateSerializedDocument(bytes, typeInfo, validator);
+        }
+
         return bytes;
+    }
+
+    private static void ValidateSerializedDocument<TDocument>(
+        ReadOnlySpan<byte> bytes,
+        JsonTypeInfo<TDocument> typeInfo,
+        Action<TDocument> validator)
+    {
+        try
+        {
+            TDocument? document = JsonSerializer.Deserialize(bytes, typeInfo);
+            if (document is null)
+            {
+                throw new JsonException("The document is null.");
+            }
+
+            validator(document);
+        }
+        catch (Exception exception) when (
+            exception is JsonException
+            or NotSupportedException
+            or InvalidOperationException
+            or AtlasValidationException
+            or AtlasRequestException)
+        {
+            throw new AtlasValidationException("The JSON document is invalid.", exception);
+        }
     }
 
     private static void EnsureStrictObjectJson(ReadOnlySpan<byte> bytes)
@@ -885,17 +988,25 @@ public static class AtlasIntakeContracts
         }
 
         ValidateSurveyAlias(manifest.SurveyAlias);
-        if (manifest.ManifestRevision <= 0)
+        if (manifest.ManifestRevision != BaselineManifestRevision
+            && manifest.ManifestRevision != PendingManifestRevision
+            && manifest.ManifestRevision != ApprovedManifestRevision)
         {
             throw new AtlasValidationException();
         }
 
-        if (manifest.SaveRoots.Length != 2 || manifest.SaveEntries.Length == 0)
+        if (manifest.SaveRoots.Length != 2
+            || manifest.SaveEntries.Length != ExactSaveEntryCount
+            || manifest.DiscoveredSaveDirectoryEntryCount != ExactSaveEntryCount
+            || manifest.IncludedSaveCount != ExactIncludedSaveCount)
         {
             throw new AtlasValidationException();
         }
 
-        if (manifest.DefinitionGroups.Length == 0 || manifest.DefinitionEntries.Length == 0)
+        if (manifest.DefinitionGroups.Length == 0
+            || manifest.DefinitionEntries.Length != ExactDefinitionEntryCount
+            || manifest.DiscoveredDefinitionEntryCount != ExactDefinitionEntryCount
+            || manifest.IncludedDefinitionCount != ExactIncludedDefinitionCount)
         {
             throw new AtlasValidationException();
         }
@@ -905,6 +1016,8 @@ public static class AtlasIntakeContracts
         ValidateManifestSaveRoots(manifest.SaveRoots, manifest.SaveEntries);
         ValidateManifestSaveEntries(manifest.SaveEntries);
         ValidateManifestDefinitions(manifest.DefinitionGroups, manifest.DefinitionEntries);
+        ValidateManifestRevisionPolicy(manifest);
+        ValidateExactManifestCorpus(manifest);
     }
 
     private static void ValidateManifestSaveRoots(
@@ -926,6 +1039,22 @@ public static class AtlasIntakeContracts
                 throw new AtlasValidationException();
             }
 
+            if (saveRoot.ObservedEntryCount < 0
+                || saveRoot.IsReparsePoint
+                || (!StringComparer.Ordinal.Equals(saveRoot.Activity, ActiveSaveRootActivity)
+                    && !StringComparer.Ordinal.Equals(
+                        saveRoot.Activity,
+                        InactiveSaveRootActivity))
+                || (!StringComparer.Ordinal.Equals(
+                        saveRoot.Decision,
+                        IncludeSaveRootDecision)
+                    && !StringComparer.Ordinal.Equals(
+                        saveRoot.Decision,
+                        ExcludeNoSaveInputsDecision)))
+            {
+                throw new AtlasValidationException();
+            }
+
             if (!StringComparer.Ordinal.Equals(saveRoot.LocationRole, DeploymentRootSaveRole)
                 && !StringComparer.Ordinal.Equals(saveRoot.LocationRole, WebRootSaveRole))
             {
@@ -942,6 +1071,27 @@ public static class AtlasIntakeContracts
             != saveEntries.Length)
         {
             throw new AtlasValidationException();
+        }
+
+        foreach (AtlasManifestSaveRoot saveRoot in saveRoots)
+        {
+            AtlasManifestSaveEntry[] rootEntries = saveEntries
+                .Where(entry => StringComparer.Ordinal.Equals(entry.RootAlias, saveRoot.RootAlias))
+                .ToArray();
+            bool hasIncludedSave = rootEntries.Any(entry =>
+                StringComparer.Ordinal.Equals(entry.Decision, IncludeSaveDecision));
+            if (rootEntries.Length != saveRoot.ObservedEntryCount
+                || !StringComparer.Ordinal.Equals(
+                    saveRoot.Activity,
+                    hasIncludedSave ? ActiveSaveRootActivity : InactiveSaveRootActivity)
+                || !StringComparer.Ordinal.Equals(
+                    saveRoot.Decision,
+                    hasIncludedSave
+                        ? IncludeSaveRootDecision
+                        : ExcludeNoSaveInputsDecision))
+            {
+                throw new AtlasValidationException();
+            }
         }
     }
 
@@ -966,6 +1116,12 @@ public static class AtlasIntakeContracts
                 throw new AtlasValidationException();
             }
 
+            if (!StringComparer.Ordinal.Equals(saveEntry.EntryType, FileEntryType)
+                || saveEntry.IsReparsePoint)
+            {
+                throw new AtlasValidationException();
+            }
+
             ValidateManifestSaveRole(saveEntry);
         }
     }
@@ -979,6 +1135,11 @@ public static class AtlasIntakeContracts
         {
             if (string.IsNullOrWhiteSpace(group.GroupId)
                 || string.IsNullOrWhiteSpace(group.SelectionRule)
+                || group.DiscoveredCount < 0
+                || (!StringComparer.Ordinal.Equals(group.Decision, IncludeDefinitionDecision)
+                    && !StringComparer.Ordinal.Equals(
+                        group.Decision,
+                        ExcludeDefinitionDecision))
                 || !groupIds.Add(group.GroupId))
             {
                 throw new AtlasValidationException();
@@ -997,6 +1158,29 @@ public static class AtlasIntakeContracts
             {
                 throw new AtlasValidationException();
             }
+
+            if ((!StringComparer.Ordinal.Equals(entry.Decision, IncludeDefinitionDecision)
+                    && !StringComparer.Ordinal.Equals(
+                        entry.Decision,
+                        ExcludeDefinitionDecision))
+                || !StringComparer.Ordinal.Equals(entry.EntryType, FileEntryType)
+                || entry.IsReparsePoint)
+            {
+                throw new AtlasValidationException();
+            }
+        }
+
+        foreach (AtlasManifestDefinitionGroup group in groups)
+        {
+            AtlasManifestDefinitionEntry[] groupEntries = entries
+                .Where(entry => StringComparer.Ordinal.Equals(entry.GroupId, group.GroupId))
+                .ToArray();
+            if (groupEntries.Length != group.DiscoveredCount
+                || groupEntries.Any(entry =>
+                    !StringComparer.Ordinal.Equals(entry.Decision, group.Decision)))
+            {
+                throw new AtlasValidationException();
+            }
         }
     }
 
@@ -1004,21 +1188,48 @@ public static class AtlasIntakeContracts
     {
         if (StringComparer.Ordinal.Equals(saveEntry.Role, SlotSaveRole))
         {
-            if (saveEntry.SlotNumber is null or < 1 or > 20)
+            if (saveEntry.SlotNumber is null or < 1 or > 20
+                || !StringComparer.Ordinal.Equals(saveEntry.Decision, IncludeSaveDecision))
             {
                 throw new AtlasValidationException();
             }
+
+            return;
         }
-        else if (saveEntry.SlotNumber is not null)
+
+        if (saveEntry.SlotNumber is not null)
         {
             throw new AtlasValidationException();
         }
 
-        if (StringComparer.Ordinal.Equals(saveEntry.Role, SteamAutoCloudSaveRole)
-            && !StringComparer.Ordinal.Equals(saveEntry.Decision, ExcludeSteamAutoCloudDecision))
+        if (StringComparer.Ordinal.Equals(saveEntry.Role, GlobalSaveRole)
+            || StringComparer.Ordinal.Equals(saveEntry.Role, ConfigSaveRole))
         {
-            throw new AtlasValidationException();
+            if (!StringComparer.Ordinal.Equals(saveEntry.Decision, IncludeSaveDecision))
+            {
+                throw new AtlasValidationException();
+            }
+
+            return;
         }
+
+        if (StringComparer.Ordinal.Equals(saveEntry.Role, SteamAutoCloudSaveRole))
+        {
+            if (!StringComparer.Ordinal.Equals(saveEntry.Decision, ExcludeSteamAutoCloudDecision))
+            {
+                throw new AtlasValidationException();
+            }
+
+            return;
+        }
+
+        if (StringComparer.Ordinal.Equals(saveEntry.Role, OtherSaveRole)
+            && StringComparer.Ordinal.Equals(saveEntry.Decision, ExcludeNonSaveDecision))
+        {
+            return;
+        }
+
+        throw new AtlasValidationException();
     }
 
     private static void ValidateManifestConfirmation(AtlasManifestConfirmation confirmation)
@@ -1091,10 +1302,16 @@ public static class AtlasIntakeContracts
         }
 
         ValidateSurveyAlias(inventory.SurveyAlias);
+        if (inventory.Artifacts.Length == 0)
+        {
+            throw new AtlasValidationException();
+        }
+
         HashSet<string> aliases = new(StringComparer.Ordinal);
         Dictionary<string, string[]> lineages = new(StringComparer.Ordinal);
         foreach (AtlasPrivateArtifactEntry artifact in inventory.Artifacts)
         {
+            ValidateInventoryArtifact(artifact);
             ValidateArtifactAlias(artifact.ArtifactAlias);
             if (!aliases.Add(artifact.ArtifactAlias))
             {
@@ -1102,12 +1319,6 @@ public static class AtlasIntakeContracts
             }
 
             if (artifact.LineageAliases is null)
-            {
-                throw new AtlasValidationException();
-            }
-
-            if (artifact.Qualification is not null
-                && !StringComparer.Ordinal.Equals(artifact.ArtifactClass, SaveCopyArtifactClass))
             {
                 throw new AtlasValidationException();
             }
@@ -1174,7 +1385,7 @@ public static class AtlasIntakeContracts
     {
         if (!StringComparer.Ordinal.Equals(document.SchemaVersion, CopyPlanSchemaVersion)
             || document.ManifestRevision != PendingManifestRevision
-            || document.Entries.Length == 0)
+            || document.Entries.Length != ExactIncludedSaveCount + ExactIncludedDefinitionCount)
         {
             throw new AtlasValidationException();
         }
@@ -1183,6 +1394,8 @@ public static class AtlasIntakeContracts
         HashSet<string> sourceAliases = new(StringComparer.Ordinal);
         HashSet<string> destinationAliases = new(StringComparer.Ordinal);
         HashSet<string> destinationPaths = new(StringComparer.Ordinal);
+        int saveCount = 0;
+        int definitionCount = 0;
         foreach (AtlasCopyPlanEntry entry in document.Entries)
         {
             ValidateSourceAliasByArtifactClass(entry.SourceAlias, entry.ArtifactClass);
@@ -1196,6 +1409,27 @@ public static class AtlasIntakeContracts
             {
                 throw new AtlasValidationException();
             }
+
+            if (StringComparer.Ordinal.Equals(entry.ArtifactClass, SaveCopyArtifactClass))
+            {
+                saveCount++;
+            }
+            else if (StringComparer.Ordinal.Equals(
+                entry.ArtifactClass,
+                DefinitionCopyArtifactClass))
+            {
+                definitionCount++;
+            }
+            else
+            {
+                throw new AtlasValidationException();
+            }
+        }
+
+        if (saveCount != ExactIncludedSaveCount
+            || definitionCount != ExactIncludedDefinitionCount)
+        {
+            throw new AtlasValidationException();
         }
     }
 
@@ -1236,6 +1470,11 @@ public static class AtlasIntakeContracts
                 document.ArtifactBindings,
                 DiscoveredRequestRole,
                 DiscoveredInventoryBackupRole);
+            if (document.DecisionCommit is not null
+                || document.FinalCopyRootRelativePath is not null)
+            {
+                throw new AtlasValidationException();
+            }
         }
         else if (document.StateRevision == ApprovedStateRevision)
         {
@@ -1252,6 +1491,10 @@ public static class AtlasIntakeContracts
             ValidateGitCommit(
                 document.DecisionCommit ?? string.Empty,
                 nameof(document.DecisionCommit));
+            if (document.FinalCopyRootRelativePath is not null)
+            {
+                throw new AtlasValidationException();
+            }
         }
         else if (document.StateRevision == QualifiedStateRevision)
         {
@@ -1266,9 +1509,15 @@ public static class AtlasIntakeContracts
                 document.ArtifactBindings,
                 CopyRequestRole,
                 QualifiedInventoryBackupRole);
-            ValidateCanonicalRelativePath(
-                document.FinalCopyRootRelativePath ?? string.Empty,
-                nameof(document.FinalCopyRootRelativePath));
+            ValidateGitCommit(
+                document.DecisionCommit ?? string.Empty,
+                nameof(document.DecisionCommit));
+            if (!StringComparer.Ordinal.Equals(
+                    document.FinalCopyRootRelativePath,
+                    SaveSnapshotRelativeRoot))
+            {
+                throw new AtlasValidationException();
+            }
         }
         else
         {
@@ -1284,9 +1533,15 @@ public static class AtlasIntakeContracts
                 document.ArtifactBindings,
                 CleanupPreflightRequestRole,
                 PreflightedInventoryBackupRole);
-            ValidateCanonicalRelativePath(
-                document.FinalCopyRootRelativePath ?? string.Empty,
-                nameof(document.FinalCopyRootRelativePath));
+            ValidateGitCommit(
+                document.DecisionCommit ?? string.Empty,
+                nameof(document.DecisionCommit));
+            if (!StringComparer.Ordinal.Equals(
+                    document.FinalCopyRootRelativePath,
+                    SaveSnapshotRelativeRoot))
+            {
+                throw new AtlasValidationException();
+            }
         }
     }
 
@@ -1296,15 +1551,16 @@ public static class AtlasIntakeContracts
             || !StringComparer.Ordinal.Equals(document.Profile, TrustedLocalFilesystemProfile)
             || document.SteamAppId != ExactSteamAppId
             || document.BuildId != ExactBuildId
-            || document.SaveCount < 0
-            || document.DefinitionCount < 0
-            || document.Entries.Length == 0)
+            || document.SaveCount != ExactIncludedSaveCount
+            || document.DefinitionCount != ExactIncludedDefinitionCount
+            || document.Entries.Length != ExactIncludedSaveCount + ExactIncludedDefinitionCount)
         {
             throw new AtlasValidationException();
         }
 
         ValidateSurveyAlias(document.SurveyAlias);
         ValidateArtifactAlias(document.ReceiptArtifactAlias);
+        ValidateArtifactAlias(document.ApprovedManifestArtifactAlias);
         ValidateLowerHexDigest(document.CopyRequestSha256, nameof(document.CopyRequestSha256));
         ValidateLowerHexDigest(document.ApprovedStateSha256, nameof(document.ApprovedStateSha256));
         ValidateLowerHexDigest(
@@ -1315,9 +1571,13 @@ public static class AtlasIntakeContracts
         ValidateLowerHexDigest(
             document.GameExecutableSha256,
             nameof(document.GameExecutableSha256));
-        ValidateCanonicalRelativePath(
-            document.FinalCopyRootRelativePath,
-            nameof(document.FinalCopyRootRelativePath));
+        if (!StringComparer.Ordinal.Equals(
+                document.FinalCopyRootRelativePath,
+                SaveSnapshotRelativeRoot))
+        {
+            throw new AtlasValidationException();
+        }
+
         if (!document.DecisionReference.StartsWith(
                 ApprovalDecisionReferencePrefix,
                 StringComparison.Ordinal))
@@ -1329,7 +1589,10 @@ public static class AtlasIntakeContracts
             document.DecisionReference[ApprovalDecisionReferencePrefix.Length..],
             nameof(document.DecisionReference));
         HashSet<string> aliases = new(StringComparer.Ordinal);
+        HashSet<string> sourceAliases = new(StringComparer.Ordinal);
         HashSet<string> destinations = new(StringComparer.Ordinal);
+        int saveCount = 0;
+        int definitionCount = 0;
         foreach (AtlasCopyReceiptEntry entry in document.Entries)
         {
             ValidateArtifactAlias(entry.DestinationArtifactAlias);
@@ -1339,10 +1602,31 @@ public static class AtlasIntakeContracts
                 nameof(entry.DestinationRelativePath));
             ValidateLowerHexDigest(entry.SourceSha256, nameof(entry.SourceSha256));
             if (!aliases.Add(entry.DestinationArtifactAlias)
+                || !sourceAliases.Add(entry.SourceAlias)
                 || !destinations.Add(entry.DestinationRelativePath))
             {
                 throw new AtlasValidationException();
             }
+
+            if (StringComparer.Ordinal.Equals(entry.ArtifactClass, SaveCopyArtifactClass))
+            {
+                saveCount++;
+            }
+            else if (StringComparer.Ordinal.Equals(
+                entry.ArtifactClass,
+                DefinitionCopyArtifactClass))
+            {
+                definitionCount++;
+            }
+            else
+            {
+                throw new AtlasValidationException();
+            }
+        }
+
+        if (saveCount != document.SaveCount || definitionCount != document.DefinitionCount)
+        {
+            throw new AtlasValidationException();
         }
     }
 
@@ -1360,11 +1644,17 @@ public static class AtlasIntakeContracts
         ValidateSurveyAlias(document.SurveyAlias);
         ValidateArtifactAlias(document.ReportArtifactAlias);
         ValidateLowerHexDigest(document.InventorySha256, nameof(document.InventorySha256));
-        ValidateMilestone(document.ProposedMilestone, nameof(document.ProposedMilestone));
+        ValidateInventoryMilestone(document.ProposedMilestone);
         HashSet<string> aliases = new(StringComparer.Ordinal);
         foreach (AtlasCleanupPreflightResult result in document.Results)
         {
             ValidateArtifactAlias(result.ArtifactAlias);
+            ValidateInventoryArtifactClass(result.ArtifactClass);
+            ValidateInventoryStatus(result.Status);
+            ValidateInventoryDisposition(result.PlannedDisposition);
+            ValidateInventoryMilestone(result.LastUseMilestone);
+            ValidateNonEmptyToken(result.ExpiryCondition);
+            ValidateCleanupPreflightResult(result.Result);
             if (!aliases.Add(result.ArtifactAlias))
             {
                 throw new AtlasValidationException();
@@ -1509,6 +1799,226 @@ public static class AtlasIntakeContracts
             || !AtlasMilestoneOrder.TryGetValue(value, out _))
         {
             throw new AtlasRequestException($"The '{parameterName}' milestone is invalid.");
+        }
+    }
+
+    private static void ValidateManifestRevisionPolicy(AtlasCorpusIntakeManifest manifest)
+    {
+        if (manifest.ManifestRevision == BaselineManifestRevision)
+        {
+            if (!StringComparer.Ordinal.Equals(
+                    manifest.Validation.Method,
+                    ManualA0ValidationMethod)
+                || !StringComparer.Ordinal.Equals(
+                    manifest.Confirmation.Status,
+                    ApprovedConfirmationStatus))
+            {
+                throw new AtlasValidationException();
+            }
+
+            return;
+        }
+
+        if (!StringComparer.Ordinal.Equals(
+                manifest.Validation.Method,
+                AtlasToolValidationMethod))
+        {
+            throw new AtlasValidationException();
+        }
+
+        if (manifest.ManifestRevision == PendingManifestRevision)
+        {
+            if (!StringComparer.Ordinal.Equals(
+                    manifest.Confirmation.Status,
+                    PendingConfirmationStatus))
+            {
+                throw new AtlasValidationException();
+            }
+
+            return;
+        }
+
+        if (!StringComparer.Ordinal.Equals(
+                manifest.Confirmation.Status,
+                ApprovedConfirmationStatus))
+        {
+            throw new AtlasValidationException();
+        }
+    }
+
+    private static void ValidateExactManifestCorpus(AtlasCorpusIntakeManifest manifest)
+    {
+        int includedSaves = 0;
+        int excludedSteamMetadata = 0;
+        foreach (AtlasManifestSaveEntry entry in manifest.SaveEntries)
+        {
+            if (StringComparer.Ordinal.Equals(entry.Decision, IncludeSaveDecision))
+            {
+                includedSaves++;
+                continue;
+            }
+
+            if (StringComparer.Ordinal.Equals(
+                    entry.Decision,
+                    ExcludeSteamAutoCloudDecision))
+            {
+                excludedSteamMetadata++;
+                continue;
+            }
+
+            throw new AtlasValidationException();
+        }
+
+        int includedDefinitions = 0;
+        int excludedDefinitions = 0;
+        foreach (AtlasManifestDefinitionEntry entry in manifest.DefinitionEntries)
+        {
+            if (StringComparer.Ordinal.Equals(entry.Decision, IncludeDefinitionDecision))
+            {
+                includedDefinitions++;
+                continue;
+            }
+
+            if (StringComparer.Ordinal.Equals(entry.Decision, ExcludeDefinitionDecision))
+            {
+                excludedDefinitions++;
+                continue;
+            }
+
+            throw new AtlasValidationException();
+        }
+
+        if (includedSaves != ExactIncludedSaveCount
+            || excludedSteamMetadata != ExactExcludedSteamMetadataCount
+            || includedDefinitions != ExactIncludedDefinitionCount
+            || excludedDefinitions != ExactExcludedDefinitionCount)
+        {
+            throw new AtlasValidationException();
+        }
+    }
+
+    private static void ValidateInventoryArtifact(AtlasPrivateArtifactEntry artifact)
+    {
+        if (artifact.LineageAliases is null)
+        {
+            throw new AtlasValidationException();
+        }
+
+        ValidateInventoryArtifactClass(artifact.ArtifactClass);
+        ValidateNonEmptyToken(artifact.Purpose);
+        ValidateCustodianRole(artifact.CustodianRole);
+        ValidateInventoryMilestone(artifact.LastUseMilestone);
+        ValidateNonEmptyToken(artifact.ExpiryCondition);
+        ValidateInventoryDisposition(artifact.PlannedDisposition);
+        ValidateInventoryStatus(artifact.Status);
+        ValidateNonEmptyToken(artifact.VerificationMethod);
+
+        HashSet<string> lineageAliases = new(StringComparer.Ordinal);
+        foreach (string lineageAlias in artifact.LineageAliases)
+        {
+            ValidateArtifactAlias(lineageAlias);
+            if (!lineageAliases.Add(lineageAlias))
+            {
+                throw new AtlasValidationException();
+            }
+        }
+
+        if (StringComparer.Ordinal.Equals(artifact.ArtifactClass, SaveCopyArtifactClass))
+        {
+            if (!StringComparer.Ordinal.Equals(
+                    artifact.Qualification,
+                    PreservationUnqualifiedSaveQualification)
+                && !StringComparer.Ordinal.Equals(
+                    artifact.Qualification,
+                    A2QualifiedSaveQualification))
+            {
+                throw new AtlasValidationException();
+            }
+        }
+        else if (artifact.Qualification is not null)
+        {
+            throw new AtlasValidationException();
+        }
+
+        string trustedReceiptPrefix = TrustedLocalFilesystemProfile + ";receipt:";
+        if (artifact.VerificationMethod.StartsWith(trustedReceiptPrefix, StringComparison.Ordinal))
+        {
+            if (!StringComparer.Ordinal.Equals(artifact.ArtifactClass, SaveCopyArtifactClass)
+                && !StringComparer.Ordinal.Equals(
+                    artifact.ArtifactClass,
+                    DefinitionCopyArtifactClass))
+            {
+                throw new AtlasValidationException();
+            }
+
+            ValidateArtifactAlias(
+                artifact.VerificationMethod[trustedReceiptPrefix.Length..]);
+        }
+    }
+
+    private static void ValidateInventoryArtifactClass(string value)
+    {
+        if (!AllowedInventoryArtifactClasses.Contains(value))
+        {
+            throw new AtlasValidationException();
+        }
+    }
+
+    private static void ValidateInventoryStatus(string value)
+    {
+        if (!AllowedInventoryStatuses.Contains(value))
+        {
+            throw new AtlasValidationException();
+        }
+    }
+
+    private static void ValidateInventoryDisposition(string value)
+    {
+        if (!AllowedInventoryDispositions.Contains(value))
+        {
+            throw new AtlasValidationException();
+        }
+    }
+
+    private static void ValidateInventoryMilestone(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || !AtlasMilestoneOrder.ContainsKey(value))
+        {
+            throw new AtlasValidationException();
+        }
+    }
+
+    private static void ValidateCustodianRole(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new AtlasValidationException();
+        }
+
+        foreach (char character in value)
+        {
+            if (!(IsLowerAsciiLetter(character)
+                    || char.IsAsciiDigit(character)
+                    || character == '-'))
+            {
+                throw new AtlasValidationException();
+            }
+        }
+    }
+
+    private static void ValidateNonEmptyToken(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new AtlasValidationException();
+        }
+    }
+
+    private static void ValidateCleanupPreflightResult(string value)
+    {
+        if (!AllowedCleanupPreflightResults.Contains(value))
+        {
+            throw new AtlasValidationException();
         }
     }
 
@@ -1973,7 +2483,14 @@ public sealed class AtlasApprovalException(string message) : Exception(message);
 
 public sealed class AtlasSafetyException(string message) : Exception(message);
 
-internal sealed class AtlasValidationException : Exception;
+internal sealed class AtlasValidationException(string message, Exception? innerException = null)
+    : Exception(message, innerException)
+{
+    public AtlasValidationException()
+        : this("The JSON document is invalid.")
+    {
+    }
+}
 
 [JsonSourceGenerationOptions(
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

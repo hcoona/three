@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 namespace Hcoona.CelesphoniaModifier.Atlas;
 
 public enum LocatorSegmentKind
@@ -60,9 +62,51 @@ public readonly record struct LocatorSegment
 
 public sealed class LocatorAliasMap
 {
-    public required IReadOnlyDictionary<string, string> DynamicKeyAliases { get; init; }
+    internal LocatorAliasMap(
+        IReadOnlyDictionary<string, string> dynamicKeyAliases,
+        IReadOnlyDictionary<string, string> schemaKeyAliases)
+    {
+        DynamicKeyAliases = FreezeAliases(dynamicKeyAliases, "dynamic-key-");
+        SchemaKeyAliases = FreezeAliases(schemaKeyAliases, "schema-key-");
+    }
 
-    public required IReadOnlyDictionary<string, string> SchemaKeyAliases { get; init; }
+    public IReadOnlyDictionary<string, string> DynamicKeyAliases { get; }
+
+    public IReadOnlyDictionary<string, string> SchemaKeyAliases { get; }
+
+    private static ReadOnlyDictionary<string, string> FreezeAliases(
+        IReadOnlyDictionary<string, string> source,
+        string prefix)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        Dictionary<string, string> aliases = new(StringComparer.Ordinal);
+        HashSet<string> values = new(StringComparer.Ordinal);
+        HashSet<int> ordinals = [];
+        foreach (KeyValuePair<string, string> pair in source)
+        {
+            LocatorSegmentRedactor.ValidateKey(pair.Key);
+            LocatorSegmentRedactor.ValidateAliasValue(pair.Value, prefix);
+            if (!aliases.TryAdd(pair.Key, pair.Value) || !values.Add(pair.Value))
+            {
+                throw new AtlasSafetyException("The locator alias map is invalid.");
+            }
+
+            ordinals.Add(int.Parse(
+                pair.Value[prefix.Length..],
+                System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        for (int ordinal = 1; ordinal <= aliases.Count; ordinal++)
+        {
+            if (!ordinals.Contains(ordinal))
+            {
+                throw new AtlasSafetyException("The locator alias map is invalid.");
+            }
+        }
+
+        return new ReadOnlyDictionary<string, string>(aliases);
+    }
 }
 
 public static class LocatorSegmentRedactor
@@ -74,6 +118,26 @@ public static class LocatorSegmentRedactor
         "@c",
         "@r",
     ];
+    private static readonly HashSet<string> AllowedDocumentRoles =
+        new(StringComparer.Ordinal)
+        {
+            AtlasIntakeContracts.DiscoveredRequestRole,
+            AtlasIntakeContracts.ConfirmRequestRole,
+            AtlasIntakeContracts.CopyRequestRole,
+            AtlasIntakeContracts.CleanupPreflightRequestRole,
+            AtlasIntakeContracts.DiscoveredInventoryBackupRole,
+            AtlasIntakeContracts.ApprovedInventoryBackupRole,
+            AtlasIntakeContracts.QualifiedInventoryBackupRole,
+            AtlasIntakeContracts.PreflightedInventoryBackupRole,
+            AtlasIntakeContracts.BaselineManifestRole,
+            AtlasIntakeContracts.PendingManifestRole,
+            AtlasIntakeContracts.ApprovedManifestRole,
+            AtlasIntakeContracts.SourceRootMapRole,
+            AtlasIntakeContracts.CopyPlanRole,
+            AtlasIntakeContracts.CopyReceiptRole,
+            AtlasIntakeContracts.CleanupPreflightReportRole,
+            AtlasIntakeContracts.PredecessorStateRole,
+        };
 
     public static LocatorAliasMap CreateAliasMap(IEnumerable<LocatorSegment> segments)
     {
@@ -107,11 +171,9 @@ public static class LocatorSegmentRedactor
             }
         }
 
-        return new LocatorAliasMap
-        {
-            SchemaKeyAliases = CreateAliases(schemaKeys, "schema-key-"),
-            DynamicKeyAliases = CreateAliases(dynamicKeys, "dynamic-key-"),
-        };
+        return new LocatorAliasMap(
+            CreateAliases(dynamicKeys, "dynamic-key-"),
+            CreateAliases(schemaKeys, "schema-key-"));
     }
 
     public static string Redact(
@@ -121,14 +183,39 @@ public static class LocatorSegmentRedactor
         ArgumentNullException.ThrowIfNull(segments);
         ArgumentNullException.ThrowIfNull(aliasMap);
 
+        SortedSet<string> schemaKeys = new(StringComparer.Ordinal);
+        SortedSet<string> dynamicKeys = new(StringComparer.Ordinal);
         List<string> output = [];
         foreach (LocatorSegment segment in segments)
         {
+            switch (segment.Kind)
+            {
+                case LocatorSegmentKind.DocumentRoleToken:
+                    ValidateDocumentRole(segment.TextValue);
+                    break;
+                case LocatorSegmentKind.ArrayIndex:
+                    ArgumentOutOfRangeException.ThrowIfNegative(segment.NumericValue ?? -1);
+                    break;
+                case LocatorSegmentKind.JsonExMarker:
+                    ValidateJsonExMarker(segment.TextValue);
+                    break;
+                case LocatorSegmentKind.SchemaKey:
+                    ValidateKey(segment.TextValue);
+                    schemaKeys.Add(segment.TextValue);
+                    break;
+                case LocatorSegmentKind.DynamicKey:
+                    ValidateKey(segment.TextValue);
+                    dynamicKeys.Add(segment.TextValue);
+                    break;
+                default:
+                    throw new AtlasSafetyException("The locator segment kind is invalid.");
+            }
+
             output.Add(segment.Kind switch
             {
-                LocatorSegmentKind.DocumentRoleToken => RedactDocumentRole(segment),
+                LocatorSegmentKind.DocumentRoleToken => segment.TextValue,
                 LocatorSegmentKind.ArrayIndex => RedactArrayIndex(segment),
-                LocatorSegmentKind.JsonExMarker => RedactJsonExMarker(segment),
+                LocatorSegmentKind.JsonExMarker => segment.TextValue,
                 LocatorSegmentKind.SchemaKey => RedactSchemaKey(segment, aliasMap.SchemaKeyAliases),
                 LocatorSegmentKind.DynamicKey => RedactDynamicKey(
                     segment,
@@ -137,7 +224,52 @@ public static class LocatorSegmentRedactor
             });
         }
 
+        ValidateAliasPopulation(aliasMap.SchemaKeyAliases, schemaKeys, "schema-key-");
+        ValidateAliasPopulation(aliasMap.DynamicKeyAliases, dynamicKeys, "dynamic-key-");
         return string.Join("/", output);
+    }
+
+    private static void ValidateAliasPopulation(
+        IReadOnlyDictionary<string, string> aliases,
+        SortedSet<string> expectedKeys,
+        string prefix)
+    {
+        if (aliases.Count != expectedKeys.Count)
+        {
+            throw new AtlasSafetyException("The locator alias map is invalid.");
+        }
+
+        string[] sortedKeys = expectedKeys
+            .OrderBy(static key => key, StringComparer.Ordinal)
+            .ToArray();
+        for (int index = 0; index < sortedKeys.Length; index++)
+        {
+            string expectedKey = sortedKeys[index];
+            if (!aliases.TryGetValue(expectedKey, out string? alias))
+            {
+                throw new AtlasSafetyException("The locator alias map is invalid.");
+            }
+
+            string expectedAlias = $"{prefix}{index + 1:000000}";
+            if (!StringComparer.Ordinal.Equals(alias, expectedAlias))
+            {
+                throw new AtlasSafetyException("The locator alias map is invalid.");
+            }
+        }
+    }
+
+    internal static void ValidateAliasValue(string alias, string prefix)
+    {
+        if (!alias.StartsWith(prefix, StringComparison.Ordinal)
+            || alias.Length != prefix.Length + 6
+            || !int.TryParse(
+                alias.AsSpan(prefix.Length),
+                System.Globalization.CultureInfo.InvariantCulture,
+                out int ordinal)
+            || ordinal <= 0)
+        {
+            throw new AtlasSafetyException("The locator alias map is invalid.");
+        }
     }
 
     private static Dictionary<string, string> CreateAliases(
@@ -160,12 +292,6 @@ public static class LocatorSegmentRedactor
         return aliases;
     }
 
-    private static string RedactDocumentRole(LocatorSegment segment)
-    {
-        ValidateDocumentRole(segment.TextValue);
-        return segment.TextValue;
-    }
-
     private static string RedactArrayIndex(LocatorSegment segment)
     {
         if (segment.NumericValue is null or < 0)
@@ -175,12 +301,6 @@ public static class LocatorSegmentRedactor
 
         return segment.NumericValue.Value.ToString(
             System.Globalization.CultureInfo.InvariantCulture);
-    }
-
-    private static string RedactJsonExMarker(LocatorSegment segment)
-    {
-        ValidateJsonExMarker(segment.TextValue);
-        return segment.TextValue;
     }
 
     private static string RedactSchemaKey(
@@ -205,20 +325,9 @@ public static class LocatorSegmentRedactor
 
     private static void ValidateDocumentRole(string token)
     {
-        if (string.IsNullOrWhiteSpace(token))
+        if (!AllowedDocumentRoles.Contains(token))
         {
             throw new AtlasSafetyException("The document-role token is invalid.");
-        }
-
-        foreach (char character in token)
-        {
-            if (!(
-                    (character is >= 'a' and <= 'z')
-                    || char.IsAsciiDigit(character)
-                    || character == '-'))
-            {
-                throw new AtlasSafetyException("The document-role token is invalid.");
-            }
         }
     }
 
@@ -230,7 +339,7 @@ public static class LocatorSegmentRedactor
         }
     }
 
-    private static void ValidateKey(string token)
+    internal static void ValidateKey(string token)
     {
         if (string.IsNullOrEmpty(token))
         {

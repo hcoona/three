@@ -32,6 +32,7 @@ public sealed class ProjectBoundaryTests
         "AtlasDiscoveryTests.cs",
         "AtlasIntakeContractTests.cs",
         "AtlasProcessSmokeTests.cs",
+        "AtlasTestSupport.cs",
         "EmptyAtlasSurveyTests.cs",
         "Hcoona.CelesphoniaModifier.Atlas.Tests.csproj",
         "LocatorSegmentRedactorTests.cs",
