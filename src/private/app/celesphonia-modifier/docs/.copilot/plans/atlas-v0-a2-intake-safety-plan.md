@@ -159,23 +159,26 @@ contract-invalid request is an argument-validation failure.
 The exact command contracts are:
 
 - `intake-discover`, version `atlas-intake-discovery-request/v1`: `schemaVersion`,
-  `surveyAlias`, `workspaceRoot`, `baselineManifestPath`, `expectedBaselineSha256`,
+  `surveyAlias`, `projectRoot`, `workspaceRoot`, `baselineManifestPath`, `expectedBaselineSha256`,
   `expectedBaselineRevision`, `nextManifestRevision`, `manifestRevisionDirectory`, `saveRoots`,
   `definitionRoot`, `gameExecutablePath`, `sourceRootMapOutputPath`, `inventoryPath`,
   `expectedInventorySha256`, `inventoryBackupPath`, `copyPlanOutputPath`, `stateRevisionDirectory`,
   `expectedSteamAppId`, and `expectedBuildId`;
 - `intake-confirm`, version `atlas-intake-confirmation-request/v1`: `schemaVersion`,
-  `surveyAlias`, `workspaceRoot`, `discoveredStatePath`, `expectedDiscoveredStateSha256`,
+  `surveyAlias`, `projectRoot`, `workspaceRoot`, `discoveredStatePath`,
+  `expectedDiscoveredStateSha256`,
   `pendingManifestPath`, `sourceRootMapPath`, `copyPlanPath`, `decisionCommit`,
   `manifestRevisionDirectory`, `stateRevisionDirectory`, `inventoryPath`,
   `expectedInventorySha256`, and `inventoryBackupPath`;
 - `intake-copy`, version `atlas-intake-copy-request/v1`: `schemaVersion`, `surveyAlias`,
-  `workspaceRoot`, `approvedStatePath`, `expectedApprovedStateSha256`, `approvedManifestPath`,
+  `projectRoot`, `workspaceRoot`, `approvedStatePath`, `expectedApprovedStateSha256`,
+  `approvedManifestPath`,
   `sourceRootMapPath`, `copyPlanPath`, `decisionCommit`, `incompleteCopyPath`, `finalCopyPath`,
   `stateRevisionDirectory`, `inventoryPath`, `expectedInventorySha256`, and
   `inventoryBackupPath`; and
 - `cleanup-preflight`, version `atlas-cleanup-preflight-request/v1`: `schemaVersion`,
-  `surveyAlias`, `workspaceRoot`, `qualifiedStatePath`, `expectedQualifiedStateSha256`,
+  `surveyAlias`, `projectRoot`, `workspaceRoot`, `qualifiedStatePath`,
+  `expectedQualifiedStateSha256`,
   `stateRevisionDirectory`, `inventoryPath`, `expectedInventorySha256`, `inventoryBackupPath`,
   `proposedMilestone`, and `reportOutputPath`.
 
@@ -204,14 +207,13 @@ bindings, one absolute definition-root binding, and the absolute game-executable
 
 Discovery also publishes `atlas-copy-plan/v1`. The plan contains `schemaVersion`, survey and
 discovery revisions, and one entry per included manifest source. Each entry contains `sourceAlias`,
-inventoried `sourceArtifactAlias`, reserved `destinationArtifactAlias`, artifact class, and
-canonical destination-relative path.
+reserved `destinationArtifactAlias`, artifact class, and canonical destination-relative path.
 
 Artifact aliases use one monotonic cursor above the greatest ordinal in either the bound inventory
-or any copy-plan reservation. Discovery reserves destinations only after allocating its control and
-per-source discovery aliases, in manifest `sourceAlias` order. Confirmation and later phases advance
-beyond both inventoried aliases and reservations. Destination aliases enter the inventory only on
-successful copy publication.
+or any copy-plan reservation. Discovery reserves destinations after allocating its control aliases,
+in manifest `sourceAlias` order. Confirmation and later phases advance beyond both inventoried
+aliases and reservations. Destination aliases enter the inventory only on successful copy
+publication.
 
 Save destinations are `saves/<sourceAlias>.rpgsave`. Definition destinations are
 `definitions/<sourceAlias><lowercase-source-extension>`. Source aliases are unique, allowed
@@ -251,6 +253,11 @@ Other canonical survey-relative paths are:
 Every request path must equal its corresponding canonical path after normalization. The fixed state
 paths and state artifact bindings let later increments locate and rehash retained evidence without
 adding paths to the inventory schema.
+
+`projectRoot` is the repository root. `workspaceRoot` must equal the full-path result of joining it
+with `src\private\app\celesphonia-modifier\.private\atlas-v0\<surveyAlias>`. The tool also requires
+the parent `.private\.gitignore` to be an ordinary non-reparse file whose effective rules include
+`*` and `!.gitignore`. Every request tests this invariant before creating output.
 
 Requests and operational outputs are private. Their C# types and synthetic examples are
 repository-safe; no real request or path enters Git.
@@ -442,7 +449,8 @@ ambient lookup or array-order pairing is permitted.
 Before content access, it re-enumerates every source directory and requires exact agreement with
 the approved manifest. For each included source, it:
 
-1. applies the path policy and confirms unchanged discovery metadata;
+1. applies the path policy and confirms the manifest's relative path, entry type, reparse status,
+   classification, and complete directory census still match;
 2. opens the source with `FileAccess.Read` and `FileShare.Read`;
 3. captures length and last-write metadata from the held source;
 4. creates a destination with `FileMode.CreateNew` and `FileShare.None`;
@@ -485,14 +493,14 @@ property to save copies.
 
 The copy receipt uses `atlas-copy-receipt/v1`. It contains the survey alias, receipt alias, profile,
 approved-state digest, approved manifest digest, source-root-map digest, copy-plan digest, decision
-reference, final relative copy root, public identifiers, private game-executable SHA-256, exact save
-and definition counts, and one entry per copy-plan source. Each entry contains both artifact
-aliases, source alias, artifact class, destination-relative path, source length, source-last-write
-UTC value, and SHA-256.
+reference, approved-manifest artifact alias, final relative copy root, public identifiers, private
+game-executable SHA-256, exact save and definition counts, and one entry per copy-plan source. Each
+entry contains destination artifact alias, source alias, artifact class, destination-relative path,
+source length, source-last-write UTC value, and SHA-256.
 
 Receipt, qualified state, and inventory agree only when every copy-plan and receipt entry has
 exactly one inventory entry with the same destination artifact alias and class, status `present`,
-the declared source artifact as its only lineage member, and verification method
+the approved manifest revision-5 artifact alias as its only lineage member, and verification method
 `trusted-local-filesystem/v1;receipt:<receipt-alias>`; save copies additionally have
 `a2-qualified`. No destination entry exists before copy. Successful copy adds each destination as
 `present`, adds only the control entries declared below, and changes no unrelated entry. Definitions
@@ -523,9 +531,10 @@ recovery. Backups remain inventoried private evidence through A2 release.
 Each phase publishes its state revision last. Re-running the same phase request before that state
 exists is idempotent: the command validates each existing final output against deterministically
 regenerated bytes, creates only missing outputs, recognizes an already completed inventory replace
-when the canonical and backup digests match, and then publishes the state. Any mismatch is a safety
-refusal. An existing valid phase state returns success without writing. A later phase without its
-required predecessor state is an approval refusal.
+when the canonical digest equals the calculated replacement and the backup digest equals the
+request-bound prior inventory, and then publishes the state. Any other digest is a safety refusal.
+An existing valid phase state returns success without writing. A later phase without its required
+predecessor state is an approval refusal.
 
 The recovery matrix is:
 
@@ -535,6 +544,13 @@ The recovery matrix is:
 - missing deterministic control output, with no phase state: regenerate it from the same request;
 - complete request-owned `.incomplete` directory with every planned copy and staged receipt:
   validate destination bytes and promote the captured receipt without rereading sources;
+- final directory with every planned copy and staged receipt, before inventory replacement:
+  validate destination bytes, then continue without rereading sources;
+- replaced inventory before receipt publication: require canonical SHA-256 to equal the calculated
+  replacement digest and backup SHA-256 to equal the request-bound prior inventory digest, then
+  publish the captured staged receipt;
+- published receipt before state revision 3: validate receipt, copies, replacement inventory, and
+  prior-inventory backup, then publish state revision 3;
 - incomplete copy set, missing receipt evidence, or missing final copy artifact: safety refusal
   pending exact human removal and a fresh copy run;
 - mismatching staging file, final output, inventory, backup, or state: safety refusal;
@@ -563,7 +579,7 @@ milestone, and one result per artifact.
 
 Every retained A2 artifact receives an inventory entry in the state-bound inventory:
 
-- manifest revisions and per-source metadata: `live-discovery`, A2, `retain-private`;
+- manifest revisions: `live-discovery`, A2, `retain-private`;
 - request documents: `private-evidence`, A8, `delete`;
 - root map, copy plan, intake state, receipt, and inventory backups: `private-provenance`, A8,
   `retain-private`;
@@ -584,10 +600,10 @@ state after revision 1 names the prior state. No revision self-references. Every
 backup receives its own alias.
 
 Within discovery, new aliases allocate in this fixed order: request, manifest revision 4, root map,
-copy plan, state revision 1, inventory backup, per-source metadata in `sourceAlias` order, then
-destination reservations in that order. Within later phases, allocation order is request, manifest
-revision when present, receipt or preflight report, state revision, then inventory backup. Released
-A0 manifest revision 3 keeps its existing alias; every new retained byte sequence gets a new alias.
+copy plan, state revision 1, inventory backup, then destination reservations in `sourceAlias` order.
+Within later phases, allocation order is request, manifest revision when present, receipt or
+preflight report, state revision, then inventory backup. Released A0 manifest revision 3 keeps its
+existing alias; every new retained byte sequence gets a new alias.
 
 ## 13. Accepted residual risks
 
@@ -734,6 +750,13 @@ src/private/app/celesphonia-modifier/docs/.copilot/reviews/
   atlas-v0-a2-release-gate.md
 ```
 
+The source-safety candidate compares from the plan-review record and contains only the production,
+test, schema, and implementation-candidate documentation paths above. The final release candidate
+uses the same base and adds only the tool-safety and intake-approval record paths.
+
+The release-record child changes only `atlas-v0-a2-release-gate.md`. The plan-review record precedes
+and is the base of all three comparisons; it is not repeated in their diffs.
+
 ## 17. Tests and execution stages
 
 All automated tests use only synthetic paths, manifests, bytes, keys, inventories, and temporary
@@ -801,9 +824,12 @@ Run cleanup preflight, but perform no deletion.
 
 ### A2.4 Release
 
-Create a final repository-safe candidate containing the approved tracked scope and records. A fresh
-independent subagent reviews the complete cumulative candidate and safe acceptance evidence. Resolve
-every finding and repeat until exact `No findings`.
+Treat the verified intake-approval record commit as the final repository-safe candidate. Relative
+to the plan-review base, it contains the implementation-candidate paths plus only the tool-safety
+and intake-approval records defined in section 16.
+
+A fresh independent subagent reviews that complete cumulative candidate and safe acceptance
+evidence. Resolve every finding and repeat until exact `No findings`.
 
 Persist `../reviews/atlas-v0-a2-release-gate.md` as a reviewed staged blob and unchanged record-only
 child. Verify and push it before marking A2 complete.
@@ -877,7 +903,8 @@ The implementation candidate must pass:
 - the complete A2 tests through Microsoft.Testing.Platform;
 - direct apphost smoke commands;
 - evaluated project-reference and package-reference checks;
-- exact no-renames cumulative tracked-path comparison;
+- exact no-renames tracked-path comparisons for the source-safety candidate, final release
+  candidate, and release-record child defined in section 16;
 - ref-bound HK checks;
 - `git diff --check`;
 - committed-file line-length and LF checks; and
