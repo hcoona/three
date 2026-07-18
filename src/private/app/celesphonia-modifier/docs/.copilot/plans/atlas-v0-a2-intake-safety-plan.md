@@ -926,11 +926,11 @@ recorded in review documents, not emitted by a command.
 
 The only counts permitted in Git are: save denominator 23, included saves 21, excluded Steam
 metadata 2, definition denominator 580, included definitions 496, excluded definitions 84, copy
-successes 21 and 496, copy failures 0, unsupported/unreadable 0, unexplained preflight artifacts 0,
-invalid inventory rows 0, and deletions 0. `Invalid inventory rows` is the strict validation result
-for the state-3-bound inventory, not a workspace census. The only safe difference categories are
-root set, denominator, selection rule, public build, unsupported/unreadable, or no difference.
-Every name and every other count is private.
+successes 21 and 496, copy failures 0, unsupported/unreadable 0, invalid inventory rows 0, and
+deletions 0. `Invalid inventory rows` is the strict validation result for the state-3-bound
+inventory, not a workspace census. The only safe difference categories are root set, denominator,
+selection rule, public build, unsupported/unreadable, or no difference. Every name and every other
+count is private.
 
 The plan-review record path is `../reviews/atlas-v0-a2-plan-review.md`. It binds:
 
