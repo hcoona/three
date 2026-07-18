@@ -2,6 +2,11 @@
 
 **Status:** Confirmed execution baseline
 
+> **Conditional A2 amendment**
+> The revised A2 subsection takes effect only when the exact
+> `atlas-v0-a2-intake-safety-plan.md` plan-review record is verified. Until then, A2 has no
+> implementation authority.
+
 **Implementation language:** C# on the repository-pinned .NET SDK
 
 **Product scope:** Personal and private research; no WinUI or external distribution

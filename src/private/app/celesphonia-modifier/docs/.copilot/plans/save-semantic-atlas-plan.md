@@ -25,8 +25,9 @@ observed structure and marks unexplained semantics as unknown.
 ## 2. Corpus and evidence boundary
 
 Before copying, the project leader confirms a finite live-save discovery manifest, exact
-fingerprint scope, and finite installed-definition roots and file-selection rules. The
-preliminary survey then covers immutable, read-only copies of:
+fingerprint scope, and finite installed-definition roots and file-selection rules. The preliminary
+survey then covers qualified read-only snapshots that are rehashed against private provenance
+before each use:
 
 - every existing `fileN.rpgsave`;
 - `global.rpgsave`;
@@ -72,7 +73,7 @@ delivery work still require budgets and stop conditions.
 ## 4. Production workflow
 
 ```text
-immutable copied inputs
+qualified, provenance-revalidated snapshot inputs
   -> deterministic structural scanner
   -> redacted observations and completeness report
   -> independent Agent semantic proposals

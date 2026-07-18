@@ -184,7 +184,8 @@ The snapshot:
 - marks copied save files read-only;
 - captures into a unique timestamped `.incomplete` directory;
 - writes a schema-valid private completion manifest only after every check passes;
-- atomically renames the completed directory to its stable final name;
+- performs an ordinary same-volume rename to its stable final name without claiming crash
+  atomicity;
 - removes only the newly created incomplete directory after any failure; and
 - records qualification as `preservation-unqualified`.
 
