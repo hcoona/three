@@ -207,10 +207,11 @@ discovery revisions, and one entry per included manifest source. Each entry cont
 inventoried `sourceArtifactAlias`, reserved `destinationArtifactAlias`, artifact class, and
 canonical destination-relative path.
 
-Artifact aliases allocate after the greatest ordinal in the bound inventory, in manifest
-`sourceAlias` order. Discovery creates one `live-discovery` inventory entry per included source with
-status `present`. Destination aliases are only reserved by the copy plan; save-copy and
-definition-copy inventory entries do not exist until successful qualification.
+Artifact aliases use one monotonic cursor above the greatest ordinal in either the bound inventory
+or any copy-plan reservation. Discovery reserves destinations only after allocating its control and
+per-source discovery aliases, in manifest `sourceAlias` order. Confirmation and later phases advance
+beyond both inventoried aliases and reservations. Destination aliases enter the inventory only on
+successful copy publication.
 
 Save destinations are `saves/<sourceAlias>.rpgsave`. Definition destinations are
 `definitions/<sourceAlias><lowercase-source-extension>`. Source aliases are unique, allowed
@@ -507,10 +508,10 @@ Every create-new private JSON output uses one publication procedure:
 4. move it to a nonexistent final filename; and
 5. retain no success claim if any step fails.
 
-A staging file is never a revision or completion signal. If interruption leaves one, later commands
-refuse it until the project leader removes that exact staging file after inspection. A final
-create-new revision is complete bytes but remains unusable unless all predecessor and digest checks
-pass.
+A staging file is never a revision or completion signal. Deterministic control-document staging may
+be validated and promoted by the same request. A staged copy receipt is captured point-in-time
+evidence: repair may validate and promote those exact bytes but never regenerate them. A final
+create-new revision is complete bytes but remains unusable unless all state and digest checks pass.
 
 The revision-managed canonical inventory uses a different bounded procedure because its v1 schema
 has no revision field. The request binds the current inventory digest and a nonexistent unique
@@ -529,10 +530,14 @@ required predecessor state is an approval refusal.
 The recovery matrix is:
 
 - valid state for the requested or a later phase: return that command's fixed success without write;
-- matching request-owned staging file or final output, with no phase state: validate and continue;
-- missing output, with no phase state: create it;
+- matching deterministic control staging or final output, with no phase state: validate and
+  continue;
+- missing deterministic control output, with no phase state: regenerate it from the same request;
+- complete request-owned `.incomplete` directory with every planned copy and staged receipt:
+  validate destination bytes and promote the captured receipt without rereading sources;
+- incomplete copy set, missing receipt evidence, or missing final copy artifact: safety refusal
+  pending exact human removal and a fresh copy run;
 - mismatching staging file, final output, inventory, backup, or state: safety refusal;
-- request-owned `.incomplete` directory: safety refusal pending human inspection and exact removal;
 - unowned staging or incomplete artifact: safety refusal with no removal; and
 - invocation whose required earlier state is absent: approval refusal.
 
@@ -578,10 +583,11 @@ Manifest revision 4 names revision 3 as its direct predecessor; revision 5 names
 state after revision 1 names the prior state. No revision self-references. Every retained inventory
 backup receives its own alias.
 
-Within a phase, new aliases allocate in this fixed order: request; manifest revision when present;
-root map; copy plan; receipt or preflight report; state revision; inventory backup; then per-source
-metadata or destination entries in manifest `sourceAlias` order. Released A0 manifest revision 3
-keeps its existing alias; every new retained byte sequence gets a new alias.
+Within discovery, new aliases allocate in this fixed order: request, manifest revision 4, root map,
+copy plan, state revision 1, inventory backup, per-source metadata in `sourceAlias` order, then
+destination reservations in that order. Within later phases, allocation order is request, manifest
+revision when present, receipt or preflight report, state revision, then inventory backup. Released
+A0 manifest revision 3 keeps its existing alias; every new retained byte sequence gets a new alias.
 
 ## 13. Accepted residual risks
 
@@ -636,7 +642,13 @@ Milestone order is `A2` through `A8`, then `post-A8-appeal`. The first matching 
 order above. An invalid inventory row fails the command rather than producing eligibility.
 
 After publishing the report, preflight adds exactly one `cleanup-record` inventory entry, safely
-replaces the inventory, and publishes state revision 4 last. No prior row changes.
+replaces the inventory, and publishes state revision 4 last. The replacement adds exactly four
+entries: preflight request, cleanup report, state revision 4, and preflight inventory backup. No
+prior row changes.
+
+The preflight backup preserves the historical state-3 inventory bytes. State revision 4 binds its
+alias, canonical survey-relative path, and digest. After preflight, state-3 qualification rehashes
+that backup when the canonical inventory digest no longer equals the digest in state 3.
 
 The proposed milestone is not deletion authority. A2 does not need artifact paths because it does
 not delete. Final cleanup, alias-to-path custody, deletion approval, and attestation are designed
@@ -730,7 +742,8 @@ directories. They never use the installed game, a real save, copied game content
 Direct tests cover:
 
 - strict JSON shape, duplicate rejection, versions, values, revisions, and private digest binding;
-- schema/DTO agreement for every new private contract and item census;
+- schema/DTO agreement and item census for the five schema-governed output contracts;
+- strict-reader and DTO tests for all four request contracts;
 - DOS-path normalization, containment, fixed-drive policy, and component reparse refusal;
 - complete discovery accounting and every A0 terminal rule;
 - denial of stale, pending, rejected, superseded, or digest-mismatched manifests;
@@ -803,7 +816,7 @@ A2 is accepted only when:
 2. production projects retain zero project-local package references;
 3. requests are strict, explicit, private, duplicate-free, and free of ambient discovery;
 4. metadata-only discovery precedes every source-content read;
-5. exactly 21 save inputs and 496 definitions are approved, or a reopened A0 releases a new scope;
+5. exactly 21 save inputs and 496 definitions from released A0 revision 3 are approved;
 6. every source has exactly one terminal status and Steam cloud metadata is excluded;
 7. the project leader approves exact pending manifest bytes before confirmation or copy;
 8. intake-state revision 2 binds approved manifest revision 5 and every private input digest;
@@ -819,8 +832,8 @@ A2 is accepted only when:
     remains authoritative if process success is not reported; no failure removes an unowned path;
 17. later-use revalidation is required because read-only snapshots are not immutable;
 18. locator redaction cannot emit or remap a literal source key;
-19. lifecycle preflight deletes nothing, reports every state-3 inventory artifact, adds only its
-    own inventory entry, and publishes state revision 4;
+19. lifecycle preflight deletes nothing, reports every state-3 inventory artifact, adds exactly its
+    request, report, state-4, and inventory-backup entries, and publishes state revision 4;
 20. no private path, hash, name, value, source text, request, or unapproved count enters process
     output or Git; section 20 lists the only repository-safe aggregate counts;
 21. every command result follows the declared fixed bytes, exit code, and A1 precedence;
@@ -849,6 +862,9 @@ Stop A2 and revise or reopen the governing increment when:
 - private execution would use a changed or dirty source candidate;
 - validation is nondeterministic without the bounded internal fault seam; or
 - any independent finding remains unresolved.
+
+Any A0 reopening ends this one-shot plan's authority. A2 resumes only through a revised, persisted,
+independently approved A2 plan with a new revision and state sequence.
 
 ## 20. Validation and records
 
