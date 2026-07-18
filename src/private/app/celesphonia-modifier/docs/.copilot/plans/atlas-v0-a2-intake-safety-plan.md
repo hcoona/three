@@ -93,7 +93,8 @@ human approval gate in section 10.
 - Metadata-only discovery for the two approved save-root roles.
 - Metadata-only discovery for the frozen installed-definition rules.
 - Existing `atlas-intake/v2` and `atlas-private-inventory/v1` contracts.
-- New private root-map, copy-receipt, locator-map, and cleanup-report contracts.
+- New private root-map, approval-binding, copy-plan, copy-receipt, locator-map, and cleanup-report
+  contracts.
 - Strict private request parsing with source-generated `System.Text.Json` metadata.
 - Trusted-local copy creation and private fidelity evidence.
 - Deterministic deny-by-default locator-key aliases.
@@ -161,16 +162,21 @@ The exact command contracts are:
   `surveyAlias`, `workspaceRoot`, `baselineManifestPath`, `expectedBaselineSha256`,
   `expectedBaselineRevision`, `nextManifestRevision`, `manifestRevisionDirectory`, `saveRoots`,
   `definitionRoot`, `gameExecutablePath`, `sourceRootMapOutputPath`, `inventoryPath`,
-  `expectedInventorySha256`, and `inventoryBackupPath`;
+  `expectedInventorySha256`, `inventoryBackupPath`, `copyPlanOutputPath`,
+  `previousSourceRootMapPath`, `expectedPreviousSourceRootMapSha256`, `previousCopyPlanPath`, and
+  `expectedPreviousCopyPlanSha256`;
 - `intake-confirm`, version `atlas-intake-confirmation-request/v1`: `schemaVersion`,
   `surveyAlias`, `workspaceRoot`, `pendingManifestPath`, `expectedPendingSha256`,
   `expectedPendingRevision`, `sourceRootMapPath`, `expectedSourceRootMapSha256`, `decisionCommit`,
-  and `manifestRevisionDirectory`;
+  `copyPlanPath`, `expectedCopyPlanSha256`, `predecessorApprovalBindingPath`,
+  `expectedPredecessorApprovalBindingSha256`, `approvalBindingOutputPath`, and
+  `manifestRevisionDirectory`;
 - `intake-copy`, version `atlas-intake-copy-request/v1`: `schemaVersion`, `surveyAlias`,
   `workspaceRoot`, `approvedManifestPath`, `expectedApprovedSha256`,
-  `expectedApprovedRevision`, `sourceRootMapPath`, `expectedSourceRootMapSha256`,
-  `decisionCommit`, `incompleteCopyPath`, `finalCopyPath`, `inventoryPath`,
-  `expectedInventorySha256`, and `inventoryBackupPath`; and
+  `expectedApprovedRevision`, `approvalBindingPath`, `expectedApprovalBindingSha256`,
+  `sourceRootMapPath`, `copyPlanPath`, `priorCopyReceiptPath`,
+  `expectedPriorCopyReceiptSha256`, `decisionCommit`, `incompleteCopyPath`, `finalCopyPath`,
+  `inventoryPath`, `expectedInventorySha256`, and `inventoryBackupPath`; and
 - `cleanup-preflight`, version `atlas-cleanup-preflight-request/v1`: `schemaVersion`,
   `surveyAlias`, `workspaceRoot`, `inventoryPath`, `expectedInventorySha256`,
   `proposedMilestone`, and `reportOutputPath`.
@@ -180,6 +186,17 @@ only `locationRole` and `path`. Other path properties are strings. Revisions are
 Expected hashes are 64 lowercase hexadecimal characters. `decisionCommit` is a 40-character
 lowercase Git object identifier. `proposedMilestone` is an existing inventory milestone and is
 advisory because preflight cannot authorize deletion.
+
+The four predecessor path/hash pairs are explicit nullable pairs:
+
+- previous source-root map on the first A2 discovery;
+- previous copy plan on the first A2 discovery;
+- predecessor approval binding on the first A2 approval;
+- prior copy receipt on the first qualified A2 copy.
+
+Exactly both members or neither member is present. A later operation verifies the predecessor
+document, digest, survey, and revision before doing work; neither member may be null on a
+subsequent operation.
 
 Manifest revisions are create-new files named
 `corpus-intake-manifest.rNNNNNN.json` in one survey-local private revision directory. Revision
@@ -197,6 +214,22 @@ The source-root map uses `atlas-source-root-map/v1` and contains only `schemaVer
 `surveyAlias`, `discoveryRevision`, two `rootAlias`/absolute-path save bindings, and one absolute
 definition-root binding plus the absolute game-executable path. It is private. Confirmation and
 copy bind its exact SHA-256 alongside the manifest.
+
+Discovery compares supplied previous source-root-map and copy-plan documents before treating roots
+or mappings as unchanged. It publishes `atlas-copy-plan/v1`. The plan contains `schemaVersion`,
+survey and discovery revisions, its predecessor digest, and one entry per included manifest source.
+Each entry contains
+`sourceAlias`, inventoried `sourceArtifactAlias`, new `destinationArtifactAlias`, artifact class,
+and canonical destination-relative path.
+
+Artifact aliases allocate after the greatest ordinal in the bound inventory, in manifest
+`sourceAlias` order. Discovery creates one `live-discovery` inventory entry per included source with
+status `present`, and one destination entry with status `planned`. The destination's only
+`lineageAliases` member is the corresponding live-discovery artifact alias.
+
+Save destinations are `saves/<sourceAlias>.rpgsave`. Definition destinations are
+`definitions/<sourceAlias><lowercase-source-extension>`. Source aliases are unique, allowed
+extensions are frozen by A0, and any duplicate destination is a safety failure.
 
 Requests and operational outputs are private. Their C# types and synthetic examples are
 repository-safe; no real request or path enters Git.
@@ -325,18 +358,18 @@ reopens A0; A2 cannot approve a narrowing itself.
 
 ## 10. Human-operated private approval
 
-The pending manifest and its hash are never supplied to Copilot or a subagent. The project leader
-performs the private phase:
+The pending manifest and private binding documents are never supplied to Copilot or a subagent. The
+project leader performs the private phase:
 
 1. creates the private request without placing its path in an Agent transcript;
 2. verifies in the Steam client that application `1786790` still reports public build
    `13624401` and confirms that the installation was not manually altered;
 3. runs the reviewed source candidate from a clean checkout;
-4. opens the exact pending manifest and source-root map in a local editor;
-5. verifies their revisions, roots, decisions, counts, and private SHA-256 values;
+4. opens the exact pending manifest, source-root map, and copy plan in a local editor;
+5. verifies their revisions, roots, mappings, decisions, counts, and private SHA-256 values;
 6. reports only approved repository-safe aggregate counts and contract differences;
 7. explicitly approves or rejects that survey alias and revision;
-8. supplies both private expected SHA-256 values only to local requests; and
+8. supplies all three private expected SHA-256 values only to local requests; and
 9. runs confirmation only after the approval record commit is pushed.
 
 The approval record at `../reviews/atlas-v0-a2-intake-approval.md` contains:
@@ -352,26 +385,41 @@ The approval record at `../reviews/atlas-v0-a2-intake-approval.md` contains:
 The record is independently reviewed as an exact staged blob, committed unchanged as the only child
 of the approved source-safety record, pushed, and verified for parent, path, content, and upstream.
 
-`intake-confirm` requires the exact private SHA-256 reviewed by the project leader. It verifies that
-the pending file is the newest revision, matches that digest and revision, and remains `pending`.
-It then writes the next create-new revision, differing only in manifest revision and confirmation:
-`approved`, `project-leader`, and the exact approval-record commit.
+`intake-confirm` requires the exact private SHA-256 values reviewed by the project leader. It
+verifies the pending manifest is newest and `pending`, and that the source-root map and copy plan
+match its survey and discovery revision. It writes the next manifest revision, differing only in
+revision and confirmation: `approved`, `project-leader`, and the exact approval-record commit.
+
+It then publishes `atlas-intake-approval-binding/v1`, containing survey alias; pending and approved
+manifest revisions and digests; source-root-map revision and digest; copy-plan revision and digest;
+decision commit; and optional predecessor-approval-binding digest. Copy trusts only this closed
+binding and verifies every referenced private document against it.
+
+The approved revision and approval binding are a paired publication. If interruption publishes only
+one, neither authorizes copying. Re-running `intake-confirm` with the same request validates the
+existing member against deterministically regenerated counterpart bytes and publishes only the
+missing member. Any byte difference is a safety refusal; neither file is overwritten or deleted.
 
 This is a trusted human-operated gate, not a claim that the CLI proves Git authority. Any later
 discovery revision invalidates approval. The operator privately hashes the approved revision and
 places that digest in the copy request.
 
-During copy, the tool hashes `Game.exe` and every included definition. Together with the public
-application and build identifiers, these values establish the private fingerprint evidence scoped
-by A0. On every later intake, a changed public build, operator-reported local alteration, or
-fingerprint mismatch reopens A0. No private fingerprint enters the approval record or process
-output.
+During copy, the tool hashes `Game.exe` under the same held-handle stability rules as copied files.
+Together with every included definition hash and the public identifiers, this establishes the
+game-content portion of A0 fingerprint evidence. Atlas tool, schema, redaction-policy, and
+configuration digests remain outside A2 and are added to the final Atlas snapshot under A8.
+
+The first A2 copy has no prior receipt. Every later intake binds a prior receipt and compares its
+game executable and definition hashes before qualification. A changed public build,
+operator-reported local alteration, or fingerprint mismatch reopens A0. No private fingerprint
+enters the approval record or process output.
 
 ## 11. Copy and qualification
 
-`intake-copy` accepts only the newest approved manifest revision. Its private digest, revision,
-survey alias, decision commit, source-root-map digest, and root aliases must exactly match the
-request. The map supplies the only absolute source paths; no ambient lookup is permitted.
+`intake-copy` accepts only the newest approved manifest revision and one approval binding. Manifest,
+source-root-map, copy-plan, survey, decision, revision, predecessor, and digest values must match
+that binding. The root map supplies the only absolute source paths and the copy plan supplies the
+only artifact and destination mapping; no ambient lookup or array-order pairing is permitted.
 
 Before content access, it re-enumerates every source directory and requires exact agreement with
 the approved manifest. For each included source, it:
@@ -400,8 +448,10 @@ signal in the final directory.
 A snapshot is `a2-qualified` only when its final copy receipt and canonical inventory agree.
 Neither signal alone is usable. The operation does not claim an atomic transaction across those
 signals. If interruption leaves an `.incomplete` directory or only one final signal, later tools
-refuse it. Recovery requires human inspection and a separately approved retry or targeted removal;
-A2 never guesses or recursively removes an unexpected final directory.
+refuse it. If both signals agree, persisted qualification is authoritative even when interruption
+or standard-output failure prevents a success message. Recovery requires human inspection and a
+separately approved retry or targeted removal; A2 never guesses or recursively removes an
+unexpected final directory.
 
 On an ordinary pre-rename failure, cleanup attempts to remove only the request-bound, owned,
 non-reparse `.incomplete` directory. If removal fails, the command reports failure and leaves the
@@ -413,18 +463,20 @@ destination-relative aliases, lengths, and SHA-256 values. Definition copies use
 The inventory uses `a2-qualified` only for save-copy entries because the existing schema limits that
 property to save copies.
 
-The copy receipt uses `atlas-copy-receipt/v1`. It contains the survey alias, receipt alias, profile,
-approved manifest revision and digest, source-root-map digest, decision reference, final relative
-copy root, public application and build identifiers, private game-executable SHA-256, exact save and
-definition counts, and one entry per included source. Each entry contains artifact alias, source
-alias, artifact class, destination-relative path, source length, source-last-write UTC value, and
-SHA-256.
+The copy receipt uses `atlas-copy-receipt/v1`. It contains the survey alias, receipt alias,
+profile, approval-binding digest, approved manifest digest, source-root-map digest, copy-plan
+digest, optional prior-receipt digest, decision reference, final relative copy root, public
+identifiers, private game-executable SHA-256, exact save and definition counts, and one entry per
+copy-plan source. Each entry contains both artifact aliases, source alias, artifact class,
+destination-relative path, source length, source-last-write UTC value, and SHA-256.
 
-Receipt and inventory agree only when every receipt entry has exactly one inventory entry with the
-same artifact alias and class, status `present`, direct source lineage, and verification method
+Receipt and inventory agree only when every copy-plan and receipt entry has exactly one inventory
+entry with the same destination artifact alias and class, status `present`, the declared source
+artifact as its only lineage member, and verification method
 `trusted-local-filesystem/v1;receipt:<receipt-alias>`; save copies additionally have
-`a2-qualified`. No extra A2 copy entry may exist. Definitions are qualified by receipt agreement,
-not by the save-only inventory property.
+`a2-qualified`. Every corresponding planned entry transitions to `present`, no unrelated entry
+changes, and no extra A2 copy entry exists. Definitions are qualified by agreement, not by the
+save-only inventory property.
 
 ## 12. Private document publication
 
@@ -448,17 +500,20 @@ that backup path, then reopens and validates the canonical file. It makes no cra
 If the canonical file or expected backup state is invalid, all tools refuse both and require human
 recovery. Backups remain inventoried private evidence through A2 release.
 
-The four new private schemas are:
+The six new private schemas are:
 
 - `atlas-source-root-map/v1`;
+- `atlas-intake-approval-binding/v1`;
+- `atlas-copy-plan/v1`;
 - `atlas-copy-receipt/v1`;
 - `atlas-locator-alias-map/v1`; and
 - `atlas-cleanup-preflight/v1`.
 
-Their tracked JSON Schemas define exact properties, ordering-independent invariants, canonical
-relative paths, alias patterns, digest links, and item census. C# DTOs and serializers implement the
-same closed contracts. The locator map contains its schema version, survey alias, map revision,
-predecessor digest, and separate source-key-to-alias arrays. The cleanup report contains its schema
+Their tracked JSON Schemas define closed local document shapes, property types, canonical relative
+path syntax, and alias patterns. BCL-only C# validators enforce alias uniqueness, census,
+predecessors, calculated digests, lineage, and every cross-field or cross-document invariant.
+
+The locator schema supports the first scanning increment. The cleanup report contains its schema
 version, survey alias, bound inventory digest, proposed milestone, and one result per artifact.
 
 ## 13. Accepted residual risks
@@ -492,10 +547,11 @@ one:
 - `schema-key-NNNNNN`; or
 - `dynamic-key-NNNNNN`.
 
-The private alias map is persisted per survey. Later operations reuse it and refuse any remap or
-previously unseen key until a new approved mapping revision exists. Source keys never enter Git or
-Agent input. Unknown or ambiguous kinds, conflicting mappings, range exhaustion, and attempted
-literal keys are safety failures.
+A2 implements the redactor, locator-map schema, validators, and synthetic tests only. No real key is
+read and no private locator map is created in A2. The first scanning increment persists the map per
+survey, reuses it later, and refuses remaps or unseen keys until a new approved mapping revision
+exists. Source keys never enter Git or Agent input. Unknown or ambiguous kinds, conflicting
+mappings, range exhaustion, and attempted literal keys are safety failures.
 
 ## 15. Lifecycle preflight
 
@@ -567,8 +623,10 @@ New private-contract schemas:
 
 ```text
 src/private/app/celesphonia-modifier/docs/.copilot/schemas/atlas-v0/
+  copy-plan.schema.json
   cleanup-preflight-report.schema.json
   copy-receipt.schema.json
+  intake-approval-binding.schema.json
   locator-alias-map.schema.json
   source-root-map.schema.json
 ```
@@ -589,9 +647,12 @@ Direct tests cover:
 - DOS-path normalization, containment, fixed-drive policy, and component reparse refusal;
 - complete discovery accounting and every A0 terminal rule;
 - denial of stale, pending, rejected, superseded, or digest-mismatched manifests;
+- root-map, approval-binding, copy-plan, predecessor, artifact, and destination continuity;
 - per-file copy fidelity, destination read-only state, directory reconciliation, and final signals;
 - deterministic injected sharing, short-read, flush, move, hash, cancellation, and cleanup failures;
 - interruption at each private-document publication and inventory-replacement seam;
+- persisted-state outcomes before, between, and after the two qualification signals, including
+  standard-output failure after qualification;
 - refusal to use an incomplete or mismatched final snapshot;
 - no live-source deletion, modification, decode, or scan;
 - stable two-pass locator aliases and every literal bypass;
@@ -666,12 +727,13 @@ A2 is accepted only when:
 13. all 21 save copies and 496 definition copies have matching private provenance;
 14. source metadata remains stable while each handle is held and directory entry sets remain stable;
 15. qualification requires both a final copy receipt and canonical inventory agreement;
-16. a failed or interrupted intake leaves no usable snapshot and removes no unowned path;
+16. interruption before joint agreement leaves an unusable partial state; joint agreement remains
+    qualified even if process success is not reported; no failure removes an unowned path;
 17. later-use revalidation is required because read-only snapshots are not immutable;
 18. locator redaction cannot emit or remap a literal source key;
 19. lifecycle preflight is non-mutating and reports every inventoried artifact;
-20. no private path, hash, name, value, source text, request, or granular count enters process
-    output or Git; approved aggregate A0/A2 counts may enter Git but never process output;
+20. no private path, hash, name, value, source text, request, or unapproved count enters process
+    output or Git; section 20 lists the only repository-safe aggregate counts;
 21. every command result follows the declared fixed bytes, exit code, and A1 precedence;
 22. locked restore, build, formatting, targeted tests, apphost checks, and HK pass;
 23. source-safety review reports `No findings` before private discovery;
@@ -719,6 +781,12 @@ No retained command transcript may contain a private path, hash, manifest, reque
 inventory, source name, granular count, or copy. Repository-safe aggregate acceptance counts are
 recorded in review documents, not emitted by a command.
 
+The only counts permitted in Git are: save denominator 23, included saves 21, excluded Steam
+metadata 2, definition denominator 580, included definitions 496, excluded definitions 84, copy
+successes 21 and 496, copy failures 0, unsupported/unreadable 0, unexplained preflight artifacts 0,
+and deletions 0. The only safe difference categories are root set, denominator, selection rule,
+public build, unsupported/unreadable, or no difference. Every name and every other count is private.
+
 The plan-review record path is `../reviews/atlas-v0-a2-plan-review.md`. It binds:
 
 - the final plan commit and tree;
@@ -729,8 +797,9 @@ The plan-review record path is `../reviews/atlas-v0-a2-plan-review.md`. It binds
 - plan validation outcomes; and
 - the implementation diff base.
 
-The reviewed plan candidate contains this plan, the A0 contract, Atlas execution plan, Save
-Semantic Atlas plan, and `.copilot` index. No other path belongs to the plan candidate.
+The reviewed plan candidate contains this plan, the A0 contract, A0 scope-review lifecycle banner,
+Atlas execution plan, Save Semantic Atlas plan, and `.copilot` index. No other path belongs to the
+plan candidate.
 
 Every plan-review, source-safety, approval, and release record follows sections 16 and 17 of
 `project-operating-model.md`: independently review its exact staged blob, commit it unchanged as a
@@ -741,9 +810,9 @@ record-only child, push it, and verify parent, path, content, and upstream.
 Expected private outputs are:
 
 - create-new pending and approved manifest revisions;
-- request documents and live-discovery metadata;
+- request documents, live-discovery metadata, approval bindings, and copy plans;
 - save and definition snapshots;
-- private provenance, inventory, completion signals, and locator maps;
+- private receipts, inventory, and completion signals;
 - cleanup-preflight report; and
 - unusable incomplete evidence retained only when removal fails.
 

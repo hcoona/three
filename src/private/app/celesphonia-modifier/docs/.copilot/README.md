@@ -37,7 +37,8 @@ save discovery, decoding, semantic, write, WinUI, network, or private-data behav
 ## Current gate evidence
 
 - `reviews/atlas-v0-a0-scope-review.md` is the repository-safe record of the approved Atlas V0 A0
-  project-leader decision.
+  project-leader decision. Its forward-looking identity and immutable-copy wording is partially
+  superseded only when the verified A2 plan-review record activates the trusted-local profile.
 - `reviews/atlas-v0-a0-release-gate.md` is created only after an exact committed A0 candidate
   receives an independent `No findings` result. That record establishes A0 completion.
 - `reviews/atlas-v0-a1-plan-review.md` is created only after the exact A1 plan receives an

@@ -2,6 +2,13 @@
 
 **Status:** Approved
 
+> **Lifecycle: Partially superseded**
+> The identity/link qualification wording in section 2 and the immutable-copy wording in section 5
+> remain historical evidence of the A0 decision. When the exact
+> `../plans/atlas-v0-a2-intake-safety-plan.md` plan-review record is verified, its
+> `trusted-local-filesystem/v1` profile replaces those forward-looking requirements. Git history
+> preserves this record's originally approved bytes; this banner records only later lifecycle.
+
 **Decision:** Project leader approved A0 on July 17, 2026
 
 **Decision authority:** Project leader
