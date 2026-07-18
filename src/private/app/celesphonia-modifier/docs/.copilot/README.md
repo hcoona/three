@@ -2,7 +2,7 @@
 
 > **Warning**
 > `research-tools/save-research-decoder.js` is a research-only tool.
-> Run it only on immutable copies in the ignored `.private/` workspace.
+> Run it only on qualified private snapshots after provenance revalidation.
 > Its inputs and outputs can contain private save data and must never be committed.
 
 This folder contains Copilot-assisted planning, remediation, and research artifacts for the
@@ -72,8 +72,8 @@ normative perspective taxonomy.
 - `research/game-and-save-format-summary.md` is a non-sensitive supporting summary derived from
   the main plan.
 - `research-tools/save-research-decoder.js` is a research-only source copy for private analysis.
-  Use only immutable copies in the ignored `.private/` workspace, never the live save directory,
-  and do not commit generated outputs.
+  Use only qualified private snapshots after provenance revalidation, never a live save or the
+  pre-A2 preservation snapshot, and do not commit generated outputs.
 
 ## Document lifecycle
 

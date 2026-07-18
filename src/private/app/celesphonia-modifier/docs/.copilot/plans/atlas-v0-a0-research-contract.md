@@ -6,6 +6,12 @@
 
 **Governing plan:** `atlas-v0-execution-plan.md`, Increment A0
 
+> **Proposed A2 partial supersession**
+> When the exact `atlas-v0-a2-intake-safety-plan.md` plan-review record is verified, that plan
+> supersedes only this contract's forward-looking references to an A2 identity harness and
+> preservation-snapshot requalification. All A0 scope, privacy, lifecycle, and reopening rules
+> remain normative.
+
 **Execution boundary:** Read-only discovery and documentation, except for the single
 project-leader-authorized preservation snapshot in section 6.1; no decoding
 
@@ -159,12 +165,12 @@ Every manifest, copy, decoded output, evidence payload, Agent envelope, and prov
 this workspace is private. Repository-safe canonical outputs are reviewed here before being
 copied into Git.
 
-### 6.1 Pre-A2 preservation snapshot
+### 6.1 Preservation snapshot created before A2
 
-One preservation snapshot may be created before the A2 C# identity harness exists, solely to
-freeze the current save state before later gameplay changes it. This is the only pre-A2 copy
-exception and requires both a committed and pushed version of this contract and explicit
-project-leader direction to preserve the current saves.
+One preservation snapshot was permitted before the A2 C# intake harness, solely to freeze the
+then-current save state before later gameplay changed it. This was the only pre-A2 copy exception
+and required both a committed and pushed version of this contract and explicit project-leader
+direction.
 
 The snapshot:
 
@@ -178,13 +184,14 @@ The snapshot:
 - marks copied save files read-only;
 - captures into a unique timestamped `.incomplete` directory;
 - writes a schema-valid private completion manifest only after every check passes;
-- atomically renames the completed directory to its immutable final name;
+- atomically renames the completed directory to its stable final name;
 - removes only the newly created incomplete directory after any failure; and
 - records qualification as `preservation-unqualified`.
 
 The preservation snapshot cannot satisfy A2, cannot enter the Atlas corpus automatically, and
-cannot establish writable compatibility. A2 creates a new qualified immutable copy under the
-separately approved trust profile; it does not promote this preservation snapshot.
+cannot establish writable compatibility. It remains permanently `preservation-unqualified`. A2
+creates new qualified read-only snapshots under its separately approved trust profile and never
+promotes or requalifies this preservation snapshot.
 
 The private completion manifest conforms to
 `../schemas/atlas-v0/preservation-snapshot-manifest.schema.json`. The final directory name plus that
@@ -205,10 +212,9 @@ Every private artifact inventory entry records:
 - current status; and
 - verification method.
 
-An artifact alias identifies one custody object: immutable bytes or a directory snapshot, or one
+An artifact alias identifies one custody object: preserved bytes, a directory snapshot, or one
 revision-managed logical record at a canonical private path. A revision-managed record retains its
-alias when its manifest revision changes; separately retained historical bytes receive a new
-alias.
+alias when its manifest revision changes; separately retained historical bytes receive a new alias.
 
 `lineageAliases` lists only direct inventoried inputs or predecessors from which the entry was
 derived. Direction is derived artifact to source or successor revision to predecessor revision.
@@ -220,8 +226,8 @@ The lifecycle classes are:
 | Class                                 | Last use                                  | Disposition                                                                                    |
 | ------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | Live discovery metadata               | A2 copy verification                      | Retain private manifest; never copy content into Git                                           |
-| Immutable save copies                 | A8 private repeatability review           | Delete during A8 final cleanup, before release review                                          |
-| Included definition copies            | A6 source-correlation review              | Delete during A8 final cleanup, before release review                                          |
+| Qualified read-only save snapshots    | A8 private repeatability review           | Delete during A8 final cleanup, before release review                                          |
+| Included definition snapshots         | A6 source-correlation review              | Delete during A8 final cleanup, before release review                                          |
 | Decoded save data                     | A6 private evidence and A8 privacy review | Delete during A8 final cleanup, before release review                                          |
 | Private correlation evidence          | A8 evidence audit                         | Delete during A8 final cleanup unless a new approved policy retains it                         |
 | Agent envelopes                       | A8 Agent-egress audit                     | Delete during A8 final cleanup, before release review                                          |
@@ -386,9 +392,9 @@ The project leader approved:
 This approval satisfies A0's required human confirmation and approves research scope only. A0
 completes, and A1 becomes eligible to begin, only after the independent release gate reviews an
 exact committed candidate and its repository-safe record is persisted. Approval does not authorize
-copying until the A2 identity checks exist, except for the preservation-only process in section 6.1
-under separate explicit project-leader direction. It does not authorize decoding, semantic claims,
-or writes.
+copying until the separately approved A2 intake checks exist, except for the historical
+preservation-only process in section 6.1 under separate explicit project-leader direction. It does
+not authorize decoding, semantic claims, or writes.
 
 ## 13. A0 release handoff and reopening
 
@@ -401,7 +407,7 @@ After the independent release gate passes, another contributor continues from co
 3. verifying the persisted plan commit and clean worktree;
 4. locating the approved `atlas-intake/v2` revision 3 manifest and preservation snapshot under the
    tracked project's ignored `.private\atlas-v0` workspace;
-5. treating the preservation snapshot as `preservation-unqualified` until A2 revalidates it; and
+5. treating the preservation snapshot as permanently `preservation-unqualified`; and
 6. beginning A1 only from its separately committed and pushed execution plan.
 
 The contributor verifies the release record's candidate commit, tree, first-parent relationship,

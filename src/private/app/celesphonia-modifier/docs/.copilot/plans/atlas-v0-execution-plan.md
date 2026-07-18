@@ -165,9 +165,9 @@ exist.
 
 - Read-only live discovery command.
 - Human-reviewable discovery manifest.
-- Immutable-copy command and private provenance map.
+- Qualified read-only snapshot command and private provenance map.
 - Trusted-local-filesystem preflight and copy-verification checks.
-- Private-workspace preflight and final-cleanup command.
+- Non-mutating private-workspace lifecycle preflight.
 - Locator-segment redaction classifier.
 
 ### Acceptance criteria
@@ -181,8 +181,7 @@ exist.
 - Every discovered live file and installed definition reaches one terminal intake status.
 - `steam_autocloud.vdf` is always excluded.
 - Dynamic locator segments are aliased before they can enter a canonical record.
-- Cleanup supports preflight listing and final attestation but does not delete evidence before
-  its declared last-use milestone.
+- Lifecycle preflight reports eligibility without mutation; final deletion remains deferred to A8.
 
 ### Stop conditions
 
