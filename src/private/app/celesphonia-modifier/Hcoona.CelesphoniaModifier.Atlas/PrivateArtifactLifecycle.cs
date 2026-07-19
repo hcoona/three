@@ -269,44 +269,25 @@ public static class PrivateArtifactLifecycle
 
     internal static string EvaluateLifecycleResult(
         AtlasPrivateArtifactEntry artifact,
-        string proposedMilestone)
-    {
-        if (!StringComparer.Ordinal.Equals(
-                artifact.Status,
-                AtlasIntakeContracts.LastUseCompleteArtifactStatus)
-            && !StringComparer.Ordinal.Equals(
-                artifact.Status,
-                AtlasIntakeContracts.DeletionPendingArtifactStatus))
-        {
-            return "blocked-status";
-        }
-
-        if (!StringComparer.Ordinal.Equals(
-                artifact.PlannedDisposition,
-                AtlasIntakeContracts.DeleteDisposition))
-        {
-            return "blocked-disposition";
-        }
-
-        if (AtlasIntakeContracts.AtlasMilestoneOrder[proposedMilestone]
-            < AtlasIntakeContracts.AtlasMilestoneOrder[artifact.LastUseMilestone])
-        {
-            return "blocked-before-last-use";
-        }
-
-        if (!StringComparer.Ordinal.Equals(
-                artifact.ExpiryCondition,
-                "after:" + artifact.LastUseMilestone))
-        {
-            return "indeterminate-expiry";
-        }
-
-        return "eligible-for-human-review";
-    }
+        string proposedMilestone) =>
+        AtlasIntakeContracts.EvaluateCleanupPreflightResult(
+            artifact.ArtifactClass,
+            artifact.Status,
+            artifact.PlannedDisposition,
+            artifact.LastUseMilestone,
+            artifact.ExpiryCondition,
+            artifact.Qualification,
+            proposedMilestone);
 
     internal static AtlasPrivateArtifactInventoryDocument CreatePreflightInventory(
         AtlasPrivateArtifactInventoryDocument priorInventory,
-        PreflightPhaseAliases aliases) =>
+        PreflightPhaseAliases aliases)
+    {
+        string predecessorStateAlias = TrustedLocalCopy.TryFindPhaseAlias(
+                priorInventory,
+                AtlasIntakeContracts.State3Purpose)
+            ?? throw new AtlasSafetyException("The qualified predecessor state is missing.");
+        return
         priorInventory with
         {
             Artifacts =
@@ -332,7 +313,7 @@ public static class PrivateArtifactLifecycle
                     aliases.StateAlias,
                     AtlasIntakeContracts.PrivateProvenanceArtifactClass,
                     AtlasIntakeContracts.State4Purpose,
-                    [aliases.ReportAlias],
+                    [predecessorStateAlias, aliases.ReportAlias, aliases.InventoryBackupAlias],
                     "A8",
                     AtlasIntakeContracts.RetainPrivateDisposition,
                     AtlasIntakeContracts.IntakeStateSchemaVersion),
@@ -346,6 +327,7 @@ public static class PrivateArtifactLifecycle
                     "inventory-backup:preflighted"),
             ],
         };
+    }
 
     internal static AtlasIntakeStateDocument CreatePreflightedState(
         AtlasCleanupPreflightRequest request,

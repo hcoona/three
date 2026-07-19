@@ -45,12 +45,49 @@ public sealed class TrustedLocalCopyTests
             state.Document.FinalCopyRootRelativePath);
         Assert.True(Directory.Exists(workspace.Layout.CanonicalFinalCopyPath));
         Assert.False(Directory.Exists(workspace.Layout.CanonicalIncompleteCopyPath));
-        Assert.Contains(
-            inventory.Document.Artifacts,
+        AtlasPrivateArtifactEntry receiptArtifact = inventory.Document.Artifacts.Single(
             artifact => artifact.Purpose == AtlasIntakeContracts.CopyReceiptPurpose);
-        Assert.Contains(
-            inventory.Document.Artifacts,
+        AtlasPrivateArtifactEntry state3Artifact = inventory.Document.Artifacts.Single(
             artifact => artifact.Purpose == AtlasIntakeContracts.State3Purpose);
+        AtlasPrivateArtifactEntry state2Artifact = inventory.Document.Artifacts.Single(
+            artifact => artifact.Purpose == AtlasIntakeContracts.State2Purpose);
+        Assert.Equal(
+            [state2Artifact.ArtifactAlias, receiptArtifact.ArtifactAlias],
+            state3Artifact.LineageAliases);
+    }
+
+    [Fact]
+    public async Task CopyAsyncCompletedRerunReturnsWhenLiveSourcesAreMissing()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareApprovedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        await TrustedLocalCopy.CopyAsync(
+            workspace.Layout.CanonicalCopyRequestPath,
+            TestContext.Current.CancellationToken);
+        Directory.Delete(workspace.GameRootPath, recursive: true);
+
+        await TrustedLocalCopy.CopyAsync(
+            workspace.Layout.CanonicalCopyRequestPath,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(File.Exists(workspace.Layout.CanonicalQualifiedStatePath));
+    }
+
+    [Fact]
+    public async Task CopyAsyncCompletedRerunReturnsWithoutLiveSourceAccess()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareApprovedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        await TrustedLocalCopy.CopyAsync(
+            workspace.Layout.CanonicalCopyRequestPath,
+            TestContext.Current.CancellationToken);
+
+        await TrustedLocalCopy.CopyAsync(
+            workspace.Layout.CanonicalCopyRequestPath,
+            AtlasTestSupport.CreateLiveSourceAccessThrowingIo(workspace),
+            TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -275,6 +312,58 @@ public sealed class TrustedLocalCopyTests
         Assert.Equal(0, liveSourceOpenCount);
         Assert.False(Directory.Exists(workspace.Layout.CanonicalIncompleteCopyPath));
         Assert.True(File.Exists(workspace.Layout.CanonicalQualifiedStatePath));
+    }
+
+    [Fact]
+    public async Task CopyAsyncPreservesRecoverableIncompleteDirectoryWhenCanceledMidHash()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareApprovedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        using CancellationTokenSource source = new();
+        bool moveDirectoryCalled = false;
+        bool cancelled = false;
+        string incompleteReceiptStagingPath = Path.Combine(
+            workspace.Layout.CanonicalIncompleteCopyPath,
+            Path.GetFileName(AtlasDiscovery.GetStagingPath(
+                workspace.Layout.CanonicalCopyReceiptPath,
+                AtlasIntakeContracts.QualifiedPhase)));
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            openFile: (path, mode, access, share, options) =>
+            {
+                Stream stream = AtlasIoSeams.Default.OpenFile(path, mode, access, share, options);
+                if (!cancelled
+                    && mode == FileMode.Open
+                    && access == FileAccess.Read
+                    && AtlasDiscovery.ContainsPath(
+                        workspace.Layout.CanonicalIncompleteCopyPath,
+                        path)
+                    && File.Exists(incompleteReceiptStagingPath)
+                    && !Path.GetFileName(path).Contains("copy-receipt", StringComparison.Ordinal))
+                {
+                    cancelled = true;
+                    return new CancelAfterFirstReadStream(stream, source);
+                }
+
+                return stream;
+            },
+            moveDirectory: (currentSource, destination) =>
+            {
+                moveDirectoryCalled = true;
+                AtlasIoSeams.Default.MoveDirectory(currentSource, destination);
+            });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => TrustedLocalCopy.CopyAsync(
+                workspace.Layout.CanonicalCopyRequestPath,
+                io,
+                source.Token).AsTask());
+
+        Assert.False(moveDirectoryCalled);
+        Assert.True(Directory.Exists(workspace.Layout.CanonicalIncompleteCopyPath));
+        Assert.False(Directory.Exists(workspace.Layout.CanonicalFinalCopyPath));
+        Assert.False(File.Exists(workspace.Layout.CanonicalCopyReceiptPath));
+        Assert.False(File.Exists(workspace.Layout.CanonicalQualifiedStatePath));
     }
 
     [Fact]
@@ -1020,6 +1109,27 @@ public sealed class TrustedLocalCopyTests
             }
 
             await InnerStream.WriteAsync(copy, cancellationToken);
+        }
+    }
+
+    private sealed class CancelAfterFirstReadStream(
+        Stream innerStream,
+        CancellationTokenSource source) : DelegatingStream(innerStream)
+    {
+        private bool cancelled;
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            int read = await InnerStream.ReadAsync(buffer, cancellationToken);
+            if (!cancelled && read > 0)
+            {
+                cancelled = true;
+                source.Cancel();
+            }
+
+            return read;
         }
     }
 

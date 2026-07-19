@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Hcoona.CelesphoniaModifier.Atlas;
 using Xunit;
@@ -7,10 +8,6 @@ namespace Hcoona.CelesphoniaModifier.Atlas.Tests;
 
 public sealed class AtlasDiscoveryTests
 {
-    private const string OverlappingIncludeGroupId = "z-json-include";
-    private const string OverlappingExcludeGroupId = "a-data-exclude";
-    private const string OverlappingNotesGroupId = "m-notes-exclude";
-
     public static TheoryData<
         string,
         Func<AtlasPrivateArtifactInventoryDocument, AtlasPrivateArtifactInventoryDocument>>
@@ -109,6 +106,88 @@ public sealed class AtlasDiscoveryTests
         }
     }
 
+    public static TheoryData<string, Action<JsonObject>> FrozenA0ManifestMutationCases
+    {
+        get
+        {
+            TheoryData<string, Action<JsonObject>> data = [];
+            data.Add(
+                "save-root-order",
+                json =>
+                {
+                    JsonArray saveRoots = (JsonArray)json["saveRoots"]!;
+                    SwapArrayItems(saveRoots, 0, 1);
+                });
+            data.Add(
+                "save-root-role",
+                json =>
+                    ((JsonObject)((JsonArray)json["saveRoots"]!)[0]!)["locationRole"] =
+                        AtlasIntakeContracts.WebRootSaveRole);
+            data.Add(
+                "save-entry-order",
+                json =>
+                {
+                    JsonArray saveEntries = (JsonArray)json["saveEntries"]!;
+                    SwapArrayItems(saveEntries, 0, 1);
+                });
+            data.Add(
+                "save-entry-slot",
+                json => ((JsonObject)((JsonArray)json["saveEntries"]!)[7]!)["slotNumber"] = 8);
+            data.Add(
+                "definition-group-id",
+                json =>
+                    ((JsonObject)((JsonArray)json["definitionGroups"]!)[0]!)["groupId"] =
+                        "unexpected-group");
+            data.Add(
+                "definition-group-rule",
+                json =>
+                    ((JsonObject)((JsonArray)json["definitionGroups"]!)[0]!)["selectionRule"] =
+                        "package-lock.json");
+            data.Add(
+                "definition-group-order",
+                json =>
+                {
+                    JsonArray groups = (JsonArray)json["definitionGroups"]!;
+                    SwapArrayItems(groups, 6, 7);
+                });
+            return data;
+        }
+    }
+
+    public static TheoryData<
+        string,
+        Func<AtlasPrivateArtifactInventoryDocument, AtlasPrivateArtifactInventoryDocument>>
+        InvalidConfirmationRecoveryAliasCases
+    {
+        get
+        {
+            TheoryData<
+                string,
+                Func<AtlasPrivateArtifactInventoryDocument,
+                    AtlasPrivateArtifactInventoryDocument>> data = [];
+            data.Add(
+                "swapped-request-manifest",
+                inventory => SwapRecoveryAliases(
+                    inventory,
+                    AtlasIntakeContracts.ConfirmRequestPurpose,
+                    AtlasIntakeContracts.ManifestRevision5Purpose));
+            data.Add(
+                "forged-manifest",
+                inventory => ReplaceRecoveryAlias(
+                    inventory,
+                    AtlasIntakeContracts.ManifestRevision5Purpose,
+                    "private-artifact-900000",
+                    AtlasIntakeContracts.State2Purpose));
+            data.Add(
+                "skipped-cursor",
+                inventory => ReplaceRecoveryAlias(
+                    inventory,
+                    AtlasIntakeContracts.ApprovedInventoryBackupPurpose,
+                    "private-artifact-000009"));
+            return data;
+        }
+    }
+
     [Fact]
     public async Task DiscoverAsyncPublishesPendingManifestRootMapCopyPlanAndState()
     {
@@ -148,6 +227,13 @@ public sealed class AtlasDiscoveryTests
         Assert.Equal(
             AtlasIntakeContracts.AtlasToolValidationMethod,
             pendingManifest.Document.Validation.Method);
+        Assert.Equal(
+            AtlasIntakeContracts.GetExactFrozenDefinitionGroups()
+                .Select(static group => group.GroupId)
+                .ToArray(),
+            pendingManifest.Document.DefinitionGroups
+                .Select(static group => group.GroupId)
+                .ToArray());
         Assert.Equal(2, rootMap.Document.SaveRoots.Length);
         Assert.Equal(
             AtlasIntakeContracts.ExactIncludedSaveCount
@@ -210,6 +296,74 @@ public sealed class AtlasDiscoveryTests
         Assert.True(File.Exists(workspace.Layout.CanonicalApprovedInventoryBackupPath));
     }
 
+    [Fact]
+    public async Task DiscoverAsyncCompletedRerunReturnsWhenLiveSourcesAreMissing()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+        Directory.Delete(workspace.GameRootPath, recursive: true);
+
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(File.Exists(workspace.Layout.CanonicalDiscoveredStatePath));
+    }
+
+    [Fact]
+    public async Task DiscoverAsyncCompletedRerunReturnsWithoutLiveSourceAccess()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            AtlasTestSupport.CreateLiveSourceAccessThrowingIo(workspace),
+            TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task ConfirmAsyncCompletedRerunReturnsWhenLiveSourcesAreMissing()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreateConfirmationRequest());
+        await AtlasDiscovery.ConfirmAsync(
+            workspace.Layout.CanonicalConfirmRequestPath,
+            TestContext.Current.CancellationToken);
+        Directory.Delete(workspace.GameRootPath, recursive: true);
+
+        await AtlasDiscovery.ConfirmAsync(
+            workspace.Layout.CanonicalConfirmRequestPath,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(File.Exists(workspace.Layout.CanonicalApprovedStatePath));
+    }
+
+    [Fact]
+    public async Task ConfirmAsyncCompletedRerunReturnsWithoutLiveSourceAccess()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreateConfirmationRequest());
+        await AtlasDiscovery.ConfirmAsync(
+            workspace.Layout.CanonicalConfirmRequestPath,
+            TestContext.Current.CancellationToken);
+
+        await AtlasDiscovery.ConfirmAsync(
+            workspace.Layout.CanonicalConfirmRequestPath,
+            AtlasTestSupport.CreateLiveSourceAccessThrowingIo(workspace),
+            TestContext.Current.CancellationToken);
+    }
+
     [Theory]
     [MemberData(nameof(ValidDiscoverySourceRootLayouts))]
     public async Task DiscoverAsyncAcceptsFrozenA0SourceRootLayout(string caseName)
@@ -240,47 +394,17 @@ public sealed class AtlasDiscoveryTests
     }
 
     [Fact]
-    public async Task OverlappingDefinitionRuleOrderPersistsThroughQualification()
+    public async Task ExactFrozenA0CorpusQualifiesThroughCopy()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
-        await RewriteBaselineManifestWithOverlappingDefinitionRulesAsync(
-            workspace,
-            reverseGroupOrder: false);
-
         await AtlasDiscovery.DiscoverAsync(
             workspace.Layout.CanonicalDiscoverRequestPath,
             TestContext.Current.CancellationToken);
-
-        AtlasLoadedDocument<AtlasCorpusIntakeManifest> pendingManifest =
-            await AtlasIntakeContracts.ReadManifestAsync(
-                workspace.Layout.CanonicalPendingManifestPath,
-                TestContext.Current.CancellationToken);
-        string[] expectedGroupOrder =
-        [
-            OverlappingIncludeGroupId,
-            OverlappingNotesGroupId,
-            OverlappingExcludeGroupId,
-        ];
-        Assert.Equal(
-            expectedGroupOrder,
-            pendingManifest.Document.DefinitionGroups
-                .Select(static group => group.GroupId)
-                .ToArray());
 
         workspace.WriteRequest(workspace.CreateConfirmationRequest());
         await AtlasDiscovery.ConfirmAsync(
             workspace.Layout.CanonicalConfirmRequestPath,
             TestContext.Current.CancellationToken);
-
-        AtlasLoadedDocument<AtlasCorpusIntakeManifest> approvedManifest =
-            await AtlasIntakeContracts.ReadManifestAsync(
-                workspace.Layout.CanonicalApprovedManifestPath,
-                TestContext.Current.CancellationToken);
-        Assert.Equal(
-            expectedGroupOrder,
-            approvedManifest.Document.DefinitionGroups
-                .Select(static group => group.GroupId)
-                .ToArray());
 
         workspace.WriteRequest(workspace.CreateCopyRequest());
         await TrustedLocalCopy.CopyAsync(
@@ -294,20 +418,23 @@ public sealed class AtlasDiscoveryTests
         Assert.Equal(AtlasIntakeContracts.QualifiedPhase, state.Document.Phase);
     }
 
-    [Fact]
-    public async Task DiscoverAsyncRejectsReversedOverlappingDefinitionRuleOrder()
+    [Theory]
+    [MemberData(nameof(FrozenA0ManifestMutationCases))]
+    public async Task DiscoverAsyncRejectsFrozenA0ManifestMutations(
+        string caseName,
+        Action<JsonObject> mutate)
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
-        await RewriteBaselineManifestWithOverlappingDefinitionRulesAsync(
-            workspace,
-            reverseGroupOrder: true);
+        await MutateBaselineManifestAsync(workspace, mutate);
 
-        AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
+        AtlasApprovalException exception = await Assert.ThrowsAsync<AtlasApprovalException>(
             () => AtlasDiscovery.DiscoverAsync(
                 workspace.Layout.CanonicalDiscoverRequestPath,
                 TestContext.Current.CancellationToken).AsTask());
 
-        Assert.Contains("classification changed", exception.Message, StringComparison.Ordinal);
+        Assert.NotNull(caseName);
+        Assert.False(File.Exists(workspace.Layout.CanonicalPendingManifestPath));
+        Assert.Contains("invalid", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -937,6 +1064,48 @@ public sealed class AtlasDiscoveryTests
                 .ToArray());
     }
 
+    [Theory]
+    [MemberData(nameof(InvalidConfirmationRecoveryAliasCases))]
+    public async Task ConfirmAsyncRejectsRecoveredConfirmationAliasMutations(
+        string caseName,
+        Func<AtlasPrivateArtifactInventoryDocument, AtlasPrivateArtifactInventoryDocument> mutate)
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreateConfirmationRequest());
+        bool failed = false;
+        AtlasIoSeams failingIo = AtlasTestSupport.CreateIo(
+            moveFile: (source, destination) =>
+            {
+                if (!failed
+                    && AtlasIntakeContracts.PathEquals(
+                        destination,
+                        workspace.Layout.CanonicalApprovedStatePath))
+                {
+                    failed = true;
+                    throw new IOException("synthetic confirmation state publication failure");
+                }
+
+                AtlasIoSeams.Default.MoveFile(source, destination);
+            });
+        await Assert.ThrowsAsync<IOException>(
+            () => AtlasDiscovery.ConfirmAsync(
+                workspace.Layout.CanonicalConfirmRequestPath,
+                failingIo,
+                TestContext.Current.CancellationToken).AsTask());
+        workspace.UpdateInventory(mutate);
+
+        AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.ConfirmAsync(
+                workspace.Layout.CanonicalConfirmRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.NotNull(caseName);
+        Assert.Contains("alias", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task DiscoverAsyncRejectsAmbiguousRecoveredAlias()
     {
@@ -1211,73 +1380,23 @@ public sealed class AtlasDiscoveryTests
             workspace.WebSaveRootPath);
     }
 
-    private static async Task RewriteBaselineManifestWithOverlappingDefinitionRulesAsync(
+    private static async Task MutateBaselineManifestAsync(
         AtlasSyntheticWorkspace workspace,
-        bool reverseGroupOrder)
+        Action<JsonObject> mutate)
     {
-        AtlasLoadedDocument<AtlasCorpusIntakeManifest> baselineManifest =
-            await AtlasIntakeContracts.ReadManifestAsync(
+        JsonObject json = (JsonNode.Parse(await File.ReadAllBytesAsync(
                 workspace.Layout.CanonicalBaselineManifestPath,
-                TestContext.Current.CancellationToken);
-        AtlasManifestDefinitionGroup[] definitionGroups = CreateOverlappingDefinitionGroups(
-            reverseGroupOrder);
-        AtlasManifestDefinitionEntry[] definitionEntries =
-            baselineManifest.Document.DefinitionEntries
-                .Select(entry => entry with
-                {
-                    GroupId = IsSyntheticDataDefinition(entry)
-                        ? OverlappingIncludeGroupId
-                        : OverlappingNotesGroupId,
-                    Decision = IsSyntheticDataDefinition(entry)
-                        ? AtlasIntakeContracts.IncludeDefinitionDecision
-                        : AtlasIntakeContracts.ExcludeDefinitionDecision,
-                })
-                .ToArray();
-        AtlasCorpusIntakeManifest updatedManifest = baselineManifest.Document with
-        {
-            DefinitionGroups = definitionGroups,
-            DefinitionEntries = definitionEntries,
-        };
-        await File.WriteAllBytesAsync(
+                TestContext.Current.CancellationToken))
+            ?.AsObject())
+            ?? throw new InvalidOperationException("The baseline manifest is required.");
+        mutate(json);
+        await File.WriteAllTextAsync(
             workspace.Layout.CanonicalBaselineManifestPath,
-            AtlasIntakeContracts.SerializeManifest(updatedManifest),
+            json.ToJsonString(new JsonSerializerOptions { WriteIndented = true }),
+            new UTF8Encoding(false),
             TestContext.Current.CancellationToken);
         workspace.WriteRequest(workspace.CreateDiscoveryRequest());
     }
-
-    private static AtlasManifestDefinitionGroup[] CreateOverlappingDefinitionGroups(
-        bool reverseGroupOrder)
-    {
-        AtlasManifestDefinitionGroup[] groups =
-        [
-            new AtlasManifestDefinitionGroup
-            {
-                GroupId = OverlappingIncludeGroupId,
-                SelectionRule = "www/**/*.json",
-                DiscoveredCount = AtlasIntakeContracts.ExactIncludedDefinitionCount,
-                Decision = AtlasIntakeContracts.IncludeDefinitionDecision,
-            },
-            new AtlasManifestDefinitionGroup
-            {
-                GroupId = OverlappingNotesGroupId,
-                SelectionRule = "www/notes/*.txt",
-                DiscoveredCount = AtlasIntakeContracts.ExactExcludedDefinitionCount,
-                Decision = AtlasIntakeContracts.ExcludeDefinitionDecision,
-            },
-            new AtlasManifestDefinitionGroup
-            {
-                GroupId = OverlappingExcludeGroupId,
-                SelectionRule = "www/data/*.json",
-                DiscoveredCount = 0,
-                Decision = AtlasIntakeContracts.ExcludeDefinitionDecision,
-            },
-        ];
-        return reverseGroupOrder ? [.. groups.Reverse()] : groups;
-    }
-
-    private static bool IsSyntheticDataDefinition(AtlasManifestDefinitionEntry entry) =>
-        AtlasIntakeContracts.NormalizeRelativePath(entry.RelativePath)
-            .StartsWith("www/data/", StringComparison.Ordinal);
 
     private static AtlasPrivateArtifactInventoryDocument ReplaceBaselineManifestArtifact(
         AtlasPrivateArtifactInventoryDocument inventory,
@@ -1293,6 +1412,85 @@ public sealed class AtlasDiscoveryTests
                         : artifact),
             ],
         };
+
+    private static AtlasPrivateArtifactInventoryDocument ReplaceRecoveryAlias(
+        AtlasPrivateArtifactInventoryDocument inventory,
+        string purpose,
+        string replacementAlias,
+        string? dependentPurpose = null) => inventory with
+        {
+            Artifacts =
+            [
+                .. inventory.Artifacts.Select(artifact =>
+                {
+                    if (StringComparer.Ordinal.Equals(artifact.Purpose, purpose))
+                    {
+                        return artifact with { ArtifactAlias = replacementAlias };
+                    }
+
+                    if (dependentPurpose is not null
+                        && StringComparer.Ordinal.Equals(artifact.Purpose, dependentPurpose))
+                    {
+                        return artifact with
+                        {
+                            LineageAliases =
+                            [
+                                .. artifact.LineageAliases.Select(lineageAlias =>
+                                    StringComparer.Ordinal.Equals(
+                                        lineageAlias,
+                                        inventory.Artifacts.Single(current =>
+                                            StringComparer.Ordinal.Equals(
+                                                current.Purpose,
+                                                purpose)).ArtifactAlias)
+                                        ? replacementAlias
+                                        : lineageAlias),
+                            ],
+                        };
+                    }
+
+                    return artifact;
+                }),
+            ],
+        };
+
+    private static AtlasPrivateArtifactInventoryDocument SwapRecoveryAliases(
+        AtlasPrivateArtifactInventoryDocument inventory,
+        string firstPurpose,
+        string secondPurpose)
+    {
+        AtlasPrivateArtifactEntry first = inventory.Artifacts.Single(artifact =>
+            StringComparer.Ordinal.Equals(artifact.Purpose, firstPurpose));
+        AtlasPrivateArtifactEntry second = inventory.Artifacts.Single(artifact =>
+            StringComparer.Ordinal.Equals(artifact.Purpose, secondPurpose));
+        return inventory with
+        {
+            Artifacts =
+            [
+                .. inventory.Artifacts.Select(artifact =>
+                {
+                    if (StringComparer.Ordinal.Equals(artifact.Purpose, firstPurpose))
+                    {
+                        return artifact with { ArtifactAlias = second.ArtifactAlias };
+                    }
+
+                    if (StringComparer.Ordinal.Equals(artifact.Purpose, secondPurpose))
+                    {
+                        return artifact with { ArtifactAlias = first.ArtifactAlias };
+                    }
+
+                    return artifact;
+                }),
+            ],
+        };
+    }
+
+    private static void SwapArrayItems(JsonArray array, int firstIndex, int secondIndex)
+    {
+        JsonNode? first = array[firstIndex]?.DeepClone();
+        JsonNode? second = array[secondIndex]?.DeepClone();
+        array[firstIndex] = second;
+        array[secondIndex] = first;
+    }
 
     private static string CreateTemporaryDirectory()
     {

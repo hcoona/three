@@ -263,7 +263,7 @@ public static class TrustedLocalCopy
                 throw new AtlasSafetyException("The incomplete copy directory is unusable.");
             }
 
-            ValidateCopiedFilesAgainstReceipt(
+            await ValidateCopiedFilesAgainstReceiptAsync(
                 layout.CanonicalIncompleteCopyPath,
                 stagedReceiptEvidence.Document,
                 io,
@@ -274,6 +274,7 @@ public static class TrustedLocalCopy
                 throw new AtlasSafetyException("The final copy path must not exist before rename.");
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             io.MoveDirectory(layout.CanonicalIncompleteCopyPath, layout.CanonicalFinalCopyPath);
             renamedToFinal = true;
             finalReceiptStagingPath = Path.Combine(
@@ -288,7 +289,7 @@ public static class TrustedLocalCopy
                 throw new AtlasSafetyException("The final copy directory is unusable.");
             }
 
-            ValidateCopiedFilesAgainstReceipt(
+            await ValidateCopiedFilesAgainstReceiptAsync(
                 layout.CanonicalFinalCopyPath,
                 stagedReceiptEvidence.Document,
                 io,
@@ -588,11 +589,12 @@ public static class TrustedLocalCopy
                 copyPlan,
                 aliases,
                 incompleteReceipt.Document);
-            ValidateCopiedFilesAgainstReceipt(
+            await ValidateCopiedFilesAgainstReceiptAsync(
                 layout.CanonicalIncompleteCopyPath,
                 incompleteReceipt.Document,
                 io,
-                cancellationToken);
+                cancellationToken)
+                .ConfigureAwait(false);
             return IncompleteCopyEvidenceState.Recoverable;
         }
         catch (OperationCanceledException)
@@ -657,11 +659,12 @@ public static class TrustedLocalCopy
                 copyPlan,
                 aliases,
                 incompleteReceipt.Document);
-            ValidateCopiedFilesAgainstReceipt(
+            await ValidateCopiedFilesAgainstReceiptAsync(
                 layout.CanonicalIncompleteCopyPath,
                 incompleteReceipt.Document,
                 io,
                 cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             io.MoveDirectory(layout.CanonicalIncompleteCopyPath, layout.CanonicalFinalCopyPath);
             hasIncomplete = false;
             hasFinal = true;
@@ -716,7 +719,7 @@ public static class TrustedLocalCopy
             copyPlan,
             aliases,
             receipt.Document);
-        ValidateCopiedFilesAgainstReceipt(
+        await ValidateCopiedFilesAgainstReceiptAsync(
             layout.CanonicalFinalCopyPath,
             receipt.Document,
             io,
@@ -904,6 +907,10 @@ public static class TrustedLocalCopy
         CopyPhaseAliases aliases,
         string receiptPath)
     {
+        string predecessorStateAlias = TryFindPhaseAlias(
+                priorInventory,
+                AtlasIntakeContracts.State2Purpose)
+            ?? throw new AtlasSafetyException("The approved predecessor state is missing.");
         List<AtlasPrivateArtifactEntry> destinationEntries = [];
         foreach (AtlasCopyPlanEntry entry in copyPlan.Entries)
         {
@@ -950,7 +957,7 @@ public static class TrustedLocalCopy
                     aliases.StateAlias,
                     AtlasIntakeContracts.PrivateProvenanceArtifactClass,
                     AtlasIntakeContracts.State3Purpose,
-                    [aliases.ReceiptAlias],
+                    [predecessorStateAlias, aliases.ReceiptAlias],
                     "A8",
                     AtlasIntakeContracts.RetainPrivateDisposition,
                     AtlasIntakeContracts.IntakeStateSchemaVersion),
@@ -1080,7 +1087,7 @@ public static class TrustedLocalCopy
         }
     }
 
-    internal static void ValidateCopiedFilesAgainstReceipt(
+    internal static async ValueTask ValidateCopiedFilesAgainstReceiptAsync(
         string finalCopyPath,
         AtlasCopyReceiptDocument receipt,
         AtlasIoSeams io,
@@ -1088,12 +1095,14 @@ public static class TrustedLocalCopy
     {
         foreach (AtlasCopyReceiptEntry entry in receipt.Entries)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             string destinationPath = Path.Combine(
                 finalCopyPath,
                 entry.DestinationRelativePath.Replace('/', Path.DirectorySeparatorChar));
             AtlasDiscovery.ValidateExistingOrdinaryFile(destinationPath, io);
 
-            string sha256 = HashFile(destinationPath, io, cancellationToken);
+            string sha256 = await HashFileAsync(destinationPath, io, cancellationToken)
+                .ConfigureAwait(false);
             long length = io.GetLength(destinationPath);
             FileAttributes attributes = io.GetAttributes(destinationPath);
             if (!StringComparer.Ordinal.Equals(entry.SourceSha256, sha256)
@@ -1396,7 +1405,8 @@ public static class TrustedLocalCopy
             }
         }
         string sourceSha256 = Convert.ToHexStringLower(hash.GetHashAndReset());
-        string destinationSha256 = HashFile(destinationPath, io, cancellationToken);
+        string destinationSha256 = await HashFileAsync(destinationPath, io, cancellationToken)
+            .ConfigureAwait(false);
         long destinationLength = io.GetLength(destinationPath);
         DateTimeOffset sourceLastWriteAfter = io.GetLastWriteTimeUtc(source.AbsolutePath);
         if (bytesCopied != sourceLength
@@ -1467,10 +1477,11 @@ public static class TrustedLocalCopy
             throw new AtlasSafetyException("The tracked source changed while it was hashed.");
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         return Convert.ToHexStringLower(hash.GetHashAndReset());
     }
 
-    internal static string HashFile(
+    internal static async ValueTask<string> HashFileAsync(
         string absolutePath,
         AtlasIoSeams io,
         CancellationToken cancellationToken)
@@ -1481,7 +1492,31 @@ public static class TrustedLocalCopy
             FileAccess.Read,
             FileShare.Read,
             FileOptions.SequentialScan);
-        return Convert.ToHexStringLower(SHA256.HashData(stream));
+        using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(81920);
+        try
+        {
+            while (true)
+            {
+                int read = await stream.ReadAsync(
+                        buffer.AsMemory(0, buffer.Length),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                hash.AppendData(buffer, 0, read);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
     }
 
     internal static async ValueTask<AtlasLoadedDocument<AtlasCopyReceiptDocument>> LoadReceiptAsync(

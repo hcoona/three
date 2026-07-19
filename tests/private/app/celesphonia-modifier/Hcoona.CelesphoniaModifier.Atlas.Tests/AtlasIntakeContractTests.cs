@@ -21,6 +21,23 @@ public sealed class AtlasIntakeContractTests
         }
     }
 
+    public static TheoryData<string, string> RequestOperationDeviceCases
+    {
+        get
+        {
+            TheoryData<string, string> data = [];
+            foreach (string commandName in
+                     new[] { "discover", "confirm", "copy", "cleanup-preflight" })
+            {
+                data.Add(commandName, "NUL");
+                data.Add(commandName, "COM¹");
+                data.Add(commandName, "LPT²");
+            }
+
+            return data;
+        }
+    }
+
     [Fact]
     public async Task DiscoveryRequestRejectsDuplicatePropertyOnly()
     {
@@ -129,6 +146,9 @@ public sealed class AtlasIntakeContractTests
         Assert.False(AtlasIntakeContracts.IsCanonicalSurveyRelativePath(":x"));
         Assert.False(AtlasIntakeContracts.IsCanonicalSurveyRelativePath("x:"));
         Assert.False(AtlasIntakeContracts.IsCanonicalSurveyRelativePath("C:foo"));
+        Assert.False(AtlasIntakeContracts.IsCanonicalSurveyRelativePath("COM¹"));
+        Assert.False(AtlasIntakeContracts.IsCanonicalSurveyRelativePath("com².txt"));
+        Assert.False(AtlasIntakeContracts.IsCanonicalSurveyRelativePath("logs/LPT³.backup"));
     }
 
     [Fact]
@@ -247,9 +267,10 @@ public sealed class AtlasIntakeContractTests
     }
 
     [Theory]
-    [MemberData(nameof(RequestOperationNames))]
+    [MemberData(nameof(RequestOperationDeviceCases))]
     public async Task OperationsRejectDeviceComponentInCanonicalRequestPathBeforeReading(
-        string commandName)
+        string commandName,
+        string deviceComponent)
     {
         int readCount = 0;
         AtlasIoSeams io = AtlasTestSupport.CreateIo(
@@ -258,9 +279,11 @@ public sealed class AtlasIntakeContractTests
                 readCount++;
                 return ValueTask.FromResult(Array.Empty<byte>());
             });
-        string requestPath = CreateCanonicalRequestPathWithDeviceComponent(commandName);
+        string requestPath = CreateCanonicalRequestPathWithDeviceComponent(
+            commandName,
+            deviceComponent);
 
-        await Assert.ThrowsAsync<AtlasSafetyException>(
+        await Assert.ThrowsAsync<AtlasRequestException>(
             () => RunRequestOperationAsync(
                 commandName,
                 requestPath,
@@ -560,7 +583,7 @@ public sealed class AtlasIntakeContractTests
                     ["verificationMethod"] =
                         AtlasIntakeContracts.TrustedLocalFilesystemProfile
                         + ";receipt:private-artifact-999998",
-                    ["qualification"] = null,
+                    ["qualification"] = "invalid-save-copy-qualification",
                 });
             });
     }
@@ -628,6 +651,159 @@ public sealed class AtlasIntakeContractTests
                 Assert.False(string.IsNullOrWhiteSpace(result.ExpiryCondition));
             });
         Assert.Equal("indeterminate-expiry", report.Results[0].Result);
+    }
+
+    [Fact]
+    public async Task StateDocumentsRejectBindingPathSwaps()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreateConfirmationRequest());
+        await AtlasDiscovery.ConfirmAsync(
+            workspace.Layout.CanonicalConfirmRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        await TrustedLocalCopy.CopyAsync(
+            workspace.Layout.CanonicalCopyRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreatePreflightRequest());
+        await PrivateArtifactLifecycle.CleanupPreflightAsync(
+            workspace.Layout.CanonicalCleanupPreflightRequestPath,
+            TestContext.Current.CancellationToken);
+
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalDiscoveredStatePath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasApprovalException),
+            json => SwapBindingRelativePaths(json, "documentBindings", 0, 1),
+            TestContext.Current.CancellationToken);
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalDiscoveredStatePath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasApprovalException),
+            json => SwapBindingRelativePaths(json, "artifactBindings", 0, 1),
+            TestContext.Current.CancellationToken);
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalApprovedStatePath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasApprovalException),
+            json => SwapBindingRelativePaths(json, "documentBindings", 0, 1),
+            TestContext.Current.CancellationToken);
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalApprovedStatePath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasApprovalException),
+            json => SwapBindingRelativePaths(json, "artifactBindings", 0, 1),
+            TestContext.Current.CancellationToken);
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalQualifiedStatePath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasApprovalException),
+            json => SwapBindingRelativePaths(json, "documentBindings", 0, 4),
+            TestContext.Current.CancellationToken);
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalQualifiedStatePath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasApprovalException),
+            json => SwapBindingRelativePaths(json, "artifactBindings", 0, 1),
+            TestContext.Current.CancellationToken);
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalPreflightedStatePath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasApprovalException),
+            json => SwapBindingRelativePaths(json, "documentBindings", 4, 5),
+            TestContext.Current.CancellationToken);
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalPreflightedStatePath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasApprovalException),
+            json => SwapBindingRelativePaths(json, "artifactBindings", 0, 1),
+            TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task InventoryRejectsStateLineageMutations()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreateConfirmationRequest());
+        await AtlasDiscovery.ConfirmAsync(
+            workspace.Layout.CanonicalConfirmRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        await TrustedLocalCopy.CopyAsync(
+            workspace.Layout.CanonicalCopyRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreatePreflightRequest());
+        await PrivateArtifactLifecycle.CleanupPreflightAsync(
+            workspace.Layout.CanonicalCleanupPreflightRequestPath,
+            TestContext.Current.CancellationToken);
+
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalInventoryPath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadInventoryAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasSafetyException),
+            json =>
+            {
+                JsonObject state3 = GetArtifactByPurpose(json, AtlasIntakeContracts.State3Purpose);
+                JsonArray lineage = (JsonArray)state3["lineageAliases"]!;
+                lineage.RemoveAt(0);
+            },
+            TestContext.Current.CancellationToken);
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalInventoryPath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadInventoryAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasSafetyException),
+            json =>
+            {
+                JsonObject state3 = GetArtifactByPurpose(json, AtlasIntakeContracts.State3Purpose);
+                JsonArray lineage = (JsonArray)state3["lineageAliases"]!;
+                string first = (string)lineage[0]!;
+                string second = (string)lineage[1]!;
+                lineage[0] = second;
+                lineage[1] = first;
+            },
+            TestContext.Current.CancellationToken);
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalInventoryPath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadInventoryAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasSafetyException),
+            json =>
+            {
+                JsonObject state4 = GetArtifactByPurpose(json, AtlasIntakeContracts.State4Purpose);
+                JsonArray lineage = (JsonArray)state4["lineageAliases"]!;
+                lineage.RemoveAt(0);
+            },
+            TestContext.Current.CancellationToken);
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalInventoryPath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadInventoryAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasSafetyException),
+            json =>
+            {
+                JsonObject state4 = GetArtifactByPurpose(json, AtlasIntakeContracts.State4Purpose);
+                JsonArray lineage = (JsonArray)state4["lineageAliases"]!;
+                string first = (string)lineage[0]!;
+                lineage.RemoveAt(0);
+                lineage.Insert(1, first);
+            },
+            TestContext.Current.CancellationToken);
     }
 
     private static void AssertSchemaCoversSerializedDocument(
@@ -915,6 +1091,28 @@ public sealed class AtlasIntakeContractTests
             await File.WriteAllBytesAsync(path, originalBytes, cancellationToken);
         }
     }
+
+    private static void SwapBindingRelativePaths(
+        JsonObject json,
+        string bindingPropertyName,
+        int firstIndex,
+        int secondIndex)
+    {
+        JsonArray bindings = (JsonArray)json[bindingPropertyName]!;
+        JsonObject first = (JsonObject)bindings[firstIndex]!;
+        JsonObject second = (JsonObject)bindings[secondIndex]!;
+        string firstPath = (string)first["relativePath"]!;
+        string secondPath = (string)second["relativePath"]!;
+        first["relativePath"] = secondPath;
+        second["relativePath"] = firstPath;
+    }
+
+    private static JsonObject GetArtifactByPurpose(JsonObject json, string purpose) =>
+        ((JsonArray)json["artifacts"]!)
+            .Select(node => node as JsonObject)
+            .Single(artifact =>
+                artifact is not null
+                && StringComparer.Ordinal.Equals((string?)artifact["purpose"], purpose))!;
 
     private static void ApplyJsonMutation(JsonObject json, JsonMutation mutation)
     {
@@ -1413,11 +1611,13 @@ public sealed class AtlasIntakeContractTests
         AtlasIntakeContracts.GetCanonicalRequestRelativePath(commandName)
             .Replace('/', Path.DirectorySeparatorChar));
 
-    private static string CreateCanonicalRequestPathWithDeviceComponent(string commandName) =>
+    private static string CreateCanonicalRequestPathWithDeviceComponent(
+        string commandName,
+        string deviceComponent) =>
         Path.Combine(
             Path.GetTempPath(),
             "atlas-a2-device-request",
-            "NUL",
+            deviceComponent,
             "src",
             "private",
             "app",
@@ -1510,6 +1710,33 @@ internal static class AtlasTestSupport
 
                 return AtlasIoSeams.Default.OpenFile(path, mode, access, share, options);
             });
+
+    public static AtlasIoSeams CreateLiveSourceAccessThrowingIo(AtlasSyntheticWorkspace workspace)
+    {
+        bool IsTrackedSourcePath(string path) =>
+            AtlasDiscovery.ContainsPath(workspace.GameRootPath, path);
+        return CreateIo(
+            fileExists: path =>
+                IsTrackedSourcePath(path)
+                    ? throw new InvalidOperationException("Source access is not expected.")
+                    : AtlasIoSeams.Default.FileExists(path),
+            directoryExists: path =>
+                IsTrackedSourcePath(path)
+                    ? throw new InvalidOperationException("Source access is not expected.")
+                    : AtlasIoSeams.Default.DirectoryExists(path),
+            getAttributes: path =>
+                IsTrackedSourcePath(path)
+                    ? throw new InvalidOperationException("Source access is not expected.")
+                    : AtlasIoSeams.Default.GetAttributes(path),
+            enumerateFileSystemEntries: (path, searchOption) =>
+                IsTrackedSourcePath(path)
+                    ? throw new InvalidOperationException("Source access is not expected.")
+                    : AtlasIoSeams.Default.EnumerateFileSystemEntries(path, searchOption),
+            openFile: (path, mode, access, share, options) =>
+                IsTrackedSourcePath(path)
+                    ? throw new InvalidOperationException("Source access is not expected.")
+                    : AtlasIoSeams.Default.OpenFile(path, mode, access, share, options));
+    }
 
     public static async Task<JsonObject> LoadJsonObjectAsync(
         string path,
@@ -1770,6 +1997,8 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
 
     private async Task InitializeAsync()
     {
+        AtlasCorpusIntakeManifest baselineManifest = CreateBaselineManifest();
+        AtlasPrivateArtifactInventoryDocument inventory = CreateBaselineInventory();
         Directory.CreateDirectory(Path.Combine(
             rootPath,
             "src",
@@ -1793,69 +2022,13 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
             "*\n!.gitignore\n",
             new UTF8Encoding(false),
             TestContext.Current.CancellationToken);
-        foreach (int slot in Enumerable.Range(1, 19))
-        {
-            await File.WriteAllBytesAsync(
-                Path.Combine(SaveRootPath, $"file{slot}.rpgsave"),
-                [(byte)slot],
-                TestContext.Current.CancellationToken);
-        }
-
-        await File.WriteAllBytesAsync(
-            Path.Combine(SaveRootPath, "global.rpgsave"),
-            [20],
-            TestContext.Current.CancellationToken);
-        await File.WriteAllBytesAsync(
-            Path.Combine(SaveRootPath, "config.rpgsave"),
-            [21],
-            TestContext.Current.CancellationToken);
-        await File.WriteAllTextAsync(
-            Path.Combine(SaveRootPath, "steam_autocloud.vdf"),
-            "steam",
-            Encoding.UTF8,
-            TestContext.Current.CancellationToken);
-        await File.WriteAllTextAsync(
-            Path.Combine(WebSaveRootPath, "steam_autocloud.vdf"),
-            "steam",
-            Encoding.UTF8,
-            TestContext.Current.CancellationToken);
+        await CreateSyntheticSaveFilesAsync(baselineManifest.SaveEntries);
         await File.WriteAllTextAsync(
             GameExecutablePath,
             "Game",
             Encoding.UTF8,
             TestContext.Current.CancellationToken);
-        foreach (int index in Enumerable.Range(
-                     1,
-                     AtlasIntakeContracts.ExactIncludedDefinitionCount))
-        {
-            await File.WriteAllTextAsync(
-                Path.Combine(
-                    DefinitionRootPath,
-                    "www",
-                    "data",
-                    $"definition-{index:000000}.json"),
-                "{}",
-                Encoding.UTF8,
-                TestContext.Current.CancellationToken);
-        }
-
-        foreach (int index in Enumerable.Range(
-                     1,
-                     AtlasIntakeContracts.ExactExcludedDefinitionCount))
-        {
-            await File.WriteAllTextAsync(
-                Path.Combine(
-                    DefinitionRootPath,
-                    "www",
-                    "notes",
-                    $"excluded-{index:000000}.txt"),
-                "excluded",
-                Encoding.UTF8,
-                TestContext.Current.CancellationToken);
-        }
-
-        AtlasCorpusIntakeManifest baselineManifest = CreateBaselineManifest();
-        AtlasPrivateArtifactInventoryDocument inventory = CreateBaselineInventory();
+        await CreateSyntheticDefinitionFilesAsync(baselineManifest.DefinitionEntries);
         File.WriteAllBytes(
             Layout.CanonicalBaselineManifestPath,
             AtlasIntakeContracts.SerializeManifest(baselineManifest));
@@ -1863,6 +2036,42 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
             Layout.CanonicalInventoryPath,
             AtlasIntakeContracts.SerializeInventory(inventory));
         WriteRequest(CreateDiscoveryRequest());
+    }
+
+    private async Task CreateSyntheticSaveFilesAsync(AtlasManifestSaveEntry[] saveEntries)
+    {
+        Dictionary<string, string> saveRoots = new(StringComparer.Ordinal)
+        {
+            ["save-root-0001"] = SaveRootPath,
+            ["save-root-0002"] = WebSaveRootPath,
+        };
+        foreach (AtlasManifestSaveEntry entry in saveEntries)
+        {
+            string absolutePath = Path.Combine(
+                saveRoots[entry.RootAlias],
+                entry.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
+            await File.WriteAllBytesAsync(
+                absolutePath,
+                Encoding.UTF8.GetBytes(entry.SourceAlias),
+                TestContext.Current.CancellationToken);
+        }
+    }
+
+    private async Task CreateSyntheticDefinitionFilesAsync(
+        AtlasManifestDefinitionEntry[] definitionEntries)
+    {
+        foreach (AtlasManifestDefinitionEntry entry in definitionEntries)
+        {
+            string absolutePath = Path.Combine(
+                DefinitionRootPath,
+                entry.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
+            await File.WriteAllBytesAsync(
+                absolutePath,
+                Encoding.UTF8.GetBytes(entry.SourceAlias),
+                TestContext.Current.CancellationToken);
+        }
     }
 
     private static AtlasPrivateArtifactInventoryDocument CreateBaselineInventory() => new()
@@ -1889,133 +2098,22 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
 
     private static AtlasCorpusIntakeManifest CreateBaselineManifest()
     {
-        AtlasManifestSaveEntry[] saveEntries =
-        [
-            .. Enumerable.Range(1, 19).Select(index => new AtlasManifestSaveEntry
-            {
-                SourceAlias = $"save-source-{index:0000}",
-                RootAlias = "save-root-0001",
-                RelativePath = $"file{index}.rpgsave",
-                Role = AtlasIntakeContracts.SlotSaveRole,
-                SlotNumber = index,
-                Decision = AtlasIntakeContracts.IncludeSaveDecision,
-                EntryType = AtlasIntakeContracts.FileEntryType,
-                IsReparsePoint = false,
-            }),
-            new AtlasManifestSaveEntry
-            {
-                SourceAlias = "save-source-0020",
-                RootAlias = "save-root-0001",
-                RelativePath = "global.rpgsave",
-                Role = AtlasIntakeContracts.GlobalSaveRole,
-                Decision = AtlasIntakeContracts.IncludeSaveDecision,
-                EntryType = AtlasIntakeContracts.FileEntryType,
-                IsReparsePoint = false,
-            },
-            new AtlasManifestSaveEntry
-            {
-                SourceAlias = "save-source-0021",
-                RootAlias = "save-root-0001",
-                RelativePath = "config.rpgsave",
-                Role = AtlasIntakeContracts.ConfigSaveRole,
-                Decision = AtlasIntakeContracts.IncludeSaveDecision,
-                EntryType = AtlasIntakeContracts.FileEntryType,
-                IsReparsePoint = false,
-            },
-            new AtlasManifestSaveEntry
-            {
-                SourceAlias = "save-source-0022",
-                RootAlias = "save-root-0001",
-                RelativePath = "steam_autocloud.vdf",
-                Role = AtlasIntakeContracts.SteamAutoCloudSaveRole,
-                Decision = AtlasIntakeContracts.ExcludeSteamAutoCloudDecision,
-                EntryType = AtlasIntakeContracts.FileEntryType,
-                IsReparsePoint = false,
-            },
-            new AtlasManifestSaveEntry
-            {
-                SourceAlias = "save-source-0023",
-                RootAlias = "save-root-0002",
-                RelativePath = "steam_autocloud.vdf",
-                Role = AtlasIntakeContracts.SteamAutoCloudSaveRole,
-                Decision = AtlasIntakeContracts.ExcludeSteamAutoCloudDecision,
-                EntryType = AtlasIntakeContracts.FileEntryType,
-                IsReparsePoint = false,
-            },
-        ];
-        AtlasManifestDefinitionEntry[] definitionEntries =
-        [
-            .. Enumerable.Range(1, AtlasIntakeContracts.ExactIncludedDefinitionCount).Select(
-                index => new AtlasManifestDefinitionEntry
-                {
-                    SourceAlias = $"definition-source-{index:000000}",
-                    RelativePath = $"www/data/definition-{index:000000}.json",
-                    GroupId = "data",
-                    Decision = AtlasIntakeContracts.IncludeDefinitionDecision,
-                    EntryType = AtlasIntakeContracts.FileEntryType,
-                    IsReparsePoint = false,
-                }),
-            .. Enumerable.Range(1, AtlasIntakeContracts.ExactExcludedDefinitionCount).Select(
-                index => new AtlasManifestDefinitionEntry
-                {
-                    SourceAlias =
-                        "definition-source-"
-                        + $"{AtlasIntakeContracts.ExactIncludedDefinitionCount + index:000000}",
-                    RelativePath = $"www/notes/excluded-{index:000000}.txt",
-                    GroupId = "auxiliary",
-                    Decision = AtlasIntakeContracts.ExcludeDefinitionDecision,
-                    EntryType = AtlasIntakeContracts.FileEntryType,
-                    IsReparsePoint = false,
-                }),
-        ];
+        AtlasManifestSaveEntry[] saveEntries = AtlasIntakeContracts.GetExactFrozenSaveEntries();
+        AtlasManifestDefinitionGroup[] definitionGroups =
+            AtlasIntakeContracts.GetExactFrozenDefinitionGroups();
+        AtlasManifestDefinitionEntry[] definitionEntries = CreateBaselineDefinitionEntries();
         return new AtlasCorpusIntakeManifest
         {
             SchemaVersion = AtlasIntakeContracts.IntakeManifestSchemaVersion,
             SurveyAlias = SurveyAlias,
             ManifestRevision = AtlasIntakeContracts.BaselineManifestRevision,
-            SaveRoots =
-            [
-                new AtlasManifestSaveRoot
-                {
-                    RootAlias = "save-root-0001",
-                    LocationRole = AtlasIntakeContracts.DeploymentRootSaveRole,
-                    Activity = AtlasIntakeContracts.ActiveSaveRootActivity,
-                    Decision = AtlasIntakeContracts.IncludeSaveRootDecision,
-                    ObservedEntryCount = 22,
-                    IsReparsePoint = false,
-                },
-                new AtlasManifestSaveRoot
-                {
-                    RootAlias = "save-root-0002",
-                    LocationRole = AtlasIntakeContracts.WebRootSaveRole,
-                    Activity = AtlasIntakeContracts.InactiveSaveRootActivity,
-                    Decision = AtlasIntakeContracts.ExcludeNoSaveInputsDecision,
-                    ObservedEntryCount = 1,
-                    IsReparsePoint = false,
-                },
-            ],
+            SaveRoots = AtlasIntakeContracts.GetExactFrozenSaveRoots(),
             DiscoveredSaveDirectoryEntryCount = AtlasIntakeContracts.ExactSaveEntryCount,
             IncludedSaveCount = AtlasIntakeContracts.ExactIncludedSaveCount,
             SaveEntries = saveEntries,
             DiscoveredDefinitionEntryCount = AtlasIntakeContracts.ExactDefinitionEntryCount,
             IncludedDefinitionCount = AtlasIntakeContracts.ExactIncludedDefinitionCount,
-            DefinitionGroups =
-            [
-                new AtlasManifestDefinitionGroup
-                {
-                    GroupId = "data",
-                    SelectionRule = "www/data/*.json",
-                    DiscoveredCount = AtlasIntakeContracts.ExactIncludedDefinitionCount,
-                    Decision = AtlasIntakeContracts.IncludeDefinitionDecision,
-                },
-                new AtlasManifestDefinitionGroup
-                {
-                    GroupId = "auxiliary",
-                    SelectionRule = "www/notes/*.txt",
-                    DiscoveredCount = AtlasIntakeContracts.ExactExcludedDefinitionCount,
-                    Decision = AtlasIntakeContracts.ExcludeDefinitionDecision,
-                },
-            ],
+            DefinitionGroups = definitionGroups,
             DefinitionEntries = definitionEntries,
             Validation = new AtlasManifestValidation
             {
@@ -2037,5 +2135,80 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
                 DecisionReference = "commit:" + ApprovalCommit,
             },
         };
+    }
+
+    private static AtlasManifestDefinitionEntry[] CreateBaselineDefinitionEntries()
+    {
+        List<AtlasManifestDefinitionEntry> entries = [];
+        int nextOrdinal = 1;
+
+        void AddDefinitionEntries(
+            string groupId,
+            string decision,
+            IEnumerable<string> relativePaths)
+        {
+            foreach (string relativePath in relativePaths)
+            {
+                entries.Add(new AtlasManifestDefinitionEntry
+                {
+                    SourceAlias = $"definition-source-{nextOrdinal++:000000}",
+                    RelativePath = relativePath,
+                    GroupId = groupId,
+                    Decision = decision,
+                    EntryType = AtlasIntakeContracts.FileEntryType,
+                    IsReparsePoint = false,
+                });
+            }
+        }
+
+        AddDefinitionEntries(
+            AtlasIntakeContracts.RootPackageDefinitionGroupId,
+            AtlasIntakeContracts.IncludeDefinitionDecision,
+            ["package.json"]);
+        AddDefinitionEntries(
+            AtlasIntakeContracts.WebPackageDefinitionGroupId,
+            AtlasIntakeContracts.IncludeDefinitionDecision,
+            ["www/package.json"]);
+        AddDefinitionEntries(
+            AtlasIntakeContracts.WebEntryDefinitionGroupId,
+            AtlasIntakeContracts.IncludeDefinitionDecision,
+            ["www/index.html"]);
+        AddDefinitionEntries(
+            AtlasIntakeContracts.GameDataDefinitionGroupId,
+            AtlasIntakeContracts.IncludeDefinitionDecision,
+            Enumerable.Range(1, 327)
+                .Select(index => $"www/data/definition-{index:000000}.json"));
+        AddDefinitionEntries(
+            AtlasIntakeContracts.EngineScriptsDefinitionGroupId,
+            AtlasIntakeContracts.IncludeDefinitionDecision,
+            Enumerable.Range(1, 8)
+                .Select(index => $"www/js/engine-{index:0000}.js"));
+        AddDefinitionEntries(
+            AtlasIntakeContracts.PluginScriptsDefinitionGroupId,
+            AtlasIntakeContracts.IncludeDefinitionDecision,
+            Enumerable.Range(1, 157)
+                .Select(index => $"www/js/plugins/plugin-{index:000000}.js"));
+        AddDefinitionEntries(
+            AtlasIntakeContracts.CodecReferenceDefinitionGroupId,
+            AtlasIntakeContracts.IncludeDefinitionDecision,
+            ["www/js/libs/lz-string.js"]);
+        AddDefinitionEntries(
+            AtlasIntakeContracts.RuntimeLibsDefinitionGroupId,
+            AtlasIntakeContracts.ExcludeDefinitionDecision,
+            Enumerable.Range(1, 5)
+                .Select(index => $"www/js/libs/runtime-{index:0000}.js"));
+        AddDefinitionEntries(
+            AtlasIntakeContracts.AuxiliaryDefinitionGroupId,
+            AtlasIntakeContracts.ExcludeDefinitionDecision,
+            Enumerable.Range(1, 44)
+                .Select(index => $"www/notes/auxiliary-{index:000000}.txt"));
+        AddDefinitionEntries(
+            AtlasIntakeContracts.DetachedDlcDefinitionGroupId,
+            AtlasIntakeContracts.ExcludeDefinitionDecision,
+            Enumerable.Range(1, 35)
+                .Select(index =>
+                    "Celesphonia Cosplay DLC 2/gallery/item-"
+                    + $"{index:000000}.html"));
+        return [.. entries];
     }
 }

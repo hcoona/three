@@ -52,6 +52,12 @@ public sealed class ProjectBoundaryTests
         "private-artifact-inventory.schema.json",
         "preservation-snapshot-manifest.schema.json",
         "source-root-map.schema.json",
+        "test-data/",
+        "test-data/agent-egress-envelope.invalid-attestation.json",
+        "test-data/agent-egress-envelope.invalid-literal-key.json",
+        "test-data/agent-egress-envelope.invalid-private-field.json",
+        "test-data/agent-egress-envelope.invalid-survey-alias.json",
+        "test-data/agent-egress-envelope.valid.json",
     ];
 
     private static readonly string[] ExpectedTestPackages =
@@ -128,16 +134,43 @@ public sealed class ProjectBoundaryTests
 
         Assert.Equal(
             ExpectedLibraryFiles.Order(StringComparer.Ordinal),
-            GetFileNames(paths.LibraryDirectory));
+            GetBoundaryEntries(paths.LibraryDirectory));
         Assert.Equal(
             ExpectedCliFiles.Order(StringComparer.Ordinal),
-            GetFileNames(paths.CliDirectory));
+            GetBoundaryEntries(paths.CliDirectory));
         Assert.Equal(
             ExpectedTestFiles.Order(StringComparer.Ordinal),
-            GetFileNames(paths.TestDirectory));
+            GetBoundaryEntries(paths.TestDirectory));
         Assert.Equal(
             ExpectedSchemaFiles.Order(StringComparer.Ordinal),
-            GetFileNames(paths.SchemaDirectory));
+            GetBoundaryEntries(paths.SchemaDirectory));
+    }
+
+    [Fact]
+    public void BoundaryHelperIncludesNestedUnauthorizedEntries()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            $"{nameof(ProjectBoundaryTests)}-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "allowed.cs"), "// allowed");
+            string nestedDirectory = Path.Combine(root, "nested");
+            Directory.CreateDirectory(nestedDirectory);
+            File.WriteAllText(Path.Combine(nestedDirectory, "blocked.cs"), "// blocked");
+
+            Assert.Equal(
+                ["allowed.cs", "nested/", "nested/blocked.cs"],
+                GetBoundaryEntries(root));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
     }
 
     [Fact]
@@ -210,12 +243,39 @@ public sealed class ProjectBoundaryTests
             .Single(element => element.Name.LocalName == propertyName)
             .Value;
 
-    private static string[] GetFileNames(string directory) =>
-        Directory
-            .EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly)
-            .Select(Path.GetFileName)
-            .Order(StringComparer.Ordinal)
-            .ToArray()!;
+    private static string[] GetBoundaryEntries(string directory)
+    {
+        List<string> entries = [];
+        EnumerateBoundaryEntries(directory, directory, entries);
+        return [.. entries.Order(StringComparer.Ordinal)];
+    }
+
+    private static void EnumerateBoundaryEntries(
+        string root,
+        string directory,
+        List<string> entries)
+    {
+        foreach (string childDirectory in Directory.EnumerateDirectories(directory))
+        {
+            string directoryName = Path.GetFileName(childDirectory);
+            if (StringComparer.OrdinalIgnoreCase.Equals(directoryName, "bin")
+                || StringComparer.OrdinalIgnoreCase.Equals(directoryName, "obj"))
+            {
+                continue;
+            }
+
+            entries.Add(ToRepoRelativePath(root, childDirectory) + "/");
+            EnumerateBoundaryEntries(root, childDirectory, entries);
+        }
+
+        foreach (string file in Directory.EnumerateFiles(directory))
+        {
+            entries.Add(ToRepoRelativePath(root, file));
+        }
+    }
+
+    private static string ToRepoRelativePath(string root, string path) =>
+        Path.GetRelativePath(root, path).Replace('\\', '/');
 
     private static string[] GetIncludes(XDocument project, string itemName) =>
         project

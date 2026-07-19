@@ -69,6 +69,8 @@ public static class AtlasDiscovery
             throw new AtlasApprovalException("The baseline manifest revision is invalid.");
         }
 
+        ValidateDiscoveryLiveSourcePaths(request, layout, io);
+
         PhaseInventoryContext inventoryContext = await TrustedLocalCopy.LoadPhaseInventoryAsync(
                 layout.CanonicalInventoryPath,
                 layout.CanonicalDiscoveredInventoryBackupPath,
@@ -1018,11 +1020,12 @@ public static class AtlasDiscovery
             throw new AtlasSafetyException("The qualified copy set is incomplete.");
         }
 
-        TrustedLocalCopy.ValidateCopiedFilesAgainstReceipt(
+        await TrustedLocalCopy.ValidateCopiedFilesAgainstReceiptAsync(
             layout.CanonicalFinalCopyPath,
             receipt.Document,
             io,
-            cancellationToken);
+            cancellationToken)
+            .ConfigureAwait(false);
         AtlasPrivateArtifactInventoryDocument expectedInventory =
             TrustedLocalCopy.CreateQualifiedInventory(
                 priorInventory.Document,
@@ -1400,6 +1403,26 @@ public static class AtlasDiscovery
             request.DefinitionRoot,
             request.GameExecutablePath,
             sourceRootPaths);
+        ValidateSourceOutsideWorkspace(layout.WorkspaceRoot, deploymentSaveRoot);
+        ValidateSourceOutsideWorkspace(layout.WorkspaceRoot, webSaveRoot);
+        ValidateSourceOutsideWorkspace(layout.WorkspaceRoot, request.DefinitionRoot);
+    }
+
+    internal static void ValidateDiscoveryLiveSourcePaths(
+        AtlasIntakeDiscoveryRequest request,
+        AtlasWorkspaceLayout layout,
+        AtlasIoSeams io)
+    {
+        Dictionary<string, string> sourceRootPaths = request.SaveRoots.ToDictionary(
+            static root => root.LocationRole,
+            static root => root.Path,
+            StringComparer.Ordinal);
+        string deploymentSaveRoot = GetRequiredSaveRootPath(
+            sourceRootPaths,
+            AtlasIntakeContracts.DeploymentRootSaveRole);
+        string webSaveRoot = GetRequiredSaveRootPath(
+            sourceRootPaths,
+            AtlasIntakeContracts.WebRootSaveRole);
         ValidateSourceOutsideWorkspace(layout.WorkspaceRoot, deploymentSaveRoot);
         ValidateSourceOutsideWorkspace(layout.WorkspaceRoot, webSaveRoot);
         ValidateSourceOutsideWorkspace(layout.WorkspaceRoot, request.DefinitionRoot);
@@ -2237,22 +2260,50 @@ public static class AtlasDiscovery
                 throw new AtlasSafetyException("The approved inventory transition is incomplete.");
             }
 
-            return new ConfirmationPhaseAliases(
+            ConfirmationPhaseAliases aliases = new(
                 requestAlias,
                 manifestAlias,
                 stateAlias,
                 backupAlias);
+            ValidateRecoveredConfirmationAliases(inventoryContext, copyPlan, aliases);
+            return aliases;
         }
 
-        int nextOrdinal = Math.Max(
+        return CreateConfirmationPhaseAliases(
+            GetFirstConfirmationArtifactOrdinal(inventoryContext, copyPlan));
+    }
+
+    private static int GetFirstConfirmationArtifactOrdinal(
+        PhaseInventoryContext inventoryContext,
+        AtlasCopyPlanDocument copyPlan) =>
+        Math.Max(
                 GetMaximumArtifactOrdinal(inventoryContext.PriorInventory.Document),
                 GetMaximumArtifactOrdinal(copyPlan))
             + 1;
-        return new ConfirmationPhaseAliases(
-            AtlasIntakeContracts.FormatArtifactAlias(nextOrdinal++),
-            AtlasIntakeContracts.FormatArtifactAlias(nextOrdinal++),
-            AtlasIntakeContracts.FormatArtifactAlias(nextOrdinal++),
-            AtlasIntakeContracts.FormatArtifactAlias(nextOrdinal));
+
+    private static ConfirmationPhaseAliases CreateConfirmationPhaseAliases(int firstOrdinal) =>
+        new(
+            AtlasIntakeContracts.FormatArtifactAlias(firstOrdinal++),
+            AtlasIntakeContracts.FormatArtifactAlias(firstOrdinal++),
+            AtlasIntakeContracts.FormatArtifactAlias(firstOrdinal++),
+            AtlasIntakeContracts.FormatArtifactAlias(firstOrdinal));
+
+    private static void ValidateRecoveredConfirmationAliases(
+        PhaseInventoryContext inventoryContext,
+        AtlasCopyPlanDocument copyPlan,
+        ConfirmationPhaseAliases aliases)
+    {
+        ConfirmationPhaseAliases expected = CreateConfirmationPhaseAliases(
+            GetFirstConfirmationArtifactOrdinal(inventoryContext, copyPlan));
+        if (!StringComparer.Ordinal.Equals(aliases.RequestAlias, expected.RequestAlias)
+            || !StringComparer.Ordinal.Equals(aliases.ManifestAlias, expected.ManifestAlias)
+            || !StringComparer.Ordinal.Equals(aliases.StateAlias, expected.StateAlias)
+            || !StringComparer.Ordinal.Equals(
+                aliases.InventoryBackupAlias,
+                expected.InventoryBackupAlias))
+        {
+            throw new AtlasSafetyException("The approved inventory aliases are invalid.");
+        }
     }
 
     internal static AtlasPrivateArtifactInventoryDocument CreateDiscoveredInventory(
@@ -2788,6 +2839,7 @@ public static class AtlasDiscovery
 
         _ = await AtlasIntakeContracts.ReadInventoryAsync(stagingPath, cancellationToken)
             .ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         io.ReplaceFile(stagingPath, inventoryPath, backupPath);
         AtlasLoadedDocument<AtlasPrivateArtifactInventoryDocument> replacedInventory =
             await AtlasIntakeContracts.ReadInventoryAsync(inventoryPath, cancellationToken)
@@ -2818,6 +2870,7 @@ public static class AtlasDiscovery
                 readShaAsync,
                 cancellationToken)
             .ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         io.MoveFile(stagingPath, finalPath);
         await ValidatePublishedDocumentAsync(
                 finalPath,

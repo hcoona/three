@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json.Nodes;
 using Hcoona.CelesphoniaModifier.Atlas;
 using Xunit;
 
@@ -5,8 +7,80 @@ namespace Hcoona.CelesphoniaModifier.Atlas.Tests;
 
 public sealed class PrivateArtifactLifecycleTests
 {
-    [Fact]
-    public void EvaluateLifecycleResultUsesExpectedPrecedence()
+    public static TheoryData<string, string, string, string, string, string> CleanupResultCases
+    {
+        get
+        {
+            TheoryData<string, string, string, string, string, string> data = [];
+            data.Add(
+                AtlasIntakeContracts.PresentArtifactStatus,
+                AtlasIntakeContracts.DeleteDisposition,
+                "A8",
+                "after:A8",
+                "A8",
+                "blocked-status");
+            data.Add(
+                AtlasIntakeContracts.LastUseCompleteArtifactStatus,
+                AtlasIntakeContracts.RetainPrivateDisposition,
+                "A8",
+                "after:A8",
+                "A8",
+                "blocked-disposition");
+            data.Add(
+                AtlasIntakeContracts.LastUseCompleteArtifactStatus,
+                AtlasIntakeContracts.DeleteDisposition,
+                "A8",
+                "after:A8",
+                "A7",
+                "blocked-before-last-use");
+            data.Add(
+                AtlasIntakeContracts.LastUseCompleteArtifactStatus,
+                AtlasIntakeContracts.DeleteDisposition,
+                "A8",
+                "later",
+                "A8",
+                "indeterminate-expiry");
+            data.Add(
+                AtlasIntakeContracts.LastUseCompleteArtifactStatus,
+                AtlasIntakeContracts.DeleteDisposition,
+                "A8",
+                "after:A8",
+                "A8",
+                "eligible-for-human-review");
+            data.Add(
+                AtlasIntakeContracts.PresentArtifactStatus,
+                AtlasIntakeContracts.RetainPrivateDisposition,
+                "A8",
+                "later",
+                "A7",
+                "blocked-status");
+            data.Add(
+                AtlasIntakeContracts.LastUseCompleteArtifactStatus,
+                AtlasIntakeContracts.RetainPrivateDisposition,
+                "A8",
+                "later",
+                "A7",
+                "blocked-disposition");
+            data.Add(
+                AtlasIntakeContracts.LastUseCompleteArtifactStatus,
+                AtlasIntakeContracts.DeleteDisposition,
+                "A8",
+                "later",
+                "A7",
+                "blocked-before-last-use");
+            return data;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(CleanupResultCases))]
+    public void EvaluateLifecycleResultUsesExpectedPrecedence(
+        string status,
+        string plannedDisposition,
+        string lastUseMilestone,
+        string expiryCondition,
+        string proposedMilestone,
+        string expectedResult)
     {
         AtlasPrivateArtifactEntry baseEntry = new()
         {
@@ -15,50 +89,16 @@ public sealed class PrivateArtifactLifecycleTests
             Purpose = "snapshot-copy:save-source-0001",
             CustodianRole = AtlasIntakeContracts.ProjectLeaderRole,
             LineageAliases = ["private-artifact-000010"],
-            LastUseMilestone = "A8",
-            ExpiryCondition = "after:A8",
-            PlannedDisposition = AtlasIntakeContracts.DeleteDisposition,
-            Status = AtlasIntakeContracts.PresentArtifactStatus,
+            LastUseMilestone = lastUseMilestone,
+            ExpiryCondition = expiryCondition,
+            PlannedDisposition = plannedDisposition,
+            Status = status,
             VerificationMethod = AtlasIntakeContracts.TrustedLocalFilesystemProfile,
         };
 
         Assert.Equal(
-            "blocked-status",
-            PrivateArtifactLifecycle.EvaluateLifecycleResult(baseEntry, "A8"));
-        Assert.Equal(
-            "blocked-disposition",
-            PrivateArtifactLifecycle.EvaluateLifecycleResult(
-                baseEntry with
-                {
-                    Status = AtlasIntakeContracts.LastUseCompleteArtifactStatus,
-                    PlannedDisposition = AtlasIntakeContracts.RetainPrivateDisposition,
-                },
-                "A8"));
-        Assert.Equal(
-            "blocked-before-last-use",
-            PrivateArtifactLifecycle.EvaluateLifecycleResult(
-                baseEntry with
-                {
-                    Status = AtlasIntakeContracts.LastUseCompleteArtifactStatus,
-                },
-                "A7"));
-        Assert.Equal(
-            "indeterminate-expiry",
-            PrivateArtifactLifecycle.EvaluateLifecycleResult(
-                baseEntry with
-                {
-                    Status = AtlasIntakeContracts.LastUseCompleteArtifactStatus,
-                    ExpiryCondition = "later",
-                },
-                "A8"));
-        Assert.Equal(
-            "eligible-for-human-review",
-            PrivateArtifactLifecycle.EvaluateLifecycleResult(
-                baseEntry with
-                {
-                    Status = AtlasIntakeContracts.LastUseCompleteArtifactStatus,
-                },
-                "A8"));
+            expectedResult,
+            PrivateArtifactLifecycle.EvaluateLifecycleResult(baseEntry, proposedMilestone));
     }
 
     [Fact]
@@ -91,13 +131,73 @@ public sealed class PrivateArtifactLifecycleTests
         Assert.Contains(
             report.Document.Results,
             result => result.Result == "blocked-status");
-        Assert.Contains(
-            inventory.Document.Artifacts,
+        AtlasPrivateArtifactEntry reportArtifact = inventory.Document.Artifacts.Single(
             artifact => artifact.Purpose == AtlasIntakeContracts.CleanupPreflightReportPurpose);
-        Assert.Contains(
-            inventory.Document.Artifacts,
+        AtlasPrivateArtifactEntry state4Artifact = inventory.Document.Artifacts.Single(
             artifact => artifact.Purpose == AtlasIntakeContracts.State4Purpose);
+        AtlasPrivateArtifactEntry state3Artifact = inventory.Document.Artifacts.Single(
+            artifact => artifact.Purpose == AtlasIntakeContracts.State3Purpose);
+        AtlasPrivateArtifactEntry backupArtifact = inventory.Document.Artifacts.Single(
+            artifact => artifact.Purpose == AtlasIntakeContracts.PreflightInventoryBackupPurpose);
+        Assert.Equal(
+            [
+                state3Artifact.ArtifactAlias,
+                reportArtifact.ArtifactAlias,
+                backupArtifact.ArtifactAlias,
+            ],
+            state4Artifact.LineageAliases);
         Assert.True(File.Exists(workspace.Layout.CanonicalPreflightedInventoryBackupPath));
+    }
+
+    [Fact]
+    public async Task CleanupPreflightCompletedRerunReturnsWhenLiveSourcesAreMissing()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareQualifiedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreatePreflightRequest());
+        await PrivateArtifactLifecycle.CleanupPreflightAsync(
+            workspace.Layout.CanonicalCleanupPreflightRequestPath,
+            TestContext.Current.CancellationToken);
+        Directory.Delete(workspace.GameRootPath, recursive: true);
+
+        await PrivateArtifactLifecycle.CleanupPreflightAsync(
+            workspace.Layout.CanonicalCleanupPreflightRequestPath,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(File.Exists(workspace.Layout.CanonicalPreflightedStatePath));
+    }
+
+    [Fact]
+    public async Task CleanupPreflightCompletedRerunReturnsWithoutLiveSourceAccess()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareQualifiedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreatePreflightRequest());
+        await PrivateArtifactLifecycle.CleanupPreflightAsync(
+            workspace.Layout.CanonicalCleanupPreflightRequestPath,
+            TestContext.Current.CancellationToken);
+
+        await PrivateArtifactLifecycle.CleanupPreflightAsync(
+            workspace.Layout.CanonicalCleanupPreflightRequestPath,
+            AtlasTestSupport.CreateLiveSourceAccessThrowingIo(workspace),
+            TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task CleanupReportRejectsContradictoryResults()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareQualifiedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreatePreflightRequest());
+        await PrivateArtifactLifecycle.CleanupPreflightAsync(
+            workspace.Layout.CanonicalCleanupPreflightRequestPath,
+            TestContext.Current.CancellationToken);
+
+        await AssertRejectedCleanupReportMutationAsync(
+            workspace.Layout.CanonicalCleanupPreflightReportPath,
+            json =>
+                ((JsonObject)((JsonArray)json["results"]!)[0]!)["result"] =
+                    "eligible-for-human-review");
     }
 
     [Fact]
@@ -230,6 +330,37 @@ public sealed class PrivateArtifactLifecycleTests
             () => PrivateArtifactLifecycle.CleanupPreflightAsync(
                 workspace.Layout.CanonicalCleanupPreflightRequestPath,
                 TestContext.Current.CancellationToken).AsTask());
+    }
+
+    private static async Task AssertRejectedCleanupReportMutationAsync(
+        string path,
+        Action<JsonObject> mutate)
+    {
+        byte[] originalBytes = await File.ReadAllBytesAsync(
+            path,
+            TestContext.Current.CancellationToken);
+        JsonObject json = (JsonNode.Parse(originalBytes) as JsonObject)
+            ?? throw new InvalidOperationException("Expected a JSON object.");
+        mutate(json);
+        try
+        {
+            await File.WriteAllTextAsync(
+                path,
+                json.ToJsonString(),
+                new UTF8Encoding(false),
+                TestContext.Current.CancellationToken);
+            await Assert.ThrowsAsync<AtlasSafetyException>(
+                () => AtlasIntakeContracts.ReadCleanupPreflightReportAsync(
+                    path,
+                    TestContext.Current.CancellationToken).AsTask());
+        }
+        finally
+        {
+            await File.WriteAllBytesAsync(
+                path,
+                originalBytes,
+                TestContext.Current.CancellationToken);
+        }
     }
 
     private static async Task PrepareQualifiedWorkspaceAsync(AtlasSyntheticWorkspace workspace)

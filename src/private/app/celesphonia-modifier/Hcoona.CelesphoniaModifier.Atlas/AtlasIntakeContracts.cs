@@ -136,9 +136,122 @@ public static class AtlasIntakeContracts
     internal const string ConfirmRequestPurpose = "request:confirm";
     internal const string CopyRequestPurpose = "request:copy";
     internal const string CleanupPreflightRequestPurpose = "request:cleanup-preflight";
+    internal const string RootPackageDefinitionGroupId = "root-package";
+    internal const string WebPackageDefinitionGroupId = "web-package";
+    internal const string WebEntryDefinitionGroupId = "web-entry";
+    internal const string GameDataDefinitionGroupId = "game-data";
+    internal const string EngineScriptsDefinitionGroupId = "engine-scripts";
+    internal const string PluginScriptsDefinitionGroupId = "plugin-scripts";
+    internal const string CodecReferenceDefinitionGroupId = "codec-reference";
+    internal const string RuntimeLibsDefinitionGroupId = "non-semantic-runtime-libs";
+    internal const string AuxiliaryDefinitionGroupId = "auxiliary-definition-probes";
+    internal const string DetachedDlcDefinitionGroupId = "detached-dlc-probe";
+    internal const string RootPackageSelectionRule = "package.json";
+    internal const string WebPackageSelectionRule = "www/package.json";
+    internal const string WebEntrySelectionRule = "www/index.html";
+    internal const string GameDataSelectionRule = "www/data/*.json";
+    internal const string EngineScriptsSelectionRule = "www/js/*.js";
+    internal const string PluginScriptsSelectionRule = "www/js/plugins/*.js";
+    internal const string CodecReferenceSelectionRule = "www/js/libs/lz-string.js";
+    internal const string RuntimeLibsSelectionRule = "www/js/libs/*.js";
+    internal const string AuxiliaryDefinitionSelectionRule =
+        "www/**/*.{json,csv,txt,xml,yaml,yml,xlsx}";
+    internal const string DetachedDlcSelectionRule = "Celesphonia Cosplay DLC 2/**/*";
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private static readonly AtlasJsonContext JsonContext = new(JsonOptions);
+    internal static readonly IReadOnlyList<int> ExactIncludedSaveSlots =
+    [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+    ];
+    private static readonly ExactSaveRootContract[] ExactFrozenSaveRoots =
+    [
+        new(
+            "save-root-0001",
+            DeploymentRootSaveRole,
+            ActiveSaveRootActivity,
+            IncludeSaveRootDecision,
+            22),
+        new(
+            "save-root-0002",
+            WebRootSaveRole,
+            InactiveSaveRootActivity,
+            ExcludeNoSaveInputsDecision,
+            1),
+    ];
+    private static readonly ExactSaveEntryContract[] ExactFrozenSaveEntries =
+        CreateExactFrozenSaveEntryContracts();
+    private static readonly ExactDefinitionGroupContract[] ExactFrozenDefinitionGroups =
+    [
+        new(
+            RootPackageDefinitionGroupId,
+            RootPackageSelectionRule,
+            1,
+            IncludeDefinitionDecision),
+        new(
+            WebPackageDefinitionGroupId,
+            WebPackageSelectionRule,
+            1,
+            IncludeDefinitionDecision),
+        new(
+            WebEntryDefinitionGroupId,
+            WebEntrySelectionRule,
+            1,
+            IncludeDefinitionDecision),
+        new(
+            GameDataDefinitionGroupId,
+            GameDataSelectionRule,
+            327,
+            IncludeDefinitionDecision),
+        new(
+            EngineScriptsDefinitionGroupId,
+            EngineScriptsSelectionRule,
+            8,
+            IncludeDefinitionDecision),
+        new(
+            PluginScriptsDefinitionGroupId,
+            PluginScriptsSelectionRule,
+            157,
+            IncludeDefinitionDecision),
+        new(
+            CodecReferenceDefinitionGroupId,
+            CodecReferenceSelectionRule,
+            1,
+            IncludeDefinitionDecision),
+        new(
+            RuntimeLibsDefinitionGroupId,
+            RuntimeLibsSelectionRule,
+            5,
+            ExcludeDefinitionDecision),
+        new(
+            AuxiliaryDefinitionGroupId,
+            AuxiliaryDefinitionSelectionRule,
+            44,
+            ExcludeDefinitionDecision),
+        new(
+            DetachedDlcDefinitionGroupId,
+            DetachedDlcSelectionRule,
+            35,
+            ExcludeDefinitionDecision),
+    ];
     private static readonly HashSet<string> AllowedInventoryArtifactClasses =
         new(StringComparer.Ordinal)
         {
@@ -466,7 +579,8 @@ public static class AtlasIntakeContracts
         {
             if (segment.Length == 0
                 || StringComparer.Ordinal.Equals(segment, ".")
-                || StringComparer.Ordinal.Equals(segment, ".."))
+                || StringComparer.Ordinal.Equals(segment, "..")
+                || IsReservedDosDeviceComponent(segment))
             {
                 return false;
             }
@@ -517,6 +631,66 @@ public static class AtlasIntakeContracts
         };
 
     internal static string GetExpectedStateRelativePath(int revision) => FormatStatePath(revision);
+
+    internal static string GetManifestRelativePath(int manifestRevision) =>
+        manifestRevision switch
+        {
+            BaselineManifestRevision => "intake/corpus-intake-manifest.json",
+            PendingManifestRevision =>
+                "intake/manifest-revisions/corpus-intake-manifest.r000004.json",
+            ApprovedManifestRevision =>
+                "intake/manifest-revisions/corpus-intake-manifest.r000005.json",
+            _ => throw new AtlasSafetyException("The manifest revision is invalid."),
+        };
+
+    internal static string GetSourceRootMapRelativePath() => "intake/source-root-map.json";
+
+    internal static string GetCopyPlanRelativePath() => "intake/copy-plan.json";
+
+    internal static string GetCopyReceiptRelativePath() => SaveSnapshotRelativeRoot
+        + "/copy-receipt.json";
+
+    internal static string GetCleanupPreflightReportRelativePath() => "cleanup/a2-preflight.json";
+
+    internal static AtlasManifestSaveRoot[] GetExactFrozenSaveRoots() =>
+        [
+            .. ExactFrozenSaveRoots.Select(static contract => new AtlasManifestSaveRoot
+            {
+                RootAlias = contract.RootAlias,
+                LocationRole = contract.LocationRole,
+                Activity = contract.Activity,
+                Decision = contract.Decision,
+                ObservedEntryCount = contract.ObservedEntryCount,
+                IsReparsePoint = false,
+            }),
+        ];
+
+    internal static AtlasManifestSaveEntry[] GetExactFrozenSaveEntries() =>
+        [
+            .. ExactFrozenSaveEntries.Select(static contract => new AtlasManifestSaveEntry
+            {
+                SourceAlias = contract.SourceAlias,
+                RootAlias = contract.RootAlias,
+                RelativePath = contract.RelativePath,
+                Role = contract.Role,
+                SlotNumber = contract.SlotNumber,
+                Decision = contract.Decision,
+                EntryType = FileEntryType,
+                IsReparsePoint = false,
+            }),
+        ];
+
+    internal static AtlasManifestDefinitionGroup[] GetExactFrozenDefinitionGroups() =>
+        [
+            .. ExactFrozenDefinitionGroups.Select(
+                static contract => new AtlasManifestDefinitionGroup
+                {
+                    GroupId = contract.GroupId,
+                    SelectionRule = contract.SelectionRule,
+                    DiscoveredCount = contract.DiscoveredCount,
+                    Decision = contract.Decision,
+                }),
+        ];
 
     internal static AtlasWorkspaceLayout CreateWorkspaceLayout(
         string projectRoot,
@@ -587,7 +761,18 @@ public static class AtlasIntakeContracts
 
         try
         {
-            _ = NormalizePath(path);
+            string normalizedPath = NormalizePath(path);
+            string root = Path.GetPathRoot(normalizedPath)
+                ?? throw new AtlasRequestException($"The path '{parameterName}' root is invalid.");
+            foreach (string segment in normalizedPath[root.Length..]
+                         .Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (IsReservedDosDeviceComponent(segment))
+                {
+                    throw new AtlasRequestException(
+                        $"The path '{parameterName}' must not use a reserved DOS device name.");
+                }
+            }
         }
         catch (Exception exception) when (
             exception is ArgumentException
@@ -740,7 +925,11 @@ public static class AtlasIntakeContracts
     private static bool IsNumberedDosDevice(string component, string prefix) =>
         component.Length == prefix.Length + 1
         && component.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-        && component[prefix.Length] is >= '1' and <= '9';
+        && IsReservedDosDeviceSuffix(component[prefix.Length]);
+
+    private static bool IsReservedDosDeviceSuffix(char suffix) =>
+        suffix is >= '1' and <= '9'
+        || suffix is '\u00B9' or '\u00B2' or '\u00B3';
 
     private static void ValidateRequestPathComponent(
         string path,
@@ -1310,7 +1499,9 @@ public static class AtlasIntakeContracts
                 throw new AtlasValidationException();
             }
 
-            if (!StringComparer.Ordinal.Equals(saveRoot.LocationRole, DeploymentRootSaveRole)
+            if (!StringComparer.Ordinal.Equals(
+                    saveRoot.LocationRole,
+                    DeploymentRootSaveRole)
                 && !StringComparer.Ordinal.Equals(saveRoot.LocationRole, WebRootSaveRole))
             {
                 throw new AtlasValidationException();
@@ -1593,7 +1784,83 @@ public static class AtlasIntakeContracts
             }
         }
 
+        ValidateRequiredStateLineages(inventory);
         EnsureAcyclicLineage(lineages);
+    }
+
+    private static void ValidateRequiredStateLineages(
+        AtlasPrivateArtifactInventoryDocument inventory)
+    {
+        AtlasPrivateArtifactEntry? state3 = TryGetUniqueArtifactByPurpose(inventory, State3Purpose);
+        if (state3 is not null)
+        {
+            string predecessorStateAlias = GetRequiredArtifactAliasByPurpose(
+                inventory,
+                State2Purpose);
+            string receiptAlias = GetRequiredArtifactAliasByPurpose(inventory, CopyReceiptPurpose);
+            RequireExactLineage(
+                state3.LineageAliases,
+                predecessorStateAlias,
+                receiptAlias);
+        }
+
+        AtlasPrivateArtifactEntry? state4 = TryGetUniqueArtifactByPurpose(inventory, State4Purpose);
+        if (state4 is not null)
+        {
+            string predecessorStateAlias = GetRequiredArtifactAliasByPurpose(
+                inventory,
+                State3Purpose);
+            string reportAlias = GetRequiredArtifactAliasByPurpose(
+                inventory,
+                CleanupPreflightReportPurpose);
+            string backupAlias = GetRequiredArtifactAliasByPurpose(
+                inventory,
+                PreflightInventoryBackupPurpose);
+            RequireExactLineage(
+                state4.LineageAliases,
+                predecessorStateAlias,
+                reportAlias,
+                backupAlias);
+        }
+    }
+
+    private static AtlasPrivateArtifactEntry? TryGetUniqueArtifactByPurpose(
+        AtlasPrivateArtifactInventoryDocument inventory,
+        string purpose)
+    {
+        AtlasPrivateArtifactEntry[] matches = inventory.Artifacts
+            .Where(artifact => StringComparer.Ordinal.Equals(artifact.Purpose, purpose))
+            .ToArray();
+        return matches.Length switch
+        {
+            0 => null,
+            1 => matches[0],
+            _ => throw new AtlasValidationException(),
+        };
+    }
+
+    private static string GetRequiredArtifactAliasByPurpose(
+        AtlasPrivateArtifactInventoryDocument inventory,
+        string purpose) =>
+        TryGetUniqueArtifactByPurpose(inventory, purpose)?.ArtifactAlias
+        ?? throw new AtlasValidationException();
+
+    private static void RequireExactLineage(
+        string[] actualLineage,
+        params string[] expectedLineage)
+    {
+        if (actualLineage.Length != expectedLineage.Length)
+        {
+            throw new AtlasValidationException();
+        }
+
+        for (int index = 0; index < expectedLineage.Length; index++)
+        {
+            if (!StringComparer.Ordinal.Equals(actualLineage[index], expectedLineage[index]))
+            {
+                throw new AtlasValidationException();
+            }
+        }
     }
 
     private static void ValidateSourceRootMap(AtlasSourceRootMapDocument document)
@@ -1708,16 +1975,26 @@ public static class AtlasIntakeContracts
 
         if (document.StateRevision == DiscoveredStateRevision)
         {
-            RequireDocumentRoles(
+            RequireExactDocumentBindings(
                 document.DocumentBindings,
-                BaselineManifestRole,
-                PendingManifestRole,
-                SourceRootMapRole,
-                CopyPlanRole);
-            RequireArtifactRoles(
+                new ExactBindingContract(
+                    BaselineManifestRole,
+                    GetManifestRelativePath(BaselineManifestRevision)),
+                new ExactBindingContract(
+                    PendingManifestRole,
+                    GetManifestRelativePath(PendingManifestRevision)),
+                new ExactBindingContract(
+                    SourceRootMapRole,
+                    GetSourceRootMapRelativePath()),
+                new ExactBindingContract(CopyPlanRole, GetCopyPlanRelativePath()));
+            RequireExactArtifactBindings(
                 document.ArtifactBindings,
-                DiscoveredRequestRole,
-                DiscoveredInventoryBackupRole);
+                new ExactBindingContract(
+                    DiscoveredRequestRole,
+                    GetCanonicalRequestRelativePath("discover")),
+                new ExactBindingContract(
+                    DiscoveredInventoryBackupRole,
+                    GetInventoryBackupRelativePath(DiscoveredPhase)));
             if (document.DecisionCommit is not null
                 || document.FinalCopyRootRelativePath is not null)
             {
@@ -1726,16 +2003,26 @@ public static class AtlasIntakeContracts
         }
         else if (document.StateRevision == ApprovedStateRevision)
         {
-            RequireDocumentRoles(
+            RequireExactDocumentBindings(
                 document.DocumentBindings,
-                PredecessorStateRole,
-                ApprovedManifestRole,
-                SourceRootMapRole,
-                CopyPlanRole);
-            RequireArtifactRoles(
+                new ExactBindingContract(
+                    PredecessorStateRole,
+                    GetExpectedStateRelativePath(DiscoveredStateRevision)),
+                new ExactBindingContract(
+                    ApprovedManifestRole,
+                    GetManifestRelativePath(ApprovedManifestRevision)),
+                new ExactBindingContract(
+                    SourceRootMapRole,
+                    GetSourceRootMapRelativePath()),
+                new ExactBindingContract(CopyPlanRole, GetCopyPlanRelativePath()));
+            RequireExactArtifactBindings(
                 document.ArtifactBindings,
-                ConfirmRequestRole,
-                ApprovedInventoryBackupRole);
+                new ExactBindingContract(
+                    ConfirmRequestRole,
+                    GetCanonicalRequestRelativePath("confirm")),
+                new ExactBindingContract(
+                    ApprovedInventoryBackupRole,
+                    GetInventoryBackupRelativePath(ApprovedPhase)));
             ValidateGitCommit(
                 document.DecisionCommit ?? string.Empty,
                 nameof(document.DecisionCommit));
@@ -1746,17 +2033,29 @@ public static class AtlasIntakeContracts
         }
         else if (document.StateRevision == QualifiedStateRevision)
         {
-            RequireDocumentRoles(
+            RequireExactDocumentBindings(
                 document.DocumentBindings,
-                PredecessorStateRole,
-                ApprovedManifestRole,
-                SourceRootMapRole,
-                CopyPlanRole,
-                CopyReceiptRole);
-            RequireArtifactRoles(
+                new ExactBindingContract(
+                    PredecessorStateRole,
+                    GetExpectedStateRelativePath(ApprovedStateRevision)),
+                new ExactBindingContract(
+                    ApprovedManifestRole,
+                    GetManifestRelativePath(ApprovedManifestRevision)),
+                new ExactBindingContract(
+                    SourceRootMapRole,
+                    GetSourceRootMapRelativePath()),
+                new ExactBindingContract(CopyPlanRole, GetCopyPlanRelativePath()),
+                new ExactBindingContract(
+                    CopyReceiptRole,
+                    GetCopyReceiptRelativePath()));
+            RequireExactArtifactBindings(
                 document.ArtifactBindings,
-                CopyRequestRole,
-                QualifiedInventoryBackupRole);
+                new ExactBindingContract(
+                    CopyRequestRole,
+                    GetCanonicalRequestRelativePath("copy")),
+                new ExactBindingContract(
+                    QualifiedInventoryBackupRole,
+                    GetInventoryBackupRelativePath(QualifiedPhase)));
             ValidateGitCommit(
                 document.DecisionCommit ?? string.Empty,
                 nameof(document.DecisionCommit));
@@ -1769,18 +2068,32 @@ public static class AtlasIntakeContracts
         }
         else
         {
-            RequireDocumentRoles(
+            RequireExactDocumentBindings(
                 document.DocumentBindings,
-                PredecessorStateRole,
-                ApprovedManifestRole,
-                SourceRootMapRole,
-                CopyPlanRole,
-                CopyReceiptRole,
-                CleanupPreflightReportRole);
-            RequireArtifactRoles(
+                new ExactBindingContract(
+                    PredecessorStateRole,
+                    GetExpectedStateRelativePath(QualifiedStateRevision)),
+                new ExactBindingContract(
+                    ApprovedManifestRole,
+                    GetManifestRelativePath(ApprovedManifestRevision)),
+                new ExactBindingContract(
+                    SourceRootMapRole,
+                    GetSourceRootMapRelativePath()),
+                new ExactBindingContract(CopyPlanRole, GetCopyPlanRelativePath()),
+                new ExactBindingContract(
+                    CopyReceiptRole,
+                    GetCopyReceiptRelativePath()),
+                new ExactBindingContract(
+                    CleanupPreflightReportRole,
+                    GetCleanupPreflightReportRelativePath()));
+            RequireExactArtifactBindings(
                 document.ArtifactBindings,
-                CleanupPreflightRequestRole,
-                PreflightedInventoryBackupRole);
+                new ExactBindingContract(
+                    CleanupPreflightRequestRole,
+                    GetCanonicalRequestRelativePath("cleanup-preflight")),
+                new ExactBindingContract(
+                    PreflightedInventoryBackupRole,
+                    GetInventoryBackupRelativePath(PreflightedPhase)));
             ValidateGitCommit(
                 document.DecisionCommit ?? string.Empty,
                 nameof(document.DecisionCommit));
@@ -1915,6 +2228,20 @@ public static class AtlasIntakeContracts
             {
                 throw new AtlasValidationException();
             }
+
+            if (!StringComparer.Ordinal.Equals(
+                    result.Result,
+                    EvaluateCleanupPreflightResult(
+                        result.ArtifactClass,
+                        result.Status,
+                        result.PlannedDisposition,
+                        result.LastUseMilestone,
+                        result.ExpiryCondition,
+                        qualification: null,
+                        document.ProposedMilestone)))
+            {
+                throw new AtlasValidationException();
+            }
         }
     }
 
@@ -1941,31 +2268,36 @@ public static class AtlasIntakeContracts
         }
     }
 
-    private static void RequireDocumentRoles(
+    private static void RequireExactDocumentBindings(
         AtlasDocumentBinding[] bindings,
-        params string[] expectedRoles)
+        params ExactBindingContract[] expectedBindings)
     {
-        RequireRoles(bindings.Select(static binding => binding.Role), expectedRoles);
+        RequireExactBindings(bindings, expectedBindings);
     }
 
-    private static void RequireArtifactRoles(
+    private static void RequireExactArtifactBindings(
         AtlasArtifactBinding[] bindings,
-        params string[] expectedRoles)
+        params ExactBindingContract[] expectedBindings)
     {
-        RequireRoles(bindings.Select(static binding => binding.Role), expectedRoles);
+        RequireExactBindings(bindings, expectedBindings);
     }
 
-    private static void RequireRoles(IEnumerable<string> roles, params string[] expectedRoles)
+    private static void RequireExactBindings<TBinding>(
+        TBinding[] bindings,
+        ExactBindingContract[] expectedBindings)
+        where TBinding : AtlasBindingBase
     {
-        HashSet<string> actual = roles.ToHashSet(StringComparer.Ordinal);
-        if (actual.Count != expectedRoles.Length)
+        if (bindings.Length != expectedBindings.Length)
         {
             throw new AtlasValidationException();
         }
 
-        foreach (string expectedRole in expectedRoles)
+        for (int index = 0; index < expectedBindings.Length; index++)
         {
-            if (!actual.Contains(expectedRole))
+            TBinding binding = bindings[index];
+            ExactBindingContract expected = expectedBindings[index];
+            if (!StringComparer.Ordinal.Equals(binding.Role, expected.Role)
+                || !StringComparer.Ordinal.Equals(binding.RelativePath, expected.RelativePath))
             {
                 throw new AtlasValidationException();
             }
@@ -2042,7 +2374,8 @@ public static class AtlasIntakeContracts
         {
             if (segment.Length == 0
                 || StringComparer.Ordinal.Equals(segment, ".")
-                || StringComparer.Ordinal.Equals(segment, ".."))
+                || StringComparer.Ordinal.Equals(segment, "..")
+                || IsReservedDosDeviceComponent(segment))
             {
                 throw new AtlasValidationException();
             }
@@ -2104,52 +2437,76 @@ public static class AtlasIntakeContracts
 
     private static void ValidateExactManifestCorpus(AtlasCorpusIntakeManifest manifest)
     {
-        int includedSaves = 0;
-        int excludedSteamMetadata = 0;
-        foreach (AtlasManifestSaveEntry entry in manifest.SaveEntries)
+        RequireExactSaveRootContract(manifest.SaveRoots);
+        RequireExactSaveEntryContract(manifest.SaveEntries);
+        RequireExactDefinitionGroupContract(manifest.DefinitionGroups);
+    }
+
+    private static void RequireExactSaveRootContract(AtlasManifestSaveRoot[] saveRoots)
+    {
+        if (saveRoots.Length != ExactFrozenSaveRoots.Length)
         {
-            if (StringComparer.Ordinal.Equals(entry.Decision, IncludeSaveDecision))
-            {
-                includedSaves++;
-                continue;
-            }
-
-            if (StringComparer.Ordinal.Equals(
-                    entry.Decision,
-                    ExcludeSteamAutoCloudDecision))
-            {
-                excludedSteamMetadata++;
-                continue;
-            }
-
             throw new AtlasValidationException();
         }
 
-        int includedDefinitions = 0;
-        int excludedDefinitions = 0;
-        foreach (AtlasManifestDefinitionEntry entry in manifest.DefinitionEntries)
+        for (int index = 0; index < ExactFrozenSaveRoots.Length; index++)
         {
-            if (StringComparer.Ordinal.Equals(entry.Decision, IncludeDefinitionDecision))
+            AtlasManifestSaveRoot actual = saveRoots[index];
+            ExactSaveRootContract expected = ExactFrozenSaveRoots[index];
+            if (!StringComparer.Ordinal.Equals(actual.RootAlias, expected.RootAlias)
+                || !StringComparer.Ordinal.Equals(actual.LocationRole, expected.LocationRole)
+                || !StringComparer.Ordinal.Equals(actual.Activity, expected.Activity)
+                || !StringComparer.Ordinal.Equals(actual.Decision, expected.Decision)
+                || actual.ObservedEntryCount != expected.ObservedEntryCount)
             {
-                includedDefinitions++;
-                continue;
+                throw new AtlasValidationException();
             }
+        }
+    }
 
-            if (StringComparer.Ordinal.Equals(entry.Decision, ExcludeDefinitionDecision))
-            {
-                excludedDefinitions++;
-                continue;
-            }
-
+    private static void RequireExactSaveEntryContract(AtlasManifestSaveEntry[] saveEntries)
+    {
+        if (saveEntries.Length != ExactFrozenSaveEntries.Length)
+        {
             throw new AtlasValidationException();
         }
 
-        if (includedSaves != ExactIncludedSaveCount
-            || excludedSteamMetadata != ExactExcludedSteamMetadataCount
-            || includedDefinitions != ExactIncludedDefinitionCount
-            || excludedDefinitions != ExactExcludedDefinitionCount)
+        for (int index = 0; index < ExactFrozenSaveEntries.Length; index++)
+        {
+            AtlasManifestSaveEntry actual = saveEntries[index];
+            ExactSaveEntryContract expected = ExactFrozenSaveEntries[index];
+            if (!StringComparer.Ordinal.Equals(actual.RootAlias, expected.RootAlias)
+                || !StringComparer.Ordinal.Equals(
+                    NormalizeRelativePath(actual.RelativePath),
+                    expected.RelativePath)
+                || !StringComparer.Ordinal.Equals(actual.Role, expected.Role)
+                || actual.SlotNumber != expected.SlotNumber
+                || !StringComparer.Ordinal.Equals(actual.Decision, expected.Decision))
+            {
+                throw new AtlasValidationException();
+            }
+        }
+    }
+
+    private static void RequireExactDefinitionGroupContract(
+        AtlasManifestDefinitionGroup[] definitionGroups)
+    {
+        if (definitionGroups.Length != ExactFrozenDefinitionGroups.Length)
         {
             throw new AtlasValidationException();
+        }
+
+        for (int index = 0; index < ExactFrozenDefinitionGroups.Length; index++)
+        {
+            AtlasManifestDefinitionGroup actual = definitionGroups[index];
+            ExactDefinitionGroupContract expected = ExactFrozenDefinitionGroups[index];
+            if (!StringComparer.Ordinal.Equals(actual.GroupId, expected.GroupId)
+                || !StringComparer.Ordinal.Equals(actual.SelectionRule, expected.SelectionRule)
+                || actual.DiscoveredCount != expected.DiscoveredCount
+                || !StringComparer.Ordinal.Equals(actual.Decision, expected.Decision))
+            {
+                throw new AtlasValidationException();
+            }
         }
     }
 
@@ -2278,6 +2635,41 @@ public static class AtlasIntakeContracts
         }
     }
 
+    internal static string EvaluateCleanupPreflightResult(
+        string artifactClass,
+        string status,
+        string plannedDisposition,
+        string lastUseMilestone,
+        string expiryCondition,
+        string? qualification,
+        string proposedMilestone)
+    {
+        _ = artifactClass;
+        _ = qualification;
+        if (!StringComparer.Ordinal.Equals(status, LastUseCompleteArtifactStatus)
+            && !StringComparer.Ordinal.Equals(status, DeletionPendingArtifactStatus))
+        {
+            return "blocked-status";
+        }
+
+        if (!StringComparer.Ordinal.Equals(plannedDisposition, DeleteDisposition))
+        {
+            return "blocked-disposition";
+        }
+
+        if (AtlasMilestoneOrder[proposedMilestone] < AtlasMilestoneOrder[lastUseMilestone])
+        {
+            return "blocked-before-last-use";
+        }
+
+        if (!StringComparer.Ordinal.Equals(expiryCondition, "after:" + lastUseMilestone))
+        {
+            return "indeterminate-expiry";
+        }
+
+        return "eligible-for-human-review";
+    }
+
     private static void ValidateOutputAbsoluteDosPath(string path)
     {
         try
@@ -2331,6 +2723,52 @@ public static class AtlasIntakeContracts
         }
     }
 
+    private static ExactSaveEntryContract[] CreateExactFrozenSaveEntryContracts()
+    {
+        List<ExactSaveEntryContract> contracts = [];
+        int nextSourceOrdinal = 1;
+        foreach (int slot in ExactIncludedSaveSlots)
+        {
+            contracts.Add(new ExactSaveEntryContract(
+                $"save-source-{nextSourceOrdinal++:0000}",
+                "save-root-0001",
+                $"file{slot}.rpgsave",
+                SlotSaveRole,
+                slot,
+                IncludeSaveDecision));
+        }
+
+        contracts.Add(new ExactSaveEntryContract(
+            $"save-source-{nextSourceOrdinal++:0000}",
+            "save-root-0001",
+            "global.rpgsave",
+            GlobalSaveRole,
+            null,
+            IncludeSaveDecision));
+        contracts.Add(new ExactSaveEntryContract(
+            $"save-source-{nextSourceOrdinal++:0000}",
+            "save-root-0001",
+            "config.rpgsave",
+            ConfigSaveRole,
+            null,
+            IncludeSaveDecision));
+        contracts.Add(new ExactSaveEntryContract(
+            $"save-source-{nextSourceOrdinal++:0000}",
+            "save-root-0001",
+            "steam_autocloud.vdf",
+            SteamAutoCloudSaveRole,
+            null,
+            ExcludeSteamAutoCloudDecision));
+        contracts.Add(new ExactSaveEntryContract(
+            $"save-source-{nextSourceOrdinal:0000}",
+            "save-root-0002",
+            "steam_autocloud.vdf",
+            SteamAutoCloudSaveRole,
+            null,
+            ExcludeSteamAutoCloudDecision));
+        return [.. contracts];
+    }
+
     internal static readonly IReadOnlyDictionary<string, int> AtlasMilestoneOrder =
         new Dictionary<string, int>(StringComparer.Ordinal)
         {
@@ -2343,6 +2781,29 @@ public static class AtlasIntakeContracts
             ["A8"] = 6,
             ["post-A8-appeal"] = 7,
         };
+
+    private readonly record struct ExactSaveRootContract(
+        string RootAlias,
+        string LocationRole,
+        string Activity,
+        string Decision,
+        int ObservedEntryCount);
+
+    private readonly record struct ExactSaveEntryContract(
+        string SourceAlias,
+        string RootAlias,
+        string RelativePath,
+        string Role,
+        int? SlotNumber,
+        string Decision);
+
+    private readonly record struct ExactDefinitionGroupContract(
+        string GroupId,
+        string SelectionRule,
+        int DiscoveredCount,
+        string Decision);
+
+    private readonly record struct ExactBindingContract(string Role, string RelativePath);
 }
 
 public sealed record class AtlasIntakeDiscoveryRequest
