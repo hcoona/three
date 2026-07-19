@@ -61,10 +61,11 @@ Tool-safety record `9edbd57b4f44e76de321e06be81a581ed11b0017` does not authorize
 after this material source-profile decision.
 
 After verification, this amendment partially supersedes the A2 plan's section 6 v1 request
-contracts, section 10 source-profile attestation and strictly human-invoked wording, and sections
-17.2-17.3 request-preparation and local-invocation wording. It does not supersede the rule that
-Copilot and subagents never receive private document bytes, the project leader personally audits
-private outputs, and only the project leader can approve the pending manifest and later phases.
+contracts, section 8 CLI contract, section 10 source-profile attestation and strictly human-invoked
+wording, section 16 comparison chain, and sections 17.2-17.4 request-preparation, invocation, and
+release wording. It does not supersede the rule that Copilot and subagents never receive private
+document bytes, the project leader personally audits private outputs, and only the project leader
+can approve the pending manifest and later phases.
 
 The verified amendment plan-review record becomes the implementation diff base. Any implementation
 outside the exact path boundary in section 11 creates a new plan candidate. Any later tracked
@@ -111,7 +112,7 @@ attestedByRole = project-leader
 steamIntegrityCheckPassed = true
 exactBoundInstallerAppliedAfterIntegrityCheck = true
 noLaterSteamVerificationOrUpdate = true
-noLaterPatchRerun = true
+noLaterPatchInstallationExecutionOrManagedContentChange = true
 noLaterManualExecutableOrDefinitionEdit = true
 ```
 
@@ -121,8 +122,9 @@ incomplete field is a safety refusal.
 
 The final three fields apply to Steam- or patch-managed executable and definition content. They do
 not prohibit ordinary gameplay writes inside the two approved save roots. A later Steam
-verification, Steam update, patch rerun, or manual executable/definition edit invalidates the
-attestation even if the installer bytes remain unchanged.
+verification, Steam update, patch installation/execution, patch-managed content change, or manual
+executable/definition edit invalidates the attestation even if the retained installer bytes remain
+unchanged.
 
 The final public intake-approval record may state only that the private attestation passed. It does
 not contain the installer path, installer hash, request bytes, or installed-file details.
@@ -162,7 +164,7 @@ celesphonia-atlas intake-prepare-copy <preparation-file>
 ```
 
 The project leader creates each private preparation file and supplies the human-only facts. The
-preparation files occupy fixed, alias-only relative paths under:
+preparation files occupy fixed, alias-only repository-relative suffixes:
 
 ```text
 src\private\app\celesphonia-modifier\.private\atlas-v0\
@@ -171,21 +173,29 @@ src\private\app\celesphonia-modifier\.private\atlas-v0\
   operator-input\<surveyAlias>\copy.json
 ```
 
-That directory is outside the surveyed workspace and its closed census. The relative command paths
-contain only public fixed segments and the approved survey alias; they reveal no source locator,
-source file name, or digest. Copilot may invoke a reviewed command with that relative path but may
-not read or display the preparation file.
+That directory is outside the surveyed workspace and its closed census. Every CLI operand remains
+an absolute canonical DOS path as required by the original A2 contract. Before invocation, the
+deterministic driver verifies the already-known repository root with
+`git rev-parse --show-toplevel`, joins exactly one suffix above, normalizes it with
+`Path.GetFullPath`, and requires containment under that root. It never accepts the current directory
+as an implicit root.
 
-Discovery preparation contains every v2 discovery-request field except
-`expectedInstallerSha256`. The builder:
+The resulting absolute control path contains only the public repository root, fixed segments, and
+the approved survey alias; it reveals no game/save/installer locator, source file name, or digest.
+Copilot may pass that absolute path to a reviewed command but may not read or display the file.
+
+Discovery preparation contains its preparation `schemaVersion` and every other v2
+discovery-request field except `officialPatch.expectedInstallerSha256`, `preparationPath`,
+`expectedPreparationSha256`, and `preparationArtifactAlias`. The builder:
 
 1. strictly validates the preparation shape and canonical alias-only paths;
 2. validates and hashes only the explicit installer using section 6 steps 1-8 and 10, requiring
    metadata stability but deferring expected-hash equality to human approval and discovery;
-3. inserts the calculated digest into the v2 discovery request;
-4. serializes canonical UTF-8 bytes;
-5. creates the request at its one canonical workspace path, or accepts an exact byte match; and
-6. emits only `Intake request prepared.` or the existing classified diagnostic.
+3. calculates the canonical preparation-file digest and reserves the next inventory alias;
+4. inserts both digests, the canonical preparation path, and the reserved alias into the request;
+5. serializes canonical UTF-8 bytes;
+6. creates the request at its one canonical workspace path, or accepts an exact byte match; and
+7. emits only `Intake request prepared.` or the existing classified diagnostic.
 
 The project leader opens the generated request, audits its private path, digest, attestation, and
 all existing A2 request fields, and explicitly approves it before discovery. This human review
@@ -208,11 +218,84 @@ Every builder is create-new or exact-byte-idempotent, supports cancellation, wri
 request, never overwrites different bytes, and never emits private values or exception details.
 Preparation files and generated requests remain private. The tool does not delete them.
 
-Discovery preparation also requires the canonical workspace census to contain no A2 output from a
-prior v1 or v2 attempt. Its only permitted existing generated request is an exact byte match to the
-new v2 request. It never migrates, deletes, or overwrites an earlier request or output.
+Fresh discovery preparation also requires the canonical workspace census to contain no A2 operation
+output from a prior v1 or v2 attempt. Its only permitted existing generated request is an exact byte
+match to the new v2 request. It never migrates, deletes, or overwrites an earlier request or output.
 
-### 5.2 Discovery request
+Before any operation output exists, a builder rerun may revalidate its input and accept only the
+exact existing request bytes. After a valid successor state exists, the builder returns success from
+sealed request/state evidence without opening the preparation file, installer, or live source. Any
+intermediate operation output causes the builder to refuse; only the corresponding operation may
+enter its section 7 recovery path.
+
+Every v2 discovery, confirmation, and copy request also contains exactly:
+
+- `preparationPath`, the canonical absolute path of its fixed alias-only preparation file;
+- `expectedPreparationSha256`, the builder-calculated lowercase digest; and
+- `preparationArtifactAlias`, the next inventory alias at builder time.
+
+A fresh operation reopens only that preparation file with read access and write/delete sharing
+denied, strictly revalidates its schema, digest, canonical path, reserved alias, and exact
+field-to-request projection, then adds its inventory row before the request row. Discovery
+separately performs its fresh installer hash comparison. The request row names the preparation alias
+as direct lineage. Completed-state and recovery paths trust the sealed request binding and never
+reopen the preparation file.
+
+### 5.2 Exact CLI grammar and help
+
+The global help bytes become exactly:
+
+```text
+Usage:
+  celesphonia-atlas empty-survey
+  celesphonia-atlas intake-prepare-discovery <preparation-file>
+  celesphonia-atlas intake-prepare-confirmation <preparation-file>
+  celesphonia-atlas intake-prepare-copy <preparation-file>
+  celesphonia-atlas intake-discover <request-file>
+  celesphonia-atlas intake-confirm <request-file>
+  celesphonia-atlas intake-copy <request-file>
+  celesphonia-atlas cleanup-preflight <request-file>
+
+Commands:
+  empty-survey                 Write a deterministic empty Atlas survey.
+  intake-prepare-discovery     Prepare an intake discovery request.
+  intake-prepare-confirmation  Prepare an intake confirmation request.
+  intake-prepare-copy          Prepare an intake copy request.
+  intake-discover              Discover the approved Atlas intake scope.
+  intake-confirm               Confirm an approved Atlas intake manifest.
+  intake-copy                  Create qualified Atlas research snapshots.
+  cleanup-preflight            Report private-artifact cleanup eligibility.
+
+Options:
+  -h, --help  Show help.
+```
+
+Every preparation command uses this exact command-help text:
+
+```text
+Usage: celesphonia-atlas <preparation-command> <preparation-file>
+
+Options:
+  -h, --help  Show help.
+```
+
+Existing request-command and empty-survey help bytes remain unchanged. The parser precedence is:
+
+1. one global help token;
+2. exact two-token empty-survey, preparation-command, or request-command help;
+3. exact one-token `empty-survey`;
+4. exact two-token recognized preparation command with a non-help path;
+5. exact two-token recognized request command with a non-help path; then
+6. fixed `Invalid arguments.` with exit 2.
+
+Unknown commands, empty/whitespace paths, extra arguments, mixed help, or a help token used as an
+operation path never invoke an operation. Preparation success is exactly
+`Intake request prepared.` on stdout. All existing error bytes, exit classifications, cancellation
+precedence, stdout/stderr write precedence, and no-exception-detail rules remain byte-for-byte.
+Every help and diagnostic line uses LF, and each complete help or success payload ends in exactly
+one LF.
+
+### 5.3 Discovery request
 
 The v2 discovery request adds one required `officialPatch` object containing exactly:
 
@@ -225,7 +308,7 @@ The v2 discovery request adds one required `officialPatch` object containing exa
 No current directory, profile, registry, Downloads folder, Steam manifest, or environment value is
 used to infer the installer path or hash.
 
-### 5.3 Confirmation and copy requests
+### 5.4 Confirmation and copy requests
 
 The v2 confirmation and copy requests each add required
 `expectedOfficialPatchInstallerSha256`. They obtain the installer path from the strictly validated
@@ -240,28 +323,28 @@ source-root map bound through the preceding state, then require exact equality a
 Completed-phase validation and recovery trust sealed private evidence and perform no installer or
 live-source open.
 
-### 5.4 Source-root map
+### 5.5 Source-root map
 
 `atlas-source-root-map/v2` adds one required `officialPatchProvenance` object containing exactly:
 
-- public source URL;
-- public version label;
-- installer artifact alias;
-- private installer absolute path;
-- private lowercase SHA-256; and
-- the closed installation attestation.
+- `sourceUrl`, the public source URL;
+- `versionLabel`, the public version label;
+- `installerArtifactAlias`, the inventory alias;
+- `installerPath`, the private absolute path;
+- `installerSha256`, the private lowercase digest; and
+- `installationAttestation`, the closed attestation.
 
 The installer path appears in no state or receipt.
 
-### 5.5 State and receipt binding
+### 5.6 State and receipt binding
 
 Every `atlas-intake-state/v2` revision and `atlas-copy-receipt/v2` contains one required,
 path-free `officialPatchBinding` object with exactly:
 
-- public source URL;
-- public version label;
-- installer artifact alias; and
-- private lowercase installer SHA-256.
+- `sourceUrl`, the public source URL;
+- `versionLabel`, the public version label;
+- `installerArtifactAlias`, the inventory alias; and
+- `installerSha256`, the private lowercase digest.
 
 State revision 1 records discovery verification, revision 2 records approval-time revalidation,
 and revision 3 plus the copy receipt record the final fresh pre-copy revalidation. State revision 4
@@ -273,11 +356,11 @@ or path-free binding objects. Root-map attestation is validated in full and rema
 bound through the existing root-map document digest in every state.
 
 Inventory validation separately requires one installer row with the exact alias, class, purpose,
-retention tuple, and verification method from section 5.6, plus source-root-map direct lineage to
+retention tuple, and verification method from section 5.7, plus source-root-map direct lineage to
 that alias. Any projection/hash/alias/version/source/attestation/inventory mismatch is a safety
 refusal.
 
-### 5.6 Private inventory
+### 5.7 Private inventory
 
 Discovery allocates the official-patch installer artifact before the source-root-map artifact and
 adds one `atlas-private-inventory/v1` entry:
@@ -306,6 +389,34 @@ retained. The existing cleanup report remains single-result: it returns `blocked
 rows because status is evaluated first, while separately preserving and validating
 `plannedDisposition = retain-private`. A8 has no deletion authority for either unless a future
 independently approved plan explicitly reverses the project-leader decision.
+
+Each preparation file receives one inventory row immediately before its generated-request row:
+
+```text
+artifactClass = private-evidence
+purpose = <phase-specific value below>
+custodianRole = project-leader
+lineageAliases = []
+lastUseMilestone = A2
+expiryCondition = after:A2
+plannedDisposition = delete
+status = present
+verificationMethod = <exact preparation schema version>
+qualification = null
+```
+
+The exact purpose values are `request-preparation:discover`,
+`request-preparation:confirmation`, and `request-preparation:copy`. The corresponding verification
+method is that phase's preparation schema version from section 5.
+
+The preparation alias and digest are bound through the request and successor state. Preparation
+files remain outside the survey census but inside the private-artifact inventory and A8 lifecycle.
+A2 performs no deletion. Any later cleanup requires the existing reviewed status-transition and
+human-approval process; the builders and intake operations have no cleanup authority.
+
+Alias allocation preserves every pre-amendment relative order, inserts each preparation alias
+immediately before its generated-request alias, and inserts the discovery installer alias
+immediately before the source-root-map alias. Recovery validates those exact consecutive ordinals.
 
 ## 6. Installer hashing and path safety
 
@@ -345,9 +456,13 @@ canonical location.
 
 Any pending manifest, inventory transition, copy plan, state, backup, staging file, or later-phase
 artifact without that valid v2 root map is a safety refusal. A v1 root map or state is a safety
-refusal. The tool neither deletes nor repurposes such bytes; the project leader must archive the
-workspace and authorize a new empty survey identity before retrying. Confirmation, copy, and
-preflight require state v2, so v1 state cannot enter their recovery paths.
+refusal. A request-only-v1 workspace means a canonical v1 discovery request exists with no other A2
+operation output; it receives the same safety refusal.
+
+The tool and this plan authorize no deletion, archive, migration, reuse, replacement, or second
+survey identity for any v1 or ambiguous bytes. A2 stops for a separately persisted and independently
+reviewed A0/A2 remediation decision. The one-shot survey identity remains unchanged. Confirmation,
+copy, and preflight require state v2, so v1 state cannot enter their recovery paths.
 
 ### Discovery
 
@@ -382,9 +497,11 @@ and inherits its patch binding into state revision 4 without opening the install
 The project leader may direct Copilot to invoke the deterministic C# request builder and execute the
 resulting private request after the amended source-safety gate, provided:
 
-- the human-created preparation file uses only the exact canonical alias-only path in section 5.1;
+- the preparation or request operand is the exact absolute path anchored under the verified
+  repository root as section 5.1 defines;
 - the project leader audits and approves the generated request before its operation;
-- the operation uses only the exact canonical generated-request path;
+- `discover.json`, `confirm.json`, `copy.json`, and `cleanup-preflight.json` are accepted only at
+  their existing canonical request paths under the same verified repository root;
 - no command output, retained transcript, or Agent message contains the private request, installer
   path, installer hash, source paths, manifest bytes, or generated private records;
 - Copilot does not open, parse, display, search, summarize, or attach generated private files;
@@ -396,15 +513,25 @@ resulting private request after the amended source-safety gate, provided:
 Executing the reviewed CLI is not authority to inspect its inputs or outputs. Any unexpected
 process output, exception detail, or private disclosure is a stop condition.
 
+The three builders prepare discovery, confirmation, and copy requests. Cleanup preflight keeps its
+existing human-created request contract, but Copilot may invoke it only after the project leader
+audits that request and authorizes the exact canonical absolute control path.
+
 ## 9. Synthetic test requirements
 
 All tests use synthetic installer bytes and paths. They cover:
 
 - strict preparation shapes, canonical alias-only paths, builder fixed output, create-new behavior,
   exact-byte idempotence, cancellation, and no-private-output failures;
+- absolute repository-root anchoring for all preparation and request operands, with relative,
+  current-directory-inferred, outside-root, wrong-name, and wrong-survey rejection;
+- exact global/preparation help bytes, parser precedence, extra/mixed argument rejection, stream
+  failure precedence, and zero-operation help behavior;
 - discovery preparation hash generation followed by explicit human-approval simulation and fresh
   discovery rehash comparison;
 - confirmation/copy preparation from sealed evidence without installer or live-source opens;
+- preparation-file digest/alias binding, preparation-before-request inventory ordering, direct
+  lineage, and completed/recovery zero preparation-file opens;
 - strict v2 request shape, duplicate, missing, null, unknown, trailing, URL, version, hash, and
   attestation validation;
 - schema/DTO agreement for root-map v2, state v2, and receipt v2;
@@ -427,7 +554,7 @@ All tests use synthetic installer bytes and paths. They cover:
 
 ## 10. Acceptance criteria
 
-The implementation increment passes only when:
+The amended implementation gate passes only when:
 
 1. the exact plan candidate and plan-review record satisfy section 2;
 2. only the paths in section 11 change from the verified amendment plan-review record;
@@ -453,6 +580,15 @@ The implementation increment passes only when:
     the only child change; and
 21. private discovery remains blocked until that record passes parent, path, blob, upstream, and
     clean-worktree verification.
+
+Full A2 release additionally requires:
+
+1. the intake-approval record contains every safe discovery fact in section 11.2;
+2. confirmation, copy, and preflight complete under the approved decision commit;
+3. the private-run-acceptance record contains every safe final fact in section 11.2;
+4. a fresh reviewer reports exact `No findings` on the complete cumulative candidate;
+5. the release-gate record is reviewed and published as the exact record-only child; and
+6. the release record is the clean shared branch tip with the exact chain in section 11.1.
 
 ## 11. Exact implementation path boundary
 
@@ -517,8 +653,100 @@ src/private/app/celesphonia-modifier/docs/.copilot/reviews/
   atlas-v0-a2-patch-provenance-tool-safety-review.md
 ```
 
-Future intake-approval and release records retain their previously planned paths but must cite this
-amendment and the amended source-safety record.
+The remaining repository-safe record paths are:
+
+```text
+src/private/app/celesphonia-modifier/docs/.copilot/reviews/
+  atlas-v0-a2-intake-approval.md
+  atlas-v0-a2-private-run-acceptance.md
+  atlas-v0-a2-release-gate.md
+```
+
+### 11.1 Superseding commit and record chain
+
+The following roles define exact commits:
+
+- `P` is the final amendment-plan candidate. Relative to `9edbd57b`, its cumulative no-renames diff
+  contains exactly the four plan-candidate paths in section 11.
+- `B` is the immediate child of `P`. It adds only
+  `atlas-v0-a2-patch-provenance-plan-review.md`, with the independently reviewed staged blob
+  unchanged. `B` is the amended implementation and all later cumulative-review diff base.
+- `S` is the final amended source candidate descended from `B`. The cumulative no-renames diff
+  `B..S` contains exactly the implementation paths in section 11 and no record path.
+- `T` is the immediate child of `S`. It adds only
+  `atlas-v0-a2-patch-provenance-tool-safety-review.md`, unchanged from its independently reviewed
+  staged blob.
+- `A` is the immediate child of `T`, created only after private discovery and project-leader review.
+  It adds only `atlas-v0-a2-intake-approval.md`, unchanged from its independently reviewed staged
+  blob. `A` is the public `decisionCommit` used by confirmation and copy.
+- `R` is the immediate child of `A`, created only after successful confirmation, copy, and cleanup
+  preflight. It adds only `atlas-v0-a2-private-run-acceptance.md`, unchanged from its independently
+  reviewed staged blob.
+- `G` is the immediate child of `R`. It adds only `atlas-v0-a2-release-gate.md`, unchanged from its
+  independently reviewed staged blob, and becomes the A2 shared-branch tip.
+
+The source-safety review examines exact `B..S`. The final fresh independent review examines exact
+`B..R`; that cumulative no-renames diff may contain only the implementation paths plus the tool-
+safety, intake-approval, and private-run-acceptance record paths. The plan-review record is the base
+and is not repeated in either diff. The release record reviews and cites the exact `B..R` candidate,
+then verifies `G` as its one-path record-only child.
+
+Every role must be a pushed commit with verified parent, tree, allowed no-renames paths, staged blob
+identity where applicable, upstream equality, and clean worktree. A code, schema, test,
+documentation, dependency, build, request-contract, or private-procedure change after `S` invalidates
+`T` and all descendants; the chain restarts from `B` with a new source candidate. No old A2
+plan/tool record substitutes for `B` or `T`.
+
+This chain supersedes the original A2 plan's section 16 comparison base and section 17.4 candidate
+sequence. All other record-review mechanics remain governing.
+
+### 11.2 Mandatory repository-safe private-run evidence
+
+`atlas-v0-a2-intake-approval.md` records exactly these safe facts after the project leader audits
+the generated discovery request, pending manifest, v2 root map, state revision 1, and inventory:
+
+- survey alias, pending-manifest revision, Steam application/build, public patch URL/version, and
+  the existing approved A0 aggregate counts;
+- `requestBuilderSucceeded = true`;
+- `generatedRequestHumanReviewed = true`;
+- `installationAttestationPassed = true`;
+- `installerHashRevalidatedAtDiscovery = true`;
+- `sourceRootMapV2PublishedFirst = true`;
+- `v1OrAmbiguousArtifactsObserved = false`;
+- `discoveryPreparationInventoryBindingPassed = true`;
+- `permanentInstallerCustodyRowPassed = true`;
+- `permanentHashEvidenceCustodyRowPassed = true`;
+- `privateDisclosureObserved = false`; and
+- the explicit project-leader approval or rejection decision.
+
+The record contains no installer hash/path/name/metadata, preparation/request bytes, private
+document digest, source path/name, per-file result, or installed-file identity claim.
+
+`atlas-v0-a2-private-run-acceptance.md` records exactly these safe facts after the project leader
+audits state revisions 2-4, copy receipt v2, final inventory, and cleanup report:
+
+- the approved survey alias, public decision commit `A`, public patch URL/version, Steam
+  application/build, and approved aggregate copy counts;
+- `installerHashRevalidatedAtConfirmation = true`;
+- `installerHashRevalidatedAtCopy = true`;
+- `patchBindingContinuityPassed = true`;
+- `stateV2RevisionsOneThroughFourPassed = true`;
+- `copyReceiptV2Passed = true`;
+- `confirmationPreparationInventoryBindingPassed = true`;
+- `copyPreparationInventoryBindingPassed = true`;
+- `permanentCustodyRowsPresent = 2`;
+- `permanentCustodyCleanupResult = blocked-status`;
+- `cleanupInvalidRows = 0`;
+- `cleanupDeletionsPerformed = 0`;
+- `unexpectedRecoveryObserved = false`;
+- `privateDisclosureObserved = false`; and
+- `packageHashClaimLimitedToPackageIdentity = true`.
+
+These are project-leader attestations based on private document review and fixed CLI outcomes, not
+public reproduction of private evidence. A false, unknown, missing, or non-applicable value stops
+release. The final cumulative reviewer checks record completeness, chain consistency, public-value
+agreement, and absence of private fields. `atlas-v0-a2-release-gate.md` cites `B`, `S`, `T`, `A`,
+`R`, the exact final-review result, and all parent/path/blob/upstream/clean-worktree checks.
 
 ## 12. Validation procedure
 
@@ -563,12 +791,15 @@ Stop and return to planning if:
 - the Steam public build changes;
 - integrity verification, install ordering, or no-later-modification attestation is false;
 - any A0 root, count, rule, decision, alias identity, or denominator changes;
+- any v1 or ambiguous request, output, staging, or recovery artifact is present;
 - any design claims installer-package identity proves installed-file identity;
 - any private locator-bearing path, hash, source name, request bytes, output bytes, or source content
   beyond the permitted alias-only control paths reaches Git or Agent output;
 - any implementation path falls outside section 11;
 - any dependency, project, SDK, telemetry, or target-framework change is proposed;
 - validation requires an unplanned source open during recovery;
+- any required section 11.2 safe fact is false, unknown, missing, or non-applicable;
+- any tracked change occurs between `S` and `G` outside the exact record-only chain;
 - any record-only parent, path, blob, upstream, or clean-worktree check fails; or
 - any independent finding remains unresolved.
 

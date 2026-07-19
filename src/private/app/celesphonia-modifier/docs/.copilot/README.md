@@ -55,6 +55,13 @@ semantic scanning, write authority, WinUI, network access, and private data from
 - `reviews/atlas-v0-a2-tool-safety-review.md` records the original A2 source-safety result. It is
   historical after discovery was suspended for the official-patch provenance amendment and does
   not authorize a private run.
+- `reviews/atlas-v0-a2-patch-provenance-plan-review.md` will bind the exact amendment plan and
+  replace the original A2 plan-review commit as the implementation diff base.
+- `reviews/atlas-v0-a2-patch-provenance-tool-safety-review.md` will be the only source-safety record
+  that can authorize the amended private run.
+- `reviews/atlas-v0-a2-private-run-acceptance.md` will carry only the amendment's mandatory
+  repository-safe booleans and aggregates after the private phases. It never carries private
+  hashes, paths, names, or document bytes.
 
 ## Workflow-policy artifacts
 
