@@ -147,6 +147,9 @@ The amendment replaces these private contract versions:
 - Discovery preparation: none to `atlas-intake-discovery-preparation/v1`.
 - Confirmation preparation: none to `atlas-intake-confirmation-preparation/v1`.
 - Copy preparation: none to `atlas-intake-copy-preparation/v1`.
+- Cleanup preparation: none to `atlas-cleanup-preflight-preparation/v1`.
+- Preparation receipt: none to `atlas-request-preparation-receipt/v1`.
+- Request review: none to `atlas-private-request-review/v1`.
 - Source-root map: `atlas-source-root-map/v1` to `atlas-source-root-map/v2`.
 - Intake state: `atlas-intake-state/v1` to `atlas-intake-state/v2`.
 - Copy receipt: `atlas-copy-receipt/v1` to `atlas-copy-receipt/v2`.
@@ -167,6 +170,7 @@ The amended C# CLI adds these fixed-output commands:
 celesphonia-atlas intake-prepare-discovery <repository-root> <survey-alias>
 celesphonia-atlas intake-prepare-confirmation <repository-root> <survey-alias>
 celesphonia-atlas intake-prepare-copy <repository-root> <survey-alias>
+celesphonia-atlas intake-prepare-preflight <repository-root> <survey-alias>
 ```
 
 The project leader creates each private preparation file and supplies the human-only facts. The
@@ -177,6 +181,9 @@ src\private\app\celesphonia-modifier\.private\atlas-v0\
   operator-input\<surveyAlias>\discover.json
   operator-input\<surveyAlias>\confirm.json
   operator-input\<surveyAlias>\copy.json
+  operator-input\<surveyAlias>\cleanup-preflight.json
+  operator-input\<surveyAlias>\<phase>.receipt.json
+  operator-input\<surveyAlias>\<phase>.review.json
 ```
 
 That directory is outside the surveyed workspace and its closed census. The C# CLI itself is the
@@ -197,42 +204,84 @@ discovery-request field except `officialPatch.expectedInstallerSha256`, `prepara
 1. strictly validates the preparation shape and canonical alias-only paths;
 2. validates and hashes only the explicit installer using section 6 steps 1-8 and 10, requiring
    metadata stability but deferring expected-hash equality to human approval and discovery;
-3. calculates the canonical preparation-file digest and reserves the next inventory alias;
-4. inserts both digests, the canonical preparation path, and the reserved alias into the request;
+3. calculates the canonical preparation-file digest and reserves four consecutive aliases;
+4. inserts both digests, the canonical preparation path, and the reserved aliases into the request;
 5. serializes canonical UTF-8 bytes;
-6. creates the request at its one canonical workspace path, or accepts an exact byte match; and
-7. emits only `Intake request prepared.` or the existing classified diagnostic.
+6. creates the request at its one canonical workspace path, or accepts an exact byte match;
+7. publishes the preparation receipt last; and
+8. emits only `Intake request prepared.` or the existing classified diagnostic.
 
 The project leader opens the generated request, audits its private path, digest, attestation, and
-all existing A2 request fields, and explicitly approves it before discovery. This human review
-turns the builder-calculated digest into the expected installer binding that discovery rehashes.
+all existing A2 request fields, then creates the approved request-review document before discovery.
+This human review turns the builder-calculated digest into the expected installer binding that
+discovery rehashes.
 
 Confirmation preparation contains exactly `schemaVersion`, `surveyAlias`, `projectRoot`,
-`workspaceRoot`, `approved`, `decisionCommit`, and `expectedPendingManifestSha256`. `approved` must
-be `true`. It reads sealed canonical state/root-map/plan/inventory evidence, requires the
-human-supplied manifest digest to match, projects the root-map patch binding, and builds the exact
-v2 confirmation request at the existing canonical path.
-
-Copy preparation contains exactly `schemaVersion`, `surveyAlias`, `projectRoot`, `workspaceRoot`,
-`expectedApprovedStateSha256`, and `decisionCommit`. It reads sealed canonical
-state/root-map/plan/inventory evidence, requires the human-supplied state and decision values to
-match, projects the root-map patch binding, and builds the exact v2 copy request at the existing
+`workspaceRoot`, `approved`, `decisionCommit`, `expectedPendingManifestSha256`, and
+`discoveryOutputsHumanAudited = true`. `approved` must be `true`. It reads sealed canonical
+state/root-map/plan/inventory evidence, requires the human-supplied manifest digest to match,
+projects the root-map patch binding, and builds the exact v2 confirmation request at the existing
 canonical path.
 
-Preparation never opens live game sources. Confirmation/copy preparation never opens the installer.
-Every builder is create-new or exact-byte-idempotent, supports cancellation, writes no partial final
-request, never overwrites different bytes, and never emits private values or exception details.
-Preparation files and generated requests remain private. The tool does not delete them.
+Copy preparation contains exactly `schemaVersion`, `surveyAlias`, `projectRoot`, `workspaceRoot`,
+`expectedApprovedStateSha256`, `decisionCommit`, and
+`confirmationOutputsHumanAudited = true`. It reads sealed canonical state/root-map/plan/inventory
+evidence, requires the human-supplied state and decision values to match, projects the root-map
+patch binding, and builds the exact v2 copy request at the existing canonical path.
+
+Cleanup-preflight preparation contains exactly `schemaVersion`, `surveyAlias`, `projectRoot`,
+`workspaceRoot`, `expectedQualifiedStateSha256`, `proposedMilestone`, and
+`copyOutputsHumanAudited = true`. It reads sealed state-3/inventory evidence and builds the existing
+cleanup-preflight request at its canonical path.
+
+Preparation never opens live game sources. Confirmation, copy, and preflight preparation never open
+the installer. Every builder is create-new or exact-byte-idempotent, supports cancellation, writes
+no partial final artifact, never overwrites different bytes, and never emits private values or
+exception details. Preparation, request, receipt, and review files remain private. The tool does not
+delete them.
 
 Fresh discovery preparation also requires the canonical workspace census to contain no A2 operation
 output from a prior v1 or v2 attempt. Its only permitted existing generated request is an exact byte
 match to the new v2 request. It never migrates, deletes, or overwrites an earlier request or output.
 
 Before any operation output exists, a builder rerun may revalidate its input and accept only the
-exact existing request bytes. After a valid successor state exists, the builder returns success from
-sealed request/state evidence without opening the preparation file, installer, or live source. Any
-intermediate operation output causes the builder to refuse; only the corresponding operation may
-enter its section 7 recovery path.
+exact existing request and receipt bytes. After a valid successor state exists, the builder returns
+success from sealed state evidence without opening the custody bundle, installer, or live source.
+Any intermediate operation output causes the builder to refuse; only the corresponding operation
+may enter its section 7 recovery path.
+
+A request without its final receipt is a preparation-publication seam, not a reviewable request.
+Operations refuse it. Only the same builder may validate the exact request and finish the receipt;
+abandoning that seam stops A2 and retains both files for separately reviewed remediation.
+
+The phase tokens are exactly `discover`, `confirm`, `copy`, and `cleanup-preflight`. Each
+`atlas-request-preparation-receipt/v1` contains exactly:
+
+- `schemaVersion`, `surveyAlias`, `phase`, and `sourceInventorySha256`;
+- `preparationArtifact`, with alias, canonical path, digest, purpose, schema version, and lifecycle;
+- `requestArtifact`, with alias, canonical path, digest, purpose, schema version, and lifecycle;
+- `receiptArtifactAlias` and `reviewArtifactAlias`; and
+- `reviewPath`, the fixed `<phase>.review.json` path.
+
+The receipt is the pre-execution custody record. It reserves four consecutive aliases in this order:
+preparation, request, receipt, review. It binds exact bytes and lifecycle even when the project
+leader later rejects or abandons the request.
+
+After auditing the request, the project leader creates `atlas-private-request-review/v1` at the
+fixed review path. It contains exactly:
+
+- `schemaVersion`, `surveyAlias`, `phase`, and `reviewerRole = project-leader`;
+- `decision`, exactly `approved` or `rejected`;
+- `preparationReceiptSha256` and `requestSha256`;
+- `requestFieldsReviewed = true` and `privateValuesRemainPrivate = true`; and
+- `priorOutputAuditRequired` and `priorOutputAuditPassed`.
+
+Discovery review requires both prior-output booleans to be `false`. Confirmation, copy, and
+preflight require both to be `true` and require exact agreement with their preparation input. A
+missing review returns approval-required. A rejected review returns approval-required and stops A2.
+The request, receipt, preparation, and review then remain under private project-leader custody; this
+plan authorizes no deletion, migration, reuse, or alias release. An abandoned bundle means the
+receipt exists without a review and has the same stop-and-retain outcome.
 
 Every v2 discovery, confirmation, and copy request also contains exactly:
 
@@ -242,10 +291,14 @@ Every v2 discovery, confirmation, and copy request also contains exactly:
 
 A fresh operation reopens only that preparation file with read access and write/delete sharing
 denied, strictly revalidates its schema, digest, canonical path, reserved alias, and exact
-field-to-request projection, then adds its inventory row before the request row. Discovery
-separately performs its fresh installer hash comparison. The request row names the preparation alias
-as direct lineage. Completed-state and recovery paths trust the sealed request binding and never
-reopen the preparation file.
+field-to-request projection. It also validates the receipt, request, and review digests, paths,
+aliases, decisions, and audit booleans. It imports all four rows into the private inventory before
+adding phase outputs. Discovery separately performs its fresh installer hash comparison.
+
+The exact imported lineage is: preparation `[]`; request `[preparation]`; receipt
+`[preparation, request]`; and review `[request, receipt]`. Successor state binds the request,
+receipt, and review digests. Completed-state and recovery paths trust those sealed bindings and
+never reopen the custody bundle.
 
 ### 5.2 Exact CLI grammar and help
 
@@ -257,6 +310,7 @@ Usage:
   celesphonia-atlas intake-prepare-discovery <repository-root> <survey-alias>
   celesphonia-atlas intake-prepare-confirmation <repository-root> <survey-alias>
   celesphonia-atlas intake-prepare-copy <repository-root> <survey-alias>
+  celesphonia-atlas intake-prepare-preflight <repository-root> <survey-alias>
   celesphonia-atlas intake-discover <repository-root> <survey-alias>
   celesphonia-atlas intake-confirm <repository-root> <survey-alias>
   celesphonia-atlas intake-copy <repository-root> <survey-alias>
@@ -267,6 +321,7 @@ Commands:
   intake-prepare-discovery     Prepare an intake discovery request.
   intake-prepare-confirmation  Prepare an intake confirmation request.
   intake-prepare-copy          Prepare an intake copy request.
+  intake-prepare-preflight     Prepare a cleanup preflight request.
   intake-discover              Discover the approved Atlas intake scope.
   intake-confirm               Confirm an approved Atlas intake manifest.
   intake-copy                  Create qualified Atlas research snapshots.
@@ -425,18 +480,29 @@ verificationMethod = <exact preparation schema version>
 qualification = null
 ```
 
-The exact purpose values are `request-preparation:discover`,
-`request-preparation:confirmation`, and `request-preparation:copy`. The corresponding verification
-method is that phase's preparation schema version from section 5.
+The exact preparation purpose values are `request-preparation:discover`,
+`request-preparation:confirmation`, `request-preparation:copy`, and
+`request-preparation:cleanup-preflight`. The corresponding verification method is that phase's
+preparation schema version from section 5.
 
-The preparation alias and digest are bound through the request and successor state. Preparation
-files remain outside the survey census but inside the private-artifact inventory and A8 lifecycle.
+The other imported rows use the same custody, last-use, expiry, disposition, status, and
+qualification values. Their distinct fields are:
+
+- request: `private-evidence`, existing `request:<phase>` purpose, existing
+  `atlas-cli:<command>` verification;
+- receipt: `private-provenance`, `request-preparation-receipt:<phase>` purpose, receipt schema
+  verification; and
+- review: `private-evidence`, `request-review:<phase>` purpose, review schema verification.
+
+Before an approved operation, the receipt governs the private custody bundle outside the survey
+census. The operation imports all four rows into the private-artifact inventory and A8 lifecycle.
 A2 performs no deletion. Any later cleanup requires the existing reviewed status-transition and
-human-approval process; the builders and intake operations have no cleanup authority.
+human-approval process; builders and intake operations have no cleanup authority.
 
-Alias allocation preserves every pre-amendment relative order, inserts each preparation alias
-immediately before its generated-request alias, and inserts the discovery installer alias
-immediately before the source-root-map alias. Recovery validates those exact consecutive ordinals.
+Alias allocation replaces each pre-amendment request position with the consecutive
+`[preparation, request, receipt, review]` quartet, then preserves every later relative order. It
+inserts the discovery installer alias immediately before the source-root-map alias. Recovery
+validates those exact consecutive ordinals and lineages.
 
 ## 6. Installer hashing and path safety
 
@@ -486,21 +552,25 @@ copy, and preflight require state v2, so v1 state cannot enter their recovery pa
 
 ### Discovery
 
-Discovery validates and hashes the installer before enumerating live game roots. It publishes the
-v2 root map first, then the pending manifest and later outputs. Inventory lineage and state revision
-1 are published only after the private hash and installation attestation pass.
+Fresh discovery requires the approved discovery request-review document. It validates and hashes
+the installer before enumerating live game roots. It publishes the v2 root map first, then the
+pending manifest and later outputs. Inventory lineage and state revision 1 are published only after
+the private hash and installation attestation pass.
 
 ### Confirmation
 
-Fresh confirmation validates state revision 1 and every bound private document, rehashes the
-installer, and publishes state revision 2 only after exact equality. A completed valid state-2-or-
-later rerun returns from sealed evidence without opening the installer or live sources.
+Fresh confirmation requires public decision commit `A`, the preparation's discovery-output audit,
+and the approved confirmation request-review document. It validates state revision 1 and every
+bound private document, rehashes the installer, and publishes state revision 2 only after exact
+equality. A completed valid state-2-or-later rerun returns from sealed evidence without opening the
+installer or live sources.
 
 ### Copy
 
-Fresh copy validates state revision 2 and every bound document, rehashes the installer before
-opening any live game source, and carries the exact path-free binding into the receipt and state
-revision 3.
+Fresh copy requires the preparation's confirmation-output audit and the approved copy
+request-review document. It validates state revision 2 and every bound document, rehashes the
+installer before opening any live game source, and carries the exact path-free binding into the
+receipt and state revision 3.
 
 A missing, changed, unstable, reparse-backed, or mismatched installer before fresh state revision 3
 stops A2. It does not authorize recopying or replacement with another package.
@@ -509,7 +579,8 @@ stops A2. It does not authorize recopying or replacement with another package.
 
 Recovery after any output-publication seam validates sealed bytes only. It never rehashes the
 installer and never opens live game sources. A complete staged receipt and finalization recovery
-uses the patch binding already sealed before copying. Cleanup preflight validates state revision 3
+uses the patch binding already sealed before copying. Fresh cleanup preflight requires the
+preparation's copy-output audit and approved preflight request review. It validates state revision 3
 and inherits its patch binding into state revision 4 without opening the installer.
 
 ## 8. Privacy and operator boundary
@@ -531,9 +602,9 @@ resulting private request after the amended source-safety gate, provided:
 Executing the reviewed CLI is not authority to inspect its inputs or outputs. Any unexpected
 process output, exception detail, or private disclosure is a stop condition.
 
-The three builders prepare discovery, confirmation, and copy requests. Cleanup preflight keeps its
-existing human-created request contract, but Copilot may invoke it only after the project leader
-audits that request and authorizes the exact root/alias command.
+The four builders prepare discovery, confirmation, copy, and cleanup-preflight requests. Copilot may
+invoke an operation only after the project leader creates the matching approved review document and
+authorizes the exact root/alias command.
 
 ### 8.1 Exact direct-apphost invocation
 
@@ -555,7 +626,8 @@ After `T` is the clean upstream-equal `HEAD`, Copilot may run exactly:
 & $apphost intake-prepare-discovery $repositoryRoot $surveyAlias
 ```
 
-The project leader audits and approves the generated request before Copilot may run:
+The project leader audits the generated request and creates its approved request-review document
+before Copilot may run:
 
 ```powershell
 & $apphost intake-discover $repositoryRoot $surveyAlias
@@ -570,9 +642,15 @@ After discovery audit and publication of `A`, the same prepare/audit/operate seq
 & $apphost intake-copy $repositoryRoot $surveyAlias
 ```
 
-Those four lines are separate invocations; each operation line requires project-leader audit of its
-generated request first. After the project leader creates and audits the existing preflight request,
-Copilot may run:
+Those four lines are separate invocations; each operation line requires project-leader audit and an
+approved request-review document first. After copy-output audit, Copilot may prepare preflight:
+
+```powershell
+& $apphost intake-prepare-preflight $repositoryRoot $surveyAlias
+```
+
+After the project leader audits that request and creates its approved review document, Copilot may
+run:
 
 ```powershell
 & $apphost cleanup-preflight $repositoryRoot $surveyAlias
@@ -597,11 +675,14 @@ All tests use synthetic installer bytes and paths. They cover:
 - discovery preparation hash generation followed by explicit human-approval simulation and fresh
   discovery rehash comparison;
 - confirmation/copy preparation from sealed evidence without installer or live-source opens;
-- preparation-file digest/alias binding, preparation-before-request inventory ordering, direct
-  lineage, and completed/recovery zero preparation-file opens;
+- receipt-last publication, four-alias custody order, strict private review decisions, exact
+  lineage, approved inventory import, and completed/recovery zero custody-bundle opens;
+- missing/rejected/abandoned review behavior, durable pre-execution custody, zero deletion, and
+  mandatory replanning;
+- discovery-to-confirmation, confirmation-to-copy, and copy-to-preflight output-audit gates;
 - strict v2 request shape, duplicate, missing, null, unknown, trailing, URL, version, hash, and
   attestation validation;
-- schema/DTO agreement for root-map v2, state v2, and receipt v2;
+- schema/DTO agreement for preparation receipt v1, root-map v2, state v2, and copy receipt v2;
 - ordinary-file, fixed-drive, containment, reserved-name, and component-reparse policy;
 - held-stream length and write-denied path last-write stability;
 - exact hash success plus mismatch, short-read, sharing, I/O, and cancellation failures;
@@ -626,7 +707,8 @@ The amended implementation gate passes only when:
 
 1. the exact plan candidate and plan-review record satisfy section 2;
 2. only the paths in section 11 change from the verified amendment plan-review record;
-3. the C# builders prepare auditable requests without exposing private values to Copilot;
+3. the four C# builders publish receipt-bound requests, and every operation requires the exact
+   approved private review without exposing private values to Copilot;
 4. all versioned contracts and schemas match section 5 exactly;
 5. installer path and hash remain private in every success and failure;
 6. all three fresh phases rehash and bind the exact installer as section 6 requires;
@@ -678,6 +760,7 @@ src/private/app/celesphonia-modifier/
     schemas/atlas-v0/
       copy-receipt.schema.json
       intake-state.schema.json
+      request-preparation-receipt.schema.json
       source-root-map.schema.json
 tests/private/app/celesphonia-modifier/
   Hcoona.CelesphoniaModifier.Atlas.Tests/
@@ -692,7 +775,7 @@ tests/private/app/celesphonia-modifier/
 ```
 
 The README change records the amended contract status only. The two listed CLI files authorize the
-three fixed-output preparation commands and explicit root/alias grammar for every private phase. The
+four fixed-output preparation commands and explicit root/alias grammar for every private phase. The
 two listed new C# files authorize the BCL-only request builder and its synthetic tests. No project,
 package, lock, root configuration, new schema path, or other production/test file is authorized.
 
@@ -775,17 +858,19 @@ the generated discovery request, pending manifest, v2 root map, state revision 1
 
 - survey alias, pending-manifest revision, Steam application/build, public patch URL/version, and
   the existing approved A0 aggregate counts;
-- `requestBuilderSucceeded = true`;
-- `generatedRequestHumanReviewed = true`;
+- `discoveryRequestPrepared = true`;
+- `discoveryRequestReviewApproved = true`;
+- `discoveryRequestHumanAudited = true`;
+- `discoveryOutputsHumanAudited = true`;
 - `installationAttestationPassed = true`;
 - `installerHashRevalidatedAtDiscovery = true`;
 - `sourceRootMapV2PublishedFirst = true`;
 - `v1OrAmbiguousArtifactsObserved = false`;
-- `discoveryPreparationInventoryBindingPassed = true`;
+- `discoveryCustodyBundleInventoryBindingPassed = true`;
 - `permanentInstallerCustodyRowPassed = true`;
 - `permanentHashEvidenceCustodyRowPassed = true`;
 - `privateDisclosureObserved = false`; and
-- the explicit project-leader approval or rejection decision.
+- `projectLeaderDecision = approved`.
 
 The record contains no installer hash/path/name/metadata, preparation/request bytes, private
 document digest, source path/name, per-file result, or installed-file identity claim.
@@ -800,8 +885,16 @@ audits state revisions 2-4, copy receipt v2, final inventory, and cleanup report
 - `patchBindingContinuityPassed = true`;
 - `stateV2RevisionsOneThroughFourPassed = true`;
 - `copyReceiptV2Passed = true`;
-- `confirmationPreparationInventoryBindingPassed = true`;
-- `copyPreparationInventoryBindingPassed = true`;
+- `confirmationRequestReviewApproved = true`;
+- `confirmationOutputsHumanAudited = true`;
+- `copyRequestReviewApproved = true`;
+- `copyOutputsHumanAudited = true`;
+- `preflightRequestReviewApproved = true`;
+- `preflightOutputsHumanAudited = true`;
+- `requestReviewBindingsPassed = 4`;
+- `confirmationCustodyBundleInventoryBindingPassed = true`;
+- `copyCustodyBundleInventoryBindingPassed = true`;
+- `preflightCustodyBundleInventoryBindingPassed = true`;
 - `permanentCustodyRowsPresent = 2`;
 - `permanentCustodyCleanupResult = blocked-status`;
 - `cleanupInvalidRows = 0`;
@@ -863,6 +956,8 @@ Stop and return to planning if:
 - integrity verification, install ordering, or no-later-modification attestation is false;
 - any A0 root, count, rule, decision, alias identity, or denominator changes;
 - any v1 or ambiguous request, output, staging, or recovery artifact is present;
+- any custody bundle is missing, inconsistent, rejected, or abandoned after preparation succeeds;
+- any required request review or prior-output audit is absent or not approved;
 - any design claims installer-package identity proves installed-file identity;
 - any private locator-bearing path, hash, source name, request bytes, output bytes, or source
   content beyond the permitted public root/alias arguments reaches Git or Agent output;
