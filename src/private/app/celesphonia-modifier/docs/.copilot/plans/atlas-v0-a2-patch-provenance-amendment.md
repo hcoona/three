@@ -108,6 +108,7 @@ Later copy hashes independently prove only the copied per-file bytes.
 The discovery request carries this closed private attestation:
 
 ```text
+attestationPhase = discovery
 attestedByRole = project-leader
 retainedInstallerObtainedFromDeclaredOfficialSource = true
 retainedInstallerMatchesDeclaredVersionLabel = true
@@ -122,7 +123,13 @@ The project leader must confirm that these statements describe both the A0 basel
 the current installation before preparing the discovery request. A false, missing, unknown, or
 incomplete field is a safety refusal.
 
-The first two booleans attest that the retained file came from the section 1 product URL and was
+The project leader repeats the complete attestation before preparing confirmation and again before
+preparing copy. Authorizing each approved review-receipt command reaffirms that the phase
+attestation is still current immediately before operation. A stale or uncertain attestation stops
+A2 even when the package hash still matches.
+
+`attestationPhase` is exactly `discovery`, `confirmation`, or `copy`. The first two booleans attest
+that the retained file came from the section 1 product URL and was
 presented to the project leader as `CN Patch v1.05.2`. A false or uncertain origin/version claim
 stops A2; the private package hash does not independently prove either claim.
 
@@ -149,7 +156,7 @@ The amendment replaces these private contract versions:
 - Copy preparation: none to `atlas-intake-copy-preparation/v1`.
 - Cleanup preparation: none to `atlas-cleanup-preflight-preparation/v1`.
 - Preparation receipt: none to `atlas-request-preparation-receipt/v1`.
-- Request review: none to `atlas-private-request-review/v1`.
+- Request review receipt: none to `atlas-private-request-review-receipt/v1`.
 - Source-root map: `atlas-source-root-map/v1` to `atlas-source-root-map/v2`.
 - Intake state: `atlas-intake-state/v1` to `atlas-intake-state/v2`.
 - Copy receipt: `atlas-copy-receipt/v1` to `atlas-copy-receipt/v2`.
@@ -171,6 +178,7 @@ celesphonia-atlas intake-prepare-discovery <repository-root> <survey-alias>
 celesphonia-atlas intake-prepare-confirmation <repository-root> <survey-alias>
 celesphonia-atlas intake-prepare-copy <repository-root> <survey-alias>
 celesphonia-atlas intake-prepare-preflight <repository-root> <survey-alias>
+celesphonia-atlas intake-record-review <repository-root> <survey-alias> <phase> <decision>
 ```
 
 The project leader creates each private preparation file and supplies the human-only facts. The
@@ -182,15 +190,20 @@ src\private\app\celesphonia-modifier\.private\atlas-v0\
   operator-input\<surveyAlias>\confirm.json
   operator-input\<surveyAlias>\copy.json
   operator-input\<surveyAlias>\cleanup-preflight.json
-  operator-input\<surveyAlias>\<phase>.receipt.json
-  operator-input\<surveyAlias>\<phase>.review.json
 ```
 
-That directory is outside the surveyed workspace and its closed census. The C# CLI itself is the
-only driver. Every private-phase command accepts exactly an explicit absolute canonical
-`repository-root` and the exact public `survey-000001` alias. It rejects relative/device/UNC roots,
-the current directory as an implicit root, another survey alias, and every visible reparse
-component.
+Preparation inputs remain outside the surveyed workspace and its closed census. Preparation
+receipts and review receipts occupy exact canonical paths inside the survey request directory:
+
+```text
+requests\<phase>.preparation-receipt.json
+requests\<phase>.review-receipt.json
+```
+
+The C# CLI itself is the only driver. Every private-phase command accepts exactly an explicit
+absolute canonical `repository-root` and the exact public `survey-000001` alias. It rejects
+relative/device/UNC roots, the current directory as an implicit root, another survey alias, and
+every visible reparse component.
 
 The CLI derives the one fixed preparation or request path from those two arguments, then requires
 the parsed private document's `projectRoot`, `workspaceRoot`, and `surveyAlias` to match. The
@@ -212,22 +225,24 @@ discovery-request field except `officialPatch.expectedInstallerSha256`, `prepara
 8. emits only `Intake request prepared.` or the existing classified diagnostic.
 
 The project leader opens the generated request, audits its private path, digest, attestation, and
-all existing A2 request fields, then creates the approved request-review document before discovery.
-This human review turns the builder-calculated digest into the expected installer binding that
-discovery rehashes.
+all existing A2 request fields, then authorizes the approved review-receipt command before
+discovery. This human review turns the builder-calculated digest into the expected installer
+binding that discovery rehashes.
 
 Confirmation preparation contains exactly `schemaVersion`, `surveyAlias`, `projectRoot`,
 `workspaceRoot`, `approved`, `decisionCommit`, `expectedPendingManifestSha256`, and
-`discoveryOutputsHumanAudited = true`. `approved` must be `true`. It reads sealed canonical
-state/root-map/plan/inventory evidence, requires the human-supplied manifest digest to match,
-projects the root-map patch binding, and builds the exact v2 confirmation request at the existing
-canonical path.
+`discoveryOutputsHumanAudited = true`, plus the full
+`freshInstallationAttestation` with `attestationPhase = confirmation`. `approved` must be `true`.
+It reads sealed canonical state/root-map/plan/inventory evidence, requires the human-supplied
+manifest digest to match, projects the root-map patch identity, and builds the exact v2 confirmation
+request at the existing canonical path.
 
 Copy preparation contains exactly `schemaVersion`, `surveyAlias`, `projectRoot`, `workspaceRoot`,
 `expectedApprovedStateSha256`, `decisionCommit`, and
-`confirmationOutputsHumanAudited = true`. It reads sealed canonical state/root-map/plan/inventory
-evidence, requires the human-supplied state and decision values to match, projects the root-map
-patch binding, and builds the exact v2 copy request at the existing canonical path.
+`confirmationOutputsHumanAudited = true`, plus the full `freshInstallationAttestation` with
+`attestationPhase = copy`. It reads sealed canonical state/root-map/plan/inventory evidence,
+requires the human-supplied state and decision values to match, projects the root-map patch
+identity, and builds the exact v2 copy request at the existing canonical path.
 
 Cleanup-preflight preparation contains exactly `schemaVersion`, `surveyAlias`, `projectRoot`,
 `workspaceRoot`, `expectedQualifiedStateSha256`, `proposedMilestone`, and
@@ -237,8 +252,8 @@ cleanup-preflight request at its canonical path.
 Preparation never opens live game sources. Confirmation, copy, and preflight preparation never open
 the installer. Every builder is create-new or exact-byte-idempotent, supports cancellation, writes
 no partial final artifact, never overwrites different bytes, and never emits private values or
-exception details. Preparation, request, receipt, and review files remain private. The tool does not
-delete them.
+exception details. Preparation, request, preparation-receipt, and review-receipt files remain
+private. The tool does not delete them.
 
 Fresh discovery preparation also requires the canonical workspace census to contain no A2 operation
 output from a prior v1 or v2 attempt. Its only permitted existing generated request is an exact byte
@@ -257,31 +272,76 @@ abandoning that seam stops A2 and retains both files for separately reviewed rem
 The phase tokens are exactly `discover`, `confirm`, `copy`, and `cleanup-preflight`. Each
 `atlas-request-preparation-receipt/v1` contains exactly:
 
-- `schemaVersion`, `surveyAlias`, `phase`, and `sourceInventorySha256`;
-- `preparationArtifact`, with alias, canonical path, digest, purpose, schema version, and lifecycle;
-- `requestArtifact`, with alias, canonical path, digest, purpose, schema version, and lifecycle;
-- `receiptArtifactAlias` and `reviewArtifactAlias`; and
-- `reviewPath`, the fixed `<phase>.review.json` path.
+- `schemaVersion: string`, fixed to the receipt version;
+- `surveyAlias: string`, fixed to `survey-000001`;
+- `phase: string`, one exact phase token;
+- `sourceInventorySha256: string`, 64 lowercase hexadecimal characters;
+- `preparationArtifact` and `requestArtifact`, exact custody objects defined below;
+- `receiptArtifactAlias: string` and `reviewReceiptArtifactAlias: string`; and
+- `reviewReceiptRelativePath: string`, exactly
+  `requests/<phase>.review-receipt.json`.
+
+Each custody object contains exactly:
+
+- `artifactAlias: string`, `absolutePath: string`, and `sha256: string`;
+- `artifactClass: string`, `purpose: string`, and `contractVersion: string`;
+- `custodianRole: string`, fixed to `project-leader`;
+- `lineageAliases: string[]`, with the exact section 5.7 order;
+- `lastUseMilestone: string`, `expiryCondition: string`, and
+  `plannedDisposition: string`;
+- `status: string` and `verificationMethod: string`; and
+- `qualification: null`.
+
+Every property is required; null, duplicate, unknown, or trailing data fails. The schema requires
+64-character lowercase digests, canonical aliases/paths, exact phase-specific constants, and
+`additionalProperties: false`.
 
 The receipt is the pre-execution custody record. It reserves four consecutive aliases in this order:
-preparation, request, receipt, review. It binds exact bytes and lifecycle even when the project
-leader later rejects or abandons the request.
+preparation, request, receipt, review receipt. It binds exact bytes and lifecycle even when the
+project leader later rejects or abandons the request.
 
-After auditing the request, the project leader creates `atlas-private-request-review/v1` at the
-fixed review path. It contains exactly:
+After auditing, the project leader authorizes this fixed-output C# command:
 
-- `schemaVersion`, `surveyAlias`, `phase`, and `reviewerRole = project-leader`;
-- `decision`, exactly `approved` or `rejected`;
-- `preparationReceiptSha256` and `requestSha256`;
-- `requestFieldsReviewed = true` and `privateValuesRemainPrivate = true`; and
-- `priorOutputAuditRequired` and `priorOutputAuditPassed`.
+```text
+celesphonia-atlas intake-record-review <repository-root> <survey-alias> <phase> <decision>
+```
 
-Discovery review requires both prior-output booleans to be `false`. Confirmation, copy, and
-preflight require both to be `true` and require exact agreement with their preparation input. A
-missing review returns approval-required. A rejected review returns approval-required and stops A2.
-The request, receipt, preparation, and review then remain under private project-leader custody; this
-plan authorizes no deletion, migration, reuse, or alias release. An abandoned bundle means the
-receipt exists without a review and has the same stop-and-retain outcome.
+`decision` is exactly `approved`, `rejected`, or `abandoned`. The command derives every private path
+and digest and publishes `atlas-private-request-review-receipt/v1` with create-new semantics. An
+exact existing byte match is idempotent; any different existing byte is a safety refusal. Its
+properties are exactly:
+
+- `schemaVersion: string`, `surveyAlias: string`, `phase: string`;
+- `reviewerRole: string`, fixed to `project-leader`;
+- `decision: string`, one exact decision token;
+- `preparationReceiptRelativePath: string` and
+  `preparationReceiptSha256: string`;
+- `requestRelativePath: string` and `requestSha256: string`;
+- `requestAuditCompleted: boolean` and `privateValuesRemainPrivate: boolean`;
+- `priorOutputAuditRequired: boolean` and `priorOutputAuditPassed: boolean`; and
+- `installationAttestationRequired: boolean` and
+  `installationAttestationStillCurrent: boolean`; and
+- `reviewReceiptArtifactAlias: string`.
+
+Every review-receipt property is required. Both relative paths are canonical survey-relative paths;
+both digests are 64 lowercase hexadecimal characters. Aliases, phases, roles, and decisions use
+their exact closed tokens. Null, duplicate, unknown, absolute, or trailing data fails, and its
+schema also sets `additionalProperties: false`.
+
+Approved discovery uses `requestAuditCompleted = true`, privacy `true`, and both prior-output
+booleans `false`. Approved discovery, confirmation, and copy require both installation-attestation
+booleans `true`. Approved preflight requires both to be `false`. Approved later phases require both
+prior-output booleans `true`. Rejected uses completed `true`, privacy `true`, and passed/current
+booleans `false`. Abandoned uses completed `false`, privacy `true`, and passed/current booleans
+`false`. Required flags remain phase-derived.
+
+Before publishing an approved later-phase receipt, the command strictly validates the preparation's
+prior-output audit and the request's phase attestation. The project leader's authorization is the
+human assertion that those fields remain true; the command supplies no success-shaped default.
+
+Missing review receipt returns approval-required. Rejected or abandoned receipt returns
+approval-required and stops A2. Its create-new bytes are the immutable decision custody; the plan
+authorizes no deletion, replacement, migration, reuse, or alias release.
 
 Every v2 discovery, confirmation, and copy request also contains exactly:
 
@@ -291,14 +351,17 @@ Every v2 discovery, confirmation, and copy request also contains exactly:
 
 A fresh operation reopens only that preparation file with read access and write/delete sharing
 denied, strictly revalidates its schema, digest, canonical path, reserved alias, and exact
-field-to-request projection. It also validates the receipt, request, and review digests, paths,
-aliases, decisions, and audit booleans. It imports all four rows into the private inventory before
-adding phase outputs. Discovery separately performs its fresh installer hash comparison.
+field-to-request projection. It also validates the preparation receipt, request, and review-receipt
+digests, paths, aliases, decision, and audit booleans. It imports all four rows into the private
+inventory before adding phase outputs. Discovery separately performs its fresh installer hash
+comparison.
 
 The exact imported lineage is: preparation `[]`; request `[preparation]`; receipt
-`[preparation, request]`; and review `[request, receipt]`. Successor state binds the request,
-receipt, and review digests. Completed-state and recovery paths trust those sealed bindings and
-never reopen the custody bundle.
+`[preparation, request]`; and review receipt `[request, receipt]`. Successor state uses exact
+document-binding roles `request`, `request-preparation-receipt`, and `request-review-receipt`.
+Because both receipts are inside the workspace, their binding paths are survey-relative. The
+outside-workspace preparation input is bound transitively by its receipt. Completed-state and
+recovery paths trust those sealed bindings and never reopen the custody bundle.
 
 ### 5.2 Exact CLI grammar and help
 
@@ -322,6 +385,7 @@ Commands:
   intake-prepare-confirmation  Prepare an intake confirmation request.
   intake-prepare-copy          Prepare an intake copy request.
   intake-prepare-preflight     Prepare a cleanup preflight request.
+  intake-record-review         Record a private request-review decision.
   intake-discover              Discover the approved Atlas intake scope.
   intake-confirm               Confirm an approved Atlas intake manifest.
   intake-copy                  Create qualified Atlas research snapshots.
@@ -331,7 +395,7 @@ Options:
   -h, --help  Show help.
 ```
 
-Every private-phase command uses this exact command-help text:
+Every preparation and operation command uses this exact command-help text:
 
 ```text
 Usage: celesphonia-atlas <command> <repository-root> <survey-alias>
@@ -340,14 +404,24 @@ Options:
   -h, --help  Show help.
 ```
 
+The review command instead uses:
+
+```text
+Usage: celesphonia-atlas intake-record-review <repository-root> <survey-alias> <phase> <decision>
+
+Options:
+  -h, --help  Show help.
+```
+
 Empty-survey help bytes remain unchanged. The parser precedence is:
 
 1. one global help token;
-2. exact two-token empty-survey or recognized private-phase command help;
+2. exact two-token empty-survey or recognized command help;
 3. exact one-token `empty-survey`;
 4. exact three-token recognized preparation command with root and alias;
-5. exact three-token recognized request command with root and alias; then
-6. fixed `Invalid arguments.` with exit 2.
+5. exact five-token review command with root, alias, phase, and decision;
+6. exact three-token recognized request command with root and alias; then
+7. fixed `Invalid arguments.` with exit 2.
 
 Unknown commands, empty/whitespace arguments, extra arguments, mixed help, a help token used as an
 operation argument, or any legacy preparation/request-file operand never invoke an operation.
@@ -357,6 +431,9 @@ precedence, stdout/stderr write precedence, and no-exception-detail rules remain
 Every help and diagnostic line uses LF, and each complete help or success payload ends in exactly
 one LF.
 
+Review publication success is exactly `Request review recorded.` on stdout and uses the same error,
+cancellation, stream, and privacy rules.
+
 ### 5.3 Discovery request
 
 The v2 discovery request adds one required `officialPatch` object containing exactly:
@@ -365,7 +442,7 @@ The v2 discovery request adds one required `officialPatch` object containing exa
 - `versionLabel`, exactly `CN Patch v1.05.2`;
 - `installerPath`, an explicit private absolute DOS path;
 - `expectedInstallerSha256`, 64 lowercase hexadecimal characters; and
-- `installationAttestation`, with exactly the eight fields and values in section 4.
+- `installationAttestation`, with exactly the nine fields and values in section 4.
 
 No current directory, profile, registry, Downloads folder, Steam manifest, or environment value is
 used to infer the installer path or hash.
@@ -374,7 +451,8 @@ used to infer the installer path or hash.
 
 The v2 confirmation and copy requests each add required
 `expectedOfficialPatchInstallerSha256`. They obtain the installer path from the strictly validated
-source-root map bound through the preceding state.
+source-root map bound through the preceding state. Each also adds the preparation's required
+`freshInstallationAttestation` with its exact phase.
 
 Hash equality is one closed chain:
 
@@ -408,6 +486,16 @@ live-source open.
 - `installerSha256`, the private lowercase digest; and
 - `installationAttestation`, the closed attestation.
 
+It also adds required `discoveryOutputBindings` containing exactly:
+
+- `pendingManifest`, with `relativePath: string`, the exact manifest `schemaVersion: string`,
+  `manifestRevision: integer` fixed to 4, and `sha256: string`; and
+- `copyPlan`, with `relativePath: string`, the exact plan `schemaVersion: string`, and
+  `sha256: string`.
+
+Both relative paths are canonical survey-relative final paths; each digest is 64 lowercase
+hexadecimal characters. Unknown, missing, duplicate, absolute, staging, or mismatched values fail.
+
 The installer path appears in no state or receipt.
 
 ### 5.6 State and receipt binding
@@ -418,16 +506,19 @@ path-free `officialPatchBinding` object with exactly:
 - `sourceUrl`, the public source URL;
 - `versionLabel`, the public version label;
 - `installerArtifactAlias`, the inventory alias; and
-- `installerSha256`, the private lowercase digest.
+- `installerSha256`, the private lowercase digest; and
+- `installationAttestation`, the phase-specific nine-field attestation.
 
-State revision 1 records discovery verification, revision 2 records approval-time revalidation,
-and revision 3 plus the copy receipt record the final fresh pre-copy revalidation. State revision 4
-inherits the exact state-3 binding and performs no installer open.
+State revision 1 carries `discovery`, state revision 2 carries `confirmation`, and state revision 3
+plus copy receipt carry `copy`. State revision 4 inherits the exact state-3 binding and performs no
+installer open.
 
-The implementation uses distinct full-provenance and path-free-binding types. It defines one
-`ToBinding()` projection from root-map provenance and permits exact equality only among projected
-or path-free binding objects. Root-map attestation is validated in full and remains transitively
-bound through the existing root-map document digest in every state.
+The implementation uses distinct full-provenance, path-free identity, and phase-binding types.
+`ToIdentity()` projects source URL, version, alias, and hash from root-map provenance. Identity
+equality is exact across all phases. `WithAttestation()` adds one strictly validated phase-specific
+attestation. Validators require discovery-to-confirmation-to-copy progression, identical true
+claims, and no prior-phase reuse. Root-map attestation also remains bound through its document
+digest in every state.
 
 Inventory validation separately requires one installer row with the exact alias, class, purpose,
 retention tuple, and verification method from section 5.7, plus source-root-map direct lineage to
@@ -490,9 +581,10 @@ qualification values. Their distinct fields are:
 
 - request: `private-evidence`, existing `request:<phase>` purpose, existing
   `atlas-cli:<command>` verification;
-- receipt: `private-provenance`, `request-preparation-receipt:<phase>` purpose, receipt schema
-  verification; and
-- review: `private-evidence`, `request-review:<phase>` purpose, review schema verification.
+- preparation receipt: `private-provenance`, `request-preparation-receipt:<phase>` purpose,
+  preparation-receipt schema verification; and
+- review receipt: `private-evidence`, `request-review-receipt:<phase>` purpose,
+  review-receipt schema verification.
 
 Before an approved operation, the receipt governs the private custody bundle outside the survey
 census. The operation imports all four rows into the private-artifact inventory and A8 lifecycle.
@@ -535,15 +627,17 @@ No private discovery was run under v1. The amended implementation performs no v1
 upgrade, deletion, or best-effort recovery.
 
 The final `atlas-source-root-map/v2` file is the sole discovery-phase patch-verification marker.
-Fresh discovery hashes the installer before publication and publishes that v2 root map before any
-pending manifest or later discovery output. A rerun may enter no-rehash recovery only after it
-strictly validates the v2 root map, its exact request-derived provenance, and its deterministic
-canonical location.
+Fresh discovery hashes the installer and enumerates live sources, stages every live-derived output,
+and validates all staged bytes before atomically publishing that marker. A rerun may enter
+no-rehash recovery only after it strictly validates the final v2 root map, its output bindings,
+provenance, and canonical location.
 
-Any pending manifest, inventory transition, copy plan, state, backup, staging file, or later-phase
-artifact without that valid v2 root map is a safety refusal. A v1 root map or state is a safety
-refusal. A request-only-v1 workspace means a canonical v1 discovery request exists with no other A2
-operation output; it receives the same safety refusal.
+The only permitted pre-marker staging paths are each final discovery path plus
+`.discovery-staging`, for the pending manifest, copy plan, and root map. Any other pending manifest,
+inventory transition, copy plan, state, backup, staging file, or later-phase artifact without the
+valid marker is a safety refusal. A v1 root map or state is a safety refusal. A request-only-v1
+workspace means a canonical v1 discovery request exists with no other A2 operation output; it
+receives the same safety refusal.
 
 The tool and this plan authorize no deletion, archive, migration, reuse, replacement, or second
 survey identity for any v1 or ambiguous bytes. A2 stops for a separately persisted and independently
@@ -552,25 +646,37 @@ copy, and preflight require state v2, so v1 state cannot enter their recovery pa
 
 ### Discovery
 
-Fresh discovery requires the approved discovery request-review document. It validates and hashes
-the installer before enumerating live game roots. It publishes the v2 root map first, then the
-pending manifest and later outputs. Inventory lineage and state revision 1 are published only after
-the private hash and installation attestation pass.
+Fresh discovery requires the approved discovery review receipt. It validates and hashes
+the installer before enumerating live game roots. It calculates canonical pending-manifest and
+copy-plan bytes, writes them only to their staging paths, and builds root-map v2 with their exact
+relative paths, versions, revisions, and digests. It stages and re-reads the root map, manifest, and
+plan, then requires byte and digest agreement.
+
+If the marker is absent, a rerun may reopen installer/live sources, regenerate all three byte
+sequences, require every existing stage to be byte-identical, and create only missing stages. It
+never overwrites or deletes a different stage. Only a complete validated stage set may atomically
+move root map to its final marker path.
+
+After the marker exists, recovery opens no installer or live source. For each bound manifest/plan,
+exactly one final file or staging file must exist. Recovery validates its marker-bound digest and
+atomically moves a valid stage to the final path. Missing, duplicate, or mismatched stage/final
+states are safety refusals. Inventory lineage and state revision 1 are published only after both
+bound final files validate.
 
 ### Confirmation
 
 Fresh confirmation requires public decision commit `A`, the preparation's discovery-output audit,
-and the approved confirmation request-review document. It validates state revision 1 and every
-bound private document, rehashes the installer, and publishes state revision 2 only after exact
-equality. A completed valid state-2-or-later rerun returns from sealed evidence without opening the
-installer or live sources.
+the fresh confirmation attestation, and the approved review receipt that says it remains current.
+It validates state revision 1 and every bound private document, rehashes the installer, and
+publishes state revision 2 only after exact identity/hash agreement. A completed valid
+state-2-or-later rerun returns from sealed evidence without opening the installer or live sources.
 
 ### Copy
 
-Fresh copy requires the preparation's confirmation-output audit and the approved copy
-request-review document. It validates state revision 2 and every bound document, rehashes the
-installer before opening any live game source, and carries the exact path-free binding into the
-receipt and state revision 3.
+Fresh copy requires the preparation's confirmation-output audit and the approved copy review
+receipt confirming the fresh copy attestation is still current immediately before operation. It
+validates state revision 2 and every bound document, rehashes the installer before opening any live
+game source, and carries the copy-phase binding into the receipt and state revision 3.
 
 A missing, changed, unstable, reparse-backed, or mismatched installer before fresh state revision 3
 stops A2. It does not authorize recopying or replacement with another package.
@@ -603,8 +709,8 @@ Executing the reviewed CLI is not authority to inspect its inputs or outputs. An
 process output, exception detail, or private disclosure is a stop condition.
 
 The four builders prepare discovery, confirmation, copy, and cleanup-preflight requests. Copilot may
-invoke an operation only after the project leader creates the matching approved review document and
-authorizes the exact root/alias command.
+invoke an operation only after the project leader authorizes the matching approved review-receipt
+command and the exact operation command.
 
 ### 8.1 Exact direct-apphost invocation
 
@@ -626,10 +732,11 @@ After `T` is the clean upstream-equal `HEAD`, Copilot may run exactly:
 & $apphost intake-prepare-discovery $repositoryRoot $surveyAlias
 ```
 
-The project leader audits the generated request and creates its approved request-review document
-before Copilot may run:
+The project leader audits the generated request and authorizes its approved review-receipt command
+before Copilot may run these as separate invocations:
 
 ```powershell
+& $apphost intake-record-review $repositoryRoot $surveyAlias discover approved
 & $apphost intake-discover $repositoryRoot $surveyAlias
 ```
 
@@ -637,22 +744,25 @@ After discovery audit and publication of `A`, the same prepare/audit/operate seq
 
 ```powershell
 & $apphost intake-prepare-confirmation $repositoryRoot $surveyAlias
+& $apphost intake-record-review $repositoryRoot $surveyAlias confirm approved
 & $apphost intake-confirm $repositoryRoot $surveyAlias
 & $apphost intake-prepare-copy $repositoryRoot $surveyAlias
+& $apphost intake-record-review $repositoryRoot $surveyAlias copy approved
 & $apphost intake-copy $repositoryRoot $surveyAlias
 ```
 
 Those four lines are separate invocations; each operation line requires project-leader audit and an
-approved request-review document first. After copy-output audit, Copilot may prepare preflight:
+approved review receipt first. After copy-output audit, Copilot may prepare preflight:
 
 ```powershell
 & $apphost intake-prepare-preflight $repositoryRoot $surveyAlias
 ```
 
-After the project leader audits that request and creates its approved review document, Copilot may
+After the project leader audits that request and authorizes its approved review receipt, Copilot may
 run:
 
 ```powershell
+& $apphost intake-record-review $repositoryRoot $surveyAlias cleanup-preflight approved
 & $apphost cleanup-preflight $repositoryRoot $surveyAlias
 ```
 
@@ -661,6 +771,9 @@ logging. Exit 0 must carry exactly the command's one fixed success line. A nonze
 exactly one classified fixed diagnostic line. Any additional/different output or a Git-gate
 mismatch stops execution before another command. Copilot reports only the fixed line and exit code;
 it never lists or opens a derived control file.
+
+If the project leader rejects or abandons a request, Copilot may run only the matching
+`intake-record-review` line with that decision token. It must not invoke the phase operation.
 
 ## 9. Synthetic test requirements
 
@@ -677,17 +790,22 @@ All tests use synthetic installer bytes and paths. They cover:
 - confirmation/copy preparation from sealed evidence without installer or live-source opens;
 - receipt-last publication, four-alias custody order, strict private review decisions, exact
   lineage, approved inventory import, and completed/recovery zero custody-bundle opens;
+- review-receipt command grammar, create-new/exact-byte idempotence, decision immutability, and
+  rejected/abandoned replacement refusal;
 - missing/rejected/abandoned review behavior, durable pre-execution custody, zero deletion, and
   mandatory replanning;
 - discovery-to-confirmation, confirmation-to-copy, and copy-to-preflight output-audit gates;
 - strict v2 request shape, duplicate, missing, null, unknown, trailing, URL, version, hash, and
   attestation validation;
-- schema/DTO agreement for preparation receipt v1, root-map v2, state v2, and copy receipt v2;
+- discovery/confirmation/copy attestation progression, stale/reused phase rejection, and review
+  receipt current-at-operation gates;
+- schema/DTO agreement for both custody receipts, root-map v2, state v2, and copy receipt v2;
 - ordinary-file, fixed-drive, containment, reserved-name, and component-reparse policy;
 - held-stream length and write-denied path last-write stability;
 - exact hash success plus mismatch, short-read, sharing, I/O, and cancellation failures;
 - zero publication after failed installer validation;
-- source-root-map-v2-first publication and no-rehash recovery only after that marker validates;
+- all live-derived bytes staged before root-map-v2 marker publication, exact output bindings, every
+  pre/post-marker seam, and zero-source-open recovery after the marker;
 - fail-closed handling for every synthetic partial-v1/v2 artifact combination;
 - fresh discovery hashing before live-root enumeration;
 - fresh confirmation and copy detecting installer replacement;
@@ -713,9 +831,9 @@ The amended implementation gate passes only when:
 5. installer path and hash remain private in every success and failure;
 6. all three fresh phases rehash and bind the exact installer as section 6 requires;
 7. recovery and completed reruns open neither installer nor live source;
-8. no-rehash discovery recovery requires the source-root-map-v2 marker;
+8. no-rehash discovery recovery requires the marker-bound staged/final output matrix;
 9. every v1 or ambiguous partial workspace fails closed without deletion;
-10. the human attestation is closed, exact, and excludes ordinary gameplay save writes;
+10. the attestation is closed, phase-fresh/current, and excludes ordinary gameplay save writes;
 11. the installer and hash-evidence inventory rows are permanently retained and `blocked-status`;
 12. no claim equates package hash with installed-file identity;
 13. production code remains BCL-only with no project, package, lock, TFM, or telemetry change;
@@ -761,6 +879,7 @@ src/private/app/celesphonia-modifier/
       copy-receipt.schema.json
       intake-state.schema.json
       request-preparation-receipt.schema.json
+      request-review-receipt.schema.json
       source-root-map.schema.json
 tests/private/app/celesphonia-modifier/
   Hcoona.CelesphoniaModifier.Atlas.Tests/
@@ -843,10 +962,11 @@ and is not repeated in either diff. The release record reviews and cites the exa
 then verifies `G` as its one-path record-only child.
 
 Every role must be a pushed commit with verified parent, tree, allowed no-renames paths, staged blob
-identity where applicable, upstream equality, and clean worktree. A code, schema, test,
-documentation, dependency, build, request-contract, or private-procedure change after `S`
-invalidates `T` and all descendants; the chain restarts from `B` with a new source candidate. No old
-A2 plan/tool record substitutes for `B` or `T`.
+identity where applicable, upstream equality, and clean worktree. The exact `T`, `A`, `R`, and `G`
+record-only paths and parent order are the sole permitted documentation changes after `S`. Any
+other code, schema, test, documentation, dependency, build, request-contract, or private-procedure
+change invalidates `T` and all descendants; the chain restarts from `B` with a new source candidate.
+No old A2 plan/tool record substitutes for `B` or `T`.
 
 This chain supersedes the original A2 plan's section 16 comparison base and section 17.4 candidate
 sequence. All other record-review mechanics remain governing.
@@ -858,12 +978,17 @@ the generated discovery request, pending manifest, v2 root map, state revision 1
 
 - survey alias, pending-manifest revision, Steam application/build, public patch URL/version, and
   the existing approved A0 aggregate counts;
+- the human public-build verification method;
+- `trusted-local-filesystem/v1` and every accepted residual risk;
+- exact source candidate `S` commit/tree and amended tool-safety record `T`;
 - `discoveryRequestPrepared = true`;
 - `discoveryRequestReviewApproved = true`;
 - `discoveryRequestHumanAudited = true`;
 - `discoveryOutputsHumanAudited = true`;
 - `installationAttestationPassed = true`;
+- `discoveryAttestationCurrentAtOperation = true`;
 - `installerHashRevalidatedAtDiscovery = true`;
+- `liveDerivedOutputsStagedBeforeMarker = true`;
 - `sourceRootMapV2PublishedFirst = true`;
 - `v1OrAmbiguousArtifactsObserved = false`;
 - `discoveryCustodyBundleInventoryBindingPassed = true`;
@@ -872,8 +997,9 @@ the generated discovery request, pending manifest, v2 root map, state revision 1
 - `privateDisclosureObserved = false`; and
 - `projectLeaderDecision = approved`.
 
-The record contains no installer hash/path/name/metadata, preparation/request bytes, private
-document digest, source path/name, per-file result, or installed-file identity claim.
+These retain every original A2 section 10 approval-record field and add the amendment evidence. The
+record explicitly says it contains no installer hash/path/name/metadata, preparation/request bytes,
+private document digest, source path/name, per-file result, or installed-file identity claim.
 
 `atlas-v0-a2-private-run-acceptance.md` records exactly these safe facts after the project leader
 audits state revisions 2-4, copy receipt v2, final inventory, and cleanup report:
@@ -882,6 +1008,9 @@ audits state revisions 2-4, copy receipt v2, final inventory, and cleanup report
   application/build, and approved aggregate copy counts;
 - `installerHashRevalidatedAtConfirmation = true`;
 - `installerHashRevalidatedAtCopy = true`;
+- `installationReattestedAtConfirmation = true`;
+- `installationReattestedImmediatelyBeforeCopy = true`;
+- `copyAttestationBoundToStateAndReceipt = true`;
 - `patchBindingContinuityPassed = true`;
 - `stateV2RevisionsOneThroughFourPassed = true`;
 - `copyReceiptV2Passed = true`;
@@ -980,7 +1109,8 @@ To resume:
 5. publish and independently review the amended source candidate;
 6. verify the amended tool-safety record before any private operation;
 7. invoke the reviewed builder without opening its private preparation file or generated request;
-8. have the project leader audit and approve the generated request;
-9. execute the fixed-output CLI without inspecting generated private files;
-10. leave exact private document review and approval to the project leader; and
-11. never infer private authority from conversation history or the historical `9edbd57b` record.
+8. have the project leader audit the request and authorize its immutable review receipt;
+9. run only the authorized review-record and phase-operation lines, without private inspection;
+10. have the project leader audit the private output before authorizing the next phase;
+11. leave exact private document review and approval to the project leader; and
+12. never infer private authority from conversation history or the historical `9edbd57b` record.
