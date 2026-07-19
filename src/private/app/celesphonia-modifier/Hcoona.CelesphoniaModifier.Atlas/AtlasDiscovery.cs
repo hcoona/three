@@ -663,6 +663,7 @@ public static class AtlasDiscovery
             request.Document.ExpectedInventorySha256,
             priorInventory.Sha256,
             static () => new AtlasSafetyException("The discovered backup digest is invalid."));
+        ValidatePendingManifestTransition(baselineManifest.Document, pendingManifest);
         Dictionary<string, string> saveRootPaths = request.Document.SaveRoots.ToDictionary(
             static saveRoot => saveRoot.LocationRole,
             static saveRoot => AtlasIntakeContracts.NormalizePath(saveRoot.Path),
@@ -678,13 +679,11 @@ public static class AtlasDiscovery
         EnsureBytesMatch(
             AtlasIntakeContracts.SerializeSourceRootMap(expectedSourceRootMap),
             sourceRootMap.Bytes);
-        DiscoveryPhaseAliases aliases = new(
-            requestBinding.ArtifactAlias,
-            pendingBinding.ArtifactAlias,
-            sourceRootMapBinding.ArtifactAlias,
-            copyPlanBinding.ArtifactAlias,
-            state.Document.StateArtifactAlias,
-            backupBinding.ArtifactAlias);
+        string baselineManifestAlias = FindManifestArtifactAlias(
+            priorInventory.Document,
+            AtlasIntakeContracts.ManifestRevision3Purpose);
+        DiscoveryPhaseAliases aliases = ResolveDiscoveryAliases(
+            new PhaseInventoryContext(priorInventory, priorInventory));
         AtlasCopyPlanDocument expectedCopyPlan = CreateCopyPlan(
             pendingManifest.Document,
             GetNextDiscoveryDestinationArtifactOrdinal(aliases));
@@ -693,7 +692,7 @@ public static class AtlasDiscovery
         ValidateCopyPlanAgainstManifest(copyPlan.Document, pendingManifest.Document);
         AtlasPrivateArtifactInventoryDocument expectedInventory = CreateDiscoveredInventory(
             priorInventory.Document,
-            baselineBinding.ArtifactAlias,
+            baselineManifestAlias,
             aliases);
         EnsureBytesMatch(
             AtlasIntakeContracts.SerializeInventory(expectedInventory),
@@ -701,7 +700,7 @@ public static class AtlasDiscovery
         AtlasIntakeStateDocument expectedState = CreateDiscoveredState(
             request,
             layout,
-            baselineBinding.ArtifactAlias,
+            baselineManifestAlias,
             baselineManifest,
             pendingManifest,
             sourceRootMap,
@@ -857,15 +856,20 @@ public static class AtlasDiscovery
                 cancellationToken)
             .ConfigureAwait(false);
 
-        ConfirmationPhaseAliases aliases = new(
-            requestBinding.ArtifactAlias,
-            approvedManifestBinding.ArtifactAlias,
-            state.Document.StateArtifactAlias,
-            backupBinding.ArtifactAlias);
+        ConfirmationPhaseAliases aliases = ResolveConfirmationAliases(
+            new PhaseInventoryContext(priorInventory, priorInventory),
+            copyPlan.Document);
+        string pendingManifestAlias = FindManifestArtifactAlias(
+            priorInventory.Document,
+            AtlasIntakeContracts.ManifestRevision4Purpose);
+        string discoveredStateAlias = TrustedLocalCopy.TryFindPhaseAlias(
+                priorInventory.Document,
+                AtlasIntakeContracts.State1Purpose)
+            ?? throw new AtlasSafetyException("The discovered state inventory row is missing.");
         AtlasPrivateArtifactInventoryDocument expectedInventory = CreateApprovedInventory(
             priorInventory.Document,
-            pendingManifestBinding.ArtifactAlias,
-            discoveredState.Document.StateArtifactAlias,
+            pendingManifestAlias,
+            discoveredStateAlias,
             aliases);
         EnsureBytesMatch(
             AtlasIntakeContracts.SerializeInventory(expectedInventory),
@@ -1014,11 +1018,9 @@ public static class AtlasDiscovery
                 cancellationToken)
             .ConfigureAwait(false);
 
-        CopyPhaseAliases aliases = new(
-            requestBinding.ArtifactAlias,
-            receiptBinding.ArtifactAlias,
-            state.Document.StateArtifactAlias,
-            backupBinding.ArtifactAlias);
+        CopyPhaseAliases aliases = TrustedLocalCopy.ResolveCopyAliases(
+            new PhaseInventoryContext(priorInventory, priorInventory),
+            copyPlan.Document);
         AtlasCopyReceiptDocument expectedReceipt = TrustedLocalCopy.CreateCopyReceipt(
             request.Sha256,
             request.Document,
@@ -1056,10 +1058,13 @@ public static class AtlasDiscovery
             io,
             cancellationToken)
             .ConfigureAwait(false);
+        string approvedManifestAlias = FindManifestArtifactAlias(
+            priorInventory.Document,
+            AtlasIntakeContracts.ManifestRevision5Purpose);
         AtlasPrivateArtifactInventoryDocument expectedInventory =
             TrustedLocalCopy.CreateQualifiedInventory(
                 priorInventory.Document,
-                approvedManifestBinding.ArtifactAlias,
+                approvedManifestAlias,
                 copyPlan.Document,
                 aliases,
                 layout.CanonicalCopyReceiptPath);
@@ -1179,11 +1184,8 @@ public static class AtlasDiscovery
                 cancellationToken)
             .ConfigureAwait(false);
 
-        PreflightPhaseAliases aliases = new(
-            requestBinding.ArtifactAlias,
-            reportBinding.ArtifactAlias,
-            state.Document.StateArtifactAlias,
-            backupBinding.ArtifactAlias);
+        PreflightPhaseAliases aliases = PrivateArtifactLifecycle.ResolvePreflightAliases(
+            new PhaseInventoryContext(priorInventory, priorInventory));
         AtlasCleanupPreflightReportDocument expectedReport =
             PrivateArtifactLifecycle.CreateCleanupReport(
                 request.Document,
@@ -1207,6 +1209,25 @@ public static class AtlasDiscovery
             phaseInventory.Sha256,
             report.Sha256);
         EnsureBytesMatch(AtlasIntakeContracts.SerializeState(expectedState), state.Bytes);
+    }
+
+    internal static void ValidatePendingManifestTransition(
+        AtlasCorpusIntakeManifest baselineManifest,
+        AtlasLoadedDocument<AtlasCorpusIntakeManifest> pendingManifest)
+    {
+        AtlasCorpusIntakeManifest expected = baselineManifest with
+        {
+            ManifestRevision = AtlasIntakeContracts.PendingManifestRevision,
+            Validation = baselineManifest.Validation with
+            {
+                Method = AtlasIntakeContracts.AtlasToolValidationMethod,
+            },
+            Confirmation = new AtlasManifestConfirmation
+            {
+                Status = AtlasIntakeContracts.PendingConfirmationStatus,
+            },
+        };
+        EnsureBytesMatch(AtlasIntakeContracts.SerializeManifest(expected), pendingManifest.Bytes);
     }
 
     internal static void EnsureLoadedBindingMatches<TDocument>(

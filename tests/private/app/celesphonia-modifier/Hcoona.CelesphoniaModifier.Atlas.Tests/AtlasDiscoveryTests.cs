@@ -180,6 +180,59 @@ public sealed class AtlasDiscoveryTests
 
     public static TheoryData<
         string,
+        Func<AtlasCorpusIntakeManifest, AtlasCorpusIntakeManifest>>
+        CompletedDefinitionIdentityMutationCases
+    {
+        get
+        {
+            TheoryData<
+                string,
+                Func<AtlasCorpusIntakeManifest, AtlasCorpusIntakeManifest>> data = [];
+            data.Add(
+                "alias",
+                static manifest => SwapDefinitionIdentityFields(
+                    manifest,
+                    3,
+                    4,
+                    swapAlias: true));
+            data.Add(
+                "path",
+                static manifest => SwapDefinitionIdentityFields(
+                    manifest,
+                    3,
+                    4,
+                    swapPath: true));
+            data.Add(
+                "group",
+                static manifest => SwapDefinitionIdentityFields(
+                    manifest,
+                    0,
+                    1,
+                    swapGroup: true));
+            data.Add(
+                "decision",
+                static manifest => SwapDefinitionIdentityFields(
+                    manifest,
+                    3,
+                    496,
+                    swapGroup: true,
+                    swapDecision: true));
+            data.Add(
+                "combined",
+                static manifest => SwapDefinitionIdentityFields(
+                    manifest,
+                    0,
+                    496,
+                    swapAlias: true,
+                    swapPath: true,
+                    swapGroup: true,
+                    swapDecision: true));
+            return data;
+        }
+    }
+
+    public static TheoryData<
+        string,
         Func<AtlasPrivateArtifactInventoryDocument, AtlasPrivateArtifactInventoryDocument>>
         InvalidConfirmationRecoveryAliasCases
     {
@@ -386,6 +439,98 @@ public sealed class AtlasDiscoveryTests
             workspace.Layout.CanonicalConfirmRequestPath,
             AtlasTestSupport.CreateLiveSourceAccessThrowingIo(workspace),
             TestContext.Current.CancellationToken);
+    }
+
+    [Theory]
+    [MemberData(nameof(CompletedDefinitionIdentityMutationCases))]
+    public async Task ConfirmAsyncRejectsReboundCompletedDefinitionIdentityMutation(
+        string caseName,
+        Func<AtlasCorpusIntakeManifest, AtlasCorpusIntakeManifest> mutate)
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+        await RebindDiscoveredManifestEvidenceAsync(workspace, mutate);
+        workspace.WriteRequest(workspace.CreateConfirmationRequest());
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.ConfirmAsync(
+                workspace.Layout.CanonicalConfirmRequestPath,
+                AtlasTestSupport.CreateLiveSourceAccessThrowingIo(workspace),
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.NotNull(caseName);
+        Assert.False(File.Exists(workspace.Layout.CanonicalApprovedManifestPath));
+        Assert.False(File.Exists(workspace.Layout.CanonicalApprovedStatePath));
+        Assert.False(File.Exists(workspace.Layout.CanonicalApprovedInventoryBackupPath));
+    }
+
+    [Theory]
+    [InlineData("shifted-cursor")]
+    [InlineData("baseline-custody")]
+    public async Task DiscoverAsyncRejectsReboundCompletedState1AliasCorruption(string caseName)
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+        if (StringComparer.Ordinal.Equals(caseName, "shifted-cursor"))
+        {
+            await ShiftCompletedPhaseAliasesAsync(
+                workspace,
+                workspace.Layout.CanonicalDiscoveredStatePath,
+                [
+                    AtlasIntakeContracts.DiscoverRequestPurpose,
+                    AtlasIntakeContracts.ManifestRevision4Purpose,
+                    AtlasIntakeContracts.SourceRootMapPurpose,
+                    AtlasIntakeContracts.CopyPlanPurpose,
+                    AtlasIntakeContracts.State1Purpose,
+                    AtlasIntakeContracts.DiscoveryInventoryBackupPurpose,
+                ],
+                shiftCopyPlanReservations: true);
+        }
+        else
+        {
+            await RebindBaselineCustodyAliasAsync(workspace);
+        }
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                AtlasTestSupport.CreateLiveSourceAccessThrowingIo(workspace),
+                TestContext.Current.CancellationToken).AsTask());
+    }
+
+    [Fact]
+    public async Task ConfirmAsyncRejectsReboundCompletedState2AliasCursorShift()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreateConfirmationRequest());
+        await AtlasDiscovery.ConfirmAsync(
+            workspace.Layout.CanonicalConfirmRequestPath,
+            TestContext.Current.CancellationToken);
+        await ShiftCompletedPhaseAliasesAsync(
+            workspace,
+            workspace.Layout.CanonicalApprovedStatePath,
+            [
+                AtlasIntakeContracts.ConfirmRequestPurpose,
+                AtlasIntakeContracts.ManifestRevision5Purpose,
+                AtlasIntakeContracts.State2Purpose,
+                AtlasIntakeContracts.ApprovedInventoryBackupPurpose,
+            ],
+            shiftCopyPlanReservations: false);
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.ConfirmAsync(
+                workspace.Layout.CanonicalConfirmRequestPath,
+                AtlasTestSupport.CreateLiveSourceAccessThrowingIo(workspace),
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.False(File.Exists(workspace.Layout.CanonicalQualifiedStatePath));
     }
 
     [Theory]
@@ -1469,6 +1614,257 @@ public sealed class AtlasDiscoveryTests
             workspace.SaveRootPath,
             workspace.WebSaveRootPath);
     }
+
+    private static AtlasCorpusIntakeManifest SwapDefinitionIdentityFields(
+        AtlasCorpusIntakeManifest manifest,
+        int firstIndex,
+        int secondIndex,
+        bool swapAlias = false,
+        bool swapPath = false,
+        bool swapGroup = false,
+        bool swapDecision = false)
+    {
+        AtlasManifestDefinitionEntry[] entries = [.. manifest.DefinitionEntries];
+        AtlasManifestDefinitionEntry first = entries[firstIndex];
+        AtlasManifestDefinitionEntry second = entries[secondIndex];
+        entries[firstIndex] = first with
+        {
+            SourceAlias = swapAlias ? second.SourceAlias : first.SourceAlias,
+            RelativePath = swapPath ? second.RelativePath : first.RelativePath,
+            GroupId = swapGroup ? second.GroupId : first.GroupId,
+            Decision = swapDecision ? second.Decision : first.Decision,
+        };
+        entries[secondIndex] = second with
+        {
+            SourceAlias = swapAlias ? first.SourceAlias : second.SourceAlias,
+            RelativePath = swapPath ? first.RelativePath : second.RelativePath,
+            GroupId = swapGroup ? first.GroupId : second.GroupId,
+            Decision = swapDecision ? first.Decision : second.Decision,
+        };
+        return manifest with { DefinitionEntries = entries };
+    }
+
+    private static async Task RebindDiscoveredManifestEvidenceAsync(
+        AtlasSyntheticWorkspace workspace,
+        Func<AtlasCorpusIntakeManifest, AtlasCorpusIntakeManifest> mutate)
+    {
+        AtlasLoadedDocument<AtlasCorpusIntakeManifest> pendingManifest =
+            await AtlasIntakeContracts.ReadManifestAsync(
+                workspace.Layout.CanonicalPendingManifestPath,
+                TestContext.Current.CancellationToken);
+        AtlasLoadedDocument<AtlasCopyPlanDocument> copyPlan =
+            await AtlasIntakeContracts.ReadCopyPlanAsync(
+                workspace.Layout.CanonicalCopyPlanPath,
+                TestContext.Current.CancellationToken);
+        AtlasLoadedDocument<AtlasIntakeStateDocument> state =
+            await AtlasIntakeContracts.ReadStateAsync(
+                workspace.Layout.CanonicalDiscoveredStatePath,
+                TestContext.Current.CancellationToken);
+        AtlasCorpusIntakeManifest mutatedManifest = mutate(pendingManifest.Document);
+        int firstDestinationOrdinal = copyPlan.Document.Entries
+            .Min(static entry => AtlasIntakeContracts.ParseArtifactOrdinal(
+                entry.DestinationArtifactAlias));
+        AtlasCopyPlanDocument mutatedCopyPlan = AtlasDiscovery.CreateCopyPlan(
+            mutatedManifest,
+            firstDestinationOrdinal);
+        await File.WriteAllBytesAsync(
+            workspace.Layout.CanonicalPendingManifestPath,
+            AtlasIntakeContracts.SerializeManifest(mutatedManifest),
+            TestContext.Current.CancellationToken);
+        await File.WriteAllBytesAsync(
+            workspace.Layout.CanonicalCopyPlanPath,
+            AtlasIntakeContracts.SerializeCopyPlan(mutatedCopyPlan),
+            TestContext.Current.CancellationToken);
+        AtlasIntakeStateDocument reboundState = state.Document with
+        {
+            DocumentBindings =
+            [
+                .. state.Document.DocumentBindings.Select(binding => binding with
+                {
+                    Sha256 = binding.Role switch
+                    {
+                        AtlasIntakeContracts.PendingManifestRole =>
+                            AtlasSyntheticWorkspace.ComputeSha256(
+                                workspace.Layout.CanonicalPendingManifestPath),
+                        AtlasIntakeContracts.CopyPlanRole =>
+                            AtlasSyntheticWorkspace.ComputeSha256(
+                                workspace.Layout.CanonicalCopyPlanPath),
+                        _ => binding.Sha256,
+                    },
+                }),
+            ],
+        };
+        await File.WriteAllBytesAsync(
+            workspace.Layout.CanonicalDiscoveredStatePath,
+            AtlasIntakeContracts.SerializeState(reboundState),
+            TestContext.Current.CancellationToken);
+    }
+
+    private static async Task ShiftCompletedPhaseAliasesAsync(
+        AtlasSyntheticWorkspace workspace,
+        string statePath,
+        string[] phasePurposes,
+        bool shiftCopyPlanReservations)
+    {
+        AtlasLoadedDocument<AtlasPrivateArtifactInventoryDocument> inventory =
+            await AtlasIntakeContracts.ReadInventoryAsync(
+                workspace.Layout.CanonicalInventoryPath,
+                TestContext.Current.CancellationToken);
+        AtlasLoadedDocument<AtlasCopyPlanDocument> copyPlan =
+            await AtlasIntakeContracts.ReadCopyPlanAsync(
+                workspace.Layout.CanonicalCopyPlanPath,
+                TestContext.Current.CancellationToken);
+        AtlasLoadedDocument<AtlasIntakeStateDocument> state =
+            await AtlasIntakeContracts.ReadStateAsync(
+                statePath,
+                TestContext.Current.CancellationToken);
+        Dictionary<string, string> aliasMap = new(StringComparer.Ordinal);
+        foreach (string purpose in phasePurposes)
+        {
+            string alias = inventory.Document.Artifacts.Single(artifact =>
+                StringComparer.Ordinal.Equals(artifact.Purpose, purpose)).ArtifactAlias;
+            aliasMap.Add(
+                alias,
+                AtlasIntakeContracts.FormatArtifactAlias(
+                    AtlasIntakeContracts.ParseArtifactOrdinal(alias) + 1));
+        }
+
+        if (shiftCopyPlanReservations)
+        {
+            foreach (AtlasCopyPlanEntry entry in copyPlan.Document.Entries)
+            {
+                aliasMap.Add(
+                    entry.DestinationArtifactAlias,
+                    AtlasIntakeContracts.FormatArtifactAlias(
+                        AtlasIntakeContracts.ParseArtifactOrdinal(
+                            entry.DestinationArtifactAlias) + 1));
+            }
+
+            AtlasCopyPlanDocument shiftedCopyPlan = copyPlan.Document with
+            {
+                Entries =
+                [
+                    .. copyPlan.Document.Entries.Select(entry => entry with
+                    {
+                        DestinationArtifactAlias = RebindAlias(
+                            entry.DestinationArtifactAlias,
+                            aliasMap),
+                    }),
+                ],
+            };
+            await File.WriteAllBytesAsync(
+                workspace.Layout.CanonicalCopyPlanPath,
+                AtlasIntakeContracts.SerializeCopyPlan(shiftedCopyPlan),
+                TestContext.Current.CancellationToken);
+        }
+
+        AtlasPrivateArtifactInventoryDocument shiftedInventory = inventory.Document with
+        {
+            Artifacts =
+            [
+                .. inventory.Document.Artifacts.Select(artifact => artifact with
+                {
+                    ArtifactAlias = RebindAlias(artifact.ArtifactAlias, aliasMap),
+                    LineageAliases =
+                    [
+                        .. artifact.LineageAliases.Select(alias =>
+                            RebindAlias(alias, aliasMap)),
+                    ],
+                }),
+            ],
+        };
+        await File.WriteAllBytesAsync(
+            workspace.Layout.CanonicalInventoryPath,
+            AtlasIntakeContracts.SerializeInventory(shiftedInventory),
+            TestContext.Current.CancellationToken);
+        string copyPlanSha256 = AtlasSyntheticWorkspace.ComputeSha256(
+            workspace.Layout.CanonicalCopyPlanPath);
+        AtlasIntakeStateDocument shiftedState = state.Document with
+        {
+            StateArtifactAlias = RebindAlias(state.Document.StateArtifactAlias, aliasMap),
+            InventorySha256 = AtlasSyntheticWorkspace.ComputeSha256(
+                workspace.Layout.CanonicalInventoryPath),
+            DocumentBindings =
+            [
+                .. state.Document.DocumentBindings.Select(binding => binding with
+                {
+                    ArtifactAlias = RebindAlias(binding.ArtifactAlias, aliasMap),
+                    Sha256 = StringComparer.Ordinal.Equals(
+                        binding.Role,
+                        AtlasIntakeContracts.CopyPlanRole)
+                        ? copyPlanSha256
+                        : binding.Sha256,
+                }),
+            ],
+            ArtifactBindings =
+            [
+                .. state.Document.ArtifactBindings.Select(binding => binding with
+                {
+                    ArtifactAlias = RebindAlias(binding.ArtifactAlias, aliasMap),
+                }),
+            ],
+        };
+        await File.WriteAllBytesAsync(
+            statePath,
+            AtlasIntakeContracts.SerializeState(shiftedState),
+            TestContext.Current.CancellationToken);
+    }
+
+    private static async Task RebindBaselineCustodyAliasAsync(
+        AtlasSyntheticWorkspace workspace)
+    {
+        AtlasLoadedDocument<AtlasPrivateArtifactInventoryDocument> inventory =
+            await AtlasIntakeContracts.ReadInventoryAsync(
+                workspace.Layout.CanonicalInventoryPath,
+                TestContext.Current.CancellationToken);
+        AtlasLoadedDocument<AtlasIntakeStateDocument> state =
+            await AtlasIntakeContracts.ReadStateAsync(
+                workspace.Layout.CanonicalDiscoveredStatePath,
+                TestContext.Current.CancellationToken);
+        string requestAlias = inventory.Document.Artifacts.Single(artifact =>
+            StringComparer.Ordinal.Equals(
+                artifact.Purpose,
+                AtlasIntakeContracts.DiscoverRequestPurpose)).ArtifactAlias;
+        AtlasPrivateArtifactInventoryDocument reboundInventory = inventory.Document with
+        {
+            Artifacts =
+            [
+                .. inventory.Document.Artifacts.Select(artifact =>
+                    StringComparer.Ordinal.Equals(
+                        artifact.Purpose,
+                        AtlasIntakeContracts.ManifestRevision4Purpose)
+                        ? artifact with { LineageAliases = [requestAlias] }
+                        : artifact),
+            ],
+        };
+        await File.WriteAllBytesAsync(
+            workspace.Layout.CanonicalInventoryPath,
+            AtlasIntakeContracts.SerializeInventory(reboundInventory),
+            TestContext.Current.CancellationToken);
+        AtlasIntakeStateDocument reboundState = state.Document with
+        {
+            InventorySha256 = AtlasSyntheticWorkspace.ComputeSha256(
+                workspace.Layout.CanonicalInventoryPath),
+            DocumentBindings =
+            [
+                .. state.Document.DocumentBindings.Select(binding =>
+                    StringComparer.Ordinal.Equals(
+                        binding.Role,
+                        AtlasIntakeContracts.BaselineManifestRole)
+                        ? binding with { ArtifactAlias = requestAlias }
+                        : binding),
+            ],
+        };
+        await File.WriteAllBytesAsync(
+            workspace.Layout.CanonicalDiscoveredStatePath,
+            AtlasIntakeContracts.SerializeState(reboundState),
+            TestContext.Current.CancellationToken);
+    }
+
+    private static string RebindAlias(
+        string alias,
+        Dictionary<string, string> aliasMap) =>
+        aliasMap.TryGetValue(alias, out string? replacement) ? replacement : alias;
 
     private static async Task MutateBaselineManifestAsync(
         AtlasSyntheticWorkspace workspace,
