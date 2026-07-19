@@ -30,6 +30,10 @@ semantic scanning, write authority, WinUI, network access, and private data from
 - `plans/atlas-v0-a2-intake-safety-plan.md` defines A2's trusted-local-filesystem intake,
   human-approval boundary, copy qualification, locator redaction, lifecycle behavior, and staged
   safety and release gates once its plan-review record authorizes implementation.
+- `plans/atlas-v0-a2-patch-provenance-amendment.md` defines the pending correction that binds the
+  official Kagura Games patch package through private SHA-256 evidence and a human installation
+  attestation. It has no implementation authority until its exact plan-review record is verified
+  and no private-run authority until a fresh amended source-safety record is verified.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -47,6 +51,10 @@ semantic scanning, write authority, WinUI, network access, and private data from
   independent `No findings` result. That record authorizes A1 implementation.
 - `reviews/atlas-v0-a1-release-gate.md` is created only after an exact committed A1 implementation
   receives an independent `No findings` result. That record establishes A1 completion.
+- `reviews/atlas-v0-a2-plan-review.md` authorized the original trusted-local A2 implementation.
+- `reviews/atlas-v0-a2-tool-safety-review.md` records the original A2 source-safety result. It is
+  historical after discovery was suspended for the official-patch provenance amendment and does
+  not authorize a private run.
 
 ## Workflow-policy artifacts
 

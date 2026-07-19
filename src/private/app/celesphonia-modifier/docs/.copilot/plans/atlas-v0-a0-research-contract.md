@@ -12,6 +12,15 @@
 > preservation-snapshot requalification. All A0 scope, privacy, lifecycle, and reopening rules
 > remain normative.
 
+<!-- Separate amendment notice. -->
+
+> **Pending official-patch provenance clarification**
+> The released A0 corpus was collected after Steam integrity verification and installation of the
+> exact operator-retained Kagura Games `CN Patch v1.05.2` package. The
+> `atlas-v0-a2-patch-provenance-amendment.md` records that already-existing source profile without
+> changing A0 roots, counts, selection rules, or terminal decisions. It takes effect only through
+> its verified plan-review record.
+
 **Execution boundary:** Read-only discovery and documentation, except for the single
 project-leader-authorized preservation snapshot in section 6.1; no decoding
 
