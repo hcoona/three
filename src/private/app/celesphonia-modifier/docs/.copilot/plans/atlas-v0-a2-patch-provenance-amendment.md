@@ -109,6 +109,8 @@ The discovery request carries this closed private attestation:
 
 ```text
 attestedByRole = project-leader
+retainedInstallerObtainedFromDeclaredOfficialSource = true
+retainedInstallerMatchesDeclaredVersionLabel = true
 steamIntegrityCheckPassed = true
 exactBoundInstallerAppliedAfterIntegrityCheck = true
 noLaterSteamVerificationOrUpdate = true
@@ -119,6 +121,10 @@ noLaterManualExecutableOrDefinitionEdit = true
 The project leader must confirm that these statements describe both the A0 baseline procedure and
 the current installation before preparing the discovery request. A false, missing, unknown, or
 incomplete field is a safety refusal.
+
+The first two booleans attest that the retained file came from the section 1 product URL and was
+presented to the project leader as `CN Patch v1.05.2`. A false or uncertain origin/version claim
+stops A2; the private package hash does not independently prove either claim.
 
 The final three fields apply to Steam- or patch-managed executable and definition content. They do
 not prohibit ordinary gameplay writes inside the two approved save roots. A later Steam
@@ -133,17 +139,17 @@ not contain the installer path, installer hash, request bytes, or installed-file
 
 The amendment replaces these private contract versions:
 
-| Contract                 | Existing                               | Amended                                    |
-| ------------------------ | -------------------------------------- | ------------------------------------------ |
-| Discovery request        | `atlas-intake-discovery-request/v1`    | `atlas-intake-discovery-request/v2`        |
-| Confirmation             | `atlas-intake-confirmation-request/v1` | `atlas-intake-confirmation-request/v2`     |
-| Copy request             | `atlas-intake-copy-request/v1`         | `atlas-intake-copy-request/v2`             |
-| Discovery preparation    | None                                   | `atlas-intake-discovery-preparation/v1`    |
-| Confirmation preparation | None                                   | `atlas-intake-confirmation-preparation/v1` |
-| Copy preparation         | None                                   | `atlas-intake-copy-preparation/v1`         |
-| Source-root map          | `atlas-source-root-map/v1`             | `atlas-source-root-map/v2`                 |
-| Intake state             | `atlas-intake-state/v1`                | `atlas-intake-state/v2`                    |
-| Copy receipt             | `atlas-copy-receipt/v1`                | `atlas-copy-receipt/v2`                    |
+- Discovery request: `atlas-intake-discovery-request/v1` to
+  `atlas-intake-discovery-request/v2`.
+- Confirmation request: `atlas-intake-confirmation-request/v1` to
+  `atlas-intake-confirmation-request/v2`.
+- Copy request: `atlas-intake-copy-request/v1` to `atlas-intake-copy-request/v2`.
+- Discovery preparation: none to `atlas-intake-discovery-preparation/v1`.
+- Confirmation preparation: none to `atlas-intake-confirmation-preparation/v1`.
+- Copy preparation: none to `atlas-intake-copy-preparation/v1`.
+- Source-root map: `atlas-source-root-map/v1` to `atlas-source-root-map/v2`.
+- Intake state: `atlas-intake-state/v1` to `atlas-intake-state/v2`.
+- Copy receipt: `atlas-copy-receipt/v1` to `atlas-copy-receipt/v2`.
 
 Cleanup-preflight request, manifest, copy-plan, inventory, and cleanup-report versions remain
 unchanged. State revision numbers, manifest revision numbers, and all existing canonical file names
@@ -158,9 +164,9 @@ closed v1/v2 transition.
 The amended C# CLI adds these fixed-output commands:
 
 ```text
-celesphonia-atlas intake-prepare-discovery <preparation-file>
-celesphonia-atlas intake-prepare-confirmation <preparation-file>
-celesphonia-atlas intake-prepare-copy <preparation-file>
+celesphonia-atlas intake-prepare-discovery <repository-root> <survey-alias>
+celesphonia-atlas intake-prepare-confirmation <repository-root> <survey-alias>
+celesphonia-atlas intake-prepare-copy <repository-root> <survey-alias>
 ```
 
 The project leader creates each private preparation file and supplies the human-only facts. The
@@ -173,16 +179,16 @@ src\private\app\celesphonia-modifier\.private\atlas-v0\
   operator-input\<surveyAlias>\copy.json
 ```
 
-That directory is outside the surveyed workspace and its closed census. Every CLI operand remains
-an absolute canonical DOS path as required by the original A2 contract. Before invocation, the
-deterministic driver verifies the already-known repository root with
-`git rev-parse --show-toplevel`, joins exactly one suffix above, normalizes it with
-`Path.GetFullPath`, and requires containment under that root. It never accepts the current directory
-as an implicit root.
+That directory is outside the surveyed workspace and its closed census. The C# CLI itself is the
+only driver. Every private-phase command accepts exactly an explicit absolute canonical
+`repository-root` and the exact public `survey-000001` alias. It rejects relative/device/UNC roots,
+the current directory as an implicit root, another survey alias, and every visible reparse
+component.
 
-The resulting absolute control path contains only the public repository root, fixed segments, and
-the approved survey alias; it reveals no game/save/installer locator, source file name, or digest.
-Copilot may pass that absolute path to a reviewed command but may not read or display the file.
+The CLI derives the one fixed preparation or request path from those two arguments, then requires
+the parsed private document's `projectRoot`, `workspaceRoot`, and `surveyAlias` to match. The
+arguments reveal no game/save/installer locator, source file name, or digest. Copilot may pass them
+to a reviewed command but may not read or display the derived file.
 
 Discovery preparation contains its preparation `schemaVersion` and every other v2
 discovery-request field except `officialPatch.expectedInstallerSha256`, `preparationPath`,
@@ -204,8 +210,8 @@ turns the builder-calculated digest into the expected installer binding that dis
 Confirmation preparation contains exactly `schemaVersion`, `surveyAlias`, `projectRoot`,
 `workspaceRoot`, `approved`, `decisionCommit`, and `expectedPendingManifestSha256`. `approved` must
 be `true`. It reads sealed canonical state/root-map/plan/inventory evidence, requires the
-human-supplied manifest digest to match, projects the root-map patch binding, and builds the exact v2
-confirmation request at the existing canonical path.
+human-supplied manifest digest to match, projects the root-map patch binding, and builds the exact
+v2 confirmation request at the existing canonical path.
 
 Copy preparation contains exactly `schemaVersion`, `surveyAlias`, `projectRoot`, `workspaceRoot`,
 `expectedApprovedStateSha256`, and `decisionCommit`. It reads sealed canonical
@@ -248,13 +254,13 @@ The global help bytes become exactly:
 ```text
 Usage:
   celesphonia-atlas empty-survey
-  celesphonia-atlas intake-prepare-discovery <preparation-file>
-  celesphonia-atlas intake-prepare-confirmation <preparation-file>
-  celesphonia-atlas intake-prepare-copy <preparation-file>
-  celesphonia-atlas intake-discover <request-file>
-  celesphonia-atlas intake-confirm <request-file>
-  celesphonia-atlas intake-copy <request-file>
-  celesphonia-atlas cleanup-preflight <request-file>
+  celesphonia-atlas intake-prepare-discovery <repository-root> <survey-alias>
+  celesphonia-atlas intake-prepare-confirmation <repository-root> <survey-alias>
+  celesphonia-atlas intake-prepare-copy <repository-root> <survey-alias>
+  celesphonia-atlas intake-discover <repository-root> <survey-alias>
+  celesphonia-atlas intake-confirm <repository-root> <survey-alias>
+  celesphonia-atlas intake-copy <repository-root> <survey-alias>
+  celesphonia-atlas cleanup-preflight <repository-root> <survey-alias>
 
 Commands:
   empty-survey                 Write a deterministic empty Atlas survey.
@@ -270,26 +276,27 @@ Options:
   -h, --help  Show help.
 ```
 
-Every preparation command uses this exact command-help text:
+Every private-phase command uses this exact command-help text:
 
 ```text
-Usage: celesphonia-atlas <preparation-command> <preparation-file>
+Usage: celesphonia-atlas <command> <repository-root> <survey-alias>
 
 Options:
   -h, --help  Show help.
 ```
 
-Existing request-command and empty-survey help bytes remain unchanged. The parser precedence is:
+Empty-survey help bytes remain unchanged. The parser precedence is:
 
 1. one global help token;
-2. exact two-token empty-survey, preparation-command, or request-command help;
+2. exact two-token empty-survey or recognized private-phase command help;
 3. exact one-token `empty-survey`;
-4. exact two-token recognized preparation command with a non-help path;
-5. exact two-token recognized request command with a non-help path; then
+4. exact three-token recognized preparation command with root and alias;
+5. exact three-token recognized request command with root and alias; then
 6. fixed `Invalid arguments.` with exit 2.
 
-Unknown commands, empty/whitespace paths, extra arguments, mixed help, or a help token used as an
-operation path never invoke an operation. Preparation success is exactly
+Unknown commands, empty/whitespace arguments, extra arguments, mixed help, a help token used as an
+operation argument, or any legacy preparation/request-file operand never invoke an operation.
+Preparation success is exactly
 `Intake request prepared.` on stdout. All existing error bytes, exit classifications, cancellation
 precedence, stdout/stderr write precedence, and no-exception-detail rules remain byte-for-byte.
 Every help and diagnostic line uses LF, and each complete help or success payload ends in exactly
@@ -303,7 +310,7 @@ The v2 discovery request adds one required `officialPatch` object containing exa
 - `versionLabel`, exactly `CN Patch v1.05.2`;
 - `installerPath`, an explicit private absolute DOS path;
 - `expectedInstallerSha256`, 64 lowercase hexadecimal characters; and
-- `installationAttestation`, with exactly the six fields and values in section 4.
+- `installationAttestation`, with exactly the eight fields and values in section 4.
 
 No current directory, profile, registry, Downloads folder, Steam manifest, or environment value is
 used to infer the installer path or hash.
@@ -312,13 +319,25 @@ used to infer the installer path or hash.
 
 The v2 confirmation and copy requests each add required
 `expectedOfficialPatchInstallerSha256`. They obtain the installer path from the strictly validated
-source-root map bound through the preceding state, then require exact equality among:
+source-root map bound through the preceding state.
 
-- the request's expected hash;
-- the source-root map's installer hash;
-- the preceding state's patch binding;
-- the patch installer inventory alias; and
-- the freshly calculated installer hash.
+Hash equality is one closed chain:
+
+- request `expectedOfficialPatchInstallerSha256`;
+- root-map provenance `installerSha256`;
+- predecessor-state binding `installerSha256`; and
+- freshly calculated installer SHA-256.
+
+Alias equality is a separate closed chain:
+
+- root-map provenance `installerArtifactAlias`;
+- predecessor-state binding `installerArtifactAlias`;
+- the one inventory row's `artifactAlias`; and
+- the successor state or receipt binding `installerArtifactAlias`.
+
+The inventory row must also match the exact class, purpose, custody, retention, status, and
+verification tuple in section 5.7. Source URL and version label compare separately against their
+public constants and every path-free binding.
 
 Completed-phase validation and recovery trust sealed private evidence and perform no installer or
 live-source open.
@@ -378,7 +397,8 @@ verificationMethod = sha256-held-read-handle
 qualification = null
 ```
 
-The source-root-map inventory entry names the installer artifact alias as direct lineage. Alias
+The source-root-map inventory entry supplements, rather than replaces, its existing lineage. Its
+exact ordered `lineageAliases` value is `[pendingManifestAlias, installerArtifactAlias]`. Alias
 allocation remains consecutive and uses the existing monotonic cursor.
 
 The source-root-map inventory entry is also changed to `lastUseMilestone = post-A8-appeal`,
@@ -497,11 +517,9 @@ and inherits its patch binding into state revision 4 without opening the install
 The project leader may direct Copilot to invoke the deterministic C# request builder and execute the
 resulting private request after the amended source-safety gate, provided:
 
-- the preparation or request operand is the exact absolute path anchored under the verified
-  repository root as section 5.1 defines;
+- the CLI receives only the explicit verified repository root and `survey-000001`;
 - the project leader audits and approves the generated request before its operation;
-- `discover.json`, `confirm.json`, `copy.json`, and `cleanup-preflight.json` are accepted only at
-  their existing canonical request paths under the same verified repository root;
+- the C# CLI derives and validates the exact preparation or request path;
 - no command output, retained transcript, or Agent message contains the private request, installer
   path, installer hash, source paths, manifest bytes, or generated private records;
 - Copilot does not open, parse, display, search, summarize, or attach generated private files;
@@ -515,7 +533,56 @@ process output, exception detail, or private disclosure is a stop condition.
 
 The three builders prepare discovery, confirmation, and copy requests. Cleanup preflight keeps its
 existing human-created request contract, but Copilot may invoke it only after the project leader
-audits that request and authorizes the exact canonical absolute control path.
+audits that request and authorizes the exact root/alias command.
+
+### 8.1 Exact direct-apphost invocation
+
+The amended tool-safety record binds this procedure and its relative apphost path. The only runtime
+substitution is the current environment's already-known absolute repository root. It may appear
+only as the local command argument, never in Git or CLI output. No other substitution is allowed:
+
+```powershell
+$repositoryRoot = "<verified absolute repository root>"
+$surveyAlias = "survey-000001"
+$atlasRoot = Join-Path $repositoryRoot "src\private\app\celesphonia-modifier"
+$apphost = Join-Path $atlasRoot `
+  "Hcoona.CelesphoniaModifier.Atlas.Cli\bin\Debug\net10.0\celesphonia-atlas.exe"
+```
+
+After `T` is the clean upstream-equal `HEAD`, Copilot may run exactly:
+
+```powershell
+& $apphost intake-prepare-discovery $repositoryRoot $surveyAlias
+```
+
+The project leader audits and approves the generated request before Copilot may run:
+
+```powershell
+& $apphost intake-discover $repositoryRoot $surveyAlias
+```
+
+After discovery audit and publication of `A`, the same prepare/audit/operate sequence uses:
+
+```powershell
+& $apphost intake-prepare-confirmation $repositoryRoot $surveyAlias
+& $apphost intake-confirm $repositoryRoot $surveyAlias
+& $apphost intake-prepare-copy $repositoryRoot $surveyAlias
+& $apphost intake-copy $repositoryRoot $surveyAlias
+```
+
+Those four lines are separate invocations; each operation line requires project-leader audit of its
+generated request first. After the project leader creates and audits the existing preflight request,
+Copilot may run:
+
+```powershell
+& $apphost cleanup-preflight $repositoryRoot $surveyAlias
+```
+
+Each invocation runs without transcription, verbose/debug output, piping, redirection, or argument
+logging. Exit 0 must carry exactly the command's one fixed success line. A nonzero exit must carry
+exactly one classified fixed diagnostic line. Any additional/different output or a Git-gate
+mismatch stops execution before another command. Copilot reports only the fixed line and exit code;
+it never lists or opens a derived control file.
 
 ## 9. Synthetic test requirements
 
@@ -523,9 +590,9 @@ All tests use synthetic installer bytes and paths. They cover:
 
 - strict preparation shapes, canonical alias-only paths, builder fixed output, create-new behavior,
   exact-byte idempotence, cancellation, and no-private-output failures;
-- absolute repository-root anchoring for all preparation and request operands, with relative,
-  current-directory-inferred, outside-root, wrong-name, and wrong-survey rejection;
-- exact global/preparation help bytes, parser precedence, extra/mixed argument rejection, stream
+- absolute repository-root and exact-survey argument validation, derived control paths, and
+  relative/current-directory/device/UNC/outside-root/wrong-name/wrong-survey rejection;
+- exact global/private-phase help bytes, parser precedence, extra/mixed argument rejection, stream
   failure precedence, and zero-operation help behavior;
 - discovery preparation hash generation followed by explicit human-approval simulation and fresh
   discovery rehash comparison;
@@ -544,6 +611,7 @@ All tests use synthetic installer bytes and paths. They cover:
 - fresh discovery hashing before live-root enumeration;
 - fresh confirmation and copy detecting installer replacement;
 - exact root-map/state/receipt/inventory alias and hash continuity;
+- exact source-root-map ordered lineage `[pendingManifestAlias, installerArtifactAlias]`;
 - permanent inventory retention and cleanup-preflight blocking;
 - completed discovery/confirmation/copy/preflight performing zero installer and source opens;
 - every existing output-publication and recovery seam preserving prior no-reopen behavior;
@@ -623,10 +691,10 @@ tests/private/app/celesphonia-modifier/
     TrustedLocalCopyTests.cs
 ```
 
-The README change records the amended contract status only. The two listed CLI files authorize only
-the three fixed-output preparation commands. The two listed new C# files authorize the BCL-only
-request builder and its synthetic tests. No project, package, lock, root configuration, new schema
-path, or other production/test file is authorized.
+The README change records the amended contract status only. The two listed CLI files authorize the
+three fixed-output preparation commands and explicit root/alias grammar for every private phase. The
+two listed new C# files authorize the BCL-only request builder and its synthetic tests. No project,
+package, lock, root configuration, new schema path, or other production/test file is authorized.
 
 The plan candidate itself contains exactly:
 
@@ -693,9 +761,9 @@ then verifies `G` as its one-path record-only child.
 
 Every role must be a pushed commit with verified parent, tree, allowed no-renames paths, staged blob
 identity where applicable, upstream equality, and clean worktree. A code, schema, test,
-documentation, dependency, build, request-contract, or private-procedure change after `S` invalidates
-`T` and all descendants; the chain restarts from `B` with a new source candidate. No old A2
-plan/tool record substitutes for `B` or `T`.
+documentation, dependency, build, request-contract, or private-procedure change after `S`
+invalidates `T` and all descendants; the chain restarts from `B` with a new source candidate. No old
+A2 plan/tool record substitutes for `B` or `T`.
 
 This chain supersedes the original A2 plan's section 16 comparison base and section 17.4 candidate
 sequence. All other record-review mechanics remain governing.
@@ -780,6 +848,9 @@ mise exec -- dotnet msbuild $tests `
 
 Also run ref-bound HK checks, `git diff --check`, committed-file LF and line-length checks, exact
 no-renames path comparisons, and candidate tree, ancestry, upstream, and clean-worktree checks.
+The line-length gate requires every line in this new amendment and every added/modified line in the
+four-path plan diff to be at most 100 characters. Unchanged baseline lines outside the diff do not
+belong to this candidate gate.
 
 ## 13. Stop conditions
 
@@ -793,8 +864,8 @@ Stop and return to planning if:
 - any A0 root, count, rule, decision, alias identity, or denominator changes;
 - any v1 or ambiguous request, output, staging, or recovery artifact is present;
 - any design claims installer-package identity proves installed-file identity;
-- any private locator-bearing path, hash, source name, request bytes, output bytes, or source content
-  beyond the permitted alias-only control paths reaches Git or Agent output;
+- any private locator-bearing path, hash, source name, request bytes, output bytes, or source
+  content beyond the permitted public root/alias arguments reaches Git or Agent output;
 - any implementation path falls outside section 11;
 - any dependency, project, SDK, telemetry, or target-framework change is proposed;
 - validation requires an unplanned source open during recovery;
