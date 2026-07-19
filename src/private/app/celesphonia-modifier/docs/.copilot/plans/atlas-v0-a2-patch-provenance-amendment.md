@@ -60,12 +60,24 @@ The original A2 plan-review and tool-safety records remain immutable historical 
 Tool-safety record `9edbd57b4f44e76de321e06be81a581ed11b0017` does not authorize discovery
 after this material source-profile decision.
 
-After verification, this amendment partially supersedes the A2 plan's section 6 v1 request
-contracts, section 8 CLI contract, section 10 source-profile attestation and strictly human-invoked
-wording, section 16 comparison chain, and sections 17.2-17.4 request-preparation, invocation, and
-release wording. It does not supersede the rule that Copilot and subagents never receive private
-document bytes, the project leader personally audits private outputs, and only the project leader
-can approve the pending manifest and later phases.
+After verification, this amendment partially supersedes these exact A2 clauses:
+
+- section 6's v1 requests, canonical request/receipt paths, and related state bindings;
+- section 8's CLI contract;
+- section 10's source-profile attestation and project-leader-only creation/execution wording;
+- section 15's four-entry preflight inventory replacement;
+- section 16's comparison base;
+- sections 17.2-17.4's private invocation, request preparation, and release sequence;
+- section 18's four-entry preflight acceptance clause;
+- section 20's count whitelist only for the exact safe contract/evidence counts below; and
+- section 21's project-leader-only invocation wording.
+
+It does not supersede the rule that Copilot and subagents never receive private document bytes, the
+project leader personally audits private requests and outputs, and only the project leader can
+approve the pending manifest and later phases.
+
+The added safe counts are four custody rows per phase, seven preflight additions, four approved
+request-review bindings, and two permanent custody rows. Every other new count remains private.
 
 The verified amendment plan-review record becomes the implementation diff base. Any implementation
 outside the exact path boundary in section 11 creates a new plan candidate. Any later tracked
@@ -196,8 +208,8 @@ Preparation inputs remain outside the surveyed workspace and its closed census. 
 receipts and review receipts occupy exact canonical paths inside the survey request directory:
 
 ```text
-requests\<phase>.preparation-receipt.json
-requests\<phase>.review-receipt.json
+intake\requests\<phase>.preparation-receipt.json
+intake\requests\<phase>.review-receipt.json
 ```
 
 The C# CLI itself is the only driver. Every private-phase command accepts exactly an explicit
@@ -279,7 +291,7 @@ The phase tokens are exactly `discover`, `confirm`, `copy`, and `cleanup-preflig
 - `preparationArtifact` and `requestArtifact`, exact custody objects defined below;
 - `receiptArtifactAlias: string` and `reviewReceiptArtifactAlias: string`; and
 - `reviewReceiptRelativePath: string`, exactly
-  `requests/<phase>.review-receipt.json`.
+  `intake/requests/<phase>.review-receipt.json`.
 
 Each custody object contains exactly:
 
@@ -322,6 +334,10 @@ properties are exactly:
 - `installationAttestationRequired: boolean` and
   `installationAttestationStillCurrent: boolean`; and
 - `reviewReceiptArtifactAlias: string`.
+
+`preparationReceiptRelativePath` is exactly
+`intake/requests/<phase>.preparation-receipt.json`. `requestRelativePath` is exactly
+`intake/requests/<phase>.json`.
 
 Every review-receipt property is required. Both relative paths are canonical survey-relative paths;
 both digests are 64 lowercase hexadecimal characters. Aliases, phases, roles, and decisions use
@@ -374,6 +390,7 @@ Usage:
   celesphonia-atlas intake-prepare-confirmation <repository-root> <survey-alias>
   celesphonia-atlas intake-prepare-copy <repository-root> <survey-alias>
   celesphonia-atlas intake-prepare-preflight <repository-root> <survey-alias>
+  celesphonia-atlas intake-record-review <repository-root> <survey-alias> <phase> <decision>
   celesphonia-atlas intake-discover <repository-root> <survey-alias>
   celesphonia-atlas intake-confirm <repository-root> <survey-alias>
   celesphonia-atlas intake-copy <repository-root> <survey-alias>
@@ -596,6 +613,10 @@ Alias allocation replaces each pre-amendment request position with the consecuti
 inserts the discovery installer alias immediately before the source-root-map alias. Recovery
 validates those exact consecutive ordinals and lineages.
 
+For cleanup preflight, this replaces the original four-entry addition with exactly seven entries:
+preparation, request, preparation receipt, review receipt, cleanup report, state revision 4, and
+the preflight inventory backup. No prior inventory row changes.
+
 ## 6. Installer hashing and path safety
 
 Fresh discovery, fresh confirmation, and fresh copy each:
@@ -722,11 +743,41 @@ only as the local command argument, never in Git or CLI output. No other substit
 $repositoryRoot = "<verified absolute repository root>"
 $surveyAlias = "survey-000001"
 $atlasRoot = Join-Path $repositoryRoot "src\private\app\celesphonia-modifier"
+$cli = Join-Path $atlasRoot `
+  "Hcoona.CelesphoniaModifier.Atlas.Cli\Hcoona.CelesphoniaModifier.Atlas.Cli.csproj"
 $apphost = Join-Path $atlasRoot `
   "Hcoona.CelesphoniaModifier.Atlas.Cli\bin\Debug\net10.0\celesphonia-atlas.exe"
 ```
 
-After `T` is the clean upstream-equal `HEAD`, Copilot may run exactly:
+`T` binds `S`, the CLI project and apphost paths, these rebuild commands, and the exact global-help
+bytes. An apphost produced during source-candidate review is never private-run authority.
+
+Immediately before every preparation, review-record, or operation invocation, Copilot verifies the
+exact required chain head, upstream equality, and clean worktree. Discovery requires `T`; every
+later phase requires `A`. The no-renames `S..HEAD` diff may contain only the already-reviewed record
+paths and blobs allowed by section 11.1. Every source, project, lock, and build-control path must be
+tree-equal to `S`. Copilot then materializes a fresh apphost with exactly:
+
+```powershell
+mise exec -- dotnet restore $cli --locked-mode -v:minimal
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+mise exec -- dotnet clean $cli --no-restore -nologo -v:minimal
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if (Test-Path -LiteralPath $apphost -PathType Leaf) { exit 1 }
+mise exec -- dotnet build $cli --no-restore --no-incremental `
+  /m:1 -warnaserror -nologo -v:minimal
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if (-not (Test-Path -LiteralPath $apphost -PathType Leaf)) { exit 1 }
+& $apphost --help
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+```
+
+Only the exact bound global-help bytes pass. Copilot then repeats the chain, upstream,
+tree-equality, and clean-worktree checks. Any stale apphost, path drift, extra record path, output
+mismatch, or build failure stops before private input is opened. This rebuild gate repeats before
+every private-phase command.
+
+After the post-build discovery gate passes with `T` as `HEAD`, Copilot may run exactly:
 
 ```powershell
 & $apphost intake-prepare-discovery $repositoryRoot $surveyAlias
@@ -794,6 +845,7 @@ All tests use synthetic installer bytes and paths. They cover:
   rejected/abandoned replacement refusal;
 - missing/rejected/abandoned review behavior, durable pre-execution custody, zero deletion, and
   mandatory replanning;
+- preflight adding exactly the seven amended rows without changing a prior row;
 - discovery-to-confirmation, confirmation-to-copy, and copy-to-preflight output-audit gates;
 - strict v2 request shape, duplicate, missing, null, unknown, trailing, URL, version, hash, and
   attestation validation;
@@ -836,17 +888,18 @@ The amended implementation gate passes only when:
 10. the attestation is closed, phase-fresh/current, and excludes ordinary gameplay save writes;
 11. the installer and hash-evidence inventory rows are permanently retained and `blocked-status`;
 12. no claim equates package hash with installed-file identity;
-13. production code remains BCL-only with no project, package, lock, TFM, or telemetry change;
-14. locked restore and warning-free build of the test project pass;
-15. `dotnet format --verify-no-changes` passes for all three projects;
-16. the complete Microsoft.Testing.Platform suite and direct apphost smoke tests pass;
-17. evaluated project and package references remain within the approved graph;
-18. exact no-renames path, line-length, LF, HK, `git diff --check`, tree, ancestry, upstream, and
+13. preflight adds exactly seven amended rows and changes no prior inventory row;
+14. production code remains BCL-only with no project, package, lock, TFM, or telemetry change;
+15. locked restore and warning-free build of the test project pass;
+16. `dotnet format --verify-no-changes` passes for all three projects;
+17. the complete Microsoft.Testing.Platform suite and direct apphost smoke tests pass;
+18. evaluated project and package references remain within the approved graph;
+19. exact no-renames path, line-length, LF, HK, `git diff --check`, tree, ancestry, upstream, and
     clean-worktree checks pass;
-19. a fresh independent source reviewer reports exact `No findings`;
-20. the amended tool-safety record is reviewed as an exact staged blob and published unchanged as
+20. a fresh independent source reviewer reports exact `No findings`;
+21. the amended tool-safety record is reviewed as an exact staged blob and published unchanged as
     the only child change; and
-21. private discovery remains blocked until that record passes parent, path, blob, upstream, and
+22. private discovery remains blocked until that record passes parent, path, blob, upstream, and
     clean-worktree verification.
 
 Full A2 release additionally requires:
@@ -974,7 +1027,8 @@ sequence. All other record-review mechanics remain governing.
 ### 11.2 Mandatory repository-safe private-run evidence
 
 `atlas-v0-a2-intake-approval.md` records exactly these safe facts after the project leader audits
-the generated discovery request, pending manifest, v2 root map, state revision 1, and inventory:
+the generated discovery request, pending manifest, v2 root map, copy plan, state revision 1, and
+inventory:
 
 - survey alias, pending-manifest revision, Steam application/build, public patch URL/version, and
   the existing approved A0 aggregate counts;
@@ -985,6 +1039,7 @@ the generated discovery request, pending manifest, v2 root map, state revision 1
 - `discoveryRequestReviewApproved = true`;
 - `discoveryRequestHumanAudited = true`;
 - `discoveryOutputsHumanAudited = true`;
+- `copyPlanHumanAudited = true`;
 - `installationAttestationPassed = true`;
 - `discoveryAttestationCurrentAtOperation = true`;
 - `installerHashRevalidatedAtDiscovery = true`;
@@ -998,8 +1053,9 @@ the generated discovery request, pending manifest, v2 root map, state revision 1
 - `projectLeaderDecision = approved`.
 
 These retain every original A2 section 10 approval-record field and add the amendment evidence. The
-record explicitly says it contains no installer hash/path/name/metadata, preparation/request bytes,
-private document digest, source path/name, per-file result, or installed-file identity claim.
+record explicitly says no private path, name, hash, value, or source text is recorded. It also says
+it contains no installer metadata, preparation/request bytes, private document digest, per-file
+result, or installed-file identity claim.
 
 `atlas-v0-a2-private-run-acceptance.md` records exactly these safe facts after the project leader
 audits state revisions 2-4, copy receipt v2, final inventory, and cleanup report:
@@ -1033,10 +1089,11 @@ audits state revisions 2-4, copy receipt v2, final inventory, and cleanup report
 - `packageHashClaimLimitedToPackageIdentity = true`.
 
 These are project-leader attestations based on private document review and fixed CLI outcomes, not
-public reproduction of private evidence. A false, unknown, missing, or non-applicable value stops
-release. The final cumulative reviewer checks record completeness, chain consistency, public-value
-agreement, and absence of private fields. `atlas-v0-a2-release-gate.md` cites `B`, `S`, `T`, `A`,
-`R`, the exact final-review result, and all parent/path/blob/upstream/clean-worktree checks.
+public reproduction of private evidence. A value that is unknown, missing, non-applicable, or
+different from its exact required literal above stops release. The final cumulative reviewer checks
+record completeness, chain consistency, public-value agreement, and absence of private fields.
+`atlas-v0-a2-release-gate.md` cites `B`, `S`, `T`, `A`, `R`, the exact final-review result, and all
+parent/path/blob/upstream/clean-worktree checks.
 
 ## 12. Validation procedure
 
@@ -1093,7 +1150,8 @@ Stop and return to planning if:
 - any implementation path falls outside section 11;
 - any dependency, project, SDK, telemetry, or target-framework change is proposed;
 - validation requires an unplanned source open during recovery;
-- any required section 11.2 safe fact is false, unknown, missing, or non-applicable;
+- any section 11.2 fact differs from its exact required literal, is unknown, missing, or
+  non-applicable;
 - any tracked change occurs between `S` and `G` outside the exact record-only chain;
 - any record-only parent, path, blob, upstream, or clean-worktree check fails; or
 - any independent finding remains unresolved.
@@ -1108,9 +1166,10 @@ To resume:
 4. implement only section 11 with synthetic data;
 5. publish and independently review the amended source candidate;
 6. verify the amended tool-safety record before any private operation;
-7. invoke the reviewed builder without opening its private preparation file or generated request;
-8. have the project leader audit the request and authorize its immutable review receipt;
-9. run only the authorized review-record and phase-operation lines, without private inspection;
-10. have the project leader audit the private output before authorizing the next phase;
-11. leave exact private document review and approval to the project leader; and
-12. never infer private authority from conversation history or the historical `9edbd57b` record.
+7. run the exact post-record rebuild and prelaunch gates before each phase;
+8. invoke the reviewed builder without opening its private preparation file or generated request;
+9. have the project leader audit the request and authorize its immutable review receipt;
+10. run only the authorized review-record and phase-operation lines, without private inspection;
+11. have the project leader audit the private output before authorizing the next phase;
+12. leave exact private document review and approval to the project leader; and
+13. never infer private authority from conversation history or the historical `9edbd57b` record.
