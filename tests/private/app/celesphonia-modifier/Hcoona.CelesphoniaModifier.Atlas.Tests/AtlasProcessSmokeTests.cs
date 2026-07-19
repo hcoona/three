@@ -75,11 +75,8 @@ public sealed class AtlasProcessSmokeTests
             workspace.Layout.CanonicalDiscoverRequestPath,
             TestContext.Current.CancellationToken);
         AtlasIntakeConfirmationRequest confirmRequest = workspace.CreateConfirmationRequest();
-        confirmRequest = confirmRequest with
-        {
-            ExpectedDiscoveredStateSha256 = new string('0', 64),
-        };
         workspace.WriteRequest(confirmRequest);
+        File.Delete(workspace.Layout.CanonicalDiscoveredStatePath);
 
         ProcessResult result = await RunAsync(
             "intake-confirm",
@@ -88,6 +85,50 @@ public sealed class AtlasProcessSmokeTests
         Assert.Equal(6, result.ExitCode);
         Assert.Empty(result.StandardOutput);
         Assert.Equal("Approval required.\n"u8.ToArray(), result.StandardError);
+    }
+
+    [Fact]
+    public async Task CorruptStateProcessWritesExactSafetyDiagnostic()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreateConfirmationRequest());
+        await File.WriteAllTextAsync(
+            workspace.Layout.CanonicalDiscoveredStatePath,
+            "{}",
+            TestContext.Current.CancellationToken);
+
+        ProcessResult result = await RunAsync(
+            "intake-confirm",
+            workspace.Layout.CanonicalConfirmRequestPath);
+
+        Assert.Equal(5, result.ExitCode);
+        Assert.Empty(result.StandardOutput);
+        Assert.Equal("Safety check failed.\n"u8.ToArray(), result.StandardError);
+    }
+
+    [Fact]
+    public async Task MismatchedStateProcessWritesExactSafetyDiagnostic()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+        AtlasIntakeConfirmationRequest request = workspace.CreateConfirmationRequest() with
+        {
+            ExpectedDiscoveredStateSha256 = new string('0', 64),
+        };
+        workspace.WriteRequest(request);
+
+        ProcessResult result = await RunAsync(
+            "intake-confirm",
+            workspace.Layout.CanonicalConfirmRequestPath);
+
+        Assert.Equal(5, result.ExitCode);
+        Assert.Empty(result.StandardOutput);
+        Assert.Equal("Safety check failed.\n"u8.ToArray(), result.StandardError);
     }
 
     [Fact]

@@ -268,7 +268,8 @@ internal static class AtlasCliApplication
             await operation(cancellationToken).ConfigureAwait(false);
             if (successBytes is not null)
             {
-                await WriteBytesAsync(standardOutput, successBytes).ConfigureAwait(false);
+                await WriteBytesAsync(standardOutput, successBytes, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             return SuccessExitCode;
@@ -331,7 +332,8 @@ internal static class AtlasCliApplication
     {
         try
         {
-            await WriteBytesAsync(standardOutput, helpBytes).ConfigureAwait(false);
+            await WriteBytesAsync(standardOutput, helpBytes, CancellationToken.None)
+                .ConfigureAwait(false);
             return SuccessExitCode;
         }
         catch (Exception)
@@ -351,7 +353,8 @@ internal static class AtlasCliApplication
     {
         try
         {
-            await WriteBytesAsync(standardError, diagnostic).ConfigureAwait(false);
+            await WriteBytesAsync(standardError, diagnostic, CancellationToken.None)
+                .ConfigureAwait(false);
             return intendedExitCode;
         }
         catch (Exception)
@@ -362,14 +365,15 @@ internal static class AtlasCliApplication
 
     private static async ValueTask WriteBytesAsync(
         Stream destination,
-        ReadOnlyMemory<byte> bytes)
+        ReadOnlyMemory<byte> bytes,
+        CancellationToken cancellationToken)
     {
         if (!destination.CanWrite)
         {
             throw new NotSupportedException("The destination stream does not support writing.");
         }
 
-        await destination.WriteAsync(bytes, CancellationToken.None).ConfigureAwait(false);
+        await destination.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
     }
 
     private enum RequestCommandKind

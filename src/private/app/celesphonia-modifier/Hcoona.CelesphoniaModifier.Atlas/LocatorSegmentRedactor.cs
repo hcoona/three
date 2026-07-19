@@ -135,22 +135,10 @@ public static class LocatorSegmentRedactor
     private static readonly HashSet<string> AllowedDocumentRoles =
         new(StringComparer.Ordinal)
         {
-            AtlasIntakeContracts.DiscoveredRequestRole,
-            AtlasIntakeContracts.ConfirmRequestRole,
-            AtlasIntakeContracts.CopyRequestRole,
-            AtlasIntakeContracts.CleanupPreflightRequestRole,
-            AtlasIntakeContracts.DiscoveredInventoryBackupRole,
-            AtlasIntakeContracts.ApprovedInventoryBackupRole,
-            AtlasIntakeContracts.QualifiedInventoryBackupRole,
-            AtlasIntakeContracts.PreflightedInventoryBackupRole,
-            AtlasIntakeContracts.BaselineManifestRole,
-            AtlasIntakeContracts.PendingManifestRole,
-            AtlasIntakeContracts.ApprovedManifestRole,
-            AtlasIntakeContracts.SourceRootMapRole,
-            AtlasIntakeContracts.CopyPlanRole,
-            AtlasIntakeContracts.CopyReceiptRole,
-            AtlasIntakeContracts.CleanupPreflightReportRole,
-            AtlasIntakeContracts.PredecessorStateRole,
+            "slot-save",
+            "global-save",
+            "config-save",
+            "definition-source",
         };
 
     public static LocatorAliasMap CreateAliasMap(IEnumerable<LocatorSegment> segments)

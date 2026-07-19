@@ -27,6 +27,22 @@ public static class PrivateArtifactLifecycle
             request.WorkspaceRoot,
             request.SurveyAlias);
         AtlasDiscovery.ValidatePrivateWorkspace(layout, io);
+        if (AtlasIntakeContracts.PathEquals(
+                request.QualifiedStatePath,
+                layout.CanonicalQualifiedStatePath)
+            && AtlasDiscovery.IsRequiredFileAbsent(layout.CanonicalQualifiedStatePath, io))
+        {
+            if (!AtlasDiscovery.IsRequiredFileAbsent(
+                    layout.CanonicalPreflightedStatePath,
+                    io))
+            {
+                throw new AtlasSafetyException(
+                    "A completed state lacks its qualified predecessor.");
+            }
+
+            throw new AtlasApprovalException("The qualified state is required.");
+        }
+
         ValidateCleanupPreflightCanonicalPaths(loadedRequest.AbsolutePath, request, layout, io);
         AtlasDiscovery.ValidateCommandWorkspaceCensus(
             layout,
@@ -43,11 +59,6 @@ public static class PrivateArtifactLifecycle
             return;
         }
 
-        if (!io.FileExists(layout.CanonicalQualifiedStatePath))
-        {
-            throw new AtlasApprovalException("The qualified state is required.");
-        }
-
         AtlasLoadedDocument<AtlasIntakeStateDocument> qualifiedState =
             await AtlasIntakeContracts.ReadStateAsync(
                     request.QualifiedStatePath,
@@ -55,13 +66,13 @@ public static class PrivateArtifactLifecycle
                 .ConfigureAwait(false);
         if (qualifiedState.Document.StateRevision != AtlasIntakeContracts.QualifiedStateRevision)
         {
-            throw new AtlasApprovalException("The qualified state revision is invalid.");
+            throw new AtlasSafetyException("The qualified state revision is invalid.");
         }
 
         AtlasDiscovery.EnsureDigestMatches(
             request.ExpectedQualifiedStateSha256,
             qualifiedState.Sha256,
-            static () => new AtlasApprovalException("The qualified state digest is invalid."));
+            static () => new AtlasSafetyException("The qualified state digest is invalid."));
 
         PhaseInventoryContext inventoryContext = await TrustedLocalCopy.LoadPhaseInventoryAsync(
                 layout.CanonicalInventoryPath,
@@ -91,7 +102,7 @@ public static class PrivateArtifactLifecycle
                 inventoryContext.CurrentInventory);
         }
 
-        await AtlasDiscovery.ValidateQualifiedStateAsync(
+        await AtlasDiscovery.ValidateStateChainAsync(
                 layout,
                 qualifiedState,
                 inventoryContext.PriorInventory,
@@ -212,7 +223,10 @@ public static class PrivateArtifactLifecycle
         if (requestAlias is not null
             || reportAlias is not null
             || stateAlias is not null
-            || backupAlias is not null)
+            || backupAlias is not null
+            || !StringComparer.Ordinal.Equals(
+                inventoryContext.CurrentInventory.Sha256,
+                inventoryContext.PriorInventory.Sha256))
         {
             if (requestAlias is null
                 || reportAlias is null
@@ -223,17 +237,59 @@ public static class PrivateArtifactLifecycle
                     "The preflight inventory transition is incomplete.");
             }
 
-            return new PreflightPhaseAliases(requestAlias, reportAlias, stateAlias, backupAlias);
+            PreflightPhaseAliases aliases = new(
+                requestAlias,
+                reportAlias,
+                stateAlias,
+                backupAlias);
+            ValidateRecoveredPreflightAliases(inventoryContext, aliases);
+            return aliases;
         }
 
-        int nextOrdinal =
+        return CreatePreflightPhaseAliases(
             AtlasDiscovery.GetMaximumArtifactOrdinal(inventoryContext.PriorInventory.Document)
-            + 1;
-        return new PreflightPhaseAliases(
-            AtlasIntakeContracts.FormatArtifactAlias(nextOrdinal++),
-            AtlasIntakeContracts.FormatArtifactAlias(nextOrdinal++),
-            AtlasIntakeContracts.FormatArtifactAlias(nextOrdinal++),
-            AtlasIntakeContracts.FormatArtifactAlias(nextOrdinal));
+            + 1);
+    }
+
+    private static PreflightPhaseAliases CreatePreflightPhaseAliases(int firstOrdinal) =>
+        new(
+            AtlasIntakeContracts.FormatArtifactAlias(firstOrdinal++),
+            AtlasIntakeContracts.FormatArtifactAlias(firstOrdinal++),
+            AtlasIntakeContracts.FormatArtifactAlias(firstOrdinal++),
+            AtlasIntakeContracts.FormatArtifactAlias(firstOrdinal));
+
+    private static void ValidateRecoveredPreflightAliases(
+        PhaseInventoryContext inventoryContext,
+        PreflightPhaseAliases aliases)
+    {
+        PreflightPhaseAliases expected = CreatePreflightPhaseAliases(
+            AtlasDiscovery.GetMaximumArtifactOrdinal(inventoryContext.PriorInventory.Document)
+            + 1);
+        TrustedLocalCopy.ValidateRecoveredPhaseArtifacts(
+            inventoryContext,
+            [
+                new(
+                    expected.RequestAlias,
+                    AtlasIntakeContracts.CleanupPreflightRequestPurpose,
+                    AtlasIntakeContracts.PrivateEvidenceArtifactClass),
+                new(
+                    expected.ReportAlias,
+                    AtlasIntakeContracts.CleanupPreflightReportPurpose,
+                    AtlasIntakeContracts.CleanupRecordArtifactClass),
+                new(
+                    expected.StateAlias,
+                    AtlasIntakeContracts.State4Purpose,
+                    AtlasIntakeContracts.PrivateProvenanceArtifactClass),
+                new(
+                    expected.InventoryBackupAlias,
+                    AtlasIntakeContracts.PreflightInventoryBackupPurpose,
+                    AtlasIntakeContracts.PrivateProvenanceArtifactClass),
+            ],
+            "The preflight inventory aliases are invalid.");
+        if (aliases != expected)
+        {
+            throw new AtlasSafetyException("The preflight inventory aliases are invalid.");
+        }
     }
 
     internal static AtlasCleanupPreflightReportDocument CreateCleanupReport(

@@ -10,7 +10,7 @@ public sealed class LocatorSegmentRedactorTests
     {
         LocatorSegment[] segments =
         [
-            LocatorSegment.DocumentRole(AtlasIntakeContracts.CopyPlanRole),
+            LocatorSegment.DocumentRole("slot-save"),
             LocatorSegment.SchemaKey("beta"),
             LocatorSegment.SchemaKey("alpha"),
             LocatorSegment.DynamicKey("delta"),
@@ -27,7 +27,7 @@ public sealed class LocatorSegmentRedactorTests
         Assert.Equal("dynamic-key-000001", aliasMap.DynamicKeyAliases["charlie"]);
         Assert.Equal("dynamic-key-000002", aliasMap.DynamicKeyAliases["delta"]);
         Assert.Equal(
-            $"{AtlasIntakeContracts.CopyPlanRole}/schema-key-000002/schema-key-000001/"
+            "slot-save/schema-key-000002/schema-key-000001/"
             + "dynamic-key-000002/dynamic-key-000001/2/@",
             redacted);
     }
@@ -45,7 +45,7 @@ public sealed class LocatorSegmentRedactorTests
             LocatorSegmentRedactor.Redact(
                 [LocatorSegment.DocumentRole("document-root")],
                 LocatorSegmentRedactor.CreateAliasMap(
-                    [LocatorSegment.DocumentRole(AtlasIntakeContracts.CopyPlanRole)])));
+                    [LocatorSegment.DocumentRole("slot-save")])));
     }
 
     [Fact]
@@ -60,10 +60,10 @@ public sealed class LocatorSegmentRedactorTests
             ]);
 
         Assert.Equal(
-            $"{AtlasIntakeContracts.CopyPlanRole}/schema-key-000001/dynamic-key-000002",
+            "definition-source/schema-key-000001/dynamic-key-000002",
             LocatorSegmentRedactor.Redact(
                 [
-                    LocatorSegment.DocumentRole(AtlasIntakeContracts.CopyPlanRole),
+                    LocatorSegment.DocumentRole("definition-source"),
                     LocatorSegment.SchemaKey("alpha"),
                     LocatorSegment.DynamicKey("delta"),
                 ],
@@ -78,6 +78,45 @@ public sealed class LocatorSegmentRedactorTests
                 aliasMap));
         Assert.Throws<AtlasSafetyException>(() =>
             LocatorSegmentRedactor.Redact([LocatorSegment.DynamicKey("echo")], aliasMap));
+    }
+
+    [Fact]
+    public void DocumentRolesMatchTheEgressEnvelopeContractExactly()
+    {
+        string[] allowedRoles =
+        [
+            "slot-save",
+            "global-save",
+            "config-save",
+            "definition-source",
+        ];
+        foreach (string role in allowedRoles)
+        {
+            LocatorSegment segment = LocatorSegment.DocumentRole(role);
+            LocatorAliasMap aliasMap = LocatorSegmentRedactor.CreateAliasMap([segment]);
+            Assert.Equal(role, LocatorSegmentRedactor.Redact([segment], aliasMap));
+        }
+
+        Assert.Throws<AtlasSafetyException>(() =>
+            LocatorSegmentRedactor.CreateAliasMap(
+                [LocatorSegment.DocumentRole(AtlasIntakeContracts.CopyPlanRole)]));
+    }
+
+    [Fact]
+    public void RedactionDoesNotEmitDynamicPrivateLiterals()
+    {
+        const string PrivateLiteral = "synthetic-private-locator";
+        LocatorSegment[] segments =
+        [
+            LocatorSegment.DocumentRole("global-save"),
+            LocatorSegment.DynamicKey(PrivateLiteral),
+        ];
+        LocatorAliasMap aliasMap = LocatorSegmentRedactor.CreateAliasMap(segments);
+
+        string redacted = LocatorSegmentRedactor.Redact(segments, aliasMap);
+
+        Assert.Equal("global-save/dynamic-key-000001", redacted);
+        Assert.DoesNotContain(PrivateLiteral, redacted, StringComparison.Ordinal);
     }
 
     [Fact]

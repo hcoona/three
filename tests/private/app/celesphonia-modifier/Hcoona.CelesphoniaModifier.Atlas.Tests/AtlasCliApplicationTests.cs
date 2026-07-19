@@ -322,6 +322,366 @@ public sealed class AtlasCliApplicationTests
     }
 
     [Fact]
+    public async Task EmptySurveyDefaultTokenCancellationUsesCallerCancellation()
+    {
+        using CancellationTokenSource source = new();
+        await source.CancelAsync();
+
+        (int exitCode, _, byte[] standardError) = await RunAsync(
+            ["empty-survey"],
+            new DelegatingOperations
+            {
+                EmptySurvey = (_, _) =>
+                    ValueTask.FromException(new OperationCanceledException()),
+            },
+            source.Token);
+
+        Assert.Equal(AtlasCliApplication.CanceledExitCode, exitCode);
+        Assert.Equal("Operation canceled.\n"u8.ToArray(), standardError);
+    }
+
+    [Fact]
+    public async Task EmptySurveyForeignTokenCancellationIsUnexpected()
+    {
+        using CancellationTokenSource source = new();
+        using CancellationTokenSource foreignSource = new();
+        await source.CancelAsync();
+
+        (int exitCode, _, byte[] standardError) = await RunAsync(
+            ["empty-survey"],
+            new DelegatingOperations
+            {
+                EmptySurvey = (_, _) => ValueTask.FromException(
+                    new OperationCanceledException(foreignSource.Token)),
+            },
+            source.Token);
+
+        Assert.Equal(AtlasCliApplication.UnexpectedErrorExitCode, exitCode);
+        Assert.Equal("Unexpected failure.\n"u8.ToArray(), standardError);
+    }
+
+    [Fact]
+    public async Task EmptySurveyUnsolicitedCancellationIsUnexpected()
+    {
+        (int exitCode, _, byte[] standardError) = await RunAsync(
+            ["empty-survey"],
+            new DelegatingOperations
+            {
+                EmptySurvey = (_, _) =>
+                    ValueTask.FromException(new OperationCanceledException()),
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.UnexpectedErrorExitCode, exitCode);
+        Assert.Equal("Unexpected failure.\n"u8.ToArray(), standardError);
+    }
+
+    [Fact]
+    public async Task EmptySurveyUnrequestedCallerTokenCancellationIsUnexpected()
+    {
+        using CancellationTokenSource source = new();
+
+        (int exitCode, _, byte[] standardError) = await RunAsync(
+            ["empty-survey"],
+            new DelegatingOperations
+            {
+                EmptySurvey = (_, _) => ValueTask.FromException(
+                    new OperationCanceledException(source.Token)),
+            },
+            source.Token);
+
+        Assert.Equal(AtlasCliApplication.UnexpectedErrorExitCode, exitCode);
+        Assert.Equal("Unexpected failure.\n"u8.ToArray(), standardError);
+    }
+
+    [Fact]
+    public async Task EmptySurveyReceivesCallerTokenAndMapsPartialCancellation()
+    {
+        using CancellationTokenSource source = new();
+        CancellationToken observedToken = default;
+        (int exitCode, byte[] standardOutput, byte[] standardError) = await RunAsync(
+            ["empty-survey"],
+            new DelegatingOperations
+            {
+                EmptySurvey = async (output, token) =>
+                {
+                    observedToken = token;
+                    await output.WriteAsync("prefix"u8.ToArray(), token);
+                    await source.CancelAsync();
+                    throw new OperationCanceledException(token);
+                },
+            },
+            source.Token);
+
+        Assert.Equal(source.Token, observedToken);
+        Assert.Equal(AtlasCliApplication.CanceledExitCode, exitCode);
+        Assert.Equal("prefix"u8.ToArray(), standardOutput);
+        Assert.Equal("Operation canceled.\n"u8.ToArray(), standardError);
+    }
+
+    [Fact]
+    public async Task EmptySurveyOutputFailuresUseIoDiagnostic()
+    {
+        (int exitCode, byte[] standardOutput, byte[] standardError) = await RunAsync(
+            ["empty-survey"],
+            new DelegatingOperations
+            {
+                EmptySurvey = async (output, token) =>
+                {
+                    await output.WriteAsync("prefix"u8.ToArray(), token);
+                    throw new IOException("synthetic private detail");
+                },
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.IoErrorExitCode, exitCode);
+        Assert.Equal("prefix"u8.ToArray(), standardOutput);
+        Assert.Equal("I/O failure.\n"u8.ToArray(), standardError);
+    }
+
+    [Fact]
+    public async Task EmptySurveyNonWritableOutputUsesIoDiagnostic()
+    {
+        using NonWritableStream standardOutput = new();
+        using MemoryStream standardError = new();
+
+        int exitCode = await AtlasCliApplication.RunAsync(
+            ["empty-survey"],
+            standardOutput,
+            standardError,
+            AtlasCliOperations.Default,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.IoErrorExitCode, exitCode);
+        Assert.Equal("I/O failure.\n"u8.ToArray(), standardError.ToArray());
+    }
+
+    [Fact]
+    public async Task EmptySurveyStdoutFailureUsesIoDiagnostic()
+    {
+        using ThrowingWriteStream standardOutput = new();
+        using MemoryStream standardError = new();
+
+        int exitCode = await AtlasCliApplication.RunAsync(
+            ["empty-survey"],
+            standardOutput,
+            standardError,
+            AtlasCliOperations.Default,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.IoErrorExitCode, exitCode);
+        Assert.Equal("I/O failure.\n"u8.ToArray(), standardError.ToArray());
+    }
+
+    [Fact]
+    public async Task A2DefaultTokenCancellationUsesCallerCancellation()
+    {
+        using CancellationTokenSource source = new();
+        await source.CancelAsync();
+
+        (int exitCode, _, byte[] standardError) = await RunAsync(
+            ["intake-discover", @"Q:\private\discover.json"],
+            new DelegatingOperations
+            {
+                Discover = (_, _) =>
+                    ValueTask.FromException(new OperationCanceledException()),
+            },
+            source.Token);
+
+        Assert.Equal(AtlasCliApplication.CanceledExitCode, exitCode);
+        Assert.Equal("Operation canceled.\n"u8.ToArray(), standardError);
+    }
+
+    [Fact]
+    public async Task A2ForeignAndUnsolicitedCancellationAreUnexpected()
+    {
+        using CancellationTokenSource callerSource = new();
+        using CancellationTokenSource foreignSource = new();
+        await callerSource.CancelAsync();
+        (int foreignCode, _, byte[] foreignError) = await RunAsync(
+            ["intake-discover", @"Q:\private\discover.json"],
+            new DelegatingOperations
+            {
+                Discover = (_, _) => ValueTask.FromException(
+                    new OperationCanceledException(foreignSource.Token)),
+            },
+            callerSource.Token);
+        (int unsolicitedCode, _, byte[] unsolicitedError) = await RunAsync(
+            ["intake-discover", @"Q:\private\discover.json"],
+            new DelegatingOperations
+            {
+                Discover = (_, _) =>
+                    ValueTask.FromException(new OperationCanceledException()),
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.UnexpectedErrorExitCode, foreignCode);
+        Assert.Equal("Unexpected failure.\n"u8.ToArray(), foreignError);
+        Assert.Equal(AtlasCliApplication.UnexpectedErrorExitCode, unsolicitedCode);
+        Assert.Equal("Unexpected failure.\n"u8.ToArray(), unsolicitedError);
+    }
+
+    [Fact]
+    public async Task A2UnrequestedCallerTokenCancellationIsUnexpected()
+    {
+        using CancellationTokenSource source = new();
+
+        (int exitCode, _, byte[] standardError) = await RunAsync(
+            ["intake-discover", @"Q:\private\discover.json"],
+            new DelegatingOperations
+            {
+                Discover = (_, _) => ValueTask.FromException(
+                    new OperationCanceledException(source.Token)),
+            },
+            source.Token);
+
+        Assert.Equal(AtlasCliApplication.UnexpectedErrorExitCode, exitCode);
+        Assert.Equal("Unexpected failure.\n"u8.ToArray(), standardError);
+    }
+
+    [Fact]
+    public async Task A2CancellationBeforeSuccessWriteDoesNotReportSuccess()
+    {
+        using CancellationTokenSource source = new();
+        (int exitCode, byte[] standardOutput, byte[] standardError) = await RunAsync(
+            ["intake-discover", @"Q:\private\discover.json"],
+            new DelegatingOperations
+            {
+                Discover = async (_, token) =>
+                {
+                    Assert.Equal(source.Token, token);
+                    await source.CancelAsync();
+                },
+            },
+            source.Token);
+
+        Assert.Equal(AtlasCliApplication.CanceledExitCode, exitCode);
+        Assert.Empty(standardOutput);
+        Assert.Equal("Operation canceled.\n"u8.ToArray(), standardError);
+    }
+
+    [Fact]
+    public async Task A2CancellationDuringPartialSuccessWriteDoesNotReportSuccess()
+    {
+        using CancellationTokenSource source = new();
+        using CancelingWriteStream standardOutput = new(source);
+        using MemoryStream standardError = new();
+
+        int exitCode = await AtlasCliApplication.RunAsync(
+            ["intake-copy", @"Q:\private\copy.json"],
+            standardOutput,
+            standardError,
+            new DelegatingOperations
+            {
+                Copy = (_, token) =>
+                {
+                    Assert.Equal(source.Token, token);
+                    return ValueTask.CompletedTask;
+                },
+            },
+            source.Token);
+
+        Assert.Equal(AtlasCliApplication.CanceledExitCode, exitCode);
+        Assert.Equal("Intake "u8.ToArray(), standardOutput.ToArray());
+        Assert.Equal("Operation canceled.\n"u8.ToArray(), standardError.ToArray());
+    }
+
+    [Fact]
+    public async Task A2SuccessOutputFailuresUseIoDiagnostic()
+    {
+        using ThrowingWriteStream standardOutput = new();
+        using MemoryStream standardError = new();
+
+        int exitCode = await AtlasCliApplication.RunAsync(
+            ["cleanup-preflight", @"Q:\private\cleanup.json"],
+            standardOutput,
+            standardError,
+            new DelegatingOperations(),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.IoErrorExitCode, exitCode);
+        Assert.Equal("I/O failure.\n"u8.ToArray(), standardError.ToArray());
+    }
+
+    [Fact]
+    public async Task A2NonWritableSuccessOutputUsesIoDiagnostic()
+    {
+        using NonWritableStream standardOutput = new();
+        using MemoryStream standardError = new();
+
+        int exitCode = await AtlasCliApplication.RunAsync(
+            ["intake-confirm", @"Q:\private\confirm.json"],
+            standardOutput,
+            standardError,
+            new DelegatingOperations(),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.IoErrorExitCode, exitCode);
+        Assert.Equal("I/O failure.\n"u8.ToArray(), standardError.ToArray());
+    }
+
+    [Fact]
+    public async Task HelpAndInvalidInputIgnoreCallerCancellation()
+    {
+        using CancellationTokenSource source = new();
+        await source.CancelAsync();
+
+        (int helpCode, byte[] helpOutput, byte[] helpError) = await RunAsync(
+            ["--help"],
+            new DelegatingOperations(),
+            source.Token);
+        (int invalidCode, byte[] invalidOutput, byte[] invalidError) = await RunAsync(
+            ["invalid"],
+            new DelegatingOperations(),
+            source.Token);
+
+        Assert.Equal(AtlasCliApplication.SuccessExitCode, helpCode);
+        Assert.Equal(ExpectedGlobalHelp, helpOutput);
+        Assert.Empty(helpError);
+        Assert.Equal(AtlasCliApplication.UsageErrorExitCode, invalidCode);
+        Assert.Empty(invalidOutput);
+        Assert.Equal("Invalid arguments.\n"u8.ToArray(), invalidError);
+    }
+
+    [Fact]
+    public async Task HelpOutputFailureUsesIoDiagnostic()
+    {
+        using ThrowingWriteStream standardOutput = new();
+        using MemoryStream standardError = new();
+
+        int exitCode = await AtlasCliApplication.RunAsync(
+            ["--help"],
+            standardOutput,
+            standardError,
+            new DelegatingOperations(),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.IoErrorExitCode, exitCode);
+        Assert.Equal("I/O failure.\n"u8.ToArray(), standardError.ToArray());
+    }
+
+    [Fact]
+    public async Task A2DiagnosticFailureTakesIoPrecedence()
+    {
+        using MemoryStream standardOutput = new();
+        using ThrowingWriteStream standardError = new();
+
+        int exitCode = await AtlasCliApplication.RunAsync(
+            ["intake-copy", @"Q:\private\copy.json"],
+            standardOutput,
+            standardError,
+            new DelegatingOperations
+            {
+                Copy = (_, _) => ValueTask.FromException(
+                    new AtlasSafetyException("synthetic private detail")),
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.IoErrorExitCode, exitCode);
+        Assert.Empty(standardOutput.ToArray());
+    }
+
+    [Fact]
     public async Task DiagnosticFailureReturnsIoError()
     {
         using MemoryStream standardOutput = new();
@@ -397,6 +757,14 @@ public sealed class AtlasCliApplicationTests
 
         public Func<string, CancellationToken, ValueTask>? Discover { get; init; }
 
+        public Func<Stream, CancellationToken, ValueTask>? EmptySurvey { get; init; }
+
+        public override ValueTask WriteEmptySurveyAsync(
+            Stream standardOutput,
+            CancellationToken cancellationToken) =>
+            EmptySurvey?.Invoke(standardOutput, cancellationToken)
+            ?? base.WriteEmptySurveyAsync(standardOutput, cancellationToken);
+
         public override ValueTask RunCleanupPreflightAsync(
             string requestFilePath,
             CancellationToken cancellationToken) =>
@@ -458,5 +826,92 @@ public sealed class AtlasCliApplicationTests
             ReadOnlyMemory<byte> buffer,
             CancellationToken cancellationToken = default) =>
             ValueTask.FromException(new IOException("synthetic stream failure"));
+    }
+
+    private sealed class NonWritableStream : Stream
+    {
+        public override bool CanRead => false;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => 0;
+
+        public override long Position
+        {
+            get => 0;
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) =>
+            throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class CancelingWriteStream(CancellationTokenSource source) : Stream
+    {
+        private readonly MemoryStream inner = new();
+
+        public override bool CanRead => false;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => true;
+
+        public override long Length => inner.Length;
+
+        public override long Position
+        {
+            get => inner.Position;
+            set => throw new NotSupportedException();
+        }
+
+        public byte[] ToArray() => inner.ToArray();
+
+        public override void Flush() => inner.Flush();
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) =>
+            throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+
+        public override async ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            await inner.WriteAsync(buffer[..7], cancellationToken);
+            await source.CancelAsync();
+            throw new OperationCanceledException(cancellationToken);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                inner.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
     }
 }

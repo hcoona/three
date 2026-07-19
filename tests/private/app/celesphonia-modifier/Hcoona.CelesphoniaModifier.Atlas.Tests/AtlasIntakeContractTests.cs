@@ -677,56 +677,56 @@ public sealed class AtlasIntakeContractTests
             workspace.Layout.CanonicalDiscoveredStatePath,
             static (path, cancellationToken) =>
                 AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-            typeof(AtlasApprovalException),
+            typeof(AtlasSafetyException),
             json => SwapBindingRelativePaths(json, "documentBindings", 0, 1),
             TestContext.Current.CancellationToken);
         await AssertRejectedDocumentMutationAsync(
             workspace.Layout.CanonicalDiscoveredStatePath,
             static (path, cancellationToken) =>
                 AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-            typeof(AtlasApprovalException),
+            typeof(AtlasSafetyException),
             json => SwapBindingRelativePaths(json, "artifactBindings", 0, 1),
             TestContext.Current.CancellationToken);
         await AssertRejectedDocumentMutationAsync(
             workspace.Layout.CanonicalApprovedStatePath,
             static (path, cancellationToken) =>
                 AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-            typeof(AtlasApprovalException),
+            typeof(AtlasSafetyException),
             json => SwapBindingRelativePaths(json, "documentBindings", 0, 1),
             TestContext.Current.CancellationToken);
         await AssertRejectedDocumentMutationAsync(
             workspace.Layout.CanonicalApprovedStatePath,
             static (path, cancellationToken) =>
                 AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-            typeof(AtlasApprovalException),
+            typeof(AtlasSafetyException),
             json => SwapBindingRelativePaths(json, "artifactBindings", 0, 1),
             TestContext.Current.CancellationToken);
         await AssertRejectedDocumentMutationAsync(
             workspace.Layout.CanonicalQualifiedStatePath,
             static (path, cancellationToken) =>
                 AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-            typeof(AtlasApprovalException),
+            typeof(AtlasSafetyException),
             json => SwapBindingRelativePaths(json, "documentBindings", 0, 4),
             TestContext.Current.CancellationToken);
         await AssertRejectedDocumentMutationAsync(
             workspace.Layout.CanonicalQualifiedStatePath,
             static (path, cancellationToken) =>
                 AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-            typeof(AtlasApprovalException),
+            typeof(AtlasSafetyException),
             json => SwapBindingRelativePaths(json, "artifactBindings", 0, 1),
             TestContext.Current.CancellationToken);
         await AssertRejectedDocumentMutationAsync(
             workspace.Layout.CanonicalPreflightedStatePath,
             static (path, cancellationToken) =>
                 AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-            typeof(AtlasApprovalException),
+            typeof(AtlasSafetyException),
             json => SwapBindingRelativePaths(json, "documentBindings", 4, 5),
             TestContext.Current.CancellationToken);
         await AssertRejectedDocumentMutationAsync(
             workspace.Layout.CanonicalPreflightedStatePath,
             static (path, cancellationToken) =>
                 AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-            typeof(AtlasApprovalException),
+            typeof(AtlasSafetyException),
             json => SwapBindingRelativePaths(json, "artifactBindings", 0, 1),
             TestContext.Current.CancellationToken);
     }
@@ -1270,25 +1270,25 @@ public sealed class AtlasIntakeContractTests
                 workspace.Layout.CanonicalDiscoveredStatePath,
                 static (path, cancellationToken) =>
                     AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-                typeof(AtlasApprovalException)),
+                typeof(AtlasSafetyException)),
             new(
                 "state-r2",
                 workspace.Layout.CanonicalApprovedStatePath,
                 static (path, cancellationToken) =>
                     AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-                typeof(AtlasApprovalException)),
+                typeof(AtlasSafetyException)),
             new(
                 "state-r3",
                 workspace.Layout.CanonicalQualifiedStatePath,
                 static (path, cancellationToken) =>
                     AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-                typeof(AtlasApprovalException)),
+                typeof(AtlasSafetyException)),
             new(
                 "state-r4",
                 workspace.Layout.CanonicalPreflightedStatePath,
                 static (path, cancellationToken) =>
                     AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-                typeof(AtlasApprovalException)),
+                typeof(AtlasSafetyException)),
             new(
                 "copy-receipt",
                 workspace.Layout.CanonicalCopyReceiptPath,
@@ -1377,14 +1377,14 @@ public sealed class AtlasIntakeContractTests
                 workspace.Layout.CanonicalPreflightedStatePath,
                 static (path, cancellationToken) =>
                     AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-                typeof(AtlasApprovalException),
+                typeof(AtlasSafetyException),
                 json => ((JsonArray)json["documentBindings"]!)[0] = null),
             new(
                 "state-r4.artifactBindings[0]",
                 workspace.Layout.CanonicalPreflightedStatePath,
                 static (path, cancellationToken) =>
                     AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-                typeof(AtlasApprovalException),
+                typeof(AtlasSafetyException),
                 json => ((JsonArray)json["artifactBindings"]!)[0] = null),
             new(
                 "copy-receipt.entries[0]",
@@ -1469,28 +1469,28 @@ public sealed class AtlasIntakeContractTests
                 workspace.Layout.CanonicalDiscoveredStatePath,
                 static (path, cancellationToken) =>
                     AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-                typeof(AtlasApprovalException),
+                typeof(AtlasSafetyException),
                 json => json["decisionCommit"] = null),
             new(
                 "state-r2.finalCopyRootRelativePath",
                 workspace.Layout.CanonicalApprovedStatePath,
                 static (path, cancellationToken) =>
                     AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-                typeof(AtlasApprovalException),
+                typeof(AtlasSafetyException),
                 json => json["finalCopyRootRelativePath"] = null),
             new(
                 "state-r3.decisionCommit",
                 workspace.Layout.CanonicalQualifiedStatePath,
                 static (path, cancellationToken) =>
                     AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-                typeof(AtlasApprovalException),
+                typeof(AtlasSafetyException),
                 json => json["decisionCommit"] = null),
             new(
                 "state-r4.finalCopyRootRelativePath",
                 workspace.Layout.CanonicalPreflightedStatePath,
                 static (path, cancellationToken) =>
                     AtlasIntakeContracts.ReadStateAsync(path, cancellationToken).AsTask(),
-                typeof(AtlasApprovalException),
+                typeof(AtlasSafetyException),
                 json => json["finalCopyRootRelativePath"] = null),
         ];
 

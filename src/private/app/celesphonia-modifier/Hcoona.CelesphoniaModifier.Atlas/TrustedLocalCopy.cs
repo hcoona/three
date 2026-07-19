@@ -30,6 +30,23 @@ public static class TrustedLocalCopy
             request.WorkspaceRoot,
             request.SurveyAlias);
         AtlasDiscovery.ValidatePrivateWorkspace(layout, io);
+        if (AtlasIntakeContracts.PathEquals(
+                request.ApprovedStatePath,
+                layout.CanonicalApprovedStatePath)
+            && AtlasDiscovery.IsRequiredFileAbsent(layout.CanonicalApprovedStatePath, io))
+        {
+            if (!AtlasDiscovery.IsRequiredFileAbsent(layout.CanonicalQualifiedStatePath, io)
+                || !AtlasDiscovery.IsRequiredFileAbsent(
+                    layout.CanonicalPreflightedStatePath,
+                    io))
+            {
+                throw new AtlasSafetyException(
+                    "A completed state lacks its approved predecessor.");
+            }
+
+            throw new AtlasApprovalException("The approved state is required.");
+        }
+
         ValidateCopyCanonicalPaths(loadedRequest.AbsolutePath, request, layout, io);
         AtlasDiscovery.ValidateCommandWorkspaceCensus(
             layout,
@@ -46,11 +63,6 @@ public static class TrustedLocalCopy
             return;
         }
 
-        if (!io.FileExists(layout.CanonicalApprovedStatePath))
-        {
-            throw new AtlasApprovalException("The approved state is required.");
-        }
-
         AtlasLoadedDocument<AtlasIntakeStateDocument> approvedState =
             await AtlasIntakeContracts.ReadStateAsync(
                     request.ApprovedStatePath,
@@ -58,20 +70,36 @@ public static class TrustedLocalCopy
                 .ConfigureAwait(false);
         if (approvedState.Document.StateRevision != AtlasIntakeContracts.ApprovedStateRevision)
         {
-            throw new AtlasApprovalException("The approved state revision is invalid.");
+            throw new AtlasSafetyException("The approved state revision is invalid.");
         }
 
         AtlasDiscovery.EnsureDigestMatches(
             request.ExpectedApprovedStateSha256,
             approvedState.Sha256,
-            static () => new AtlasApprovalException("The approved state digest is invalid."));
+            static () => new AtlasSafetyException("The approved state digest is invalid."));
         if (!StringComparer.Ordinal.Equals(
                 approvedState.Document.DecisionCommit,
                 request.DecisionCommit))
         {
-            throw new AtlasApprovalException(
+            throw new AtlasSafetyException(
                 "The decision commit does not match state revision 2.");
         }
+
+        PhaseInventoryContext inventoryContext = await LoadPhaseInventoryAsync(
+                layout.CanonicalInventoryPath,
+                layout.CanonicalQualifiedInventoryBackupPath,
+                request.ExpectedInventorySha256,
+                io,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await AtlasDiscovery.ValidateStateChainAsync(
+                layout,
+                approvedState,
+                inventoryContext.PriorInventory,
+                new AtlasDiscovery.StateValidationExpectations(),
+                io,
+                cancellationToken)
+            .ConfigureAwait(false);
 
         AtlasDocumentBinding approvedManifestBinding =
             AtlasIntakeContracts.GetRequiredDocumentBinding(
@@ -118,22 +146,6 @@ public static class TrustedLocalCopy
             throw new AtlasApprovalException("The approved manifest is invalid.");
         }
 
-        PhaseInventoryContext inventoryContext = await LoadPhaseInventoryAsync(
-                layout.CanonicalInventoryPath,
-                layout.CanonicalQualifiedInventoryBackupPath,
-                request.ExpectedInventorySha256,
-                io,
-                cancellationToken)
-            .ConfigureAwait(false);
-        await AtlasDiscovery.ValidateApprovedStateAsync(
-                layout,
-                approvedState,
-                inventoryContext.PriorInventory,
-                new AtlasDiscovery.StateValidationExpectations(),
-                io,
-                cancellationToken)
-            .ConfigureAwait(false);
-
         CopyPhaseAliases aliases = ResolveCopyAliases(
             inventoryContext,
             copyPlan.Document);
@@ -145,6 +157,19 @@ public static class TrustedLocalCopy
         string incompleteReceiptStagingPath = Path.Combine(
             layout.CanonicalIncompleteCopyPath,
             Path.GetFileName(finalReceiptStagingPath));
+        await PromoteValidatedInnerReceiptStagingAsync(
+                loadedRequest.Sha256,
+                request,
+                layout,
+                approvedState,
+                approvedManifest,
+                sourceRootMap,
+                copyPlan,
+                aliases,
+                incompleteReceiptStagingPath,
+                io,
+                cancellationToken)
+            .ConfigureAwait(false);
         ValidateCopyOutputCensus(layout, copyPlan.Document, io);
         RequireRecoverableCopyStateBeforeSourceAccess(layout, inventoryContext, io);
 
@@ -367,7 +392,10 @@ public static class TrustedLocalCopy
                         .ConfigureAwait(false);
                 if (incompleteState == IncompleteCopyEvidenceState.PartialOwned)
                 {
-                    TryDeleteOwnedIncompleteDirectory(layout.CanonicalIncompleteCopyPath, io);
+                    DeleteOwnedIncompleteDirectory(
+                        layout.CanonicalIncompleteCopyPath,
+                        copyPlan.Document,
+                        io);
                 }
             }
 
@@ -553,12 +581,28 @@ public static class TrustedLocalCopy
     {
         try
         {
+            string innerReceiptStagingPath = AtlasDiscovery.GetStagingPath(
+                incompleteReceiptStagingPath,
+                AtlasIntakeContracts.QualifiedPhase);
+            bool hasOuterReceiptEvidence = io.FileExists(incompleteReceiptStagingPath)
+                || io.DirectoryExists(incompleteReceiptStagingPath);
+            bool hasInnerReceiptEvidence = io.FileExists(innerReceiptStagingPath)
+                || io.DirectoryExists(innerReceiptStagingPath);
             if (!HasCompleteCopySet(
                     layout.CanonicalIncompleteCopyPath,
                     copyPlan.Document,
                     incompleteReceiptStagingPath,
                     io))
             {
+                if (hasOuterReceiptEvidence || hasInnerReceiptEvidence)
+                {
+                    return IncompleteCopyEvidenceState.Complete;
+                }
+
+                _ = InspectOwnedPartialCopyContent(
+                    layout.CanonicalIncompleteCopyPath,
+                    copyPlan.Document,
+                    io);
                 return IncompleteCopyEvidenceState.PartialOwned;
             }
         }
@@ -609,6 +653,79 @@ public static class TrustedLocalCopy
         {
             return IncompleteCopyEvidenceState.Complete;
         }
+    }
+
+    internal static async ValueTask PromoteValidatedInnerReceiptStagingAsync(
+        string requestSha256,
+        AtlasIntakeCopyRequest request,
+        AtlasWorkspaceLayout layout,
+        AtlasLoadedDocument<AtlasIntakeStateDocument> approvedState,
+        AtlasLoadedDocument<AtlasCorpusIntakeManifest> approvedManifest,
+        AtlasLoadedDocument<AtlasSourceRootMapDocument> sourceRootMap,
+        AtlasLoadedDocument<AtlasCopyPlanDocument> copyPlan,
+        CopyPhaseAliases aliases,
+        string incompleteReceiptStagingPath,
+        AtlasIoSeams io,
+        CancellationToken cancellationToken)
+    {
+        string innerReceiptStagingPath = AtlasDiscovery.GetStagingPath(
+            incompleteReceiptStagingPath,
+            AtlasIntakeContracts.QualifiedPhase);
+        bool hasOuterReceipt = io.FileExists(incompleteReceiptStagingPath);
+        bool hasInnerReceipt = io.FileExists(innerReceiptStagingPath);
+        if (io.DirectoryExists(incompleteReceiptStagingPath)
+            || io.DirectoryExists(innerReceiptStagingPath)
+            || (hasOuterReceipt && hasInnerReceipt))
+        {
+            throw new AtlasSafetyException("The staged copy receipt evidence is ambiguous.");
+        }
+
+        if (!hasInnerReceipt)
+        {
+            return;
+        }
+
+        if (!io.DirectoryExists(layout.CanonicalIncompleteCopyPath))
+        {
+            throw new AtlasSafetyException("The staged copy receipt is not request-owned.");
+        }
+
+        AtlasDiscovery.ValidateExistingOrdinaryFile(innerReceiptStagingPath, io);
+        if (!HasCompleteCopySet(
+                layout.CanonicalIncompleteCopyPath,
+                copyPlan.Document,
+                innerReceiptStagingPath,
+                io))
+        {
+            throw new AtlasSafetyException("The staged copy receipt census is incomplete.");
+        }
+
+        AtlasLoadedDocument<AtlasCopyReceiptDocument> receipt =
+            await LoadReceiptAsync(innerReceiptStagingPath, cancellationToken)
+                .ConfigureAwait(false);
+        ValidateReceiptAgainstBindings(
+            requestSha256,
+            request,
+            approvedState,
+            approvedManifest,
+            sourceRootMap,
+            copyPlan,
+            aliases,
+            receipt.Document);
+        await ValidateCopiedFilesAgainstReceiptAsync(
+                layout.CanonicalIncompleteCopyPath,
+                receipt.Document,
+                io,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await AtlasDiscovery.MoveValidatedFileAsync(
+                innerReceiptStagingPath,
+                incompleteReceiptStagingPath,
+                receipt.Sha256,
+                AtlasDiscovery.ReadCopyReceiptShaAsync,
+                io,
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     internal static async ValueTask<bool> TryRecoverCopyFinalizationAsync(
@@ -1588,7 +1705,10 @@ public static class TrustedLocalCopy
         if (requestAlias is not null
             || receiptAlias is not null
             || stateAlias is not null
-            || backupAlias is not null)
+            || backupAlias is not null
+            || !StringComparer.Ordinal.Equals(
+                inventoryContext.CurrentInventory.Sha256,
+                inventoryContext.PriorInventory.Sha256))
         {
             if (requestAlias is null
                 || receiptAlias is null
@@ -1598,18 +1718,113 @@ public static class TrustedLocalCopy
                 throw new AtlasSafetyException("The qualified inventory is incomplete.");
             }
 
-            return new CopyPhaseAliases(requestAlias, receiptAlias, stateAlias, backupAlias);
+            CopyPhaseAliases aliases = new(requestAlias, receiptAlias, stateAlias, backupAlias);
+            ValidateRecoveredCopyAliases(inventoryContext, copyPlan, aliases);
+            return aliases;
         }
 
-        int nextOrdinal = Math.Max(
-            AtlasDiscovery.GetMaximumArtifactOrdinal(inventoryContext.PriorInventory.Document),
-            AtlasDiscovery.GetMaximumArtifactOrdinal(copyPlan))
+        return CreateCopyPhaseAliases(GetFirstCopyArtifactOrdinal(inventoryContext, copyPlan));
+    }
+
+    private static int GetFirstCopyArtifactOrdinal(
+        PhaseInventoryContext inventoryContext,
+        AtlasCopyPlanDocument copyPlan) =>
+        Math.Max(
+                AtlasDiscovery.GetMaximumArtifactOrdinal(inventoryContext.PriorInventory.Document),
+                AtlasDiscovery.GetMaximumArtifactOrdinal(copyPlan))
             + 1;
-        return new CopyPhaseAliases(
-            AtlasIntakeContracts.FormatArtifactAlias(nextOrdinal++),
-            AtlasIntakeContracts.FormatArtifactAlias(nextOrdinal++),
-            AtlasIntakeContracts.FormatArtifactAlias(nextOrdinal++),
-            AtlasIntakeContracts.FormatArtifactAlias(nextOrdinal));
+
+    private static CopyPhaseAliases CreateCopyPhaseAliases(int firstOrdinal) =>
+        new(
+            AtlasIntakeContracts.FormatArtifactAlias(firstOrdinal++),
+            AtlasIntakeContracts.FormatArtifactAlias(firstOrdinal++),
+            AtlasIntakeContracts.FormatArtifactAlias(firstOrdinal++),
+            AtlasIntakeContracts.FormatArtifactAlias(firstOrdinal));
+
+    private static void ValidateRecoveredCopyAliases(
+        PhaseInventoryContext inventoryContext,
+        AtlasCopyPlanDocument copyPlan,
+        CopyPhaseAliases aliases)
+    {
+        CopyPhaseAliases expected = CreateCopyPhaseAliases(
+            GetFirstCopyArtifactOrdinal(inventoryContext, copyPlan));
+        List<RecoveredArtifactExpectation> expectedArtifacts =
+        [
+            new(
+                expected.RequestAlias,
+                AtlasIntakeContracts.CopyRequestPurpose,
+                AtlasIntakeContracts.PrivateEvidenceArtifactClass),
+        ];
+        expectedArtifacts.AddRange(copyPlan.Entries.Select(entry =>
+            new RecoveredArtifactExpectation(
+                entry.DestinationArtifactAlias,
+                $"snapshot-copy:{entry.SourceAlias}",
+                entry.ArtifactClass)));
+        expectedArtifacts.AddRange(
+        [
+            new(
+                expected.ReceiptAlias,
+                AtlasIntakeContracts.CopyReceiptPurpose,
+                AtlasIntakeContracts.PrivateProvenanceArtifactClass),
+            new(
+                expected.StateAlias,
+                AtlasIntakeContracts.State3Purpose,
+                AtlasIntakeContracts.PrivateProvenanceArtifactClass),
+            new(
+                expected.InventoryBackupAlias,
+                AtlasIntakeContracts.QualifiedInventoryBackupPurpose,
+                AtlasIntakeContracts.PrivateProvenanceArtifactClass),
+        ]);
+        ValidateRecoveredPhaseArtifacts(
+            inventoryContext,
+            expectedArtifacts,
+            "The qualified inventory aliases are invalid.");
+        if (aliases != expected)
+        {
+            throw new AtlasSafetyException("The qualified inventory aliases are invalid.");
+        }
+    }
+
+    internal static void ValidateRecoveredPhaseArtifacts(
+        PhaseInventoryContext inventoryContext,
+        IReadOnlyList<RecoveredArtifactExpectation> expectedArtifacts,
+        string errorMessage)
+    {
+        AtlasPrivateArtifactEntry[] priorArtifacts =
+            inventoryContext.PriorInventory.Document.Artifacts;
+        AtlasPrivateArtifactEntry[] currentArtifacts =
+            inventoryContext.CurrentInventory.Document.Artifacts;
+        if (currentArtifacts.Length != priorArtifacts.Length + expectedArtifacts.Count)
+        {
+            throw new AtlasSafetyException(errorMessage);
+        }
+
+        AtlasPrivateArtifactInventoryDocument recoveredPrefix =
+            inventoryContext.CurrentInventory.Document with
+            {
+                Artifacts = currentArtifacts[..priorArtifacts.Length],
+            };
+        byte[] recoveredPrefixBytes = AtlasIntakeContracts.SerializeInventory(recoveredPrefix);
+        if (!recoveredPrefixBytes.AsSpan().SequenceEqual(inventoryContext.PriorInventory.Bytes))
+        {
+            throw new AtlasSafetyException(errorMessage);
+        }
+
+        for (int index = 0; index < expectedArtifacts.Count; index++)
+        {
+            AtlasPrivateArtifactEntry actual = currentArtifacts[priorArtifacts.Length + index];
+            RecoveredArtifactExpectation expected = expectedArtifacts[index];
+            if (!StringComparer.Ordinal.Equals(
+                    actual.ArtifactAlias,
+                    expected.ArtifactAlias)
+                || !StringComparer.Ordinal.Equals(actual.Purpose, expected.Purpose)
+                || !StringComparer.Ordinal.Equals(
+                    actual.ArtifactClass,
+                    expected.ArtifactClass))
+            {
+                throw new AtlasSafetyException(errorMessage);
+            }
+        }
     }
 
     internal static string? TryFindPhaseAlias(
@@ -1634,15 +1849,96 @@ public static class TrustedLocalCopy
             or ObjectDisposedException
             or NotSupportedException;
 
-    internal static void TryDeleteOwnedIncompleteDirectory(string path, AtlasIoSeams io)
+    internal static void DeleteOwnedIncompleteDirectory(
+        string path,
+        AtlasCopyPlanDocument copyPlan,
+        AtlasIoSeams io)
     {
-        try
+        OwnedPartialCopyContent content = InspectOwnedPartialCopyContent(path, copyPlan, io);
+        foreach (string file in content.Files)
         {
-            AtlasDiscovery.ValidateExistingOrdinaryDirectory(path, io);
-            io.DeleteDirectory(path, true);
+            io.SetAttributes(file, io.GetAttributes(file) & ~FileAttributes.ReadOnly);
         }
-        catch
+
+        foreach (string directory in content.Directories
+                     .OrderByDescending(static value => value.Length))
         {
+            io.SetAttributes(directory, io.GetAttributes(directory) & ~FileAttributes.ReadOnly);
+        }
+
+        io.SetAttributes(path, io.GetAttributes(path) & ~FileAttributes.ReadOnly);
+        io.DeleteDirectory(path, true);
+    }
+
+    private static OwnedPartialCopyContent InspectOwnedPartialCopyContent(
+        string copyRoot,
+        AtlasCopyPlanDocument copyPlan,
+        AtlasIoSeams io)
+    {
+        AtlasDiscovery.ValidateExistingOrdinaryDirectory(copyRoot, io);
+        HashSet<string> expectedFiles = copyPlan.Entries
+            .Select(entry => Path.Combine(
+                copyRoot,
+                entry.DestinationRelativePath.Replace('/', Path.DirectorySeparatorChar)))
+            .Select(AtlasIntakeContracts.NormalizePath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> expectedDirectories = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string expectedFile in expectedFiles)
+        {
+            string? directory = Path.GetDirectoryName(expectedFile);
+            while (!string.IsNullOrEmpty(directory)
+                   && !AtlasIntakeContracts.PathEquals(directory, copyRoot))
+            {
+                expectedDirectories.Add(AtlasIntakeContracts.NormalizePath(directory));
+                directory = Path.GetDirectoryName(directory);
+            }
+        }
+
+        HashSet<string> files = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> directories = new(StringComparer.OrdinalIgnoreCase);
+        InspectDirectory(copyRoot);
+        return new OwnedPartialCopyContent([.. files], [.. directories]);
+
+        void InspectDirectory(string directoryPath)
+        {
+            foreach (string childEntry in io.EnumerateFileSystemEntries(
+                         directoryPath,
+                         SearchOption.TopDirectoryOnly))
+            {
+                string normalizedEntry = AtlasIntakeContracts.NormalizePath(childEntry);
+                if (!AtlasDiscovery.ContainsPath(copyRoot, normalizedEntry)
+                    || AtlasIntakeContracts.PathEquals(normalizedEntry, directoryPath))
+                {
+                    throw new AtlasSafetyException(
+                        "The partial copy set has ambiguous content.");
+                }
+
+                FileAttributes attributes = io.GetAttributes(normalizedEntry);
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new AtlasSafetyException("A partial copy path is reparse-backed.");
+                }
+
+                if ((attributes & FileAttributes.Directory) != 0)
+                {
+                    if (!expectedDirectories.Contains(normalizedEntry)
+                        || !directories.Add(normalizedEntry))
+                    {
+                        throw new AtlasSafetyException(
+                            "The partial copy set has ambiguous content.");
+                    }
+
+                    InspectDirectory(normalizedEntry);
+                    continue;
+                }
+
+                if (!expectedFiles.Contains(normalizedEntry)
+                    || !files.Add(normalizedEntry))
+                {
+                    throw new AtlasSafetyException(
+                        "The partial copy set has ambiguous content.");
+                }
+            }
         }
     }
 }
@@ -1656,6 +1952,15 @@ internal sealed record CopyPhaseAliases(
     string ReceiptAlias,
     string StateAlias,
     string InventoryBackupAlias);
+
+internal sealed record RecoveredArtifactExpectation(
+    string ArtifactAlias,
+    string Purpose,
+    string ArtifactClass);
+
+internal sealed record OwnedPartialCopyContent(
+    IReadOnlyList<string> Files,
+    IReadOnlyList<string> Directories);
 
 internal enum IncompleteCopyEvidenceState
 {

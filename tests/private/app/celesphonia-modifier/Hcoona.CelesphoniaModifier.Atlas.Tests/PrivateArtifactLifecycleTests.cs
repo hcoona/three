@@ -298,6 +298,67 @@ public sealed class PrivateArtifactLifecycleTests
     }
 
     [Fact]
+    public async Task CleanupPreflightAsyncRejectsRecoveredCursorMismatch()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareQualifiedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreatePreflightRequest());
+        bool failed = false;
+        AtlasIoSeams failingIo = AtlasTestSupport.CreateIo(
+            moveFile: (source, destination) =>
+            {
+                if (!failed
+                    && AtlasIntakeContracts.PathEquals(
+                        destination,
+                        workspace.Layout.CanonicalPreflightedStatePath))
+                {
+                    failed = true;
+                    throw new IOException("synthetic preflight state publication failure");
+                }
+
+                AtlasIoSeams.Default.MoveFile(source, destination);
+            });
+        await Assert.ThrowsAsync<IOException>(
+            () => PrivateArtifactLifecycle.CleanupPreflightAsync(
+                workspace.Layout.CanonicalCleanupPreflightRequestPath,
+                failingIo,
+                TestContext.Current.CancellationToken).AsTask());
+        workspace.UpdateInventory(inventory =>
+        {
+            AtlasPrivateArtifactEntry report = inventory.Artifacts.Single(artifact =>
+                StringComparer.Ordinal.Equals(
+                    artifact.Purpose,
+                    AtlasIntakeContracts.CleanupPreflightReportPurpose));
+            const string ForgedAlias = "private-artifact-900000";
+            return inventory with
+            {
+                Artifacts =
+                [
+                    .. inventory.Artifacts.Select(artifact => artifact with
+                    {
+                        ArtifactAlias = ReferenceEquals(artifact, report)
+                            ? ForgedAlias
+                            : artifact.ArtifactAlias,
+                        LineageAliases =
+                        [
+                            .. artifact.LineageAliases.Select(alias =>
+                                StringComparer.Ordinal.Equals(alias, report.ArtifactAlias)
+                                    ? ForgedAlias
+                                    : alias),
+                        ],
+                    }),
+                ],
+            };
+        });
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => PrivateArtifactLifecycle.CleanupPreflightAsync(
+                workspace.Layout.CanonicalCleanupPreflightRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+        Assert.False(File.Exists(workspace.Layout.CanonicalPreflightedStatePath));
+    }
+
+    [Fact]
     public async Task CleanupPreflightAsyncRejectsPreflightedStateWhenReportIsMissing()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
@@ -309,7 +370,7 @@ public sealed class PrivateArtifactLifecycleTests
 
         File.Delete(workspace.Layout.CanonicalCleanupPreflightReportPath);
 
-        await Assert.ThrowsAsync<FileNotFoundException>(
+        await Assert.ThrowsAsync<AtlasSafetyException>(
             () => PrivateArtifactLifecycle.CleanupPreflightAsync(
                 workspace.Layout.CanonicalCleanupPreflightRequestPath,
                 TestContext.Current.CancellationToken).AsTask());

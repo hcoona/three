@@ -419,7 +419,7 @@ public static class AtlasIntakeContracts
             path,
             JsonContext.AtlasIntakeStateDocument,
             static document => ValidateState(document),
-            static message => new AtlasApprovalException(message),
+            static message => new AtlasSafetyException(message),
             cancellationToken);
 
     internal static ValueTask<AtlasLoadedDocument<AtlasCopyReceiptDocument>> ReadCopyReceiptAsync(
@@ -1019,7 +1019,7 @@ public static class AtlasIntakeContracts
         AtlasDocumentBinding? binding = state.DocumentBindings
             .SingleOrDefault(candidate => StringComparer.Ordinal.Equals(candidate.Role, role));
         return binding
-            ?? throw new AtlasApprovalException($"State '{state.Phase}' lacks '{role}'.");
+            ?? throw new AtlasSafetyException($"State '{state.Phase}' lacks '{role}'.");
     }
 
     internal static AtlasArtifactBinding GetRequiredArtifactBinding(
@@ -1029,7 +1029,7 @@ public static class AtlasIntakeContracts
         AtlasArtifactBinding? binding = state.ArtifactBindings
             .SingleOrDefault(candidate => StringComparer.Ordinal.Equals(candidate.Role, role));
         return binding
-            ?? throw new AtlasApprovalException($"State '{state.Phase}' lacks '{role}'.");
+            ?? throw new AtlasSafetyException($"State '{state.Phase}' lacks '{role}'.");
     }
 
     private static async ValueTask<AtlasLoadedDocument<TDocument>> ReadRequestAsync<TDocument>(
@@ -2475,7 +2475,8 @@ public static class AtlasIntakeContracts
         {
             AtlasManifestSaveEntry actual = saveEntries[index];
             ExactSaveEntryContract expected = ExactFrozenSaveEntries[index];
-            if (!StringComparer.Ordinal.Equals(actual.RootAlias, expected.RootAlias)
+            if (!StringComparer.Ordinal.Equals(actual.SourceAlias, expected.SourceAlias)
+                || !StringComparer.Ordinal.Equals(actual.RootAlias, expected.RootAlias)
                 || !StringComparer.Ordinal.Equals(
                     NormalizeRelativePath(actual.RelativePath),
                     expected.RelativePath)

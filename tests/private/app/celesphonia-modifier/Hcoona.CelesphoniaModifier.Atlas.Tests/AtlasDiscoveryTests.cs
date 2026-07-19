@@ -134,6 +134,30 @@ public sealed class AtlasDiscoveryTests
                 "save-entry-slot",
                 json => ((JsonObject)((JsonArray)json["saveEntries"]!)[7]!)["slotNumber"] = 8);
             data.Add(
+                "save-entry-alias-renumber",
+                json =>
+                    ((JsonObject)((JsonArray)json["saveEntries"]!)[0]!)["sourceAlias"] =
+                        "save-source-9999");
+            data.Add(
+                "save-entry-alias-swap",
+                json =>
+                {
+                    JsonArray entries = (JsonArray)json["saveEntries"]!;
+                    JsonObject first = (JsonObject)entries[0]!;
+                    JsonObject second = (JsonObject)entries[1]!;
+                    string firstAlias = first["sourceAlias"]!.GetValue<string>();
+                    first["sourceAlias"] = second["sourceAlias"]!.GetValue<string>();
+                    second["sourceAlias"] = firstAlias;
+                });
+            data.Add(
+                "save-entry-alias-duplicate",
+                json =>
+                {
+                    JsonArray entries = (JsonArray)json["saveEntries"]!;
+                    ((JsonObject)entries[1]!)["sourceAlias"] =
+                        ((JsonObject)entries[0]!)["sourceAlias"]!.GetValue<string>();
+                });
+            data.Add(
                 "definition-group-id",
                 json =>
                     ((JsonObject)((JsonArray)json["definitionGroups"]!)[0]!)["groupId"] =
@@ -1004,6 +1028,50 @@ public sealed class AtlasDiscoveryTests
     }
 
     [Fact]
+    public async Task DiscoverAsyncRejectsSwappedRecoveredArtifactOrderBeforeSourceAccess()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        bool failed = false;
+        AtlasIoSeams failingIo = AtlasTestSupport.CreateIo(
+            moveFile: (source, destination) =>
+            {
+                if (!failed
+                    && AtlasIntakeContracts.PathEquals(
+                        destination,
+                        workspace.Layout.CanonicalDiscoveredStatePath))
+                {
+                    failed = true;
+                    throw new IOException("synthetic discovery state publication failure");
+                }
+
+                AtlasIoSeams.Default.MoveFile(source, destination);
+            });
+        await Assert.ThrowsAsync<IOException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                failingIo,
+                TestContext.Current.CancellationToken).AsTask());
+        AtlasLoadedDocument<AtlasPrivateArtifactInventoryDocument> priorInventory =
+            await AtlasIntakeContracts.ReadInventoryAsync(
+                workspace.Layout.CanonicalDiscoveredInventoryBackupPath,
+                TestContext.Current.CancellationToken);
+        workspace.UpdateInventory(inventory =>
+        {
+            AtlasPrivateArtifactEntry[] artifacts = [.. inventory.Artifacts];
+            int firstRecoveredIndex = priorInventory.Document.Artifacts.Length;
+            (artifacts[firstRecoveredIndex], artifacts[firstRecoveredIndex + 1]) =
+                (artifacts[firstRecoveredIndex + 1], artifacts[firstRecoveredIndex]);
+            return inventory with { Artifacts = artifacts };
+        });
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                AtlasTestSupport.CreateLiveSourceAccessThrowingIo(workspace),
+                TestContext.Current.CancellationToken).AsTask());
+    }
+
+    [Fact]
     public async Task ConfirmAsyncRecoversAfterInventoryReplacementBeforeStatePublication()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
@@ -1150,7 +1218,7 @@ public sealed class AtlasDiscoveryTests
             TestContext.Current.CancellationToken);
         File.Delete(workspace.Layout.CanonicalDiscoveredInventoryBackupPath);
 
-        await Assert.ThrowsAsync<FileNotFoundException>(
+        await Assert.ThrowsAsync<AtlasSafetyException>(
             () => AtlasDiscovery.DiscoverAsync(
                 workspace.Layout.CanonicalDiscoverRequestPath,
                 TestContext.Current.CancellationToken).AsTask());
@@ -1169,6 +1237,28 @@ public sealed class AtlasDiscoveryTests
             TestContext.Current.CancellationToken);
         File.Delete(workspace.Layout.CanonicalDiscoveredStatePath);
 
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.ConfirmAsync(
+                workspace.Layout.CanonicalConfirmRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+    }
+
+    [Fact]
+    public async Task ConfirmAsyncDistinguishesAbsentStateFromNonFileState()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreateConfirmationRequest());
+        File.Delete(workspace.Layout.CanonicalDiscoveredStatePath);
+
+        await Assert.ThrowsAsync<AtlasApprovalException>(
+            () => AtlasDiscovery.ConfirmAsync(
+                workspace.Layout.CanonicalConfirmRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Directory.CreateDirectory(workspace.Layout.CanonicalDiscoveredStatePath);
         await Assert.ThrowsAsync<AtlasSafetyException>(
             () => AtlasDiscovery.ConfirmAsync(
                 workspace.Layout.CanonicalConfirmRequestPath,
