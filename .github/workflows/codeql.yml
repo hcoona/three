@@ -172,7 +172,7 @@ jobs:
 
       - name: Setup .NET SDK
         if: matrix.language == 'csharp'
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
           cache: true
