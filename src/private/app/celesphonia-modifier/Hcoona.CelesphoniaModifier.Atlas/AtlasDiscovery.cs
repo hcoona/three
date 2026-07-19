@@ -1239,6 +1239,10 @@ public static class AtlasDiscovery
             throw new AtlasSafetyException("The source-root map does not match the manifest.");
         }
 
+        Dictionary<string, string> sourceRootPaths = sourceRootMap.SaveRoots.ToDictionary(
+            static binding => binding.LocationRole,
+            static binding => binding.AbsolutePath,
+            StringComparer.Ordinal);
         foreach (AtlasSourceRootBinding binding in sourceRootMap.SaveRoots)
         {
             if (!manifestRoots.TryGetValue(binding.LocationRole, out AtlasManifestSaveRoot? root)
@@ -1247,6 +1251,11 @@ public static class AtlasDiscovery
                 throw new AtlasSafetyException("The source-root map does not match the manifest.");
             }
         }
+
+        ValidateFrozenA0SourceRootLayout(
+            sourceRootMap.DefinitionRootPath,
+            sourceRootMap.GameExecutablePath,
+            sourceRootPaths);
     }
 
     internal static void ValidateCopyPlanAgainstManifest(
@@ -1320,10 +1329,6 @@ public static class AtlasDiscovery
             io);
         ValidateExistingOrdinaryFile(request.BaselineManifestPath, io);
         ValidateExistingOrdinaryFile(request.InventoryPath, io);
-        ValidateExistingOrdinaryDirectory(request.SaveRoots[0].Path, io);
-        ValidateExistingOrdinaryDirectory(request.SaveRoots[1].Path, io);
-        ValidateExistingOrdinaryDirectory(request.DefinitionRoot, io);
-        ValidateExistingOrdinaryFile(request.GameExecutablePath, io);
         ValidateCreateNewOutputDirectory(
             layout.ManifestRevisionDirectory,
             layout.WorkspaceRoot,
@@ -1381,16 +1386,27 @@ public static class AtlasDiscovery
             layout.WorkspaceRoot,
             io);
 
-        ValidateSourceOutsideWorkspace(layout.WorkspaceRoot, request.SaveRoots[0].Path);
-        ValidateSourceOutsideWorkspace(layout.WorkspaceRoot, request.SaveRoots[1].Path);
+        Dictionary<string, string> sourceRootPaths = request.SaveRoots.ToDictionary(
+            static root => root.LocationRole,
+            static root => root.Path,
+            StringComparer.Ordinal);
+        string deploymentSaveRoot = GetRequiredSaveRootPath(
+            sourceRootPaths,
+            AtlasIntakeContracts.DeploymentRootSaveRole);
+        string webSaveRoot = GetRequiredSaveRootPath(
+            sourceRootPaths,
+            AtlasIntakeContracts.WebRootSaveRole);
+        ValidateFrozenA0SourceRootLayout(
+            request.DefinitionRoot,
+            request.GameExecutablePath,
+            sourceRootPaths);
+        ValidateSourceOutsideWorkspace(layout.WorkspaceRoot, deploymentSaveRoot);
+        ValidateSourceOutsideWorkspace(layout.WorkspaceRoot, webSaveRoot);
         ValidateSourceOutsideWorkspace(layout.WorkspaceRoot, request.DefinitionRoot);
-        AtlasIntakeContracts.AssertContainsPath(request.DefinitionRoot, request.GameExecutablePath);
-        if (!StringComparer.OrdinalIgnoreCase.Equals(
-                Path.GetFileName(request.GameExecutablePath),
-                "Game.exe"))
-        {
-            throw new AtlasSafetyException("The game executable path is invalid.");
-        }
+        ValidateExistingOrdinaryDirectory(deploymentSaveRoot, io);
+        ValidateExistingOrdinaryDirectory(webSaveRoot, io);
+        ValidateExistingOrdinaryDirectory(request.DefinitionRoot, io);
+        ValidateExistingOrdinaryFile(request.GameExecutablePath, io);
     }
 
     internal static void ValidateConfirmationCanonicalPaths(
@@ -1875,6 +1891,38 @@ public static class AtlasDiscovery
             throw new AtlasSafetyException("The workspace and source roots must be disjoint.");
         }
     }
+
+    internal static void ValidateFrozenA0SourceRootLayout(
+        string definitionRoot,
+        string gameExecutablePath,
+        IReadOnlyDictionary<string, string> saveRootPaths)
+    {
+        string deploymentSaveRoot = GetRequiredSaveRootPath(
+            saveRootPaths,
+            AtlasIntakeContracts.DeploymentRootSaveRole);
+        string webSaveRoot = GetRequiredSaveRootPath(
+            saveRootPaths,
+            AtlasIntakeContracts.WebRootSaveRole);
+        if (!AtlasIntakeContracts.PathEquals(
+                gameExecutablePath,
+                Path.Combine(definitionRoot, "Game.exe"))
+            || !AtlasIntakeContracts.PathEquals(
+                deploymentSaveRoot,
+                Path.Combine(definitionRoot, "save"))
+            || !AtlasIntakeContracts.PathEquals(
+                webSaveRoot,
+                Path.Combine(definitionRoot, "www", "save")))
+        {
+            throw new AtlasSafetyException("The source-root layout is invalid.");
+        }
+    }
+
+    internal static string GetRequiredSaveRootPath(
+        IReadOnlyDictionary<string, string> saveRootPaths,
+        string locationRole) =>
+        saveRootPaths.TryGetValue(locationRole, out string? path)
+            ? path
+            : throw new AtlasSafetyException("The source-root layout is invalid.");
 
     internal static bool IsContainedInEitherDirection(string first, string second)
     {
@@ -2994,10 +3042,7 @@ public static class AtlasDiscovery
             DiscoveredDefinitionEntryCount = discoveredDefinitionEntries.Count,
             IncludedDefinitionCount = discoveredDefinitionEntries.Count(entry =>
                 StringComparer.Ordinal.Equals(entry.Decision, "include")),
-            DefinitionGroups = discoveredDefinitionGroups.OrderBy(
-                    static group => group.GroupId,
-                    StringComparer.Ordinal)
-                .ToArray(),
+            DefinitionGroups = discoveredDefinitionGroups,
             DefinitionEntries = discoveredDefinitionEntries.OrderBy(
                     static entry => entry.SourceAlias,
                     StringComparer.Ordinal)

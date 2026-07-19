@@ -1144,38 +1144,104 @@ public static class TrustedLocalCopy
 
         HashSet<string> actualFiles = new(StringComparer.OrdinalIgnoreCase);
         HashSet<string> actualDirectories = new(StringComparer.OrdinalIgnoreCase);
-        foreach (string entryPath in io.EnumerateFileSystemEntries(
-                     copyRoot,
-                     SearchOption.AllDirectories))
+        EnumerateRecoveredDirectory(copyRoot);
+
+        return expectedFiles.SetEquals(actualFiles)
+            && expectedDirectories.SetEquals(actualDirectories);
+
+        void EnumerateRecoveredDirectory(string directoryPath)
         {
-            FileAttributes attributes = io.GetAttributes(entryPath);
-            if ((attributes & FileAttributes.ReparsePoint) != 0)
+            string[] childEntries;
+            try
             {
-                throw new AtlasSafetyException("A recovered copy path is reparse-backed.");
+                childEntries =
+                [
+                    .. io.EnumerateFileSystemEntries(
+                            directoryPath,
+                            SearchOption.TopDirectoryOnly)
+                        .OrderBy(
+                            static path => Path.GetFileName(path),
+                            StringComparer.OrdinalIgnoreCase),
+                ];
+            }
+            catch (Exception exception) when (
+                exception is IOException
+                or UnauthorizedAccessException
+                or NotSupportedException)
+            {
+                throw new AtlasSafetyException("The recovered copy set is inaccessible.");
             }
 
-            string normalizedEntry = AtlasIntakeContracts.NormalizePath(entryPath);
-            if ((attributes & FileAttributes.Directory) != 0)
+            foreach (string childEntry in childEntries)
             {
-                actualDirectories.Add(normalizedEntry);
-                if (!expectedDirectories.Contains(normalizedEntry))
+                string normalizedEntry;
+                try
+                {
+                    normalizedEntry = AtlasIntakeContracts.NormalizePath(childEntry);
+                }
+                catch (Exception exception) when (
+                    exception is ArgumentException
+                    or IOException
+                    or NotSupportedException)
+                {
+                    throw new AtlasSafetyException("The recovered copy set is ambiguous.");
+                }
+
+                if (!AtlasDiscovery.ContainsPath(copyRoot, normalizedEntry)
+                    || AtlasIntakeContracts.PathEquals(normalizedEntry, directoryPath))
                 {
                     throw new AtlasSafetyException(
                         "The recovered copy set has unexpected content.");
                 }
 
-                continue;
-            }
+                FileAttributes attributes;
+                try
+                {
+                    attributes = io.GetAttributes(normalizedEntry);
+                }
+                catch (Exception exception) when (
+                    exception is IOException
+                    or UnauthorizedAccessException
+                    or NotSupportedException)
+                {
+                    throw new AtlasSafetyException("The recovered copy set is inaccessible.");
+                }
 
-            actualFiles.Add(normalizedEntry);
-            if (!expectedFiles.Contains(normalizedEntry))
-            {
-                throw new AtlasSafetyException("The recovered copy set has unexpected content.");
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new AtlasSafetyException("A recovered copy path is reparse-backed.");
+                }
+
+                if ((attributes & FileAttributes.Directory) != 0)
+                {
+                    if (!actualDirectories.Add(normalizedEntry))
+                    {
+                        throw new AtlasSafetyException(
+                            "The recovered copy set is ambiguous.");
+                    }
+
+                    if (!expectedDirectories.Contains(normalizedEntry))
+                    {
+                        throw new AtlasSafetyException(
+                            "The recovered copy set has unexpected content.");
+                    }
+
+                    EnumerateRecoveredDirectory(normalizedEntry);
+                    continue;
+                }
+
+                if (!actualFiles.Add(normalizedEntry))
+                {
+                    throw new AtlasSafetyException("The recovered copy set is ambiguous.");
+                }
+
+                if (!expectedFiles.Contains(normalizedEntry))
+                {
+                    throw new AtlasSafetyException(
+                        "The recovered copy set has unexpected content.");
+                }
             }
         }
-
-        return expectedFiles.SetEquals(actualFiles)
-            && expectedDirectories.SetEquals(actualDirectories);
     }
 
     internal static CopyValidationContext ValidateCurrentSourcesAgainstManifest(

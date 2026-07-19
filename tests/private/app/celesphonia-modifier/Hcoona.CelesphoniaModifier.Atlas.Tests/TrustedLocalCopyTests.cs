@@ -645,7 +645,7 @@ public sealed class TrustedLocalCopyTests
     }
 
     [Fact]
-    public async Task HasCompleteCopySetRejectsReparseEntryViaInjectedSeam()
+    public async Task HasCompleteCopySetRejectsReparseDirectoryBeforeDescending()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
         await PrepareApprovedWorkspaceAsync(workspace);
@@ -660,10 +660,27 @@ public sealed class TrustedLocalCopyTests
         string injectedPath = Path.Combine(
             workspace.Layout.CanonicalFinalCopyPath,
             "injected-reparse");
+        List<string> enumeratedDirectories = [];
         AtlasIoSeams io = AtlasTestSupport.CreateIo(
             enumerateFileSystemEntries: (path, searchOption) =>
-                AtlasIoSeams.Default.EnumerateFileSystemEntries(path, searchOption)
-                    .Append(injectedPath),
+            {
+                Assert.Equal(SearchOption.TopDirectoryOnly, searchOption);
+                enumeratedDirectories.Add(AtlasIntakeContracts.NormalizePath(path));
+                if (AtlasIntakeContracts.PathEquals(path, injectedPath))
+                {
+                    throw new InvalidOperationException(
+                        "Reparse directories must not be enumerated.");
+                }
+
+                IEnumerable<string> entries = AtlasIoSeams.Default.EnumerateFileSystemEntries(
+                    path,
+                    SearchOption.TopDirectoryOnly);
+                return AtlasIntakeContracts.PathEquals(
+                    path,
+                    workspace.Layout.CanonicalFinalCopyPath)
+                    ? entries.Append(injectedPath)
+                    : entries;
+            },
             getAttributes: path =>
                 AtlasIntakeContracts.PathEquals(path, injectedPath)
                     ? FileAttributes.Directory | FileAttributes.ReparsePoint
@@ -675,6 +692,9 @@ public sealed class TrustedLocalCopyTests
                 copyPlan.Document,
                 workspace.Layout.CanonicalCopyReceiptPath,
                 io));
+        Assert.DoesNotContain(
+            enumeratedDirectories,
+            path => AtlasIntakeContracts.PathEquals(path, injectedPath));
     }
 
     [Fact]

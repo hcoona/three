@@ -421,7 +421,9 @@ public static class AtlasIntakeContracts
     }
 
     internal static bool PathEquals(string first, string second) =>
-        StringComparer.OrdinalIgnoreCase.Equals(NormalizePath(first), NormalizePath(second));
+        StringComparer.OrdinalIgnoreCase.Equals(
+            NormalizePath(first).TrimEnd(Path.DirectorySeparatorChar, '/'),
+            NormalizePath(second).TrimEnd(Path.DirectorySeparatorChar, '/'));
 
     internal static string AppendDirectorySeparator(string path)
     {
@@ -689,10 +691,12 @@ public static class AtlasIntakeContracts
         for (int index = 0; index < segments.Length; index++)
         {
             string next = Path.Combine(current, segments[index]);
-            bool exists = io.FileExists(next) || io.DirectoryExists(next);
-            if (!exists)
+            bool fileExists = io.FileExists(next);
+            bool directoryExists = io.DirectoryExists(next);
+            if (!fileExists && !directoryExists)
             {
-                throw new AtlasRequestException("The request path does not exist.");
+                ValidateMissingRequestPathSegments(segments, index);
+                return;
             }
 
             ValidateRequestPathComponent(
@@ -702,6 +706,41 @@ public static class AtlasIntakeContracts
             current = next;
         }
     }
+
+    private static void ValidateMissingRequestPathSegments(string[] segments, int startIndex)
+    {
+        for (int index = startIndex; index < segments.Length; index++)
+        {
+            if (IsReservedDosDeviceComponent(segments[index]))
+            {
+                throw new AtlasSafetyException("Device paths are not allowed.");
+            }
+        }
+    }
+
+    private static bool IsReservedDosDeviceComponent(string component)
+    {
+        string trimmedComponent = component.TrimEnd(' ', '.');
+        int extensionIndex = trimmedComponent.IndexOf('.');
+        string deviceName = extensionIndex >= 0
+            ? trimmedComponent[..extensionIndex]
+            : trimmedComponent;
+        deviceName = deviceName.TrimEnd(' ');
+        return StringComparer.OrdinalIgnoreCase.Equals(deviceName, "CON")
+            || StringComparer.OrdinalIgnoreCase.Equals(deviceName, "PRN")
+            || StringComparer.OrdinalIgnoreCase.Equals(deviceName, "AUX")
+            || StringComparer.OrdinalIgnoreCase.Equals(deviceName, "NUL")
+            || StringComparer.OrdinalIgnoreCase.Equals(deviceName, "CLOCK$")
+            || StringComparer.OrdinalIgnoreCase.Equals(deviceName, "CONIN$")
+            || StringComparer.OrdinalIgnoreCase.Equals(deviceName, "CONOUT$")
+            || IsNumberedDosDevice(deviceName, "COM")
+            || IsNumberedDosDevice(deviceName, "LPT");
+    }
+
+    private static bool IsNumberedDosDevice(string component, string prefix) =>
+        component.Length == prefix.Length + 1
+        && component.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+        && component[prefix.Length] is >= '1' and <= '9';
 
     private static void ValidateRequestPathComponent(
         string path,

@@ -7,6 +7,10 @@ namespace Hcoona.CelesphoniaModifier.Atlas.Tests;
 
 public sealed class AtlasDiscoveryTests
 {
+    private const string OverlappingIncludeGroupId = "z-json-include";
+    private const string OverlappingExcludeGroupId = "a-data-exclude";
+    private const string OverlappingNotesGroupId = "m-notes-exclude";
+
     public static TheoryData<
         string,
         Func<AtlasPrivateArtifactInventoryDocument, AtlasPrivateArtifactInventoryDocument>>
@@ -75,6 +79,32 @@ public sealed class AtlasDiscoveryTests
                     {
                         VerificationMethod = AtlasIntakeContracts.ManualA0ValidationMethod,
                     }));
+            return data;
+        }
+    }
+
+    public static TheoryData<string> ValidDiscoverySourceRootLayouts
+    {
+        get
+        {
+            TheoryData<string> data = [];
+            data.Add("exact");
+            data.Add("trailing-separators");
+            return data;
+        }
+    }
+
+    public static TheoryData<string> InvalidDiscoverySourceRootLayouts
+    {
+        get
+        {
+            TheoryData<string> data = [];
+            data.Add("swapped-save-roles");
+            data.Add("nested-primary-save-root");
+            data.Add("sibling-runtime-save-root");
+            data.Add("unrelated-primary-save-root");
+            data.Add("duplicate-save-roots");
+            data.Add("contained-game-executable");
             return data;
         }
     }
@@ -178,6 +208,106 @@ public sealed class AtlasDiscoveryTests
             inventory.Document.Artifacts,
             artifact => artifact.Purpose == AtlasIntakeContracts.State2Purpose);
         Assert.True(File.Exists(workspace.Layout.CanonicalApprovedInventoryBackupPath));
+    }
+
+    [Theory]
+    [MemberData(nameof(ValidDiscoverySourceRootLayouts))]
+    public async Task DiscoverAsyncAcceptsFrozenA0SourceRootLayout(string caseName)
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        workspace.WriteRequest(CreateDiscoverySourceRootLayoutCase(workspace, caseName));
+
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(File.Exists(workspace.Layout.CanonicalDiscoveredStatePath));
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidDiscoverySourceRootLayouts))]
+    public async Task DiscoverAsyncRejectsNonA0SourceRootLayout(string caseName)
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        workspace.WriteRequest(CreateDiscoverySourceRootLayoutCase(workspace, caseName));
+
+        AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Contains("source-root layout", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OverlappingDefinitionRuleOrderPersistsThroughQualification()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await RewriteBaselineManifestWithOverlappingDefinitionRulesAsync(
+            workspace,
+            reverseGroupOrder: false);
+
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+
+        AtlasLoadedDocument<AtlasCorpusIntakeManifest> pendingManifest =
+            await AtlasIntakeContracts.ReadManifestAsync(
+                workspace.Layout.CanonicalPendingManifestPath,
+                TestContext.Current.CancellationToken);
+        string[] expectedGroupOrder =
+        [
+            OverlappingIncludeGroupId,
+            OverlappingNotesGroupId,
+            OverlappingExcludeGroupId,
+        ];
+        Assert.Equal(
+            expectedGroupOrder,
+            pendingManifest.Document.DefinitionGroups
+                .Select(static group => group.GroupId)
+                .ToArray());
+
+        workspace.WriteRequest(workspace.CreateConfirmationRequest());
+        await AtlasDiscovery.ConfirmAsync(
+            workspace.Layout.CanonicalConfirmRequestPath,
+            TestContext.Current.CancellationToken);
+
+        AtlasLoadedDocument<AtlasCorpusIntakeManifest> approvedManifest =
+            await AtlasIntakeContracts.ReadManifestAsync(
+                workspace.Layout.CanonicalApprovedManifestPath,
+                TestContext.Current.CancellationToken);
+        Assert.Equal(
+            expectedGroupOrder,
+            approvedManifest.Document.DefinitionGroups
+                .Select(static group => group.GroupId)
+                .ToArray());
+
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        await TrustedLocalCopy.CopyAsync(
+            workspace.Layout.CanonicalCopyRequestPath,
+            TestContext.Current.CancellationToken);
+
+        AtlasLoadedDocument<AtlasIntakeStateDocument> state =
+            await AtlasIntakeContracts.ReadStateAsync(
+                workspace.Layout.CanonicalQualifiedStatePath,
+                TestContext.Current.CancellationToken);
+        Assert.Equal(AtlasIntakeContracts.QualifiedPhase, state.Document.Phase);
+    }
+
+    [Fact]
+    public async Task DiscoverAsyncRejectsReversedOverlappingDefinitionRuleOrder()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await RewriteBaselineManifestWithOverlappingDefinitionRulesAsync(
+            workspace,
+            reverseGroupOrder: true);
+
+        AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Contains("classification changed", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -961,6 +1091,193 @@ public sealed class AtlasDiscoveryTests
         entries.ToDictionary(
             static entry => AtlasIntakeContracts.NormalizeRelativePath(entry.RelativePath),
             StringComparer.OrdinalIgnoreCase);
+
+    private static AtlasIntakeDiscoveryRequest CreateDiscoverySourceRootLayoutCase(
+        AtlasSyntheticWorkspace workspace,
+        string caseName) =>
+        caseName switch
+        {
+            "exact" => workspace.CreateDiscoveryRequest(),
+            "trailing-separators" => CreateDiscoveryRequestWithRoots(
+                workspace,
+                workspace.DefinitionRootPath + Path.DirectorySeparatorChar,
+                workspace.GameExecutablePath,
+                workspace.SaveRootPath + Path.DirectorySeparatorChar,
+                workspace.WebSaveRootPath + Path.DirectorySeparatorChar),
+            "swapped-save-roles" => CreateDiscoveryRequestWithRoots(
+                workspace,
+                workspace.DefinitionRootPath,
+                workspace.GameExecutablePath,
+                workspace.WebSaveRootPath,
+                workspace.SaveRootPath),
+            "nested-primary-save-root" => CreateDiscoveryRequestWithNestedPrimarySaveRoot(
+                workspace),
+            "sibling-runtime-save-root" => CreateDiscoveryRequestWithSiblingRuntimeSaveRoot(
+                workspace),
+            "unrelated-primary-save-root" => CreateDiscoveryRequestWithUnrelatedPrimarySaveRoot(
+                workspace),
+            "duplicate-save-roots" => CreateDiscoveryRequestWithRoots(
+                workspace,
+                workspace.DefinitionRootPath,
+                workspace.GameExecutablePath,
+                workspace.SaveRootPath,
+                workspace.SaveRootPath),
+            "contained-game-executable" => CreateDiscoveryRequestWithContainedGameExecutable(
+                workspace),
+            _ => throw new InvalidOperationException("Unsupported source-root layout case."),
+        };
+
+    private static AtlasIntakeDiscoveryRequest CreateDiscoveryRequestWithRoots(
+        AtlasSyntheticWorkspace workspace,
+        string definitionRoot,
+        string gameExecutablePath,
+        string deploymentSaveRoot,
+        string webSaveRoot) =>
+        workspace.CreateDiscoveryRequest() with
+        {
+            DefinitionRoot = definitionRoot,
+            GameExecutablePath = gameExecutablePath,
+            SaveRoots =
+            [
+                new AtlasRequestSaveRoot
+                {
+                    LocationRole = AtlasIntakeContracts.DeploymentRootSaveRole,
+                    Path = deploymentSaveRoot,
+                },
+                new AtlasRequestSaveRoot
+                {
+                    LocationRole = AtlasIntakeContracts.WebRootSaveRole,
+                    Path = webSaveRoot,
+                },
+            ],
+        };
+
+    private static AtlasIntakeDiscoveryRequest CreateDiscoveryRequestWithNestedPrimarySaveRoot(
+        AtlasSyntheticWorkspace workspace)
+    {
+        string nestedPrimarySaveRoot = Path.Combine(workspace.SaveRootPath, "nested");
+        Directory.CreateDirectory(nestedPrimarySaveRoot);
+        return CreateDiscoveryRequestWithRoots(
+            workspace,
+            workspace.DefinitionRootPath,
+            workspace.GameExecutablePath,
+            nestedPrimarySaveRoot,
+            workspace.WebSaveRootPath);
+    }
+
+    private static AtlasIntakeDiscoveryRequest CreateDiscoveryRequestWithSiblingRuntimeSaveRoot(
+        AtlasSyntheticWorkspace workspace)
+    {
+        string siblingRuntimeSaveRoot = Path.Combine(
+            workspace.ProjectRoot,
+            "sibling-runtime-save");
+        Directory.CreateDirectory(siblingRuntimeSaveRoot);
+        return CreateDiscoveryRequestWithRoots(
+            workspace,
+            workspace.DefinitionRootPath,
+            workspace.GameExecutablePath,
+            workspace.SaveRootPath,
+            siblingRuntimeSaveRoot);
+    }
+
+    private static AtlasIntakeDiscoveryRequest CreateDiscoveryRequestWithUnrelatedPrimarySaveRoot(
+        AtlasSyntheticWorkspace workspace)
+    {
+        string unrelatedPrimarySaveRoot = Path.Combine(
+            workspace.ProjectRoot,
+            "unrelated-primary-save");
+        Directory.CreateDirectory(unrelatedPrimarySaveRoot);
+        return CreateDiscoveryRequestWithRoots(
+            workspace,
+            workspace.DefinitionRootPath,
+            workspace.GameExecutablePath,
+            unrelatedPrimarySaveRoot,
+            workspace.WebSaveRootPath);
+    }
+
+    private static AtlasIntakeDiscoveryRequest CreateDiscoveryRequestWithContainedGameExecutable(
+        AtlasSyntheticWorkspace workspace)
+    {
+        string containedGameExecutablePath = Path.Combine(
+            workspace.DefinitionRootPath,
+            "www",
+            "Game.exe");
+        File.WriteAllText(containedGameExecutablePath, "synthetic");
+        return CreateDiscoveryRequestWithRoots(
+            workspace,
+            workspace.DefinitionRootPath,
+            containedGameExecutablePath,
+            workspace.SaveRootPath,
+            workspace.WebSaveRootPath);
+    }
+
+    private static async Task RewriteBaselineManifestWithOverlappingDefinitionRulesAsync(
+        AtlasSyntheticWorkspace workspace,
+        bool reverseGroupOrder)
+    {
+        AtlasLoadedDocument<AtlasCorpusIntakeManifest> baselineManifest =
+            await AtlasIntakeContracts.ReadManifestAsync(
+                workspace.Layout.CanonicalBaselineManifestPath,
+                TestContext.Current.CancellationToken);
+        AtlasManifestDefinitionGroup[] definitionGroups = CreateOverlappingDefinitionGroups(
+            reverseGroupOrder);
+        AtlasManifestDefinitionEntry[] definitionEntries =
+            baselineManifest.Document.DefinitionEntries
+                .Select(entry => entry with
+                {
+                    GroupId = IsSyntheticDataDefinition(entry)
+                        ? OverlappingIncludeGroupId
+                        : OverlappingNotesGroupId,
+                    Decision = IsSyntheticDataDefinition(entry)
+                        ? AtlasIntakeContracts.IncludeDefinitionDecision
+                        : AtlasIntakeContracts.ExcludeDefinitionDecision,
+                })
+                .ToArray();
+        AtlasCorpusIntakeManifest updatedManifest = baselineManifest.Document with
+        {
+            DefinitionGroups = definitionGroups,
+            DefinitionEntries = definitionEntries,
+        };
+        await File.WriteAllBytesAsync(
+            workspace.Layout.CanonicalBaselineManifestPath,
+            AtlasIntakeContracts.SerializeManifest(updatedManifest),
+            TestContext.Current.CancellationToken);
+        workspace.WriteRequest(workspace.CreateDiscoveryRequest());
+    }
+
+    private static AtlasManifestDefinitionGroup[] CreateOverlappingDefinitionGroups(
+        bool reverseGroupOrder)
+    {
+        AtlasManifestDefinitionGroup[] groups =
+        [
+            new AtlasManifestDefinitionGroup
+            {
+                GroupId = OverlappingIncludeGroupId,
+                SelectionRule = "www/**/*.json",
+                DiscoveredCount = AtlasIntakeContracts.ExactIncludedDefinitionCount,
+                Decision = AtlasIntakeContracts.IncludeDefinitionDecision,
+            },
+            new AtlasManifestDefinitionGroup
+            {
+                GroupId = OverlappingNotesGroupId,
+                SelectionRule = "www/notes/*.txt",
+                DiscoveredCount = AtlasIntakeContracts.ExactExcludedDefinitionCount,
+                Decision = AtlasIntakeContracts.ExcludeDefinitionDecision,
+            },
+            new AtlasManifestDefinitionGroup
+            {
+                GroupId = OverlappingExcludeGroupId,
+                SelectionRule = "www/data/*.json",
+                DiscoveredCount = 0,
+                Decision = AtlasIntakeContracts.ExcludeDefinitionDecision,
+            },
+        ];
+        return reverseGroupOrder ? [.. groups.Reverse()] : groups;
+    }
+
+    private static bool IsSyntheticDataDefinition(AtlasManifestDefinitionEntry entry) =>
+        AtlasIntakeContracts.NormalizeRelativePath(entry.RelativePath)
+            .StartsWith("www/data/", StringComparison.Ordinal);
 
     private static AtlasPrivateArtifactInventoryDocument ReplaceBaselineManifestArtifact(
         AtlasPrivateArtifactInventoryDocument inventory,

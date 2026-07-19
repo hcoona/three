@@ -110,7 +110,7 @@ public sealed class AtlasProcessSmokeTests
     }
 
     [Fact]
-    public async Task MissingRequestProcessUsesInvalidDiagnostic()
+    public async Task MissingRequestProcessUsesIoDiagnostic()
     {
         string missingRequestPath = Path.Combine(
             Path.GetTempPath(),
@@ -127,9 +127,9 @@ public sealed class AtlasProcessSmokeTests
                 .Replace('/', Path.DirectorySeparatorChar));
         ProcessResult result = await RunAsync("intake-discover", missingRequestPath);
 
-        Assert.Equal(2, result.ExitCode);
+        Assert.Equal(4, result.ExitCode);
         Assert.Empty(result.StandardOutput);
-        Assert.Equal("Invalid arguments.\n"u8.ToArray(), result.StandardError);
+        Assert.Equal("I/O failure.\n"u8.ToArray(), result.StandardError);
     }
 
     [Fact]

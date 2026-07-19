@@ -224,7 +224,31 @@ public sealed class AtlasIntakeContractTests
 
     [Theory]
     [MemberData(nameof(RequestOperationNames))]
-    public async Task OperationsRejectMissingCanonicalRequestPathBeforeReading(
+    public async Task OperationsTreatMissingCanonicalRequestPathAsIoFailure(
+        string commandName)
+    {
+        int readCount = 0;
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            readAllBytesAsync: (_, _) =>
+            {
+                readCount++;
+                return ValueTask.FromException<byte[]>(
+                    new FileNotFoundException("synthetic request missing"));
+            });
+        string requestPath = CreateMissingCanonicalRequestPath(commandName);
+
+        await Assert.ThrowsAsync<FileNotFoundException>(
+            () => RunRequestOperationAsync(
+                commandName,
+                requestPath,
+                io,
+                TestContext.Current.CancellationToken).AsTask());
+        Assert.Equal(1, readCount);
+    }
+
+    [Theory]
+    [MemberData(nameof(RequestOperationNames))]
+    public async Task OperationsRejectDeviceComponentInCanonicalRequestPathBeforeReading(
         string commandName)
     {
         int readCount = 0;
@@ -234,9 +258,9 @@ public sealed class AtlasIntakeContractTests
                 readCount++;
                 return ValueTask.FromResult(Array.Empty<byte>());
             });
-        string requestPath = CreateMissingCanonicalRequestPath(commandName);
+        string requestPath = CreateCanonicalRequestPathWithDeviceComponent(commandName);
 
-        await Assert.ThrowsAsync<AtlasRequestException>(
+        await Assert.ThrowsAsync<AtlasSafetyException>(
             () => RunRequestOperationAsync(
                 commandName,
                 requestPath,
@@ -1388,6 +1412,21 @@ public sealed class AtlasIntakeContractTests
         AtlasSyntheticWorkspace.SurveyAlias,
         AtlasIntakeContracts.GetCanonicalRequestRelativePath(commandName)
             .Replace('/', Path.DirectorySeparatorChar));
+
+    private static string CreateCanonicalRequestPathWithDeviceComponent(string commandName) =>
+        Path.Combine(
+            Path.GetTempPath(),
+            "atlas-a2-device-request",
+            "NUL",
+            "src",
+            "private",
+            "app",
+            "celesphonia-modifier",
+            ".private",
+            "atlas-v0",
+            AtlasSyntheticWorkspace.SurveyAlias,
+            AtlasIntakeContracts.GetCanonicalRequestRelativePath(commandName)
+                .Replace('/', Path.DirectorySeparatorChar));
 
     private sealed record StrictReaderCase(
         string Name,
