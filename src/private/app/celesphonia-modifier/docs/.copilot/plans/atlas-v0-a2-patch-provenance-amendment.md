@@ -230,6 +230,7 @@ receipts and review receipts occupy exact canonical paths inside the survey requ
 intake\requests\<phase>.preparation-receipt.json
 intake\requests\<phase>.review-receipt.json
 intake\requests\<phase>.terminal-custody.json
+intake\private-artifact-inventory.json.<phase>-terminal.staging
 intake\inventory-backups\private-artifact-inventory.<phase>-terminal.json
 ```
 
@@ -394,28 +395,40 @@ For `rejected` or `abandoned`, the review command also publishes
 - `sourceInventorySha256` and `replacementInventorySha256`;
 - `custodyBindings`, the exact four-element sealed binding array;
 - `terminalCustodyArtifactAlias` and `terminalInventoryBackupArtifactAlias`; and
-- `terminalInventoryBackupRelativePath` and `terminalInventoryBackupSha256`.
+- `terminalInventoryStagingRelativePath`, `terminalInventoryBackupRelativePath`, and
+  `terminalInventoryBackupSha256`.
 
 Every property is required. Digests are lowercase SHA-256; aliases, phase, decision, and the
-backup path use their exact closed forms. Null, duplicate, unknown, absolute backup, trailing, or
-mismatched data fails, and the schema sets `additionalProperties: false`.
+staging/backup paths use their exact closed forms. Null, duplicate, unknown, absolute path,
+trailing, or mismatched data fails, and the schema sets `additionalProperties: false`.
 
-The sole staging path is the terminal record's final path plus `.terminal-custody-staging`. The
-command stages and validates the terminal record, builds a six-row inventory addition from the
-quartet, terminal record, and backup, safely replaces the exact source inventory with the fixed
-backup, and publishes the terminal record last. The backup digest equals `sourceInventorySha256`.
-The record binds both inventory digests and the backup. Every path, alias, digest, lifecycle value,
-and decision must agree.
+The exact terminal-record staging path is its final path plus `.terminal-custody-staging`. The exact
+inventory staging path is
+`intake/private-artifact-inventory.json.<phase>-terminal.staging`. The command stages and validates
+the terminal record, builds the six-row replacement, writes and validates that inventory staging
+file, calls `File.Replace` with the fixed backup, and publishes the terminal record last. The backup
+digest equals `sourceInventorySha256`. The record binds both inventory digests, staging path, and
+backup. Every path, alias, digest, lifecycle value, and decision must agree.
 
 The terminal record and backup aliases are the next two monotonic aliases after the quartet. Their
 paths are the fixed terminal paths in section 5.1. Because approved and terminal decisions are
 exclusive, the approved operation instead starts its normal later aliases at that same next cursor.
 
 Review success for a terminal decision is emitted only after the final marker, replacement
-inventory, backup, and quartet all validate. A rerun recovers any exact intermediate seam using the
-same preparation receipt and review-receipt bytes; mismatch refuses without deletion. The completed
-terminal marker is the sole custody signal for that rejected/abandoned branch and can never
-authorize a phase operation.
+inventory, backup, and quartet all validate. Only `intake-record-review` may recover these exact
+states with the same preparation/review bytes:
+
+- receipt only: create and validate the terminal-record stage, then the inventory stage;
+- terminal-record stage plus prior inventory: create or validate the inventory stage;
+- both stages plus prior inventory and no backup: validate both, then call `File.Replace`;
+- replacement inventory plus exact backup and terminal-record stage: publish the final marker; or
+- final marker plus replacement inventory and backup, with neither stage: return fixed success.
+
+Every listed state also requires the exact quartet. An inventory stage without the record stage,
+replacement inventory without the record stage/final, final marker before replacement, any
+stage/final duplication, unexpected backup, or byte/digest mismatch is a safety refusal with no
+deletion. The completed terminal marker is the sole custody signal for that rejected/abandoned
+branch and can never authorize a phase operation.
 
 Missing review receipt returns approval-required. A rejected or abandoned completed terminal record
 also returns approval-required to any phase operation and stops A2. The plan authorizes no deletion,
@@ -784,9 +797,11 @@ valid marker is a safety refusal. A v1 root map or state is a safety refusal. A 
 workspace means a canonical v1 discovery request exists with no other A2 operation output; it
 receives the same safety refusal.
 
-The terminal-custody staging/final paths are governed only by section 5.1. A matching terminal
-marker is a completed rejected/abandoned branch, not discovery staging. Only `intake-record-review`
-may recover its exact incomplete seams; every phase operation returns approval-required.
+The terminal-record staging/final paths, exact terminal inventory staging path, and terminal backup
+are governed only by section 5.1. They are the sole exceptions to the preceding pre-marker census,
+and only while `intake-record-review` validates an exact section 5.1 terminal state. A matching
+final marker is a completed rejected/abandoned branch, not discovery staging. Every phase operation
+returns approval-required and never recovers those paths.
 
 The tool and this plan authorize no deletion, archive, migration, reuse, replacement, or second
 survey identity for any v1 or ambiguous bytes. A2 stops for a separately persisted and independently
@@ -1030,7 +1045,8 @@ All tests use synthetic installer bytes and paths. They cover:
 - review-receipt command grammar, create-new/exact-byte idempotence, decision immutability, and
   rejected/abandoned replacement refusal;
 - missing/rejected/abandoned behavior, six-row terminal custody, every terminal publication/recovery
-  seam, mutation refusal, zero deletion, and mandatory replanning;
+  seam including both exact staging paths and `File.Replace`, mutation refusal, zero deletion, and
+  mandatory replanning;
 - preflight adding exactly the seven amended rows without changing a prior row;
 - discovery-to-confirmation, confirmation-to-copy, and copy-to-preflight output-audit gates;
 - strict v2 request shape, duplicate, missing, null, unknown, trailing, URL, version, hash, and
@@ -1071,7 +1087,7 @@ The amended implementation gate passes only when:
 3. the four C# builders publish receipt-bound requests, and every operation requires the exact
    approved private review without exposing private values to Copilot;
 4. all versioned contracts and schemas match section 5 exactly;
-5. every rejected/abandoned decision completes its six-row terminal custody before success;
+5. every rejected/abandoned decision completes its exact staged six-row custody before success;
 6. installer path and hash remain private in every success and failure;
 7. all three fresh phases rehash and bind the exact installer as section 6 requires;
 8. no-rehash recovery and completed reruns open neither installer nor live source;
@@ -1340,6 +1356,7 @@ Stop and return to planning if:
 - any v1 or ambiguous request, output, staging, or recovery artifact is present;
 - any custody bundle is missing, inconsistent, rejected, or abandoned after preparation succeeds;
 - any rejected/abandoned review lacks its exact terminal marker and six-row inventory transition;
+- any terminal staging, inventory, backup, or marker state falls outside the section 5.1 matrix;
 - any required request review or prior-output audit is absent or not approved;
 - any design claims installer-package identity proves installed-file identity;
 - any private locator-bearing path, hash, source name, request bytes, output bytes, or source
