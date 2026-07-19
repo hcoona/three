@@ -69,10 +69,13 @@ After verification, this amendment partially supersedes these exact A2 clauses:
 - section 12's uniform discovery/terminal staging and recovery, schema list, amended-artifact
   lifecycle and alias order, plus its state-bound rule only for a rejected/abandoned decision;
 - section 15's four-entry preflight inventory replacement;
-- section 16's comparison base;
+- section 16's implementation/schema/record path boundary, comparison bases, record identities, and
+  record sequence;
+- section 17.1's source-candidate and tool-safety-record identity/authority wording;
 - sections 17.2-17.4's private invocation, request preparation, and release sequence;
 - section 18's four-entry preflight acceptance clause;
-- section 20's count whitelist only for the exact safe contract/evidence counts below; and
+- section 20's affected comparisons, record identities, reviewed plan-candidate path set, and count
+  whitelist only for the exact safe contract/evidence counts below; and
 - section 21's project-leader-only invocation wording.
 
 It does not supersede the rule that Copilot and subagents never receive private document bytes, the
@@ -86,6 +89,11 @@ entries, and two permanent custody rows. Every other new count remains private.
 All unaffected section 11 copy, qualification, fidelity, and inventory-agreement requirements
 remain governing. Section 12's unrelated publication, inventory-replacement, copy-finalization,
 state-last, refusal, backup, and lifecycle requirements also remain governing.
+
+Sections 11 and 12 of this amendment replace every affected path, comparison base, record identity,
+and parent sequence. Original A2 validation mechanics, no-private-transcript rules, independent
+record review, toolchain assumptions, and source-change invalidation remain governing unless this
+amendment gives an exact replacement.
 
 The verified amendment plan-review record becomes the implementation diff base. Any implementation
 outside the exact path boundary in section 11 creates a new plan candidate. Any later tracked
