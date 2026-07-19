@@ -14,8 +14,9 @@
 > The released A0 corpus came from Steam application `1786790`, public build `13624401`, after the
 > operator applied the exact retained Kagura Games `CN Patch v1.05.2` package. Section 10's
 > unmodified-installation wording is therefore inaccurate. The
-> `atlas-v0-a2-patch-provenance-amendment.md` supersedes only that source-profile and provenance
-> scope after its plan-review record is verified.
+> `atlas-v0-a2-patch-provenance-amendment.md` supersedes that source-profile, provenance,
+> request-preparation, and narrow execution-operator scope after its plan-review record is verified.
+> The project leader's private audit and explicit approval boundary remains unchanged.
 >
 > Tool-safety record `9edbd57b4f44e76de321e06be81a581ed11b0017` remains historical evidence
 > for its exact candidate but no longer authorizes private discovery. A fresh amended source-safety
