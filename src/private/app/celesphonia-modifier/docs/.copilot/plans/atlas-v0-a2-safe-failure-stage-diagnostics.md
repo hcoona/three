@@ -127,6 +127,10 @@ an already categorized exception propagates unchanged.
 
 `P` adds only this plan. `P2`, `P3`, and `P4` are consecutive plan-only children that resolve
 independent review findings. `R` is the direct child of `P4` and adds only the plan-review record.
+`P5` is the direct child of `R` and adds `AtlasProcessSmokeTests.cs` to the candidate path set after
+the unchanged full suite proved that its existing generic discovery assertion must follow the new
+fixed `request-preflight` contract. `R2` is the direct child of `P5` and updates only the plan-review
+record with the independently reviewed amendment.
 
 `I` may change only:
 
@@ -144,11 +148,14 @@ tests/private/app/celesphonia-modifier/
   Hcoona.CelesphoniaModifier.Atlas.Tests/
     AtlasCliApplicationTests.cs
     AtlasDiscoveryTests.cs
+    AtlasProcessSmokeTests.cs
 ```
 
 `G` adds only the release-gate record. The immutable chain is
-`B -> P -> P2 -> P3 -> P4 -> R -> I -> G`. Each role must be pushed and verified as the clean shared
-branch tip before the next role proceeds.
+`B -> P -> P2 -> P3 -> P4 -> R -> P5 -> R2 -> I -> G`. Each role must be pushed and verified as the
+shared branch tip before the next role proceeds. Uncommitted implementation work may remain in the
+worktree while the plan-only `P5` and record-only `R2` commits are created, but it conveys no
+authority and must not enter either commit.
 
 ## 5. Acceptance evidence
 
@@ -156,7 +163,8 @@ The candidate is acceptable when:
 
 1. representative synthetic refusals prove all seven stage values and the reachable baseline
    manifest-row return transition;
-2. one CLI theory proves exact UTF-8 bytes and exit code 5 for all seven stages;
+2. one CLI theory proves exact UTF-8 bytes and exit code 5 for all seven stages, and direct apphost
+   smoke proves the reachable `request-preflight` bytes;
 3. separate cases prove both `Unspecified` and an unknown enum value use the generic fallback;
 4. an injected pre-categorized exception propagates without being recategorized;
 5. stage-bearing safety exceptions injected into empty survey, confirm, copy, and cleanup remain
