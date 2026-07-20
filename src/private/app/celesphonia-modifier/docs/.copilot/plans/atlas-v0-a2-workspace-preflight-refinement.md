@@ -90,8 +90,12 @@ A2R5 does not:
 
 ## 4. Exact repository candidates
 
-`P` adds only this plan. `R` adds only
-`reviews/atlas-v0-a2-workspace-preflight-refinement-plan-review.md`.
+`P` adds only this plan. `R` adds only:
+
+```text
+src/private/app/celesphonia-modifier/docs/.copilot/reviews/
+  atlas-v0-a2-workspace-preflight-refinement-plan-review.md
+```
 
 `I` may change only:
 
@@ -111,11 +115,17 @@ tests/private/app/celesphonia-modifier/
     AtlasDiscoveryTests.cs
 ```
 
-`G` adds only
-`reviews/atlas-v0-a2-workspace-preflight-refinement-release-gate.md`.
+`G` adds only:
 
-The immutable chain is `B -> P -> R -> I -> G`. Each role must be pushed and verified as the clean
-shared branch tip before the next role begins.
+```text
+src/private/app/celesphonia-modifier/docs/.copilot/reviews/
+  atlas-v0-a2-workspace-preflight-refinement-release-gate.md
+```
+
+The immutable chain is `B -> P -> P2 -> R -> I -> G`. `P2` changes only this plan to resolve plan
+review. Each exact staged `R` and `G` blob must receive independent `No findings`, be committed
+unchanged, and then be pushed and verified as the clean shared branch tip. Every other role must
+also be pushed and verified as the clean shared branch tip before the next role begins.
 
 ## 5. Acceptance evidence
 
@@ -135,8 +145,10 @@ The candidate is acceptable when:
 9. the current A2 plan and index document the A2R5 gate without rewriting A2R4 history;
 10. existing A2R3/A2R4 tests, unchanged process smoke, and the complete suite remain enabled;
 11. locked restore, warning-as-error build, format, focused tests, full tests, smoke, reference,
-    ref-bound HK, and Git candidate-integrity checks pass; and
-12. a fresh GPT-5.6 Sol reviewer returns exact `No findings` for committed `I`.
+    ref-bound HK, and Git candidate-integrity checks pass;
+12. a fresh GPT-5.6 Sol reviewer returns exact `No findings` for committed `I`; and
+13. independent reviewers return exact `No findings` for the staged `R` and `G` records before
+    those exact blobs are committed unchanged.
 
 Per-throw matrices, canonical-path subcategories, census-boundary subcategories, and new process
 tests are not required.
