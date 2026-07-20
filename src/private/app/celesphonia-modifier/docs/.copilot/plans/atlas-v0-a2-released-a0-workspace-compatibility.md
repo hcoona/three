@@ -36,9 +36,12 @@ content
 
 The project leader approved this amendment after an independent minimality audit found the
 production correction proportionate but the planned synthetic evidence significantly
-overengineered. This section supersedes only conflicting acceptance-evidence breadth in sections 2,
-3, 5, 6, 9, and 10. The exact-name correction, fail-closed census, privacy boundary, validation
-commands, stop conditions, candidate paths, and release authority remain unchanged.
+overengineered. This section supersedes conflicting acceptance-evidence breadth in sections 2, 3,
+and 6, plus conflicting Git-role, validation, and resume mechanics in sections 5, 9, and 10. In
+particular, old statements that `R` authorizes implementation, `I` directly descends from `R`, or
+the release record binds only `B`, `P`, `R`, `I`, and `G` are historical rather than operative. The
+exact-name correction, fail-closed census, privacy boundary, validation commands, stop conditions,
+candidate paths, and release authority remain unchanged.
 
 The focused new synthetic evidence is:
 
@@ -55,20 +58,22 @@ inventory rows, generated-document binding assertions, a separate device case, o
 all-I/O-operation guard. Test-only production layout properties are also unnecessary. These
 omissions reduce redundant proof; they do not authorize any operation on retained A0 content.
 
-The immutable evidence chain is now `B -> P -> R -> P2 -> P3 -> R2 -> I -> G`:
+The immutable evidence chain is now `B -> P -> R -> P2 -> P3 -> P4 -> R2 -> I -> G`:
 
 - `B`, `P`, and `R` retain the identifiers and historical evidence defined below;
 - `P2` is the initial amendment candidate and direct child of `R`;
 - `P3` is the direct child of `P2`, changes only this plan, and resolves the independent `P2`
   review findings;
-- `R2` is the direct child of `P3` and changes only the existing plan-review record;
+- `P4` is the direct child of `P3`, changes only this plan, and resolves the independent `P3`
+  review finding;
+- `R2` is the direct child of `P4` and changes only the existing plan-review record;
 - `I` is the direct child of `R2`; and
 - `G` is the direct child of `I`.
 
-The amendment review binds `P2` and its findings, plus the exact `P3` commit, tree, plan blob,
-cumulative changed path, dispositions, and final `No findings` result. Future references below to
-the current plan candidate or plan-review record mean `P3` and `R2` respectively. The release record
-binds all eight roles.
+The amendment review binds `P2` and `P3` with their findings, plus the exact `P4` commit, tree, plan
+blob, cumulative changed path, dispositions, and final `No findings` result. Future references below
+to the current plan candidate or plan-review record mean `P4` and `R2` respectively. The release
+record binds all nine roles.
 
 Use these ancestry checks instead of the conflicting four-role checks in section 9:
 
@@ -77,10 +82,12 @@ $expectedB = "5f1cf84d6de5966a40436ae16426415fe7d69231"
 $expectedP = "e322f635d3847e2fe738a2d97a939940b63d941e"
 $expectedR = "e1d828315cda967dccaea1dbcc049a6814c4da55"
 $expectedP2 = "81947411e32cf51ff6a194e62a46cdae7eccdacf"
+$expectedP3 = "b828666e0ba27db8f26084c964113c6985cfd13b"
 
 $I = git rev-parse HEAD
 $R2 = git rev-parse "$I^"
-$P3 = git rev-parse "$R2^"
+$P4 = git rev-parse "$R2^"
+$P3 = git rev-parse "$P4^"
 $P2 = git rev-parse "$P3^"
 $R = git rev-parse "$P2^"
 $P = git rev-parse "$R^"
@@ -90,16 +97,17 @@ if ($B -cne $expectedB -or $P -cne $expectedP -or $R -cne $expectedR) {
   throw "The original plan chain is invalid."
 }
 if ($P2 -cne $expectedP2) { throw "The initial amendment candidate is invalid." }
+if ($P3 -cne $expectedP3) { throw "The corrected amendment candidate is invalid." }
 ```
 
-Before `R2`, apply the same derivation from `P3` through `B`, require `P3^ == P2`, and require
-`R..P3` to modify only this plan. Require `R2^ == P3` and `P3..R2` to modify only the existing
+Before `R2`, apply the same derivation from `P4` through `B`, require `P4^ == P3`, and require
+`R..P4` to modify only this plan. Require `R2^ == P4` and `P4..R2` to modify only the existing
 plan-review record. All existing tree, blob, upstream, index, worktree, path, HK, and formatting
 checks still apply to their corresponding revised roles.
 
 The current resume procedure supersedes conflicting steps in section 10:
 
-1. verify and independently review the pushed `P3`;
+1. verify and independently review the pushed `P4`;
 2. update and independently review the existing plan-review record, then commit and verify `R2`;
 3. implement the focused candidate and run the unchanged validation commands;
 4. commit and verify `I`, then independently review its complete candidate until `No findings`;
