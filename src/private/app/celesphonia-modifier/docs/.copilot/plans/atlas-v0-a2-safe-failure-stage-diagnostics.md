@@ -125,8 +125,8 @@ an already categorized exception propagates unchanged.
 
 ## 4. Exact repository candidates
 
-`P` adds only this plan. `P2` and `P3` are consecutive plan-only children that resolve independent
-review findings. `R` is the direct child of `P3` and adds only the plan-review record.
+`P` adds only this plan. `P2`, `P3`, and `P4` are consecutive plan-only children that resolve
+independent review findings. `R` is the direct child of `P4` and adds only the plan-review record.
 
 `I` may change only:
 
@@ -147,15 +147,15 @@ tests/private/app/celesphonia-modifier/
 ```
 
 `G` adds only the release-gate record. The immutable chain is
-`B -> P -> P2 -> P3 -> R -> I -> G`. Each role must be pushed and verified as the clean shared
+`B -> P -> P2 -> P3 -> P4 -> R -> I -> G`. Each role must be pushed and verified as the clean shared
 branch tip before the next role proceeds.
 
 ## 5. Acceptance evidence
 
 The candidate is acceptable when:
 
-1. representative synthetic refusals prove all seven stage values, plus the baseline manifest-row
-   lookup and destination-ordinal return transitions;
+1. representative synthetic refusals prove all seven stage values and the reachable baseline
+   manifest-row return transition;
 2. one CLI theory proves exact UTF-8 bytes and exit code 5 for all seven stages;
 3. separate cases prove both `Unspecified` and an unknown enum value use the generic fallback;
 4. an injected pre-categorized exception propagates without being recategorized;
@@ -169,7 +169,9 @@ The candidate is acceptable when:
 10. the original A2R3 compatibility tests and complete suite remain enabled and pass;
 11. locked restore, build, format, tests, smoke, reference, ref-bound HK, and Git
     candidate-integrity checks pass; and
-12. a fresh GPT-5.6 Sol reviewer returns exact `No findings` for the committed candidate.
+12. exact source review verifies the destination-ordinal transition remains classified as
+    `baseline-inventory` without adding an unreachable fault seam; and
+13. a fresh GPT-5.6 Sol reviewer returns exact `No findings` for the committed candidate.
 
 Per-throw matrices, lifecycle cross-products, coverage work, performance work, and duplicate harness
 tests are not required.
@@ -192,6 +194,6 @@ Retry handoff is closed:
 - an approval, request, I/O, cancellation, or unexpected diagnostic follows the existing A2 stop
   policy without disclosing additional detail.
 
-To resume: verify and independently review `P3`, commit the record-only `R`, implement and validate
+To resume: verify and independently review `P4`, commit the record-only `R`, implement and validate
 the exact path set, commit and independently review `I`, then commit the independently reviewed
 record-only `G`.
