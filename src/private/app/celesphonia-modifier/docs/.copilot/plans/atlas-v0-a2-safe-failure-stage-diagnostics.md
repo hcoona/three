@@ -1,8 +1,8 @@
 # Atlas V0 A2 Safe Failure-Stage Diagnostics
 
-**Lifecycle:** Active subordinate; planning-only before verified shared `R`
+**Lifecycle:** Active subordinate; planning-only before verified shared `R2`
 
-**Status:** Approved scope; implementation blocked until plan review
+**Status:** Amended scope; implementation blocked until amendment review
 
 **Increment:** A2R4 - Safe Failure-Stage Diagnostics
 
@@ -129,8 +129,9 @@ an already categorized exception propagates unchanged.
 independent review findings. `R` is the direct child of `P4` and adds only the plan-review record.
 `P5` is the direct child of `R` and adds `AtlasProcessSmokeTests.cs` to the candidate path set after
 the unchanged full suite proved that its existing generic discovery assertion must follow the new
-fixed `request-preflight` contract. `R2` is the direct child of `P5` and updates only the plan-review
-record with the independently reviewed amendment.
+fixed `request-preflight` contract. `P6` is the direct child of `P5` and resolves amendment-review
+findings. `R2` is the direct child of `P6` and updates only the plan-review record with the
+independently reviewed amendment.
 
 `I` may change only:
 
@@ -152,10 +153,10 @@ tests/private/app/celesphonia-modifier/
 ```
 
 `G` adds only the release-gate record. The immutable chain is
-`B -> P -> P2 -> P3 -> P4 -> R -> P5 -> R2 -> I -> G`. Each role must be pushed and verified as the
-shared branch tip before the next role proceeds. Uncommitted implementation work may remain in the
-worktree while the plan-only `P5` and record-only `R2` commits are created, but it conveys no
-authority and must not enter either commit.
+`B -> P -> P2 -> P3 -> P4 -> R -> P5 -> P6 -> R2 -> I -> G`. Each role must be pushed and verified
+as the shared branch tip before the next role proceeds. Uncommitted implementation work may remain
+in the worktree while the plan-only `P5`, plan-only `P6`, and record-only `R2` commits are created,
+but it conveys no authority and must not enter those commits.
 
 ## 5. Acceptance evidence
 
@@ -202,6 +203,6 @@ Retry handoff is closed:
 - an approval, request, I/O, cancellation, or unexpected diagnostic follows the existing A2 stop
   policy without disclosing additional detail.
 
-To resume: verify and independently review `P4`, commit the record-only `R`, implement and validate
-the exact path set, commit and independently review `I`, then commit the independently reviewed
-record-only `G`.
+To resume: verify `P5` and independently review `P6`, commit the record-only `R2`, implement and
+validate the exact path set, commit and independently review `I`, then commit the independently
+reviewed record-only `G`.
