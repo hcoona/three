@@ -33,9 +33,6 @@ semantic scanning, write authority, WinUI, network access, and private data from
 - `plans/atlas-v0-a2-post-patch-baseline-correction.md` governs the A2 correction that treats the
   observed post-patch installed file tree as the research baseline. It retains the original A2
   harness and removes package-provenance machinery that is not needed for read-only intake.
-- `plans/atlas-v0-a2-patch-provenance-amendment.md` is partially superseded historical context.
-  Its public source facts remain descriptive, but its package hash, attestation, request, launcher,
-  custody, recovery, implementation, and Git-chain requirements have no forward authority.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -55,13 +52,11 @@ semantic scanning, write authority, WinUI, network access, and private data from
   receives an independent `No findings` result. That record establishes A1 completion.
 - `reviews/atlas-v0-a2-plan-review.md` authorized the original trusted-local A2 implementation.
 - `reviews/atlas-v0-a2-tool-safety-review.md` records the original A2 source-safety result. It is
-  historical evidence for the unchanged source implementation but does not by itself authorize the
-  resumed private run.
-- `reviews/atlas-v0-a2-patch-provenance-plan-review.md` binds the exact amendment plan and
-  remains immutable historical evidence. Its authorized implementation was rejected before commit.
+  the source-safety evidence for the unchanged original implementation. Private-run authority
+  resumes only after the post-patch correction release gate verifies source equality.
 - `reviews/atlas-v0-a2-post-patch-baseline-plan-review.md` will bind the correction plan.
-- `reviews/atlas-v0-a2-post-patch-baseline-tool-safety-review.md` will authorize private discovery
-  only after the unchanged original A2 source is validated and independently reviewed.
+- `reviews/atlas-v0-a2-post-patch-baseline-release-gate.md` will establish correction completion
+  and resume the original A2 private-run authority.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` will use the original A2 repository-safe fields.
   It never carries private hashes, paths, names, document bytes, or package-provenance claims.
 

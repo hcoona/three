@@ -422,9 +422,11 @@ After the independent release gate passes, another contributor continues from co
 The contributor verifies the release record's candidate commit, tree, first-parent relationship,
 and changed-path restriction before relying on the A0 completion claim.
 
-Reopen A0 if the installed game, either candidate save root, corpus denominator, redaction policy,
-privacy boundary, schema, or approval record changes. A reopened A0 records a new manifest
-revision, obtains any required project-leader confirmation, and passes the independent increment
-release gate again before returning to `done`.
+Reopen A0 if the approved root-role set, selected relative-path corpus, corpus denominator,
+selection or terminal rule, redaction policy, privacy boundary, schema, or approval record changes.
+Installed byte changes within that same finite corpus are captured by later private copy evidence;
+they do not by themselves reopen A0. A reopened A0 records a new manifest revision, obtains any
+required project-leader confirmation, and passes the independent increment release gate again
+before returning to `done`.
 
 Do not rely on conversation history or session task state as the only handoff.

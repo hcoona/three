@@ -194,8 +194,9 @@ Expected hashes are 64 lowercase hexadecimal characters. `decisionCommit` is a 4
 lowercase Git object identifier. `proposedMilestone` is an existing inventory milestone and is
 advisory because preflight cannot authorize deletion.
 
-`expectedSteamAppId` is exactly `1786790`; `expectedBuildId` is exactly `13624401`. They are public
-A0 policy inputs and are bound through every state and receipt. A different value reopens A0.
+`expectedSteamAppId` is exactly `1786790`; `expectedBuildId` is exactly `13624401`. They are frozen
+descriptive labels for the A0 starting point and are bound through every state and receipt. They do
+not claim that Steam or a package can reconstruct the observed installed tree.
 
 Manifest revisions are create-new files named
 `corpus-intake-manifest.rNNNNNN.json` in one survey-local private revision directory. Revision
@@ -404,8 +405,7 @@ The pending manifest and private binding documents are never supplied to Copilot
 project leader performs the private phase:
 
 1. creates the private request without placing its path in an Agent transcript;
-2. verifies in the Steam client that application `1786790` still reports public build
-   `13624401` and confirms that the installation was not manually altered;
+2. confirms that the requested roots are the intended observed installation and save locations;
 3. runs the reviewed source candidate from a clean checkout;
 4. opens the exact pending manifest, source-root map, copy plan, and discovered state in a local
    editor;
@@ -420,7 +420,7 @@ The approval record at `../reviews/atlas-v0-a2-intake-approval.md` contains:
 
 - survey alias and pending manifest revision;
 - safe aggregate counts and public game-build identifiers;
-- the human verification method for the current public Steam build identifier;
+- the public game-build identifiers as descriptive A0 labels;
 - `trusted-local-filesystem/v1` and its accepted residual risks;
 - the exact source-safety candidate commit and tree;
 - the project leader's decision; and
@@ -445,10 +445,11 @@ Together with every included definition hash and the public identifiers, this es
 game-content portion of A0 fingerprint evidence. Atlas tool, schema, redaction-policy, and
 configuration digests remain outside A2 and are added to the final Atlas snapshot under A8.
 
-This one-shot A2 run establishes the first qualified game-content fingerprint. A changed public
-build or operator-reported local alteration before this run reopens A0. Comparing a later
-installation requires a separately approved intake plan. No private fingerprint enters the
-approval record or process output.
+This one-shot A2 run establishes the first qualified game-content fingerprint. A changed root-role
+set, selected relative-path corpus, denominator, selection rule, or terminal policy reopens A0.
+Byte changes within the same approved finite corpus are captured by the new private fingerprint and
+do not by themselves reopen A0. Comparing a later installation requires a separately approved
+intake plan. No private fingerprint enters the approval record or process output.
 
 ## 11. Copy and qualification
 

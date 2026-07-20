@@ -16,8 +16,8 @@
 **Planned plan-review record:**
 `../reviews/atlas-v0-a2-post-patch-baseline-plan-review.md`
 
-**Planned tool-safety record:**
-`../reviews/atlas-v0-a2-post-patch-baseline-tool-safety-review.md`
+**Planned release-gate record:**
+`../reviews/atlas-v0-a2-post-patch-baseline-release-gate.md`
 
 ## 1. Decision and rationale
 
@@ -37,19 +37,11 @@ and recovery state machines without changing the corpus, read-only operation, or
 The project leader rejected that expansion before it was committed. This plan restores proportional
 governance and the unchanged original A2 implementation.
 
-## 2. Authority and supersession
+## 2. Authority and deletion
 
-This plan supersedes:
-
-- every executable, schema, test, validation, and Git-chain requirement in
-  `atlas-v0-a2-patch-provenance-amendment.md`;
-- the amendment's package identity, private installer hash, installation attestation, repeated
-  revalidation, request-preparation, review-receipt, fixed-launcher, custody, and recovery models;
-- the amendment's suspension of the unchanged original A2 source; and
-- the amendment-specific fields planned for later A2 records.
-
-The public fact that the observed baseline followed an off-tree patch remains descriptive historical
-context. It does not authorize or reject an intake run.
+The patch-provenance amendment and its plan-review document are removed from the current tree. Their
+Git history is sufficient provenance for the abandoned direction. Neither document has forward
+authority.
 
 The following remain governing:
 
@@ -60,10 +52,11 @@ The following remain governing:
 - per-file held-handle copy, length, and digest evidence;
 - locator redaction, strict contracts, lifecycle preflight, and no deletion;
 - no live-save writes, decoding, semantic claims, or future writer authority; and
+- the original reviewed tool-safety evidence;
 - independent review and record-only release gates.
 
-The committed patch-provenance plan and review record remain immutable historical evidence. They do
-not authorize implementation or private execution.
+The original tool-safety record resumes private-run authority only after this correction's release
+gate verifies that the reviewed source bytes are unchanged.
 
 ## 3. Baseline model
 
@@ -77,8 +70,7 @@ approved observed roots
 ```
 
 Steam application `1786790`, public build `13624401`, and game version `1.05` remain repository-safe
-descriptive identifiers from A0. The patch name or source may be retained as non-authoritative
-context, but A2 does not require it.
+descriptive identifiers from A0. A2 requires no patch metadata.
 
 The baseline changes only when an A0 reopening condition changes or the observed private manifest
 differs from the approved finite corpus. Package availability, package hash, installation sequence,
@@ -97,12 +89,12 @@ This model does not claim:
 ### In scope
 
 - Correct the normative A0/A2 source-baseline wording.
-- Mark the patch-provenance amendment and its review as historical for forward authority.
+- Delete the patch-provenance amendment and its plan review from the current tree.
 - Reject and remove the complete uncommitted 23-path implementation candidate.
 - Restore a clean worktree whose production, schema, and test files equal the historical A2 source.
 - Re-run the unchanged original A2 validation and all 248 synthetic tests.
 - Independently review the exact corrected candidate.
-- Publish a fresh record-only tool-safety decision before private discovery.
+- Publish a record-only correction release gate before private discovery.
 
 ### Out of scope
 
@@ -125,8 +117,10 @@ src/private/app/celesphonia-modifier/docs/.copilot/
   plans/
     atlas-v0-a0-research-contract.md
     atlas-v0-a2-intake-safety-plan.md
-    atlas-v0-a2-patch-provenance-amendment.md
     atlas-v0-a2-post-patch-baseline-correction.md
+    atlas-v0-a2-patch-provenance-amendment.md (deleted)
+  reviews/
+    atlas-v0-a2-patch-provenance-plan-review.md (deleted)
 ```
 
 The plan-review record child may add only:
@@ -136,54 +130,259 @@ src/private/app/celesphonia-modifier/docs/.copilot/reviews/
   atlas-v0-a2-post-patch-baseline-plan-review.md
 ```
 
+The release-gate record child may add only:
+
+```text
+src/private/app/celesphonia-modifier/docs/.copilot/reviews/
+  atlas-v0-a2-post-patch-baseline-release-gate.md
+```
+
 ## 6. Execution procedure
 
-After the plan-review record is committed, pushed, and verified:
+Commit and push `D` while retaining the rejected candidate residue:
 
-1. remove only the exact six untracked files authorized by the rejected amendment;
-2. restore only the exact 17 modified implementation paths to the committed plan-review candidate;
-3. verify the worktree contains no remaining implementation candidate path;
-4. compare the exact historical production, schema, and test path set with
-   `9edbd57b4f44e76de321e06be81a581ed11b0017`;
-5. stop if any source, schema, project, package, lock, SDK, or test byte differs;
-6. run the original A2 validation from a clean worktree;
-7. commit no source change because the source candidate is the plan-review commit itself;
-8. obtain a fresh independent `No findings` review of that exact committed candidate; and
-9. prepare, independently review, commit, push, and verify the record-only tool-safety child.
+1. stage only the reviewed plan-review record;
+2. verify the staged path and blob, then commit and push the record unchanged;
+3. verify `D` parent, path, blob, tree, and upstream equality;
+4. explicitly defer only the clean-worktree gate; and
+5. stop if any residue path is staged or falls outside the literal lists below.
 
-The cleanup command or script must name every file literally. It must not use recursive deletion,
+The exact modified tracked residue is:
+
+```text
+src/private/app/celesphonia-modifier/
+  Hcoona.CelesphoniaModifier.Atlas.Cli/
+    AtlasCliApplication.cs
+    AtlasCliOperations.cs
+  Hcoona.CelesphoniaModifier.Atlas/
+    AtlasDiscovery.cs
+    AtlasIntakeContracts.cs
+    PrivateArtifactLifecycle.cs
+    TrustedLocalCopy.cs
+  docs/.copilot/schemas/atlas-v0/
+    copy-receipt.schema.json
+    intake-state.schema.json
+    source-root-map.schema.json
+tests/private/app/celesphonia-modifier/
+  Hcoona.CelesphoniaModifier.Atlas.Tests/
+    AtlasCliApplicationTests.cs
+    AtlasDiscoveryTests.cs
+    AtlasIntakeContractTests.cs
+    AtlasProcessSmokeTests.cs
+    PrivateArtifactLifecycleTests.cs
+    ProjectBoundaryTests.cs
+    TrustedLocalCopyTests.cs
+```
+
+The exact untracked residue is:
+
+```text
+src/private/app/celesphonia-modifier/
+  Hcoona.CelesphoniaModifier.Atlas.Cli/AtlasFixedOutputLauncher.cs
+  Hcoona.CelesphoniaModifier.Atlas/AtlasRequestPreparation.cs
+  docs/.copilot/schemas/atlas-v0/
+    request-preparation-receipt.schema.json
+    request-review-receipt.schema.json
+    request-terminal-custody.schema.json
+tests/private/app/celesphonia-modifier/
+  Hcoona.CelesphoniaModifier.Atlas.Tests/AtlasRequestPreparationTests.cs
+```
+
+After provisional `D` verification:
+
+1. require `git diff --cached --quiet`;
+2. require porcelain status to equal exactly the 16 modified and six untracked paths above;
+3. restore the 16 tracked paths literally from `HEAD`;
+4. remove the six untracked files individually with `Remove-Item -LiteralPath`;
+5. preserve the committed correction `README.md`;
+6. require empty porcelain status, completing `D`'s clean-worktree gate;
+7. compare the historical source path set in section 7 with the historical commit;
+8. run the original A2 validation from the clean worktree;
+9. obtain a fresh independent `No findings` review of exact committed candidate `S`; and
+10. prepare, review, commit, push, and verify the record-only release-gate child `G`.
+
+The cleanup procedure must name every file literally. It must not use recursive deletion,
 wildcards, `git reset --hard`, or broad checkout commands.
+
+Run the cleanup from the repository root with these literal arrays:
+
+```powershell
+$projectRoot = "src\private\app\celesphonia-modifier"
+$testRoot = "tests\private\app\celesphonia-modifier"
+$library = "$projectRoot\Hcoona.CelesphoniaModifier.Atlas"
+$cli = "$projectRoot\Hcoona.CelesphoniaModifier.Atlas.Cli"
+$schemas = "$projectRoot\docs\.copilot\schemas\atlas-v0"
+$tests = "$testRoot\Hcoona.CelesphoniaModifier.Atlas.Tests"
+
+$trackedResidue = @(
+  "$cli\AtlasCliApplication.cs"
+  "$cli\AtlasCliOperations.cs"
+  "$library\AtlasDiscovery.cs"
+  "$library\AtlasIntakeContracts.cs"
+  "$library\PrivateArtifactLifecycle.cs"
+  "$library\TrustedLocalCopy.cs"
+  "$schemas\copy-receipt.schema.json"
+  "$schemas\intake-state.schema.json"
+  "$schemas\source-root-map.schema.json"
+  "$tests\AtlasCliApplicationTests.cs"
+  "$tests\AtlasDiscoveryTests.cs"
+  "$tests\AtlasIntakeContractTests.cs"
+  "$tests\AtlasProcessSmokeTests.cs"
+  "$tests\PrivateArtifactLifecycleTests.cs"
+  "$tests\ProjectBoundaryTests.cs"
+  "$tests\TrustedLocalCopyTests.cs"
+)
+
+$untrackedResidue = @(
+  "$cli\AtlasFixedOutputLauncher.cs"
+  "$library\AtlasRequestPreparation.cs"
+  "$schemas\request-preparation-receipt.schema.json"
+  "$schemas\request-review-receipt.schema.json"
+  "$schemas\request-terminal-custody.schema.json"
+  "$tests\AtlasRequestPreparationTests.cs"
+)
+
+if (-not (git diff --cached --quiet)) {
+  throw "Staged residue is not allowed."
+}
+
+$expected = @(
+  $trackedResidue | ForEach-Object { " M " + $_.Replace("\", "/") }
+  $untrackedResidue | ForEach-Object { "?? " + $_.Replace("\", "/") }
+)
+$actual = @(git status --porcelain=v1)
+if (($actual | Sort-Object) -join "`n" -ne
+    ($expected | Sort-Object) -join "`n") {
+  throw "Unexpected worktree residue."
+}
+
+git restore --source=HEAD --worktree -- $trackedResidue
+if ($LASTEXITCODE -ne 0) {
+  throw "Tracked cleanup failed."
+}
+foreach ($path in $untrackedResidue) {
+  Remove-Item -LiteralPath $path
+}
+if (git status --porcelain=v1) {
+  throw "The worktree is not clean."
+}
+```
 
 ## 7. Git evidence chain
 
 The correction uses these exact roles:
 
 - `B` is correction base `112b05d80712469100dd834ecca74fd2acba4639`.
-- `C` is the pushed correction-plan candidate descended from `B`. `B..C` changes exactly the five
+- `C` is the pushed correction-plan candidate descended from `B`. `B..C` changes exactly the six
   plan-candidate paths in section 5.
 - `D` is the immediate child of `C`. It adds only the independently reviewed
   `atlas-v0-a2-post-patch-baseline-plan-review.md` blob unchanged.
 - `S` equals `D`. It is the corrected committed source candidate because no source byte changes.
-- `T` is the immediate child of `S`. It adds only the independently reviewed
-  `atlas-v0-a2-post-patch-baseline-tool-safety-review.md` blob unchanged.
+- `G` is the immediate child of `S`. It adds only the independently reviewed
+  `atlas-v0-a2-post-patch-baseline-release-gate.md` blob unchanged.
 
-Every role must be pushed and equal the shared upstream before the next role proceeds. `D` and `T`
-must pass first-parent, exact-path, staged-blob, tree, upstream, and clean-worktree verification.
+Every role must be pushed and equal the shared upstream before the next role proceeds. `D` first
+passes parent, path, staged-blob, tree, and upstream verification while the exact residue is
+retained. Literal cleanup then completes its clean-worktree gate before validation or source
+review. `G` must pass every gate without a deferral.
 
 Any source, schema, project, package, lock, SDK, TFM, test, or unplanned documentation change
-between `C` and `T` invalidates the chain.
+between `C` and `G` invalidates the chain.
+
+### 7.1 Exact unchanged-source set
+
+Only these 20 historical production, schema, and test paths participate in source-byte equality:
+
+```text
+src/private/app/celesphonia-modifier/
+  Hcoona.CelesphoniaModifier.Atlas.Cli/
+    AtlasCliApplication.cs
+    AtlasCliOperations.cs
+  Hcoona.CelesphoniaModifier.Atlas/
+    AtlasDiscovery.cs
+    AtlasIntakeContracts.cs
+    LocatorSegmentRedactor.cs
+    PrivateArtifactLifecycle.cs
+    TrustedLocalCopy.cs
+  docs/.copilot/schemas/atlas-v0/
+    cleanup-preflight-report.schema.json
+    copy-plan.schema.json
+    copy-receipt.schema.json
+    intake-state.schema.json
+    source-root-map.schema.json
+tests/private/app/celesphonia-modifier/
+  Hcoona.CelesphoniaModifier.Atlas.Tests/
+    AtlasCliApplicationTests.cs
+    AtlasDiscoveryTests.cs
+    AtlasIntakeContractTests.cs
+    AtlasProcessSmokeTests.cs
+    LocatorSegmentRedactorTests.cs
+    PrivateArtifactLifecycleTests.cs
+    ProjectBoundaryTests.cs
+    TrustedLocalCopyTests.cs
+```
+
+After cleanup, run:
+
+```powershell
+$historical = @(
+  "$cli\AtlasCliApplication.cs"
+  "$cli\AtlasCliOperations.cs"
+  "$library\AtlasDiscovery.cs"
+  "$library\AtlasIntakeContracts.cs"
+  "$library\LocatorSegmentRedactor.cs"
+  "$library\PrivateArtifactLifecycle.cs"
+  "$library\TrustedLocalCopy.cs"
+  "$schemas\cleanup-preflight-report.schema.json"
+  "$schemas\copy-plan.schema.json"
+  "$schemas\copy-receipt.schema.json"
+  "$schemas\intake-state.schema.json"
+  "$schemas\source-root-map.schema.json"
+  "$tests\AtlasCliApplicationTests.cs"
+  "$tests\AtlasDiscoveryTests.cs"
+  "$tests\AtlasIntakeContractTests.cs"
+  "$tests\AtlasProcessSmokeTests.cs"
+  "$tests\LocatorSegmentRedactorTests.cs"
+  "$tests\PrivateArtifactLifecycleTests.cs"
+  "$tests\ProjectBoundaryTests.cs"
+  "$tests\TrustedLocalCopyTests.cs"
+)
+$historicalCommit = "9edbd57b4f44e76de321e06be81a581ed11b0017"
+$readme = "$projectRoot\docs\.copilot\README.md"
+$C = git rev-parse "HEAD^"
+
+git diff --exit-code --no-renames $historicalCommit HEAD -- $historical
+if ($LASTEXITCODE -ne 0) {
+  throw "Committed historical source differs."
+}
+git diff --exit-code HEAD -- $historical
+if ($LASTEXITCODE -ne 0) {
+  throw "Worktree historical source differs."
+}
+git diff --exit-code $C HEAD -- $readme
+if ($LASTEXITCODE -ne 0) {
+  throw "README differs from the correction candidate."
+}
+if (-not (git diff --cached --quiet)) {
+  throw "The index is not clean."
+}
+if (git status --porcelain=v1) {
+  throw "The worktree is not clean."
+}
+```
 
 ## 8. Acceptance criteria
 
 The correction passes only when:
 
-1. `B..C` changes exactly the five paths in section 5;
+1. `B..C` changes exactly the six paths in section 5;
 2. the plan states that the observed post-patch file tree is the baseline;
 3. no package or installation-history evidence is required for A2;
 4. a fresh independent plan reviewer reports exact `No findings`;
-5. `D` is the verified record-only child of `C`;
+5. `D` is the record-only child of `C`, provisionally verified before literal cleanup and fully
+   verified afterward;
 6. the rejected 23-path implementation is absent from the worktree and Git history;
-7. the historical production, schema, and test path set is byte-identical to `9edbd57b`;
+7. the 20 historical source paths in section 7 are byte-identical to `9edbd57b`;
 8. locked restore and warning-free build pass;
 9. `dotnet format --verify-no-changes` passes for the library, CLI, and tests;
 10. Microsoft.Testing.Platform reports exactly 248 passed, zero failed, and zero skipped;
@@ -192,7 +391,8 @@ The correction passes only when:
 13. candidate-path HK, LF, line-length, and `git diff --check` gates pass;
 14. no private or original data is accessed during correction;
 15. a fresh independent source reviewer reports exact `No findings`;
-16. `T` is the verified record-only child of `S`; and
+16. `G` is the verified record-only child of `S` and resumes the original A2 private-run
+    authority; and
 17. the branch equals upstream with a clean tracked and untracked worktree.
 
 ## 9. Stop conditions
@@ -214,10 +414,11 @@ Repository-safe outputs:
 
 - this correction plan and its plan-review record;
 - the unchanged-source validation result;
-- the final record-only tool-safety review; and
+- the final record-only correction release gate; and
 - exact public Git commit, tree, parent, path, and test-count evidence.
 
 There is no private output.
 
-To resume, verify `C` and `D`, confirm the exact 23 rejected paths are the only dirty paths, then
-continue at section 6. Do not inspect or execute any private request before verified `T`.
+To resume, verify `C` and provisional `D`, require the exact 16 modified and six untracked residue
+paths in section 6 with nothing staged, then continue at the literal cleanup step. Do not inspect or
+execute any private request before verified `G`.
