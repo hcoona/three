@@ -32,6 +32,42 @@ content
 **Planned release-gate record:**
 `../reviews/atlas-v0-a2-released-a0-workspace-compatibility-release-gate.md`
 
+## 0. Approved proportionality amendment
+
+The project leader approved this amendment after an independent minimality audit found the
+production correction proportionate but the planned synthetic evidence significantly
+overengineered. This section supersedes only conflicting acceptance-evidence breadth in sections 2,
+3, 5, 6, 9, and 10. The exact-name correction, fail-closed census, privacy boundary, validation
+commands, stop conditions, candidate paths, and release authority remain unchanged.
+
+The focused new synthetic evidence is:
+
+1. one discovery case with every exact retained A0 entry and nested opaque sentinels, proving
+   successful admission without reading, opening, or enumerating descendant content;
+2. one theory proving near-match rejection in the survey root, `intake`, and `copies`;
+3. one theory proving wrong-type rejection at those three boundaries; and
+4. one representative reparse-point rejection proving that the unchanged census guard still applies
+   to an admitted A0 name.
+
+The existing full suite remains the regression evidence for the shared census and later lifecycle
+behavior. This increment does not require a lifecycle/rerun cross-product, synthetic legacy
+inventory rows, generated-document binding assertions, a separate device case, or an exhaustive
+all-I/O-operation guard. Test-only production layout properties are also unnecessary. These
+omissions reduce redundant proof; they do not authorize any operation on retained A0 content.
+
+The immutable evidence chain is now `B -> P -> R -> P2 -> R2 -> I -> G`:
+
+- `B`, `P`, and `R` retain the identifiers and historical evidence defined below;
+- `P2` is the direct child of `R` and changes only this governing plan;
+- `R2` is the direct child of `P2` and changes only the existing plan-review record;
+- `I` is the direct child of `R2`; and
+- `G` is the direct child of `I`.
+
+The amendment review binds the exact `P2` commit, tree, plan blob, changed path, and final
+`No findings` result. Future references below to the current plan candidate or plan-review record
+mean `P2` and `R2` respectively. The release record binds all seven roles. Resume by verifying and
+reviewing `P2`, committing and verifying `R2`, and then continuing at implementation.
+
 ## 1. Problem and evidence
 
 The released A0 contract requires the private survey workspace to retain:
