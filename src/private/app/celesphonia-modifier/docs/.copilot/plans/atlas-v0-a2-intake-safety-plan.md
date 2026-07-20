@@ -15,7 +15,7 @@
 > `atlas-v0-a2-post-patch-baseline-correction.md` supersedes the inaccurate unmodified-installation
 > wording and the later package-provenance amendment. The patch package and installation history are
 > descriptive context, not intake identity or authorization evidence. The original A2 source remains
-> unchanged, but private discovery requires the correction plan and fresh tool-safety records.
+> unchanged, but private discovery requires the correction plan review and release gate.
 
 ## 1. Outcome
 

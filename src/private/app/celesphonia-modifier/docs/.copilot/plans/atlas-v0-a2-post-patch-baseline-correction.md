@@ -242,7 +242,8 @@ $untrackedResidue = @(
   "$tests\AtlasRequestPreparationTests.cs"
 )
 
-if (-not (git diff --cached --quiet)) {
+git diff --cached --quiet
+if ($LASTEXITCODE -ne 0) {
   throw "Staged residue is not allowed."
 }
 
@@ -251,8 +252,11 @@ $expected = @(
   $untrackedResidue | ForEach-Object { "?? " + $_.Replace("\", "/") }
 )
 $actual = @(git status --porcelain=v1)
-if (($actual | Sort-Object) -join "`n" -ne
-    ($expected | Sort-Object) -join "`n") {
+if ($LASTEXITCODE -ne 0) {
+  throw "Git status failed."
+}
+if ((($actual | Sort-Object) -join "`n") -ne
+    (($expected | Sort-Object) -join "`n")) {
   throw "Unexpected worktree residue."
 }
 
@@ -263,7 +267,11 @@ if ($LASTEXITCODE -ne 0) {
 foreach ($path in $untrackedResidue) {
   Remove-Item -LiteralPath $path
 }
-if (git status --porcelain=v1) {
+$remaining = @(git status --porcelain=v1)
+if ($LASTEXITCODE -ne 0) {
+  throw "Git status failed."
+}
+if ($remaining.Count -ne 0) {
   throw "The worktree is not clean."
 }
 ```
@@ -363,10 +371,15 @@ git diff --exit-code $C HEAD -- $readme
 if ($LASTEXITCODE -ne 0) {
   throw "README differs from the correction candidate."
 }
-if (-not (git diff --cached --quiet)) {
+git diff --cached --quiet
+if ($LASTEXITCODE -ne 0) {
   throw "The index is not clean."
 }
-if (git status --porcelain=v1) {
+$remaining = @(git status --porcelain=v1)
+if ($LASTEXITCODE -ne 0) {
+  throw "Git status failed."
+}
+if ($remaining.Count -ne 0) {
   throw "The worktree is not clean."
 }
 ```
