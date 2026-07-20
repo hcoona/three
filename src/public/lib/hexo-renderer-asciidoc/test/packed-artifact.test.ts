@@ -1,0 +1,271 @@
+/**
+ * Copyright 2015 Shuai Zhang
+ * SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+ */
+
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+const packageRoot = path.resolve(import.meta.dirname, '..');
+const distDirectory = path.join(packageRoot, 'dist');
+const expectedDistFiles = ['index.cjs', 'index.d.cts', 'index.d.cts.map'];
+const expectedHexoVersion = '8.1.2';
+const probeText = `
+== Packed Artifact ==
+
+[source,javascript]
+----
+const value = { nested: true };
+----
+`;
+const expectedHtml = `<div class="sect1">
+<h2 id="_packed_artifact">Packed Artifact</h2>
+<div class="sectionbody">
+<div class="listingblock">
+<div class="content">
+<pre><code class="highlight javascript"><span class="keyword">const</span> value = &#123; <span class="attr">nested</span>: <span class="literal">true</span> &#125;;</code></pre>
+</div>
+</div>
+</div>
+</div>`;
+
+let temporaryDirectory: string;
+let artifactDirectory: string;
+let consumerDirectory: string;
+let distWasAbsentBeforeBuild = false;
+let builtDistFiles: string[] = [];
+let packedManifest: { dependencies?: { asciidoctor?: string }; name?: string; version?: string };
+let packedArtifact: { inventory: string[]; sha256: string; version: string };
+let consumerManifest: {
+  dependencies: { hexo: string; 'hexo-renderer-asciidoc': string };
+  name: string;
+  packageManager: string;
+  private: boolean;
+};
+
+const runNodeProbe = (scriptName: string, source: string): Record<string, unknown> => {
+  const scriptPath = path.join(consumerDirectory, scriptName);
+  writeFileSync(scriptPath, source);
+  const stdout = execFileSync(process.execPath, [scriptPath], {
+    cwd: consumerDirectory,
+    encoding: 'utf8',
+  });
+  return JSON.parse(stdout) as Record<string, unknown>;
+};
+
+beforeAll(() => {
+  temporaryDirectory = mkdtempSync(path.join(tmpdir(), 'hexo-renderer-asciidoc-packed-v3-'));
+  artifactDirectory = path.join(temporaryDirectory, 'artifact');
+  consumerDirectory = path.join(temporaryDirectory, 'consumer');
+  mkdirSync(artifactDirectory);
+  mkdirSync(consumerDirectory);
+
+  rmSync(distDirectory, { recursive: true, force: true });
+  distWasAbsentBeforeBuild = !existsSync(distDirectory);
+  if (!distWasAbsentBeforeBuild) {
+    throw new Error('dist/ must be absent before the packed-artifact build');
+  }
+
+  execFileSync('pnpm', ['run', 'build'], { cwd: packageRoot, stdio: 'pipe' });
+  builtDistFiles = readdirSync(distDirectory).sort();
+
+  const packOutput = execFileSync(
+    'npm',
+    ['pack', '--ignore-scripts', '--json', '--pack-destination', artifactDirectory],
+    { cwd: packageRoot, encoding: 'utf8' },
+  );
+  const packResult = JSON.parse(packOutput) as Array<{ filename: string }>;
+  const archivePath = path.join(artifactDirectory, packResult[0]?.filename ?? '');
+  if (!existsSync(archivePath)) {
+    throw new Error('npm pack did not produce the expected v3 artifact');
+  }
+
+  packedManifest = JSON.parse(
+    execFileSync('tar', ['-xOzf', archivePath, 'package/package.json'], { encoding: 'utf8' }),
+  ) as typeof packedManifest;
+  const version = packedManifest.version;
+  if (typeof version !== 'string') {
+    throw new Error('packed artifact does not contain a package version');
+  }
+  packedArtifact = {
+    inventory: execFileSync('tar', ['-tzf', archivePath], { encoding: 'utf8' }).trim().split('\n'),
+    sha256: createHash('sha256').update(readFileSync(archivePath)).digest('hex'),
+    version,
+  };
+
+  consumerManifest = {
+    name: 'hexo-renderer-asciidoc-packed-v3-consumer',
+    private: true,
+    packageManager: `pnpm@${execFileSync('pnpm', ['--version'], { encoding: 'utf8' }).trim()}`,
+    dependencies: {
+      hexo: expectedHexoVersion,
+      'hexo-renderer-asciidoc': `file:${archivePath}`,
+    },
+  };
+  writeFileSync(path.join(consumerDirectory, 'package.json'), `${JSON.stringify(consumerManifest, undefined, 2)}\n`);
+  execFileSync('pnpm', ['install', '--lockfile-only', '--ignore-scripts'], {
+    cwd: consumerDirectory,
+    stdio: 'pipe',
+  });
+  execFileSync('pnpm', ['install', '--frozen-lockfile', '--ignore-scripts'], {
+    cwd: consumerDirectory,
+    stdio: 'pipe',
+  });
+}, 60_000);
+
+afterAll(() => {
+  rmSync(temporaryDirectory, { recursive: true, force: true });
+  rmSync(distDirectory, { recursive: true, force: true });
+});
+
+describe('packed Asciidoctor v3 package import shapes', () => {
+  it('builds a fresh dist, records packed metadata, and preserves the current runtime dependency', () => {
+    expect(distWasAbsentBeforeBuild).toBe(true);
+    expect(builtDistFiles).toEqual(expectedDistFiles);
+
+    expect(expectedHtml).toContain('<h2 id="_packed_artifact">Packed Artifact</h2>');
+    expect(expectedHtml).toContain('&#123;');
+    expect(expectedHtml).toContain('&#125;');
+    expect(expectedHtml).toContain('<code class="highlight javascript">');
+
+    expect(packedManifest.name).toBe('hexo-renderer-asciidoc');
+    expect(packedManifest.dependencies?.asciidoctor).toBe('3.0.4');
+    expect(packedArtifact.version).toBe(packedManifest.version);
+    expect(packedArtifact.inventory).toEqual(
+      expect.arrayContaining(['package/package.json', ...expectedDistFiles.map((file) => `package/dist/${file}`)]),
+    );
+    expect(packedArtifact.sha256).toMatch(/^[\da-f]{64}$/);
+    expect(consumerManifest.dependencies.hexo).toBe(expectedHexoVersion);
+    expect(existsSync(path.join(consumerDirectory, 'pnpm-lock.yaml'))).toBe(true);
+  });
+
+  it('invokes CommonJS default, named, and registered renderers with identical HTML', () => {
+    const probe = runNodeProbe(
+      'commonjs.cjs',
+      `const sample = ${JSON.stringify(probeText)};
+const packageRoot = require('hexo-renderer-asciidoc');
+const registrations = [];
+const registerResult = packageRoot.registerRenderer({
+  extend: {
+    renderer: {
+      register(...args) {
+        registrations.push(args);
+      },
+    },
+  },
+});
+const render = (fn) => fn({ text: sample });
+process.stdout.write(JSON.stringify({
+  rootType: typeof packageRoot,
+  keys: Object.keys(packageRoot).sort(),
+  defaultType: typeof packageRoot.default,
+  rendererType: typeof packageRoot.renderer,
+  registerRendererType: typeof packageRoot.registerRenderer,
+  defaultEqualsRenderer: packageRoot.default === packageRoot.renderer,
+  registerResultIsUndefined: registerResult === undefined,
+  outputs: {
+    default: render(packageRoot.default),
+    named: render(packageRoot.renderer),
+    registered: registrations.map(([extension, outputFormat, registeredRenderer, sync]) => ({
+      extension,
+      outputFormat,
+      rendererIsPublic: registeredRenderer === packageRoot.renderer,
+      sync,
+      html: render(registeredRenderer),
+    })),
+  },
+}));`,
+    );
+
+    expect(probe).toEqual({
+      rootType: 'object',
+      keys: ['default', 'registerRenderer', 'renderer'],
+      defaultType: 'function',
+      rendererType: 'function',
+      registerRendererType: 'function',
+      defaultEqualsRenderer: true,
+      registerResultIsUndefined: true,
+      outputs: {
+        default: expectedHtml,
+        named: expectedHtml,
+        registered: [
+          { extension: 'ad', outputFormat: 'html', rendererIsPublic: true, sync: true, html: expectedHtml },
+          { extension: 'adoc', outputFormat: 'html', rendererIsPublic: true, sync: true, html: expectedHtml },
+          { extension: 'asciidoc', outputFormat: 'html', rendererIsPublic: true, sync: true, html: expectedHtml },
+        ],
+      },
+    });
+  });
+
+  it('invokes the ESM nested default, named, namespace, and registered renderers with identical HTML', () => {
+    const probe = runNodeProbe(
+      'module.mjs',
+      `const sample = ${JSON.stringify(probeText)};
+import packageDefault, { registerRenderer, renderer } from 'hexo-renderer-asciidoc';
+const registrations = [];
+const registerResult = registerRenderer({
+  extend: {
+    renderer: {
+      register(...args) {
+        registrations.push(args);
+      },
+    },
+  },
+});
+const nestedDefault = packageDefault.default;
+const namespaceRenderer = packageDefault.renderer;
+const render = (fn) => fn({ text: sample });
+process.stdout.write(JSON.stringify({
+  defaultType: typeof packageDefault,
+  defaultKeys: Object.keys(packageDefault).sort(),
+  nestedDefaultType: typeof nestedDefault,
+  namespaceRendererType: typeof namespaceRenderer,
+  rendererType: typeof renderer,
+  registerRendererType: typeof registerRenderer,
+  defaultEqualsRenderer: packageDefault === renderer,
+  nestedDefaultEqualsRenderer: nestedDefault === renderer,
+  namespaceRendererEqualsNamed: namespaceRenderer === renderer,
+  registerResultIsUndefined: registerResult === undefined,
+  outputs: {
+    nestedDefault: render(nestedDefault),
+    named: render(renderer),
+    namespaceNamed: render(namespaceRenderer),
+    registered: registrations.map(([extension, outputFormat, registeredRenderer, sync]) => ({
+      extension,
+      outputFormat,
+      rendererIsPublic: registeredRenderer === renderer,
+      sync,
+      html: render(registeredRenderer),
+    })),
+  },
+}));`,
+    );
+
+    expect(probe).toEqual({
+      defaultType: 'object',
+      defaultKeys: ['default', 'registerRenderer', 'renderer'],
+      nestedDefaultType: 'function',
+      namespaceRendererType: 'function',
+      rendererType: 'function',
+      registerRendererType: 'function',
+      defaultEqualsRenderer: false,
+      nestedDefaultEqualsRenderer: true,
+      namespaceRendererEqualsNamed: true,
+      registerResultIsUndefined: true,
+      outputs: {
+        nestedDefault: expectedHtml,
+        named: expectedHtml,
+        namespaceNamed: expectedHtml,
+        registered: [
+          { extension: 'ad', outputFormat: 'html', rendererIsPublic: true, sync: true, html: expectedHtml },
+          { extension: 'adoc', outputFormat: 'html', rendererIsPublic: true, sync: true, html: expectedHtml },
+          { extension: 'asciidoc', outputFormat: 'html', rendererIsPublic: true, sync: true, html: expectedHtml },
+        ],
+      },
+    });
+  });
+});

@@ -46,4 +46,18 @@ get <span class="string">'/hi'</span> <span class="keyword">do</span>
 </div>`),
     );
   });
+
+  it('escapes braces after conversion and syntax highlighting', () => {
+    const body = `
+[source,javascript]
+----
+const value = { nested: true };
+----`;
+
+    const result = renderAsciiDoc(body);
+
+    expect(result).toContain('&#123;');
+    expect(result).toContain('&#125;');
+    expect(result).not.toContain('{ nested:');
+  });
 });
