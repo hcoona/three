@@ -42,6 +42,7 @@ public sealed class FakeProcessRunner : IProcessRunner
     {
         ArgumentNullException.ThrowIfNull(startSpec);
         cancellationToken.ThrowIfCancellationRequested();
+
         ValidateEnvironmentMode(startSpec.EnvironmentMode);
 
         StartSpecs.Add(startSpec);

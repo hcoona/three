@@ -89,6 +89,40 @@ public sealed class CacheBoundaryToStringTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void SecretTextAndAcquiredAccessTokenToStringRedactTokenValue()
+    {
+        var secret = new SecretText { Value = "opaque-access-token" };
+        var token = new AcquiredAccessToken
+        {
+            AccountId = null,
+            TenantId = "tenant-1",
+            DeploymentKey = "deployment-key",
+            Token = secret,
+            ExpiresAt = null,
+        };
+
+        string secretText = secret.ToString();
+        string tokenText = token.ToString();
+        string resultText = AcquiredAccessTokenResult.Success(token).ToString();
+
+        Assert.Equal("<redacted>", secretText);
+        Assert.DoesNotContain(secret.Value, secretText, StringComparison.Ordinal);
+        Assert.DoesNotContain(secret.Value, tokenText, StringComparison.Ordinal);
+        Assert.DoesNotContain(secret.Value, resultText, StringComparison.Ordinal);
+        Assert.Equal(
+            "AcquiredAccessToken { AccountId = <unknown>, TenantId = tenant-1, "
+                + "DeploymentKey = deployment-key, "
+                + "Token = <redacted>, ExpiresAt = <unknown> }",
+            tokenText);
+        Assert.Equal(
+            "AcquiredAccessTokenResult { Status = Success, AccessToken = "
+                + "AcquiredAccessToken { AccountId = <unknown>, TenantId = tenant-1, "
+                + "DeploymentKey = deployment-key, "
+                + "Token = <redacted>, ExpiresAt = <unknown> } }",
+            resultText);
+    }
+
     private static IdentityMaterial CreateIdentityMaterial() =>
         new()
         {

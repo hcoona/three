@@ -402,6 +402,8 @@ public sealed class AzureAuthPersistenceTests
                     Owner = new FileSystemOwner("current-user"),
                     CurrentUserOwnsArtifact = true,
                     OwnerOnlyWritable = true,
+                    TrustedWorkingDirectory = @"C:\ProgramData\AzureAuth",
+                    TrustedPathEntries = [@"C:\Windows\System32", @"C:\Windows"],
                 }
             )
         );

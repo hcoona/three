@@ -40,6 +40,8 @@ public enum AzureAuthArtifactTrustStatus
 /// <summary>Trusted structured evidence produced by the inspector.</summary>
 public sealed record AzureAuthArtifactEvidence
 {
+    private IReadOnlyList<string> _trustedPathEntries = Array.AsReadOnly(Array.Empty<string>());
+
     public required string CanonicalPath { get; init; }
 
     public required FileSystemEntryIdentity StableArtifactIdentity { get; init; }
@@ -59,6 +61,20 @@ public sealed record AzureAuthArtifactEvidence
     public required bool CurrentUserOwnsArtifact { get; init; }
 
     public required bool OwnerOnlyWritable { get; init; }
+
+    /// <summary>Platform-attested launch directory; this is runtime evidence, not wire data.</summary>
+    public required string TrustedWorkingDirectory { get; init; }
+
+    /// <summary>Platform-attested child PATH entries, snapshotted when evidence is created.</summary>
+    public required IReadOnlyList<string> TrustedPathEntries
+    {
+        get => _trustedPathEntries;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            _trustedPathEntries = Array.AsReadOnly(value.ToArray());
+        }
+    }
 }
 
 /// <summary>
@@ -259,6 +275,18 @@ public static class AzureAuthTrustPolicy
         {
             throw new ArgumentException("Artifact owner is required.", nameof(evidence));
         }
+
+        AzureAuthWindowsDirectoryPathPolicy.Validate(
+            evidence.TrustedWorkingDirectory,
+            nameof(evidence.TrustedWorkingDirectory)
+        );
+        foreach (string pathEntry in evidence.TrustedPathEntries)
+        {
+            AzureAuthWindowsDirectoryPathPolicy.Validate(
+                pathEntry,
+                nameof(evidence.TrustedPathEntries)
+            );
+        }
     }
 
     private static bool MatchesPins(
@@ -400,6 +428,11 @@ internal static class AzureAuthDeploymentKey
         AppendField(builder, evidence.Owner.Id);
         AppendField(builder, evidence.CurrentUserOwnsArtifact ? "1" : "0");
         AppendField(builder, evidence.OwnerOnlyWritable ? "1" : "0");
+        AppendField(builder, evidence.TrustedWorkingDirectory);
+        foreach (string pathEntry in evidence.TrustedPathEntries)
+        {
+            AppendField(builder, pathEntry);
+        }
 
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
         return Convert.ToHexString(hash).ToLowerInvariant();

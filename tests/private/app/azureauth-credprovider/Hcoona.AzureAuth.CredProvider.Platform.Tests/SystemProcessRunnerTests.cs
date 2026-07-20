@@ -84,6 +84,7 @@ public sealed class SystemProcessRunnerTests
 
         var result = await runner.RunAsync(startSpec, TestContext.Current.CancellationToken);
 
+        Assert.Equal(ProcessExecutionStatus.NonZeroExit, result.Status);
         Assert.Equal(37, result.ExitCode);
         Assert.False(result.Succeeded);
         Assert.Equal("nonzero stdout", DecodeLines(result.StandardOutput)["stdout"]);
@@ -294,7 +295,151 @@ public sealed class SystemProcessRunnerTests
     }
 
     [Fact]
-    public async Task RunAsyncWithPreCanceledTokenDoesNotLaunchHelperProcess()
+    public async Task RunAsyncReturnsTimedOutStatusAndKillsProcessTreeWhenTimeoutExpires()
+    {
+        if (OperatingSystem.IsWindows() || !File.Exists("/bin/sh"))
+        {
+            return;
+        }
+
+        var pidFile = Path.Combine(CreateTestDirectory("process timeout"), "child.pid");
+        var runner = new SystemProcessRunner();
+        Task<ProcessResult> runTask = runner.RunAsync(
+            new ProcessStartSpec(
+                "/bin/sh",
+                ["-c", $"sleep 30 & echo $! > {ShellQuote(pidFile)}; sleep 30"],
+                timeout: TimeSpan.FromMilliseconds(200)
+            ),
+            TestContext.Current.CancellationToken
+        );
+        int childProcessId = await WaitForProcessIdAsync(pidFile, TestContext.Current.CancellationToken);
+
+        ProcessResult result = await runTask;
+
+        Assert.Equal(ProcessExecutionStatus.TimedOut, result.Status);
+        await AssertProcessExitsAsync(childProcessId, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task RunAsyncTimesOutWhileChildDoesNotReadLargeStandardInput()
+    {
+        if (!OperatingSystem.IsLinux() || !File.Exists("/bin/sh"))
+        {
+            return;
+        }
+
+        var runner = new SystemProcessRunner();
+        var stopwatch = Stopwatch.StartNew();
+
+        ProcessResult result = await runner.RunAsync(
+            new ProcessStartSpec(
+                "/bin/sh",
+                ["-c", "sleep 30"],
+                standardInput: new string('x', 16 * 1024 * 1024),
+                timeout: TimeSpan.FromMilliseconds(150)
+            ),
+            TestContext.Current.CancellationToken
+        );
+
+        stopwatch.Stop();
+        Assert.Equal(ProcessExecutionStatus.TimedOut, result.Status);
+        Assert.True(
+            stopwatch.Elapsed < TimeSpan.FromSeconds(3),
+            $"Runner took {stopwatch.Elapsed}."
+        );
+    }
+
+    [Fact]
+    public async Task RunAsyncReturnsWithinBoundWhenExitedRootLeavesInheritedPipeOpen()
+    {
+        if (OperatingSystem.IsWindows() || !File.Exists("/bin/sh"))
+        {
+            return;
+        }
+
+        var runner = new SystemProcessRunner();
+        var stopwatch = Stopwatch.StartNew();
+
+        ProcessResult result = await runner.RunAsync(
+            new ProcessStartSpec(
+                "/bin/sh",
+                ["-c", "sleep 4 &"],
+                timeout: TimeSpan.FromMilliseconds(150)
+            ),
+            TestContext.Current.CancellationToken
+        );
+
+        stopwatch.Stop();
+        Assert.Equal(ProcessExecutionStatus.TimedOut, result.Status);
+        Assert.True(
+            stopwatch.Elapsed < TimeSpan.FromSeconds(3),
+            $"Runner took {stopwatch.Elapsed}."
+        );
+    }
+
+    [Fact]
+    public async Task RunAsyncReturnsOutputTooLargeForBoundedStdoutCapture()
+    {
+        if (OperatingSystem.IsWindows() || !File.Exists("/bin/sh"))
+        {
+            return;
+        }
+
+        var runner = new SystemProcessRunner();
+        ProcessResult result = await runner.RunAsync(
+            new ProcessStartSpec(
+                "/bin/sh",
+                ["-c", "i=0; while [ $i -lt 10000 ]; do printf x; i=$((i+1)); done"],
+                timeout: TimeSpan.FromSeconds(5),
+                outputCaptureOptions: new ProcessOutputCaptureOptions
+                {
+                    StandardOutputByteLimit = 32,
+                    StandardOutputCharacterLimit = 32,
+                    StandardErrorByteLimit = 32,
+                    StandardErrorCharacterLimit = 32,
+                }
+            ),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ProcessExecutionStatus.OutputTooLarge, result.Status);
+        Assert.True(result.StandardOutput.Length <= 32);
+    }
+
+    [Fact]
+    public async Task RunAsyncReturnsInvalidOutputForInvalidUtf8Stdout()
+    {
+        if (OperatingSystem.IsWindows() || !File.Exists("/bin/sh"))
+        {
+            return;
+        }
+
+        var runner = new SystemProcessRunner();
+        ProcessResult result = await runner.RunAsync(
+            new ProcessStartSpec("/bin/sh", ["-c", "printf '\\377'"]),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ProcessExecutionStatus.InvalidOutput, result.Status);
+        Assert.Empty(result.StandardOutput);
+    }
+
+    [Fact]
+    public async Task RunAsyncReturnsLaunchFailureForMissingExecutable()
+    {
+        var runner = new SystemProcessRunner();
+
+        ProcessResult result = await runner.RunAsync(
+            new ProcessStartSpec(Path.Combine(CreateTestDirectory("missing tool"), "missing-tool")),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(ProcessExecutionStatus.LaunchFailure, result.Status);
+        Assert.False(result.HasExitCode);
+    }
+
+    [Fact]
+    public async Task RunAsyncWithPreCanceledTokenThrowsWithoutLaunchingProcess()
     {
         var markerFile = Path.Combine(CreateTestDirectory("pre canceled process"), "launched.txt");
         var runner = new SystemProcessRunner();
@@ -336,7 +481,7 @@ public sealed class SystemProcessRunnerTests
     }
 
     [Fact]
-    public async Task RunAsyncWithCancellationAfterPreStartValidationDoesNotLaunchHelperProcess()
+    public async Task RunAsyncWithCancellationAfterPreStartValidationThrows()
     {
         var markerFile = Path.Combine(
             CreateTestDirectory("post validation canceled process"),
@@ -363,6 +508,27 @@ public sealed class SystemProcessRunnerTests
         );
 
         Assert.False(File.Exists(markerFile));
+    }
+
+    [Fact]
+    public void ProcessStartSpecRejectsUnboundedTimeoutAndCaptureLimits()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new ProcessStartSpec("tool", timeout: TimeSpan.MaxValue)
+        );
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new ProcessStartSpec(
+                "tool",
+                outputCaptureOptions: new ProcessOutputCaptureOptions
+                {
+                    StandardOutputByteLimit =
+                        ProcessOutputCaptureOptions.MaximumStreamLimit + 1,
+                    StandardOutputCharacterLimit = 1,
+                    StandardErrorByteLimit = 1,
+                    StandardErrorCharacterLimit = 1,
+                }
+            )
+        );
     }
 
     private static ProcessStartSpec HelperStartSpec(

@@ -102,7 +102,7 @@ public sealed class FakeProcessRunnerTests
     }
 
     [Fact]
-    public async Task RunAsyncWithCancellationAfterPreStartValidationDoesNotRunQueuedHandler()
+    public async Task RunAsyncWithCancellationAfterPreStartValidationThrows()
     {
         var runner = new FakeProcessRunner();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(

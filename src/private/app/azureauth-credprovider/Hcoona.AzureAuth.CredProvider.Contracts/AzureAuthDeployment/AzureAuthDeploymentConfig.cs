@@ -171,43 +171,7 @@ public static class WindowsPathPolicy
 
     public static void ValidateExecutablePath(string path)
     {
-        if (string.IsNullOrWhiteSpace(path) || !string.Equals(path, path.Trim(), StringComparison.Ordinal))
-        {
-            throw new ArgumentException(
-                "Executable path is not an allowed absolute Windows path.",
-                nameof(path)
-            );
-        }
-
-        if (path.Length < 4 || path[1] != ':' || path[2] != '\\' || path[0] is < 'A' or > 'Z')
-        {
-            throw new ArgumentException(
-                "Executable path is not an allowed absolute Windows path.",
-                nameof(path)
-            );
-        }
-
-        if (
-            path.Contains('/')
-            || path.Contains('%')
-            || path.IndexOf(':', 2) >= 0
-            || path.Any(static character => !IsAllowedPathCharacter(character))
-        )
-        {
-            throw new ArgumentException(
-                "Executable path is not an allowed absolute Windows path.",
-                nameof(path)
-            );
-        }
-
-        string[] components = path[3..].Split('\\', StringSplitOptions.None);
-        if (components.Length == 0 || components.Any(IsForbiddenComponent))
-        {
-            throw new ArgumentException(
-                "Executable path contains a forbidden component.",
-                nameof(path)
-            );
-        }
+        string[] components = ValidateAbsoluteDrivePath(path, "Executable");
 
         if (!string.Equals(components[^1], "AzureAuth.exe", StringComparison.Ordinal))
         {
@@ -218,6 +182,11 @@ public static class WindowsPathPolicy
         }
     }
 
+    internal static void ValidateDirectoryPath(string path)
+    {
+        _ = ValidateAbsoluteDrivePath(path, "Directory");
+    }
+
     public static bool MatchesConfiguredCanonicalPath(string configuredPath, string? canonicalPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(configuredPath);
@@ -226,6 +195,39 @@ public static class WindowsPathPolicy
     }
 
     private static bool IsAllowedPathCharacter(char value) => value is >= ' ' and <= '~';
+
+    private static string[] ValidateAbsoluteDrivePath(string path, string pathKind)
+    {
+        if (
+            string.IsNullOrWhiteSpace(path)
+            || !string.Equals(path, path.Trim(), StringComparison.Ordinal)
+            || path.Length < 4
+            || path[1] != ':'
+            || path[2] != '\\'
+            || path[0] is < 'A' or > 'Z'
+            || path.Contains('/')
+            || path.Contains('%')
+            || path.IndexOf(':', 2) >= 0
+            || path.Any(static character => !IsAllowedPathCharacter(character))
+        )
+        {
+            throw new ArgumentException(
+                $"{pathKind} path is not an allowed absolute Windows path.",
+                nameof(path)
+            );
+        }
+
+        string[] components = path[3..].Split('\\', StringSplitOptions.None);
+        if (components.Length == 0 || components.Any(IsForbiddenComponent))
+        {
+            throw new ArgumentException(
+                $"{pathKind} path contains a forbidden component.",
+                nameof(path)
+            );
+        }
+
+        return components;
+    }
 
     private static bool IsForbiddenComponent(string component)
     {
