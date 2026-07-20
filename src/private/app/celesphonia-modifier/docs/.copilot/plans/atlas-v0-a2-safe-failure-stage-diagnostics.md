@@ -8,9 +8,20 @@
 
 **Decision owner:** Project leader
 
+**Audience:** Project leader, implementers, independent reviewers, and future resumers
+
+**Purpose:** Identify the next metadata-discovery refusal boundary without exposing its payload
+
 **Implementation language:** Existing C# on the repository-pinned .NET 10 SDK
 
 **Base:** `b8fb8eb5f84f41e6e7bf98a7aea7f3e7fa8b69bd`
+
+**Governing sources:** Active A2 intake-safety plan, A2R3 release gate, and project operating model
+
+**Dependencies:** Existing Atlas library, CLI, synthetic workspace, and Microsoft.Testing.Platform
+
+**Unresolved risk:** The next retry may reach a valid fixed stage but still require a separately
+planned repository-safe diagnosis
 
 **Plan-review record:**
 `../reviews/atlas-v0-a2-safe-failure-stage-diagnostics-plan-review.md`
@@ -43,6 +54,12 @@ The CLI retains exit code 5 and emits exactly
 arrays; it never emits `Exception.Message`, enum formatting, paths, values, hashes, names, counts,
 stack traces, or other dynamic text.
 
+The library adds public enum `AtlasDiscoveryFailureStage` with `Unspecified` and the seven listed
+values. `AtlasSafetyException` keeps its existing public message-only constructor unchanged and adds
+a public read-only `DiscoveryStage` property plus an additive constructor accepting a stage and
+optional inner exception. The message-only constructor yields `Unspecified`. This small public
+surface is required because the CLI is a separate assembly; no friend-assembly access is added.
+
 The seven stages identify execution location, not an A0 difference or private fact. Existing
 root-set, denominator, selection-rule, public-build, unsupported/unreadable, and no-difference
 categories remain separate and unchanged.
@@ -53,7 +70,8 @@ In scope:
 
 - attach the current stage when `AtlasDiscovery.DiscoverAsync` propagates an
   `AtlasSafetyException`;
-- map only those seven values to fixed CLI diagnostics;
+- map only those seven values to fixed CLI diagnostics when the invoked command is
+  `intake-discover`;
 - preserve the generic safety fallback for uncategorized failures and every other command;
 - document the fixed diagnostics and A2R4 gate;
 - add focused synthetic and CLI tests; and
@@ -70,23 +88,28 @@ Out of scope:
 
 ## 3. Stage boundaries
 
-`DiscoverAsync` maintains one current stage around its existing control flow:
+`DiscoverAsync` maintains one current stage without reordering its existing control flow:
 
 1. request reading and workspace-layout construction use `request-preflight`;
 2. private-workspace, canonical-path, and census checks use `workspace-preflight`;
 3. idempotent existing-state validation uses `existing-state`;
-4. baseline manifest, inventory, and discovery-alias checks use `baseline-inventory`;
-5. live source existence, type, containment, and profile checks use
-   `live-source-preflight`;
-6. source enumeration and baseline reconciliation use `corpus-reconciliation`; and
-7. pending documents, inventory replacement, and state publication use `publication`.
+4. baseline manifest reading, inventory loading, and discovery-alias resolution use
+   `baseline-inventory`;
+5. live source existence, type, containment, and profile checks use `live-source-preflight`;
+6. the following baseline manifest-artifact lookup returns to `baseline-inventory`;
+7. source enumeration and baseline reconciliation use `corpus-reconciliation`;
+8. the following destination-artifact ordinal parsing returns to `baseline-inventory`; and
+9. pending documents, inventory replacement, and state publication use `publication`.
 
 Only `AtlasSafetyException` receives a stage. Request, approval, I/O, cancellation, and unexpected
-exception mappings remain unchanged. An already categorized exception is not recategorized.
+exception mappings remain unchanged. The outer catch wraps only an `Unspecified` safety exception;
+an already categorized exception propagates unchanged.
 
 ## 4. Exact repository candidates
 
-`P` adds only this plan. `R` adds only the plan-review record.
+`P` adds only this plan. `P2` is the direct child of `P`, changes only this plan, and resolves the
+independent `P` review findings. `R` is the direct child of `P2` and adds only the plan-review
+record.
 
 `I` may change only:
 
@@ -106,8 +129,8 @@ tests/private/app/celesphonia-modifier/
     AtlasDiscoveryTests.cs
 ```
 
-`G` adds only the release-gate record. The immutable chain is `B -> P -> R -> I -> G`. Each role
-must be pushed and verified as the clean shared branch tip before the next role proceeds.
+`G` adds only the release-gate record. The immutable chain is `B -> P -> P2 -> R -> I -> G`. Each
+role must be pushed and verified as the clean shared branch tip before the next role proceeds.
 
 ## 5. Acceptance evidence
 
@@ -115,14 +138,16 @@ The candidate is acceptable when:
 
 1. each of the seven discovery boundaries tags a representative synthetic safety refusal with the
    exact expected enum value;
-2. one CLI theory proves exact UTF-8 bytes and exit code 5 for all seven stages and the fallback;
-3. injected private exception text and request paths are absent from both output streams;
-4. existing tests prove confirm, copy, and cleanup still use the generic safety diagnostic;
-5. no test reads private data or adds a private fixture;
-6. the original A2R3 compatibility tests and complete suite remain enabled and pass;
-7. locked restore, build, format, tests, smoke, reference, ref-bound HK, and Git candidate-integrity
+2. one CLI theory proves exact UTF-8 bytes and exit code 5 for all seven stages;
+3. separate cases prove both `Unspecified` and an unknown enum value use the generic fallback;
+4. an injected pre-categorized exception propagates without being recategorized;
+5. stage-bearing safety exceptions injected into confirm, copy, and cleanup remain generic;
+6. injected private exception text and request paths are absent from both output streams;
+7. no test reads private data or adds a private fixture;
+8. the original A2R3 compatibility tests and complete suite remain enabled and pass;
+9. locked restore, build, format, tests, smoke, reference, ref-bound HK, and Git candidate-integrity
    checks pass; and
-8. a fresh GPT-5.6 Sol reviewer returns exact `No findings` for the committed candidate.
+10. a fresh GPT-5.6 Sol reviewer returns exact `No findings` for the committed candidate.
 
 Per-throw matrices, lifecycle cross-products, coverage work, performance work, and duplicate harness
 tests are not required.
@@ -136,6 +161,15 @@ This plan grants no private-run authority. After verified shared `G`, update onl
 session script's commit binding to `G`, independently review the exact script, and return it to the
 project leader for one metadata-only retry. The project leader reports only the fixed stage token.
 
-To resume: verify `B`, commit and review `P`, commit the record-only `R`, implement and validate the
-exact path set, commit and independently review `I`, then commit the independently reviewed
+Retry handoff is closed:
+
+- success returns to the active A2 local-review procedure and reports only its approved aggregate
+  result;
+- a fixed stage token stops execution and scopes a new repository-safe diagnosis;
+- the generic safety fallback stops execution and reopens only the categorization gap; and
+- an approval, request, I/O, cancellation, or unexpected diagnostic follows the existing A2 stop
+  policy without disclosing additional detail.
+
+To resume: verify and independently review `P2`, commit the record-only `R`, implement and validate
+the exact path set, commit and independently review `I`, then commit the independently reviewed
 record-only `G`.
