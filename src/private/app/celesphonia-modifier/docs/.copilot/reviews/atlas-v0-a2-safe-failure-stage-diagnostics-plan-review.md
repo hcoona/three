@@ -4,17 +4,17 @@
 
 **Increment:** A2R4 - Safe Failure-Stage Diagnostics
 
-**Outcome:** Implementation ready only after verified shared `R`
+**Outcome:** Implementation ready only after verified shared `R2`
 
 **Final independent result:** `No findings`
 
 **Base:** `b8fb8eb5f84f41e6e7bf98a7aea7f3e7fa8b69bd`
 
-**Final plan candidate:** `a48a5ce8123064fa882fb51248285080bc9359d5`
+**Final plan candidate:** `ca0cab69357e112bc3136209b7567b26a7fff1f0`
 
-**Final plan tree:** `9fbf0aab281ad3c1ca10fbb3306fedb410cbf034`
+**Final plan tree:** `577168fb01d63fe1aafc9efab896db5c59c3de31`
 
-**Final plan blob:** `0c9793a0ec19a9d77703b27b58df8f5e5198cfd1`
+**Final plan blob:** `82513b49b8997604b5420dbe911c702ce5f22ee3`
 
 **Governing plan:**
 `../plans/atlas-v0-a2-safe-failure-stage-diagnostics.md`
@@ -22,6 +22,10 @@
 **Record reviewer:** `a2r4-plan-record-reviewer`
 
 **Record-review result:** `No findings`
+
+**Amendment record reviewer:** `a2r4-amendment-record-reviewer`
+
+**Amendment record-review result:** `No findings`
 
 ## 1. Exact plan binding
 
@@ -33,10 +37,15 @@ P   5355b462f83396c3bfabd793b8e05c160b7e1c78
 P2  fe30270cd4c6457db49d61ab49961e236c961c06
 P3  8a3935b9355dd067cf651aab53c9b21ae6773f1a
 P4  a48a5ce8123064fa882fb51248285080bc9359d5
+R   4da9acc622154c5ba4cb87d067070472b0128c66
+P5  6b93f6ee7a720a11674e53f39ced5b1140655840
+P6  ca0cab69357e112bc3136209b7567b26a7fff1f0
 ```
 
 Each role is the direct child of the preceding role. The cumulative no-renames `B..P4` diff adds
-only the governing plan. `P4` equaled the clean shared branch upstream at final review.
+only the governing plan; `P4..R` adds only this review record; and `R..P6` changes only the
+governing plan. `P6` equaled the shared branch upstream at final amendment review. Uncommitted
+implementation work was excluded from `P5`, `P6`, and the amendment review.
 
 The plan candidates bind these tree and plan-blob pairs:
 
@@ -48,19 +57,26 @@ The plan candidates bind these tree and plan-blob pairs:
   blob `d961b727e4628bb2402aa43a0c1492477d225683`.
 - `P4`: tree `9fbf0aab281ad3c1ca10fbb3306fedb410cbf034`;
   blob `0c9793a0ec19a9d77703b27b58df8f5e5198cfd1`.
+- `P5`: tree `391d360e0ce51e4d24df6efb216b56451f234c3b`;
+  blob `18b2778bb91c7b1e9a7309988348d998aacbd8f9`.
+- `P6`: tree `577168fb01d63fe1aafc9efab896db5c59c3de31`;
+  blob `82513b49b8997604b5420dbe911c702ce5f22ee3`.
 
 ## 2. Reviewer independence and disposition
 
 Every iteration used a fresh GPT-5.6 Sol subagent that did not author its reviewed candidate and
 received only repository-safe public sources.
 
-| Iteration | Reviewer                    | Result        |
-| --------: | --------------------------- | ------------- |
-|         1 | `a2r4-plan-reviewer`        | Five findings |
-|         2 | `a2r4-plan-rereviewer`      | Four findings |
-|         3 | `a2r4-plan-final-reviewer`  | Two findings  |
-|         4 | `a2r4-plan-gate-reviewer`   | `No findings` |
-|    Record | `a2r4-plan-record-reviewer` | `No findings` |
+|        Iteration | Reviewer                         | Result        |
+| ---------------: | -------------------------------- | ------------- |
+|                1 | `a2r4-plan-reviewer`             | Five findings |
+|                2 | `a2r4-plan-rereviewer`           | Four findings |
+|                3 | `a2r4-plan-final-reviewer`       | Two findings  |
+|                4 | `a2r4-plan-gate-reviewer`        | `No findings` |
+|                5 | `a2r4-amendment-reviewer`        | One finding   |
+|                6 | `a2r4-amendment-final-reviewer`  | `No findings` |
+|           Record | `a2r4-plan-record-reviewer`      | `No findings` |
+| Amendment record | `a2r4-amendment-record-reviewer` | `No findings` |
 
 Iteration 1 specified the additive cross-assembly API, corrected non-monotonic stage transitions,
 completed fallback and command-isolation evidence, added document metadata, and closed every retry
@@ -76,6 +92,12 @@ reachable failures. The final plan bytes end in LF.
 
 Iteration 4 reviewed the complete `P4` candidate and returned exact `No findings`.
 
+Iteration 5 confirmed that the existing direct apphost discovery smoke assertion must follow the
+new fixed `request-preflight` contract, accepted the one-file path expansion as necessary and
+proportionate, and found stale lifecycle text that still authorized implementation after `R`.
+`P6` corrected the lifecycle, status, immutable chain, and resume instructions to require `R2`.
+Iteration 6 reviewed the cumulative amendment and returned exact `No findings`.
+
 ## 3. Accepted scope and evidence
 
 The accepted increment:
@@ -85,7 +107,7 @@ The accepted increment:
 - preserves raw-message suppression and generic diagnostics for every other command;
 - changes no safety decision, request, schema, package, project, or private artifact;
 - uses representative synthetic stage refusals, fixed-byte CLI mapping, fallback, propagation,
-  isolation, documentation, and full regression evidence; and
+  isolation, direct apphost smoke, documentation, and full regression evidence; and
 - excludes per-throw matrices, telemetry, tracing, harnesses, private fixtures, and lifecycle
   cross-products.
 
@@ -94,6 +116,8 @@ The accepted increment:
 Planning and review accessed no `.private` path, request, game, save, manifest, inventory, hash,
 preservation content, generated output, or private value. The plan grants no private-run authority.
 
-This exact staged record must receive independent `No findings`, then be committed unchanged as
-`R`, the direct child of `P4`. The `P4..R` diff adds only this file. `R` must be pushed and verified
-as the clean shared branch tip before implementation begins.
+`R` was committed as the direct child of `P4` after independent record review. This amended staged
+record must receive independent `No findings`, then be committed unchanged as `R2`, the direct
+child of `P6`. The `P6..R2` diff updates only this file. `R2` must be pushed and verified as the
+shared branch tip before implementation is committed; uncommitted implementation work conveys no
+authority and must not enter `R2`.
