@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Contracts.AzureAuthDeployment;
 using Hcoona.AzureAuth.CredProvider.Platform.AzureAuthProvider;
@@ -13,6 +14,7 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 public sealed class AzureAuthIdentityProviderTests
 {
     private static readonly DateTimeOffset BoundAt = new(2026, 7, 20, 19, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Now = new(2026, 7, 20, 20, 0, 0, TimeSpan.Zero);
     private static readonly string[] LaunchEnvironmentKeys =
     [
         "LOCALAPPDATA",
@@ -213,7 +215,7 @@ public sealed class AzureAuthIdentityProviderTests
     {
         var inspector = new CountingInspector(CreateTrustedInspection());
         var runner = new FakeProcessRunner();
-        runner.EnqueueResult(new ProcessResult(0, "opaque-token", string.Empty));
+        runner.EnqueueResult(new ProcessResult(0, CreateJwt(), string.Empty));
         var provider = CreateProvider(inspector, runner);
 
         AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
@@ -456,7 +458,8 @@ public sealed class AzureAuthIdentityProviderTests
         {
             var inspector = new CountingInspector(CreateTrustedInspection());
             var runner = new FakeProcessRunner();
-            runner.EnqueueResult(new ProcessResult(0, "opaque-token\r\n", "secret-stderr"));
+            string jwt = CreateJwt();
+            runner.EnqueueResult(new ProcessResult(0, jwt + "\r\n", "secret-stderr"));
             AzureAuthProcessLaunchOptions launchOptions = CreateLaunchOptions() with
             {
                 Timeout = TimeSpan.FromMinutes(5),
@@ -520,11 +523,11 @@ public sealed class AzureAuthIdentityProviderTests
 
             Assert.Equal(AcquiredAccessTokenStatus.Success, result.Status);
             AcquiredAccessToken token = Assert.IsType<AcquiredAccessToken>(result.AccessToken);
-            Assert.Equal("opaque-token", token.Token.Value);
+            Assert.Equal(jwt, token.Token.Value);
             Assert.Null(token.AccountId);
             Assert.Equal("tenant-1", token.TenantId);
             Assert.Equal(CreateTrustedTrustResult(CreateDeploymentConfig()).DeploymentKey, token.DeploymentKey);
-            Assert.Null(token.ExpiresAt);
+            Assert.Equal(Now.AddHours(1), token.ExpiresAt);
         }
         finally
         {
@@ -544,7 +547,7 @@ public sealed class AzureAuthIdentityProviderTests
         };
         var inspector = new CountingInspector(AzureAuthArtifactInspection.Trusted(evidence));
         var runner = new FakeProcessRunner();
-        runner.EnqueueResult(new ProcessResult(0, "opaque-token\n", string.Empty));
+        runner.EnqueueResult(new ProcessResult(0, CreateJwt() + "\n", string.Empty));
         AzureAuthProviderConfig config = CreateAzureAuthProviderConfig();
         AzureAuthTrustResult trust = AzureAuthTrustPolicy.Evaluate(
             config.DeploymentConfig!,
@@ -780,7 +783,8 @@ public sealed class AzureAuthIdentityProviderTests
             binding ?? CreateBoundBinding(config),
             launchOptions ?? CreateLaunchOptions(),
             inspector,
-            runner
+            runner,
+            new FixedTimeProvider(Now)
         );
     }
 
@@ -856,6 +860,21 @@ public sealed class AzureAuthIdentityProviderTests
             ProvenanceIdentifier = "foundation/wp2",
         };
 
+    private static string CreateJwt(int unique = 0)
+    {
+        string header = Base64Url("""{"alg":"RS256","typ":"JWT"}""");
+        string payload = Base64Url(
+            $$"""{"aud":"{{AzureAuthIdentityProvider.AzureDevOpsResourceId}}","tid":"tenant-1","iat":{{Now.AddMinutes(-1).ToUnixTimeSeconds()}},"nbf":{{Now.AddMinutes(-1).ToUnixTimeSeconds()}},"exp":{{Now.AddHours(1).ToUnixTimeSeconds()}},"jti":{{unique}}}""");
+        return $"{header}.{payload}.c2lnbmF0dXJl";
+    }
+
+    private static string Base64Url(string value) =>
+        Convert
+            .ToBase64String(Encoding.UTF8.GetBytes(value))
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+
     private static AzureAuthArtifactInspection CreateTrustedInspection() =>
         AzureAuthArtifactInspection.Trusted(CreateMatchingEvidence(CreateDeploymentConfig()));
 
@@ -927,7 +946,12 @@ public sealed class AzureAuthIdentityProviderTests
 
             int tokenIndex = Interlocked.Increment(ref _tokenCounter);
             await Task.Delay(TimeSpan.FromMilliseconds(25), cancellationToken).ConfigureAwait(false);
-            return new ProcessResult(0, $"token-{tokenIndex}\n", "ignored-stderr");
+            return new ProcessResult(0, CreateJwt(tokenIndex) + "\n", "ignored-stderr");
         }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 }

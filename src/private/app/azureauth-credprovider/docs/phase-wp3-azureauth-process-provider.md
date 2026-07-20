@@ -161,8 +161,8 @@ job-object or equivalent whole-tree containment when that guarantee is needed.
 
 ## Raw Token Output Rules
 
-WP3 treats AzureAuth token stdout as opaque token text and validates only the
-transport shape:
+WP3's process boundary first treats AzureAuth stdout as opaque token text and
+validates the transport shape:
 
 - allow no line ending, one LF, or one CRLF, trimmed once
 - reject a bare CR
@@ -172,17 +172,14 @@ transport shape:
 - reject control characters
 - reject oversized output through runner bounds
 
-WP3 does not:
-
-- parse JWT claims
-- infer account or tenant from the token
-- exchange the token into final ecosystem credentials
-- derive expiry from token contents
-
-The tenant and deployment key come from constraints actually enforced for the
-launch. AzureAuth `aad --tenant` does not constrain the bound account, so account
-identity remains unknown (`null`). Expiry also remains unknown (`null`). WP3 does
-not parse JWTs to infer any of these fields.
+WP4 subsequently requires strict Azure DevOps JWT claim-consistency validation
+before returning the acquired token and derives `iat`, `nbf`, and `exp`
+metadata. This is not local signature authentication; see
+[`phase-wp4-token-materialization.md`](phase-wp4-token-materialization.md).
+The tenant and deployment key still come from constraints enforced for launch,
+not from JWT claims. AzureAuth `aad --tenant` does not constrain the bound
+account, so account identity remains unknown (`null`). Ecosystem credential
+exchange remains outside the WP3 provider.
 
 All currently accepted cache policies disable AzureAuth's upstream MSAL file
 cache with the explicit product-controlled value above. A
@@ -215,6 +212,7 @@ WP3 public result codes are stable product strings, including:
 - `AzureAuthProcessOutputTooLarge`
 - `AzureAuthProcessOutputInvalid`
 - `AzureAuthTokenOutputInvalid`
+- `AzureAuthTokenClaimsInconsistent`
 - `AzureAuthProviderFailure`
 
 Raw stderr and token content are never copied into these public errors.

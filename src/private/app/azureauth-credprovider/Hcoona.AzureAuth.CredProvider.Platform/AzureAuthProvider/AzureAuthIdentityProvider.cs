@@ -2,6 +2,7 @@ using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Contracts.AzureAuthDeployment;
 using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Hcoona.AzureAuth.CredProvider.Platform.Processes;
+using Hcoona.AzureAuth.CredProvider.Platform.TokenMaterialization;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.AzureAuthProvider;
 
@@ -23,6 +24,7 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
     private readonly AzureAuthProviderConfig _providerConfig;
     private readonly AzureAuthProcessLaunchOptions _launchOptions;
     private readonly IProcessRunner _processRunner;
+    private readonly TimeProvider _timeProvider;
     private readonly IAzureAuthArtifactTrustInspector _trustInspector;
 
     public AzureAuthIdentityProvider(
@@ -30,7 +32,8 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
         AzureAuthBinding binding,
         AzureAuthProcessLaunchOptions launchOptions,
         IAzureAuthArtifactTrustInspector? trustInspector = null,
-        IProcessRunner? processRunner = null
+        IProcessRunner? processRunner = null,
+        TimeProvider? timeProvider = null
     )
     {
         ArgumentNullException.ThrowIfNull(providerConfig);
@@ -46,6 +49,7 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
         _launchOptions = launchOptions;
         _trustInspector = trustInspector ?? new DeferredAzureAuthArtifactTrustInspector();
         _processRunner = processRunner ?? new SystemProcessRunner();
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async ValueTask<AcquiredAccessTokenResult> AcquireAccessTokenAsync(
@@ -343,7 +347,7 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
         );
     }
 
-    private static AcquiredAccessTokenResult MapProcessResult(
+    private AcquiredAccessTokenResult MapProcessResult(
         ProcessResult processResult,
         AzureAuthLaunchAuthorization authorization
     ) =>
@@ -390,7 +394,7 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
             ),
         };
 
-    private static AcquiredAccessTokenResult ValidateSuccessfulProcessOutput(
+    private AcquiredAccessTokenResult ValidateSuccessfulProcessOutput(
         string standardOutput,
         AzureAuthLaunchAuthorization authorization
     )
@@ -405,6 +409,22 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
             );
         }
 
+        if (
+            !AzureDevOpsJwtClaimConsistencyValidator.TryValidate(
+                token,
+                authorization.TenantId,
+                _timeProvider.GetUtcNow(),
+                out AzureDevOpsJwtClaimConsistency? consistency)
+            || consistency is null
+        )
+        {
+            return Failure(
+                AcquiredAccessTokenStatus.OutputRejected,
+                "AzureAuthTokenClaimsInconsistent",
+                "AzureAuth token claim consistency validation failed."
+            );
+        }
+
         return AcquiredAccessTokenResult.Success(
             new AcquiredAccessToken
             {
@@ -412,7 +432,11 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
                 TenantId = authorization.TenantId,
                 DeploymentKey = authorization.DeploymentKey,
                 Token = new SecretText { Value = token },
-                ExpiresAt = null,
+                IssuedAt = consistency.IssuedAt,
+                NotBefore = consistency.NotBefore,
+                ExpiresAt = consistency.ExpiresAt,
+                Provenance = AccessTokenAcquisitionProvenance.AzureAuthProcess,
+                ClaimValidation = AccessTokenClaimValidation.AzureDevOpsClaimConsistency,
             }
         );
     }

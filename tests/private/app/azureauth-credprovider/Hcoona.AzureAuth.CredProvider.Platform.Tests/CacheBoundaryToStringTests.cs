@@ -100,6 +100,8 @@ public sealed class CacheBoundaryToStringTests
             DeploymentKey = "deployment-key",
             Token = secret,
             ExpiresAt = null,
+            Provenance = AccessTokenAcquisitionProvenance.AzureAuthProcess,
+            ClaimValidation = AccessTokenClaimValidation.AzureDevOpsClaimConsistency,
         };
 
         string secretText = secret.ToString();
@@ -112,14 +114,16 @@ public sealed class CacheBoundaryToStringTests
         Assert.DoesNotContain(secret.Value, resultText, StringComparison.Ordinal);
         Assert.Equal(
             "AcquiredAccessToken { AccountId = <unknown>, TenantId = tenant-1, "
-                + "DeploymentKey = deployment-key, "
-                + "Token = <redacted>, ExpiresAt = <unknown> }",
+                + "DeploymentKey = deployment-key, Token = <redacted>, IssuedAt = <unknown>, "
+                + "NotBefore = <unknown>, ExpiresAt = <unknown>, Provenance = AzureAuthProcess, "
+                + "ClaimValidation = AzureDevOpsClaimConsistency }",
             tokenText);
         Assert.Equal(
             "AcquiredAccessTokenResult { Status = Success, AccessToken = "
                 + "AcquiredAccessToken { AccountId = <unknown>, TenantId = tenant-1, "
-                + "DeploymentKey = deployment-key, "
-                + "Token = <redacted>, ExpiresAt = <unknown> } }",
+                + "DeploymentKey = deployment-key, Token = <redacted>, IssuedAt = <unknown>, "
+                + "NotBefore = <unknown>, ExpiresAt = <unknown>, Provenance = AzureAuthProcess, "
+                + "ClaimValidation = AzureDevOpsClaimConsistency } }",
             resultText);
     }
 
