@@ -1,6 +1,6 @@
 # Atlas V0 A2 Intake and Safety Plan
 
-**Status:** Active subject to the post-patch baseline correction gate
+**Status:** Active; A2R3 metadata-only discovery authority requires verified shared `G`
 
 **Increment:** A2 - Intake and Safety Harness
 
@@ -16,6 +16,11 @@
 > wording and the later package-provenance amendment. The patch package and installation history are
 > descriptive context, not intake identity or authorization evidence. The original A2 source remains
 > unchanged, but private discovery requires the correction plan review and release gate.
+> **Released-A0 workspace compatibility**
+> `atlas-v0-a2-released-a0-workspace-compatibility.md` governs the exact A2R3 census correction.
+> The correction recognizes only the released A0 `intake/private-provenance.json`,
+> `copies/save-snapshot-20260717T210224Z`, and top-level `decoded`, `evidence`, `agent-envelopes`,
+> and `validation` entries. Only verified shared release gate `G` renews metadata-only discovery.
 
 ## 1. Outcome
 
@@ -268,6 +273,10 @@ the parent `.private\.gitignore` to be an ordinary non-reparse file whose effect
 
 Requests and operational outputs are private. Their C# types and synthetic examples are
 repository-safe; no real request or path enters Git.
+
+Every A2 command admits only those exact released-A0 names as ordinary, non-reparse, top-level
+evidence. A2 does not open, read, or enumerate their content. Unknown siblings, near-match names,
+wrong entry types, and unexpected A2-managed entries still fail closed.
 
 ## 7. Path policy
 

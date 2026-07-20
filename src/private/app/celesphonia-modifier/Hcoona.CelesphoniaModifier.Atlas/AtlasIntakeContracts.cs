@@ -48,6 +48,13 @@ public static class AtlasIntakeContracts
 
     internal const string DeploymentRootSaveRole = "deployment-root-save";
     internal const string WebRootSaveRole = "web-root-save";
+    internal const string ReleasedA0PrivateProvenanceFileName = "private-provenance.json";
+    internal const string ReleasedA0PreservationSnapshotDirectoryName =
+        "save-snapshot-20260717T210224Z";
+    internal const string ReleasedA0DecodedDirectoryName = "decoded";
+    internal const string ReleasedA0EvidenceDirectoryName = "evidence";
+    internal const string ReleasedA0AgentEnvelopesDirectoryName = "agent-envelopes";
+    internal const string ReleasedA0ValidationDirectoryName = "validation";
     internal const string IncludeSaveRootDecision = "include-save-root";
     internal const string ExcludeNoSaveInputsDecision = "exclude-no-save-inputs";
     internal const string IncludeSaveDecision = "include-save";

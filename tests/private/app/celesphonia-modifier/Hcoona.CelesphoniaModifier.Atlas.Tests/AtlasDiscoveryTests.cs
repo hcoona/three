@@ -1463,6 +1463,182 @@ public sealed class AtlasDiscoveryTests
                 TestContext.Current.CancellationToken).AsTask());
     }
 
+    [Fact]
+    public async Task DiscoverAsyncAdmitsExactReleasedA0EntriesWithoutReadingTheirContent()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        (string privateProvenancePath, string[] opaqueDirectories) =
+            await AddReleasedA0EvidenceAsync(workspace);
+
+        bool IsOpaqueContentPath(string path) =>
+            AtlasIntakeContracts.PathEquals(path, privateProvenancePath)
+            || opaqueDirectories.Any(root => AtlasDiscovery.ContainsPath(root, path));
+
+        bool IsOpaqueDirectoryPath(string path) =>
+            opaqueDirectories.Any(root => AtlasDiscovery.ContainsPath(root, path));
+
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            readAllBytesAsync: (path, cancellationToken) =>
+                IsOpaqueContentPath(path)
+                    ? ValueTask.FromException<byte[]>(
+                        new InvalidOperationException("Opaque content was read."))
+                    : AtlasIoSeams.Default.ReadAllBytesAsync(path, cancellationToken),
+            readAllText: path =>
+                IsOpaqueContentPath(path)
+                    ? throw new InvalidOperationException("Opaque content was read.")
+                    : AtlasIoSeams.Default.ReadAllText(path),
+            enumerateFileSystemEntries: (path, searchOption) =>
+                IsOpaqueDirectoryPath(path)
+                    ? throw new InvalidOperationException("Opaque content was enumerated.")
+                    : AtlasIoSeams.Default.EnumerateFileSystemEntries(path, searchOption),
+            openFile: (path, mode, access, share, options) =>
+                IsOpaqueContentPath(path)
+                    ? throw new InvalidOperationException("Opaque content was opened.")
+                    : AtlasIoSeams.Default.OpenFile(path, mode, access, share, options));
+
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            io,
+            TestContext.Current.CancellationToken);
+    }
+
+    [Theory]
+    [InlineData("survey-root", AtlasIntakeContracts.ReleasedA0DecodedDirectoryName, true)]
+    [InlineData("intake", AtlasIntakeContracts.ReleasedA0PrivateProvenanceFileName, false)]
+    [InlineData(
+        "copies",
+        AtlasIntakeContracts.ReleasedA0PreservationSnapshotDirectoryName,
+        true)]
+    public async Task DiscoverAsyncRejectsReleasedA0NearMatch(
+        string boundary,
+        string entryName,
+        bool isDirectory)
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        string nearMatchPath = Path.Combine(
+            GetReleasedA0BoundaryDirectory(workspace, boundary),
+            entryName + ".backup");
+        if (isDirectory)
+        {
+            Directory.CreateDirectory(nearMatchPath);
+        }
+        else
+        {
+            await File.WriteAllTextAsync(
+                nearMatchPath,
+                "near-match",
+                TestContext.Current.CancellationToken);
+        }
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+    }
+
+    [Theory]
+    [InlineData("survey-root", AtlasIntakeContracts.ReleasedA0DecodedDirectoryName, false)]
+    [InlineData("intake", AtlasIntakeContracts.ReleasedA0PrivateProvenanceFileName, true)]
+    [InlineData(
+        "copies",
+        AtlasIntakeContracts.ReleasedA0PreservationSnapshotDirectoryName,
+        false)]
+    public async Task DiscoverAsyncRejectsReleasedA0EntryWithWrongType(
+        string boundary,
+        string entryName,
+        bool isDirectory)
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        string wrongTypePath = Path.Combine(
+            GetReleasedA0BoundaryDirectory(workspace, boundary),
+            entryName);
+        if (isDirectory)
+        {
+            Directory.CreateDirectory(wrongTypePath);
+        }
+        else
+        {
+            await File.WriteAllTextAsync(
+                wrongTypePath,
+                "wrong-type",
+                TestContext.Current.CancellationToken);
+        }
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+    }
+
+    [Fact]
+    public async Task DiscoverAsyncRejectsReparseBackedReleasedA0Entry()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        string targetPath = Path.Combine(
+            workspace.WorkspaceRoot,
+            AtlasIntakeContracts.ReleasedA0DecodedDirectoryName);
+        Directory.CreateDirectory(targetPath);
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            getAttributes: path =>
+                AtlasIntakeContracts.PathEquals(path, targetPath)
+                    ? AtlasIoSeams.Default.GetAttributes(path) | FileAttributes.ReparsePoint
+                    : AtlasIoSeams.Default.GetAttributes(path));
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                io,
+                TestContext.Current.CancellationToken).AsTask());
+    }
+
+    private static string GetReleasedA0BoundaryDirectory(
+        AtlasSyntheticWorkspace workspace,
+        string boundary) =>
+        boundary switch
+        {
+            "survey-root" => workspace.WorkspaceRoot,
+            "intake" => workspace.Layout.IntakeDirectory,
+            "copies" => workspace.Layout.CopiesDirectory,
+            _ => throw new InvalidOperationException("Unsupported boundary."),
+        };
+
+    private static async Task<(string PrivateProvenancePath, string[] OpaqueDirectories)>
+        AddReleasedA0EvidenceAsync(
+        AtlasSyntheticWorkspace workspace)
+    {
+        string WorkspacePath(string name) => Path.Combine(workspace.WorkspaceRoot, name);
+
+        string privateProvenancePath = Path.Combine(
+            workspace.Layout.IntakeDirectory,
+            AtlasIntakeContracts.ReleasedA0PrivateProvenanceFileName);
+        await File.WriteAllTextAsync(
+            privateProvenancePath,
+            "opaque",
+            TestContext.Current.CancellationToken);
+
+        string[] opaqueDirectories =
+        [
+            WorkspacePath(AtlasIntakeContracts.ReleasedA0DecodedDirectoryName),
+            WorkspacePath(AtlasIntakeContracts.ReleasedA0EvidenceDirectoryName),
+            WorkspacePath(AtlasIntakeContracts.ReleasedA0AgentEnvelopesDirectoryName),
+            WorkspacePath(AtlasIntakeContracts.ReleasedA0ValidationDirectoryName),
+            Path.Combine(
+                workspace.Layout.CopiesDirectory,
+                AtlasIntakeContracts.ReleasedA0PreservationSnapshotDirectoryName),
+        ];
+        foreach (string opaqueDirectory in opaqueDirectories)
+        {
+            string nestedDirectory = Path.Combine(opaqueDirectory, "nested");
+            Directory.CreateDirectory(nestedDirectory);
+            await File.WriteAllTextAsync(
+                Path.Combine(nestedDirectory, "sentinel.bin"),
+                "opaque",
+                TestContext.Current.CancellationToken);
+        }
+
+        return (privateProvenancePath, opaqueDirectories);
+    }
+
     private static AtlasManifestDefinitionGroup CreateDefinitionGroup(
         string groupId,
         string selectionRule,

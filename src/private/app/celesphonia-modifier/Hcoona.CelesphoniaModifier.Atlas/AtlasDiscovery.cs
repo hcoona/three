@@ -1591,13 +1591,22 @@ public static class AtlasDiscovery
         ValidateDirectoryEntryCensus(
             layout.WorkspaceRoot,
             [],
-            ["intake", "copies", "cleanup"],
+            [
+                "intake",
+                "copies",
+                "cleanup",
+                AtlasIntakeContracts.ReleasedA0DecodedDirectoryName,
+                AtlasIntakeContracts.ReleasedA0EvidenceDirectoryName,
+                AtlasIntakeContracts.ReleasedA0AgentEnvelopesDirectoryName,
+                AtlasIntakeContracts.ReleasedA0ValidationDirectoryName,
+            ],
             io);
 
         HashSet<string> intakeFiles = new(StringComparer.OrdinalIgnoreCase)
         {
             Path.GetFileName(layout.CanonicalBaselineManifestPath),
             Path.GetFileName(layout.CanonicalInventoryPath),
+            AtlasIntakeContracts.ReleasedA0PrivateProvenanceFileName,
         };
         if (completedStateRevision >= AtlasIntakeContracts.DiscoveredStateRevision
             || (allowCurrentPhaseTransients
@@ -1757,7 +1766,10 @@ public static class AtlasDiscovery
             throw new AtlasSafetyException("The incomplete copy path is invalid.");
         }
 
-        HashSet<string> allowedDirectories = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> allowedDirectories = new(StringComparer.OrdinalIgnoreCase)
+        {
+            AtlasIntakeContracts.ReleasedA0PreservationSnapshotDirectoryName,
+        };
         if (completedStateRevision >= AtlasIntakeContracts.QualifiedStateRevision
             || allowQualifiedPhaseTransients)
         {
