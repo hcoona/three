@@ -27,8 +27,8 @@ importers:
         specifier: ^2.0.0
         version: 2.0.0
       markdownlint-cli2:
-        specifier: 0.23.0
-        version: 0.23.0
+        specifier: 0.23.1
+        version: 0.23.1
       prettier:
         specifier: 3.9.5
         version: 3.9.5
