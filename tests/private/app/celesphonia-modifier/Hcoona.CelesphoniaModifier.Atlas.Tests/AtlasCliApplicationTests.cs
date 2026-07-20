@@ -325,6 +325,15 @@ public sealed class AtlasCliApplicationTests
     [InlineData(
         AtlasDiscoveryFailureStage.Publication,
         "Safety check failed: publication.\n")]
+    [InlineData(
+        AtlasDiscoveryFailureStage.PrivateWorkspacePolicy,
+        "Safety check failed: private-workspace-policy.\n")]
+    [InlineData(
+        AtlasDiscoveryFailureStage.DiscoveryCanonicalPaths,
+        "Safety check failed: canonical-paths.\n")]
+    [InlineData(
+        AtlasDiscoveryFailureStage.CommandWorkspaceCensus,
+        "Safety check failed: workspace-census.\n")]
     public async Task IntakeDiscoverySafetyFailureWritesFixedStageBytes(
         AtlasDiscoveryFailureStage stage,
         string expectedDiagnostic)

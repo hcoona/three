@@ -35,8 +35,10 @@ semantic scanning, write authority, WinUI, network access, and private data from
   harness and removes package-provenance machinery that is not needed for read-only intake.
 - `plans/atlas-v0-a2-released-a0-workspace-compatibility.md` is the released subordinate A2R3
   correction for exact, opaque compatibility with retained released-A0 workspace entries.
-- `plans/atlas-v0-a2-safe-failure-stage-diagnostics.md` is the active subordinate A2R4 correction
+- `plans/atlas-v0-a2-safe-failure-stage-diagnostics.md` is the released subordinate A2R4 correction
   that permits only fixed, payload-free stage tokens for `intake-discover` safety refusals.
+- `plans/atlas-v0-a2-workspace-preflight-refinement.md` is the active subordinate A2R5 correction
+  that refines only the observed workspace-preflight call boundary.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -67,7 +69,11 @@ semantic scanning, write authority, WinUI, network access, and private data from
   correction completion and renewed metadata-only discovery authority.
 - `reviews/atlas-v0-a2-safe-failure-stage-diagnostics-plan-review.md` binds the independently
   accepted A2R4 plan and authorizes only its bounded implementation.
-- `reviews/atlas-v0-a2-safe-failure-stage-diagnostics-release-gate.md` will authorize one further
+- `reviews/atlas-v0-a2-safe-failure-stage-diagnostics-release-gate.md` established A2R4 completion.
+  Its authorized retry stopped at the fixed `workspace-preflight` boundary.
+- `reviews/atlas-v0-a2-workspace-preflight-refinement-plan-review.md` binds the independently
+  accepted A2R5 plan and authorizes only its bounded implementation.
+- `reviews/atlas-v0-a2-workspace-preflight-refinement-release-gate.md` will authorize one further
   metadata-only discovery attempt only after verified shared `G`; implementation candidate `I`
   alone conveys no private-run authority.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` will use the original A2 repository-safe fields.

@@ -71,6 +71,12 @@ internal static class AtlasCliApplication
         "Safety check failed: corpus-reconciliation.\n"u8.ToArray();
     private static readonly byte[] PublicationSafetyFailureBytes =
         "Safety check failed: publication.\n"u8.ToArray();
+    private static readonly byte[] PrivateWorkspacePolicySafetyFailureBytes =
+        "Safety check failed: private-workspace-policy.\n"u8.ToArray();
+    private static readonly byte[] DiscoveryCanonicalPathsSafetyFailureBytes =
+        "Safety check failed: canonical-paths.\n"u8.ToArray();
+    private static readonly byte[] CommandWorkspaceCensusSafetyFailureBytes =
+        "Safety check failed: workspace-census.\n"u8.ToArray();
     private static readonly byte[] ApprovalRequiredBytes = "Approval required.\n"u8.ToArray();
     private static readonly byte[] IntakeDiscoverySuccessBytes =
         "Intake discovery completed.\n"u8.ToArray();
@@ -360,6 +366,12 @@ internal static class AtlasCliApplication
             AtlasDiscoveryFailureStage.CorpusReconciliation =>
                 CorpusReconciliationSafetyFailureBytes,
             AtlasDiscoveryFailureStage.Publication => PublicationSafetyFailureBytes,
+            AtlasDiscoveryFailureStage.PrivateWorkspacePolicy =>
+                PrivateWorkspacePolicySafetyFailureBytes,
+            AtlasDiscoveryFailureStage.DiscoveryCanonicalPaths =>
+                DiscoveryCanonicalPathsSafetyFailureBytes,
+            AtlasDiscoveryFailureStage.CommandWorkspaceCensus =>
+                CommandWorkspaceCensusSafetyFailureBytes,
             _ => SafetyFailureBytes,
         };
 

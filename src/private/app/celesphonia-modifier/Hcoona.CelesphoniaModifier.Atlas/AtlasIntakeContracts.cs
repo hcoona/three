@@ -3605,6 +3605,9 @@ public enum AtlasDiscoveryFailureStage
     LiveSourcePreflight = 5,
     CorpusReconciliation = 6,
     Publication = 7,
+    PrivateWorkspacePolicy = 8,
+    DiscoveryCanonicalPaths = 9,
+    CommandWorkspaceCensus = 10,
 }
 
 public sealed class AtlasSafetyException : Exception

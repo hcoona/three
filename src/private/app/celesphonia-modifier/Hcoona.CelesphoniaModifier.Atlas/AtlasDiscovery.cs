@@ -37,9 +37,11 @@ public static class AtlasDiscovery
                 request.ProjectRoot,
                 request.WorkspaceRoot,
                 request.SurveyAlias);
-            failureStage = AtlasDiscoveryFailureStage.WorkspacePreflight;
+            failureStage = AtlasDiscoveryFailureStage.PrivateWorkspacePolicy;
             ValidatePrivateWorkspace(layout, io);
+            failureStage = AtlasDiscoveryFailureStage.DiscoveryCanonicalPaths;
             ValidateDiscoveryCanonicalPaths(loadedRequest.AbsolutePath, request, layout, io);
+            failureStage = AtlasDiscoveryFailureStage.CommandWorkspaceCensus;
             ValidateCommandWorkspaceCensus(
                 layout,
                 AtlasIntakeContracts.DiscoveredStateRevision,

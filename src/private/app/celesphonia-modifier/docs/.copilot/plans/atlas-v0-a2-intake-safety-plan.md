@@ -1,6 +1,6 @@
 # Atlas V0 A2 Intake and Safety Plan
 
-**Status:** Active; A2R4 safe-stage diagnostics require verified shared `G` before discovery retry
+**Status:** Active; A2R5 workspace refinement requires verified shared `G` before discovery retry
 
 **Increment:** A2 - Intake and Safety Harness
 
@@ -25,6 +25,10 @@
 > `atlas-v0-a2-safe-failure-stage-diagnostics.md` governs the A2R4 discover-only diagnostic
 > correction. It may expose only a fixed stage token for a categorized discovery safety refusal.
 > Only verified shared release gate `G` authorizes another private metadata-only discovery attempt.
+> **Workspace-preflight refinement**
+> `atlas-v0-a2-workspace-preflight-refinement.md` governs the A2R5 refinement of the observed
+> `workspace-preflight` refusal into three fixed call-boundary tokens. It changes no validator or
+> safety decision. Only verified shared release gate `G` authorizes another metadata-only attempt.
 
 ## 1. Outcome
 
@@ -393,12 +397,17 @@ Safety check failed: baseline-inventory.
 Safety check failed: live-source-preflight.
 Safety check failed: corpus-reconciliation.
 Safety check failed: publication.
+Safety check failed: private-workspace-policy.
+Safety check failed: canonical-paths.
+Safety check failed: workspace-census.
 ```
 
-An unspecified or unknown discovery stage retains `Safety check failed.`. `empty-survey`,
-`intake-confirm`, `intake-copy`, and `cleanup-preflight` also retain the generic diagnostic even if
-an internal exception carries a discovery stage. These tokens identify only the fixed control-flow
-boundary; they never incorporate exception text or runtime data.
+The legacy `workspace-preflight` line remains mapped for compatibility; new discovery execution
+uses the three refined tokens. An unspecified or unknown discovery stage retains
+`Safety check failed.`. `empty-survey`, `intake-confirm`, `intake-copy`, and `cleanup-preflight`
+also retain the generic diagnostic even if an internal exception carries a discovery stage. These
+tokens identify only the fixed control-flow boundary; they never incorporate exception text or
+runtime data.
 
 Missing or inaccessible requests, sharing violations, and failed output operations are I/O
 failures. Invalid JSON, schema versions, properties, values, and path syntax are argument failures.

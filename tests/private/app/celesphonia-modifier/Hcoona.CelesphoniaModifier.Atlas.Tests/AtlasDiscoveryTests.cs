@@ -303,6 +303,25 @@ public sealed class AtlasDiscoveryTests
     }
 
     [Fact]
+    public async Task DiscoverAsyncCategorizesInvalidPrivateWorkspacePolicy()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            readAllText: path =>
+                AtlasIntakeContracts.PathEquals(path, workspace.Layout.PrivateGitIgnorePath)
+                    ? "invalid"
+                    : AtlasIoSeams.Default.ReadAllText(path));
+
+        AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                io,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(AtlasDiscoveryFailureStage.PrivateWorkspacePolicy, exception.DiscoveryStage);
+    }
+
+    [Fact]
     public async Task DiscoverAsyncPublishesPendingManifestRootMapCopyPlanAndState()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
@@ -1502,10 +1521,12 @@ public sealed class AtlasDiscoveryTests
         };
         workspace.WriteRequest(request);
 
-        await Assert.ThrowsAsync<AtlasSafetyException>(
+        AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
             () => AtlasDiscovery.DiscoverAsync(
                 workspace.Layout.CanonicalDiscoverRequestPath,
                 TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(AtlasDiscoveryFailureStage.DiscoveryCanonicalPaths, exception.DiscoveryStage);
     }
 
     [Fact]
@@ -1617,7 +1638,7 @@ public sealed class AtlasDiscoveryTests
                 workspace.Layout.CanonicalDiscoverRequestPath,
                 TestContext.Current.CancellationToken).AsTask());
 
-        Assert.Equal(AtlasDiscoveryFailureStage.WorkspacePreflight, exception.DiscoveryStage);
+        Assert.Equal(AtlasDiscoveryFailureStage.CommandWorkspaceCensus, exception.DiscoveryStage);
     }
 
     [Theory]
