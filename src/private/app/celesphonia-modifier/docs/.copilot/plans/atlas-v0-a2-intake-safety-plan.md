@@ -1,6 +1,6 @@
 # Atlas V0 A2 Intake and Safety Plan
 
-**Status:** Private discovery suspended pending the official-patch provenance amendment
+**Status:** Active subject to the post-patch baseline correction gate
 
 **Increment:** A2 - Intake and Safety Harness
 
@@ -10,17 +10,12 @@
 
 **Implementation diff base:** The verified A2 plan-review record commit
 
-> **Pending official-patch provenance amendment**
-> The released A0 corpus came from Steam application `1786790`, public build `13624401`, after the
-> operator applied the exact retained Kagura Games `CN Patch v1.05.2` package. Section 10's
-> unmodified-installation wording is therefore inaccurate. The
-> `atlas-v0-a2-patch-provenance-amendment.md` supersedes that source-profile, provenance,
-> request-preparation, and narrow execution-operator scope after its plan-review record is verified.
-> The project leader's private audit and explicit approval boundary remains unchanged.
->
-> Tool-safety record `9edbd57b4f44e76de321e06be81a581ed11b0017` remains historical evidence
-> for its exact candidate but no longer authorizes private discovery. A fresh amended source-safety
-> record is required.
+> **Post-patch baseline correction**
+> The approved source is the observed installed file tree after an off-tree patch was applied.
+> `atlas-v0-a2-post-patch-baseline-correction.md` supersedes the inaccurate unmodified-installation
+> wording and the later package-provenance amendment. The patch package and installation history are
+> descriptive context, not intake identity or authorization evidence. The original A2 source remains
+> unchanged, but private discovery requires the correction plan and fresh tool-safety records.
 
 ## 1. Outcome
 

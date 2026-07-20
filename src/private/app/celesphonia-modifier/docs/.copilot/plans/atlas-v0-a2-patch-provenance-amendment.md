@@ -1,6 +1,6 @@
 # Atlas V0 A2 Official-Patch Provenance Amendment
 
-**Status:** Governing only through an exact verified plan-review record; no private-run authority
+**Status:** Partially superseded historical context; no implementation or private-run authority
 
 **Increment:** A2R1 - Official-Patch Provenance
 
@@ -14,6 +14,13 @@
 
 **Planned review record:**
 `../reviews/atlas-v0-a2-patch-provenance-plan-review.md`
+
+> **Superseded scope**
+> `atlas-v0-a2-post-patch-baseline-correction.md` supersedes every package hash, installation
+> attestation, request-preparation, review-receipt, fixed-launcher, custody, recovery, schema,
+> implementation, test, validation, and Git-chain requirement in this amendment. The public fact
+> that the observed baseline followed an off-tree patch remains historical context only. The
+> amendment's implementation candidate was never committed and carries no authority.
 
 ## 1. Reason for the amendment
 

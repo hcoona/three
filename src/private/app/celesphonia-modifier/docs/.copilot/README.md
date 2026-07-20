@@ -30,10 +30,12 @@ semantic scanning, write authority, WinUI, network access, and private data from
 - `plans/atlas-v0-a2-intake-safety-plan.md` defines A2's trusted-local-filesystem intake,
   human-approval boundary, copy qualification, locator redaction, lifecycle behavior, and staged
   safety and release gates once its plan-review record authorizes implementation.
-- `plans/atlas-v0-a2-patch-provenance-amendment.md` defines the pending correction that binds the
-  official Kagura Games patch package through private SHA-256 evidence and a human installation
-  attestation. It has no implementation authority until its exact plan-review record is verified
-  and no private-run authority until a fresh amended source-safety record is verified.
+- `plans/atlas-v0-a2-post-patch-baseline-correction.md` governs the A2 correction that treats the
+  observed post-patch installed file tree as the research baseline. It retains the original A2
+  harness and removes package-provenance machinery that is not needed for read-only intake.
+- `plans/atlas-v0-a2-patch-provenance-amendment.md` is partially superseded historical context.
+  Its public source facts remain descriptive, but its package hash, attestation, request, launcher,
+  custody, recovery, implementation, and Git-chain requirements have no forward authority.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -53,15 +55,15 @@ semantic scanning, write authority, WinUI, network access, and private data from
   receives an independent `No findings` result. That record establishes A1 completion.
 - `reviews/atlas-v0-a2-plan-review.md` authorized the original trusted-local A2 implementation.
 - `reviews/atlas-v0-a2-tool-safety-review.md` records the original A2 source-safety result. It is
-  historical after discovery was suspended for the official-patch provenance amendment and does
-  not authorize a private run.
-- `reviews/atlas-v0-a2-patch-provenance-plan-review.md` will bind the exact amendment plan and
-  replace the original A2 plan-review commit as the implementation diff base.
-- `reviews/atlas-v0-a2-patch-provenance-tool-safety-review.md` will be the only source-safety record
-  that can authorize the amended private run.
-- `reviews/atlas-v0-a2-private-run-acceptance.md` will carry only the amendment's mandatory public
-  identifiers, commit bindings, repository-safe booleans, and aggregates after the private phases.
-  It never carries private hashes, paths, names, or document bytes.
+  historical evidence for the unchanged source implementation but does not by itself authorize the
+  resumed private run.
+- `reviews/atlas-v0-a2-patch-provenance-plan-review.md` binds the exact amendment plan and
+  remains immutable historical evidence. Its authorized implementation was rejected before commit.
+- `reviews/atlas-v0-a2-post-patch-baseline-plan-review.md` will bind the correction plan.
+- `reviews/atlas-v0-a2-post-patch-baseline-tool-safety-review.md` will authorize private discovery
+  only after the unchanged original A2 source is validated and independently reviewed.
+- `reviews/atlas-v0-a2-private-run-acceptance.md` will use the original A2 repository-safe fields.
+  It never carries private hashes, paths, names, document bytes, or package-provenance claims.
 
 ## Workflow-policy artifacts
 
