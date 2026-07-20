@@ -3,9 +3,15 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
  */
 
-import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { runVitestSubprocess } from './helpers/vitest-subprocess';
+
+type Deferred<T> = {
+  promise: Promise<T>;
+  reject: (reason?: unknown) => void;
+  resolve: (value: T) => void;
+};
 
 const pipeline = vi.hoisted(() => ({
   calls: [] as string[],
@@ -28,6 +34,17 @@ vi.mock('../src/core/sanitize', () => ({
 
 import renderer from '../src/core/renderer';
 
+const createDeferred = <T>(): Deferred<T> => {
+  let reject: Deferred<T>['reject'] = () => undefined;
+  let resolve: Deferred<T>['resolve'] = () => undefined;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return { promise, reject, resolve };
+};
+
 beforeEach(() => {
   pipeline.calls.length = 0;
   pipeline.convert.mockReset().mockImplementation((text: string) => {
@@ -45,65 +62,77 @@ beforeEach(() => {
 });
 
 describe('renderer pipeline', () => {
-  it('runs conversion, highlighting, and brace escaping in order', () => {
-    const result = renderer({ text: 'input' });
+  it('awaits conversion before highlighting and brace escaping', async () => {
+    const deferredConversion = createDeferred<string>();
+    pipeline.convert.mockReset().mockImplementation(() => {
+      pipeline.calls.push('convert:called');
+      return deferredConversion.promise.then((html) => {
+        pipeline.calls.push('convert:resolved');
+        return html;
+      });
+    });
+    pipeline.highlight.mockReset().mockImplementation((html: string) => {
+      pipeline.calls.push('highlight');
+      return `<highlighted>${html}</highlighted>`;
+    });
+    pipeline.escape.mockReset().mockImplementation((html: string) => {
+      pipeline.calls.push('escape');
+      return `<escaped>${html}</escaped>`;
+    });
 
-    expect(pipeline.calls).toEqual(['convert', 'highlight', 'escape']);
+    const renderPromise = renderer({ text: 'input' });
+
+    await Promise.resolve();
+
     expect(pipeline.convert).toHaveBeenCalledWith('input');
+    expect(pipeline.calls).toEqual(['convert:called']);
+    expect(pipeline.highlight).not.toHaveBeenCalled();
+    expect(pipeline.escape).not.toHaveBeenCalled();
+
+    deferredConversion.resolve('<converted>input</converted>');
+
+    await expect(renderPromise).resolves.toBe(
+      '<escaped><highlighted><converted>input</converted></highlighted></escaped>',
+    );
+    expect(pipeline.calls).toEqual(['convert:called', 'convert:resolved', 'highlight', 'escape']);
     expect(pipeline.highlight).toHaveBeenCalledWith('<converted>input</converted>');
     expect(pipeline.escape).toHaveBeenCalledWith('<highlighted><converted>input</converted></highlighted>');
-    expect(result).toBe('<escaped><highlighted><converted>input</converted></highlighted></escaped>');
   });
 
-  it('preserves conversion error identity and suppresses downstream stages', () => {
+  it('preserves conversion error identity and suppresses downstream stages', async () => {
     const sentinel = new Error('conversion sentinel');
     pipeline.convert.mockImplementation(() => {
       pipeline.calls.push('convert');
       throw sentinel;
     });
 
-    let caught: unknown;
-    try {
-      renderer({ text: 'input' });
-    } catch (error) {
-      caught = error;
-    }
-
-    expect(caught).toBe(sentinel);
+    await expect(renderer({ text: 'input' })).rejects.toBe(sentinel);
     expect(pipeline.calls).toEqual(['convert']);
     expect(pipeline.highlight).not.toHaveBeenCalled();
     expect(pipeline.escape).not.toHaveBeenCalled();
   });
 
-  it('preserves highlighting error identity and suppresses brace escaping', () => {
+  it('preserves highlighting error identity and suppresses brace escaping', async () => {
     const sentinel = new Error('highlighting sentinel');
     pipeline.highlight.mockImplementation(() => {
       pipeline.calls.push('highlight');
       throw sentinel;
     });
 
-    let caught: unknown;
-    try {
-      renderer({ text: 'input' });
-    } catch (error) {
-      caught = error;
-    }
-
-    expect(caught).toBe(sentinel);
+    await expect(renderer({ text: 'input' })).rejects.toBe(sentinel);
     expect(pipeline.calls).toEqual(['convert', 'highlight']);
     expect(pipeline.escape).not.toHaveBeenCalled();
   });
 
-  it('characterizes conversion, highlighting, and escaping failures in an isolated subprocess', () => {
+  it('characterizes conversion, highlighting, and escaping failures in an isolated subprocess', async () => {
     const packageRoot = path.resolve(import.meta.dirname, '..');
 
-    expect(() =>
-      execFileSync('pnpm', ['exec', 'vitest', 'run', '--config', 'vitest.pipeline-failure.config.ts'], {
+    await expect(
+      runVitestSubprocess({
+        args: ['--config', 'vitest.pipeline-failure.config.ts'],
         cwd: packageRoot,
-        env: { ...process.env, NODE_OPTIONS: '--unhandled-rejections=strict' },
-        stdio: 'pipe',
         timeout: 30_000,
       }),
-    ).not.toThrow();
+    ).resolves.toBeUndefined();
   }, 60_000);
 });

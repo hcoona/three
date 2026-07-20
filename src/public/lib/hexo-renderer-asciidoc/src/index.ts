@@ -10,6 +10,6 @@ if (typeof hexo !== 'undefined' && hexo?.extend?.renderer) {
   registerRenderer(hexo);
 }
 
-export { registerRenderer, renderer };
 export type { Hexo, Renderer, RendererData, RendererLocals } from './types';
+export { registerRenderer, renderer };
 export default renderer;

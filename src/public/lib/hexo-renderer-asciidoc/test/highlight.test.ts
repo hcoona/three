@@ -7,92 +7,142 @@ import * as hexoUtil from 'hexo-util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applyStaticHighlighting } from '../src/core/highlight';
 
+const FIXED_HIGHLIGHT_OPTIONS = {
+  autoDetect: false,
+  gutter: false,
+  wrap: false,
+};
+
+const wrapCanonicalListingBlock = (preHtml: string): string => `<div class="listingblock">
+<div class="content">
+${preHtml}
+</div>
+</div>`;
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
 describe('applyStaticHighlighting', () => {
-  it('decodes escaped code text before invoking hexo highlighter', () => {
-    const highlightResult = '<figure class="highlight"></figure>';
-    const highlightMock = vi.spyOn(hexoUtil, 'highlight').mockReturnValue(highlightResult);
+  it.each([
+    {
+      name: 'pre.highlight > code[data-lang]',
+      preHtml: '<pre class="highlight"><code data-lang="xml">&lt;node /&gt;</code></pre>',
+      expectedSource: '<node />',
+      expectedLanguage: 'xml',
+    },
+    {
+      name: 'pre.highlight > code',
+      preHtml: '<pre class="highlight"><code>plain &amp; text</code></pre>',
+      expectedSource: 'plain & text',
+      expectedLanguage: 'plaintext',
+    },
+    {
+      name: 'pre[lang] > code',
+      preHtml: '<pre lang="python"><code>value = 1</code></pre>',
+      expectedSource: 'value = 1',
+      expectedLanguage: 'python',
+    },
+    {
+      name: 'pre > code',
+      preHtml: '<pre><code>bare &amp; code</code></pre>',
+      expectedSource: 'bare & code',
+      expectedLanguage: 'plaintext',
+    },
+  ])('highlights the canonical $name shape', ({ preHtml, expectedSource, expectedLanguage }) => {
+    const highlightMock = vi
+      .spyOn(hexoUtil, 'highlight')
+      .mockImplementation((_source, options) => `<figure data-language="${options?.lang}"></figure>`);
 
-    const html = `<div class="listingblock">
-<div class="content">
-<pre class="highlight"><code data-lang="xml">&lt;div class=&quot;test&quot;&gt;AT&amp;T&lt;/div&gt;</code></pre>
-</div>
-</div>`;
-
-    const result = applyStaticHighlighting(html);
+    const result = applyStaticHighlighting(wrapCanonicalListingBlock(preHtml));
 
     expect(highlightMock).toHaveBeenCalledTimes(1);
-    const callArgs = highlightMock.mock.calls[0];
-    expect(callArgs).toBeDefined();
-    if (!callArgs) {
-      throw new Error('Expected hexoUtil.highlight to be called at least once');
-    }
-
-    const [source, options] = callArgs;
-    expect(source).toBe('<div class="test">AT&T</div>');
-    expect(options).toBeDefined();
-    expect(options?.lang).toBe('xml');
-    expect(result).toContain(highlightResult);
-  });
-
-  it('uses plaintext for a language-less code block and fixed highlighting options', () => {
-    const highlightMock = vi.spyOn(hexoUtil, 'highlight').mockReturnValue('<figure class="highlight">plain</figure>');
-    const html = `<div class="listingblock"><div class="content">
-<pre class="highlight"><code>plain &amp; text</code></pre>
-</div></div>`;
-
-    const result = applyStaticHighlighting(html);
-
-    expect(highlightMock).toHaveBeenCalledWith('plain & text', {
-      autoDetect: false,
-      gutter: false,
-      lang: 'plaintext',
-      wrap: false,
+    expect(highlightMock).toHaveBeenCalledWith(expectedSource, {
+      ...FIXED_HIGHLIGHT_OPTIONS,
+      lang: expectedLanguage,
     });
-    expect(result).toContain('<figure class="highlight">plain</figure>');
+    expect(result).toContain(`<figure data-language="${expectedLanguage}"></figure>`);
   });
 
-  it('rewrites a passthrough pre.highlight block outside the canonical listing-block boundary', () => {
-    const highlightResult = '<pre><code class="highlight javascript">rewritten</code></pre>';
-    const highlightMock = vi.spyOn(hexoUtil, 'highlight').mockReturnValue(highlightResult);
-    const html = `<article class="raw-boundary">
-<pre class="highlight"><code data-lang="javascript">const raw = 1;</code></pre>
-</article>`;
+  it('prefers code[data-lang] over pre[lang]', () => {
+    const highlightMock = vi
+      .spyOn(hexoUtil, 'highlight')
+      .mockReturnValue('<figure class="highlight">precedence</figure>');
 
-    const result = applyStaticHighlighting(html);
+    applyStaticHighlighting(wrapCanonicalListingBlock('<pre lang="python"><code data-lang="ruby">puts 1</code></pre>'));
 
-    expect(highlightMock).toHaveBeenCalledWith('const raw = 1;', {
-      autoDetect: false,
-      gutter: false,
-      lang: 'javascript',
-      wrap: false,
+    expect(highlightMock).toHaveBeenCalledWith('puts 1', {
+      ...FIXED_HIGHLIGHT_OPTIONS,
+      lang: 'ruby',
     });
-    expect(result).toContain(highlightResult);
-    expect(result).not.toContain('<pre class="highlight"><code data-lang="javascript">const raw = 1;</code></pre>');
   });
 
-  it('highlights multiple blocks in order with independent languages and entity decoding', () => {
+  it('decodes XML entities exactly once before highlighting', () => {
+    const highlightMock = vi.spyOn(hexoUtil, 'highlight').mockReturnValue('<figure class="highlight">decoded</figure>');
+
+    applyStaticHighlighting(
+      wrapCanonicalListingBlock(
+        '<pre class="highlight"><code data-lang="xml">&lt;one&gt;&amp;amp;notit;&lt;/one&gt;</code></pre>',
+      ),
+    );
+
+    expect(highlightMock).toHaveBeenCalledWith('<one>&amp;notit;</one>', {
+      ...FIXED_HIGHLIGHT_OPTIONS,
+      lang: 'xml',
+    });
+  });
+
+  it('highlights multiple canonical blocks in document order with isolated language detection', () => {
     const highlightMock = vi
       .spyOn(hexoUtil, 'highlight')
       .mockImplementation(
-        (source, options) => `<figure data-language="${options?.lang}" data-source-length="${source.length}"></figure>`,
+        (source, options) => `<figure data-language="${options?.lang}" data-source="${source}"></figure>`,
       );
-    const html = `<div class="listingblock"><div class="content">
-<pre class="highlight"><code data-lang="xml">&lt;one&gt;&amp;amp;</code></pre>
-</div></div>
-<div class="listingblock"><div class="content">
-<pre class="highlight"><code>two &amp; three</code></pre>
-</div></div>`;
+
+    const html = `${wrapCanonicalListingBlock('<pre class="highlight"><code data-lang="xml">&lt;one&gt;&amp;amp;</code></pre>')}
+${wrapCanonicalListingBlock('<pre lang="python"><code>value = 1</code></pre>')}
+${wrapCanonicalListingBlock('<pre><code>three &amp; four</code></pre>')}`;
 
     const result = applyStaticHighlighting(html);
 
     expect(highlightMock.mock.calls).toEqual([
-      ['<one>&amp;', { autoDetect: false, gutter: false, lang: 'xml', wrap: false }],
-      ['two & three', { autoDetect: false, gutter: false, lang: 'plaintext', wrap: false }],
+      ['<one>&amp;', { ...FIXED_HIGHLIGHT_OPTIONS, lang: 'xml' }],
+      ['value = 1', { ...FIXED_HIGHLIGHT_OPTIONS, lang: 'python' }],
+      ['three & four', { ...FIXED_HIGHLIGHT_OPTIONS, lang: 'plaintext' }],
     ]);
-    expect(result.indexOf('data-language="xml"')).toBeLessThan(result.indexOf('data-language="plaintext"'));
+    expect(result.indexOf('data-language="xml"')).toBeLessThan(result.indexOf('data-language="python"'));
+    expect(result.indexOf('data-language="python"')).toBeLessThan(result.indexOf('data-language="plaintext"'));
+  });
+
+  it.each([
+    {
+      name: 'arbitrary outer boundary',
+      html: '<article><pre class="highlight"><code data-lang="javascript">const raw = 1;</code></pre></article>',
+    },
+    {
+      name: 'nested wrapper under content',
+      html: '<div class="listingblock"><div class="content"><div><pre class="highlight"><code data-lang="javascript">const nested = 1;</code></pre></div></div></div>',
+    },
+    {
+      name: 'nested non-direct code child',
+      html: '<div class="listingblock"><div class="content"><pre class="highlight"><span><code data-lang="javascript">const wrapped = 1;</code></span></pre></div></div>',
+    },
+    {
+      name: 'passthrough-like boundary',
+      html: '<div class="pass"><div class="content"><pre class="highlight"><code data-lang="javascript">const passthrough = 1;</code></pre></div></div>',
+    },
+    {
+      name: 'canonical listing block without direct code child',
+      html: '<div class="listingblock"><div class="content"><pre>plain &amp; text</pre></div></div>',
+    },
+  ])('leaves $name untouched', ({ html }) => {
+    const highlightMock = vi
+      .spyOn(hexoUtil, 'highlight')
+      .mockReturnValue('<figure class="highlight">rewritten</figure>');
+
+    const result = applyStaticHighlighting(html);
+
+    expect(highlightMock).not.toHaveBeenCalled();
+    expect(result).toContain(html);
   });
 });

@@ -45,7 +45,16 @@ const toHighlightLanguage = (language?: string): string => {
 
 /**
  * Replace Asciidoctor's placeholder highlight blocks with Hexo's static highlighter output.
- * Keeps existing HTML structure intact while swapping in `<figure>` markup from `hexo-util`.
+ * Only the canonical `div.listingblock > div.content > pre > code` chain is rewritten so
+ * that passthrough or unrelated `pre` elements elsewhere in the document are left untouched.
+ *
+ * Within the selected `pre`, all four shapes emitted by Asciidoctor 4 and the legacy
+ * html-pipeline highlighter are recognized:
+ *   - `pre.highlight > code[data-lang]` (Asciidoctor 4 default, with a language)
+ *   - `pre.highlight > code` (Asciidoctor 4 default, without a language)
+ *   - `pre[lang] > code` (html-pipeline, with a language)
+ *   - `pre > code` (html-pipeline, without a language)
+ * Language precedence is `code[data-lang]` > `pre[lang]` > `plaintext`.
  *
  * @param html - HTML string generated directly from Asciidoctor.
  * @returns HTML with code blocks rendered using Hexo's static highlighter.
@@ -53,22 +62,19 @@ const toHighlightLanguage = (language?: string): string => {
 export const applyStaticHighlighting = (html: string): string => {
   const $ = cheerio.load(html, CHEERIO_LOAD_OPTIONS);
 
-  $('pre.highlight').each((_index, element) => {
-    if (element.type !== 'tag') {
+  $('div.listingblock > div.content > pre > code').each((_index, codeElement) => {
+    const preElement = codeElement.parent;
+    if (preElement?.type !== 'tag') {
       return;
     }
 
-    const codeNode = element.children?.[0];
-    if (!codeNode || codeNode.type !== 'tag') {
-      return;
-    }
-
-    const lang = toHighlightLanguage(codeNode.attribs?.['data-lang']);
-    const sourceCodeText = decodeXML($(codeNode).text());
+    // biome-ignore lint/complexity/useLiteralKeys: noPropertyAccessFromIndexSignature requires bracket notation for index-signature types
+    const lang = toHighlightLanguage(codeElement.attribs?.['data-lang'] ?? preElement.attribs?.['lang'] ?? undefined);
+    const sourceCodeText = decodeXML($(codeElement).text());
     const highlightOptions = { ...BASE_HIGHLIGHT_OPTIONS, lang };
     const rendered = highlightCode(sourceCodeText, highlightOptions);
 
-    $(element).replaceWith(rendered);
+    $(preElement).replaceWith(rendered);
   });
 
   return $.html();

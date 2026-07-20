@@ -9,7 +9,7 @@ import registerRenderer from '../src/hexo/register';
 import type { Hexo } from '../src/types';
 
 describe('registerRenderer', () => {
-  it('registers exactly ad, adoc, and asciidoc as synchronous HTML renderers', () => {
+  it('registers exactly ad, adoc, and asciidoc as asynchronous HTML renderers', () => {
     const register = vi.fn();
     const instance = {
       config: {},
@@ -20,9 +20,9 @@ describe('registerRenderer', () => {
 
     expect(result).toBeUndefined();
     expect(register.mock.calls).toEqual([
-      ['ad', 'html', renderer, true],
-      ['adoc', 'html', renderer, true],
-      ['asciidoc', 'html', renderer, true],
+      ['ad', 'html', renderer, false],
+      ['adoc', 'html', renderer, false],
+      ['asciidoc', 'html', renderer, false],
     ]);
   });
 });

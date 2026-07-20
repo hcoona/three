@@ -102,8 +102,8 @@ exports[`DocTest:dlist > horizontal-with-dimensions 1`] = `
 "<div class="hdlist">
 <table>
 <colgroup>
-<col style="width: 20%;">
-<col style="width: 50%;">
+<col width="20%">
+<col width="50%">
 </colgroup>
 <tr>
 <td class="hdlist1">

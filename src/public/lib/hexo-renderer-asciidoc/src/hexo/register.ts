@@ -8,7 +8,6 @@ import type { Hexo } from '../types';
 
 const SUPPORTED_EXTENSIONS = ['ad', 'adoc', 'asciidoc'] as const;
 const OUTPUT_FORMAT = 'html';
-const IS_SYNC = true;
 
 /**
  * Wire the shared renderer into a Hexo instance for all supported AsciiDoc extensions.
@@ -18,7 +17,7 @@ const IS_SYNC = true;
  */
 const registerRenderer = (instance: Hexo): void => {
   for (const extension of SUPPORTED_EXTENSIONS) {
-    instance.extend.renderer.register(extension, OUTPUT_FORMAT, renderer, IS_SYNC);
+    instance.extend.renderer.register(extension, OUTPUT_FORMAT, renderer, false);
   }
 };
 

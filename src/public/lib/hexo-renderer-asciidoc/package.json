@@ -60,7 +60,7 @@
     "hexo": ">=8.0.0"
   },
   "dependencies": {
-    "asciidoctor": "3.0.4",
+    "@asciidoctor/core": "4.0.4",
     "cheerio": "^1.2.0",
     "entities": "^8.0.0",
     "hexo-util": "^4.0.0"

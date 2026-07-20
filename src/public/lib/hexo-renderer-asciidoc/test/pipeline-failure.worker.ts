@@ -22,8 +22,8 @@ const SAMPLE_TEXT = `
 const value = { nested: true };
 ----
 `;
-// Independently reviewed v3 baseline; intentionally not derived from production stages.
-const PINNED_V3_EXPECTED_HTML = `<div class="sect1">
+// Independently reviewed v4 baseline; intentionally not derived from production stages.
+const PINNED_V4_EXPECTED_HTML = `<div class="sect1">
 <h2 id="_pipeline_failure_probe">Pipeline Failure Probe</h2>
 <div class="sectionbody">
 <div class="listingblock">
@@ -48,7 +48,7 @@ type HexoTestInstance = HexoContract & {
 type HexoConstructor = new (baseDir: string, options?: Record<string, unknown>) => HexoTestInstance;
 
 type StageName = 'convert' | 'highlight' | 'escape';
-type ConvertStage = (text: string) => string;
+type ConvertStage = (text: string) => string | Promise<string>;
 type HtmlStage = (html: string) => string;
 
 const HexoClass = Hexo as unknown as HexoConstructor;
@@ -65,7 +65,7 @@ const drainPendingTasks = async (): Promise<void> => {
 };
 
 /**
- * Test-only seam: compose the real production v3 stages while allowing one stage
+ * Test-only seam: compose the real production v4 stages while allowing one stage
  * to be replaced with a throwing sentinel. This keeps product source unchanged.
  */
 const createRendererProbe = ({
@@ -79,9 +79,9 @@ const createRendererProbe = ({
 } = {}) => {
   const calls: StageName[] = [];
 
-  const probeRenderer: Renderer = (data: RendererData) => {
+  const probeRenderer: Renderer = async (data: RendererData) => {
     calls.push('convert');
-    const html = convert(data.text);
+    const html = await convert(data.text);
 
     calls.push('highlight');
     const highlighted = highlight(html);
@@ -102,7 +102,7 @@ const createRendererProbe = ({
 const renderViaHexo = async (probeRenderer: Renderer, text: string = SAMPLE_TEXT): Promise<string> => {
   const workspace = createHexoWorkspace();
   const hexo = new HexoClass(workspace, { silent: true, debug: false });
-  hexo.extend.renderer.register(HEXO_ENGINE, 'html', probeRenderer, true);
+  hexo.extend.renderer.register(HEXO_ENGINE, 'html', probeRenderer, false);
 
   try {
     await hexo.init();
@@ -127,14 +127,7 @@ describe.sequential('pipeline failure probe worker', () => {
       },
     });
 
-    let directError: unknown;
-    try {
-      probe.renderer({ text: SAMPLE_TEXT });
-    } catch (error) {
-      directError = error;
-    }
-
-    expect(directError).toBe(sentinel);
+    await expect(probe.renderer({ text: SAMPLE_TEXT })).rejects.toBe(sentinel);
     expect(probe.calls).toEqual(['convert']);
 
     probe.reset();
@@ -150,14 +143,7 @@ describe.sequential('pipeline failure probe worker', () => {
       },
     });
 
-    let directError: unknown;
-    try {
-      probe.renderer({ text: SAMPLE_TEXT });
-    } catch (error) {
-      directError = error;
-    }
-
-    expect(directError).toBe(sentinel);
+    await expect(probe.renderer({ text: SAMPLE_TEXT })).rejects.toBe(sentinel);
     expect(probe.calls).toEqual(['convert', 'highlight']);
 
     probe.reset();
@@ -173,14 +159,7 @@ describe.sequential('pipeline failure probe worker', () => {
       },
     });
 
-    let directError: unknown;
-    try {
-      probe.renderer({ text: SAMPLE_TEXT });
-    } catch (error) {
-      directError = error;
-    }
-
-    expect(directError).toBe(sentinel);
+    await expect(probe.renderer({ text: SAMPLE_TEXT })).rejects.toBe(sentinel);
     expect(probe.calls).toEqual(['convert', 'highlight', 'escape']);
 
     probe.reset();
@@ -203,11 +182,11 @@ describe.sequential('pipeline failure probe worker', () => {
       },
     });
 
-    expect(() => directProbe.renderer({ text: SAMPLE_TEXT })).toThrow(sentinel);
+    await expect(directProbe.renderer({ text: SAMPLE_TEXT })).rejects.toBe(sentinel);
     expect(directProbe.calls).toEqual(['convert', 'highlight', 'escape']);
 
     directProbe.reset();
-    expect(directProbe.renderer({ text: SAMPLE_TEXT })).toBe(PINNED_V3_EXPECTED_HTML);
+    await expect(directProbe.renderer({ text: SAMPLE_TEXT })).resolves.toBe(PINNED_V4_EXPECTED_HTML);
     expect(directProbe.calls).toEqual(['convert', 'highlight', 'escape']);
 
     let hexoFailed = false;
@@ -226,7 +205,7 @@ describe.sequential('pipeline failure probe worker', () => {
     expect(hexoProbe.calls).toEqual(['convert', 'highlight', 'escape']);
 
     hexoProbe.reset();
-    await expect(renderViaHexo(hexoProbe.renderer)).resolves.toBe(PINNED_V3_EXPECTED_HTML);
+    await expect(renderViaHexo(hexoProbe.renderer)).resolves.toBe(PINNED_V4_EXPECTED_HTML);
     expect(hexoProbe.calls).toEqual(['convert', 'highlight', 'escape']);
   });
 });

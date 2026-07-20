@@ -38,7 +38,7 @@ let artifactDirectory: string;
 let consumerDirectory: string;
 let distWasAbsentBeforeBuild = false;
 let builtDistFiles: string[] = [];
-let packedManifest: { dependencies?: { asciidoctor?: string }; name?: string; version?: string };
+let packedManifest: { dependencies?: { '@asciidoctor/core'?: string }; name?: string; version?: string };
 let packedArtifact: { inventory: string[]; sha256: string; version: string };
 let consumerManifest: {
   dependencies: { hexo: string; 'hexo-renderer-asciidoc': string };
@@ -58,7 +58,7 @@ const runNodeProbe = (scriptName: string, source: string): Record<string, unknow
 };
 
 beforeAll(() => {
-  temporaryDirectory = mkdtempSync(path.join(tmpdir(), 'hexo-renderer-asciidoc-packed-v3-'));
+  temporaryDirectory = mkdtempSync(path.join(tmpdir(), 'hexo-renderer-asciidoc-packed-v4-'));
   artifactDirectory = path.join(temporaryDirectory, 'artifact');
   consumerDirectory = path.join(temporaryDirectory, 'consumer');
   mkdirSync(artifactDirectory);
@@ -81,7 +81,7 @@ beforeAll(() => {
   const packResult = JSON.parse(packOutput) as Array<{ filename: string }>;
   const archivePath = path.join(artifactDirectory, packResult[0]?.filename ?? '');
   if (!existsSync(archivePath)) {
-    throw new Error('npm pack did not produce the expected v3 artifact');
+    throw new Error('npm pack did not produce the expected v4 artifact');
   }
 
   packedManifest = JSON.parse(
@@ -98,7 +98,7 @@ beforeAll(() => {
   };
 
   consumerManifest = {
-    name: 'hexo-renderer-asciidoc-packed-v3-consumer',
+    name: 'hexo-renderer-asciidoc-packed-v4-consumer',
     private: true,
     packageManager: `pnpm@${execFileSync('pnpm', ['--version'], { encoding: 'utf8' }).trim()}`,
     dependencies: {
@@ -122,8 +122,8 @@ afterAll(() => {
   rmSync(distDirectory, { recursive: true, force: true });
 });
 
-describe('packed Asciidoctor v3 package import shapes', () => {
-  it('builds a fresh dist, records packed metadata, and preserves the current runtime dependency', () => {
+describe('packed Asciidoctor v4 package import shapes', () => {
+  it('builds a fresh dist, records packed metadata, and pins the v4 runtime dependency', () => {
     expect(distWasAbsentBeforeBuild).toBe(true);
     expect(builtDistFiles).toEqual(expectedDistFiles);
 
@@ -133,7 +133,7 @@ describe('packed Asciidoctor v3 package import shapes', () => {
     expect(expectedHtml).toContain('<code class="highlight javascript">');
 
     expect(packedManifest.name).toBe('hexo-renderer-asciidoc');
-    expect(packedManifest.dependencies?.asciidoctor).toBe('3.0.4');
+    expect(packedManifest.dependencies?.['@asciidoctor/core']).toBe('4.0.4');
     expect(packedArtifact.version).toBe(packedManifest.version);
     expect(packedArtifact.inventory).toEqual(
       expect.arrayContaining(['package/package.json', ...expectedDistFiles.map((file) => `package/dist/${file}`)]),
@@ -159,26 +159,28 @@ const registerResult = packageRoot.registerRenderer({
   },
 });
 const render = (fn) => fn({ text: sample });
-process.stdout.write(JSON.stringify({
-  rootType: typeof packageRoot,
-  keys: Object.keys(packageRoot).sort(),
-  defaultType: typeof packageRoot.default,
-  rendererType: typeof packageRoot.renderer,
-  registerRendererType: typeof packageRoot.registerRenderer,
-  defaultEqualsRenderer: packageRoot.default === packageRoot.renderer,
-  registerResultIsUndefined: registerResult === undefined,
-  outputs: {
-    default: render(packageRoot.default),
-    named: render(packageRoot.renderer),
-    registered: registrations.map(([extension, outputFormat, registeredRenderer, sync]) => ({
-      extension,
-      outputFormat,
-      rendererIsPublic: registeredRenderer === packageRoot.renderer,
-      sync,
-      html: render(registeredRenderer),
-    })),
-  },
-}));`,
+(async () => {
+  process.stdout.write(JSON.stringify({
+    rootType: typeof packageRoot,
+    keys: Object.keys(packageRoot).sort(),
+    defaultType: typeof packageRoot.default,
+    rendererType: typeof packageRoot.renderer,
+    registerRendererType: typeof packageRoot.registerRenderer,
+    defaultEqualsRenderer: packageRoot.default === packageRoot.renderer,
+    registerResultIsUndefined: registerResult === undefined,
+    outputs: {
+      default: await render(packageRoot.default),
+      named: await render(packageRoot.renderer),
+      registered: await Promise.all(registrations.map(async ([extension, outputFormat, registeredRenderer, sync]) => ({
+        extension,
+        outputFormat,
+        rendererIsPublic: registeredRenderer === packageRoot.renderer,
+        sync,
+        html: await render(registeredRenderer),
+      }))),
+    },
+  }));
+})();`,
     );
 
     expect(probe).toEqual({
@@ -193,9 +195,9 @@ process.stdout.write(JSON.stringify({
         default: expectedHtml,
         named: expectedHtml,
         registered: [
-          { extension: 'ad', outputFormat: 'html', rendererIsPublic: true, sync: true, html: expectedHtml },
-          { extension: 'adoc', outputFormat: 'html', rendererIsPublic: true, sync: true, html: expectedHtml },
-          { extension: 'asciidoc', outputFormat: 'html', rendererIsPublic: true, sync: true, html: expectedHtml },
+          { extension: 'ad', outputFormat: 'html', rendererIsPublic: true, sync: false, html: expectedHtml },
+          { extension: 'adoc', outputFormat: 'html', rendererIsPublic: true, sync: false, html: expectedHtml },
+          { extension: 'asciidoc', outputFormat: 'html', rendererIsPublic: true, sync: false, html: expectedHtml },
         ],
       },
     });
@@ -231,16 +233,16 @@ process.stdout.write(JSON.stringify({
   namespaceRendererEqualsNamed: namespaceRenderer === renderer,
   registerResultIsUndefined: registerResult === undefined,
   outputs: {
-    nestedDefault: render(nestedDefault),
-    named: render(renderer),
-    namespaceNamed: render(namespaceRenderer),
-    registered: registrations.map(([extension, outputFormat, registeredRenderer, sync]) => ({
+    nestedDefault: await render(nestedDefault),
+    named: await render(renderer),
+    namespaceNamed: await render(namespaceRenderer),
+    registered: await Promise.all(registrations.map(async ([extension, outputFormat, registeredRenderer, sync]) => ({
       extension,
       outputFormat,
       rendererIsPublic: registeredRenderer === renderer,
       sync,
-      html: render(registeredRenderer),
-    })),
+      html: await render(registeredRenderer),
+    }))),
   },
 }));`,
     );
@@ -261,9 +263,9 @@ process.stdout.write(JSON.stringify({
         named: expectedHtml,
         namespaceNamed: expectedHtml,
         registered: [
-          { extension: 'ad', outputFormat: 'html', rendererIsPublic: true, sync: true, html: expectedHtml },
-          { extension: 'adoc', outputFormat: 'html', rendererIsPublic: true, sync: true, html: expectedHtml },
-          { extension: 'asciidoc', outputFormat: 'html', rendererIsPublic: true, sync: true, html: expectedHtml },
+          { extension: 'ad', outputFormat: 'html', rendererIsPublic: true, sync: false, html: expectedHtml },
+          { extension: 'adoc', outputFormat: 'html', rendererIsPublic: true, sync: false, html: expectedHtml },
+          { extension: 'asciidoc', outputFormat: 'html', rendererIsPublic: true, sync: false, html: expectedHtml },
         ],
       },
     });
