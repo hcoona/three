@@ -54,11 +54,29 @@ The CLI retains exit code 5 and emits exactly
 arrays; it never emits `Exception.Message`, enum formatting, paths, values, hashes, names, counts,
 stack traces, or other dynamic text.
 
-The library adds public enum `AtlasDiscoveryFailureStage` with `Unspecified` and the seven listed
-values. `AtlasSafetyException` keeps its existing public message-only constructor unchanged and adds
-a public read-only `DiscoveryStage` property plus an additive constructor accepting a stage and
-optional inner exception. The message-only constructor yields `Unspecified`. This small public
-surface is required because the CLI is a separate assembly; no friend-assembly access is added.
+The library adds this exact public enum:
+
+```csharp
+public enum AtlasDiscoveryFailureStage
+{
+    Unspecified = 0,
+    RequestPreflight = 1,
+    WorkspacePreflight = 2,
+    ExistingState = 3,
+    BaselineInventory = 4,
+    LiveSourcePreflight = 5,
+    CorpusReconciliation = 6,
+    Publication = 7,
+}
+```
+
+`AtlasSafetyException` keeps its existing
+`public AtlasSafetyException(string message)` constructor unchanged. It adds public read-only
+property `AtlasDiscoveryFailureStage DiscoveryStage` and constructor
+`public AtlasSafetyException(string message, AtlasDiscoveryFailureStage discoveryStage,
+Exception? innerException = null)`. The message-only constructor yields `Unspecified`. This
+additive public surface is required because the CLI is a separate assembly; no friend-assembly
+access is added.
 
 The seven stages identify execution location, not an A0 difference or private fact. Existing
 root-set, denominator, selection-rule, public-build, unsupported/unreadable, and no-difference
@@ -73,7 +91,7 @@ In scope:
 - map only those seven values to fixed CLI diagnostics when the invoked command is
   `intake-discover`;
 - preserve the generic safety fallback for uncategorized failures and every other command;
-- document the fixed diagnostics and A2R4 gate;
+- correct the A2R3 lifecycle text and document the fixed diagnostics and A2R4 gate;
 - add focused synthetic and CLI tests; and
 - independently review the exact committed implementation and release record.
 
@@ -107,9 +125,8 @@ an already categorized exception propagates unchanged.
 
 ## 4. Exact repository candidates
 
-`P` adds only this plan. `P2` is the direct child of `P`, changes only this plan, and resolves the
-independent `P` review findings. `R` is the direct child of `P2` and adds only the plan-review
-record.
+`P` adds only this plan. `P2` and `P3` are consecutive plan-only children that resolve independent
+review findings. `R` is the direct child of `P3` and adds only the plan-review record.
 
 `I` may change only:
 
@@ -129,25 +146,30 @@ tests/private/app/celesphonia-modifier/
     AtlasDiscoveryTests.cs
 ```
 
-`G` adds only the release-gate record. The immutable chain is `B -> P -> P2 -> R -> I -> G`. Each
-role must be pushed and verified as the clean shared branch tip before the next role proceeds.
+`G` adds only the release-gate record. The immutable chain is
+`B -> P -> P2 -> P3 -> R -> I -> G`. Each role must be pushed and verified as the clean shared
+branch tip before the next role proceeds.
 
 ## 5. Acceptance evidence
 
 The candidate is acceptable when:
 
-1. each of the seven discovery boundaries tags a representative synthetic safety refusal with the
-   exact expected enum value;
+1. representative synthetic refusals prove all seven stage values, plus the baseline manifest-row
+   lookup and destination-ordinal return transitions;
 2. one CLI theory proves exact UTF-8 bytes and exit code 5 for all seven stages;
 3. separate cases prove both `Unspecified` and an unknown enum value use the generic fallback;
 4. an injected pre-categorized exception propagates without being recategorized;
-5. stage-bearing safety exceptions injected into confirm, copy, and cleanup remain generic;
+5. stage-bearing safety exceptions injected into empty survey, confirm, copy, and cleanup remain
+   generic;
 6. injected private exception text and request paths are absent from both output streams;
-7. no test reads private data or adds a private fixture;
-8. the original A2R3 compatibility tests and complete suite remain enabled and pass;
-9. locked restore, build, format, tests, smoke, reference, ref-bound HK, and Git candidate-integrity
-   checks pass; and
-10. a fresh GPT-5.6 Sol reviewer returns exact `No findings` for the committed candidate.
+7. the active A2 plan documents the discover-only fixed diagnostics and unchanged privacy boundary;
+8. the index marks A2R3 released, adds the A2R4 plan and gate-dependent review navigation, and does
+   not imply `I` grants private-run authority;
+9. no test reads private data or adds a private fixture;
+10. the original A2R3 compatibility tests and complete suite remain enabled and pass;
+11. locked restore, build, format, tests, smoke, reference, ref-bound HK, and Git
+    candidate-integrity checks pass; and
+12. a fresh GPT-5.6 Sol reviewer returns exact `No findings` for the committed candidate.
 
 Per-throw matrices, lifecycle cross-products, coverage work, performance work, and duplicate harness
 tests are not required.
@@ -170,6 +192,6 @@ Retry handoff is closed:
 - an approval, request, I/O, cancellation, or unexpected diagnostic follows the existing A2 stop
   policy without disclosing additional detail.
 
-To resume: verify and independently review `P2`, commit the record-only `R`, implement and validate
+To resume: verify and independently review `P3`, commit the record-only `R`, implement and validate
 the exact path set, commit and independently review `I`, then commit the independently reviewed
 record-only `G`.
