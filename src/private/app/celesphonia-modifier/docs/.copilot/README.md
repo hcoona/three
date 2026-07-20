@@ -33,8 +33,10 @@ semantic scanning, write authority, WinUI, network access, and private data from
 - `plans/atlas-v0-a2-post-patch-baseline-correction.md` governs the A2 correction that treats the
   observed post-patch installed file tree as the research baseline. It retains the original A2
   harness and removes package-provenance machinery that is not needed for read-only intake.
-- `plans/atlas-v0-a2-released-a0-workspace-compatibility.md` is the active subordinate A2R3
+- `plans/atlas-v0-a2-released-a0-workspace-compatibility.md` is the released subordinate A2R3
   correction for exact, opaque compatibility with retained released-A0 workspace entries.
+- `plans/atlas-v0-a2-safe-failure-stage-diagnostics.md` is the active subordinate A2R4 correction
+  that permits only fixed, payload-free stage tokens for `intake-discover` safety refusals.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -59,11 +61,15 @@ semantic scanning, write authority, WinUI, network access, and private data from
 - `reviews/atlas-v0-a2-post-patch-baseline-plan-review.md` binds the completed A2R2 correction plan.
 - `reviews/atlas-v0-a2-post-patch-baseline-release-gate.md` established A2R2 correction completion.
   It remains the prior private-run authority until the verified A2R3 release gate.
-- `reviews/atlas-v0-a2-released-a0-workspace-compatibility-plan-review.md` is active subordinate
-  evidence. Verified shared `R2` authorizes only the bounded A2R3 implementation.
-- `reviews/atlas-v0-a2-released-a0-workspace-compatibility-release-gate.md` will renew only
-  metadata-only discovery authority after verified shared `G`; implementation candidate `I` alone
-  conveys no private-run authority.
+- `reviews/atlas-v0-a2-released-a0-workspace-compatibility-plan-review.md` binds the completed A2R3
+  correction plan.
+- `reviews/atlas-v0-a2-released-a0-workspace-compatibility-release-gate.md` established A2R3
+  correction completion and renewed metadata-only discovery authority.
+- `reviews/atlas-v0-a2-safe-failure-stage-diagnostics-plan-review.md` binds the independently
+  accepted A2R4 plan and authorizes only its bounded implementation.
+- `reviews/atlas-v0-a2-safe-failure-stage-diagnostics-release-gate.md` will authorize one further
+  metadata-only discovery attempt only after verified shared `G`; implementation candidate `I`
+  alone conveys no private-run authority.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` will use the original A2 repository-safe fields.
   It never carries private hashes, paths, names, document bytes, or package-provenance claims.
 

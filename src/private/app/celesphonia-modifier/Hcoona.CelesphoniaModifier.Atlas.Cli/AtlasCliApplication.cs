@@ -57,6 +57,20 @@ internal static class AtlasCliApplication
     private static readonly byte[] IoFailureBytes = "I/O failure.\n"u8.ToArray();
     private static readonly byte[] UnexpectedFailureBytes = "Unexpected failure.\n"u8.ToArray();
     private static readonly byte[] SafetyFailureBytes = "Safety check failed.\n"u8.ToArray();
+    private static readonly byte[] RequestPreflightSafetyFailureBytes =
+        "Safety check failed: request-preflight.\n"u8.ToArray();
+    private static readonly byte[] WorkspacePreflightSafetyFailureBytes =
+        "Safety check failed: workspace-preflight.\n"u8.ToArray();
+    private static readonly byte[] ExistingStateSafetyFailureBytes =
+        "Safety check failed: existing-state.\n"u8.ToArray();
+    private static readonly byte[] BaselineInventorySafetyFailureBytes =
+        "Safety check failed: baseline-inventory.\n"u8.ToArray();
+    private static readonly byte[] LiveSourcePreflightSafetyFailureBytes =
+        "Safety check failed: live-source-preflight.\n"u8.ToArray();
+    private static readonly byte[] CorpusReconciliationSafetyFailureBytes =
+        "Safety check failed: corpus-reconciliation.\n"u8.ToArray();
+    private static readonly byte[] PublicationSafetyFailureBytes =
+        "Safety check failed: publication.\n"u8.ToArray();
     private static readonly byte[] ApprovalRequiredBytes = "Approval required.\n"u8.ToArray();
     private static readonly byte[] IntakeDiscoverySuccessBytes =
         "Intake discovery completed.\n"u8.ToArray();
@@ -118,6 +132,7 @@ internal static class AtlasCliApplication
                         standardOutput,
                         cancellation),
                     successBytes: null,
+                    includeDiscoveryFailureStage: false,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -133,6 +148,7 @@ internal static class AtlasCliApplication
                             command.RequestFilePath,
                             cancellation),
                         IntakeDiscoverySuccessBytes,
+                        includeDiscoveryFailureStage: true,
                         cancellationToken)
                     .ConfigureAwait(false),
                 RequestCommandKind.IntakeConfirm => await RunOperationAsync(
@@ -142,6 +158,7 @@ internal static class AtlasCliApplication
                             command.RequestFilePath,
                             cancellation),
                         IntakeConfirmationSuccessBytes,
+                        includeDiscoveryFailureStage: false,
                         cancellationToken)
                     .ConfigureAwait(false),
                 RequestCommandKind.IntakeCopy => await RunOperationAsync(
@@ -151,6 +168,7 @@ internal static class AtlasCliApplication
                             command.RequestFilePath,
                             cancellation),
                         IntakeCopySuccessBytes,
+                        includeDiscoveryFailureStage: false,
                         cancellationToken)
                     .ConfigureAwait(false),
                 RequestCommandKind.CleanupPreflight => await RunOperationAsync(
@@ -160,6 +178,7 @@ internal static class AtlasCliApplication
                             command.RequestFilePath,
                             cancellation),
                         CleanupPreflightSuccessBytes,
+                        includeDiscoveryFailureStage: false,
                         cancellationToken)
                     .ConfigureAwait(false),
                 _ => await WriteDiagnosticAsync(
@@ -261,6 +280,7 @@ internal static class AtlasCliApplication
         Stream standardError,
         Func<CancellationToken, ValueTask> operation,
         byte[]? successBytes,
+        bool includeDiscoveryFailureStage,
         CancellationToken cancellationToken)
     {
         try
@@ -283,11 +303,14 @@ internal static class AtlasCliApplication
                     CanceledExitCode)
                 .ConfigureAwait(false);
         }
-        catch (AtlasSafetyException)
+        catch (AtlasSafetyException exception)
         {
+            byte[] diagnosticBytes = includeDiscoveryFailureStage
+                ? GetDiscoverySafetyFailureBytes(exception.DiscoveryStage)
+                : SafetyFailureBytes;
             return await WriteDiagnosticAsync(
                     standardError,
-                    SafetyFailureBytes,
+                    diagnosticBytes,
                     SafetyErrorExitCode)
                 .ConfigureAwait(false);
         }
@@ -324,6 +347,21 @@ internal static class AtlasCliApplication
                 .ConfigureAwait(false);
         }
     }
+
+    private static byte[] GetDiscoverySafetyFailureBytes(
+        AtlasDiscoveryFailureStage stage) =>
+        stage switch
+        {
+            AtlasDiscoveryFailureStage.RequestPreflight => RequestPreflightSafetyFailureBytes,
+            AtlasDiscoveryFailureStage.WorkspacePreflight => WorkspacePreflightSafetyFailureBytes,
+            AtlasDiscoveryFailureStage.ExistingState => ExistingStateSafetyFailureBytes,
+            AtlasDiscoveryFailureStage.BaselineInventory => BaselineInventorySafetyFailureBytes,
+            AtlasDiscoveryFailureStage.LiveSourcePreflight => LiveSourcePreflightSafetyFailureBytes,
+            AtlasDiscoveryFailureStage.CorpusReconciliation =>
+                CorpusReconciliationSafetyFailureBytes,
+            AtlasDiscoveryFailureStage.Publication => PublicationSafetyFailureBytes,
+            _ => SafetyFailureBytes,
+        };
 
     private static async ValueTask<int> WriteHelpAsync(
         Stream standardOutput,

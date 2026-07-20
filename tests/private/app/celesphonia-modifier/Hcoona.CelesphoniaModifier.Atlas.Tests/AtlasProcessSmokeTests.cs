@@ -147,7 +147,9 @@ public sealed class AtlasProcessSmokeTests
 
         Assert.Equal(5, result.ExitCode);
         Assert.Empty(result.StandardOutput);
-        Assert.Equal("Safety check failed.\n"u8.ToArray(), result.StandardError);
+        Assert.Equal(
+            "Safety check failed: request-preflight.\n"u8.ToArray(),
+            result.StandardError);
     }
 
     [Fact]

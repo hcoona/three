@@ -266,6 +266,43 @@ public sealed class AtlasDiscoveryTests
     }
 
     [Fact]
+    public async Task DiscoverAsyncCategorizesUnspecifiedRequestPreflightFailure()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        AtlasSafetyException sourceException = new("synthetic private request detail");
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            readAllBytesAsync: (_, _) => ValueTask.FromException<byte[]>(sourceException));
+
+        AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                io,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(AtlasDiscoveryFailureStage.RequestPreflight, exception.DiscoveryStage);
+        Assert.Same(sourceException, exception.InnerException);
+    }
+
+    [Fact]
+    public async Task DiscoverAsyncPreservesCategorizedFailure()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        AtlasSafetyException expected = new(
+            "synthetic private request detail",
+            AtlasDiscoveryFailureStage.Publication);
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            readAllBytesAsync: (_, _) => ValueTask.FromException<byte[]>(expected));
+
+        AtlasSafetyException actual = await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                io,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Same(expected, actual);
+    }
+
+    [Fact]
     public async Task DiscoverAsyncPublishesPendingManifestRootMapCopyPlanAndState()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
@@ -390,6 +427,20 @@ public sealed class AtlasDiscoveryTests
     }
 
     [Fact]
+    public async Task DiscoverAsyncCategorizesLiveSourcePreflightFailure()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        File.Delete(workspace.GameExecutablePath);
+
+        AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(AtlasDiscoveryFailureStage.LiveSourcePreflight, exception.DiscoveryStage);
+    }
+
+    [Fact]
     public async Task DiscoverAsyncCompletedRerunReturnsWithoutLiveSourceAccess()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
@@ -495,11 +546,13 @@ public sealed class AtlasDiscoveryTests
             await RebindBaselineCustodyAliasAsync(workspace);
         }
 
-        await Assert.ThrowsAsync<AtlasSafetyException>(
+        AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
             () => AtlasDiscovery.DiscoverAsync(
                 workspace.Layout.CanonicalDiscoverRequestPath,
                 AtlasTestSupport.CreateLiveSourceAccessThrowingIo(workspace),
                 TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(AtlasDiscoveryFailureStage.ExistingState, exception.DiscoveryStage);
     }
 
     [Fact]
@@ -621,6 +674,7 @@ public sealed class AtlasDiscoveryTests
                 TestContext.Current.CancellationToken).AsTask());
 
         Assert.Contains("denominator", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(AtlasDiscoveryFailureStage.CorpusReconciliation, exception.DiscoveryStage);
     }
 
     [Fact]
@@ -1025,10 +1079,12 @@ public sealed class AtlasDiscoveryTests
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
         workspace.UpdateInventory(mutate);
 
-        await Assert.ThrowsAsync<AtlasSafetyException>(
+        AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
             () => AtlasDiscovery.DiscoverAsync(
                 workspace.Layout.CanonicalDiscoverRequestPath,
                 TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(AtlasDiscoveryFailureStage.BaselineInventory, exception.DiscoveryStage);
     }
 
     [Fact]
@@ -1170,6 +1226,32 @@ public sealed class AtlasDiscoveryTests
                 .Select(static artifact => artifact.ArtifactAlias)
                 .OrderBy(static alias => alias, StringComparer.Ordinal)
                 .ToArray());
+    }
+
+    [Fact]
+    public async Task DiscoverAsyncCategorizesPublicationFailure()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        AtlasIoSeams failingIo = AtlasTestSupport.CreateIo(
+            moveFile: (source, destination) =>
+            {
+                if (AtlasIntakeContracts.PathEquals(
+                        destination,
+                        workspace.Layout.CanonicalPendingManifestPath))
+                {
+                    throw new AtlasSafetyException("synthetic private publication detail");
+                }
+
+                AtlasIoSeams.Default.MoveFile(source, destination);
+            });
+
+        AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                failingIo,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(AtlasDiscoveryFailureStage.Publication, exception.DiscoveryStage);
     }
 
     [Fact]
@@ -1530,10 +1612,12 @@ public sealed class AtlasDiscoveryTests
                 TestContext.Current.CancellationToken);
         }
 
-        await Assert.ThrowsAsync<AtlasSafetyException>(
+        AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
             () => AtlasDiscovery.DiscoverAsync(
                 workspace.Layout.CanonicalDiscoverRequestPath,
                 TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(AtlasDiscoveryFailureStage.WorkspacePreflight, exception.DiscoveryStage);
     }
 
     [Theory]

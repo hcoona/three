@@ -22,169 +22,191 @@ public static class AtlasDiscovery
         ArgumentException.ThrowIfNullOrWhiteSpace(requestPath);
         ArgumentNullException.ThrowIfNull(io);
 
-        AtlasLoadedDocument<AtlasIntakeDiscoveryRequest> loadedRequest =
-            await AtlasIntakeContracts.ReadDiscoveryRequestAsync(
-                    requestPath,
+        AtlasDiscoveryFailureStage failureStage =
+            AtlasDiscoveryFailureStage.RequestPreflight;
+        try
+        {
+            AtlasLoadedDocument<AtlasIntakeDiscoveryRequest> loadedRequest =
+                await AtlasIntakeContracts.ReadDiscoveryRequestAsync(
+                        requestPath,
+                        io,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            AtlasIntakeDiscoveryRequest request = loadedRequest.Document;
+            AtlasWorkspaceLayout layout = AtlasIntakeContracts.CreateWorkspaceLayout(
+                request.ProjectRoot,
+                request.WorkspaceRoot,
+                request.SurveyAlias);
+            failureStage = AtlasDiscoveryFailureStage.WorkspacePreflight;
+            ValidatePrivateWorkspace(layout, io);
+            ValidateDiscoveryCanonicalPaths(loadedRequest.AbsolutePath, request, layout, io);
+            ValidateCommandWorkspaceCensus(
+                layout,
+                AtlasIntakeContracts.DiscoveredStateRevision,
+                io);
+
+            failureStage = AtlasDiscoveryFailureStage.ExistingState;
+            if (await TryReturnValidatedDiscoveryAsync(
+                    loadedRequest,
+                    layout,
+                    io,
+                    cancellationToken)
+                .ConfigureAwait(false))
+            {
+                return;
+            }
+
+            failureStage = AtlasDiscoveryFailureStage.BaselineInventory;
+            AtlasLoadedDocument<AtlasCorpusIntakeManifest> baselineManifest =
+                await AtlasIntakeContracts.ReadManifestAsync(
+                        request.BaselineManifestPath,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            if (!StringComparer.Ordinal.Equals(
+                    baselineManifest.Document.Confirmation.Status,
+                    AtlasIntakeContracts.ApprovedConfirmationStatus))
+            {
+                throw new AtlasApprovalException("The baseline manifest is not approved.");
+            }
+
+            EnsureDigestMatches(
+                request.ExpectedBaselineSha256,
+                baselineManifest.Sha256,
+                static () => new AtlasApprovalException(
+                    "The baseline manifest digest is invalid."));
+            if (baselineManifest.Document.ManifestRevision
+                != AtlasIntakeContracts.BaselineManifestRevision)
+            {
+                throw new AtlasApprovalException("The baseline manifest revision is invalid.");
+            }
+
+            PhaseInventoryContext inventoryContext = await TrustedLocalCopy.LoadPhaseInventoryAsync(
+                    layout.CanonicalInventoryPath,
+                    layout.CanonicalDiscoveredInventoryBackupPath,
+                    request.ExpectedInventorySha256,
                     io,
                     cancellationToken)
                 .ConfigureAwait(false);
-        AtlasIntakeDiscoveryRequest request = loadedRequest.Document;
-        AtlasWorkspaceLayout layout = AtlasIntakeContracts.CreateWorkspaceLayout(
-            request.ProjectRoot,
-            request.WorkspaceRoot,
-            request.SurveyAlias);
-        ValidatePrivateWorkspace(layout, io);
-        ValidateDiscoveryCanonicalPaths(loadedRequest.AbsolutePath, request, layout, io);
-        ValidateCommandWorkspaceCensus(layout, AtlasIntakeContracts.DiscoveredStateRevision, io);
+            DiscoveryPhaseAliases aliases = ResolveDiscoveryAliases(inventoryContext);
+            failureStage = AtlasDiscoveryFailureStage.LiveSourcePreflight;
+            ValidateDiscoveryLiveSourcePaths(request, layout, io);
+            failureStage = AtlasDiscoveryFailureStage.BaselineInventory;
+            string baselineManifestAlias = FindManifestArtifactAlias(
+                inventoryContext.PriorInventory.Document,
+                AtlasIntakeContracts.ManifestRevision3Purpose);
+            failureStage = AtlasDiscoveryFailureStage.CorpusReconciliation;
+            DiscoveredManifest discovered = DiscoverCurrentManifest(
+                request,
+                baselineManifest.Document,
+                io);
+            failureStage = AtlasDiscoveryFailureStage.BaselineInventory;
+            int nextArtifactOrdinal = GetNextDiscoveryDestinationArtifactOrdinal(aliases);
 
-        if (await TryReturnValidatedDiscoveryAsync(
-                loadedRequest,
-                layout,
-                io,
-                cancellationToken)
-            .ConfigureAwait(false))
-        {
-            return;
-        }
-
-        AtlasLoadedDocument<AtlasCorpusIntakeManifest> baselineManifest =
-            await AtlasIntakeContracts.ReadManifestAsync(
-                    request.BaselineManifestPath,
+            failureStage = AtlasDiscoveryFailureStage.Publication;
+            AtlasCorpusIntakeManifest pendingManifest = discovered.PendingManifest with
+            {
+                ManifestRevision = AtlasIntakeContracts.PendingManifestRevision,
+                Validation = discovered.PendingManifest.Validation with
+                {
+                    Method = AtlasIntakeContracts.AtlasToolValidationMethod,
+                },
+                Confirmation = new AtlasManifestConfirmation
+                {
+                    Status = AtlasIntakeContracts.PendingConfirmationStatus,
+                },
+            };
+            byte[] pendingManifestBytes = AtlasIntakeContracts.SerializeManifest(pendingManifest);
+            PublishedFile pendingManifestFile = await EnsureDeterministicFileAsync(
+                    layout.CanonicalPendingManifestPath,
+                    AtlasIntakeContracts.DiscoveredPhase,
+                    pendingManifestBytes,
+                    ReadManifestShaAsync,
+                    io,
                     cancellationToken)
                 .ConfigureAwait(false);
-        if (!StringComparer.Ordinal.Equals(
-                baselineManifest.Document.Confirmation.Status,
-                AtlasIntakeContracts.ApprovedConfirmationStatus))
-        {
-            throw new AtlasApprovalException("The baseline manifest is not approved.");
+
+            AtlasSourceRootMapDocument sourceRootMap = CreateSourceRootMap(request, discovered);
+            byte[] sourceRootMapBytes = AtlasIntakeContracts.SerializeSourceRootMap(sourceRootMap);
+            PublishedFile sourceRootMapFile = await EnsureDeterministicFileAsync(
+                    layout.CanonicalSourceRootMapPath,
+                    AtlasIntakeContracts.DiscoveredPhase,
+                    sourceRootMapBytes,
+                    ReadSourceRootMapShaAsync,
+                    io,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            AtlasCopyPlanDocument copyPlan = CreateCopyPlan(discovered, nextArtifactOrdinal);
+            byte[] copyPlanBytes = AtlasIntakeContracts.SerializeCopyPlan(copyPlan);
+            PublishedFile copyPlanFile = await EnsureDeterministicFileAsync(
+                    layout.CanonicalCopyPlanPath,
+                    AtlasIntakeContracts.DiscoveredPhase,
+                    copyPlanBytes,
+                    ReadCopyPlanShaAsync,
+                    io,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            AtlasLoadedDocument<AtlasCorpusIntakeManifest> loadedPendingManifest =
+                new(
+                    pendingManifestFile.FinalPath,
+                    pendingManifestBytes,
+                    pendingManifestFile.Sha256,
+                    pendingManifest);
+            AtlasLoadedDocument<AtlasSourceRootMapDocument> loadedSourceRootMap =
+                new(
+                    sourceRootMapFile.FinalPath,
+                    sourceRootMapBytes,
+                    sourceRootMapFile.Sha256,
+                    sourceRootMap);
+            AtlasLoadedDocument<AtlasCopyPlanDocument> loadedCopyPlan =
+                new(
+                    copyPlanFile.FinalPath,
+                    copyPlanBytes,
+                    copyPlanFile.Sha256,
+                    copyPlan);
+            AtlasPrivateArtifactInventoryDocument replacementInventory = CreateDiscoveredInventory(
+                inventoryContext.PriorInventory.Document,
+                baselineManifestAlias,
+                aliases);
+            byte[] replacementInventoryBytes =
+                AtlasIntakeContracts.SerializeInventory(replacementInventory);
+            InventoryReplaceResult inventoryReplace = await EnsureInventoryReplaceAsync(
+                    layout.CanonicalInventoryPath,
+                    layout.CanonicalDiscoveredInventoryBackupPath,
+                    AtlasIntakeContracts.DiscoveredPhase,
+                    inventoryContext.PriorInventory.Bytes,
+                    replacementInventoryBytes,
+                    io,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            AtlasIntakeStateDocument state1 = CreateDiscoveredState(
+                loadedRequest,
+                layout,
+                baselineManifestAlias,
+                baselineManifest,
+                loadedPendingManifest,
+                loadedSourceRootMap,
+                loadedCopyPlan,
+                aliases,
+                inventoryReplace.BackupSha256,
+                inventoryReplace.ReplacementSha256);
+            byte[] stateBytes = AtlasIntakeContracts.SerializeState(state1);
+            _ = await EnsureDeterministicFileAsync(
+                    layout.CanonicalDiscoveredStatePath,
+                    AtlasIntakeContracts.DiscoveredPhase,
+                    stateBytes,
+                    ReadStateShaAsync,
+                    io,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
-
-        EnsureDigestMatches(
-            request.ExpectedBaselineSha256,
-            baselineManifest.Sha256,
-            static () => new AtlasApprovalException("The baseline manifest digest is invalid."));
-        if (baselineManifest.Document.ManifestRevision
-            != AtlasIntakeContracts.BaselineManifestRevision)
+        catch (AtlasSafetyException exception)
+            when (exception.DiscoveryStage == AtlasDiscoveryFailureStage.Unspecified)
         {
-            throw new AtlasApprovalException("The baseline manifest revision is invalid.");
+            throw new AtlasSafetyException(exception.Message, failureStage, exception);
         }
-
-        PhaseInventoryContext inventoryContext = await TrustedLocalCopy.LoadPhaseInventoryAsync(
-                layout.CanonicalInventoryPath,
-                layout.CanonicalDiscoveredInventoryBackupPath,
-                request.ExpectedInventorySha256,
-                io,
-                cancellationToken)
-            .ConfigureAwait(false);
-        DiscoveryPhaseAliases aliases = ResolveDiscoveryAliases(inventoryContext);
-        ValidateDiscoveryLiveSourcePaths(request, layout, io);
-        string baselineManifestAlias = FindManifestArtifactAlias(
-            inventoryContext.PriorInventory.Document,
-            AtlasIntakeContracts.ManifestRevision3Purpose);
-        DiscoveredManifest discovered = DiscoverCurrentManifest(
-            request,
-            baselineManifest.Document,
-            io);
-        int nextArtifactOrdinal = GetNextDiscoveryDestinationArtifactOrdinal(aliases);
-
-        AtlasCorpusIntakeManifest pendingManifest = discovered.PendingManifest with
-        {
-            ManifestRevision = AtlasIntakeContracts.PendingManifestRevision,
-            Validation = discovered.PendingManifest.Validation with
-            {
-                Method = AtlasIntakeContracts.AtlasToolValidationMethod,
-            },
-            Confirmation = new AtlasManifestConfirmation
-            {
-                Status = AtlasIntakeContracts.PendingConfirmationStatus,
-            },
-        };
-        byte[] pendingManifestBytes = AtlasIntakeContracts.SerializeManifest(pendingManifest);
-        PublishedFile pendingManifestFile = await EnsureDeterministicFileAsync(
-                layout.CanonicalPendingManifestPath,
-                AtlasIntakeContracts.DiscoveredPhase,
-                pendingManifestBytes,
-                ReadManifestShaAsync,
-                io,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        AtlasSourceRootMapDocument sourceRootMap = CreateSourceRootMap(request, discovered);
-        byte[] sourceRootMapBytes = AtlasIntakeContracts.SerializeSourceRootMap(sourceRootMap);
-        PublishedFile sourceRootMapFile = await EnsureDeterministicFileAsync(
-                layout.CanonicalSourceRootMapPath,
-                AtlasIntakeContracts.DiscoveredPhase,
-                sourceRootMapBytes,
-                ReadSourceRootMapShaAsync,
-                io,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        AtlasCopyPlanDocument copyPlan = CreateCopyPlan(discovered, nextArtifactOrdinal);
-        byte[] copyPlanBytes = AtlasIntakeContracts.SerializeCopyPlan(copyPlan);
-        PublishedFile copyPlanFile = await EnsureDeterministicFileAsync(
-                layout.CanonicalCopyPlanPath,
-                AtlasIntakeContracts.DiscoveredPhase,
-                copyPlanBytes,
-                ReadCopyPlanShaAsync,
-                io,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        AtlasLoadedDocument<AtlasCorpusIntakeManifest> loadedPendingManifest =
-            new(
-                pendingManifestFile.FinalPath,
-                pendingManifestBytes,
-                pendingManifestFile.Sha256,
-                pendingManifest);
-        AtlasLoadedDocument<AtlasSourceRootMapDocument> loadedSourceRootMap =
-            new(
-                sourceRootMapFile.FinalPath,
-                sourceRootMapBytes,
-                sourceRootMapFile.Sha256,
-                sourceRootMap);
-        AtlasLoadedDocument<AtlasCopyPlanDocument> loadedCopyPlan =
-            new(
-                copyPlanFile.FinalPath,
-                copyPlanBytes,
-                copyPlanFile.Sha256,
-                copyPlan);
-        AtlasPrivateArtifactInventoryDocument replacementInventory = CreateDiscoveredInventory(
-            inventoryContext.PriorInventory.Document,
-            baselineManifestAlias,
-            aliases);
-        byte[] replacementInventoryBytes =
-            AtlasIntakeContracts.SerializeInventory(replacementInventory);
-        InventoryReplaceResult inventoryReplace = await EnsureInventoryReplaceAsync(
-                layout.CanonicalInventoryPath,
-                layout.CanonicalDiscoveredInventoryBackupPath,
-                AtlasIntakeContracts.DiscoveredPhase,
-                inventoryContext.PriorInventory.Bytes,
-                replacementInventoryBytes,
-                io,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        AtlasIntakeStateDocument state1 = CreateDiscoveredState(
-            loadedRequest,
-            layout,
-            baselineManifestAlias,
-            baselineManifest,
-            loadedPendingManifest,
-            loadedSourceRootMap,
-            loadedCopyPlan,
-            aliases,
-            inventoryReplace.BackupSha256,
-            inventoryReplace.ReplacementSha256);
-        byte[] stateBytes = AtlasIntakeContracts.SerializeState(state1);
-        _ = await EnsureDeterministicFileAsync(
-                layout.CanonicalDiscoveredStatePath,
-                AtlasIntakeContracts.DiscoveredPhase,
-                stateBytes,
-                ReadStateShaAsync,
-                io,
-                cancellationToken)
-            .ConfigureAwait(false);
     }
 
     internal static async ValueTask ConfirmAsync(

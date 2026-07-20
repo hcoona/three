@@ -303,6 +303,130 @@ public sealed class AtlasCliApplicationTests
             StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(
+        AtlasDiscoveryFailureStage.RequestPreflight,
+        "Safety check failed: request-preflight.\n")]
+    [InlineData(
+        AtlasDiscoveryFailureStage.WorkspacePreflight,
+        "Safety check failed: workspace-preflight.\n")]
+    [InlineData(
+        AtlasDiscoveryFailureStage.ExistingState,
+        "Safety check failed: existing-state.\n")]
+    [InlineData(
+        AtlasDiscoveryFailureStage.BaselineInventory,
+        "Safety check failed: baseline-inventory.\n")]
+    [InlineData(
+        AtlasDiscoveryFailureStage.LiveSourcePreflight,
+        "Safety check failed: live-source-preflight.\n")]
+    [InlineData(
+        AtlasDiscoveryFailureStage.CorpusReconciliation,
+        "Safety check failed: corpus-reconciliation.\n")]
+    [InlineData(
+        AtlasDiscoveryFailureStage.Publication,
+        "Safety check failed: publication.\n")]
+    public async Task IntakeDiscoverySafetyFailureWritesFixedStageBytes(
+        AtlasDiscoveryFailureStage stage,
+        string expectedDiagnostic)
+    {
+        string requestPath = @"Q:\private\discover.json";
+        string privateMessage = $"private failure at {requestPath}";
+        (int exitCode, byte[] standardOutput, byte[] standardError) = await RunAsync(
+            ["intake-discover", requestPath],
+            new DelegatingOperations
+            {
+                Discover = (_, _) => ValueTask.FromException(
+                    new AtlasSafetyException(privateMessage, stage)),
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.SafetyErrorExitCode, exitCode);
+        Assert.Empty(standardOutput);
+        Assert.Equal(Encoding.UTF8.GetBytes(expectedDiagnostic), standardError);
+        Assert.DoesNotContain(
+            privateMessage,
+            Encoding.UTF8.GetString(standardError),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            requestPath,
+            Encoding.UTF8.GetString(standardError),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IntakeDiscoveryUnspecifiedSafetyFailureUsesGenericDiagnostic()
+    {
+        (int exitCode, byte[] standardOutput, byte[] standardError) = await RunAsync(
+            ["intake-discover", @"Q:\private\discover.json"],
+            new DelegatingOperations
+            {
+                Discover = (_, _) => ValueTask.FromException(
+                    new AtlasSafetyException(
+                        "private",
+                        AtlasDiscoveryFailureStage.Unspecified)),
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.SafetyErrorExitCode, exitCode);
+        Assert.Empty(standardOutput);
+        Assert.Equal("Safety check failed.\n"u8.ToArray(), standardError);
+    }
+
+    [Fact]
+    public async Task IntakeDiscoveryUnknownSafetyFailureUsesGenericDiagnostic()
+    {
+        (int exitCode, byte[] standardOutput, byte[] standardError) = await RunAsync(
+            ["intake-discover", @"Q:\private\discover.json"],
+            new DelegatingOperations
+            {
+                Discover = (_, _) => ValueTask.FromException(
+                    new AtlasSafetyException(
+                        "private",
+                        (AtlasDiscoveryFailureStage)int.MaxValue)),
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.SafetyErrorExitCode, exitCode);
+        Assert.Empty(standardOutput);
+        Assert.Equal("Safety check failed.\n"u8.ToArray(), standardError);
+    }
+
+    [Theory]
+    [InlineData("empty-survey")]
+    [InlineData("intake-confirm")]
+    [InlineData("intake-copy")]
+    [InlineData("cleanup-preflight")]
+    public async Task NonDiscoverySafetyFailureIgnoresDiscoveryStage(string command)
+    {
+        string requestPath = @"Q:\private\request.json";
+        AtlasSafetyException exception = new(
+            $"private failure at {requestPath}",
+            AtlasDiscoveryFailureStage.Publication);
+        DelegatingOperations operations = new()
+        {
+            EmptySurvey = (_, _) => ValueTask.FromException(exception),
+            Confirm = (_, _) => ValueTask.FromException(exception),
+            Copy = (_, _) => ValueTask.FromException(exception),
+            CleanupPreflight = (_, _) => ValueTask.FromException(exception),
+        };
+        string[] args = StringComparer.Ordinal.Equals(command, "empty-survey")
+            ? [command]
+            : [command, requestPath];
+
+        (int exitCode, byte[] standardOutput, byte[] standardError) = await RunAsync(
+            args,
+            operations,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.SafetyErrorExitCode, exitCode);
+        Assert.Empty(standardOutput);
+        Assert.Equal("Safety check failed.\n"u8.ToArray(), standardError);
+        Assert.DoesNotContain(
+            requestPath,
+            Encoding.UTF8.GetString(standardError),
+            StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task OperationCancellationUsesCallerToken()
     {

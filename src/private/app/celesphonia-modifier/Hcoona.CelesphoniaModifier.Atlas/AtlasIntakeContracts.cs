@@ -3595,7 +3595,36 @@ public sealed class AtlasRequestException(string message, Exception? innerExcept
 
 public sealed class AtlasApprovalException(string message) : Exception(message);
 
-public sealed class AtlasSafetyException(string message) : Exception(message);
+public enum AtlasDiscoveryFailureStage
+{
+    Unspecified = 0,
+    RequestPreflight = 1,
+    WorkspacePreflight = 2,
+    ExistingState = 3,
+    BaselineInventory = 4,
+    LiveSourcePreflight = 5,
+    CorpusReconciliation = 6,
+    Publication = 7,
+}
+
+public sealed class AtlasSafetyException : Exception
+{
+    public AtlasSafetyException(string message)
+        : base(message)
+    {
+    }
+
+    public AtlasSafetyException(
+        string message,
+        AtlasDiscoveryFailureStage discoveryStage,
+        Exception? innerException = null)
+        : base(message, innerException)
+    {
+        DiscoveryStage = discoveryStage;
+    }
+
+    public AtlasDiscoveryFailureStage DiscoveryStage { get; }
+}
 
 internal sealed class AtlasValidationException(string message, Exception? innerException = null)
     : Exception(message, innerException)

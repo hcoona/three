@@ -1,6 +1,6 @@
 # Atlas V0 A2 Intake and Safety Plan
 
-**Status:** Active; A2R3 metadata-only discovery authority requires verified shared `G`
+**Status:** Active; A2R4 safe-stage diagnostics require verified shared `G` before discovery retry
 
 **Increment:** A2 - Intake and Safety Harness
 
@@ -21,6 +21,10 @@
 > The correction recognizes only the released A0 `intake/private-provenance.json`,
 > `copies/save-snapshot-20260717T210224Z`, and top-level `decoded`, `evidence`, `agent-envelopes`,
 > and `validation` entries. Only verified shared release gate `G` renews metadata-only discovery.
+> **Safe discovery failure stages**
+> `atlas-v0-a2-safe-failure-stage-diagnostics.md` governs the A2R4 discover-only diagnostic
+> correction. It may expose only a fixed stage token for a categorized discovery safety refusal.
+> Only verified shared release gate `G` authorizes another private metadata-only discovery attempt.
 
 ## 1. Outcome
 
@@ -377,6 +381,24 @@ Terminal standard-error diagnostics and exit codes are:
 |    4 | `I/O failure.`         |
 |    5 | `Safety check failed.` |
 |    6 | `Approval required.`   |
+
+Only `intake-discover` may replace the generic code-5 diagnostic with one of these exact fixed
+lines:
+
+```text
+Safety check failed: request-preflight.
+Safety check failed: workspace-preflight.
+Safety check failed: existing-state.
+Safety check failed: baseline-inventory.
+Safety check failed: live-source-preflight.
+Safety check failed: corpus-reconciliation.
+Safety check failed: publication.
+```
+
+An unspecified or unknown discovery stage retains `Safety check failed.`. `empty-survey`,
+`intake-confirm`, `intake-copy`, and `cleanup-preflight` also retain the generic diagnostic even if
+an internal exception carries a discovery stage. These tokens identify only the fixed control-flow
+boundary; they never incorporate exception text or runtime data.
 
 Missing or inaccessible requests, sharing violations, and failed output operations are I/O
 failures. Invalid JSON, schema versions, properties, values, and path syntax are argument failures.
