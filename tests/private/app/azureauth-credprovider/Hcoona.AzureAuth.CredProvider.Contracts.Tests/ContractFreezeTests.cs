@@ -1,8 +1,11 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Reflection;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Xunit;
 
@@ -8026,6 +8029,26 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
+    public void IdentityFlowPolicyAndCacheKeySchemaPreserveV1HintControlCharacterBehavior()
+    {
+        CredentialRequest baselineRequest = CreateRequest(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword
+        );
+        CredentialRequest hintedRequest = baselineRequest with
+        {
+            AccountHint = "user\u0001@example.com",
+            TenantHint = "tenant\u0002hint",
+        };
+
+        Assert.True(IdentityFlowPolicy.IsAcceptedMvpRequest(hintedRequest));
+        Assert.Equal(
+            CacheKeySchema.Create(baselineRequest, "user@example.com", "tenant-1"),
+            CacheKeySchema.Create(hintedRequest, "user@example.com", "tenant-1")
+        );
+    }
+
+    [Fact]
     public void IdentityFlowPolicyRequiresExplicitCiModeAndProvidedAzurePipelinesToken()
     {
         var ciContext = new CiContext
@@ -8402,10 +8425,21 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void CompatibilityAllowsAdditiveSameMajorButRequiresMajorForUnsafeChanges()
+    public void CompatibilityAllowsSafeSameMajorAdditionsOnlyForCredentialRequestV1()
     {
         Assert.True(ContractCompatibility.IsSupportedMajor(1, 1));
-        Assert.True(ContractCompatibility.AllowsAdditiveField(1, 1, "newSafeDetail"));
+        AssertAdditiveFieldCompatibilityAcrossAllOverloads(
+            1,
+            1,
+            "newSafeDetail",
+            expectedWhenOlderConsumersCanIgnoreSafely: true
+        );
+        AssertAdditiveFieldCompatibilityAcrossAllOverloads(
+            2,
+            2,
+            "newSafeField",
+            expectedWhenOlderConsumersCanIgnoreSafely: false
+        );
         Assert.False(ContractCompatibility.IsSupportedMajor(2, 1));
         Assert.True(ContractCompatibility.RequiresMajorVersionChange("remove-field"));
         Assert.True(ContractCompatibility.RequiresMajorVersionChange("weaken-security-policy"));
@@ -8438,7 +8472,7 @@ public sealed class ContractFreezeTests
                 ContractBreakingChangeKind.AllowPlaintextSecretDiagnostics
             )
         );
-        Assert.False(ContractCompatibility.RequiresMajorVersionChange("add-optional-field"));
+        Assert.True(ContractCompatibility.RequiresMajorVersionChange("add-optional-field"));
         Assert.True(
             ContractCompatibility.RequiresMajorVersionChange(ContractBreakingChangeKind.Unspecified)
         );
@@ -8447,6 +8481,210 @@ public sealed class ContractFreezeTests
         );
         Assert.True(
             ContractCompatibility.RequiresMajorVersionChange((ContractBreakingChangeKind)999)
+        );
+    }
+
+    [Theory]
+    [MemberData(nameof(SafeAuditableAsciiAdditiveFieldNames))]
+    public void CompatibilityAllowsSafeAuditableAsciiIdentifierShapes(string fieldName)
+    {
+        AssertAdditiveFieldCompatibilityAcrossAllOverloads(
+            1,
+            1,
+            fieldName,
+            expectedWhenOlderConsumersCanIgnoreSafely: true
+        );
+    }
+
+    [Theory]
+    [MemberData(nameof(CredentialRequestV1WireMemberNames))]
+    public void CompatibilityRejectsExistingCredentialRequestV1WireMemberNames(string fieldName)
+    {
+        AssertAdditiveFieldCompatibilityAcrossAllOverloads(
+            1,
+            1,
+            fieldName,
+            expectedWhenOlderConsumersCanIgnoreSafely: false
+        );
+    }
+
+    [Theory]
+    [MemberData(nameof(CredentialRequestV1PascalCaseFieldNames))]
+    public void CompatibilityRejectsCredentialRequestV1PascalCasePropertyNameAliases(
+        string fieldName
+    )
+    {
+        AssertAdditiveFieldCompatibilityAcrossAllOverloads(
+            1,
+            1,
+            fieldName,
+            expectedWhenOlderConsumersCanIgnoreSafely: false
+        );
+    }
+
+    [Theory]
+    [MemberData(nameof(CredentialRequestV1CaseAndWhitespaceAliases))]
+    public void CompatibilityRejectsCredentialRequestV1CaseAndWhitespaceAliases(string fieldName)
+    {
+        AssertAdditiveFieldCompatibilityAcrossAllOverloads(
+            1,
+            1,
+            fieldName,
+            expectedWhenOlderConsumersCanIgnoreSafely: false
+        );
+    }
+
+    [Theory]
+    [InlineData("acquisitionMode")]
+    [InlineData(nameof(CredentialRequestV2.AcquisitionMode))]
+    [InlineData(" ACQUISITIONMODE ")]
+    [InlineData("acquisition Mode")]
+    [InlineData("\tacquisition\tmode\r\n")]
+    public void CompatibilityRejectsAcquisitionModeAliasesAndCallerOverrideAttempts(
+        string fieldName
+    )
+    {
+        AssertAdditiveFieldCompatibilityAcrossAllOverloads(
+            1,
+            1,
+            fieldName,
+            expectedWhenOlderConsumersCanIgnoreSafely: false
+        );
+    }
+
+    [Theory]
+    [MemberData(nameof(RejectedAdditiveFieldNames))]
+    public void CompatibilityRejectsNonAuditableOrConfusableAdditiveFieldNames(string fieldName)
+    {
+        AssertAdditiveFieldCompatibilityAcrossAllOverloads(
+            1,
+            1,
+            fieldName,
+            expectedWhenOlderConsumersCanIgnoreSafely: false
+        );
+    }
+
+    [Fact]
+    public void CompatibilityFailsClosedForMismatchedOrUnknownCredentialRootsAndMajors()
+    {
+        const string safeFieldName = "newSafeField";
+
+        Assert.False(ContractCompatibility.AllowsAdditiveField(1, 2, safeFieldName));
+        Assert.True(
+            ContractCompatibility.RequiresMajorVersionChange(
+                "add-optional-field",
+                ContractVersions.CredentialContractId,
+                ContractVersions.CredentialContractMajor,
+                ContractVersions.CredentialContractV2Id,
+                ContractVersions.CredentialContractV2Major,
+                safeFieldName
+            )
+        );
+        Assert.False(ContractCompatibility.AllowsAdditiveField(999, 999, safeFieldName));
+        Assert.True(
+            ContractCompatibility.RequiresMajorVersionChange(
+                "add-optional-field",
+                "azureauth-credprovider-credential-contract-v999",
+                999,
+                "azureauth-credprovider-credential-contract-v999",
+                999,
+                safeFieldName
+            )
+        );
+        Assert.False(
+            ContractCompatibility.AllowsAdditiveField(
+                ContractVersions.CredentialContractId,
+                ContractVersions.CredentialContractMajor,
+                ContractVersions.CredentialContractV2Id,
+                ContractVersions.CredentialContractV2Major,
+                safeFieldName
+            )
+        );
+        Assert.True(
+            ContractCompatibility.RequiresMajorVersionChange(
+                "add-optional-field",
+                ContractVersions.CredentialContractId,
+                ContractVersions.CredentialContractMajor,
+                ContractVersions.CredentialContractV2Id,
+                ContractVersions.CredentialContractV2Major,
+                safeFieldName
+            )
+        );
+        Assert.False(
+            ContractCompatibility.AllowsAdditiveField(
+                "azureauth-credprovider-credential-contract-v999",
+                ContractVersions.CredentialContractMajor,
+                ContractVersions.CredentialContractId,
+                ContractVersions.CredentialContractMajor,
+                safeFieldName
+            )
+        );
+        Assert.True(
+            ContractCompatibility.RequiresMajorVersionChange(
+                "add-optional-field",
+                "azureauth-credprovider-credential-contract-v999",
+                ContractVersions.CredentialContractMajor,
+                ContractVersions.CredentialContractId,
+                ContractVersions.CredentialContractMajor,
+                safeFieldName
+            )
+        );
+        Assert.False(
+            ContractCompatibility.AllowsAdditiveField(
+                ContractVersions.CredentialContractId,
+                999,
+                ContractVersions.CredentialContractId,
+                ContractVersions.CredentialContractMajor,
+                safeFieldName
+            )
+        );
+        Assert.True(
+            ContractCompatibility.RequiresMajorVersionChange(
+                "add-optional-field",
+                ContractVersions.CredentialContractId,
+                999,
+                ContractVersions.CredentialContractId,
+                ContractVersions.CredentialContractMajor,
+                safeFieldName
+            )
+        );
+        Assert.False(
+            ContractCompatibility.AllowsAdditiveField(
+                ContractVersions.CredentialContractId,
+                ContractVersions.CredentialContractMajor,
+                "azureauth-credprovider-credential-contract-v999",
+                ContractVersions.CredentialContractMajor,
+                safeFieldName
+            )
+        );
+        Assert.True(
+            ContractCompatibility.RequiresMajorVersionChange(
+                "add-optional-field",
+                ContractVersions.CredentialContractId,
+                ContractVersions.CredentialContractMajor,
+                "azureauth-credprovider-credential-contract-v999",
+                ContractVersions.CredentialContractMajor,
+                safeFieldName
+            )
+        );
+        Assert.False(
+            ContractCompatibility.AllowsAdditiveField(
+                ContractVersions.CredentialContractId,
+                ContractVersions.CredentialContractMajor,
+                ContractVersions.CredentialContractId,
+                999,
+                safeFieldName
+            )
+        );
+        Assert.True(
+            ContractCompatibility.RequiresMajorVersionChange(
+                "add-optional-field",
+                ContractVersions.CredentialContractId,
+                ContractVersions.CredentialContractMajor,
+                ContractVersions.CredentialContractId,
+                999,
+                safeFieldName
+            )
         );
     }
 
@@ -8471,12 +8709,22 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void StringCompatibilityOverloadFailsClosedForUnknownChangesButKeepsKnownSafe()
+    public void StringCompatibilityOverloadFailsClosedForUnknownAndContextFreeAdditiveChanges()
     {
         Assert.True(
             ContractCompatibility.RequiresMajorVersionChange("phase-two-round-six-unknown-change")
         );
-        Assert.False(ContractCompatibility.RequiresMajorVersionChange("add-optional-field"));
+        Assert.True(ContractCompatibility.RequiresMajorVersionChange("add-optional-field"));
+        Assert.False(
+            ContractCompatibility.RequiresMajorVersionChange(
+                "add-optional-field",
+                ContractVersions.CredentialContractId,
+                ContractVersions.CredentialContractMajor,
+                ContractVersions.CredentialContractId,
+                ContractVersions.CredentialContractMajor,
+                "newSafeField"
+            )
+        );
     }
 
     [Fact]
@@ -9416,6 +9664,15 @@ public sealed class ContractFreezeTests
                 [CredentialErrorKind.IntegrityFailure] = "integrityFailure",
                 [CredentialErrorKind.ProtocolViolation] = "protocolViolation",
                 [CredentialErrorKind.Fatal] = "fatal",
+            }
+        );
+        VerifyEnumWireValues(
+            options,
+            new Dictionary<AcquisitionMode, string>
+            {
+                [AcquisitionMode.Unspecified] = "unspecified",
+                [AcquisitionMode.SilentOnly] = "silentOnly",
+                [AcquisitionMode.InteractionAllowed] = "interactionAllowed",
             }
         );
         VerifyEnumWireValues(
@@ -10670,6 +10927,888 @@ public sealed class ContractFreezeTests
         };
     }
 
+    // ---- V5-B: Versioned acquisition contract v2 tests ----
+
+    [Fact]
+    public void CredentialRequestV1PublicSurfaceAndWireShapeRemainFrozen()
+    {
+        JsonSerializerOptions options = ContractJson.CreateSerializerOptions();
+        CredentialRequest request = CreateRequest(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword
+        );
+        string json = JsonSerializer.Serialize(request, options);
+
+        Assert.Null(
+            typeof(CredentialRequest).GetProperty(nameof(CredentialRequestV2.AcquisitionMode))
+        );
+        Assert.Equal(CreateExpectedCredentialRequestV1Json(), json);
+    }
+
+    [Fact]
+    public void CredentialRequestV1JsonRoundTripsFuturePersistentCacheStateWithoutMvpAcceptance()
+    {
+        JsonSerializerOptions options = ContractJson.CreateSerializerOptions();
+        CredentialRequest request = CreateRequest(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword
+        ) with
+        {
+            CachePolicy = CachePolicyMode.FuturePersistentCacheRequested,
+        };
+        string json = JsonSerializer.Serialize(request, options);
+        CredentialRequest roundTripped = Assert.IsType<CredentialRequest>(
+            JsonSerializer.Deserialize<CredentialRequest>(json, options)
+        );
+
+        Assert.Contains(
+            "\"cachePolicy\":\"futurePersistentCacheRequested\"",
+            json,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(CachePolicyMode.FuturePersistentCacheRequested, roundTripped.CachePolicy);
+        Assert.False(IdentityFlowPolicy.IsAcceptedMvpRequest(roundTripped));
+    }
+
+    [Fact]
+    public void CredentialRequestV2CarriesDedicatedVersionConstants()
+    {
+        CredentialRequestV2 request = CreateRequestV2(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword,
+            AcquisitionMode.Unspecified
+        );
+
+        Assert.Equal(ContractVersions.CredentialContractV2Major, request.ContractMajor);
+        Assert.Equal(
+            "azureauth-credprovider-credential-contract-v2",
+            ContractVersions.CredentialContractV2Id
+        );
+        Assert.False(typeof(CredentialRequest).IsAssignableFrom(typeof(CredentialRequestV2)));
+        Assert.NotNull(
+            typeof(CredentialRequestV2).GetProperty(nameof(CredentialRequestV2.AcquisitionMode))
+        );
+    }
+
+    [Fact]
+    public void CredentialRequestV2JsonPublicSurfaceExposesOnlyStrictFacadeMethods()
+    {
+        string[] publicMethodNames = typeof(CredentialRequestV2Json)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)
+            .Select(static method => method.Name)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(["Deserialize", "Serialize"], publicMethodNames);
+        Assert.Empty(
+            typeof(CredentialRequestV2Json).GetProperties(
+                BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly
+            )
+        );
+        Assert.Null(typeof(CredentialRequestV2Json).GetMethod("CreateSerializerOptions"));
+        Assert.Null(typeof(CredentialRequestV2Json).GetProperty("Default"));
+    }
+
+    [Fact]
+    public void CredentialRequestV2DirectJsonSerializeRejectsRequestsAcrossCommonOptions()
+    {
+        CredentialRequestV2[] requests =
+        [
+            CreateRequestV2(
+                IdentityFlow.DeviceCode,
+                CredentialKind.BasicPassword,
+                AcquisitionMode.InteractionAllowed
+            ),
+            CreateRequestV2(
+                IdentityFlow.DeviceCode,
+                CredentialKind.BasicPassword,
+                AcquisitionMode.SilentOnly,
+                interactivePolicy: InteractivePolicy.Never
+            ),
+        ];
+
+        foreach (CredentialRequestV2 request in requests)
+        {
+            foreach (JsonSerializerOptions options in CreateDirectCredentialRequestV2JsonOptions())
+            {
+                NotSupportedException ex = Assert.Throws<NotSupportedException>(() =>
+                    JsonSerializer.Serialize(request, options)
+                );
+                Assert.Contains(
+                    "CredentialRequestV2Json.Serialize",
+                    ex.Message,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains(
+                    "CredentialRequestV2Json.Deserialize",
+                    ex.Message,
+                    StringComparison.Ordinal
+                );
+            }
+        }
+    }
+
+    [Fact]
+    public void CredentialRequestV2DirectJsonDeserializeRejectsPayloadsAcrossCommonOptions()
+    {
+        string[] payloads =
+        [
+            CreateCredentialRequestV2Json(),
+            CreateDirectCredentialRequestV2BypassJson(),
+        ];
+
+        foreach (string payload in payloads)
+        {
+            foreach (JsonSerializerOptions options in CreateDirectCredentialRequestV2JsonOptions())
+            {
+                NotSupportedException ex = Assert.Throws<NotSupportedException>(() =>
+                    JsonSerializer.Deserialize<CredentialRequestV2>(payload, options)
+                );
+                Assert.Contains(
+                    "CredentialRequestV2Json.Serialize",
+                    ex.Message,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains(
+                    "CredentialRequestV2Json.Deserialize",
+                    ex.Message,
+                    StringComparison.Ordinal
+                );
+            }
+        }
+    }
+
+    [Fact]
+    public void CredentialRequestV2JsonSerializeUsesExactStrictEnumWireValues()
+    {
+        CredentialRequestV2 request = CreateRequestV2(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword,
+            AcquisitionMode.InteractionAllowed
+        );
+        string json = CredentialRequestV2Json.Serialize(request);
+
+        Assert.Equal(CreateExpectedCredentialRequestV2Json(), json);
+    }
+
+    [Theory]
+    [InlineData(IdentityFlow.InteractiveBrowser, InteractivePolicy.HostToolAllows)]
+    [InlineData(IdentityFlow.DeviceCode, InteractivePolicy.UserAllowed)]
+    public void CredentialRequestV2JsonRoundTripsValidInteractionAllowedFlowsWithoutReflection(
+        IdentityFlow flow,
+        InteractivePolicy interactivePolicy
+    )
+    {
+        CredentialRequestV2 request = CreateRequestV2(
+            flow,
+            CredentialKind.BasicPassword,
+            AcquisitionMode.InteractionAllowed,
+            interactivePolicy: interactivePolicy
+        );
+        string json = CredentialRequestV2Json.Serialize(request);
+        CredentialRequestV2 roundTripped = CredentialRequestV2Json.Deserialize(json);
+
+        Assert.False(JsonSerializer.IsReflectionEnabledByDefault);
+        Assert.Equal(json, CredentialRequestV2Json.Serialize(roundTripped));
+        Assert.Equal(ContractVersions.CredentialContractV2Major, roundTripped.ContractMajor);
+        Assert.Equal(AcquisitionMode.InteractionAllowed, roundTripped.AcquisitionMode);
+        Assert.Equal(flow, roundTripped.IdentityFlow);
+        Assert.Equal(interactivePolicy, roundTripped.InteractivePolicy);
+    }
+
+    [Fact]
+    public void CredentialRequestV2PolicyAllowsInteractionAllowedWithFrozenFutureCacheState()
+    {
+        CredentialRequestV2 request = CreateRequestV2(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword,
+            AcquisitionMode.InteractionAllowed,
+            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested
+        );
+
+        Assert.True(CredentialRequestV2Policy.IsValid(request));
+        Assert.Null(CredentialRequestV2Policy.GetViolation(request));
+    }
+
+    [Fact]
+    public void CredentialRequestV2JsonRoundTripsInteractionAllowedWithFrozenFutureCacheState()
+    {
+        CredentialRequestV2 request = CreateRequestV2(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword,
+            AcquisitionMode.InteractionAllowed,
+            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested
+        );
+        string json = CredentialRequestV2Json.Serialize(request);
+        CredentialRequestV2 roundTripped = CredentialRequestV2Json.Deserialize(json);
+
+        Assert.Contains(
+            "\"cachePolicy\":\"futurePersistentCacheRequested\"",
+            json,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(AcquisitionMode.InteractionAllowed, roundTripped.AcquisitionMode);
+        Assert.Equal(CachePolicyMode.FuturePersistentCacheRequested, roundTripped.CachePolicy);
+        Assert.Equal(json, CredentialRequestV2Json.Serialize(roundTripped));
+        Assert.Null(CredentialRequestV2Policy.GetViolation(roundTripped));
+    }
+
+    [Fact]
+    public void CredentialRequestV2UnspecifiedPreservesV1InteractionSemantics()
+    {
+        CredentialRequestV2 request = CreateRequestV2(
+            IdentityFlow.InteractiveBrowser,
+            CredentialKind.BasicPassword,
+            AcquisitionMode.Unspecified,
+            interactivePolicy: InteractivePolicy.Never
+        );
+
+        Assert.True(CredentialRequestV2Policy.IsValid(request));
+        Assert.Null(CredentialRequestV2Policy.GetViolation(request));
+    }
+
+    [Fact]
+    public void CredentialRequestV2UnspecifiedPreservesFrozenFuturePersistentCacheState()
+    {
+        CredentialRequestV2 request = CreateRequestV2(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword,
+            AcquisitionMode.Unspecified,
+            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested
+        );
+        string json = CredentialRequestV2Json.Serialize(request);
+        CredentialRequestV2 roundTripped = CredentialRequestV2Json.Deserialize(json);
+
+        Assert.True(CredentialRequestV2Policy.IsValid(request));
+        Assert.Null(CredentialRequestV2Policy.GetViolation(request));
+        Assert.Contains("\"acquisitionMode\":\"unspecified\"", json, StringComparison.Ordinal);
+        Assert.Contains(
+            "\"cachePolicy\":\"futurePersistentCacheRequested\"",
+            json,
+            StringComparison.Ordinal
+        );
+        Assert.Equal(AcquisitionMode.Unspecified, roundTripped.AcquisitionMode);
+        Assert.Equal(CachePolicyMode.FuturePersistentCacheRequested, roundTripped.CachePolicy);
+        Assert.Null(CredentialRequestV2Policy.GetViolation(roundTripped));
+    }
+
+    public static TheoryData<CachePolicyMode> InvalidInteractionAllowedCachePolicyCases =>
+        new() { { CachePolicyMode.Unspecified }, { (CachePolicyMode)999 } };
+
+    [Theory]
+    [MemberData(nameof(InvalidInteractionAllowedCachePolicyCases))]
+    public void CredentialRequestV2PolicyRejectsInteractionAllowedWithInvalidCachePolicies(
+        CachePolicyMode cachePolicy
+    )
+    {
+        CredentialRequestV2 request = CreateRequestV2(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword,
+            AcquisitionMode.InteractionAllowed,
+            cachePolicy: cachePolicy
+        );
+        string? violation = CredentialRequestV2Policy.GetViolation(request);
+
+        Assert.False(CredentialRequestV2Policy.IsValid(request));
+        Assert.NotNull(violation);
+        Assert.Contains("frozen v1 request shape", violation, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidInteractionAllowedCachePolicyCases))]
+    public void CredentialRequestV2JsonSerializeRejectsInteractionAllowedWithInvalidCachePolicies(
+        CachePolicyMode cachePolicy
+    )
+    {
+        CredentialRequestV2 request = CreateRequestV2(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword,
+            AcquisitionMode.InteractionAllowed,
+            cachePolicy: cachePolicy
+        );
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() =>
+            CredentialRequestV2Json.Serialize(request)
+        );
+        Assert.Contains("frozen v1 request shape", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CredentialRequestV2JsonDeserializeRejectsInteractionAllowedWithUnspecifiedCache()
+    {
+        string json = CreateCredentialRequestV2JsonWithOverrides(
+            cachePolicyJsonLiteral: SerializeEnumWireLiteral(CachePolicyMode.Unspecified)
+        );
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() =>
+            CredentialRequestV2Json.Deserialize(json)
+        );
+        Assert.Contains("frozen v1 request shape", ex.Message, StringComparison.Ordinal);
+    }
+
+    public static TheoryData<string?, string?> InvalidCredentialRequestV2HintCases =>
+        new()
+        {
+            { "user\u001B@example.com", null },
+            { "user\u009F@example.com", null },
+            { null, "tenant\u001Bhint" },
+            { null, "tenant\u009Fhint" },
+        };
+
+    [Theory]
+    [MemberData(nameof(InvalidCredentialRequestV2HintCases))]
+    public void CredentialRequestV2PolicyRejectsControlCharactersInAccountAndTenantHints(
+        string? accountHint,
+        string? tenantHint
+    )
+    {
+        CredentialRequestV2 request = CreateRequestV2(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword,
+            AcquisitionMode.InteractionAllowed,
+            accountHint: accountHint,
+            tenantHint: tenantHint
+        );
+        string? violation = CredentialRequestV2Policy.GetViolation(request);
+
+        Assert.False(CredentialRequestV2Policy.IsValid(request));
+        Assert.NotNull(violation);
+        Assert.Contains("control characters", violation, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidCredentialRequestV2HintCases))]
+    public void CredentialRequestV2JsonSerializeRejectsControlCharactersInAccountAndTenantHints(
+        string? accountHint,
+        string? tenantHint
+    )
+    {
+        CredentialRequestV2 request = CreateRequestV2(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword,
+            AcquisitionMode.InteractionAllowed,
+            accountHint: accountHint,
+            tenantHint: tenantHint
+        );
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() =>
+            CredentialRequestV2Json.Serialize(request)
+        );
+        Assert.Contains("control characters", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidCredentialRequestV2HintCases))]
+    public void CredentialRequestV2JsonDeserializeRejectsControlCharactersInAccountAndTenantHints(
+        string? accountHint,
+        string? tenantHint
+    )
+    {
+        string json = CreateCredentialRequestV2JsonWithOverrides(accountHint, tenantHint);
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() =>
+            CredentialRequestV2Json.Deserialize(json)
+        );
+        Assert.Contains("control characters", ex.Message, StringComparison.Ordinal);
+    }
+
+    public static TheoryData<CredentialOperation> FrozenCredentialOperationCases =>
+        new()
+        {
+            { CredentialOperation.Get },
+            { CredentialOperation.Store },
+            { CredentialOperation.Erase },
+            { CredentialOperation.Refresh },
+            { CredentialOperation.Configure },
+            { CredentialOperation.Doctor },
+        };
+
+    [Theory]
+    [MemberData(nameof(FrozenCredentialOperationCases))]
+    public void CredentialRequestV2PolicyAllowsUnspecifiedAcrossFrozenV1OperationSurface(
+        CredentialOperation operation
+    )
+    {
+        CredentialRequestV2 request = CreateRequestV2(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword,
+            AcquisitionMode.Unspecified
+        ) with
+        {
+            Operation = operation,
+        };
+
+        Assert.True(CredentialRequestV2Policy.IsValid(request));
+        Assert.Null(CredentialRequestV2Policy.GetViolation(request));
+    }
+
+    [Theory]
+    [MemberData(nameof(FrozenCredentialOperationCases))]
+    public void CredentialRequestV2JsonRoundTripsUnspecifiedAcrossFrozenV1OperationSurface(
+        CredentialOperation operation
+    )
+    {
+        CredentialRequestV2 request = CreateRequestV2(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword,
+            AcquisitionMode.Unspecified
+        ) with
+        {
+            Operation = operation,
+        };
+        string json = CredentialRequestV2Json.Serialize(request);
+        CredentialRequestV2 roundTripped = CredentialRequestV2Json.Deserialize(json);
+
+        Assert.Equal(operation, roundTripped.Operation);
+        Assert.Equal(AcquisitionMode.Unspecified, roundTripped.AcquisitionMode);
+        Assert.Equal(json, CredentialRequestV2Json.Serialize(roundTripped));
+        Assert.True(CredentialRequestV2Policy.IsValid(roundTripped));
+        Assert.Null(CredentialRequestV2Policy.GetViolation(roundTripped));
+    }
+
+    public static TheoryData<
+        CredentialOperation,
+        AcquisitionMode
+    > NonGetOperationNonDefaultAcquisitionModeCases =>
+        new()
+        {
+            { CredentialOperation.Store, AcquisitionMode.InteractionAllowed },
+            { CredentialOperation.Store, AcquisitionMode.SilentOnly },
+            { CredentialOperation.Erase, AcquisitionMode.InteractionAllowed },
+            { CredentialOperation.Erase, AcquisitionMode.SilentOnly },
+            { CredentialOperation.Refresh, AcquisitionMode.InteractionAllowed },
+            { CredentialOperation.Refresh, AcquisitionMode.SilentOnly },
+            { CredentialOperation.Configure, AcquisitionMode.InteractionAllowed },
+            { CredentialOperation.Configure, AcquisitionMode.SilentOnly },
+            { CredentialOperation.Doctor, AcquisitionMode.InteractionAllowed },
+            { CredentialOperation.Doctor, AcquisitionMode.SilentOnly },
+        };
+
+    [Theory]
+    [MemberData(nameof(NonGetOperationNonDefaultAcquisitionModeCases))]
+    public void CredentialRequestV2PolicyRejectsNonDefaultAcquisitionModesForNonGetOperations(
+        CredentialOperation operation,
+        AcquisitionMode acquisitionMode
+    )
+    {
+        InteractivePolicy interactivePolicy =
+            acquisitionMode == AcquisitionMode.SilentOnly
+                ? InteractivePolicy.Never
+                : InteractivePolicy.UserAllowed;
+        CredentialRequestV2 request = CreateRequestV2(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword,
+            acquisitionMode,
+            interactivePolicy: interactivePolicy
+        ) with
+        {
+            Operation = operation,
+        };
+        string? violation = CredentialRequestV2Policy.GetViolation(request);
+
+        Assert.False(CredentialRequestV2Policy.IsValid(request));
+        Assert.NotNull(violation);
+        Assert.Contains("operation get", violation, StringComparison.OrdinalIgnoreCase);
+        Assert.Throws<ArgumentException>(() => CredentialRequestV2Policy.EnsureValid(request));
+    }
+
+    public static TheoryData<CredentialRequestV2> SilentOnlyCurrentFlowCases =>
+        new()
+        {
+            {
+                CreateRequestV2(
+                    IdentityFlow.InteractiveBrowser,
+                    CredentialKind.BasicPassword,
+                    AcquisitionMode.SilentOnly,
+                    interactivePolicy: InteractivePolicy.Never
+                )
+            },
+            {
+                CreateRequestV2(
+                    IdentityFlow.DeviceCode,
+                    CredentialKind.BasicPassword,
+                    AcquisitionMode.SilentOnly,
+                    interactivePolicy: InteractivePolicy.Never
+                )
+            },
+            {
+                CreateRequestV2(
+                    IdentityFlow.PatCompatibility,
+                    CredentialKind.PatCompatibility,
+                    AcquisitionMode.SilentOnly,
+                    interactivePolicy: InteractivePolicy.Never
+                )
+            },
+            { CreateAzurePipelinesSystemAccessTokenRequestV2(AcquisitionMode.SilentOnly) },
+        };
+
+    [Theory]
+    [MemberData(nameof(SilentOnlyCurrentFlowCases))]
+    public void CredentialRequestV2PolicyRejectsSilentOnlyForAllCurrentFlows(
+        CredentialRequestV2 request
+    )
+    {
+        string? violation = CredentialRequestV2Policy.GetViolation(request);
+
+        Assert.False(CredentialRequestV2Policy.IsValid(request));
+        Assert.NotNull(violation);
+        Assert.Contains("SilentOnly", violation, StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>(() => CredentialRequestV2Policy.EnsureValid(request));
+    }
+
+    [Theory]
+    [InlineData(IdentityFlow.InteractiveBrowser, InteractivePolicy.HostToolAllows)]
+    [InlineData(IdentityFlow.DeviceCode, InteractivePolicy.UserAllowed)]
+    public void CredentialRequestV2PolicyAllowsInteractionAllowedOnlyForExplicitHumanFlows(
+        IdentityFlow flow,
+        InteractivePolicy interactivePolicy
+    )
+    {
+        CredentialRequestV2 request = CreateRequestV2(
+            flow,
+            CredentialKind.BasicPassword,
+            AcquisitionMode.InteractionAllowed,
+            interactivePolicy: interactivePolicy
+        );
+
+        Assert.True(CredentialRequestV2Policy.IsValid(request));
+        Assert.Null(CredentialRequestV2Policy.GetViolation(request));
+    }
+
+    public static TheoryData<CredentialRequestV2> InvalidInteractionAllowedCases =>
+        new()
+        {
+            {
+                CreateRequestV2(
+                    IdentityFlow.PatCompatibility,
+                    CredentialKind.PatCompatibility,
+                    AcquisitionMode.InteractionAllowed,
+                    interactivePolicy: InteractivePolicy.UserAllowed
+                )
+            },
+            {
+                CreateRequestV2(
+                    IdentityFlow.InteractiveBrowser,
+                    CredentialKind.BasicPassword,
+                    AcquisitionMode.InteractionAllowed,
+                    interactivePolicy: InteractivePolicy.Never
+                )
+            },
+            {
+                CreateRequestV2(
+                    IdentityFlow.DeviceCode,
+                    CredentialKind.BasicPassword,
+                    AcquisitionMode.InteractionAllowed,
+                    ciContext: new CiContext
+                    {
+                        ExplicitCiMode = true,
+                        AllowsPersistentWrites = false,
+                    }
+                )
+            },
+        };
+
+    [Theory]
+    [MemberData(nameof(InvalidInteractionAllowedCases))]
+    public void CredentialRequestV2PolicyRejectsInteractionAllowedOutsideExplicitHumanFlows(
+        CredentialRequestV2 request
+    )
+    {
+        string? violation = CredentialRequestV2Policy.GetViolation(request);
+
+        Assert.False(CredentialRequestV2Policy.IsValid(request));
+        Assert.NotNull(violation);
+        Assert.Contains("InteractionAllowed", violation, StringComparison.Ordinal);
+    }
+
+    public static TheoryData<string> InvalidInteractionAllowedJsonCases =>
+        new()
+        {
+            {
+                ReplaceInCredentialRequestV2Json(
+                    (
+                        "\"credentialKind\":\"basicPassword\"",
+                        "\"credentialKind\":\"patCompatibility\""
+                    ),
+                    ("\"identityFlow\":\"deviceCode\"", "\"identityFlow\":\"patCompatibility\"")
+                )
+            },
+            {
+                ReplaceInCredentialRequestV2Json(
+                    (
+                        "\"ciContext\":{\"explicitCiMode\":false,\"provider\":null,"
+                            + "\"hasAzurePipelinesSystemAccessToken\":false,"
+                            + "\"allowsPersistentWrites\":false}",
+                        "\"ciContext\":{\"explicitCiMode\":true,"
+                            + "\"provider\":\"AzurePipelines\","
+                            + "\"hasAzurePipelinesSystemAccessToken\":true,"
+                            + "\"allowsPersistentWrites\":false}"
+                    )
+                )
+            },
+        };
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(999)]
+    public void CredentialRequestV2JsonSerializeRejectsUnsupportedContractMajor(int contractMajor)
+    {
+        CredentialRequestV2 request = CreateRequestV2(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword,
+            AcquisitionMode.InteractionAllowed
+        ) with
+        {
+            ContractMajor = contractMajor,
+        };
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() =>
+            CredentialRequestV2Json.Serialize(request)
+        );
+        Assert.Contains("contract major must be 2", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CredentialRequestV2JsonSerializeRejectsSilentOnly()
+    {
+        CredentialRequestV2 request = CreateRequestV2(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword,
+            AcquisitionMode.SilentOnly,
+            interactivePolicy: InteractivePolicy.Never
+        );
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() =>
+            CredentialRequestV2Json.Serialize(request)
+        );
+        Assert.Contains("SilentOnly", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidInteractionAllowedCases))]
+    public void CredentialRequestV2JsonSerializeRejectsInvalidInteractionAllowed(
+        CredentialRequestV2 request
+    )
+    {
+        ArgumentException ex = Assert.Throws<ArgumentException>(() =>
+            CredentialRequestV2Json.Serialize(request)
+        );
+        Assert.Contains("InteractionAllowed", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(NonGetOperationNonDefaultAcquisitionModeCases))]
+    public void CredentialRequestV2JsonSerializeRejectsNonDefaultModesForNonGetOperations(
+        CredentialOperation operation,
+        AcquisitionMode acquisitionMode
+    )
+    {
+        InteractivePolicy interactivePolicy =
+            acquisitionMode == AcquisitionMode.SilentOnly
+                ? InteractivePolicy.Never
+                : InteractivePolicy.UserAllowed;
+        CredentialRequestV2 request = CreateRequestV2(
+            IdentityFlow.DeviceCode,
+            CredentialKind.BasicPassword,
+            acquisitionMode,
+            interactivePolicy: interactivePolicy
+        ) with
+        {
+            Operation = operation,
+        };
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() =>
+            CredentialRequestV2Json.Serialize(request)
+        );
+        Assert.Contains("operation get", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void CredentialRequestV2JsonRequiresContractMajor()
+    {
+        string json = CreateCredentialRequestV2Json()
+            .Replace("\"contractMajor\":2,", string.Empty, StringComparison.Ordinal);
+
+        Assert.Throws<JsonException>(() => CredentialRequestV2Json.Deserialize(json));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(999)]
+    public void CredentialRequestV2JsonRejectsUnsupportedContractMajor(int contractMajor)
+    {
+        string json = CreateCredentialRequestV2Json()
+            .Replace(
+                "\"contractMajor\":2",
+                $"\"contractMajor\":{contractMajor}",
+                StringComparison.Ordinal
+            );
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() =>
+            CredentialRequestV2Json.Deserialize(json)
+        );
+        Assert.Contains("contract major must be 2", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("2")]
+    [InlineData("1")]
+    [InlineData("999")]
+    public void CredentialRequestV2JsonRejectsQuotedContractMajor(string contractMajor)
+    {
+        string json = CreateCredentialRequestV2Json()
+            .Replace(
+                "\"contractMajor\":2",
+                $"\"contractMajor\":\"{contractMajor}\"",
+                StringComparison.Ordinal
+            );
+
+        Assert.Throws<JsonException>(() => CredentialRequestV2Json.Deserialize(json));
+    }
+
+    [Fact]
+    public void CredentialRequestV2JsonRoundTripsNumericContractMajor()
+    {
+        string json = CreateCredentialRequestV2Json();
+        CredentialRequestV2 roundTripped = CredentialRequestV2Json.Deserialize(json);
+
+        Assert.Equal(ContractVersions.CredentialContractV2Major, roundTripped.ContractMajor);
+        Assert.Equal(json, CredentialRequestV2Json.Serialize(roundTripped));
+    }
+
+    [Fact]
+    public void CredentialRequestV2JsonDeserializeRejectsSilentOnlyWithArgumentException()
+    {
+        string json = ReplaceInCredentialRequestV2Json(
+            ("\"acquisitionMode\":\"interactionAllowed\"", "\"acquisitionMode\":\"silentOnly\"")
+        );
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() =>
+            CredentialRequestV2Json.Deserialize(json)
+        );
+        Assert.Contains("SilentOnly", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidInteractionAllowedJsonCases))]
+    public void CredentialRequestV2JsonDeserializeRejectsInvalidInteractionAllowed(string json)
+    {
+        ArgumentException ex = Assert.Throws<ArgumentException>(() =>
+            CredentialRequestV2Json.Deserialize(json)
+        );
+        Assert.Contains("InteractionAllowed", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(NonGetOperationNonDefaultAcquisitionModeCases))]
+    public void CredentialRequestV2JsonDeserializeRejectsNonDefaultModesForNonGetOperations(
+        CredentialOperation operation,
+        AcquisitionMode acquisitionMode
+    )
+    {
+        string json = ReplaceInCredentialRequestV2Json(
+            ("\"operation\":\"get\"", $"\"operation\":{SerializeEnumWireLiteral(operation)}"),
+            (
+                "\"acquisitionMode\":\"interactionAllowed\"",
+                $"\"acquisitionMode\":{SerializeEnumWireLiteral(acquisitionMode)}"
+            )
+        );
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() =>
+            CredentialRequestV2Json.Deserialize(json)
+        );
+        Assert.Contains("operation get", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void CredentialRequestV2JsonRequiresAcquisitionMode()
+    {
+        string json = CreateCredentialRequestV2Json()
+            .Replace(
+                ",\"acquisitionMode\":\"interactionAllowed\"",
+                string.Empty,
+                StringComparison.Ordinal
+            );
+
+        Assert.Throws<JsonException>(() => CredentialRequestV2Json.Deserialize(json));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("\r\n\t")]
+    public void CredentialRequestV2JsonRejectsEmptyOrWhitespacePayloadAsMalformedJson(string json)
+    {
+        Assert.Throws<JsonException>(() => CredentialRequestV2Json.Deserialize(json));
+    }
+
+    [Fact]
+    public void CredentialRequestV2JsonRejectsNullPayload()
+    {
+        Assert.Throws<ArgumentNullException>(() => CredentialRequestV2Json.Deserialize(null!));
+    }
+
+    [Theory]
+    [InlineData("\"AcquisitionMode\":\"interactionAllowed\"")]
+    [InlineData("\"unknownAcquisitionMode\":\"interactionAllowed\"")]
+    public void CredentialRequestV2JsonRejectsPropertyCaseAliasesAndUnknownNames(
+        string replacementProperty
+    )
+    {
+        string json = CreateCredentialRequestV2Json()
+            .Replace(
+                "\"acquisitionMode\":\"interactionAllowed\"",
+                replacementProperty,
+                StringComparison.Ordinal
+            );
+
+        Assert.Throws<JsonException>(() => CredentialRequestV2Json.Deserialize(json));
+    }
+
+    [Fact]
+    public void CredentialRequestV2JsonRejectsUnknownProperties()
+    {
+        string json = CreateCredentialRequestV2Json()
+            .Replace(
+                "\"extensionData\":{}",
+                "\"extensionData\":{},\"futurePolicy\":true",
+                StringComparison.Ordinal
+            );
+
+        Assert.Throws<JsonException>(() => CredentialRequestV2Json.Deserialize(json));
+    }
+
+    [Fact]
+    public void CredentialRequestV2JsonRejectsDuplicateProperties()
+    {
+        string json = CreateCredentialRequestV2Json()
+            .Replace(
+                "\"extensionData\":{}",
+                "\"extensionData\":{},\"acquisitionMode\":\"unspecified\"",
+                StringComparison.Ordinal
+            );
+
+        Assert.Throws<JsonException>(() => CredentialRequestV2Json.Deserialize(json));
+    }
+
+    [Theory]
+    [InlineData("\"interactionAllowed\"", "\"InteractionAllowed\"")]
+    [InlineData("\"interactionAllowed\"", "\"futureMode\"")]
+    [InlineData("\"interactionAllowed\"", "1")]
+    public void CredentialRequestV2JsonRejectsEnumCaseAliasesUnknownValuesAndNumericValues(
+        string currentValue,
+        string replacementValue
+    )
+    {
+        string json = CreateCredentialRequestV2Json()
+            .Replace(currentValue, replacementValue, StringComparison.Ordinal);
+
+        Assert.Throws<JsonException>(() => CredentialRequestV2Json.Deserialize(json));
+    }
+
     private static ConfigurationChange CreateConfigurationChange(
         ConfigurationChangeOperation operation
     ) =>
@@ -10745,6 +11884,354 @@ public sealed class ContractFreezeTests
             _ => result,
         };
     }
+
+    private static CredentialRequestV2 CreateRequestV2(
+        IdentityFlow flow,
+        CredentialKind kind,
+        AcquisitionMode acquisitionMode,
+        InteractivePolicy interactivePolicy = InteractivePolicy.UserAllowed,
+        CachePolicyMode cachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
+        CiContext? ciContext = null,
+        string? accountHint = null,
+        string? tenantHint = null
+    ) =>
+        new()
+        {
+            Ecosystem = CredentialEcosystem.Git,
+            Operation = CredentialOperation.Get,
+            Resource = CanonicalResourceIdentity.Create(
+                "dev.azure.com",
+                "org",
+                new Uri("https://dev.azure.com/org")
+            ),
+            ServiceIdentity = "default",
+            AccountHint = accountHint,
+            TenantHint = tenantHint,
+            RequestedAudience = TokenAudience.AzureDevOps,
+            CredentialKind = kind,
+            IdentityFlow = flow,
+            InteractivePolicy = interactivePolicy,
+            AcquisitionMode = acquisitionMode,
+            CachePolicy = cachePolicy,
+            CiContext =
+                ciContext
+                ?? new CiContext { ExplicitCiMode = false, AllowsPersistentWrites = false },
+        };
+
+    private static CredentialRequestV2 CreateAzurePipelinesSystemAccessTokenRequestV2(
+        AcquisitionMode acquisitionMode
+    ) =>
+        CreateRequestV2(
+            IdentityFlow.AzurePipelinesSystemAccessToken,
+            CredentialKind.BearerToken,
+            acquisitionMode,
+            interactivePolicy: InteractivePolicy.Never,
+            cachePolicy: CachePolicyMode.NonPersistentCi,
+            ciContext: new CiContext
+            {
+                ExplicitCiMode = true,
+                Provider = CiProviderNames.AzurePipelines,
+                HasAzurePipelinesSystemAccessToken = true,
+                AllowsPersistentWrites = false,
+            }
+        );
+
+    private static string CreateCredentialRequestV2Json() =>
+        CredentialRequestV2Json.Serialize(
+            CreateRequestV2(
+                IdentityFlow.DeviceCode,
+                CredentialKind.BasicPassword,
+                AcquisitionMode.InteractionAllowed
+            )
+        );
+
+    private static string CreateCredentialRequestV2JsonWithOverrides(
+        string? accountHint = null,
+        string? tenantHint = null,
+        string? cachePolicyJsonLiteral = null
+    )
+    {
+        var replacements = new List<(string Current, string Replacement)>();
+
+        if (accountHint is not null)
+        {
+            replacements.Add(
+                (
+                    "\"accountHint\":null",
+                    $"\"accountHint\":{SerializeJsonStringLiteral(accountHint)}"
+                )
+            );
+        }
+
+        if (tenantHint is not null)
+        {
+            replacements.Add(
+                ("\"tenantHint\":null", $"\"tenantHint\":{SerializeJsonStringLiteral(tenantHint)}")
+            );
+        }
+
+        if (cachePolicyJsonLiteral is not null)
+        {
+            replacements.Add(
+                (
+                    "\"cachePolicy\":\"productPersistentCacheDisabled\"",
+                    $"\"cachePolicy\":{cachePolicyJsonLiteral}"
+                )
+            );
+        }
+
+        return ReplaceInCredentialRequestV2Json(replacements.ToArray());
+    }
+
+    private static string ReplaceInCredentialRequestV2Json(
+        params (string Current, string Replacement)[] replacements
+    )
+    {
+        string json = CreateCredentialRequestV2Json();
+        foreach ((string current, string replacement) in replacements)
+        {
+            json = json.Replace(current, replacement, StringComparison.Ordinal);
+        }
+
+        return json;
+    }
+
+    private static string SerializeEnumWireLiteral<TEnum>(TEnum value)
+        where TEnum : struct, Enum =>
+        JsonSerializer.Serialize(value, ContractJson.CreateSerializerOptions());
+
+    private static string SerializeJsonStringLiteral(string value) =>
+        $"\"{JsonEncodedText.Encode(value).ToString()}\"";
+
+    private static string CreateDirectCredentialRequestV2BypassJson() =>
+        ReplaceInCredentialRequestV2Json(
+            ("\"acquisitionMode\":\"interactionAllowed\"", "\"AcquisitionMode\":\"silentOnly\""),
+            ("\"extensionData\":{}", "\"extensionData\":{},\"futurePolicy\":true")
+        );
+
+    private static JsonSerializerOptions[] CreateDirectCredentialRequestV2JsonOptions() =>
+        [
+            CreateDirectCredentialRequestV2JsonOptions(defaults: null),
+            CreateDirectCredentialRequestV2JsonOptions(JsonSerializerDefaults.Web),
+            CreateDirectCredentialRequestV2JsonOptions(
+                defaults: null,
+                propertyNamingPolicy: JsonNamingPolicy.CamelCase,
+                propertyNameCaseInsensitive: true,
+                addCamelCaseEnumConverter: true
+            ),
+            ContractJson.CreateSerializerOptions(),
+        ];
+
+    private static JsonSerializerOptions CreateDirectCredentialRequestV2JsonOptions(
+        JsonSerializerDefaults? defaults,
+        JsonNamingPolicy? propertyNamingPolicy = null,
+        bool? propertyNameCaseInsensitive = null,
+        bool addCamelCaseEnumConverter = false
+    )
+    {
+        JsonSerializerOptions options = defaults is JsonSerializerDefaults serializerDefaults
+            ? new JsonSerializerOptions(serializerDefaults)
+            : new JsonSerializerOptions();
+        options.TypeInfoResolver = new DefaultJsonTypeInfoResolver();
+        options.PropertyNamingPolicy = propertyNamingPolicy;
+        if (propertyNameCaseInsensitive.HasValue)
+        {
+            options.PropertyNameCaseInsensitive = propertyNameCaseInsensitive.Value;
+        }
+
+        if (addCamelCaseEnumConverter)
+        {
+            options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+        }
+
+        return options;
+    }
+
+    public static IEnumerable<object[]> CredentialRequestV1WireMemberNames =>
+        CredentialRequestV1FieldNamePairs.Select(static entry => new object[] { entry.WireName });
+
+    public static IEnumerable<object[]> CredentialRequestV1PascalCaseFieldNames =>
+        CredentialRequestV1FieldNamePairs.Select(static entry =>
+            new object[] { entry.PropertyName }
+        );
+
+    public static IEnumerable<object[]> CredentialRequestV1CaseAndWhitespaceAliases =>
+        CredentialRequestV1FieldNamePairs.SelectMany(static entry =>
+            new[]
+            {
+                new object[] { entry.WireName.ToUpperInvariant() },
+                new object[] { CreateWhitespaceAlias(entry.WireName) },
+            }
+        );
+
+    public static IEnumerable<object[]> SafeAuditableAsciiAdditiveFieldNames =>
+        [
+            new object[] { "newSafeField2" },
+            new object[] { "NewSafeField2" },
+            new object[] { "acquisitionMode2" },
+            new object[] { nameof(CredentialRequestV2.AcquisitionMode) + "2" },
+        ];
+
+    public static IEnumerable<object[]> RejectedAdditiveFieldNames =>
+        [
+            new object[] { "1newSafeField" },
+            new object[] { "new-safe-field" },
+            new object[] { "new_safe_field" },
+            new object[] { "newSafe Field" },
+            new object[] { "newSafeField\u0000" },
+            new object[] { "newSafe\u200BField" },
+            new object[] { "newSafe\uFEFFField" },
+            new object[] { "newSafe\u202EField" },
+            new object[] { "newSa\u0301feField" },
+            new object[] { "acqu\u0456sitionMode" },
+            new object[] { "acquisiti\u03BFnMode" },
+            new object[] { "newSafeField\uD800" },
+        ];
+
+    private static readonly (
+        string WireName,
+        string PropertyName
+    )[] CredentialRequestV1FieldNamePairs =
+    [
+        ("contractMajor", nameof(CredentialRequest.ContractMajor)),
+        ("ecosystem", nameof(CredentialRequest.Ecosystem)),
+        ("operation", nameof(CredentialRequest.Operation)),
+        ("resource", nameof(CredentialRequest.Resource)),
+        ("serviceIdentity", nameof(CredentialRequest.ServiceIdentity)),
+        ("accountHint", nameof(CredentialRequest.AccountHint)),
+        ("tenantHint", nameof(CredentialRequest.TenantHint)),
+        ("requestedAudience", nameof(CredentialRequest.RequestedAudience)),
+        ("credentialKind", nameof(CredentialRequest.CredentialKind)),
+        ("identityFlow", nameof(CredentialRequest.IdentityFlow)),
+        ("interactivePolicy", nameof(CredentialRequest.InteractivePolicy)),
+        ("cachePolicy", nameof(CredentialRequest.CachePolicy)),
+        ("ciContext", nameof(CredentialRequest.CiContext)),
+        ("extensionData", nameof(CredentialRequest.ExtensionData)),
+    ];
+
+    private static void AssertAdditiveFieldCompatibilityAcrossAllOverloads(
+        int actualMajor,
+        int supportedMajor,
+        string fieldName,
+        bool expectedWhenOlderConsumersCanIgnoreSafely
+    )
+    {
+        string actualContractId = ResolveKnownCredentialContractId(actualMajor);
+        string supportedContractId = ResolveKnownCredentialContractId(supportedMajor);
+
+        Assert.Equal(
+            expectedWhenOlderConsumersCanIgnoreSafely,
+            ContractCompatibility.AllowsAdditiveField(actualMajor, supportedMajor, fieldName)
+        );
+        Assert.Equal(
+            expectedWhenOlderConsumersCanIgnoreSafely,
+            ContractCompatibility.AllowsAdditiveField(
+                actualMajor,
+                supportedMajor,
+                fieldName,
+                olderConsumersCanIgnoreSafely: true
+            )
+        );
+        Assert.False(
+            ContractCompatibility.AllowsAdditiveField(
+                actualMajor,
+                supportedMajor,
+                fieldName,
+                olderConsumersCanIgnoreSafely: false
+            )
+        );
+        Assert.Equal(
+            expectedWhenOlderConsumersCanIgnoreSafely,
+            ContractCompatibility.AllowsAdditiveField(
+                actualContractId,
+                actualMajor,
+                supportedContractId,
+                supportedMajor,
+                fieldName
+            )
+        );
+        Assert.Equal(
+            expectedWhenOlderConsumersCanIgnoreSafely,
+            ContractCompatibility.AllowsAdditiveField(
+                actualContractId,
+                actualMajor,
+                supportedContractId,
+                supportedMajor,
+                fieldName,
+                olderConsumersCanIgnoreSafely: true
+            )
+        );
+        Assert.False(
+            ContractCompatibility.AllowsAdditiveField(
+                actualContractId,
+                actualMajor,
+                supportedContractId,
+                supportedMajor,
+                fieldName,
+                olderConsumersCanIgnoreSafely: false
+            )
+        );
+        Assert.Equal(
+            !expectedWhenOlderConsumersCanIgnoreSafely,
+            ContractCompatibility.RequiresMajorVersionChange(
+                "add-optional-field",
+                actualContractId,
+                actualMajor,
+                supportedContractId,
+                supportedMajor,
+                fieldName
+            )
+        );
+        Assert.Equal(
+            !expectedWhenOlderConsumersCanIgnoreSafely,
+            ContractCompatibility.RequiresMajorVersionChange(
+                "add-optional-field",
+                actualContractId,
+                actualMajor,
+                supportedContractId,
+                supportedMajor,
+                fieldName,
+                olderConsumersCanIgnoreSafely: true
+            )
+        );
+        Assert.True(
+            ContractCompatibility.RequiresMajorVersionChange(
+                "add-optional-field",
+                actualContractId,
+                actualMajor,
+                supportedContractId,
+                supportedMajor,
+                fieldName,
+                olderConsumersCanIgnoreSafely: false
+            )
+        );
+    }
+
+    private static string CreateWhitespaceAlias(string wireName)
+    {
+        var builder = new StringBuilder(wireName.Length + 4);
+        builder.Append('\t');
+        foreach (char character in wireName)
+        {
+            if (char.IsUpper(character))
+            {
+                builder.Append(' ');
+            }
+
+            builder.Append(character);
+        }
+
+        builder.Append("\r\n");
+        return builder.ToString();
+    }
+
+    private static string ResolveKnownCredentialContractId(int major) =>
+        major switch
+        {
+            ContractVersions.CredentialContractMajor => ContractVersions.CredentialContractId,
+            ContractVersions.CredentialContractV2Major => ContractVersions.CredentialContractV2Id,
+            _ => throw new ArgumentOutOfRangeException(nameof(major)),
+        };
 
     private static CredentialRequest CreateRequest(IdentityFlow flow, CredentialKind kind) =>
         new()
@@ -10844,6 +12331,69 @@ public sealed class ContractFreezeTests
               "cachePolicy": "productPersistentCacheDisabled"
             }
             """;
+
+    private static string CreateExpectedCredentialRequestV1Json() =>
+        string.Concat(
+            "{",
+            "\"contractMajor\":1,",
+            "\"ecosystem\":\"git\",",
+            "\"operation\":\"get\",",
+            "\"resource\":{",
+            "\"azureDevOpsHost\":\"dev.azure.com\",",
+            "\"organization\":\"org\",",
+            "\"project\":null,",
+            "\"feed\":null,",
+            "\"repository\":null,",
+            "\"serviceEndpoint\":\"https://dev.azure.com/org\"",
+            "},",
+            "\"serviceIdentity\":\"default\",",
+            "\"accountHint\":null,",
+            "\"tenantHint\":null,",
+            "\"requestedAudience\":\"azureDevOps\",",
+            "\"credentialKind\":\"basicPassword\",",
+            "\"identityFlow\":\"deviceCode\",",
+            "\"interactivePolicy\":\"userAllowed\",",
+            "\"cachePolicy\":\"productPersistentCacheDisabled\",",
+            "\"ciContext\":{",
+            "\"explicitCiMode\":false,",
+            "\"provider\":null,",
+            "\"hasAzurePipelinesSystemAccessToken\":false,",
+            "\"allowsPersistentWrites\":false",
+            "},",
+            "\"extensionData\":{}}"
+        );
+
+    private static string CreateExpectedCredentialRequestV2Json() =>
+        string.Concat(
+            "{",
+            "\"contractMajor\":2,",
+            "\"ecosystem\":\"git\",",
+            "\"operation\":\"get\",",
+            "\"resource\":{",
+            "\"azureDevOpsHost\":\"dev.azure.com\",",
+            "\"organization\":\"org\",",
+            "\"project\":null,",
+            "\"feed\":null,",
+            "\"repository\":null,",
+            "\"serviceEndpoint\":\"https://dev.azure.com/org\"",
+            "},",
+            "\"serviceIdentity\":\"default\",",
+            "\"accountHint\":null,",
+            "\"tenantHint\":null,",
+            "\"requestedAudience\":\"azureDevOps\",",
+            "\"credentialKind\":\"basicPassword\",",
+            "\"identityFlow\":\"deviceCode\",",
+            "\"interactivePolicy\":\"userAllowed\",",
+            "\"acquisitionMode\":\"interactionAllowed\",",
+            "\"cachePolicy\":\"productPersistentCacheDisabled\",",
+            "\"ciContext\":{",
+            "\"explicitCiMode\":false,",
+            "\"provider\":null,",
+            "\"hasAzurePipelinesSystemAccessToken\":false,",
+            "\"allowsPersistentWrites\":false",
+            "},",
+            "\"extensionData\":{}}"
+        );
 
     private static string GetFullyQualifiedHelperPath() =>
         GetFullyQualifiedHelperPath(KeyringHelperIntegrityPlatform.Linux);

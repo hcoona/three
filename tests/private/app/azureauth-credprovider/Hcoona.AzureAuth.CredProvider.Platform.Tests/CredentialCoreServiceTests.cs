@@ -1863,6 +1863,47 @@ public sealed class CredentialCoreServiceTests
         Assert.Equal("ProtocolViolation", error.Code);
     }
 
+    [Fact]
+    public void ExecuteContractV2MajorFailsClosedWithoutInvokingProviderCacheOrTokenExchange()
+    {
+        var provider = new DeterministicFakeIdentityProvider();
+        var derivedCredentialCache = new ReportingDerivedCredentialCache(
+            new DerivedCredentialCacheAvailability(
+                DerivedCredentialCacheAvailabilityStatus.Available
+            )
+        );
+        var tokenExchange = new CountingTokenExchange(
+            (_, _, _) => throw new InvalidOperationException("token exchange should not run")
+        );
+        var service = new CredentialCoreService(
+            provider,
+            diagnosticRouter: null,
+            derivedCredentialCache: derivedCredentialCache,
+            tokenExchange: tokenExchange
+        );
+        CredentialRequest request = CreateGitRequest() with
+        {
+            ContractMajor = ContractVersions.CredentialContractV2Major,
+        };
+
+        CredentialResult result = service.Execute(request);
+
+        Assert.Equal(CredentialResultStatus.ProtocolViolation, result.Status);
+        Assert.Equal(0, provider.InvocationCount);
+        Assert.Equal(0, derivedCredentialCache.PersistentAvailabilityCheckCount);
+        Assert.Equal(0, derivedCredentialCache.PersistentReadCount);
+        Assert.Equal(0, derivedCredentialCache.PersistentWriteCount);
+        Assert.Equal(0, tokenExchange.InvocationCount);
+        Assert.Null(result.Username);
+        Assert.Null(result.Password);
+        Assert.Null(result.BearerToken);
+        Assert.Null(result.CacheKey);
+
+        CredentialError error = Assert.IsType<CredentialError>(result.Error);
+        Assert.Equal(CredentialErrorKind.ProtocolViolation, error.Kind);
+        Assert.Equal("ProtocolViolation", error.Code);
+    }
+
     [Theory]
     [InlineData("default\u001B")]
     [InlineData("default\u009F")]

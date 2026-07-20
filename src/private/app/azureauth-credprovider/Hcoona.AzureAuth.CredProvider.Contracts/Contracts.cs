@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Hcoona.AzureAuth.CredProvider.Contracts;
@@ -818,6 +819,44 @@ public sealed record CredentialRequest : IJsonOnDeserialized
         {
             throw new ArgumentException(
                 "Protocol violation: credential request contract major must be 1.",
+                nameof(ContractMajor)
+            );
+        }
+    }
+}
+
+[JsonConverter(typeof(CredentialRequestV2DirectJsonConverter))]
+public sealed record CredentialRequestV2 : IJsonOnDeserialized
+{
+    [JsonRequired]
+    public int ContractMajor { get; init; } = ContractVersions.CredentialContractV2Major;
+    public required CredentialEcosystem Ecosystem { get; init; }
+    public required CredentialOperation Operation { get; init; }
+    public required CanonicalResourceIdentity Resource { get; init; }
+
+    [JsonRequired]
+    public required string ServiceIdentity { get; init; }
+    public string? AccountHint { get; init; }
+    public string? TenantHint { get; init; }
+    public required TokenAudience RequestedAudience { get; init; }
+    public required CredentialKind CredentialKind { get; init; }
+    public required IdentityFlow IdentityFlow { get; init; }
+    public required InteractivePolicy InteractivePolicy { get; init; }
+
+    [JsonRequired]
+    public required AcquisitionMode AcquisitionMode { get; init; }
+
+    public required CachePolicyMode CachePolicy { get; init; }
+    public CiContext? CiContext { get; init; }
+    public IReadOnlyDictionary<string, string> ExtensionData { get; init; } =
+        ContractMetadata.Empty;
+
+    void IJsonOnDeserialized.OnDeserialized()
+    {
+        if (ContractMajor != ContractVersions.CredentialContractV2Major)
+        {
+            throw new ArgumentException(
+                "Protocol violation: credential request v2 contract major must be 2.",
                 nameof(ContractMajor)
             );
         }
@@ -4312,6 +4351,31 @@ public static class IdentityFlowPolicy
             _ => IdentityFlowState.Unsupported,
         };
 
+    internal static bool IsStructurallyValidRequest(CredentialRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (
+            !HasKnownFrozenRequiredRequestEnums(request)
+            || request.Resource is null
+            || !ServiceIdentityContract.IsCanonical(request.ServiceIdentity)
+        )
+        {
+            return false;
+        }
+
+        return CanonicalResourceIdentityPolicy.IsValid(request.Resource)
+            && IsResourceShapeAllowed(request)
+            && IsFlowCredentialShapeAllowed(request);
+    }
+
+    internal static bool HasValidHintValues(CredentialRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return !ContainsRequestControlCharacters(request.AccountHint)
+            && !ContainsRequestControlCharacters(request.TenantHint);
+    }
+
     public static bool CanUsePatCompatibility(CredentialRequest request) =>
         request.IdentityFlow == IdentityFlow.PatCompatibility
         && request.CredentialKind == CredentialKind.PatCompatibility
@@ -4331,25 +4395,9 @@ public static class IdentityFlowPolicy
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        return HasKnownRequiredRequestEnums(request)
-            && request.Resource is not null
-            && ServiceIdentityContract.IsCanonical(request.ServiceIdentity)
-            && CanonicalResourceIdentityPolicy.IsValid(request.Resource)
-            && IsResourceShapeAllowed(request)
+        return IsStructurallyValidRequest(request)
+            && HasAcceptedMvpCachePolicy(request)
             && GetMvpState(request.IdentityFlow) == IdentityFlowState.AcceptedMvp
-            && (
-                request.IdentityFlow != IdentityFlow.PatCompatibility
-                || request.CredentialKind == CredentialKind.PatCompatibility
-            )
-            && (
-                request.IdentityFlow == IdentityFlow.PatCompatibility
-                || request.CredentialKind != CredentialKind.PatCompatibility
-            )
-            && (
-                request.IdentityFlow != IdentityFlow.AzurePipelinesSystemAccessToken
-                || request.Ecosystem != CredentialEcosystem.Git
-                || request.CredentialKind == CredentialKind.BearerToken
-            )
             && IsInteractivePolicyAllowed(request)
             && IsCiPolicyAllowed(request);
     }
@@ -4421,7 +4469,31 @@ public static class IdentityFlowPolicy
             request.Ecosystem
         );
 
-    private static bool HasKnownRequiredRequestEnums(CredentialRequest request) =>
+    private static bool IsFlowCredentialShapeAllowed(CredentialRequest request) =>
+        (
+            request.IdentityFlow != IdentityFlow.PatCompatibility
+            || request.CredentialKind == CredentialKind.PatCompatibility
+        )
+        && (
+            request.IdentityFlow == IdentityFlow.PatCompatibility
+            || request.CredentialKind != CredentialKind.PatCompatibility
+        )
+        && (
+            request.IdentityFlow != IdentityFlow.AzurePipelinesSystemAccessToken
+            || request.Ecosystem != CredentialEcosystem.Git
+            || request.CredentialKind == CredentialKind.BearerToken
+        );
+
+    private static bool ContainsRequestControlCharacters(string? value) =>
+        value is not null && value.Any(char.IsControl);
+
+    private static bool HasAcceptedMvpCachePolicy(CredentialRequest request) =>
+        request.CachePolicy
+            is CachePolicyMode.NoCache
+                or CachePolicyMode.ProductPersistentCacheDisabled
+                or CachePolicyMode.NonPersistentCi;
+
+    private static bool HasKnownFrozenRequiredRequestEnums(CredentialRequest request) =>
         request.ContractMajor == ContractVersions.CredentialContractMajor
         && request.Ecosystem
             is CredentialEcosystem.Git
@@ -4459,7 +4531,114 @@ public static class IdentityFlowPolicy
         && request.CachePolicy
             is CachePolicyMode.NoCache
                 or CachePolicyMode.ProductPersistentCacheDisabled
-                or CachePolicyMode.NonPersistentCi;
+                or CachePolicyMode.NonPersistentCi
+                or CachePolicyMode.FuturePersistentCacheRequested;
+}
+
+public static class CredentialRequestV2Policy
+{
+    public static void EnsureValid(CredentialRequestV2 request)
+    {
+        string? violation = GetViolation(request);
+        if (violation is not null)
+        {
+            throw new ArgumentException(violation, nameof(request));
+        }
+    }
+
+    public static bool IsValid(CredentialRequestV2 request) => GetViolation(request) is null;
+
+    public static string? GetViolation(CredentialRequestV2 request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        CredentialRequest v1Projection = ToV1Projection(request);
+
+        if (request.ContractMajor != ContractVersions.CredentialContractV2Major)
+        {
+            return "Protocol violation: credential request v2 contract major must be 2.";
+        }
+
+        if (!IdentityFlowPolicy.IsStructurallyValidRequest(v1Projection))
+        {
+            return "Protocol violation: credential request v2 must preserve the frozen v1 "
+                + "request shape.";
+        }
+
+        if (!IdentityFlowPolicy.HasValidHintValues(v1Projection))
+        {
+            return "Protocol violation: credential request v2 accountHint and tenantHint must "
+                + "not contain control characters.";
+        }
+
+        if (
+            request.AcquisitionMode is not AcquisitionMode.Unspecified
+            && request.Operation != CredentialOperation.Get
+        )
+        {
+            return "Protocol violation: acquisition-specific non-default acquisitionMode "
+                + "values are valid only for operation get.";
+        }
+
+        return request.AcquisitionMode switch
+        {
+            AcquisitionMode.Unspecified => null,
+            AcquisitionMode.SilentOnly =>
+                "Unsupported acquisition mode: SilentOnly forbids active interaction, but no "
+                    + "current work-package-1 identity flow has a source-proved silent cache "
+                    + "or broker acquisition source.",
+            AcquisitionMode.InteractionAllowed => GetInteractionAllowedViolation(request),
+            _ => "Protocol violation: credential request v2 contains an unsupported "
+                + "acquisition mode.",
+        };
+    }
+
+    private static string? GetInteractionAllowedViolation(CredentialRequestV2 request)
+    {
+        if (
+            request.IdentityFlow is not (IdentityFlow.InteractiveBrowser or IdentityFlow.DeviceCode)
+        )
+        {
+            return "Protocol violation: InteractionAllowed requires identityFlow "
+                + "interactiveBrowser or deviceCode.";
+        }
+
+        if (
+            request.InteractivePolicy
+            is not (InteractivePolicy.HostToolAllows or InteractivePolicy.UserAllowed)
+        )
+        {
+            return "Protocol violation: InteractionAllowed requires interactivePolicy "
+                + "hostToolAllows or userAllowed.";
+        }
+
+        if (request.CiContext is { ExplicitCiMode: true })
+        {
+            return "Protocol violation: InteractionAllowed is not valid for explicit CI mode.";
+        }
+
+        // InteractionAllowed must preserve the full frozen request/cache enum surface rather
+        // than collapsing to the narrower MVP-accepted cache subset.
+        return null;
+    }
+
+    private static CredentialRequest ToV1Projection(CredentialRequestV2 request) =>
+        new()
+        {
+            ContractMajor = ContractVersions.CredentialContractMajor,
+            Ecosystem = request.Ecosystem,
+            Operation = request.Operation,
+            Resource = request.Resource!,
+            ServiceIdentity = request.ServiceIdentity!,
+            AccountHint = request.AccountHint,
+            TenantHint = request.TenantHint,
+            RequestedAudience = request.RequestedAudience,
+            CredentialKind = request.CredentialKind,
+            IdentityFlow = request.IdentityFlow,
+            InteractivePolicy = request.InteractivePolicy,
+            CachePolicy = request.CachePolicy,
+            CiContext = request.CiContext,
+            ExtensionData = request.ExtensionData,
+        };
 }
 
 internal static class ServiceIdentityContract
@@ -4471,15 +4650,197 @@ internal static class ServiceIdentityContract
         && string.Equals(value, value.ToLowerInvariant(), StringComparison.Ordinal);
 }
 
+/// <summary>
+/// Compatibility helpers for frozen contract-evolution rules.
+/// Additive-field checks are intentionally credential-request-root aware because the v1 and v2
+/// credential roots have different same-major unknown-member behavior, and same-major v1 additions
+/// must fail closed on collisions with frozen wire-member names or unsafe normative fields.
+/// </summary>
 public static class ContractCompatibility
 {
+    private const string AddOptionalFieldChangeKind = "add-optional-field";
+
+    private static readonly HashSet<string> CredentialRequestV1WireNames = new(
+        StringComparer.OrdinalIgnoreCase
+    )
+    {
+        "contractMajor",
+        "ecosystem",
+        "operation",
+        "resource",
+        "serviceIdentity",
+        "accountHint",
+        "tenantHint",
+        "requestedAudience",
+        "credentialKind",
+        "identityFlow",
+        "interactivePolicy",
+        "cachePolicy",
+        "ciContext",
+        "extensionData",
+    };
+
+    private static readonly string CredentialRequestV2AcquisitionModeWireName =
+        JsonNamingPolicy.CamelCase.ConvertName(nameof(CredentialRequestV2.AcquisitionMode));
+
     public static bool IsSupportedMajor(int actualMajor, int supportedMajor) =>
         actualMajor == supportedMajor;
 
+    /// <summary>
+    /// Determines additive-field compatibility for the frozen credential request roots by major.
+    /// This overload recognizes only credential request major <c>1</c>
+    /// (<see cref="CredentialRequest" /> / <see cref="ContractVersions.CredentialContractId" />)
+    /// and credential request major <c>2</c>
+    /// (<see cref="CredentialRequestV2" /> /
+    /// <see cref="ContractVersions.CredentialContractV2Id" />).
+    /// Unknown majors fail closed.
+    /// </summary>
     public static bool AllowsAdditiveField(int actualMajor, int supportedMajor, string fieldName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fieldName);
-        return IsSupportedMajor(actualMajor, supportedMajor);
+
+        return TryResolveCredentialContractId(actualMajor, out string actualContractId)
+            && TryResolveCredentialContractId(supportedMajor, out string supportedContractId)
+            && AllowsAdditiveField(
+                actualContractId,
+                actualMajor,
+                supportedContractId,
+                supportedMajor,
+                fieldName,
+                olderConsumersCanIgnoreSafely: true
+            );
+    }
+
+    /// <summary>
+    /// Determines additive-field compatibility for the frozen credential request roots by major.
+    /// <paramref name="olderConsumersCanIgnoreSafely" /> may authorize genuinely ignorable
+    /// same-major optional fields for the v1 root, but it cannot re-allow collisions with the
+    /// frozen v1 wire members, known unsafe normative fields such as
+    /// <c>acquisitionMode</c>, or field names that are not auditable ASCII identifiers
+    /// (ASCII letters and digits with a letter first). Unknown majors fail closed.
+    /// </summary>
+    public static bool AllowsAdditiveField(
+        int actualMajor,
+        int supportedMajor,
+        string fieldName,
+        bool olderConsumersCanIgnoreSafely
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fieldName);
+
+        return TryResolveCredentialContractId(actualMajor, out string actualContractId)
+            && TryResolveCredentialContractId(supportedMajor, out string supportedContractId)
+            && AllowsAdditiveField(
+                actualContractId,
+                actualMajor,
+                supportedContractId,
+                supportedMajor,
+                fieldName,
+                olderConsumersCanIgnoreSafely
+            );
+    }
+
+    /// <summary>
+    /// Determines additive-field compatibility for explicit frozen credential request roots.
+    /// Only <see cref="ContractVersions.CredentialContractId" /> major
+    /// <see cref="ContractVersions.CredentialContractMajor" /> and
+    /// <see cref="ContractVersions.CredentialContractV2Id" /> major
+    /// <see cref="ContractVersions.CredentialContractV2Major" /> are recognized.
+    /// Unknown roots or majors fail closed.
+    /// </summary>
+    public static bool AllowsAdditiveField(
+        string actualContractId,
+        int actualMajor,
+        string supportedContractId,
+        int supportedMajor,
+        string fieldName
+    ) =>
+        AllowsAdditiveField(
+            actualContractId,
+            actualMajor,
+            supportedContractId,
+            supportedMajor,
+            fieldName,
+            olderConsumersCanIgnoreSafely: true
+        );
+
+    /// <summary>
+    /// Determines additive-field compatibility for explicit frozen credential request roots.
+    /// Genuinely ignorable same-major optional fields are allowed only for the v1
+    /// <see cref="CredentialRequest" /> root. The strict v2
+    /// <see cref="CredentialRequestV2" /> JSON contract rejects all same-major additive fields,
+    /// and ASCII-case-normalized collisions with frozen v1 wire members, known unsafe
+    /// normative fields, or non-auditable field names fail closed even when
+    /// <paramref name="olderConsumersCanIgnoreSafely" /> is <see langword="true" />.
+    /// Unknown roots or majors fail closed.
+    /// </summary>
+    public static bool AllowsAdditiveField(
+        string actualContractId,
+        int actualMajor,
+        string supportedContractId,
+        int supportedMajor,
+        string fieldName,
+        bool olderConsumersCanIgnoreSafely
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(actualContractId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(supportedContractId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fieldName);
+
+        if (GetAdditiveFieldNameDisposition(fieldName) is not AdditiveFieldNameDisposition.Safe)
+        {
+            return false;
+        }
+
+        if (!olderConsumersCanIgnoreSafely)
+        {
+            return false;
+        }
+
+        return TryResolveCredentialContractRoot(
+                actualContractId,
+                actualMajor,
+                out CredentialContractRoot actualRoot
+            )
+            && TryResolveCredentialContractRoot(
+                supportedContractId,
+                supportedMajor,
+                out CredentialContractRoot supportedRoot
+            )
+            && actualRoot == supportedRoot
+            && actualRoot == CredentialContractRoot.CredentialRequestV1;
+    }
+
+    /// <summary>
+    /// Determines whether a frozen contract change requires a new major version.
+    /// For <c>add-optional-field</c>, callers must supply the explicit credential
+    /// contract roots, majors, and field name so the decision can align with
+    /// <see cref="AllowsAdditiveField(string, int, string, int, string, bool)" />.
+    /// The context-free <see cref="RequiresMajorVersionChange(string)" /> overload
+    /// fails closed for <c>add-optional-field</c>.
+    /// </summary>
+    public static bool RequiresMajorVersionChange(
+        string changeKind,
+        string actualContractId,
+        int actualMajor,
+        string supportedContractId,
+        int supportedMajor,
+        string fieldName,
+        bool olderConsumersCanIgnoreSafely = true
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(changeKind);
+
+        return string.Equals(changeKind, AddOptionalFieldChangeKind, StringComparison.Ordinal)
+            ? !AllowsAdditiveField(
+                actualContractId,
+                actualMajor,
+                supportedContractId,
+                supportedMajor,
+                fieldName,
+                olderConsumersCanIgnoreSafely
+            )
+            : RequiresMajorVersionChange(changeKind);
     }
 
     public static bool RequiresMajorVersionChange(string changeKind)
@@ -4505,7 +4866,7 @@ public static class ContractCompatibility
             or "allow-plaintext-secret-diagnostics"
             or "add-silent-pat-fallback"
             or "make-integrity-check-optional" => true,
-            "add-optional-field" => false,
+            AddOptionalFieldChangeKind => true,
             _ => true,
         };
     }
@@ -4530,6 +4891,133 @@ public static class ContractCompatibility
             or ContractBreakingChangeKind.MakeIntegrityCheckOptional => true,
             _ => true,
         };
+
+    private static AdditiveFieldNameDisposition GetAdditiveFieldNameDisposition(string fieldName)
+    {
+        if (!TryNormalizeFieldNameForCollisionDetection(fieldName, out string? normalizedFieldName))
+        {
+            return AdditiveFieldNameDisposition.Rejected;
+        }
+
+        if (
+            IsFrozenCredentialRequestV1WireNameCollision(normalizedFieldName)
+            || IsKnownSameMajorUnsafeAdditiveField(normalizedFieldName)
+        )
+        {
+            return AdditiveFieldNameDisposition.Unsafe;
+        }
+
+        return AdditiveFieldNameDisposition.Safe;
+    }
+
+    private static bool IsFrozenCredentialRequestV1WireNameCollision(string normalizedFieldName) =>
+        CredentialRequestV1WireNames.Contains(normalizedFieldName);
+
+    private static bool IsKnownSameMajorUnsafeAdditiveField(string normalizedFieldName) =>
+        string.Equals(
+            normalizedFieldName,
+            nameof(CredentialRequestV2.AcquisitionMode),
+            StringComparison.OrdinalIgnoreCase
+        )
+        || string.Equals(
+            normalizedFieldName,
+            CredentialRequestV2AcquisitionModeWireName,
+            StringComparison.OrdinalIgnoreCase
+        );
+
+    private static bool TryNormalizeFieldNameForCollisionDetection(
+        string value,
+        [NotNullWhen(true)] out string? normalizedValue
+    )
+    {
+        var builder = new StringBuilder(value.Length);
+        for (int i = 0; i < value.Length; i++)
+        {
+            char character = value[i];
+            if (
+                (i == 0 && !IsAsciiLetter(character))
+                || (i > 0 && !IsAsciiLetter(character) && !char.IsAsciiDigit(character))
+            )
+            {
+                normalizedValue = null;
+                return false;
+            }
+
+            builder.Append(char.ToLowerInvariant(character));
+        }
+
+        normalizedValue = builder.ToString();
+        return true;
+    }
+
+    private static bool IsAsciiLetter(char character) =>
+        (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z');
+
+    private static bool TryResolveCredentialContractId(int major, out string contractId)
+    {
+        switch (major)
+        {
+            case ContractVersions.CredentialContractMajor:
+                contractId = ContractVersions.CredentialContractId;
+                return true;
+            case ContractVersions.CredentialContractV2Major:
+                contractId = ContractVersions.CredentialContractV2Id;
+                return true;
+            default:
+                contractId = string.Empty;
+                return false;
+        }
+    }
+
+    private static bool TryResolveCredentialContractRoot(
+        string contractId,
+        int major,
+        out CredentialContractRoot root
+    )
+    {
+        if (
+            major == ContractVersions.CredentialContractMajor
+            && string.Equals(
+                contractId,
+                ContractVersions.CredentialContractId,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            root = CredentialContractRoot.CredentialRequestV1;
+            return true;
+        }
+
+        if (
+            major == ContractVersions.CredentialContractV2Major
+            && string.Equals(
+                contractId,
+                ContractVersions.CredentialContractV2Id,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            root = CredentialContractRoot.CredentialRequestV2;
+            return true;
+        }
+
+        root = CredentialContractRoot.Unknown;
+        return false;
+    }
+
+    private enum AdditiveFieldNameDisposition
+    {
+        Safe,
+        Unsafe,
+        Rejected,
+    }
+
+    private enum CredentialContractRoot
+    {
+        Unknown,
+        CredentialRequestV1,
+        CredentialRequestV2,
+    }
 }
 
 public static class ContractMetadata

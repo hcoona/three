@@ -175,6 +175,11 @@ public sealed class CliApplicationTests
             StringComparison.Ordinal
         );
         Assert.Contains(
+            "optional-azureauth-wsl-backend: deferred-optional-feature\n",
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
             "fake-adapter-installer-uninstaller-scaffold: pass\n",
             result.StdOut,
             StringComparison.Ordinal

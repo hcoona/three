@@ -41,6 +41,7 @@ public enum ReleaseHardeningPhase15CheckStatus
     DeferredNonMvp,
     DeferredReleaseEvidence,
     Blocked,
+    DeferredOptionalFeature,
 }
 
 public static class ReleaseHardeningPhase15VerticalSliceService
@@ -146,6 +147,14 @@ public static class ReleaseHardeningPhase15VerticalSliceService
                     "project-breakdown phase 15",
                     "The fake adapter scaffold is validated locally; final installer package "
                         + "install/uninstall evidence must be recorded with release artifacts."),
+                DeferredOptionalFeature(
+                    "optional-azureauth-wsl-backend",
+                    "identity",
+                    "phase-v5a-wsl-azureauth-backend-governance",
+                    "Optional WSL-to-Windows AzureAuth.exe backend. Disabled and unshippable "
+                        + "until all v5a gates pass. Does not block MVP or direct-MSAL release "
+                        + "readiness. Not Windows-native Git/Visual Studio/NuGet.exe acceptance. "
+                        + "Current fake Phase 15 rows are not live evidence for this path."),
             ],
         };
     }
@@ -207,4 +216,21 @@ public static class ReleaseHardeningPhase15VerticalSliceService
             Notes = notes,
         };
     }
+
+    private static ReleaseHardeningPhase15Check DeferredOptionalFeature(
+        string id,
+        string area,
+        string evidence,
+        string notes
+    ) =>
+        new ReleaseHardeningPhase15Check
+        {
+            Id = id,
+            Area = area,
+            Status = ReleaseHardeningPhase15CheckStatus.DeferredOptionalFeature,
+            RequiredForMvp = false,
+            RequiredForFullRelease = false,
+            Evidence = evidence,
+            Notes = notes,
+        };
 }

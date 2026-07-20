@@ -63,6 +63,34 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
         Assert.Contains("disabled", check.Notes, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void EvaluateIncludesOptionalAzureAuthWslBackendAsDeferredOptionalFeature()
+    {
+        ReleaseHardeningPhase15MatrixResult result =
+            ReleaseHardeningPhase15VerticalSliceService.Evaluate();
+
+        ReleaseHardeningPhase15Check check = Assert.Single(
+            result.Checks,
+            static candidate => candidate.Id == "optional-azureauth-wsl-backend"
+        );
+        Assert.False(check.RequiredForMvp);
+        Assert.False(check.RequiredForFullRelease);
+        Assert.Equal(ReleaseHardeningPhase15CheckStatus.DeferredOptionalFeature, check.Status);
+        Assert.Contains("disabled", check.Notes, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("unshippable", check.Notes, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void EvaluateOptionalAzureAuthWslBackendDoesNotBlockMvpAcceptance()
+    {
+        ReleaseHardeningPhase15MatrixResult result =
+            ReleaseHardeningPhase15VerticalSliceService.Evaluate();
+
+        Assert.True(result.MvpLocalAcceptancePassed);
+        Assert.False(result.BlockingFailuresPresent);
+        Assert.False(result.FullReleaseEvidenceComplete);
+    }
+
     private static void AssertDeferredNonMvp(
         ReleaseHardeningPhase15MatrixResult result,
         string id

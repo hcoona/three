@@ -127,8 +127,24 @@ feed, and repository partitions and is scoped to host plus organization.
 
 1. Version fields are major versions. A consumer supports a contract only when the
    producer major version equals the supported major version.
-2. Optional additive fields are compatible within the same major version when an
-   older consumer can ignore them safely.
+2. Optional additive fields are compatible only for the credential request v1
+   root (`CredentialRequest`, contract ID
+   `azureauth-credprovider-credential-contract-v1`, major `1`) when an older v1
+   consumer can ignore them safely. Field-aware compatibility review must fail
+   this rule for any proposed name that is not an auditable ASCII identifier
+   (ASCII letters and digits with a letter first), that collides after ASCII
+   case normalization with the frozen v1 wire members
+   (`contractMajor`, `ecosystem`, `operation`, `resource`,
+   `serviceIdentity`, `accountHint`, `tenantHint`, `requestedAudience`,
+   `credentialKind`, `identityFlow`, `interactivePolicy`, `cachePolicy`,
+   `ciContext`, `extensionData`) and for normative or security-policy
+   additions such as `acquisitionMode`, even if a caller claims they are
+   ignorable, because an older v1 consumer would silently ignore the field
+   instead of enforcing its policy. The separate credential request v2 root
+   (`CredentialRequestV2`, contract ID
+   `azureauth-credprovider-credential-contract-v2`, major `2`) uses a strict
+   unknown-member contract and therefore rejects all same-major additive fields.
+   Unknown credential contract roots or majors fail closed.
 3. Removing, renaming, changing field type, changing requiredness, changing enum
    representation, or changing the meaning of a field requires a new major
    version.
@@ -144,10 +160,14 @@ feed, and repository partitions and is scoped to host plus organization.
    configuration error exit `64` without protocol stdout. Adapters must map
    unknown, unsupported, disabled, or deferred values to typed failures or doctor
    statuses.
-7. String change-kind compatibility checks fail closed. Only explicitly listed
-   compatible strings, such as `add-optional-field`, may avoid a major version
-   change; unknown non-empty strings and the `unspecified` compatibility enum
-   value require a major version change.
+7. String change-kind compatibility checks fail closed. The context-free
+   `RequiresMajorVersionChange("add-optional-field")` check also fails closed
+   because it cannot know the credential contract root or field name. Callers
+   must use the explicit credential-root/major plus field-aware additive-field
+   compatibility path (`AllowsAdditiveField(...)` or the root-aware
+   `RequiresMajorVersionChange(...)` overload) to prove that a v1 optional
+   field is genuinely safe. Unknown non-empty strings and the `unspecified`
+   compatibility enum value require a major version change.
 8. Extension data must contain only safe, non-secret metadata unless a field is
    explicitly marked as secret-bearing in the containing contract.
 

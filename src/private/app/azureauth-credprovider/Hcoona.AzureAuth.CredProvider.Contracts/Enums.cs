@@ -68,6 +68,40 @@ public enum InteractivePolicy
     UserAllowed = 3,
 }
 
+/// <summary>
+/// Separates credential acquisition interaction mode from identity flow selection.
+/// Introduced in v2 of the credential acquisition contract.
+/// </summary>
+public enum AcquisitionMode
+{
+    /// <summary>
+    /// Explicit v2 bridge value that preserves v1 acquisition semantics:
+    /// acquisition remains governed entirely by IdentityFlow and InteractivePolicy.
+    /// V1 itself does not carry an AcquisitionMode field.
+    /// </summary>
+    Unspecified = 0,
+
+    /// <summary>
+    /// Categorically forbids any browser launch, device-code prompt, broker UI,
+    /// account-selection UI, IWA round-trip, or any other form of active
+    /// authentication that requires human attention or network interaction
+    /// beyond a cache or broker lookup.
+    /// A cache miss will map to InteractionRequired rather than falling back.
+    /// Valid only for operation Get on a future source-proved cache or broker
+    /// lookup path; no current provider supports it in this work package.
+    /// </summary>
+    SilentOnly = 1,
+
+    /// <summary>
+    /// Permits explicit accepted human-facing flows (interactive browser,
+    /// device code) when InteractivePolicy also allows them.
+    /// Valid only for operation Get when InteractivePolicy is HostToolAllows
+    /// or UserAllowed.
+    /// Not valid in CI-mode or non-interactive routing.
+    /// </summary>
+    InteractionAllowed = 2,
+}
+
 public enum CachePolicyMode
 {
     Unspecified = 0,

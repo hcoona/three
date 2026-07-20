@@ -1485,6 +1485,9 @@ internal static class CliApplication
             "deferred-release-evidence: " + JoinCheckIds(
                 result.Checks,
                 ReleaseHardeningPhase15CheckStatus.DeferredReleaseEvidence),
+            "deferred-optional-feature: " + JoinCheckIds(
+                result.Checks,
+                ReleaseHardeningPhase15CheckStatus.DeferredOptionalFeature),
         ];
 
         foreach (ReleaseHardeningPhase15Check check in result.Checks)
@@ -2245,6 +2248,8 @@ internal static class CliApplication
             ReleaseHardeningPhase15CheckStatus.DeferredNonMvp => "deferred-non-mvp",
             ReleaseHardeningPhase15CheckStatus.DeferredReleaseEvidence =>
                 "deferred-release-evidence",
+            ReleaseHardeningPhase15CheckStatus.DeferredOptionalFeature =>
+                "deferred-optional-feature",
             ReleaseHardeningPhase15CheckStatus.Blocked => "blocked",
             _ => throw new InvalidOperationException("Unsupported Phase 15 check status."),
         };

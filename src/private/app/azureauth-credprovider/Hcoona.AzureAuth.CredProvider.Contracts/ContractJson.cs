@@ -26,6 +26,7 @@ public static class ContractJson
         options.Converters.Add(new StrictCamelCaseEnumConverter<IdentityFlow>());
         options.Converters.Add(new StrictCamelCaseEnumConverter<IdentityFlowState>());
         options.Converters.Add(new StrictCamelCaseEnumConverter<InteractivePolicy>());
+        options.Converters.Add(new StrictCamelCaseEnumConverter<AcquisitionMode>());
         options.Converters.Add(new StrictCamelCaseEnumConverter<CachePolicyMode>());
         options.Converters.Add(new StrictCamelCaseEnumConverter<CredentialResultStatus>());
         options.Converters.Add(new StrictCamelCaseEnumConverter<CredentialErrorKind>());

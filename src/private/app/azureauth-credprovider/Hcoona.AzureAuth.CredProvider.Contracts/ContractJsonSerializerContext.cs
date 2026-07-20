@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Hcoona.AzureAuth.CredProvider.Contracts;
 
+[JsonSerializable(typeof(AcquisitionMode))]
 [JsonSerializable(typeof(AdapterHostResult))]
 [JsonSerializable(typeof(AdapterHostExitCode))]
 [JsonSerializable(typeof(AdapterProtocol))]
@@ -31,6 +32,7 @@ namespace Hcoona.AzureAuth.CredProvider.Contracts;
 [JsonSerializable(typeof(CredentialKind))]
 [JsonSerializable(typeof(CredentialOperation))]
 [JsonSerializable(typeof(CredentialRequest))]
+[JsonSerializable(typeof(CredentialRequestV2))]
 [JsonSerializable(typeof(CredentialResult))]
 [JsonSerializable(typeof(CredentialResultStatus))]
 [JsonSerializable(typeof(DoctorCheck))]
