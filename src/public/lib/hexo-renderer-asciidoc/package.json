@@ -4,7 +4,7 @@
   "description": "Asciidoc renderer plugin for hexo",
   "type": "module",
   "main": "./dist/index.cjs",
-  "types": "./dist/index.d.cts",
+  "types": "./dist/index.d.ts",
   "files": [
     "dist",
     "README.md",
@@ -27,7 +27,10 @@
     "hooks:check": "hk check",
     "hooks:fix": "hk fix",
     "typecheck": "tsgo --noEmit",
-    "build": "tsdown",
+    "build": "tsdown && node ./scripts/normalize-dist.mjs",
+    "validate:packed-artifact": "node ./scripts/validate-packed-artifact.mjs",
+    "validate:release-pack": "node ./scripts/validate-release-pack.mjs",
+    "validate:linked-example": "node ./scripts/validate-linked-example.mjs",
     "prepublishOnly": "pnpm run build",
     "version:stamp": "node ./scripts/nbgv-version.mjs stamp",
     "version:reset": "node ./scripts/nbgv-version.mjs reset",
@@ -81,10 +84,15 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.cts",
-      "require": "./dist/index.cjs",
-      "import": "./dist/index.cjs",
-      "default": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      },
+      "default": "./dist/index.js"
     }
   }
 }

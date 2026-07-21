@@ -32,6 +32,8 @@
     "src/**/*.d.ts",
     "test/**/*.ts",
     "tsdown.config.ts",
+    "vitest.asciidoctor-runtime.config.ts",
+    "vitest.coldstart.config.ts",
     "vitest.config.ts",
     "vitest.pipeline-failure.config.ts"
   ],

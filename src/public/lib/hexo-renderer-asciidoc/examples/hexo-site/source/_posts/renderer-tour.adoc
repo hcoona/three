@@ -1,6 +1,3 @@
-// Copyright 2015 Shuai Zhang
-// SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
-
 ---
 title: Renderer pipeline tour
 date: 2025-11-17 12:05:00
@@ -9,6 +6,9 @@ categories:
 tags:
   - walkthrough
 ---
+// Copyright 2015 Shuai Zhang
+// SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+
 = Renderer pipeline tour
 :sectnums:
 

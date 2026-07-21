@@ -77,6 +77,34 @@ describe('applyStaticHighlighting', () => {
     });
   });
 
+  it('falls back to pre[lang] when code[data-lang] is empty', () => {
+    const highlightMock = vi
+      .spyOn(hexoUtil, 'highlight')
+      .mockReturnValue('<figure class="highlight">precedence-empty</figure>');
+
+    applyStaticHighlighting(wrapCanonicalListingBlock('<pre lang="python"><code data-lang="">value = 1</code></pre>'));
+
+    expect(highlightMock).toHaveBeenCalledWith('value = 1', {
+      ...FIXED_HIGHLIGHT_OPTIONS,
+      lang: 'python',
+    });
+  });
+
+  it('falls back to pre[lang] when code[data-lang] is whitespace only', () => {
+    const highlightMock = vi
+      .spyOn(hexoUtil, 'highlight')
+      .mockReturnValue('<figure class="highlight">precedence-whitespace</figure>');
+
+    applyStaticHighlighting(
+      wrapCanonicalListingBlock('<pre lang="python"><code data-lang="   ">value = 1</code></pre>'),
+    );
+
+    expect(highlightMock).toHaveBeenCalledWith('value = 1', {
+      ...FIXED_HIGHLIGHT_OPTIONS,
+      lang: 'python',
+    });
+  });
+
   it('decodes XML entities exactly once before highlighting', () => {
     const highlightMock = vi.spyOn(hexoUtil, 'highlight').mockReturnValue('<figure class="highlight">decoded</figure>');
 

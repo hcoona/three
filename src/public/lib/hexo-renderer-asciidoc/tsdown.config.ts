@@ -7,7 +7,7 @@ import { defineConfig } from 'tsdown';
 
 export default defineConfig({
   entry: 'src/index.ts',
-  format: 'cjs',
+  format: ['esm', 'cjs'],
   checks: { legacyCjs: false },
   dts: {
     sourcemap: true,

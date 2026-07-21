@@ -6,7 +6,7 @@
 import type { CheerioOptions } from 'cheerio';
 import * as cheerio from 'cheerio';
 import { decodeXML } from 'entities';
-import { highlight as highlightCode } from 'hexo-util';
+import hexoUtil from 'hexo-util';
 
 const CHEERIO_LOAD_OPTIONS: CheerioOptions = Object.freeze({
   // Cheerio 1 defaults to parse5, which eagerly decodes entities using HTML
@@ -43,6 +43,14 @@ const toHighlightLanguage = (language?: string): string => {
   return language;
 };
 
+const getPreferredLanguage = (codeLanguage: string | undefined, preLanguage: string | undefined): string => {
+  if (typeof codeLanguage === 'string' && codeLanguage.trim().length > 0) {
+    return codeLanguage;
+  }
+
+  return toHighlightLanguage(preLanguage);
+};
+
 /**
  * Replace Asciidoctor's placeholder highlight blocks with Hexo's static highlighter output.
  * Only the canonical `div.listingblock > div.content > pre > code` chain is rewritten so
@@ -69,10 +77,10 @@ export const applyStaticHighlighting = (html: string): string => {
     }
 
     // biome-ignore lint/complexity/useLiteralKeys: noPropertyAccessFromIndexSignature requires bracket notation for index-signature types
-    const lang = toHighlightLanguage(codeElement.attribs?.['data-lang'] ?? preElement.attribs?.['lang'] ?? undefined);
+    const lang = getPreferredLanguage(codeElement.attribs?.['data-lang'], preElement.attribs?.['lang']);
     const sourceCodeText = decodeXML($(codeElement).text());
     const highlightOptions = { ...BASE_HIGHLIGHT_OPTIONS, lang };
-    const rendered = highlightCode(sourceCodeText, highlightOptions);
+    const rendered = hexoUtil.highlight(sourceCodeText, highlightOptions);
 
     $(preElement).replaceWith(rendered);
   });

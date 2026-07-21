@@ -8,20 +8,43 @@
 This folder contains a self-contained Hexo site that consumes the local
 `hexo-renderer-asciidoc` package via a link dependency. Use it to test the
 renderer end-to-end without publishing to npm. It is **not** part of the root
-pnpm workspace so that its Hexo dependencies stay isolated—always run pnpm
-commands from inside `examples/hexo-site`.
+pnpm workspace so that its Hexo dependencies stay isolated—run its pnpm
+commands from `examples/hexo-site` or target that directory with `pnpm --dir`.
 
 ## Prerequisites
 
+- [mise](https://mise.jdx.dev/) installed
 - Node.js 20.19.0 or newer (matching the main project requirements)
 - pnpm 10.x (already pinned in the repo)
 
-## Usage
+## Clean-checkout setup and generation
 
-Install dependencies and start the Hexo server from inside this folder:
+The example links to the parent package's generated `dist/` files. From the
+repository root, run this exact sequence so the parent package is built before
+the example is installed or generated:
+
+<!-- linked-example-validation-sequence:start -->
 
 ```bash
-pnpm install
+mise trust
+mise exec -- pnpm install --frozen-lockfile
+mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc run build
+mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site install --frozen-lockfile
+mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site run generate
+```
+
+<!-- linked-example-validation-sequence:end -->
+
+Skipping the parent-package build can leave Hexo unable to load the linked
+renderer; Hexo may still exit successfully while reporting that `.adoc` files
+have no renderer.
+
+## Usage
+
+After completing the clean-checkout setup, start the Hexo server from inside
+this folder:
+
+```bash
 pnpm dev
 ```
 

@@ -12,8 +12,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const packageRoot = path.resolve(import.meta.dirname, '..');
 const distDirectory = path.join(packageRoot, 'dist');
-const expectedDistFiles = ['index.cjs', 'index.d.cts', 'index.d.cts.map'];
+const expectedDistFiles = ['index.cjs', 'index.d.cts', 'index.d.cts.map', 'index.d.ts', 'index.d.ts.map', 'index.js'];
 const expectedHexoVersion = '8.1.2';
+const expectedPnpmVersion = '10.34.5';
 const probeText = `
 == Packed Artifact ==
 
@@ -38,7 +39,19 @@ let artifactDirectory: string;
 let consumerDirectory: string;
 let distWasAbsentBeforeBuild = false;
 let builtDistFiles: string[] = [];
-let packedManifest: { dependencies?: { '@asciidoctor/core'?: string }; name?: string; version?: string };
+let packedManifest: {
+  dependencies?: { '@asciidoctor/core'?: string };
+  exports?: {
+    '.': {
+      import?: { default?: string; types?: string };
+      require?: { default?: string; types?: string };
+    };
+  };
+  main?: string;
+  name?: string;
+  types?: string;
+  version?: string;
+};
 let packedArtifact: { inventory: string[]; sha256: string; version: string };
 let consumerManifest: {
   dependencies: { hexo: string; 'hexo-renderer-asciidoc': string };
@@ -64,7 +77,9 @@ beforeAll(() => {
   mkdirSync(artifactDirectory);
   mkdirSync(consumerDirectory);
 
-  rmSync(distDirectory, { recursive: true, force: true });
+  if (existsSync(distDirectory)) {
+    rmSync(distDirectory, { recursive: true, force: true });
+  }
   distWasAbsentBeforeBuild = !existsSync(distDirectory);
   if (!distWasAbsentBeforeBuild) {
     throw new Error('dist/ must be absent before the packed-artifact build');
@@ -73,13 +88,11 @@ beforeAll(() => {
   execFileSync('pnpm', ['run', 'build'], { cwd: packageRoot, stdio: 'pipe' });
   builtDistFiles = readdirSync(distDirectory).sort();
 
-  const packOutput = execFileSync(
-    'npm',
-    ['pack', '--ignore-scripts', '--json', '--pack-destination', artifactDirectory],
-    { cwd: packageRoot, encoding: 'utf8' },
-  );
-  const packResult = JSON.parse(packOutput) as Array<{ filename: string }>;
-  const archivePath = path.join(artifactDirectory, packResult[0]?.filename ?? '');
+  execFileSync('pnpm', ['pack', '--pack-destination', artifactDirectory], { cwd: packageRoot, stdio: 'pipe' });
+  const archiveEntries = readdirSync(artifactDirectory)
+    .filter((entry) => entry.endsWith('.tgz'))
+    .sort();
+  const archivePath = path.join(artifactDirectory, archiveEntries[0] ?? '');
   if (!existsSync(archivePath)) {
     throw new Error('npm pack did not produce the expected v4 artifact');
   }
@@ -100,7 +113,7 @@ beforeAll(() => {
   consumerManifest = {
     name: 'hexo-renderer-asciidoc-packed-v4-consumer',
     private: true,
-    packageManager: `pnpm@${execFileSync('pnpm', ['--version'], { encoding: 'utf8' }).trim()}`,
+    packageManager: `pnpm@${expectedPnpmVersion}`,
     dependencies: {
       hexo: expectedHexoVersion,
       'hexo-renderer-asciidoc': `file:${archivePath}`,
@@ -123,9 +136,19 @@ afterAll(() => {
 });
 
 describe('packed Asciidoctor v4 package import shapes', () => {
-  it('builds a fresh dist, records packed metadata, and pins the v4 runtime dependency', () => {
+  it('records the initial dist state, builds a fresh dist, and pins the v4 runtime dependency', () => {
     expect(distWasAbsentBeforeBuild).toBe(true);
     expect(builtDistFiles).toEqual(expectedDistFiles);
+    for (const declarationName of ['index.d.ts', 'index.d.cts']) {
+      const mapName = `${declarationName}.map`;
+      const declarationMap = JSON.parse(readFileSync(path.join(distDirectory, mapName), 'utf8')) as {
+        file?: string;
+      };
+      expect(declarationMap.file).toBe(declarationName);
+      expect(readFileSync(path.join(distDirectory, declarationName), 'utf8')).toContain(
+        `//# sourceMappingURL=${mapName}`,
+      );
+    }
 
     expect(expectedHtml).toContain('<h2 id="_packed_artifact">Packed Artifact</h2>');
     expect(expectedHtml).toContain('&#123;');
@@ -134,6 +157,12 @@ describe('packed Asciidoctor v4 package import shapes', () => {
 
     expect(packedManifest.name).toBe('hexo-renderer-asciidoc');
     expect(packedManifest.dependencies?.['@asciidoctor/core']).toBe('4.0.4');
+    expect(packedManifest.main).toBe('./dist/index.cjs');
+    expect(packedManifest.types).toBe('./dist/index.d.ts');
+    expect(packedManifest.exports?.['.']?.import?.default).toBe('./dist/index.js');
+    expect(packedManifest.exports?.['.']?.import?.types).toBe('./dist/index.d.ts');
+    expect(packedManifest.exports?.['.']?.require?.default).toBe('./dist/index.cjs');
+    expect(packedManifest.exports?.['.']?.require?.types).toBe('./dist/index.d.cts');
     expect(packedArtifact.version).toBe(packedManifest.version);
     expect(packedArtifact.inventory).toEqual(
       expect.arrayContaining(['package/package.json', ...expectedDistFiles.map((file) => `package/dist/${file}`)]),
@@ -218,24 +247,16 @@ const registerResult = registerRenderer({
     },
   },
 });
-const nestedDefault = packageDefault.default;
-const namespaceRenderer = packageDefault.renderer;
 const render = (fn) => fn({ text: sample });
 process.stdout.write(JSON.stringify({
   defaultType: typeof packageDefault,
-  defaultKeys: Object.keys(packageDefault).sort(),
-  nestedDefaultType: typeof nestedDefault,
-  namespaceRendererType: typeof namespaceRenderer,
   rendererType: typeof renderer,
   registerRendererType: typeof registerRenderer,
   defaultEqualsRenderer: packageDefault === renderer,
-  nestedDefaultEqualsRenderer: nestedDefault === renderer,
-  namespaceRendererEqualsNamed: namespaceRenderer === renderer,
   registerResultIsUndefined: registerResult === undefined,
   outputs: {
-    nestedDefault: await render(nestedDefault),
+    default: await render(packageDefault),
     named: await render(renderer),
-    namespaceNamed: await render(namespaceRenderer),
     registered: await Promise.all(registrations.map(async ([extension, outputFormat, registeredRenderer, sync]) => ({
       extension,
       outputFormat,
@@ -248,20 +269,14 @@ process.stdout.write(JSON.stringify({
     );
 
     expect(probe).toEqual({
-      defaultType: 'object',
-      defaultKeys: ['default', 'registerRenderer', 'renderer'],
-      nestedDefaultType: 'function',
-      namespaceRendererType: 'function',
+      defaultType: 'function',
       rendererType: 'function',
       registerRendererType: 'function',
-      defaultEqualsRenderer: false,
-      nestedDefaultEqualsRenderer: true,
-      namespaceRendererEqualsNamed: true,
+      defaultEqualsRenderer: true,
       registerResultIsUndefined: true,
       outputs: {
-        nestedDefault: expectedHtml,
+        default: expectedHtml,
         named: expectedHtml,
-        namespaceNamed: expectedHtml,
         registered: [
           { extension: 'ad', outputFormat: 'html', rendererIsPublic: true, sync: false, html: expectedHtml },
           { extension: 'adoc', outputFormat: 'html', rendererIsPublic: true, sync: false, html: expectedHtml },
