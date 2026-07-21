@@ -40,7 +40,8 @@ the two canonical rules. A2R6 corrects that mismatch without weakening the effec
 
 After existing ordinary-file validation and newline normalization, policy validation must:
 
-1. continue to reject a UTF-8 byte-order mark;
+1. continue to reject a UTF-8 byte-order mark, with the existing `ReadAllText` seam's default
+   implementation changed to decode raw file bytes without consuming the preamble;
 2. treat an empty line or a line whose first character is `#` as non-effective;
 3. require the remaining effective lines, in order, to equal exactly `*` and `!.gitignore`; and
 4. reject every missing, reordered, duplicated, escaped-comment, whitespace-bearing, or additional
@@ -59,6 +60,7 @@ A2R6 does not:
 - inspect, read, enumerate, hash, copy, decode, or modify any real `.private` artifact;
 - rewrite the tracked policy or change the reviewed request-preparation script;
 - change path-component, fixed-drive, reparse-point, device, or ordinary-file validation;
+- add a new I/O seam or convert synchronous workspace-policy validation to asynchronous code;
 - change a request, manifest, inventory, state, copy, cleanup, or JSON schema;
 - add a package, project, harness, telemetry, logging, tracing, or private fixture;
 - alter canonical paths, workspace census, source validation, or publication; or
@@ -108,7 +110,8 @@ The candidate is acceptable when:
 1. the canonical two effective rules still pass with LF, CRLF, or CR separators and optional final
    newline;
 2. comment-only and empty lines before, between, or after those rules pass;
-3. a byte-order mark still fails;
+3. a real BOM-encoded policy file fails through default production I/O, while the existing seam
+   case remains covered;
 4. missing, reordered, duplicated, escaped-comment, whitespace-bearing, and additional effective
    rules each fail;
 5. the discover-level invalid-policy test still reports `PrivateWorkspacePolicy`;
