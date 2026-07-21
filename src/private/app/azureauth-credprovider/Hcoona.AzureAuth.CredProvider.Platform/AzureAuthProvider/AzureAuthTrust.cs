@@ -62,6 +62,20 @@ public sealed record AzureAuthArtifactEvidence
 
     public required bool OwnerOnlyWritable { get; init; }
 
+    public bool DiscretionaryAclsPresentAndNonNull { get; init; }
+
+    public string TrustedExecutableDirectory { get; init; } = string.Empty;
+
+    public bool ExecutableDirectoryChainHasNoReparsePoints { get; init; }
+
+    public bool ExecutableDirectoryChainOwnerOnlyWritable { get; init; }
+
+    public string TrustedSystemDirectory { get; init; } = string.Empty;
+
+    public bool SystemDirectoryChainHasNoReparsePoints { get; init; }
+
+    public bool SystemDirectoryChainOwnerOnlyWritable { get; init; }
+
     /// <summary>Platform-attested launch directory; this is runtime evidence, not wire data.</summary>
     public required string TrustedWorkingDirectory { get; init; }
 
@@ -87,11 +101,27 @@ public sealed record AzureAuthArtifactInspection
 
     public AzureAuthArtifactEvidence? Evidence { get; init; }
 
-    public static AzureAuthArtifactInspection Deferred(AzureAuthArtifactEvidence? evidence = null) =>
-        new() { Status = AzureAuthArtifactTrustStatus.Deferred, Evidence = evidence };
+    public string? SafeDetail { get; init; }
 
-    public static AzureAuthArtifactInspection Untrusted(AzureAuthArtifactEvidence? evidence = null) =>
-        new() { Status = AzureAuthArtifactTrustStatus.Untrusted, Evidence = evidence };
+    public static AzureAuthArtifactInspection Deferred(
+        AzureAuthArtifactEvidence? evidence = null,
+        string? safeDetail = null) =>
+        new()
+        {
+            Status = AzureAuthArtifactTrustStatus.Deferred,
+            Evidence = evidence,
+            SafeDetail = safeDetail,
+        };
+
+    public static AzureAuthArtifactInspection Untrusted(
+        AzureAuthArtifactEvidence? evidence = null,
+        string? safeDetail = null) =>
+        new()
+        {
+            Status = AzureAuthArtifactTrustStatus.Untrusted,
+            Evidence = evidence,
+            SafeDetail = safeDetail,
+        };
 
     public static AzureAuthArtifactInspection Trusted(AzureAuthArtifactEvidence evidence) =>
         new() { Status = AzureAuthArtifactTrustStatus.Trusted, Evidence = evidence };
@@ -109,16 +139,32 @@ public sealed record AzureAuthTrustResult
 
     public string? DeploymentKey { get; init; }
 
+    public string? SafeDetail { get; init; }
+
     public bool IsReady => Status == AzureAuthArtifactTrustStatus.Trusted;
 
     public static AzureAuthTrustResult Unspecified() =>
         new() { Status = AzureAuthArtifactTrustStatus.Unspecified };
 
-    public static AzureAuthTrustResult Deferred(AzureAuthArtifactEvidence? evidence = null) =>
-        new() { Status = AzureAuthArtifactTrustStatus.Deferred, Evidence = evidence };
+    public static AzureAuthTrustResult Deferred(
+        AzureAuthArtifactEvidence? evidence = null,
+        string? safeDetail = null) =>
+        new()
+        {
+            Status = AzureAuthArtifactTrustStatus.Deferred,
+            Evidence = evidence,
+            SafeDetail = safeDetail,
+        };
 
-    public static AzureAuthTrustResult Untrusted(AzureAuthArtifactEvidence? evidence = null) =>
-        new() { Status = AzureAuthArtifactTrustStatus.Untrusted, Evidence = evidence };
+    public static AzureAuthTrustResult Untrusted(
+        AzureAuthArtifactEvidence? evidence = null,
+        string? safeDetail = null) =>
+        new()
+        {
+            Status = AzureAuthArtifactTrustStatus.Untrusted,
+            Evidence = evidence,
+            SafeDetail = safeDetail,
+        };
 
     public static AzureAuthTrustResult Trusted(
         AzureAuthArtifactEvidence evidence,
@@ -171,8 +217,12 @@ public static class AzureAuthTrustPolicy
 
         return result.Status switch
         {
-            AzureAuthArtifactTrustStatus.Deferred => AzureAuthTrustResult.Deferred(result.Evidence),
-            AzureAuthArtifactTrustStatus.Untrusted => AzureAuthTrustResult.Untrusted(result.Evidence),
+            AzureAuthArtifactTrustStatus.Deferred => AzureAuthTrustResult.Deferred(
+                result.Evidence,
+                result.SafeDetail),
+            AzureAuthArtifactTrustStatus.Untrusted => AzureAuthTrustResult.Untrusted(
+                result.Evidence,
+                result.SafeDetail),
             AzureAuthArtifactTrustStatus.Trusted => result.DeploymentKey is null
                 ? AzureAuthTrustResult.Untrusted(result.Evidence)
                 : EvaluateTrustedEvidence(config, result.Evidence, result.DeploymentKey),
@@ -280,6 +330,12 @@ public static class AzureAuthTrustPolicy
             evidence.TrustedWorkingDirectory,
             nameof(evidence.TrustedWorkingDirectory)
         );
+        AzureAuthWindowsDirectoryPathPolicy.Validate(
+            evidence.TrustedExecutableDirectory,
+            nameof(evidence.TrustedExecutableDirectory));
+        AzureAuthWindowsDirectoryPathPolicy.Validate(
+            evidence.TrustedSystemDirectory,
+            nameof(evidence.TrustedSystemDirectory));
         foreach (string pathEntry in evidence.TrustedPathEntries)
         {
             AzureAuthWindowsDirectoryPathPolicy.Validate(
@@ -296,6 +352,24 @@ public static class AzureAuthTrustPolicy
     {
         return evidence.CurrentUserOwnsArtifact
             && evidence.OwnerOnlyWritable
+            && evidence.DiscretionaryAclsPresentAndNonNull
+            && evidence.ExecutableDirectoryChainHasNoReparsePoints
+            && evidence.ExecutableDirectoryChainOwnerOnlyWritable
+            && evidence.SystemDirectoryChainHasNoReparsePoints
+            && evidence.SystemDirectoryChainOwnerOnlyWritable
+            && string.Equals(
+                GetWindowsParentPath(evidence.CanonicalPath),
+                evidence.TrustedExecutableDirectory,
+                StringComparison.OrdinalIgnoreCase)
+            && string.Equals(
+                evidence.TrustedWorkingDirectory,
+                evidence.TrustedSystemDirectory,
+                StringComparison.OrdinalIgnoreCase)
+            && evidence.TrustedPathEntries.Count == 1
+            && string.Equals(
+                evidence.TrustedPathEntries[0],
+                evidence.TrustedSystemDirectory,
+                StringComparison.OrdinalIgnoreCase)
             && WindowsPathPolicy.MatchesConfiguredCanonicalPath(
                 config.ExecutablePath,
                 evidence.CanonicalPath)
@@ -312,14 +386,24 @@ public static class AzureAuthTrustPolicy
                 StringComparison.Ordinal);
     }
 
+    private static string? GetWindowsParentPath(string path)
+    {
+        int separatorIndex = path.LastIndexOf('\\');
+        return separatorIndex <= 2 ? null : path[..separatorIndex];
+    }
+
     private static AzureAuthTrustResult EvaluateCore(
         AzureAuthDeploymentConfig config,
         AzureAuthArtifactInspection inspection
     ) =>
         inspection.Status switch
         {
-            AzureAuthArtifactTrustStatus.Deferred => AzureAuthTrustResult.Deferred(inspection.Evidence),
-            AzureAuthArtifactTrustStatus.Untrusted => AzureAuthTrustResult.Untrusted(inspection.Evidence),
+            AzureAuthArtifactTrustStatus.Deferred => AzureAuthTrustResult.Deferred(
+                inspection.Evidence,
+                inspection.SafeDetail),
+            AzureAuthArtifactTrustStatus.Untrusted => AzureAuthTrustResult.Untrusted(
+                inspection.Evidence,
+                inspection.SafeDetail),
             AzureAuthArtifactTrustStatus.Trusted => EvaluateTrustedEvidence(
                 config,
                 inspection.Evidence
@@ -428,6 +512,13 @@ internal static class AzureAuthDeploymentKey
         AppendField(builder, evidence.Owner.Id);
         AppendField(builder, evidence.CurrentUserOwnsArtifact ? "1" : "0");
         AppendField(builder, evidence.OwnerOnlyWritable ? "1" : "0");
+        AppendField(builder, evidence.DiscretionaryAclsPresentAndNonNull ? "1" : "0");
+        AppendField(builder, evidence.TrustedExecutableDirectory);
+        AppendField(builder, evidence.ExecutableDirectoryChainHasNoReparsePoints ? "1" : "0");
+        AppendField(builder, evidence.ExecutableDirectoryChainOwnerOnlyWritable ? "1" : "0");
+        AppendField(builder, evidence.TrustedSystemDirectory);
+        AppendField(builder, evidence.SystemDirectoryChainHasNoReparsePoints ? "1" : "0");
+        AppendField(builder, evidence.SystemDirectoryChainOwnerOnlyWritable ? "1" : "0");
         AppendField(builder, evidence.TrustedWorkingDirectory);
         foreach (string pathEntry in evidence.TrustedPathEntries)
         {

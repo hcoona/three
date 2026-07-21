@@ -1,5 +1,6 @@
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AzurePipelines;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Hcoona.AzureAuth.CredProvider.Platform.TokenMaterialization;
 
@@ -8,6 +9,8 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
 public sealed record AuthPhase14VerticalSliceOptions
 {
     public CredentialCoreService? CredentialCoreService { get; init; }
+
+    public BoundedCredentialAcquisitionAdapter? CredentialAcquisition { get; init; }
 
     public Func<string, string?>? EnvironmentVariableReader { get; init; }
 }
@@ -45,12 +48,18 @@ public sealed class AuthPhase14VerticalSliceService
 
     private static readonly Uri DefaultServiceEndpoint = new("https://dev.azure.com/phase14");
 
-    private readonly CredentialCoreService credentialCoreService;
+    private readonly Lazy<BoundedCredentialAcquisitionAdapter> credentialAcquisition;
     private readonly Func<string, string?> environmentVariableReader;
 
     public AuthPhase14VerticalSliceService(AuthPhase14VerticalSliceOptions? options = null)
     {
-        credentialCoreService = options?.CredentialCoreService ?? new CredentialCoreService();
+        credentialAcquisition = new Lazy<BoundedCredentialAcquisitionAdapter>(
+            () => options?.CredentialAcquisition
+                ?? new BoundedCredentialAcquisitionAdapter(
+                    options?.CredentialCoreService is null
+                        ? CredentialProviderCompositionRoot.CreateProduction().AcquisitionService
+                        : new LegacyV1CredentialAcquisitionService(options.CredentialCoreService)),
+            LazyThreadSafetyMode.ExecutionAndPublication);
         environmentVariableReader =
             options?.EnvironmentVariableReader ?? Environment.GetEnvironmentVariable;
     }
@@ -60,8 +69,12 @@ public sealed class AuthPhase14VerticalSliceService
         ArgumentNullException.ThrowIfNull(request);
         ValidateLoginRequest(request);
 
-        CredentialRequest credentialRequest = CreateCredentialRequest(request);
-        CredentialResult credentialResult = ExecuteCredentialRequest(credentialRequest);
+        CredentialResult credentialResult = request.IdentityFlow
+            == IdentityFlow.AzurePipelinesSystemAccessToken
+            ? ExecuteCredentialRequest(CreateCiCredentialRequest(request))
+            : request.IdentityFlow == IdentityFlow.PatCompatibility
+                ? CreatePatDeferredResult(CreateCiCredentialRequest(request))
+                : credentialAcquisition.Value.Acquire(CreateCredentialRequest(request));
         return new AuthPhase14LoginResult
         {
             CredentialResult = credentialResult,
@@ -88,7 +101,7 @@ public sealed class AuthPhase14VerticalSliceService
                         environmentVariableReader(AzurePipelinesSystemAccessTokenVariable))
                     .CreateProtocolResult("wp5-azure-pipelines-system-access-token"),
             IdentityFlow.PatCompatibility => CreatePatDeferredResult(request),
-            _ => credentialCoreService.Execute(request),
+            _ => credentialAcquisition.Value.Acquire(TranslateV1Request(request)),
         };
     }
 
@@ -97,6 +110,12 @@ public sealed class AuthPhase14VerticalSliceService
 
     private static void ValidateLoginRequest(AuthPhase14LoginRequest request)
     {
+        if (request.IdentityFlow == IdentityFlow.DeviceCode)
+        {
+            throw new NotSupportedException(
+                "Device-code login is unavailable; use interactive-browser login.");
+        }
+
         IdentityFlowState state = IdentityFlowPolicy.GetMvpState(request.IdentityFlow);
         if (state == IdentityFlowState.Deferred)
         {
@@ -111,7 +130,51 @@ public sealed class AuthPhase14VerticalSliceService
         _ = request.ExplicitPatMaterialProvided;
     }
 
-    private static CredentialRequest CreateCredentialRequest(AuthPhase14LoginRequest request)
+    private static CredentialRequestV2 CreateCredentialRequest(AuthPhase14LoginRequest request)
+    {
+        if (request.IdentityFlow != IdentityFlow.InteractiveBrowser)
+        {
+            return new CredentialRequestV2
+            {
+                Ecosystem = CredentialEcosystem.Git,
+                Operation = CredentialOperation.Get,
+                Resource = CanonicalResourceIdentity.Create(
+                    "dev.azure.com",
+                    "phase14",
+                    DefaultServiceEndpoint),
+                ServiceIdentity = "default",
+                AccountHint = NullIfWhiteSpace(request.AccountHint),
+                TenantHint = NullIfWhiteSpace(request.TenantHint),
+                RequestedAudience = TokenAudience.AzureDevOps,
+                CredentialKind = CredentialKind.BearerToken,
+                IdentityFlow = request.IdentityFlow,
+                InteractivePolicy = InteractivePolicy.Never,
+                AcquisitionMode = AcquisitionMode.SilentOnly,
+                CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
+            };
+        }
+
+        return new CredentialRequestV2
+        {
+            Ecosystem = CredentialEcosystem.Git,
+            Operation = CredentialOperation.Get,
+            Resource = CanonicalResourceIdentity.Create(
+                "dev.azure.com",
+                "phase14",
+                DefaultServiceEndpoint),
+            ServiceIdentity = "default",
+            AccountHint = NullIfWhiteSpace(request.AccountHint),
+            TenantHint = NullIfWhiteSpace(request.TenantHint),
+            RequestedAudience = TokenAudience.AzureDevOps,
+            CredentialKind = CredentialKind.BearerToken,
+            IdentityFlow = IdentityFlow.InteractiveBrowser,
+            InteractivePolicy = InteractivePolicy.UserAllowed,
+            AcquisitionMode = AcquisitionMode.InteractionAllowed,
+            CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
+        };
+    }
+
+    private static CredentialRequest CreateCiCredentialRequest(AuthPhase14LoginRequest request)
     {
         bool azurePipelines =
             request.IdentityFlow == IdentityFlow.AzurePipelinesSystemAccessToken;
@@ -149,6 +212,27 @@ public sealed class AuthPhase14VerticalSliceService
                 : null,
         };
     }
+
+    private static CredentialRequestV2 TranslateV1Request(CredentialRequest request) =>
+        new()
+        {
+            Ecosystem = request.Ecosystem,
+            Operation = request.Operation,
+            Resource = request.Resource,
+            ServiceIdentity = request.ServiceIdentity,
+            AccountHint = request.AccountHint,
+            TenantHint = request.TenantHint,
+            RequestedAudience = request.RequestedAudience,
+            CredentialKind = request.CredentialKind,
+            IdentityFlow = request.IdentityFlow,
+            InteractivePolicy = request.InteractivePolicy,
+            AcquisitionMode = request.InteractivePolicy == InteractivePolicy.Never
+                ? AcquisitionMode.SilentOnly
+                : AcquisitionMode.InteractionAllowed,
+            CachePolicy = request.CachePolicy,
+            CiContext = request.CiContext,
+            ExtensionData = request.ExtensionData,
+        };
 
     private static CredentialResult CreatePatDeferredResult(CredentialRequest request)
     {

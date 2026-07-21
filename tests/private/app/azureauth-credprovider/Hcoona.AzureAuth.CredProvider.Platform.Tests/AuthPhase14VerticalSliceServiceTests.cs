@@ -10,7 +10,12 @@ public sealed class AuthPhase14VerticalSliceServiceTests
     [Fact]
     public void LoginInteractiveBrowserUsesAcceptedMvpFlowWithoutPersistentDerivedCredentials()
     {
-        var service = new AuthPhase14VerticalSliceService();
+        var service = new AuthPhase14VerticalSliceService(
+            new AuthPhase14VerticalSliceOptions
+            {
+                CredentialCoreService = new CredentialCoreService(
+                    new DeterministicFakeIdentityProvider()),
+            });
 
         AuthPhase14LoginResult result = service.Login(
             new AuthPhase14LoginRequest

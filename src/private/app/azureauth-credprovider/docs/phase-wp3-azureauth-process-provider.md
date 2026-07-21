@@ -60,16 +60,20 @@ Notes:
 - `ado token` is intentionally not used here.
 - `--output token` is required; WP3 does not consume AzureAuth JSON output.
 - secrets are never placed in argv.
+- The pinned upstream `aad` options contain no exact-account enforcement switch. This argv is
+  retained as the WP3 provider contract, but WP6 production composition does not invoke it for a
+  bound account and reports `AccountEnforcementUnavailable`.
 
 ## Request Matrix
 
-| Request shape                                                                                                                    | WP3 AzureAuth behavior                |
-| -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `contractMajor: 2`, `acquisitionMode: interactionAllowed`, browser, human interactive policy, non-CI, accepted WP1 request shape | Allowed to reach process preflight    |
-| Device code                                                                                                                      | Rejected; no process launch           |
-| `acquisitionMode: unspecified`                                                                                                   | Fail closed before process            |
-| `acquisitionMode: silentOnly`                                                                                                    | Fail closed before process; no launch |
-| Invalid `interactionAllowed` combinations, explicit CI, unsupported cache or frozen-request drift                                | Reject before process                 |
+| Request shape                                                                                                                    | WP3 AzureAuth behavior                                               |
+| -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `contractMajor: 2`, `acquisitionMode: interactionAllowed`, browser, human interactive policy, non-CI, accepted WP1 request shape | Allowed to reach process preflight                                   |
+| Device code                                                                                                                      | Rejected; no process launch                                          |
+| `acquisitionMode: unspecified`                                                                                                   | Fail closed before process                                           |
+| Valid `acquisitionMode: silentOnly`, `interactivePolicy: never`, non-CI frozen v1 shape                                          | Valid acquisition request; `SilentAcquisitionUnavailable`; no launch |
+| Invalid `silentOnly` combinations, including interactive policy, explicit CI, or opaque token                                    | Reject before process                                                |
+| Invalid `interactionAllowed` combinations, explicit CI, unsupported cache or frozen-request drift                                | Reject before process                                                |
 
 `AzureAuthIdentityProvider` accepts only `CredentialRequestV2`.
 
@@ -115,7 +119,20 @@ Allowed child environment keys are only:
 
 Everything else is omitted, including representative secret, proxy, and loader
 variables such as `ADO_TOKEN`, `HTTP_PROXY`, `DOTNET_ROOT`, `NODE_OPTIONS`,
-`PATHEXT`, `COMPLUS_*`, `COREHOST_*`, `LD_*`, `DYLD_*`, and `PYTHON*`.
+`COMPLUS_*`, `COREHOST_*`, CLR/CoreCLR profiler controls,
+`DOTNET_STARTUP_HOOKS`, `LD_*`, `DYLD_*`, and `PYTHON*`.
+
+For WSL interoperability launches, clearing the Linux
+`ProcessStartInfo.Environment` is not sufficient because WSL creates the
+Windows environment. The launcher therefore builds an explicit `WSLENV` from
+the product-controlled Windows variables. Required system, profile, temporary,
+`PATH`, `PATHEXT`, and cache-policy values are bridged exactly. Representative
+Windows credential, proxy, .NET/COREHOST/COMPlus, and module-loader overrides
+are also included with explicit empty product values so an inherited Windows
+value cannot reappear across the WSL boundary. This includes both CLR profiler
+families, their 32-bit and 64-bit path variants, and .NET startup hooks. The
+PowerShell trust probe uses the same bridge and additionally bridges its
+target-path variable.
 
 Additional launch rules:
 
@@ -178,8 +195,9 @@ metadata. This is not local signature authentication; see
 [`phase-wp4-token-materialization.md`](phase-wp4-token-materialization.md).
 The tenant and deployment key still come from constraints enforced for launch,
 not from JWT claims. AzureAuth `aad --tenant` does not constrain the bound
-account, so account identity remains unknown (`null`). Ecosystem credential
-exchange remains outside the WP3 provider.
+account, so account identity remains unknown (`null`). WP6 consequently fails
+closed before production launch rather than treating claims as account-binding
+evidence. Ecosystem credential exchange remains outside the WP3 provider.
 
 All currently accepted cache policies disable AzureAuth's upstream MSAL file
 cache with the explicit product-controlled value above. A
@@ -192,7 +210,7 @@ used.
 WP3 public result codes are stable product strings, including:
 
 - `AzureAuthAcquisitionModeRequired`
-- `AzureAuthSilentOnlyUnsupported`
+- `SilentAcquisitionUnavailable`
 - `AzureAuthRequestRejected`
 - `AzureAuthPolicyRejected`
 - `AzureAuthDeviceCodeUnsupported`

@@ -24,7 +24,7 @@ public sealed class CredentialCoreService
     private readonly ITokenExchange _tokenExchange;
 
     public CredentialCoreService()
-        : this(new DeterministicFakeIdentityProvider())
+        : this(new DirectMsalIdentityProvider())
     { }
 
     public CredentialCoreService(
@@ -46,7 +46,7 @@ public sealed class CredentialCoreService
         _diagnosticRouter = diagnosticRouter;
         _derivedCredentialCache =
             derivedCredentialCache ?? new NoPersistentDerivedCredentialCache();
-        _tokenExchange = tokenExchange ?? new DeterministicLocalTokenExchange();
+        _tokenExchange = tokenExchange ?? new IdentityMaterialTokenExchange();
     }
 
     public CredentialResult Execute(CredentialRequest request)

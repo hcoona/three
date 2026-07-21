@@ -1,5 +1,7 @@
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
+using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Newtonsoft.Json.Linq;
 using NuGet.Common;
 using NuGet.Protocol.Plugins;
@@ -65,7 +67,7 @@ public sealed class NuGetPluginAdapterTests
     public void AuthenticationRequestReturnsBasicCredentialsForAzureArtifactsNuGetSource(
         string packageSource)
     {
-        var adapter = new NuGetPluginAdapter();
+        NuGetPluginAdapter adapter = CreateTestAdapter();
         var request = new GetAuthenticationCredentialsRequest(
             new Uri(packageSource),
             isRetry: false,
@@ -83,9 +85,9 @@ public sealed class NuGetPluginAdapterTests
     }
 
     [Fact]
-    public void NonInteractiveAuthenticationRequestReturnsSafeError()
+    public void ExplicitTestScaffoldCanServeNonInteractiveRequest()
     {
-        var adapter = new NuGetPluginAdapter();
+        NuGetPluginAdapter adapter = CreateTestAdapter();
         var request = new GetAuthenticationCredentialsRequest(
             new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json"),
             isRetry: false,
@@ -95,16 +97,15 @@ public sealed class NuGetPluginAdapterTests
         GetAuthenticationCredentialsResponse response =
             adapter.HandleGetAuthenticationCredentials(request);
 
-        Assert.Equal(MessageResponseCode.Error, response.ResponseCode);
-        Assert.Null(response.Username);
-        Assert.Null(response.Password);
-        Assert.Contains("interaction is blocked", response.Message, StringComparison.Ordinal);
+        Assert.Equal(MessageResponseCode.Success, response.ResponseCode);
+        Assert.Equal("AzureDevOps", response.Username);
+        Assert.StartsWith("fake-secret-", response.Password, StringComparison.Ordinal);
     }
 
     [Fact]
     public void UnsupportedHostReturnsNotFound()
     {
-        var adapter = new NuGetPluginAdapter();
+        NuGetPluginAdapter adapter = CreateTestAdapter();
         var request = new GetAuthenticationCredentialsRequest(
             new Uri("https://api.nuget.org/v3/index.json"),
             isRetry: false,
@@ -122,7 +123,7 @@ public sealed class NuGetPluginAdapterTests
     [Fact]
     public void AzureArtifactsSourceWithWrongFeedSuffixReturnsSafeError()
     {
-        var adapter = new NuGetPluginAdapter();
+        NuGetPluginAdapter adapter = CreateTestAdapter();
         var request = new GetAuthenticationCredentialsRequest(
             new Uri("https://pkgs.dev.azure.com/org/_packaging/feed/npm"),
             isRetry: false,
@@ -141,7 +142,7 @@ public sealed class NuGetPluginAdapterTests
     [Fact]
     public void SetCredentialsAndSetLogLevelAreNoOpSuccesses()
     {
-        var adapter = new NuGetPluginAdapter();
+        NuGetPluginAdapter adapter = CreateTestAdapter();
 
         SetCredentialsResponse credentialsResponse = NuGetPluginAdapter.HandleSetCredentials(
             new SetCredentialsRequest(
@@ -155,5 +156,23 @@ public sealed class NuGetPluginAdapterTests
 
         Assert.Equal(MessageResponseCode.Success, credentialsResponse.ResponseCode);
         Assert.Equal(MessageResponseCode.Success, logLevelResponse.ResponseCode);
+    }
+
+    private static NuGetPluginAdapter CreateTestAdapter() =>
+        new(new SuccessfulTestAcquisitionService());
+
+    private sealed class SuccessfulTestAcquisitionService : ICredentialAcquisitionService
+    {
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(
+                new CredentialResult
+                {
+                    Status = CredentialResultStatus.Success,
+                    Username = "AzureDevOps",
+                    Password = "fake-secret-nuget",
+                    DiagnosticsCorrelationId = "nuget-adapter-test",
+                });
     }
 }

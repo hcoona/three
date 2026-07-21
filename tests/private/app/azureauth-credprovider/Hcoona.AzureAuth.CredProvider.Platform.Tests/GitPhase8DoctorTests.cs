@@ -193,7 +193,7 @@ public sealed class GitPhase8DoctorTests
             GitPhase8DoctorResult result = await service.DoctorAsync(
                 TestContext.Current.CancellationToken);
 
-            Assert.True(result.GitCredentialHelperGetSuccess);
+            Assert.False(result.GitCredentialHelperGetSuccess);
             Assert.True(result.GitCredentialHelperStoreSuccess);
             Assert.True(result.GitCredentialHelperEraseSuccess);
             Assert.False(result.LocalShellHelperShorthandSuccess);

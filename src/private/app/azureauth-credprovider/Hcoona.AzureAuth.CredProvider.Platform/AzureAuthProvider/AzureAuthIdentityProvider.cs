@@ -105,13 +105,23 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
 
     private PreflightOutcome GetPreflightOutcome(CredentialRequestV2 request)
     {
-        AcquiredAccessTokenResult? failure = GetRequestFailure(request);
-        if (failure is not null)
+        AzureAuthRequestPreflightFailure? requestFailure =
+            AzureAuthRequestPreflightPolicy.Evaluate(request);
+        if (requestFailure is not null)
         {
-            return new PreflightOutcome(failure);
+            return new PreflightOutcome(requestFailure.ToAcquisitionResult());
         }
 
-        failure = GetConfigurationFailure(request);
+        if (!_launchOptions.TryValidateInteractiveContext(out string launchCode, out string launchMessage))
+        {
+            return new PreflightOutcome(
+                Failure(
+                    AcquiredAccessTokenStatus.PrerequisiteFailed,
+                    launchCode,
+                    launchMessage));
+        }
+
+        AcquiredAccessTokenResult? failure = GetConfigurationFailure(request);
         if (failure is not null)
         {
             return new PreflightOutcome(failure);
@@ -130,6 +140,20 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
             return new PreflightOutcome(failure);
         }
 
+        if (!AzureAuthProcessLaunchDiscovery.TryResolveHostLaunchPaths(
+                _launchOptions.HostContext,
+                deploymentConfig,
+                trustResult.Evidence!,
+                out _,
+                out _))
+        {
+            return new PreflightOutcome(
+                Failure(
+                    AcquiredAccessTokenStatus.PrerequisiteFailed,
+                    "AzureAuthLaunchContextInvalid",
+                    "The trusted AzureAuth host launch paths could not be derived."));
+        }
+
         return new PreflightOutcome(
             new AzureAuthLaunchAuthorization(
                 deploymentConfig,
@@ -139,80 +163,6 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
                 trustResult.DeploymentKey
             )
         );
-    }
-
-    private static AcquiredAccessTokenResult? GetRequestFailure(CredentialRequestV2 request)
-    {
-        switch (request.AcquisitionMode)
-        {
-            case AcquisitionMode.Unspecified:
-                return Failure(
-                    AcquiredAccessTokenStatus.InteractionBlocked,
-                    "AzureAuthAcquisitionModeRequired",
-                    "AzureAuth requires acquisitionMode interactionAllowed."
-                );
-            case AcquisitionMode.SilentOnly:
-                return Failure(
-                    AcquiredAccessTokenStatus.InteractionRequired,
-                    "AzureAuthSilentOnlyUnsupported",
-                    "AzureAuth does not have a validated silent token acquisition path."
-                );
-            case AcquisitionMode.InteractionAllowed:
-                break;
-            default:
-                return Failure(
-                    AcquiredAccessTokenStatus.RequestRejected,
-                    "AzureAuthRequestRejected",
-                    "AzureAuth rejected the credential request."
-                );
-        }
-
-        if (request.IdentityFlow == IdentityFlow.DeviceCode)
-        {
-            return Failure(
-                AcquiredAccessTokenStatus.RequestRejected,
-                "AzureAuthDeviceCodeUnsupported",
-                "AzureAuth device-code interaction is unavailable until a secret-safe interaction channel exists."
-            );
-        }
-
-        if (request.CachePolicy == CachePolicyMode.FuturePersistentCacheRequested)
-        {
-            return Failure(
-                AcquiredAccessTokenStatus.PrerequisiteFailed,
-                "AzureAuthPersistentCacheUnsupported",
-                "AzureAuth persistent cache is not enabled in this work package."
-            );
-        }
-
-        if (!IsValidHint(request.AccountHint) || !IsValidHint(request.TenantHint))
-        {
-            return Failure(
-                AcquiredAccessTokenStatus.RequestRejected,
-                "AzureAuthRequestRejected",
-                "AzureAuth rejected the credential request."
-            );
-        }
-
-        if (CredentialRequestV2Policy.GetViolation(request) is not null)
-        {
-            return Failure(
-                AcquiredAccessTokenStatus.RequestRejected,
-                "AzureAuthRequestRejected",
-                "AzureAuth rejected the credential request."
-            );
-        }
-
-        if (!IdentityFlowPolicy.IsAcceptedMvpRequest(ToV1Projection(request)))
-        {
-            return Failure(
-                AcquiredAccessTokenStatus.RequestRejected,
-                "AzureAuthPolicyRejected",
-                "AzureAuth rejected the credential request."
-            );
-        }
-
-        return null;
     }
 
     private AcquiredAccessTokenResult? GetConfigurationFailure(CredentialRequestV2 request)
@@ -302,8 +252,22 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
         CredentialRequestV2 request
     )
     {
+        if (!AzureAuthProcessLaunchDiscovery.TryResolveHostLaunchPaths(
+                _launchOptions.HostContext,
+                authorization.DeploymentConfig,
+                authorization.Evidence,
+                out string executablePath,
+                out string workingDirectory))
+        {
+            throw new AzureAuthLaunchAuthorizationException(
+                Failure(
+                    AcquiredAccessTokenStatus.PrerequisiteFailed,
+                    "AzureAuthLaunchContextInvalid",
+                    "The trusted AzureAuth host launch paths could not be derived."));
+        }
+
         return new ProcessStartSpec(
-            authorization.DeploymentConfig.ExecutablePath,
+            executablePath,
             [
                 "aad",
                 "--client",
@@ -317,7 +281,7 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
                 "--output",
                 "token",
             ],
-            workingDirectory: authorization.Evidence.TrustedWorkingDirectory,
+            workingDirectory: workingDirectory,
             environment: _launchOptions.CreateEnvironment(
                 authorization.Evidence.TrustedPathEntries,
                 disableMsalCache: request.CachePolicy
@@ -477,45 +441,8 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
         return !string.Equals(normalized, boundValue, StringComparison.Ordinal);
     }
 
-    private static bool IsValidHint(string? hint)
-    {
-        if (hint is null)
-        {
-            return true;
-        }
-
-        try
-        {
-            _ = AzureAuthBindingPolicy.NormalizeObservedIdentifier(hint, nameof(hint));
-            return true;
-        }
-        catch (ArgumentException)
-        {
-            return false;
-        }
-    }
-
     private static string AssertBoundValue(string? value) =>
         value ?? throw new InvalidOperationException("Bound AzureAuth identities must be present.");
-
-    private static CredentialRequest ToV1Projection(CredentialRequestV2 request) =>
-        new()
-        {
-            ContractMajor = ContractVersions.CredentialContractMajor,
-            Ecosystem = request.Ecosystem,
-            Operation = request.Operation,
-            Resource = request.Resource!,
-            ServiceIdentity = request.ServiceIdentity!,
-            AccountHint = request.AccountHint,
-            TenantHint = request.TenantHint,
-            RequestedAudience = request.RequestedAudience,
-            CredentialKind = request.CredentialKind,
-            IdentityFlow = request.IdentityFlow,
-            InteractivePolicy = request.InteractivePolicy,
-            CachePolicy = request.CachePolicy,
-            CiContext = request.CiContext,
-            ExtensionData = request.ExtensionData,
-        };
 
     private static AcquiredAccessTokenResult Failure(
         AcquiredAccessTokenStatus status,

@@ -11413,7 +11413,7 @@ public sealed class ContractFreezeTests
         Assert.Throws<ArgumentException>(() => CredentialRequestV2Policy.EnsureValid(request));
     }
 
-    public static TheoryData<CredentialRequestV2> SilentOnlyCurrentFlowCases =>
+    public static TheoryData<CredentialRequestV2> ValidSilentOnlyFlowCases =>
         new()
         {
             {
@@ -11440,20 +11440,86 @@ public sealed class ContractFreezeTests
                     interactivePolicy: InteractivePolicy.Never
                 )
             },
-            { CreateAzurePipelinesSystemAccessTokenRequestV2(AcquisitionMode.SilentOnly) },
+            {
+                CreateRequestV2(
+                    IdentityFlow.DeviceCode,
+                    CredentialKind.BasicPassword,
+                    AcquisitionMode.SilentOnly,
+                    interactivePolicy: InteractivePolicy.Never,
+                    cachePolicy: CachePolicyMode.FuturePersistentCacheRequested
+                )
+            },
         };
 
     [Theory]
-    [MemberData(nameof(SilentOnlyCurrentFlowCases))]
-    public void CredentialRequestV2PolicyRejectsSilentOnlyForAllCurrentFlows(
+    [MemberData(nameof(ValidSilentOnlyFlowCases))]
+    public void CredentialRequestV2PolicyAllowsStructurallyValidSilentOnlyRequests(
         CredentialRequestV2 request
     )
     {
-        string? violation = CredentialRequestV2Policy.GetViolation(request);
+        Assert.True(CredentialRequestV2Policy.IsValid(request));
+        Assert.Null(CredentialRequestV2Policy.GetViolation(request));
+        CredentialRequestV2Policy.EnsureValid(request);
+    }
 
+    public static TheoryData<CredentialRequestV2, string> InvalidSilentOnlyCases =>
+        new()
+        {
+            {
+                CreateRequestV2(
+                    IdentityFlow.InteractiveBrowser,
+                    CredentialKind.BasicPassword,
+                    AcquisitionMode.SilentOnly,
+                    interactivePolicy: InteractivePolicy.UserAllowed
+                ),
+                "Protocol violation: SilentOnly requires interactivePolicy never."
+            },
+            {
+                CreateRequestV2(
+                    IdentityFlow.DeviceCode,
+                    CredentialKind.BasicPassword,
+                    AcquisitionMode.SilentOnly,
+                    interactivePolicy: InteractivePolicy.Never,
+                    ciContext: new CiContext
+                    {
+                        ExplicitCiMode = true,
+                        AllowsPersistentWrites = false,
+                    }
+                ),
+                "Protocol violation: SilentOnly is not valid for explicit CI mode."
+            },
+            {
+                CreateAzurePipelinesSystemAccessTokenRequestV2(AcquisitionMode.SilentOnly) with
+                {
+                    CiContext = new CiContext
+                    {
+                        ExplicitCiMode = false,
+                        AllowsPersistentWrites = false,
+                    },
+                },
+                "Protocol violation: SilentOnly is not valid for opaque CI tokens."
+            },
+            {
+                CreateRequestV2(
+                    IdentityFlow.DeviceCode,
+                    CredentialKind.BasicPassword,
+                    AcquisitionMode.SilentOnly,
+                    interactivePolicy: InteractivePolicy.Never,
+                    cachePolicy: (CachePolicyMode)999
+                ),
+                "Protocol violation: credential request v2 must preserve the frozen v1 request shape."
+            },
+        };
+
+    [Theory]
+    [MemberData(nameof(InvalidSilentOnlyCases))]
+    public void CredentialRequestV2PolicyRejectsInvalidSilentOnlyCombinations(
+        CredentialRequestV2 request,
+        string expectedViolation
+    )
+    {
         Assert.False(CredentialRequestV2Policy.IsValid(request));
-        Assert.NotNull(violation);
-        Assert.Contains("SilentOnly", violation, StringComparison.Ordinal);
+        Assert.Equal(expectedViolation, CredentialRequestV2Policy.GetViolation(request));
         Assert.Throws<ArgumentException>(() => CredentialRequestV2Policy.EnsureValid(request));
     }
 
@@ -11571,7 +11637,7 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void CredentialRequestV2JsonSerializeRejectsSilentOnly()
+    public void CredentialRequestV2JsonRoundTripsValidSilentOnly()
     {
         CredentialRequestV2 request = CreateRequestV2(
             IdentityFlow.DeviceCode,
@@ -11580,10 +11646,13 @@ public sealed class ContractFreezeTests
             interactivePolicy: InteractivePolicy.Never
         );
 
-        ArgumentException ex = Assert.Throws<ArgumentException>(() =>
-            CredentialRequestV2Json.Serialize(request)
-        );
-        Assert.Contains("SilentOnly", ex.Message, StringComparison.Ordinal);
+        string json = CredentialRequestV2Json.Serialize(request);
+        CredentialRequestV2 roundTripped = CredentialRequestV2Json.Deserialize(json);
+
+        Assert.Contains("\"acquisitionMode\":\"silentOnly\"", json, StringComparison.Ordinal);
+        Assert.Equal(AcquisitionMode.SilentOnly, roundTripped.AcquisitionMode);
+        Assert.Equal(InteractivePolicy.Never, roundTripped.InteractivePolicy);
+        Assert.Null(CredentialRequestV2Policy.GetViolation(roundTripped));
     }
 
     [Theory]
@@ -11680,16 +11749,18 @@ public sealed class ContractFreezeTests
     }
 
     [Fact]
-    public void CredentialRequestV2JsonDeserializeRejectsSilentOnlyWithArgumentException()
+    public void CredentialRequestV2JsonDeserializeAcceptsValidSilentOnly()
     {
         string json = ReplaceInCredentialRequestV2Json(
+            ("\"interactivePolicy\":\"userAllowed\"", "\"interactivePolicy\":\"never\""),
             ("\"acquisitionMode\":\"interactionAllowed\"", "\"acquisitionMode\":\"silentOnly\"")
         );
 
-        ArgumentException ex = Assert.Throws<ArgumentException>(() =>
-            CredentialRequestV2Json.Deserialize(json)
-        );
-        Assert.Contains("SilentOnly", ex.Message, StringComparison.Ordinal);
+        CredentialRequestV2 request = CredentialRequestV2Json.Deserialize(json);
+
+        Assert.Equal(AcquisitionMode.SilentOnly, request.AcquisitionMode);
+        Assert.Equal(InteractivePolicy.Never, request.InteractivePolicy);
+        Assert.Null(CredentialRequestV2Policy.GetViolation(request));
     }
 
     [Theory]

@@ -4,6 +4,8 @@ using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
 using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
+using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
 using Hcoona.AzureAuth.CredProvider.Platform.Redaction;
 using Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
@@ -82,6 +84,12 @@ internal static class CliApplication
         SecretRedactor redactor = CreateRedactor(args);
         try
         {
+            if (args.Count == 1 && string.Equals(args[0], "--version", StringComparison.Ordinal))
+            {
+                WriteText(stdout, $"{CommandName} {typeof(CliApplication).Assembly.GetName().Version}");
+                return SuccessExitCode;
+            }
+
             if (
                 GitCredentialHelperAdapter.TryResolveProtocolInvocation(
                     executablePath ?? CommandName,
@@ -89,13 +97,15 @@ internal static class CliApplication
                     out _)
             )
             {
+                runtimeOptions = EnsureCompositionRootFactory(runtimeOptions, stderr, redactor);
                 return HandleGitCredentialHelperProtocol(
-                    args,
-                    stdin,
-                    stdout,
-                    stderr,
-                    redactor,
-                    executablePath ?? CommandName);
+                args,
+                stdin,
+                stdout,
+                stderr,
+                redactor,
+                executablePath ?? CommandName,
+                runtimeOptions);
             }
 
             CliInvocation invocation = Parse(args);
@@ -105,9 +115,10 @@ internal static class CliApplication
                 return SuccessExitCode;
             }
 
+            runtimeOptions = EnsureCompositionRootFactory(runtimeOptions, stderr, redactor);
             return invocation.Command switch
             {
-                CliCommand.Status => HandleStatus(invocation, stdout),
+                CliCommand.Status => HandleStatus(invocation, stdout, runtimeOptions),
                 CliCommand.Configure => HandleConfigure(invocation, stdout, stderr, runtimeOptions),
                 CliCommand.Unconfigure => HandleUnconfigure(
                     invocation,
@@ -127,10 +138,66 @@ internal static class CliApplication
             TryWriteDiagnosticText(stderr, ex.Message);
             return ex.ExitCode;
         }
+        catch (CredentialProviderConfigurationUnavailableException)
+        {
+            TryWriteDiagnosticText(
+                stderr,
+                "error: credential provider configuration is unavailable.");
+            return FatalExitCode;
+        }
         catch (Exception)
         {
             WriteFatalError(stderr, redactor);
             return FatalExitCode;
+        }
+    }
+
+    private static CliRuntimeOptions EnsureCompositionRootFactory(
+        CliRuntimeOptions? runtimeOptions,
+        TextWriter stderr,
+        SecretRedactor redactor)
+    {
+        if (runtimeOptions?.CompositionRoot is not null
+            || runtimeOptions?.CompositionRootFactory is not null)
+        {
+            return runtimeOptions;
+        }
+
+        CredentialCoreService? explicitTestCore =
+            runtimeOptions?.AuthPhase14Options?.CredentialCoreService
+            ?? runtimeOptions?.ConfigurationPhase14Options?.CredentialCoreService;
+        var root = new Lazy<CredentialProviderCompositionRoot>(
+            () => explicitTestCore is not null
+                ? CredentialProviderCompositionRoot.CreateExplicitTestScaffold(explicitTestCore)
+                : CredentialProviderCompositionRoot.CreateProduction(
+                    new CredentialProviderProductionOptions
+                    {
+                        Diagnostics = new DiagnosticRouter(
+                            [new TextWriterDiagnosticSink(stderr)],
+                            redactor),
+                    }),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+        return (runtimeOptions ?? new CliRuntimeOptions()) with
+        {
+            CompositionRootFactory = () => root.Value,
+        };
+    }
+
+    private sealed class CredentialProviderConfigurationUnavailableException(Exception innerException)
+        : Exception("Credential provider configuration is unavailable.", innerException);
+
+    private static CredentialProviderCompositionRoot GetCompositionRoot(
+        CliRuntimeOptions? runtimeOptions)
+    {
+        try
+        {
+            return runtimeOptions?.CompositionRoot
+                ?? runtimeOptions?.CompositionRootFactory?.Invoke()
+                ?? CredentialProviderCompositionRoot.CreateProduction();
+        }
+        catch (Exception exception)
+        {
+            throw new CredentialProviderConfigurationUnavailableException(exception);
         }
     }
 
@@ -140,12 +207,14 @@ internal static class CliApplication
         TextWriter stdout,
         TextWriter stderr,
         SecretRedactor redactor,
-        string executablePath)
+        string executablePath,
+        CliRuntimeOptions? runtimeOptions)
     {
         var diagnosticRouter = new DiagnosticRouter(
             [new TextWriterDiagnosticSink(stderr)],
             redactor);
-        AdapterHostExecutionOutcome outcome = new GitCredentialHelperAdapter().Execute(
+        CredentialProviderCompositionRoot root = GetCompositionRoot(runtimeOptions);
+        AdapterHostExecutionOutcome outcome = root.CreateGitCredentialHelperAdapter().Execute(
             executablePath,
             args,
             stdin,
@@ -155,9 +224,13 @@ internal static class CliApplication
         return (int)outcome.Result.ExitCode;
     }
 
-    private static int HandleStatus(CliInvocation invocation, TextWriter stdout)
+    private static int HandleStatus(
+        CliInvocation invocation,
+        TextWriter stdout,
+        CliRuntimeOptions? runtimeOptions)
     {
-        WriteText(stdout, BuildStatusOutput(invocation.CiMode));
+        CredentialProviderCompositionRoot root = GetCompositionRoot(runtimeOptions);
+        WriteText(stdout, BuildStatusOutput(invocation.CiMode, root));
         return SuccessExitCode;
     }
 
@@ -218,6 +291,41 @@ internal static class CliApplication
                 return dryRunResult.Validation.IsValid ? SuccessExitCode : NotImplementedExitCode;
             }
 
+            if (IsPhase14ConfigurationEcosystem(ecosystem))
+            {
+                ConfigurationPhase14PlanResult dryRunResult;
+                try
+                {
+                    dryRunResult = CreateConfigurationPhase14VerticalSliceService(
+                            runtimeOptions,
+                            ecosystem,
+                            invocation.RegistryUrl,
+                            requireCredentialProvider:
+                                RequiresCredentialProviderForConfigure(
+                                    ecosystem,
+                                    invocation.CiMode))
+                        .DryRunConfigureAsync(
+                            ecosystem,
+                            GetConfigurationPhase14Scope(invocation.CiMode))
+                        .AsTask()
+                        .GetAwaiter()
+                        .GetResult();
+                }
+                catch (Exception exception)
+                    when (exception is InvalidOperationException
+                        or NotSupportedException
+                        or ArgumentException)
+                {
+                    TryWriteDiagnosticText(stderr, "error: " + exception.Message);
+                    return NotImplementedExitCode;
+                }
+
+                WriteText(stdout, BuildConfigurationPhase14DryRunOutput(
+                    invocation,
+                    dryRunResult));
+                return SuccessExitCode;
+            }
+
             WriteText(stdout, BuildDryRunOutput(invocation));
             return SuccessExitCode;
         }
@@ -273,7 +381,14 @@ internal static class CliApplication
             ConfigurationPhase14PlanResult configureResult;
             try
             {
-                configureResult = CreateConfigurationPhase14VerticalSliceService(runtimeOptions)
+                configureResult = CreateConfigurationPhase14VerticalSliceService(
+                        runtimeOptions,
+                        ecosystem,
+                        invocation.RegistryUrl,
+                        requireCredentialProvider:
+                            RequiresCredentialProviderForConfigure(
+                                ecosystem,
+                                invocation.CiMode))
                     .ConfigureAsync(ecosystem, GetConfigurationPhase14Scope(invocation.CiMode))
                     .AsTask()
                     .GetAwaiter()
@@ -318,7 +433,7 @@ internal static class CliApplication
             {
                 try
                 {
-                    CreateGitPhase8VerticalSliceService(runtimeOptions)
+                    CreateGitPhase8ConfigurationService(runtimeOptions)
                         .ValidateUnconfigureDryRunAsync()
                         .AsTask()
                         .GetAwaiter()
@@ -336,7 +451,7 @@ internal static class CliApplication
             {
                 try
                 {
-                    CreateNuGetPhase10VerticalSliceService(runtimeOptions)
+                    CreateNuGetPhase10ConfigurationService(runtimeOptions)
                         .ValidateUnconfigureDryRunAsync()
                         .AsTask()
                         .GetAwaiter()
@@ -350,6 +465,40 @@ internal static class CliApplication
                     return NotImplementedExitCode;
                 }
             }
+            else if (IsPhase14ConfigurationEcosystem(ecosystem))
+            {
+                ConfigurationPhase14PlanResult dryRunResult;
+                try
+                {
+                    dryRunResult = CreateConfigurationPhase14VerticalSliceService(
+                            runtimeOptions,
+                            requireCredentialProvider: false)
+                        .DryRunUnconfigureAsync(
+                            ecosystem,
+                            GetConfigurationPhase14Scope(invocation.CiMode))
+                        .AsTask()
+                        .GetAwaiter()
+                        .GetResult();
+                }
+                catch (Exception exception)
+                    when (exception is InvalidOperationException
+                        or NotSupportedException
+                        or ArgumentException)
+                {
+                    TryWriteDiagnosticText(stderr, "error: " + exception.Message);
+                    return NotImplementedExitCode;
+                }
+
+                WriteText(stdout, BuildConfigurationPhase14DryRunOutput(
+                    invocation,
+                    dryRunResult));
+                if (dryRunResult.OwnershipManifestCleanupIncomplete)
+                {
+                    WriteIncompleteCiTemporaryCleanupDiagnostic(stderr);
+                    return NotImplementedExitCode;
+                }
+                return SuccessExitCode;
+            }
 
             WriteText(stdout, BuildDryRunOutput(invocation));
             return SuccessExitCode;
@@ -360,7 +509,7 @@ internal static class CliApplication
             GitPhase8UnconfigureResult unconfigureResult;
             try
             {
-                unconfigureResult = CreateGitPhase8VerticalSliceService(runtimeOptions)
+                unconfigureResult = CreateGitPhase8ConfigurationService(runtimeOptions)
                     .UnconfigureAsync()
                     .AsTask()
                     .GetAwaiter()
@@ -383,7 +532,7 @@ internal static class CliApplication
             NuGetPhase10UnconfigureResult unconfigureResult;
             try
             {
-                unconfigureResult = CreateNuGetPhase10VerticalSliceService(runtimeOptions)
+                unconfigureResult = CreateNuGetPhase10ConfigurationService(runtimeOptions)
                     .UnconfigureAsync()
                     .AsTask()
                     .GetAwaiter()
@@ -406,7 +555,9 @@ internal static class CliApplication
             ConfigurationPhase14PlanResult unconfigureResult;
             try
             {
-                unconfigureResult = CreateConfigurationPhase14VerticalSliceService(runtimeOptions)
+                unconfigureResult = CreateConfigurationPhase14VerticalSliceService(
+                        runtimeOptions,
+                        requireCredentialProvider: false)
                     .UnconfigureAsync(ecosystem, GetConfigurationPhase14Scope(invocation.CiMode))
                     .AsTask()
                     .GetAwaiter()
@@ -421,17 +572,13 @@ internal static class CliApplication
                 return NotImplementedExitCode;
             }
 
-            if (invocation.CiMode == CliCiMode.AzurePipelines
-                && unconfigureResult.OwnershipManifestPresent)
+            WriteText(stdout, BuildConfigurationPhase14Output(invocation, unconfigureResult));
+            if (unconfigureResult.OwnershipManifestCleanupIncomplete)
             {
-                TryWriteDiagnosticText(
-                    stderr,
-                    "error: CI temporary credential cleanup is incomplete; "
-                        + "the ownership manifest was preserved for diagnosis.");
+                WriteIncompleteCiTemporaryCleanupDiagnostic(stderr);
                 return NotImplementedExitCode;
             }
 
-            WriteText(stdout, BuildConfigurationPhase14Output(invocation, unconfigureResult));
             return SuccessExitCode;
         }
 
@@ -451,6 +598,7 @@ internal static class CliApplication
         TextWriter stdout,
         CliRuntimeOptions? runtimeOptions)
     {
+        CredentialProviderCompositionRoot root = GetCompositionRoot(runtimeOptions);
         GitPhase8DoctorResult doctorResult = CreateGitPhase8VerticalSliceService(runtimeOptions)
             .DoctorAsync()
             .AsTask()
@@ -474,10 +622,12 @@ internal static class CliApplication
                 invocation,
                 doctorResult,
                 nuGetDoctorResult,
-                configurationDoctorResult));
+                configurationDoctorResult,
+                root));
         return IsGitDoctorSuccess(doctorResult)
             && IsNuGetDoctorSuccess(nuGetDoctorResult)
             && IsConfigurationPhase14DoctorSuccess(configurationDoctorResult)
+            && root.Readiness.IsReady
             ? SuccessExitCode
             : NotImplementedExitCode;
     }
@@ -507,7 +657,9 @@ internal static class CliApplication
         ConfigurationPhase14CleanupResult cleanupResult;
         try
         {
-            cleanupResult = CreateConfigurationPhase14VerticalSliceService(runtimeOptions)
+            cleanupResult = CreateConfigurationPhase14VerticalSliceService(
+                    runtimeOptions,
+                    requireCredentialProvider: false)
                 .CleanupAsync(
                     invocation.Ecosystem,
                     GetConfigurationPhase14Scope(invocation.CiMode)
@@ -548,7 +700,11 @@ internal static class CliApplication
         AuthPhase14LoginResult loginResult;
         try
         {
-            loginResult = CreateAuthPhase14VerticalSliceService(runtimeOptions)
+            loginResult = CreateAuthPhase14VerticalSliceService(
+                    runtimeOptions,
+                    requireCredentialProvider:
+                        invocation.AuthOptions.IdentityFlow
+                            != IdentityFlow.AzurePipelinesSystemAccessToken)
                 .Login(
                     new AuthPhase14LoginRequest
                     {
@@ -593,7 +749,9 @@ internal static class CliApplication
         ConfigurationPhase14CleanupResult cleanupResult;
         try
         {
-            cleanupResult = CreateConfigurationPhase14VerticalSliceService(runtimeOptions)
+            cleanupResult = CreateConfigurationPhase14VerticalSliceService(
+                    runtimeOptions,
+                    requireCredentialProvider: false)
                 .LogoutAsync()
                 .AsTask()
                 .GetAwaiter()
@@ -1001,6 +1159,7 @@ internal static class CliApplication
         var ciSpecified = false;
         var dryRun = false;
         CredentialEcosystem? ecosystem = null;
+        Uri? registryUrl = null;
         string commandName = GetCommandName(command);
 
         for (var index = 0; index < args.Count; index++)
@@ -1031,6 +1190,29 @@ internal static class CliApplication
                 continue;
             }
 
+            if (TryParseStringOption(args, ref index, "--registry-url", out string registryUrlText))
+            {
+                if (command != CliCommand.Configure)
+                {
+                    throw CreateUsageError(
+                        "error: option '--registry-url' is supported only by configure.");
+                }
+
+                if (registryUrl is not null)
+                {
+                    throw CreateUsageError(
+                        "error: option '--registry-url' cannot be specified more than once.");
+                }
+
+                if (!Uri.TryCreate(registryUrlText, UriKind.Absolute, out registryUrl))
+                {
+                    throw CreateUsageError(
+                        "error: option '--registry-url' requires an absolute URL.");
+                }
+
+                continue;
+            }
+
             if (IsOptionToken(token))
             {
                 throw CreateUnknownOptionError(token);
@@ -1054,7 +1236,19 @@ internal static class CliApplication
                 + $"Run '{CommandName} {commandName} --help' for usage.");
         }
 
-        return new CliInvocation(command, ecosystem.Value, ciMode, dryRun, HelpText: null);
+        if (registryUrl is not null
+            && ecosystem is not CredentialEcosystem.Npm
+                and not CredentialEcosystem.Pnpm
+                and not CredentialEcosystem.Yarn)
+        {
+            throw CreateUsageError(
+                "error: option '--registry-url' is supported only for npm, pnpm, and yarn.");
+        }
+
+        return new CliInvocation(command, ecosystem.Value, ciMode, dryRun, HelpText: null)
+        {
+            RegistryUrl = registryUrl,
+        };
     }
 
     private static SecretRedactor CreateRedactor(IEnumerable<string> args)
@@ -1384,10 +1578,13 @@ internal static class CliApplication
     private static string BuildConfigurationHelp(CliCommand command)
     {
         string commandName = GetCommandName(command);
-        return JoinLines(
+        var lines = new List<string>
+        {
             $"{CommandName} {commandName}",
             "Usage:",
-            $"  {CommandName} {commandName} <ecosystem> [--dry-run] [--ci <mode>] [--help]",
+            $"  {CommandName} {commandName} <ecosystem> [--dry-run] [--ci <mode>] "
+                + (command == CliCommand.Configure ? "[--registry-url <url>] " : string.Empty)
+                + "[--help]",
             string.Empty,
             "Ecosystems:",
             "  git",
@@ -1400,7 +1597,15 @@ internal static class CliApplication
             "Options:",
             "  --dry-run                    Render planned actions without mutating files.",
             "  --ci <mode>                  Select CI mode explicitly: none | azure-pipelines.",
-            "  -h, --help                   Show help.");
+        };
+        if (command == CliCommand.Configure)
+        {
+            lines.Add(
+                "  --registry-url <url>         Required Azure Artifacts npm URL for package configure.");
+        }
+
+        lines.Add("  -h, --help                   Show help.");
+        return JoinLines(lines);
     }
 
     private static string BuildDoctorHelp()
@@ -1493,23 +1698,48 @@ internal static class CliApplication
             "  -h, --help                   Show help.");
     }
 
-    private static string BuildStatusOutput(CliCiMode ciMode)
+    private static string BuildStatusOutput(
+        CliCiMode ciMode,
+        CredentialProviderCompositionRoot root)
     {
-        return JoinLines(
+        List<string> lines =
+        [
             "command: status",
             $"product: {CommandName}",
             $"phase: {PhaseName}",
             $"ci-mode: {GetCiModeText(ciMode)}",
+            $"composition-mode: {root.Mode}",
+            $"provider: {root.ProviderConfig.Selection}",
+            "interactive-readiness: "
+                + (root.Readiness.Interactive.IsReady
+                    ? "interactive-ready"
+                    : "interactive-unavailable"),
+            $"interactive-readiness-code: {root.Readiness.Interactive.Code}",
+        ];
+        if (!root.Readiness.Interactive.IsReady)
+        {
+            lines.Add($"interactive-blocker: {root.Readiness.Interactive.SafeMessage}");
+        }
+
+        lines.AddRange(
+        [
+            "silent-readiness: "
+                + (root.Readiness.Silent.IsReady ? "silent-ready" : "silent-unavailable"),
+            $"silent-readiness-code: {root.Readiness.Silent.Code}",
+            $"silent-remediation: {root.Readiness.Silent.SafeMessage}",
             "status-shell: ready",
             "environment-probing: disabled",
             "persistent-cache: disabled",
             "persistent-derived-credentials: disabled",
-            "accepted-identity-flows: browser, device-code, azure-pipelines",
+            "accepted-identity-flows: browser, azure-pipelines",
+            "unavailable-identity-flows: device-code",
             "deferred-identity-flows: pat-compatibility, service-principal, managed-identity, workload-identity",
             "pat-compatibility: deferred-disabled",
             "dry-run-rendering: enabled",
             "mutating-commands: git-nuget-auth-config-cleanup",
-            $"supported-ecosystems: {string.Join(", ", SupportedEcosystems)}");
+            $"supported-ecosystems: {string.Join(", ", SupportedEcosystems)}",
+        ]);
+        return JoinLines(lines);
     }
 
     private static string BuildAcceptanceOutput(
@@ -1623,6 +1853,12 @@ internal static class CliApplication
         return JoinLines(lines);
     }
 
+    private static void WriteIncompleteCiTemporaryCleanupDiagnostic(TextWriter stderr) =>
+        TryWriteDiagnosticText(
+            stderr,
+            "error: CI temporary credential cleanup is incomplete; "
+                + "the ownership manifest was preserved for diagnosis.");
+
     private static string BuildCleanupDryRunOutput(CliInvocation invocation)
     {
         string ecosystemText = invocation.Ecosystem is { } ecosystem
@@ -1727,6 +1963,59 @@ internal static class CliApplication
 
         lines.Add("note: no files, credentials, or caches are changed in phase 10");
         return JoinLines(lines);
+    }
+
+    private static string BuildConfigurationPhase14DryRunOutput(
+        CliInvocation invocation,
+        ConfigurationPhase14PlanResult dryRunResult)
+    {
+        CredentialEcosystem ecosystem = invocation.Ecosystem
+            ?? throw new InvalidOperationException("Dry-run commands require an ecosystem.");
+        List<ConfigurationPlannedChange> changes = dryRunResult.PlanResults
+            .SelectMany(static result => result.Changes)
+            .ToList();
+        List<string> lines =
+        [
+            $"command: {invocation.CommandName}",
+            $"ecosystem: {GetEcosystemText(ecosystem)}",
+            $"phase: {PhaseName}",
+            $"ci-mode: {GetCiModeText(invocation.CiMode)}",
+            $"scope: {GetScopeText(invocation.CiMode)}",
+            "mutates-state: no",
+            $"planned-change-count: {changes.Count}",
+            "planned-actions:",
+        ];
+
+        for (var index = 0; index < changes.Count; index++)
+        {
+            lines.Add($"  {index + 1}. {GetPhase14PlannedActionText(changes[index])}");
+        }
+
+        lines.Add("note: dry-run only; no files, credentials, or caches are changed");
+        return JoinLines(lines);
+    }
+
+    private static string GetPhase14PlannedActionText(ConfigurationPlannedChange change)
+    {
+        string operation = change.Operation switch
+        {
+            ConfigurationChangeOperation.Set => "set",
+            ConfigurationChangeOperation.Remove => "remove",
+            ConfigurationChangeOperation.InstallAdapter => "install",
+            ConfigurationChangeOperation.RemoveAdapter => "remove",
+            ConfigurationChangeOperation.EnsureFile => "ensure",
+            _ => change.Operation.ToString().ToLowerInvariant(),
+        };
+        string target = change.TargetKind switch
+        {
+            ConfigurationTargetKind.PythonKeyringBackend => "Python keyring backend",
+            ConfigurationTargetKind.KeyringShim => "Python keyring shim",
+            ConfigurationTargetKind.Npmrc => "npm-compatible registry credential",
+            ConfigurationTargetKind.Yarnrc => "Yarn registry credential",
+            ConfigurationTargetKind.CiTemporaryFile => "CI temporary credential file",
+            _ => change.TargetKind.ToString(),
+        };
+        return $"{operation} product-owned {target}";
     }
 
     private static string BuildGitConfigureDryRunOutput(
@@ -1875,7 +2164,8 @@ internal static class CliApplication
         CliInvocation invocation,
         GitPhase8DoctorResult doctorResult,
         NuGetPhase10DoctorResult nuGetDoctorResult,
-        ConfigurationPhase14DoctorResult configurationDoctorResult)
+        ConfigurationPhase14DoctorResult configurationDoctorResult,
+        CredentialProviderCompositionRoot root)
     {
         ArgumentNullException.ThrowIfNull(doctorResult);
         ArgumentNullException.ThrowIfNull(nuGetDoctorResult);
@@ -1885,12 +2175,21 @@ internal static class CliApplication
         [
             $"command: {invocation.CommandName}",
             $"phase: {PhaseName}",
+            $"composition-mode: {root.Mode}",
+            $"provider: {root.ProviderConfig.Selection}",
+            "interactive-readiness: "
+                + (root.Readiness.Interactive.IsReady ? "interactive-ready" : "unavailable"),
+            $"interactive-readiness-code: {root.Readiness.Interactive.Code}",
+            "silent-readiness: "
+                + (root.Readiness.Silent.IsReady ? "silent-ready" : "silent-unavailable"),
+            $"silent-readiness-code: {root.Readiness.Silent.Code}",
+            $"silent-remediation: {root.Readiness.Silent.SafeMessage}",
             $"configuration-plan: {GetCheckStatusText(doctorResult.ConfigurationPlanValid)}",
             $"owned-git-entries: {GetPresenceText(doctorResult.OwnedGitEntriesPresent)}",
             $"ownership-manifest: {GetPresenceText(doctorResult.OwnershipManifestPresent)}",
             "dev.azure.com-useHttpPath: "
                 + GetPresenceText(doctorResult.DevAzureUseHttpPathPresent),
-            $"fake-credential-core: {GetCheckStatusText(doctorResult.CredentialCoreSuccess)}",
+            $"credential-core: {GetCheckStatusText(doctorResult.CredentialCoreSuccess)}",
             "git-credential-helper-get: "
                 + GetCheckStatusText(doctorResult.GitCredentialHelperGetSuccess),
             "git-credential-helper-store: "
@@ -1901,12 +2200,17 @@ internal static class CliApplication
                 + GetLocalShellHelperShorthandStatusText(doctorResult),
             "protocol-payload: "
                 + (doctorResult.ProtocolPayloadCaptured ? "captured-not-printed" : "not-captured"),
-            "auth-accepted-identity-flows: browser, device-code, azure-pipelines",
+            "auth-accepted-identity-flows: browser, azure-pipelines",
+            "auth-unavailable-identity-flows: device-code",
             "auth-deferred-identity-flows: pat-compatibility, service-principal, managed-identity, workload-identity",
             "auth-pat-compatibility: deferred-disabled",
             "auth-persistent-derived-credentials: disabled",
             "auth-plaintext-fallback: disabled",
         ];
+        if (!root.Readiness.Interactive.IsReady)
+        {
+            lines.Insert(6, $"interactive-blocker: {root.Readiness.Interactive.SafeMessage}");
+        }
 
         lines.AddRange(BuildNuGetDoctorLines(nuGetDoctorResult));
         lines.AddRange(BuildConfigurationPhase14DoctorLines(configurationDoctorResult));
@@ -2053,82 +2357,6 @@ internal static class CliApplication
                         "remove product-owned NuGet plugin discovery scaffold",
                         "remove product-owned Azure Artifacts NuGet credential scaffold",
                     ],
-            CredentialEcosystem.Python => configure
-                ? ciTemporary
-                    ? [
-                        "prepare temporary Azure Pipelines Python keyring backend scaffold",
-                        "prepare temporary Python keyring helper scaffold",
-                    ]
-                    : [
-                        "register product-owned Python keyring backend scaffold",
-                        "register product-owned Python keyring helper scaffold",
-                    ]
-                : ciTemporary
-                    ? [
-                        "remove temporary Azure Pipelines Python keyring backend scaffold",
-                        "remove temporary Python keyring helper scaffold",
-                    ]
-                    : [
-                        "remove product-owned Python keyring backend scaffold",
-                        "remove product-owned Python keyring helper scaffold",
-                    ],
-            CredentialEcosystem.Pnpm => configure
-                ? ciTemporary
-                    ? [
-                        "prepare temporary Azure Pipelines pnpm auth refresh scaffold",
-                        "prepare temporary pnpm registry credential scaffold",
-                    ]
-                    : [
-                        "register product-owned pnpm auth refresh scaffold",
-                        "register product-owned pnpm registry credential scaffold",
-                    ]
-                : ciTemporary
-                    ? [
-                        "remove temporary Azure Pipelines pnpm auth refresh scaffold",
-                        "remove temporary pnpm registry credential scaffold",
-                    ]
-                    : [
-                        "remove product-owned pnpm auth refresh scaffold",
-                        "remove product-owned pnpm registry credential scaffold",
-                    ],
-            CredentialEcosystem.Yarn => configure
-                ? ciTemporary
-                    ? [
-                        "prepare temporary Azure Pipelines Yarn auth refresh scaffold",
-                        "prepare temporary Yarn registry credential scaffold",
-                    ]
-                    : [
-                        "register product-owned Yarn auth refresh scaffold",
-                        "register product-owned Yarn registry credential scaffold",
-                    ]
-                : ciTemporary
-                    ? [
-                        "remove temporary Azure Pipelines Yarn auth refresh scaffold",
-                        "remove temporary Yarn registry credential scaffold",
-                    ]
-                    : [
-                        "remove product-owned Yarn auth refresh scaffold",
-                        "remove product-owned Yarn registry credential scaffold",
-                    ],
-            CredentialEcosystem.Npm => configure
-                ? ciTemporary
-                    ? [
-                        "prepare temporary Azure Pipelines npm auth refresh scaffold",
-                        "prepare temporary npm registry credential scaffold",
-                    ]
-                    : [
-                        "register product-owned npm auth refresh scaffold",
-                        "register product-owned npm registry credential scaffold",
-                    ]
-                : ciTemporary
-                    ? [
-                        "remove temporary Azure Pipelines npm auth refresh scaffold",
-                        "remove temporary npm registry credential scaffold",
-                    ]
-                    : [
-                        "remove product-owned npm auth refresh scaffold",
-                        "remove product-owned npm registry credential scaffold",
-                    ],
             _ => throw new InvalidOperationException("Unsupported dry-run ecosystem."),
         };
     }
@@ -2136,27 +2364,69 @@ internal static class CliApplication
     private static GitPhase8VerticalSliceService CreateGitPhase8VerticalSliceService(
         CliRuntimeOptions? runtimeOptions)
     {
-        return new GitPhase8VerticalSliceService(runtimeOptions?.GitPhase8Options);
+        return GetCompositionRoot(runtimeOptions)
+            .CreateGitService(runtimeOptions?.GitPhase8Options);
     }
 
     private static NuGetPhase10VerticalSliceService CreateNuGetPhase10VerticalSliceService(
         CliRuntimeOptions? runtimeOptions)
     {
-        return new NuGetPhase10VerticalSliceService(runtimeOptions?.NuGetPhase10Options);
+        return GetCompositionRoot(runtimeOptions)
+            .CreateNuGetService(runtimeOptions?.NuGetPhase10Options);
     }
 
+    private static GitPhase8VerticalSliceService CreateGitPhase8ConfigurationService(
+        CliRuntimeOptions? runtimeOptions) =>
+        GitPhase8VerticalSliceService.CreateConfigurationOnly(runtimeOptions?.GitPhase8Options);
+
+    private static NuGetPhase10VerticalSliceService CreateNuGetPhase10ConfigurationService(
+        CliRuntimeOptions? runtimeOptions) =>
+        NuGetPhase10VerticalSliceService.CreateConfigurationOnly(
+            runtimeOptions?.NuGetPhase10Options);
+
     private static AuthPhase14VerticalSliceService CreateAuthPhase14VerticalSliceService(
-        CliRuntimeOptions? runtimeOptions)
+        CliRuntimeOptions? runtimeOptions,
+        bool requireCredentialProvider = true)
     {
-        return new AuthPhase14VerticalSliceService(runtimeOptions?.AuthPhase14Options);
+        return requireCredentialProvider
+            ? GetCompositionRoot(runtimeOptions)
+                .CreateAuthService(runtimeOptions?.AuthPhase14Options)
+            : new AuthPhase14VerticalSliceService(runtimeOptions?.AuthPhase14Options);
     }
 
     private static ConfigurationPhase14VerticalSliceService
-        CreateConfigurationPhase14VerticalSliceService(CliRuntimeOptions? runtimeOptions)
+        CreateConfigurationPhase14VerticalSliceService(
+            CliRuntimeOptions? runtimeOptions,
+            CredentialEcosystem? registryEcosystem = null,
+            Uri? registryUrl = null,
+            bool requireCredentialProvider = true)
     {
-        return new ConfigurationPhase14VerticalSliceService(
-            runtimeOptions?.ConfigurationPhase14Options);
+        ConfigurationPhase14VerticalSliceOptions? options =
+            runtimeOptions?.ConfigurationPhase14Options;
+        if (registryEcosystem is not null && registryUrl is not null)
+        {
+            var registryUrls = options?.RegistryUrls is null
+                ? new Dictionary<CredentialEcosystem, Uri>()
+                : new Dictionary<CredentialEcosystem, Uri>(options.RegistryUrls);
+            registryUrls[registryEcosystem.Value] = registryUrl;
+            options = (options ?? new ConfigurationPhase14VerticalSliceOptions()) with
+            {
+                RegistryUrls = registryUrls,
+            };
+        }
+
+        return requireCredentialProvider
+            ? GetCompositionRoot(runtimeOptions).CreateConfigurationService(options)
+            : new ConfigurationPhase14VerticalSliceService(options);
     }
+
+    private static bool RequiresCredentialProviderForConfigure(
+        CredentialEcosystem ecosystem,
+        CliCiMode ciMode) =>
+        ciMode != CliCiMode.AzurePipelines
+        && ecosystem is CredentialEcosystem.Npm
+            or CredentialEcosystem.Pnpm
+            or CredentialEcosystem.Yarn;
 
     private static string GetPlannedActionText(ConfigurationPlannedChange change)
     {
@@ -2420,6 +2690,11 @@ internal static class CliApplication
             or CredentialEcosystem.Pnpm
             or CredentialEcosystem.Yarn;
 
+    private static bool IsPackageRegistryEcosystem(CredentialEcosystem ecosystem) =>
+        ecosystem is CredentialEcosystem.Npm
+            or CredentialEcosystem.Pnpm
+            or CredentialEcosystem.Yarn;
+
     private static ConfigurationPhase14Scope GetConfigurationPhase14Scope(CliCiMode ciMode) =>
         ciMode == CliCiMode.AzurePipelines
             ? ConfigurationPhase14Scope.CiTemporary
@@ -2633,6 +2908,8 @@ internal sealed record CliInvocation(
 {
     public CliAuthOptions AuthOptions { get; init; } = new();
 
+    public Uri? RegistryUrl { get; init; }
+
     public string CommandName => CliApplicationCommandNames.Get(Command);
 
     public static CliInvocation CreateHelp(string helpText)
@@ -2702,6 +2979,10 @@ internal static class CliApplicationCommandNames
 
 internal sealed record CliRuntimeOptions
 {
+    public CredentialProviderCompositionRoot? CompositionRoot { get; init; }
+
+    public Func<CredentialProviderCompositionRoot>? CompositionRootFactory { get; init; }
+
     public GitPhase8VerticalSliceOptions? GitPhase8Options { get; init; }
 
     public NuGetPhase10VerticalSliceOptions? NuGetPhase10Options { get; init; }

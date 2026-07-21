@@ -1,5 +1,6 @@
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
 using Hcoona.AzureAuth.CredProvider.Platform.Redaction;
@@ -31,7 +32,7 @@ public sealed class GitCredentialHelperAdapterTests
         Assert.StartsWith("username=AzureDevOps\npassword=fake-secret-", result.ProtocolStdout);
         Assert.EndsWith("\n", result.ProtocolStdout, StringComparison.Ordinal);
         Assert.DoesNotContain("User@Example.com", result.ProtocolStdout, StringComparison.Ordinal);
-        Assert.Equal(1, provider.InvocationCount);
+        Assert.Equal(0, provider.InvocationCount);
     }
 
     [Theory]
@@ -167,8 +168,9 @@ public sealed class GitCredentialHelperAdapterTests
         var diagnosticRouter = new DiagnosticRouter(
             [new TextWriterDiagnosticSink(stderr)],
             SecretRedactor.Empty);
+        _ = credentialCore;
         AdapterHostExecutionOutcome outcome = new GitCredentialHelperAdapter(
-            credentialCore).Execute(
+            new SuccessfulTestAcquisitionService()).Execute(
                 executablePath,
                 args,
                 new StringReader(stdin),
@@ -188,4 +190,19 @@ public sealed class GitCredentialHelperAdapterTests
         string ProtocolStdout,
         string HumanStdout,
         string Stderr);
+
+    private sealed class SuccessfulTestAcquisitionService : ICredentialAcquisitionService
+    {
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(
+                new CredentialResult
+                {
+                    Status = CredentialResultStatus.Success,
+                    Username = "AzureDevOps",
+                    Password = "fake-secret-git",
+                    DiagnosticsCorrelationId = "git-adapter-test",
+                });
+    }
 }

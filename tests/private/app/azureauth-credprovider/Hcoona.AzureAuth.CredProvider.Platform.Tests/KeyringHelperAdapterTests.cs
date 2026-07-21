@@ -1,5 +1,6 @@
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
 using Hcoona.AzureAuth.CredProvider.Platform.Redaction;
@@ -21,7 +22,7 @@ public sealed class KeyringHelperAdapterTests
     [Fact]
     public void CredentialsModeForModernFeedWritesKeyringCredentialPairOnly()
     {
-        var provider = new CapturingIdentityProvider();
+        var provider = new SuccessfulAcquisitionService();
         KeyringHelperRequest request = CreateRequest(
             "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
             username: "User@Example.com",
@@ -29,7 +30,7 @@ public sealed class KeyringHelperAdapterTests
 
         AdapterRunResult result = Execute(
             KeyringHelperV2.BuildArguments(request).Skip(1).ToArray(),
-            credentialCore: new CredentialCoreService(provider));
+            credentialAcquisition: provider);
 
         Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
         Assert.True(result.Outcome.Result.WriteProtocolStdout);
@@ -38,7 +39,7 @@ public sealed class KeyringHelperAdapterTests
         Assert.Equal(string.Empty, result.Stderr);
         Assert.Equal(1, provider.InvocationCount);
 
-        CredentialRequest credentialRequest = Assert.Single(provider.Requests);
+        CredentialRequestV2 credentialRequest = Assert.Single(provider.Requests);
         Assert.Equal(CredentialEcosystem.Python, credentialRequest.Ecosystem);
         Assert.Equal(CredentialKind.BasicPassword, credentialRequest.CredentialKind);
         Assert.Equal(TokenAudience.AzureArtifacts, credentialRequest.RequestedAudience);
@@ -51,7 +52,7 @@ public sealed class KeyringHelperAdapterTests
     [Fact]
     public void PasswordModeForLegacyFeedWritesOnlyPassword()
     {
-        var provider = new CapturingIdentityProvider();
+        var provider = new SuccessfulAcquisitionService();
         KeyringHelperRequest request = CreateRequest(
             "https://org.visualstudio.com/DefaultCollection/project/_packaging/feed/pypi/simple/",
             username: null,
@@ -59,13 +60,13 @@ public sealed class KeyringHelperAdapterTests
 
         AdapterRunResult result = Execute(
             KeyringHelperV2.BuildArguments(request).Skip(1).ToArray(),
-            credentialCore: new CredentialCoreService(provider));
+            credentialAcquisition: provider);
 
         Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
         Assert.Equal("phase11-secret\n", result.ProtocolStdout);
         Assert.Equal(string.Empty, result.Stderr);
 
-        CredentialRequest credentialRequest = Assert.Single(provider.Requests);
+        CredentialRequestV2 credentialRequest = Assert.Single(provider.Requests);
         Assert.Equal("org", credentialRequest.Resource.Organization);
         Assert.Equal("project", credentialRequest.Resource.Project);
         Assert.Equal("feed", credentialRequest.Resource.Feed);
@@ -79,7 +80,7 @@ public sealed class KeyringHelperAdapterTests
         "project")]
     public void UploadEndpointFeedsAreAcceptedForPublishing(string service, string? project)
     {
-        var provider = new CapturingIdentityProvider();
+        var provider = new SuccessfulAcquisitionService();
         KeyringHelperRequest request = CreateRequest(
             service,
             username: null,
@@ -87,12 +88,12 @@ public sealed class KeyringHelperAdapterTests
 
         AdapterRunResult result = Execute(
             KeyringHelperV2.BuildArguments(request).Skip(1).ToArray(),
-            credentialCore: new CredentialCoreService(provider));
+            credentialAcquisition: provider);
 
         Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
         Assert.Equal("AzureDevOps\nphase11-secret\n", result.ProtocolStdout);
 
-        CredentialRequest credentialRequest = Assert.Single(provider.Requests);
+        CredentialRequestV2 credentialRequest = Assert.Single(provider.Requests);
         Assert.Equal("org", credentialRequest.Resource.Organization);
         Assert.Equal(project, credentialRequest.Resource.Project);
         Assert.Equal("feed", credentialRequest.Resource.Feed);
@@ -101,7 +102,7 @@ public sealed class KeyringHelperAdapterTests
     [Fact]
     public void SharedHostEntrypointAcceptsFullHelperCommand()
     {
-        var provider = new CapturingIdentityProvider();
+        var provider = new SuccessfulAcquisitionService();
         KeyringHelperRequest request = CreateRequest(
             "https://dev.azure.com/org/project/_packaging/feed/pypi/simple/",
             username: null,
@@ -110,7 +111,7 @@ public sealed class KeyringHelperAdapterTests
         AdapterRunResult result = Execute(
             KeyringHelperV2.BuildArguments(request).ToArray(),
             executablePath: "/usr/local/bin/azureauth-credprovider",
-            credentialCore: new CredentialCoreService(provider));
+            credentialAcquisition: provider);
 
         Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
         Assert.Equal("AzureDevOps\nphase11-secret\n", result.ProtocolStdout);
@@ -120,7 +121,7 @@ public sealed class KeyringHelperAdapterTests
     [Fact]
     public void DedicatedShimEntrypointAcceptsPythonBuiltFullHelperCommand()
     {
-        var provider = new CapturingIdentityProvider();
+        var provider = new SuccessfulAcquisitionService();
         KeyringHelperRequest request = CreateRequest(
             "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
             username: null,
@@ -128,7 +129,7 @@ public sealed class KeyringHelperAdapterTests
 
         AdapterRunResult result = Execute(
             KeyringHelperV2.BuildArguments(request).ToArray(),
-            credentialCore: new CredentialCoreService(provider));
+            credentialAcquisition: provider);
 
         Assert.Equal(AdapterHostExitCode.Success, result.Outcome.Result.ExitCode);
         Assert.Equal("phase11-secret\n", result.ProtocolStdout);
@@ -234,7 +235,10 @@ public sealed class KeyringHelperAdapterTests
                     "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
                     username: null,
                     KeyringHelperMode.Credentials)).Skip(1).ToArray(),
-            credentialCore: CreateCredentialCore(TokenExchangeResult.Unavailable));
+            credentialAcquisition: new FixedResultAcquisitionService(
+                CredentialResultStatus.CredentialUnavailable,
+                CredentialErrorKind.CredentialUnavailable,
+                "TokenExchangeUnavailable"));
 
         Assert.Equal(AdapterHostExitCode.ConfigurationError, result.Outcome.Result.ExitCode);
         Assert.False(result.Outcome.Result.WriteProtocolStdout);
@@ -251,7 +255,10 @@ public sealed class KeyringHelperAdapterTests
                     "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/",
                     username: null,
                     KeyringHelperMode.Password)).Skip(1).ToArray(),
-            credentialCore: CreateCredentialCore(TokenExchangeResult.Failed));
+            credentialAcquisition: new FixedResultAcquisitionService(
+                CredentialResultStatus.Fatal,
+                CredentialErrorKind.Fatal,
+                "TokenExchangeFailed"));
 
         Assert.Equal(AdapterHostExitCode.Fatal, result.Outcome.Result.ExitCode);
         Assert.False(result.Outcome.Result.WriteProtocolStdout);
@@ -276,7 +283,8 @@ public sealed class KeyringHelperAdapterTests
     private static AdapterRunResult Execute(
         string[] args,
         string executablePath = "/usr/local/bin/python-keyring",
-        CredentialCoreService? credentialCore = null)
+        CredentialCoreService? credentialCore = null,
+        ICredentialAcquisitionService? credentialAcquisition = null)
     {
         var protocolStdout = new StringWriter();
         var humanStdout = new StringWriter();
@@ -285,7 +293,11 @@ public sealed class KeyringHelperAdapterTests
             [new TextWriterDiagnosticSink(stderr)],
             SecretRedactor.Empty);
         AdapterHostExecutionOutcome outcome = new KeyringHelperAdapter(
-            credentialCore).Execute(
+            credentialAcquisition is null
+                ? credentialCore is null
+                    ? CredentialProviderCompositionRoot.CreateProduction().AcquisitionService
+                    : new LegacyV1CredentialAcquisitionService(credentialCore)
+                : credentialAcquisition).Execute(
                 executablePath,
                 args,
                 protocolStdout,
@@ -320,6 +332,51 @@ public sealed class KeyringHelperAdapterTests
             diagnosticRouter: null,
             derivedCredentialCache: null,
             tokenExchange: new FixedTokenExchange(exchangeResult));
+    }
+
+    private sealed class SuccessfulAcquisitionService : ICredentialAcquisitionService
+    {
+        public int InvocationCount => Requests.Count;
+
+        public List<CredentialRequestV2> Requests { get; } = [];
+
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return ValueTask.FromResult(
+                new CredentialResult
+                {
+                    Status = CredentialResultStatus.Success,
+                    Username = "AzureDevOps",
+                    Password = "phase11-secret",
+                    DiagnosticsCorrelationId = "keyring-test",
+                });
+        }
+    }
+
+    private sealed class FixedResultAcquisitionService(
+        CredentialResultStatus status,
+        CredentialErrorKind kind,
+        string code)
+        : ICredentialAcquisitionService
+    {
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(
+                new CredentialResult
+                {
+                    Status = status,
+                    DiagnosticsCorrelationId = "keyring-failure-test",
+                    Error = new CredentialError
+                    {
+                        Kind = kind,
+                        Code = code,
+                        SafeMessage = "Credential acquisition failed.",
+                    },
+                });
     }
 
     private sealed class CapturingIdentityProvider : IIdentityProvider

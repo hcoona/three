@@ -38,6 +38,7 @@ public enum AzureAuthSecureRecordReadStatus
     Present = 2,
     Unsupported = 3,
     Unsafe = 4,
+    Unavailable = 5,
 }
 
 public enum AzureAuthSecureRecordWriteStatus
@@ -47,6 +48,7 @@ public enum AzureAuthSecureRecordWriteStatus
     Conflict = 2,
     Unsupported = 3,
     Unsafe = 4,
+    Unavailable = 5,
 }
 
 public enum AzureAuthSecureRecordRevisionCheckStatus
@@ -56,6 +58,7 @@ public enum AzureAuthSecureRecordRevisionCheckStatus
     Conflict = 2,
     Unsupported = 3,
     Unsafe = 4,
+    Unavailable = 5,
 }
 
 public enum AzureAuthPersistedRecordStatus
@@ -66,6 +69,7 @@ public enum AzureAuthPersistedRecordStatus
     Malformed = 3,
     Unsupported = 4,
     Unsafe = 5,
+    Unavailable = 6,
 }
 
 public sealed record AzureAuthSecureRecordReadResult(
@@ -88,6 +92,9 @@ public sealed record AzureAuthSecureRecordReadResult(
 
     public static AzureAuthSecureRecordReadResult Unsafe() =>
         new(AzureAuthSecureRecordReadStatus.Unsafe);
+
+    public static AzureAuthSecureRecordReadResult Unavailable() =>
+        new(AzureAuthSecureRecordReadStatus.Unavailable);
 }
 
 public sealed record AzureAuthSecureRecordWriteResult(
@@ -105,6 +112,9 @@ public sealed record AzureAuthSecureRecordWriteResult(
 
     public static AzureAuthSecureRecordWriteResult Unsafe() =>
         new(AzureAuthSecureRecordWriteStatus.Unsafe);
+
+    public static AzureAuthSecureRecordWriteResult Unavailable() =>
+        new(AzureAuthSecureRecordWriteStatus.Unavailable);
 }
 
 public sealed record AzureAuthSecureRecordRevisionCheckResult(
@@ -121,6 +131,9 @@ public sealed record AzureAuthSecureRecordRevisionCheckResult(
 
     public static AzureAuthSecureRecordRevisionCheckResult Unsafe() =>
         new(AzureAuthSecureRecordRevisionCheckStatus.Unsafe);
+
+    public static AzureAuthSecureRecordRevisionCheckResult Unavailable() =>
+        new(AzureAuthSecureRecordRevisionCheckStatus.Unavailable);
 }
 
 [SuppressMessage("Design", "CA1000:Do not declare static members on generic types")]
@@ -191,6 +204,16 @@ public sealed record AzureAuthPersistedRecord<T> where T : class
             Status = AzureAuthPersistedRecordStatus.Unsafe,
         };
     }
+
+    public static AzureAuthPersistedRecord<T> Unavailable(string recordName)
+    {
+        AzureAuthRecordNamePolicy.EnsureValid(recordName);
+        return new AzureAuthPersistedRecord<T>
+        {
+            RecordName = recordName,
+            Status = AzureAuthPersistedRecordStatus.Unavailable,
+        };
+    }
 }
 
 [SuppressMessage("Design", "CA1000:Do not declare static members on generic types")]
@@ -218,6 +241,9 @@ public sealed record AzureAuthPersistedWriteResult<T> where T : class
 
     public static AzureAuthPersistedWriteResult<T> Unsafe() =>
         new() { Status = AzureAuthSecureRecordWriteStatus.Unsafe };
+
+    public static AzureAuthPersistedWriteResult<T> Unavailable() =>
+        new() { Status = AzureAuthSecureRecordWriteStatus.Unavailable };
 }
 
 public static class AzureAuthSecureRecordStoreContract
@@ -233,6 +259,7 @@ public static class AzureAuthSecureRecordStoreContract
             case AzureAuthSecureRecordReadStatus.Missing:
             case AzureAuthSecureRecordReadStatus.Unsupported:
             case AzureAuthSecureRecordReadStatus.Unsafe:
+            case AzureAuthSecureRecordReadStatus.Unavailable:
                 EnsureNoRevision(result.Revision, nameof(result.Revision));
                 if (!result.Content.IsEmpty)
                 {
@@ -263,6 +290,7 @@ public static class AzureAuthSecureRecordStoreContract
             case AzureAuthSecureRecordWriteStatus.Conflict:
             case AzureAuthSecureRecordWriteStatus.Unsupported:
             case AzureAuthSecureRecordWriteStatus.Unsafe:
+            case AzureAuthSecureRecordWriteStatus.Unavailable:
                 EnsureNoRevision(result.Revision, nameof(result.Revision));
                 return;
             default:
@@ -280,6 +308,7 @@ public static class AzureAuthSecureRecordStoreContract
             case AzureAuthSecureRecordRevisionCheckStatus.Conflict:
             case AzureAuthSecureRecordRevisionCheckStatus.Unsupported:
             case AzureAuthSecureRecordRevisionCheckStatus.Unsafe:
+            case AzureAuthSecureRecordRevisionCheckStatus.Unavailable:
                 return;
             default:
                 throw new ArgumentException(

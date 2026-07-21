@@ -87,8 +87,9 @@ public enum AcquisitionMode
     /// authentication that requires human attention or network interaction
     /// beyond a cache or broker lookup.
     /// A cache miss will map to InteractionRequired rather than falling back.
-    /// Valid only for operation Get on a future source-proved cache or broker
-    /// lookup path; no current provider supports it in this work package.
+    /// Valid only for operation Get with InteractivePolicy Never and no explicit
+    /// CI or opaque-token context. Current providers fail closed until a
+    /// source-proved cache or broker lookup path exists.
     /// </summary>
     SilentOnly = 1,
 

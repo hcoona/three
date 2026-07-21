@@ -54,8 +54,8 @@ public sealed class NuGetPhase10VerticalSliceServiceTests
         Assert.True(doctorResult.OwnershipManifestPresent);
         Assert.True(doctorResult.NetCorePluginEntrypointPresent);
         Assert.True(doctorResult.PluginModeEntrypointResolvable);
-        Assert.True(doctorResult.AzureArtifactsSourceCanonicalizationSuccess);
-        Assert.True(doctorResult.InteractivePolicyGuidanceSuccess);
+        Assert.False(doctorResult.AzureArtifactsSourceCanonicalizationSuccess);
+        Assert.False(doctorResult.InteractivePolicyGuidanceSuccess);
         Assert.True(doctorResult.OptionalEnvironmentOverridesAbsent);
     }
 

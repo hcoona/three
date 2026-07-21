@@ -4,6 +4,7 @@ using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AzurePipelines;
 using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 
@@ -21,7 +22,11 @@ public sealed record ConfigurationPhase14VerticalSliceOptions
 
     public CredentialCoreService? CredentialCoreService { get; init; }
 
+    public BoundedCredentialAcquisitionAdapter? CredentialAcquisition { get; init; }
+
     public Func<string, string?>? EnvironmentVariableReader { get; init; }
+
+    public IReadOnlyDictionary<CredentialEcosystem, Uri>? RegistryUrls { get; init; }
 }
 
 public sealed record ConfigurationPhase14ResolvedPaths
@@ -56,6 +61,8 @@ public sealed record ConfigurationPhase14PlanResult
     public required IReadOnlyList<ConfigurationPlanResult> PlanResults { get; init; }
 
     public required bool OwnershipManifestPresent { get; init; }
+
+    public bool OwnershipManifestCleanupIncomplete { get; init; }
 
     public ConfigurationPlanResult PlanResult => PlanResults[^1];
 
@@ -143,18 +150,15 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private const string CleanupStateRemoved = "removed";
     private const string CleanupStateIncomplete = "incomplete";
 
-    private static readonly Uri FakeNpmRegistryUrl = new(
-        "https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/"
-    );
-
     private static readonly Uri PythonServiceEndpoint = new("https://dev.azure.com/org");
 
-    private readonly CredentialCoreService credentialCoreService;
+    private readonly Lazy<BoundedCredentialAcquisitionAdapter> credentialAcquisition;
     private readonly Func<string, string?> environmentVariableReader;
     private readonly IFileSystem fileSystem;
     private readonly string? jobScopeId;
     private readonly string? rawJobScopeId;
     private readonly ConfigurationPhase14ResolvedPaths paths;
+    private readonly Dictionary<CredentialEcosystem, Uri> registryUrls;
 
     public ConfigurationPhase14VerticalSliceService(
         ConfigurationPhase14VerticalSliceOptions? options = null
@@ -162,43 +166,127 @@ public sealed class ConfigurationPhase14VerticalSliceService
     {
         options ??= new ConfigurationPhase14VerticalSliceOptions();
         fileSystem = options.FileSystem ?? new SystemFileSystem();
-        credentialCoreService = options.CredentialCoreService ?? new CredentialCoreService();
+        credentialAcquisition = new Lazy<BoundedCredentialAcquisitionAdapter>(
+            () => options.CredentialAcquisition
+                ?? new BoundedCredentialAcquisitionAdapter(
+                    options.CredentialCoreService is null
+                        ? CredentialProviderCompositionRoot.CreateProduction().AcquisitionService
+                        : new LegacyV1CredentialAcquisitionService(options.CredentialCoreService)),
+            LazyThreadSafetyMode.ExecutionAndPublication);
         environmentVariableReader =
             options.EnvironmentVariableReader ?? Environment.GetEnvironmentVariable;
         rawJobScopeId = options.AzurePipelinesJobScopeId
             ?? environmentVariableReader(AzurePipelinesJobScopeIdVariable);
         jobScopeId = IsValidJobScopeId(rawJobScopeId) ? rawJobScopeId : null;
         paths = ResolvePaths(options, fileSystem, jobScopeId);
+        registryUrls = ValidateRegistryUrls(options.RegistryUrls);
     }
 
     public ConfigurationPhase14ResolvedPaths Paths => paths;
+
+    public void ValidateConfigureRequest(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope)
+    {
+        EnsureCiJobScope(scope);
+        _ = GetOwnershipManifestPath(ecosystem, scope);
+        switch (ecosystem)
+        {
+            case CredentialEcosystem.Npm:
+            case CredentialEcosystem.Pnpm:
+                _ = CreateNpmDeclaration(ecosystem);
+                break;
+            case CredentialEcosystem.Yarn:
+                _ = CreateYarnDeclaration();
+                break;
+            case CredentialEcosystem.Python:
+                break;
+            default:
+                throw new NotSupportedException("Unsupported Phase 14 configuration ecosystem.");
+        }
+    }
+
+    public void ValidateUnconfigureRequest(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope)
+    {
+        EnsureCiJobScope(scope);
+        _ = GetOwnershipManifestPath(ecosystem, scope);
+    }
 
     public async ValueTask<ConfigurationPhase14PlanResult> ConfigureAsync(
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
         CancellationToken cancellationToken = default
+    ) => await ConfigureCoreAsync(ecosystem, scope, execute: true, cancellationToken);
+
+    public async ValueTask<ConfigurationPhase14PlanResult> DryRunConfigureAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        CancellationToken cancellationToken = default
+    ) => await ConfigureCoreAsync(ecosystem, scope, execute: false, cancellationToken);
+
+    private async ValueTask<ConfigurationPhase14PlanResult> ConfigureCoreAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        bool execute,
+        CancellationToken cancellationToken
     )
     {
         EnsureCiJobScope(scope);
         string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
-        List<ConfigurationPlanResult> planResults = [];
-        foreach (ConfigurationChangePlan plan in CreateApplyPlans(ecosystem, scope))
+        IReadOnlyList<ConfigurationChangePlan> plans = CreateApplyPlans(ecosystem, scope);
+        List<ConfigurationPlanResult> previewResults = [];
+        foreach (ConfigurationChangePlan plan in plans)
         {
-            planResults.Add(
-                await CreateManager(ownershipManifestPath).ApplyAsync(
-                    AttachPreviousOwnershipManifestHashIfPresent(plan, ownershipManifestPath),
-                    cancellationToken
-                )
+            ConfigurationChangePlan preparedPlan =
+                AttachPreviousOwnershipManifestHashIfPresent(plan, ownershipManifestPath);
+            previewResults.Add(
+                await CreateManager(ownershipManifestPath)
+                    .DryRunAsync(preparedPlan, cancellationToken)
             );
         }
 
-        return CreateResult(planResults, ownershipManifestPath);
+        if (!execute)
+        {
+            return CreateResult(previewResults, ownershipManifestPath);
+        }
+
+        List<ConfigurationPlanResult> appliedResults = [];
+        for (var index = 0; index < plans.Count; index++)
+        {
+            ConfigurationChangePlan preparedPlan =
+                AttachPreviousOwnershipManifestHashIfPresent(
+                    plans[index],
+                    ownershipManifestPath);
+            ConfigurationPlanResult applied = await CreateManager(ownershipManifestPath)
+                .ApplyAsync(preparedPlan, cancellationToken);
+            appliedResults.Add(applied with
+            {
+                Plan = previewResults[index].Plan,
+            });
+        }
+
+        return CreateResult(appliedResults, ownershipManifestPath);
     }
 
     public async ValueTask<ConfigurationPhase14PlanResult> UnconfigureAsync(
         CredentialEcosystem ecosystem,
         ConfigurationPhase14Scope scope,
         CancellationToken cancellationToken = default
+    ) => await UnconfigureCoreAsync(ecosystem, scope, execute: true, cancellationToken);
+
+    public async ValueTask<ConfigurationPhase14PlanResult> DryRunUnconfigureAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        CancellationToken cancellationToken = default
+    ) => await UnconfigureCoreAsync(ecosystem, scope, execute: false, cancellationToken);
+
+    private async ValueTask<ConfigurationPhase14PlanResult> UnconfigureCoreAsync(
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope,
+        bool execute,
+        CancellationToken cancellationToken
     )
     {
         EnsureCiJobScope(scope);
@@ -213,7 +301,11 @@ public sealed class ConfigurationPhase14VerticalSliceService
                     out manifestJson))
             {
                 return CreateResult(
-                    [CreateNoOpPlanResult(ConfigurationPlanOperation.Remove)],
+                    [CreateNoOpPlanResult(
+                        execute
+                            ? ConfigurationPlanOperation.Remove
+                            : ConfigurationPlanOperation.DryRun,
+                        execute)],
                     ownershipManifestPath);
             }
         }
@@ -221,39 +313,76 @@ public sealed class ConfigurationPhase14VerticalSliceService
             when (scope == ConfigurationPhase14Scope.CiTemporary
                 && IsExpectedOwnershipManifestReadOrParseFailure(exception))
         {
-            DeleteKnownCiTemporaryContainer(ecosystem);
+            ConfigurationPlanResult cleanupPlan = CreateKnownCiTemporaryContainerCleanupResult(
+                ecosystem,
+                execute);
+            if (execute)
+            {
+                DeleteKnownCiTemporaryContainer(ecosystem);
+            }
             return CreateResult(
-                [CreateNoOpPlanResult(ConfigurationPlanOperation.Remove)],
-                ownershipManifestPath);
+                [cleanupPlan],
+                ownershipManifestPath,
+                ownershipManifestCleanupIncomplete: true);
         }
 
         if (!OwnershipManifestMatchesExpectedState(manifest, ecosystem, scope))
         {
             return CreateResult(
-                [CreateNoOpPlanResult(ConfigurationPlanOperation.Remove)],
+                [CreateNoOpPlanResult(
+                    execute
+                        ? ConfigurationPlanOperation.Remove
+                        : ConfigurationPlanOperation.DryRun,
+                    execute)],
                 ownershipManifestPath);
         }
 
-        List<ConfigurationPlanResult> planResults = [];
-        foreach (
-            ConfigurationChangePlan plan in CreateRemovePlans(
-                ecosystem,
-                scope,
-                manifest,
-                manifestJson)
-        )
+        ConfigurationChangePlan[] plans = CreateRemovePlans(
+            ecosystem,
+            scope,
+            manifest,
+            manifestJson);
+        List<ConfigurationPlanResult> previewResults = [];
+        foreach (ConfigurationChangePlan plan in plans)
         {
-            planResults.Add(
-                await CreateManager(ownershipManifestPath).RemoveAsync(
-                    AttachPreviousOwnershipManifestHashIfPresent(plan, ownershipManifestPath),
-                    cancellationToken)
+            ConfigurationChangePlan preparedPlan =
+                AttachPreviousOwnershipManifestHashIfPresent(plan, ownershipManifestPath);
+            previewResults.Add(
+                await CreateManager(ownershipManifestPath)
+                    .DryRunAsync(preparedPlan, cancellationToken)
             );
         }
 
-        return planResults.Count == 0
-            ? CreateResult([CreateNoOpPlanResult(ConfigurationPlanOperation.Remove)],
+        if (!execute)
+        {
+            return previewResults.Count == 0
+                ? CreateResult(
+                    [CreateNoOpPlanResult(ConfigurationPlanOperation.DryRun, applied: false)],
+                    ownershipManifestPath)
+                : CreateResult(previewResults, ownershipManifestPath);
+        }
+
+        List<ConfigurationPlanResult> removedResults = [];
+        for (var index = 0; index < plans.Length; index++)
+        {
+            ConfigurationChangePlan preparedPlan =
+                AttachPreviousOwnershipManifestHashIfPresent(
+                    plans[index],
+                    ownershipManifestPath);
+            ConfigurationPlanResult removed = await CreateManager(ownershipManifestPath)
+                .RemoveAsync(preparedPlan, cancellationToken);
+            removedResults.Add(removed with
+            {
+                Plan = previewResults[index].Plan,
+            });
+        }
+
+        return removedResults.Count == 0
+            ? CreateResult([CreateNoOpPlanResult(
+                    ConfigurationPlanOperation.Remove,
+                    applied: true)],
                 ownershipManifestPath)
-            : CreateResult(planResults, ownershipManifestPath);
+            : CreateResult(removedResults, ownershipManifestPath);
     }
 
     public async ValueTask<ConfigurationPhase14DoctorResult> DoctorAsync(
@@ -437,7 +566,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                     : paths.NpmUserNpmrcPath,
             }
         );
-        NpmPhase12RegistryDeclaration declaration = CreateNpmDeclaration();
+        NpmPhase12RegistryDeclaration declaration = CreateNpmDeclaration(ecosystem);
         string authToken = GetPackageAuthToken(ecosystem, scope, declaration.ResourceIdentity);
         var request = new NpmPhase12CredentialPlanRequest
         {
@@ -486,7 +615,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
     )
     {
         bool ciTemporary = scope == ConfigurationPhase14Scope.CiTemporary;
-        var request = new CredentialRequest
+        var request = new CredentialRequestV2
         {
             Ecosystem = ecosystem,
             Operation = CredentialOperation.Get,
@@ -499,7 +628,10 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 : IdentityFlow.DeviceCode,
             InteractivePolicy = ciTemporary
                 ? InteractivePolicy.Never
-                : InteractivePolicy.UserAllowed,
+                : InteractivePolicy.Never,
+            AcquisitionMode = ciTemporary
+                ? AcquisitionMode.Unspecified
+                : AcquisitionMode.SilentOnly,
             CachePolicy = ciTemporary
                 ? CachePolicyMode.NonPersistentCi
                 : CachePolicyMode.ProductPersistentCacheDisabled,
@@ -516,18 +648,36 @@ public sealed class ConfigurationPhase14VerticalSliceService
         CredentialResult result = ciTemporary
             ? AzurePipelinesSystemAccessTokenService
                 .Handle(
-                    request,
+                    ToV1CiRequest(request),
                     environmentVariableReader(AzurePipelinesSystemAccessTokenVariable)
                 )
                 .CreateProtocolResult("wp5-ci-temporary-configuration")
-            : credentialCoreService.Execute(request);
+            : credentialAcquisition.Value.Acquire(request);
         return result.Status == CredentialResultStatus.Success
             && !string.IsNullOrWhiteSpace(result.BearerToken)
             ? result.BearerToken
             : throw new InvalidOperationException(
-                result.Error?.SafeMessage ?? "Failed to create a fake package auth token."
+                result.Error?.SafeMessage ?? "Failed to acquire a package authentication token."
             );
     }
+
+    private static CredentialRequest ToV1CiRequest(CredentialRequestV2 request) =>
+        new()
+        {
+            Ecosystem = request.Ecosystem,
+            Operation = request.Operation,
+            Resource = request.Resource,
+            ServiceIdentity = request.ServiceIdentity,
+            AccountHint = request.AccountHint,
+            TenantHint = request.TenantHint,
+            RequestedAudience = request.RequestedAudience,
+            CredentialKind = request.CredentialKind,
+            IdentityFlow = request.IdentityFlow,
+            InteractivePolicy = request.InteractivePolicy,
+            CachePolicy = request.CachePolicy,
+            CiContext = request.CiContext,
+            ExtensionData = request.ExtensionData,
+        };
 
     private string GetNpmTargetPath(CredentialEcosystem ecosystem, ConfigurationPhase14Scope scope)
     {
@@ -795,6 +945,65 @@ public sealed class ConfigurationPhase14VerticalSliceService
                     "Phase 14.3 cleanup supports npm, pnpm, and Yarn CI temporary state."
                 );
         }
+    }
+
+    private ConfigurationPlanResult CreateKnownCiTemporaryContainerCleanupResult(
+        CredentialEcosystem ecosystem,
+        bool execute)
+    {
+        string ecosystemName = ToContractEcosystemName(ecosystem);
+        ConfigurationTemporaryContainer temporaryContainer =
+            CreateRemoveTemporaryContainer(ecosystem, ConfigurationPhase14Scope.CiTemporary)
+            ?? throw new NotSupportedException(
+                "Phase 14.3 cleanup supports npm, pnpm, and Yarn CI temporary state.");
+        var change = new ConfigurationChange
+        {
+            Operation = ConfigurationChangeOperation.Remove,
+            TargetKind = ecosystem == CredentialEcosystem.Yarn
+                ? ConfigurationTargetKind.Yarnrc
+                : ConfigurationTargetKind.Npmrc,
+            TargetPathOrName = ecosystem == CredentialEcosystem.Yarn
+                ? fileSystem.GetFullPath(
+                    Path.Combine(temporaryContainer.ProductOwnedPath, ".yarnrc.yml"))
+                : temporaryContainer.ProductOwnedPath,
+            Key = PhysicalTargetKey,
+            RequiresOwnershipRecord = true,
+            PreviousOwnedEntryMetadata = "known-job-scoped-container",
+            PreserveDeclarationsAndComments = false,
+        };
+        ConfigurationChangePlan plan = ConfigurationChangePlanPolicy.Create(
+            "phase14-" + ecosystemName + "-unconfigure-plan",
+            "phase14-" + ecosystemName + "-unconfigure-changeset",
+            ProductId,
+            ConfigurationScope.CiTemporary,
+            new ConfigurationManifestMetadata
+            {
+                ManifestId = ecosystem == CredentialEcosystem.Yarn
+                    ? YarnCredentialManifestId
+                    : NpmCredentialManifestId,
+                OwnerProductId = ProductId,
+                EntrySelector = PhysicalTargetKey,
+                ProductVersion = ProductVersion,
+            },
+            [change],
+            temporaryContainer: temporaryContainer,
+            declarationPreservation:
+                ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible,
+            containsCredentialMaterial: false);
+        ConfigurationPlannedOperation[] plannedOperations =
+            ConfigurationPlanProjector.CreatePlannedOperations(plan);
+        ConfigurationDryRunPlan dryRunPlan =
+            ConfigurationPlanProjector.CreateDryRunPlan(plan, plannedOperations);
+        return new ConfigurationPlanResult
+        {
+            Plan = dryRunPlan,
+            Operation = execute
+                ? ConfigurationPlanOperation.Remove
+                : ConfigurationPlanOperation.DryRun,
+            State = execute ? ConfigurationPlanState.Applied : ConfigurationPlanState.Planned,
+            Changes = dryRunPlan.Changes,
+            PlannedOperations = plannedOperations,
+        };
     }
 
     private async ValueTask<bool> TryValidateApplyPlanAsync(
@@ -1228,7 +1437,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
 
     private ConfigurationPhase14PlanResult CreateResult(
         IReadOnlyList<ConfigurationPlanResult> planResults,
-        string ownershipManifestPath
+        string ownershipManifestPath,
+        bool ownershipManifestCleanupIncomplete = false
     )
     {
         return
@@ -1237,11 +1447,13 @@ public sealed class ConfigurationPhase14VerticalSliceService
             Paths = paths,
             PlanResults = planResults,
             OwnershipManifestPresent = fileSystem.FileExists(ownershipManifestPath),
+            OwnershipManifestCleanupIncomplete = ownershipManifestCleanupIncomplete,
         };
     }
 
     private static ConfigurationPlanResult CreateNoOpPlanResult(
-        ConfigurationPlanOperation operation) =>
+        ConfigurationPlanOperation operation,
+        bool applied = true) =>
         new()
         {
             Plan = new ConfigurationDryRunPlan
@@ -1261,7 +1473,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 ContainsCredentialMaterial = false,
             },
             Operation = operation,
-            State = ConfigurationPlanState.Applied,
+            State = applied ? ConfigurationPlanState.Applied : ConfigurationPlanState.Planned,
         };
 
     private ConfigurationManager CreateManager(string ownershipManifestPath) =>
@@ -1352,25 +1564,27 @@ public sealed class ConfigurationPhase14VerticalSliceService
             ? "azureauth-credprovider keyring shim phase=14.2\r\n"
             : "#!/usr/bin/env sh\nexec azureauth-credprovider keyring-helper-v2 \"$@\"\n";
 
-    private NpmPhase12RegistryDeclaration CreateNpmDeclaration()
+    private NpmPhase12RegistryDeclaration CreateNpmDeclaration(CredentialEcosystem ecosystem)
     {
+        Uri registryUrl = GetRequiredRegistryUrl(ecosystem);
         if (
             !NpmPhase12VerticalSliceService.TryCreateAzureArtifactsNpmResourceIdentity(
-                FakeNpmRegistryUrl,
+                registryUrl,
                 out CanonicalResourceIdentity? resource
             )
         )
         {
-            throw new InvalidOperationException("The fake npm registry URL is not canonical.");
+            throw new InvalidOperationException(
+                "The configured package registry URL is not a canonical Azure Artifacts npm URL.");
         }
 
         return new NpmPhase12RegistryDeclaration
         {
             SourcePath = fileSystem.GetFullPath(
-                Path.Combine(paths.StateDirectoryPath, "npm", "fake-registry.npmrc")
+                Path.Combine(paths.StateDirectoryPath, "npm", "explicit-registry-declaration.npmrc")
             ),
             Key = "registry",
-            RegistryUrl = FakeNpmRegistryUrl,
+            RegistryUrl = registryUrl,
             ResourceIdentity = resource,
             AuthSelectors = NpmCompatibleAuthSelectorPolicy.Create(resource),
         };
@@ -1378,27 +1592,93 @@ public sealed class ConfigurationPhase14VerticalSliceService
 
     private YarnPhase13RegistryDeclaration CreateYarnDeclaration()
     {
+        Uri registryUrl = GetRequiredRegistryUrl(CredentialEcosystem.Yarn);
         if (
             !NpmPhase12VerticalSliceService.TryCreateAzureArtifactsNpmResourceIdentity(
-                FakeNpmRegistryUrl,
+                registryUrl,
                 out CanonicalResourceIdentity? resource
             )
         )
         {
-            throw new InvalidOperationException("The fake Yarn registry URL is not canonical.");
+            throw new InvalidOperationException(
+                "The configured package registry URL is not a canonical Azure Artifacts npm URL.");
         }
 
         return new YarnPhase13RegistryDeclaration
         {
             SourcePath = fileSystem.GetFullPath(
-                Path.Combine(paths.StateDirectoryPath, "yarn", "fake-registry.yarnrc.yml")
+                Path.Combine(
+                    paths.StateDirectoryPath,
+                    "yarn",
+                    "explicit-registry-declaration.yarnrc.yml")
             ),
             Key = "npmRegistryServer",
-            RegistryUrl = FakeNpmRegistryUrl,
+            RegistryUrl = registryUrl,
             ResourceIdentity = resource,
-            NpmRegistriesKey = FakeNpmRegistryUrl.AbsoluteUri,
+            NpmRegistriesKey = registryUrl.AbsoluteUri,
         };
     }
+
+    private Uri GetRequiredRegistryUrl(CredentialEcosystem ecosystem)
+    {
+        if (registryUrls.TryGetValue(ecosystem, out Uri? registryUrl))
+        {
+            return registryUrl;
+        }
+
+        throw new InvalidOperationException(
+            "Package registry configuration is required. Run azureauth-credprovider configure "
+                + $"{GetEcosystemName(ecosystem)} --registry-url "
+                + "<azure-artifacts-npm-url>.");
+    }
+
+    private static Dictionary<CredentialEcosystem, Uri> ValidateRegistryUrls(
+        IReadOnlyDictionary<CredentialEcosystem, Uri>? registryUrls)
+    {
+        if (registryUrls is null)
+        {
+            return new Dictionary<CredentialEcosystem, Uri>();
+        }
+
+        var validated = new Dictionary<CredentialEcosystem, Uri>();
+        foreach ((CredentialEcosystem ecosystem, Uri registryUrl) in registryUrls)
+        {
+            if (ecosystem is not CredentialEcosystem.Npm
+                and not CredentialEcosystem.Pnpm
+                and not CredentialEcosystem.Yarn)
+            {
+                throw new ArgumentException(
+                    "Registry declarations are supported only for npm, pnpm, and Yarn.",
+                    nameof(registryUrls));
+            }
+
+            ArgumentNullException.ThrowIfNull(registryUrl);
+            if (!registryUrl.IsAbsoluteUri
+                || !NpmPhase12VerticalSliceService.TryCreateAzureArtifactsNpmResourceIdentity(
+                    registryUrl,
+                    out _))
+            {
+                throw new ArgumentException(
+                    "Registry declarations must use canonical Azure Artifacts npm registry URLs.",
+                    nameof(registryUrls));
+            }
+
+            validated.Add(ecosystem, registryUrl);
+        }
+
+        return validated;
+    }
+
+    private static string GetEcosystemName(CredentialEcosystem ecosystem) =>
+        ecosystem switch
+        {
+            CredentialEcosystem.Npm => "npm",
+            CredentialEcosystem.Pnpm => "pnpm",
+            CredentialEcosystem.Yarn => "yarn",
+            _ => throw new ArgumentException(
+                "A package registry declaration was requested for an unsupported ecosystem.",
+                nameof(ecosystem)),
+        };
 
     private static ConfigurationPhase14ResolvedPaths ResolvePaths(
         ConfigurationPhase14VerticalSliceOptions options,

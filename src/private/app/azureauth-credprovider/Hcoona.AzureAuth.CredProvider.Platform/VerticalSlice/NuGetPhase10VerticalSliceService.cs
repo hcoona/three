@@ -3,6 +3,7 @@ using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
 using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 using Newtonsoft.Json.Linq;
 using NuGet.Common;
@@ -17,6 +18,8 @@ public sealed record NuGetPhase10VerticalSliceOptions
     public IFileSystem? FileSystem { get; init; }
 
     public Func<string, string?>? EnvironmentVariableReader { get; init; }
+
+    public BoundedCredentialAcquisitionAdapter? CredentialAcquisition { get; init; }
 }
 
 public sealed record NuGetPhase10VerticalSliceResolvedPaths
@@ -123,17 +126,37 @@ public sealed class NuGetPhase10VerticalSliceService
     private readonly Func<string, string?> environmentVariableReader;
     private readonly IFileSystem fileSystem;
     private readonly NuGetPhase10VerticalSliceResolvedPaths paths;
+    private readonly Lazy<BoundedCredentialAcquisitionAdapter>? credentialAcquisition;
 
     public NuGetPhase10VerticalSliceService(NuGetPhase10VerticalSliceOptions? options = null)
+        : this(options, configurationOnly: false)
+    {
+    }
+
+    private NuGetPhase10VerticalSliceService(
+        NuGetPhase10VerticalSliceOptions? options,
+        bool configurationOnly)
     {
         options ??= new NuGetPhase10VerticalSliceOptions();
         fileSystem = options.FileSystem ?? new SystemFileSystem();
         environmentVariableReader =
             options.EnvironmentVariableReader ?? Environment.GetEnvironmentVariable;
         paths = ResolvePaths(options, fileSystem);
+        if (!configurationOnly)
+        {
+            credentialAcquisition = new Lazy<BoundedCredentialAcquisitionAdapter>(
+                () => options.CredentialAcquisition
+                    ?? new BoundedCredentialAcquisitionAdapter(
+                        CredentialProviderCompositionRoot.CreateProduction().AcquisitionService),
+                LazyThreadSafetyMode.ExecutionAndPublication);
+        }
     }
 
     public NuGetPhase10VerticalSliceResolvedPaths Paths => paths;
+
+    public static NuGetPhase10VerticalSliceService CreateConfigurationOnly(
+        NuGetPhase10VerticalSliceOptions? options = null) =>
+        new(options, configurationOnly: true);
 
     public async ValueTask<NuGetPhase10ConfigureDryRunResult> DryRunConfigureAsync(
         CancellationToken cancellationToken = default
@@ -619,11 +642,16 @@ public sealed class NuGetPhase10VerticalSliceService
             && context.Protocol == AdapterProtocol.NuGetPlugin;
     }
 
-    private static bool TryValidateAzureArtifactsSourceCanonicalization()
+    private BoundedCredentialAcquisitionAdapter GetCredentialAcquisition() =>
+        credentialAcquisition?.Value
+        ?? throw new InvalidOperationException(
+            "Credential acquisition is unavailable in a configuration-only service.");
+
+    private bool TryValidateAzureArtifactsSourceCanonicalization()
     {
         try
         {
-            var adapter = new NuGetPluginAdapter();
+            var adapter = new NuGetPluginAdapter(GetCredentialAcquisition());
             return AuthenticationSucceeds(adapter, OrganizationScopedSource)
                 && AuthenticationSucceeds(adapter, ProjectScopedSource)
                 && AuthenticationSucceeds(adapter, LegacySource)
@@ -637,11 +665,11 @@ public sealed class NuGetPhase10VerticalSliceService
         }
     }
 
-    private static bool TryValidateInteractivePolicyGuidance()
+    private bool TryValidateInteractivePolicyGuidance()
     {
         try
         {
-            var adapter = new NuGetPluginAdapter();
+            var adapter = new NuGetPluginAdapter(GetCredentialAcquisition());
             GetAuthenticationCredentialsResponse response =
                 adapter.HandleGetAuthenticationCredentials(
                     new GetAuthenticationCredentialsRequest(

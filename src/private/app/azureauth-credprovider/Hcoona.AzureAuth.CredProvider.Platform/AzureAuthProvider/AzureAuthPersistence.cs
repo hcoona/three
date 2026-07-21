@@ -49,6 +49,8 @@ public sealed class AzureAuthProviderConfigPersistence
                 AzureAuthPersistedWriteResult<AzureAuthProviderConfig>.Unsupported(),
             AzureAuthPersistedRecordStatus.Unsafe =>
                 AzureAuthPersistedWriteResult<AzureAuthProviderConfig>.Unsafe(),
+            AzureAuthPersistedRecordStatus.Unavailable =>
+                AzureAuthPersistedWriteResult<AzureAuthProviderConfig>.Unavailable(),
             AzureAuthPersistedRecordStatus.Missing => throw new InvalidOperationException(
                 "Missing provider configuration records must be created."
             ),
@@ -79,6 +81,8 @@ public sealed class AzureAuthProviderConfigPersistence
                 AzureAuthPersistedWriteResult<AzureAuthProviderConfig>.Unsupported(),
             AzureAuthPersistedRecordStatus.Unsafe =>
                 AzureAuthPersistedWriteResult<AzureAuthProviderConfig>.Unsafe(),
+            AzureAuthPersistedRecordStatus.Unavailable =>
+                AzureAuthPersistedWriteResult<AzureAuthProviderConfig>.Unavailable(),
             AzureAuthPersistedRecordStatus.Missing => throw new InvalidOperationException(
                 "Missing provider configuration records must be created."
             ),
@@ -138,6 +142,8 @@ public sealed class AzureAuthBindingPersistence
                 return AzureAuthPersistedWriteResult<AzureAuthBinding>.Unsupported();
             case AzureAuthPersistedRecordStatus.Unsafe:
                 return AzureAuthPersistedWriteResult<AzureAuthBinding>.Unsafe();
+            case AzureAuthPersistedRecordStatus.Unavailable:
+                return AzureAuthPersistedWriteResult<AzureAuthBinding>.Unavailable();
             case AzureAuthPersistedRecordStatus.Malformed:
                 throw new InvalidOperationException(
                     "Malformed binding records must be repaired with Rebind or Unbind."
@@ -194,6 +200,8 @@ public sealed class AzureAuthBindingPersistence
                 AzureAuthPersistedWriteResult<AzureAuthBinding>.Unsupported(),
             AzureAuthPersistedRecordStatus.Unsafe =>
                 AzureAuthPersistedWriteResult<AzureAuthBinding>.Unsafe(),
+            AzureAuthPersistedRecordStatus.Unavailable =>
+                AzureAuthPersistedWriteResult<AzureAuthBinding>.Unavailable(),
             _ => throw new ArgumentException("Unsupported binding record status.", nameof(expected)),
         };
     }
@@ -221,6 +229,8 @@ public sealed class AzureAuthBindingPersistence
                 return AzureAuthPersistedWriteResult<AzureAuthBinding>.Unsupported();
             case AzureAuthPersistedRecordStatus.Unsafe:
                 return AzureAuthPersistedWriteResult<AzureAuthBinding>.Unsafe();
+            case AzureAuthPersistedRecordStatus.Unavailable:
+                return AzureAuthPersistedWriteResult<AzureAuthBinding>.Unavailable();
             default:
                 throw new ArgumentException("Unsupported binding record status.", nameof(expected));
         }
@@ -270,6 +280,8 @@ internal static class AzureAuthPersistenceCore
                 recordName
             ),
             AzureAuthSecureRecordReadStatus.Unsafe => AzureAuthPersistedRecord<T>.Unsafe(recordName),
+            AzureAuthSecureRecordReadStatus.Unavailable =>
+                AzureAuthPersistedRecord<T>.Unavailable(recordName),
             AzureAuthSecureRecordReadStatus.Present => ReadPresent(
                 recordName,
                 readResult.Revision!,
@@ -320,6 +332,8 @@ internal static class AzureAuthPersistenceCore
             AzureAuthSecureRecordWriteStatus.Unsupported =>
                 AzureAuthPersistedWriteResult<T>.Unsupported(),
             AzureAuthSecureRecordWriteStatus.Unsafe => AzureAuthPersistedWriteResult<T>.Unsafe(),
+            AzureAuthSecureRecordWriteStatus.Unavailable =>
+                AzureAuthPersistedWriteResult<T>.Unavailable(),
             _ => throw new InvalidOperationException("Unsupported secure-store write status."),
         };
     }
@@ -358,6 +372,8 @@ internal static class AzureAuthPersistenceCore
                 AzureAuthPersistedWriteResult<T>.Unsupported(),
             AzureAuthSecureRecordRevisionCheckStatus.Unsafe =>
                 AzureAuthPersistedWriteResult<T>.Unsafe(),
+            AzureAuthSecureRecordRevisionCheckStatus.Unavailable =>
+                AzureAuthPersistedWriteResult<T>.Unavailable(),
             _ => throw new InvalidOperationException(
                 "Unsupported secure-store revision-check status."
             ),

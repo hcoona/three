@@ -61,18 +61,18 @@ public static class AzureAuthDoctor
             AzureAuthProviderSelection.DirectMsal => new AzureAuthDoctorCheck
             {
                 Code = "provider-selection",
-                Status = AzureAuthDoctorCheckStatus.Pass,
+                Status = AzureAuthDoctorCheckStatus.Unsupported,
                 Message =
-                    "Provider selection is directMsal. WP2 persists this choice only; WP5 owns "
-                    + "runtime composition.",
+                    "Provider selection is directMsal, but the production provider seam is not "
+                    + "implemented.",
             },
             AzureAuthProviderSelection.AzureAuth => new AzureAuthDoctorCheck
             {
                 Code = "provider-selection",
                 Status = AzureAuthDoctorCheckStatus.Pass,
                 Message =
-                    "Provider selection is azureAuth. Readiness still depends on WP3 trust "
-                    + "inspection and future WP5 composition.",
+                    "Provider selection is azureAuth. Readiness depends on trust, binding, and "
+                    + "process launch checks.",
             },
             _ => throw new ArgumentException("Unsupported provider selection.", nameof(config)),
         };
@@ -154,6 +154,12 @@ public static class AzureAuthDoctor
                 Code = "binding-state",
                 Status = AzureAuthDoctorCheckStatus.Fail,
                 Message = "Secure binding persistence reported an unsafe location or policy.",
+            },
+            AzureAuthPersistedRecordStatus.Unavailable => new AzureAuthDoctorCheck
+            {
+                Code = "binding-state",
+                Status = AzureAuthDoctorCheckStatus.Deferred,
+                Message = "Secure binding persistence is temporarily unavailable.",
             },
             AzureAuthPersistedRecordStatus.Present => DescribePresentBinding(
                 config,
@@ -308,6 +314,11 @@ public static class AzureAuthDoctor
         if (!evidence.OwnerOnlyWritable)
         {
             reasons.Add("artifact is not owner-only writable");
+        }
+
+        if (!evidence.DiscretionaryAclsPresentAndNonNull)
+        {
+            reasons.Add("artifact or directory has an absent or null discretionary ACL");
         }
 
         if (

@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
 
@@ -13,11 +14,27 @@ public sealed class KeyringHelperAdapter
     private const string ProtocolViolationCode = "ProtocolViolation";
     private const string UnsupportedHostCode = "UnsupportedHost";
 
-    private readonly CredentialCoreService credentialCore;
+    private readonly BoundedCredentialAcquisitionAdapter credentialAcquisition;
 
-    public KeyringHelperAdapter(CredentialCoreService? credentialCore = null)
+    public KeyringHelperAdapter()
+        : this(CredentialProviderCompositionRoot.CreateProduction().AcquisitionService)
+    { }
+
+    public KeyringHelperAdapter(CredentialCoreService? credentialCore)
+        : this(
+            credentialCore is null
+                ? CredentialProviderCompositionRoot.CreateProduction().AcquisitionService
+                : new LegacyV1CredentialAcquisitionService(credentialCore))
+    { }
+
+    public KeyringHelperAdapter(ICredentialAcquisitionService credentialAcquisition)
+        : this(new BoundedCredentialAcquisitionAdapter(credentialAcquisition))
+    { }
+
+    public KeyringHelperAdapter(BoundedCredentialAcquisitionAdapter credentialAcquisition)
     {
-        this.credentialCore = credentialCore ?? new CredentialCoreService();
+        ArgumentNullException.ThrowIfNull(credentialAcquisition);
+        this.credentialAcquisition = credentialAcquisition;
     }
 
     public static AdapterDescriptor Descriptor { get; } = CreateDescriptor();
@@ -119,8 +136,8 @@ public sealed class KeyringHelperAdapter
             return CreateProtocolViolationOutput();
         }
 
-        CredentialRequest credentialRequest = CreateCredentialRequest(helperRequest, resource);
-        CredentialResult credentialResult = credentialCore.Execute(credentialRequest);
+        CredentialRequestV2 credentialRequest = CreateCredentialRequest(helperRequest, resource);
+        CredentialResult credentialResult = credentialAcquisition.Acquire(credentialRequest);
         KeyringHelperResponse response = KeyringHelperV2.ToResponse(
             helperRequest,
             credentialResult);
@@ -200,11 +217,11 @@ public sealed class KeyringHelperAdapter
         return true;
     }
 
-    private static CredentialRequest CreateCredentialRequest(
+    private static CredentialRequestV2 CreateCredentialRequest(
         KeyringHelperRequest helperRequest,
         CanonicalResourceIdentity resource)
     {
-        return new CredentialRequest
+        return new CredentialRequestV2
         {
             Ecosystem = CredentialEcosystem.Python,
             Operation = CredentialOperation.Get,
@@ -215,8 +232,9 @@ public sealed class KeyringHelperAdapter
                 : helperRequest.Username.Trim(),
             RequestedAudience = TokenAudience.AzureArtifacts,
             CredentialKind = CredentialKind.BasicPassword,
-            IdentityFlow = IdentityFlow.DeviceCode,
-            InteractivePolicy = InteractivePolicy.UserAllowed,
+            IdentityFlow = IdentityFlow.InteractiveBrowser,
+            InteractivePolicy = InteractivePolicy.Never,
+            AcquisitionMode = AcquisitionMode.SilentOnly,
             CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
             CiContext = new CiContext
             {

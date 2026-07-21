@@ -1,4 +1,5 @@
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
 using Hcoona.AzureAuth.CredProvider.Platform.Redaction;
 
@@ -16,7 +17,7 @@ internal static class Program
                 out _)
         )
         {
-            return RunNuGetPlugin();
+            return RunProtocolWithProductionRoot(RunNuGetPlugin);
         }
 
         if (
@@ -26,7 +27,8 @@ internal static class Program
                 out _)
         )
         {
-            return RunKeyringHelper(invocationPath, args);
+            return RunProtocolWithProductionRoot(
+                root => RunKeyringHelper(root, invocationPath, args));
         }
 
         return CliApplication.Run(
@@ -38,11 +40,26 @@ internal static class Program
             invocationPath);
     }
 
-    private static int RunNuGetPlugin()
+    private static int RunProtocolWithProductionRoot(
+        Func<CredentialProviderCompositionRoot, int> dispatch)
     {
         try
         {
-            return new NuGetPluginAdapter()
+            return dispatch(CredentialProviderCompositionRoot.CreateProduction());
+        }
+        catch (Exception)
+        {
+            StandardConsoleTextWriters.StandardError()
+                .WriteLine("error: credential provider configuration is unavailable.");
+            return 70;
+        }
+    }
+
+    private static int RunNuGetPlugin(CredentialProviderCompositionRoot compositionRoot)
+    {
+        try
+        {
+            return compositionRoot.CreateNuGetPluginAdapter()
                 .RunPluginAsync()
                 .GetAwaiter()
                 .GetResult();
@@ -55,7 +72,10 @@ internal static class Program
         }
     }
 
-    private static int RunKeyringHelper(string? invocationPath, string[] args)
+    private static int RunKeyringHelper(
+        CredentialProviderCompositionRoot compositionRoot,
+        string? invocationPath,
+        string[] args)
     {
         try
         {
@@ -64,7 +84,7 @@ internal static class Program
             var diagnosticRouter = new DiagnosticRouter(
                 [new TextWriterDiagnosticSink(stderr)],
                 SecretRedactor.Empty);
-            AdapterHostExecutionOutcome outcome = new KeyringHelperAdapter().Execute(
+            AdapterHostExecutionOutcome outcome = compositionRoot.CreateKeyringHelperAdapter().Execute(
                 invocationPath ?? KeyringHelperAdapter.ProductExecutableName,
                 args,
                 protocolStdout,

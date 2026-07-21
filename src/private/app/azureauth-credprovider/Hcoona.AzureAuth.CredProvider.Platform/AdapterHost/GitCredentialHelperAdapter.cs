@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
 
@@ -24,11 +25,27 @@ public sealed class GitCredentialHelperAdapter
         "username",
     ];
 
-    private readonly CredentialCoreService credentialCore;
+    private readonly BoundedCredentialAcquisitionAdapter credentialAcquisition;
 
-    public GitCredentialHelperAdapter(CredentialCoreService? credentialCore = null)
+    public GitCredentialHelperAdapter()
+        : this(CredentialProviderCompositionRoot.CreateProduction().AcquisitionService)
+    { }
+
+    public GitCredentialHelperAdapter(CredentialCoreService? credentialCore)
+        : this(
+            credentialCore is null
+                ? CredentialProviderCompositionRoot.CreateProduction().AcquisitionService
+                : new LegacyV1CredentialAcquisitionService(credentialCore))
+    { }
+
+    public GitCredentialHelperAdapter(ICredentialAcquisitionService credentialAcquisition)
+        : this(new BoundedCredentialAcquisitionAdapter(credentialAcquisition))
+    { }
+
+    public GitCredentialHelperAdapter(BoundedCredentialAcquisitionAdapter credentialAcquisition)
     {
-        this.credentialCore = credentialCore ?? new CredentialCoreService();
+        ArgumentNullException.ThrowIfNull(credentialAcquisition);
+        this.credentialAcquisition = credentialAcquisition;
     }
 
     public static AdapterDescriptor Descriptor { get; } = CreateDescriptor();
@@ -159,8 +176,8 @@ public sealed class GitCredentialHelperAdapter
             return CreateProtocolViolationOutput(CredentialOperation.Get);
         }
 
-        CredentialRequest request = CreateGetRequest(resourceParseResult.Resource, fields);
-        CredentialResult result = credentialCore.Execute(request);
+        CredentialRequestV2 request = CreateGetRequest(resourceParseResult.Resource, fields);
+        CredentialResult result = credentialAcquisition.Acquire(request);
         return new AdapterHostHandlerOutput(
             credentialResult: result,
             operation: CredentialOperation.Get,
@@ -440,11 +457,11 @@ public sealed class GitCredentialHelperAdapter
         return null;
     }
 
-    private static CredentialRequest CreateGetRequest(
+    private static CredentialRequestV2 CreateGetRequest(
         CanonicalResourceIdentity resource,
         IReadOnlyDictionary<string, string> fields)
     {
-        return new CredentialRequest
+        return new CredentialRequestV2
         {
             Ecosystem = CredentialEcosystem.Git,
             Operation = CredentialOperation.Get,
@@ -456,8 +473,9 @@ public sealed class GitCredentialHelperAdapter
                     : null,
             RequestedAudience = TokenAudience.AzureDevOps,
             CredentialKind = CredentialKind.BasicPassword,
-            IdentityFlow = IdentityFlow.DeviceCode,
-            InteractivePolicy = InteractivePolicy.UserAllowed,
+            IdentityFlow = IdentityFlow.InteractiveBrowser,
+            InteractivePolicy = InteractivePolicy.Never,
+            AcquisitionMode = AcquisitionMode.SilentOnly,
             CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
             CiContext = new CiContext
             {

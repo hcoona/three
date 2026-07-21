@@ -55,8 +55,9 @@ with `contractMajor: 2`.
   `Deserialize<CredentialRequestV2>(...)` is intentionally unsupported and
   throws. The source-generated serializer context is an internal implementation
   detail.
-- Is a contract surface and validation scaffold only in work-package-1. It is
-  **not** routed through `CredentialCoreService`, providers, or cache code yet.
+- Began as a contract surface and validation scaffold in work-package-1.
+  Production composition now routes explicit v2 acquisition requests without
+  changing the frozen v1 wire or runtime behavior.
 
 ## AcquisitionMode values
 
@@ -68,9 +69,11 @@ with `contractMajor: 2`.
   representable here even though current v1 runtime behavior still fail-closes
   some of them.
 - `SilentOnly` (`silentOnly`): Categorically forbids active interaction.
-  Non-default acquisition modes are valid only on `operation: get`. In
-  work-package-1 this mode still has **no usable current acquisition source**
-  and must fail closed for every current `get` flow.
+  It is valid only on `operation: get` with `InteractivePolicy.Never`, no
+  explicit CI context, no opaque Azure Pipelines system-access-token flow, and
+  an otherwise structurally valid frozen v1 shape/flow/cache state. It is a
+  valid acquisition request, but the current runtime has **no proven silent
+  source** and returns `SilentAcquisitionUnavailable` without interaction.
 - `InteractionAllowed` (`interactionAllowed`): Contract-compatible only for
   explicit human `get` requests using browser/device-code flows when
   `InteractivePolicy` is `HostToolAllows` or `UserAllowed`. No fallback is
@@ -112,10 +115,12 @@ with `contractMajor: 2`.
 5. **Non-default modes are get-only.** `SilentOnly` and
    `InteractionAllowed` are acquisition-specific modes and are rejected for
    `store`, `erase`, `refresh`, `configure`, and `doctor`.
-6. **`SilentOnly` fails closed in WP1.** Even on `get`, browser, device code,
-   PAT compatibility, CI/system-access-token, and every other current identity
-   flow remain incompatible because no source-proved silent cache/broker
-   capability exists yet.
+6. **`SilentOnly` is valid but operationally unavailable.** Structurally valid
+   non-CI `get` requests are contract-valid when interaction is `never`.
+   Explicit CI and opaque system-access-token requests are rejected. Until a
+   source-proved silent cache/broker capability exists, runtime acquisition
+   fails closed as `SilentAcquisitionUnavailable` and never falls back to
+   interaction.
 7. **`InteractionAllowed` is narrow.** Only explicit human `get` requests using
    `interactiveBrowser` or `deviceCode` with `hostToolAllows` or `userAllowed`
    are contract-compatible. CI-mode and non-human flows are not. This check
@@ -124,15 +129,16 @@ with `contractMajor: 2`.
    and may fail closed later when runtime wiring exists.
 8. **No fallback.** Neither `SilentOnly` nor `InteractionAllowed` creates an
    implicit retry chain or silent downgrade.
-9. **No runtime routing in WP1.** Even contract-compatible v2 requests remain a
-   scaffold only until later work wires a source-proved runtime path.
+9. **Runtime routing stays fail closed.** Later production composition accepts
+   valid v2 requests, but `SilentOnly` remains unavailable until a proven
+   silent source is wired.
 
 ## What Is NOT Changed
 
 - No AzureAuth runtime or broker/cache silent path is added here.
-- No current provider is marked `SilentOnly`-compatible.
+- No current provider claims a usable silent acquisition source.
 - No fallback from `SilentOnly` to interactive acquisition is introduced.
-- No v2 request reaches the current core/provider/cache pipeline.
+- No silent cache or broker path is introduced.
 - The Phase 1.2 direct-MSAL decision remains authoritative.
 
 ## Referenced Documents

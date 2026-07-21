@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Hcoona.AzureAuth.CredProvider.Contracts;
 using Hcoona.AzureAuth.CredProvider.Platform.AdapterHost;
 using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Hcoona.AzureAuth.CredProvider.Platform.Diagnostics;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
@@ -21,6 +22,8 @@ public sealed record GitPhase8VerticalSliceOptions
     public string? ProductExecutablePath { get; init; }
 
     public bool? LocalShellGitDiscoverySupported { get; init; }
+
+    public BoundedCredentialAcquisitionAdapter? CredentialAcquisition { get; init; }
 }
 
 public sealed record GitPhase8VerticalSliceResolvedPaths
@@ -133,8 +136,16 @@ public sealed class GitPhase8VerticalSliceService
     private readonly GitPhase8VerticalSliceResolvedPaths paths;
     private readonly IProcessRunner processRunner;
     private readonly ProductExecutableInvocation? productExecutableInvocation;
+    private readonly Lazy<BoundedCredentialAcquisitionAdapter>? credentialAcquisition;
 
     public GitPhase8VerticalSliceService(GitPhase8VerticalSliceOptions? options = null)
+        : this(options, configurationOnly: false)
+    {
+    }
+
+    private GitPhase8VerticalSliceService(
+        GitPhase8VerticalSliceOptions? options,
+        bool configurationOnly)
     {
         fileSystem = new SystemFileSystem();
         paths = ResolvePaths(options);
@@ -146,9 +157,21 @@ public sealed class GitPhase8VerticalSliceService
             options?.ProductExecutablePath);
         localShellGitDiscoverySupported =
             options?.LocalShellGitDiscoverySupported ?? !OperatingSystem.IsWindows();
+        if (!configurationOnly)
+        {
+            credentialAcquisition = new Lazy<BoundedCredentialAcquisitionAdapter>(
+                () => options?.CredentialAcquisition
+                    ?? new BoundedCredentialAcquisitionAdapter(
+                        CredentialProviderCompositionRoot.CreateProduction().AcquisitionService),
+                LazyThreadSafetyMode.ExecutionAndPublication);
+        }
     }
 
     public GitPhase8VerticalSliceResolvedPaths Paths => paths;
+
+    public static GitPhase8VerticalSliceService CreateConfigurationOnly(
+        GitPhase8VerticalSliceOptions? options = null) =>
+        new(options, configurationOnly: true);
 
     public async ValueTask<GitPhase8ConfigureDryRunResult> DryRunConfigureAsync(
         CancellationToken cancellationToken = default
@@ -251,8 +274,9 @@ public sealed class GitPhase8VerticalSliceService
         var credentialCoreSuccess = false;
         try
         {
-            CredentialResult credentialResult = CreateCredentialCoreService()
-                .Execute(CreateGitRequest());
+            CredentialResult credentialResult = GetCredentialAcquisition().Acquire(
+                CreateGitRequest(),
+                cancellationToken);
             credentialCoreSuccess = credentialResult.Status == CredentialResultStatus.Success;
         }
         catch (Exception exception)
@@ -1134,9 +1158,7 @@ public sealed class GitPhase8VerticalSliceService
         return false;
     }
 
-    private static CredentialCoreService CreateCredentialCoreService() => new();
-
-    private static CredentialRequest CreateGitRequest() =>
+    private static CredentialRequestV2 CreateGitRequest() =>
         new()
         {
             Ecosystem = CredentialEcosystem.Git,
@@ -1150,7 +1172,8 @@ public sealed class GitPhase8VerticalSliceService
             RequestedAudience = TokenAudience.AzureDevOps,
             CredentialKind = CredentialKind.BasicPassword,
             IdentityFlow = IdentityFlow.DeviceCode,
-            InteractivePolicy = InteractivePolicy.UserAllowed,
+            InteractivePolicy = InteractivePolicy.Never,
+            AcquisitionMode = AcquisitionMode.SilentOnly,
             CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
             CiContext = new CiContext
             {
@@ -1159,7 +1182,12 @@ public sealed class GitPhase8VerticalSliceService
             },
         };
 
-    private static (bool Success, bool PayloadCaptured) ExecuteGitCredentialHelperAdapterPath(
+    private BoundedCredentialAcquisitionAdapter GetCredentialAcquisition() =>
+        credentialAcquisition?.Value
+        ?? throw new InvalidOperationException(
+            "Credential acquisition is unavailable in a configuration-only service.");
+
+    private (bool Success, bool PayloadCaptured) ExecuteGitCredentialHelperAdapterPath(
         string executablePath,
         string[] arguments,
         CredentialOperation expectedOperation
@@ -1167,7 +1195,7 @@ public sealed class GitPhase8VerticalSliceService
     {
         var protocolStdout = new StringWriter();
         AdapterHostExecutionOutcome outcome = new GitCredentialHelperAdapter(
-            CreateCredentialCoreService()
+            GetCredentialAcquisition()
         ).Execute(
             executablePath,
             arguments,

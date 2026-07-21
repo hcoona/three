@@ -26,6 +26,20 @@ public sealed class AzureAuthIdentityProviderTests
         "USERPROFILE",
         "WINDIR",
     ];
+    private static readonly string[] ClrInjectionEnvironmentKeys =
+    [
+        "CORECLR_ENABLE_PROFILING",
+        "CORECLR_PROFILER",
+        "CORECLR_PROFILER_PATH",
+        "CORECLR_PROFILER_PATH_32",
+        "CORECLR_PROFILER_PATH_64",
+        "COR_ENABLE_PROFILING",
+        "COR_PROFILER",
+        "COR_PROFILER_PATH",
+        "COR_PROFILER_PATH_32",
+        "COR_PROFILER_PATH_64",
+        "DOTNET_STARTUP_HOOKS",
+    ];
 
     public static TheoryData<string> InvalidTokenOutputs =>
         new()
@@ -102,19 +116,25 @@ public sealed class AzureAuthIdentityProviderTests
     }
 
     [Fact]
-    public async Task AcquireAccessTokenAsyncRejectsSilentOnlyWithoutTrustOrRunnerCalls()
+    public async Task AcquireAccessTokenAsyncReturnsSilentUnavailableWithoutTrustOrRunnerCalls()
     {
         var inspector = new CountingInspector(CreateTrustedInspection());
         var runner = new FakeProcessRunner();
         var provider = CreateProvider(inspector, runner);
 
         AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
-            CreateRequest(acquisitionMode: AcquisitionMode.SilentOnly),
+            CreateRequest(
+                interactivePolicy: InteractivePolicy.Never,
+                acquisitionMode: AcquisitionMode.SilentOnly),
             TestContext.Current.CancellationToken
         );
 
         Assert.Equal(AcquiredAccessTokenStatus.InteractionRequired, result.Status);
-        Assert.Equal("AzureAuthSilentOnlyUnsupported", result.Code);
+        Assert.Equal("SilentAcquisitionUnavailable", result.Code);
+        Assert.Equal(
+            "Silent AzureAuth acquisition is not implemented; use explicit interactive login "
+                + "for interactive operations only. No automatic remediation is available.",
+            result.SafeMessage);
         Assert.Empty(runner.RecordedStartSpecs);
         Assert.Equal(0, inspector.CallCount);
     }
@@ -494,7 +514,7 @@ public sealed class AzureAuthIdentityProviderTests
                 ],
                 startSpec.Arguments
             );
-            Assert.Equal(@"C:\ProgramData\AzureAuth", startSpec.WorkingDirectory);
+            Assert.Equal(@"C:\Windows\System32", startSpec.WorkingDirectory);
             Assert.Null(startSpec.StandardInput);
             Assert.Equal(ProcessEnvironmentMode.ExplicitOnly, startSpec.EnvironmentMode);
             Assert.True(startSpec.UseWindowsEnvironmentVariableSemantics);
@@ -514,12 +534,15 @@ public sealed class AzureAuthIdentityProviderTests
             Assert.Equal(@"C:\Users\user\AppData\Local\Temp", startSpec.Environment["TMP"]);
             Assert.Equal(@"C:\Users\user\AppData\Local", startSpec.Environment["LOCALAPPDATA"]);
             Assert.Equal(@"C:\Users\user", startSpec.Environment["USERPROFILE"]);
-            Assert.Equal(@"C:\Windows\System32;C:\Windows", startSpec.Environment["PATH"]);
+            Assert.Equal(@"C:\Windows\System32", startSpec.Environment["PATH"]);
             Assert.Equal("1", startSpec.Environment["OEAUTH_MSAL_DISABLE_CACHE"]);
             Assert.False(startSpec.Environment.ContainsKey("ADO_TOKEN"));
             Assert.False(startSpec.Environment.ContainsKey("HTTP_PROXY"));
             Assert.False(startSpec.Environment.ContainsKey("DOTNET_ROOT"));
             Assert.False(startSpec.Environment.ContainsKey("NODE_OPTIONS"));
+            Assert.All(
+                ClrInjectionEnvironmentKeys,
+                key => Assert.False(startSpec.Environment.ContainsKey(key)));
 
             Assert.Equal(AcquiredAccessTokenStatus.Success, result.Status);
             AcquiredAccessToken token = Assert.IsType<AcquiredAccessToken>(result.AccessToken);
@@ -529,6 +552,7 @@ public sealed class AzureAuthIdentityProviderTests
             Assert.Equal(CreateTrustedTrustResult(CreateDeploymentConfig()).DeploymentKey, token.DeploymentKey);
             Assert.Equal(Now.AddHours(1), token.ExpiresAt);
         }
+
         finally
         {
             foreach ((string key, string? value) in ambientEnvironment)
@@ -539,7 +563,61 @@ public sealed class AzureAuthIdentityProviderTests
     }
 
     [Fact]
-    public async Task AcquireAccessTokenAsyncClearsPathWhenInspectorAttestsNoPathEntries()
+    public async Task WslLaunchIncludesOnlyValidatedSnapshottedInteropValue()
+    {
+        var inspector = new CountingInspector(CreateTrustedInspection());
+        var runner = new FakeProcessRunner();
+        runner.EnqueueResult(new ProcessResult(0, CreateJwt() + "\n", string.Empty));
+        AzureAuthProcessLaunchOptions launchOptions = CreateLaunchOptions() with
+        {
+            HostContext = AzureAuthLaunchHostContext.WslWindowsInterop,
+            WslInterop = "/run/WSL/123_interop",
+        };
+        var provider = CreateProvider(inspector, runner, launchOptions: launchOptions);
+
+        AcquiredAccessTokenResult result = await provider.AcquireAccessTokenAsync(
+            CreateRequest(),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AcquiredAccessTokenStatus.Success, result.Status);
+        ProcessStartSpec spec = Assert.Single(runner.RecordedStartSpecs);
+        Assert.Equal("/mnt/c/Tools/AzureAuth.exe", spec.FileName);
+        Assert.Equal("/mnt/c/Windows/System32", spec.WorkingDirectory);
+        Assert.Equal("/run/WSL/123_interop", spec.Environment["WSL_INTEROP"]);
+        Assert.Equal(
+            spec.Environment.Keys
+                .Where(static key => key is not "WSLENV" and not "WSL_INTEROP")
+                .OrderBy(static key => key, StringComparer.Ordinal),
+            spec.Environment["WSLENV"]!
+                .Split(':')
+                .OrderBy(static key => key, StringComparer.Ordinal));
+        Assert.Equal(@"C:\Windows\System32", spec.Environment["PATH"]);
+        Assert.Equal("1", spec.Environment["OEAUTH_MSAL_DISABLE_CACHE"]);
+        Assert.Equal(string.Empty, spec.Environment["DOTNET_ROOT"]);
+        Assert.Equal(string.Empty, spec.Environment["COREHOST_TRACE"]);
+        Assert.Equal(string.Empty, spec.Environment["HTTP_PROXY"]);
+        Assert.Equal(string.Empty, spec.Environment["AZURE_DEVOPS_EXT_PAT"]);
+        Assert.All(
+            ClrInjectionEnvironmentKeys,
+            key => Assert.Equal(string.Empty, spec.Environment[key]));
+        string[] bridged = spec.Environment["WSLENV"]!.Split(':');
+        Assert.All(ClrInjectionEnvironmentKeys, key => Assert.Contains(key, bridged));
+    }
+
+    [Fact]
+    public void LaunchOptionsCannotOverrideEvidenceDerivedHostPaths()
+    {
+        string[] propertyNames = typeof(AzureAuthProcessLaunchOptions)
+            .GetProperties()
+            .Select(static property => property.Name)
+            .ToArray();
+
+        Assert.DoesNotContain("HostExecutablePath", propertyNames);
+        Assert.DoesNotContain("HostWorkingDirectory", propertyNames);
+    }
+
+    [Fact]
+    public async Task AcquireAccessTokenAsyncRejectsEvidenceWithoutFixedSystemPath()
     {
         AzureAuthArtifactEvidence evidence = CreateMatchingEvidence(CreateDeploymentConfig()) with
         {
@@ -549,10 +627,7 @@ public sealed class AzureAuthIdentityProviderTests
         var runner = new FakeProcessRunner();
         runner.EnqueueResult(new ProcessResult(0, CreateJwt() + "\n", string.Empty));
         AzureAuthProviderConfig config = CreateAzureAuthProviderConfig();
-        AzureAuthTrustResult trust = AzureAuthTrustPolicy.Evaluate(
-            config.DeploymentConfig!,
-            AzureAuthArtifactInspection.Trusted(evidence)
-        );
+        AzureAuthTrustResult trust = CreateTrustedTrustResult(config.DeploymentConfig!);
         AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
             config,
             "user@example.com",
@@ -572,9 +647,9 @@ public sealed class AzureAuthIdentityProviderTests
             TestContext.Current.CancellationToken
         );
 
-        ProcessStartSpec startSpec = Assert.Single(runner.RecordedStartSpecs);
-        Assert.False(startSpec.Environment.ContainsKey("PATH"));
-        Assert.Equal(AcquiredAccessTokenStatus.Success, result.Status);
+        Assert.Empty(runner.RecordedStartSpecs);
+        Assert.Equal(AcquiredAccessTokenStatus.PrerequisiteFailed, result.Status);
+        Assert.Equal("AzureAuthTrustRejected", result.Code);
     }
 
     [Fact]
@@ -833,6 +908,8 @@ public sealed class AzureAuthIdentityProviderTests
             Tmp = @"C:\Users\user\AppData\Local\Temp",
             LocalAppData = @"C:\Users\user\AppData\Local",
             UserProfile = @"C:\Users\user",
+            HostContext = AzureAuthLaunchHostContext.WindowsDesktop,
+            BrowserInteractionSupported = true,
         };
 
     private static AzureAuthProviderConfig CreateAzureAuthProviderConfig(
@@ -893,8 +970,15 @@ public sealed class AzureAuthIdentityProviderTests
             Owner = new FileSystemOwner("current-user"),
             CurrentUserOwnsArtifact = true,
             OwnerOnlyWritable = true,
-            TrustedWorkingDirectory = @"C:\ProgramData\AzureAuth",
-            TrustedPathEntries = [@"C:\Windows\System32", @"C:\Windows"],
+            DiscretionaryAclsPresentAndNonNull = true,
+            TrustedExecutableDirectory = @"C:\Tools",
+            ExecutableDirectoryChainHasNoReparsePoints = true,
+            ExecutableDirectoryChainOwnerOnlyWritable = true,
+            TrustedSystemDirectory = @"C:\Windows\System32",
+            SystemDirectoryChainHasNoReparsePoints = true,
+            SystemDirectoryChainOwnerOnlyWritable = true,
+            TrustedWorkingDirectory = @"C:\Windows\System32",
+            TrustedPathEntries = [@"C:\Windows\System32"],
         };
 
     private static AzureAuthTrustResult CreateTrustedTrustResult(

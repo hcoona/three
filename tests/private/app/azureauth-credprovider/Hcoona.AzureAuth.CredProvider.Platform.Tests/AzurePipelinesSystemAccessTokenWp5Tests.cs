@@ -306,6 +306,7 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
                 StateDirectoryPath = "/state/wp5",
                 AzurePipelinesJobScopeId = "job-a",
                 CredentialCoreService = new CredentialCoreService(identityProvider),
+                RegistryUrls = CreateTestRegistryUrls(),
                 EnvironmentVariableReader = name =>
                     name == AuthPhase14VerticalSliceService
                         .AzurePipelinesSystemAccessTokenVariable
@@ -362,6 +363,7 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
                 FileSystem = fileSystem,
                 StateDirectoryPath = "/state/wp5-cleanup",
                 AzurePipelinesJobScopeId = "job-cleanup",
+                RegistryUrls = CreateTestRegistryUrls(),
                 EnvironmentVariableReader = name =>
                     name == AuthPhase14VerticalSliceService
                         .AzurePipelinesSystemAccessTokenVariable
@@ -395,6 +397,7 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
                 FileSystem = fileSystem,
                 StateDirectoryPath = "/state/wp5-logout",
                 AzurePipelinesJobScopeId = "job-logout",
+                RegistryUrls = CreateTestRegistryUrls(),
                 EnvironmentVariableReader = name =>
                     name == AuthPhase14VerticalSliceService
                         .AzurePipelinesSystemAccessTokenVariable
@@ -465,6 +468,7 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
                 FileSystem = fileSystem,
                 StateDirectoryPath = "/state/wp5-job-validation",
                 AzurePipelinesJobScopeId = jobScopeId,
+                RegistryUrls = CreateTestRegistryUrls(),
                 EnvironmentVariableReader = name =>
                     name == AuthPhase14VerticalSliceService
                         .AzurePipelinesSystemAccessTokenVariable
@@ -517,12 +521,24 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
             StateDirectoryPath = "/state/wp5-isolation",
             CiTemporaryProductRootPath = "/product-temp/azureauth-credprovider/ci-jobs",
             AzurePipelinesJobScopeId = jobScopeId,
+            RegistryUrls = CreateTestRegistryUrls(),
             EnvironmentVariableReader = name =>
                 name == AuthPhase14VerticalSliceService
                     .AzurePipelinesSystemAccessTokenVariable
                     ? Secret
                     : null,
         });
+
+    private static Dictionary<CredentialEcosystem, Uri> CreateTestRegistryUrls() =>
+        new()
+        {
+            [CredentialEcosystem.Npm] = new(
+                "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"),
+            [CredentialEcosystem.Pnpm] = new(
+                "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"),
+            [CredentialEcosystem.Yarn] = new(
+                "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"),
+        };
 
     private static CredentialRequest CreateV1Request(CredentialEcosystem ecosystem)
     {

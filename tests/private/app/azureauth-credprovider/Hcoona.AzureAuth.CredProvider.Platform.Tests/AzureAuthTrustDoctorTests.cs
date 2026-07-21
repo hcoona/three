@@ -437,8 +437,15 @@ public sealed class AzureAuthTrustDoctorTests
             Owner = new FileSystemOwner("current-user"),
             CurrentUserOwnsArtifact = true,
             OwnerOnlyWritable = true,
-            TrustedWorkingDirectory = @"C:\ProgramData\AzureAuth",
-            TrustedPathEntries = [@"C:\Windows\System32", @"C:\Windows"],
+            DiscretionaryAclsPresentAndNonNull = true,
+            TrustedExecutableDirectory = @"C:\Tools",
+            ExecutableDirectoryChainHasNoReparsePoints = true,
+            ExecutableDirectoryChainOwnerOnlyWritable = true,
+            TrustedSystemDirectory = @"C:\Windows\System32",
+            SystemDirectoryChainHasNoReparsePoints = true,
+            SystemDirectoryChainOwnerOnlyWritable = true,
+            TrustedWorkingDirectory = @"C:\Windows\System32",
+            TrustedPathEntries = [@"C:\Windows\System32"],
         };
 
     private static AzureAuthTrustResult CreateTrustedResult(AzureAuthDeploymentConfig deploymentConfig) =>

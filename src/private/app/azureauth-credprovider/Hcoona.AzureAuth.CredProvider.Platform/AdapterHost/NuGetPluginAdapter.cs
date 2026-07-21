@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Newtonsoft.Json.Linq;
 using NuGet.Common;
@@ -15,11 +16,27 @@ public sealed class NuGetPluginAdapter
     private const string NoCredentialMessage = "Credentials were not found for this NuGet source.";
     private static readonly TimeSpan PluginShutdownTimeout = TimeSpan.FromSeconds(10);
 
-    private readonly CredentialCoreService credentialCore;
+    private readonly BoundedCredentialAcquisitionAdapter credentialAcquisition;
 
-    public NuGetPluginAdapter(CredentialCoreService? credentialCore = null)
+    public NuGetPluginAdapter()
+        : this(CredentialProviderCompositionRoot.CreateProduction().AcquisitionService)
+    { }
+
+    public NuGetPluginAdapter(CredentialCoreService? credentialCore)
+        : this(
+            credentialCore is null
+                ? CredentialProviderCompositionRoot.CreateProduction().AcquisitionService
+                : new LegacyV1CredentialAcquisitionService(credentialCore))
+    { }
+
+    public NuGetPluginAdapter(ICredentialAcquisitionService credentialAcquisition)
+        : this(new BoundedCredentialAcquisitionAdapter(credentialAcquisition))
+    { }
+
+    public NuGetPluginAdapter(BoundedCredentialAcquisitionAdapter credentialAcquisition)
     {
-        this.credentialCore = credentialCore ?? new CredentialCoreService();
+        ArgumentNullException.ThrowIfNull(credentialAcquisition);
+        this.credentialAcquisition = credentialAcquisition;
     }
 
     public static AdapterDescriptor Descriptor { get; } = CreateDescriptor();
@@ -91,10 +108,10 @@ public sealed class NuGetPluginAdapter
             return CreateErrorResponse("Protocol violation: NuGet source URI is not supported.");
         }
 
-        CredentialRequest credentialRequest = CreateCredentialRequest(
+        CredentialRequestV2 credentialRequest = CreateCredentialRequest(
             parseResult.Resource,
             request);
-        CredentialResult credentialResult = credentialCore.Execute(credentialRequest);
+        CredentialResult credentialResult = credentialAcquisition.Acquire(credentialRequest);
         return CreateAuthenticationCredentialsResponse(credentialResult);
     }
 
@@ -202,11 +219,11 @@ public sealed class NuGetPluginAdapter
         await endClose.Task.ConfigureAwait(false);
     }
 
-    private static CredentialRequest CreateCredentialRequest(
+    private static CredentialRequestV2 CreateCredentialRequest(
         CanonicalResourceIdentity resource,
         GetAuthenticationCredentialsRequest request)
     {
-        return new CredentialRequest
+        return new CredentialRequestV2
         {
             Ecosystem = CredentialEcosystem.NuGet,
             Operation = CredentialOperation.Get,
@@ -214,10 +231,9 @@ public sealed class NuGetPluginAdapter
             ServiceIdentity = DefaultServiceIdentity,
             RequestedAudience = TokenAudience.AzureArtifacts,
             CredentialKind = CredentialKind.NuGetPluginCredential,
-            IdentityFlow = IdentityFlow.DeviceCode,
-            InteractivePolicy = request.IsNonInteractive
-                ? InteractivePolicy.Never
-                : InteractivePolicy.HostToolAllows,
+            IdentityFlow = IdentityFlow.InteractiveBrowser,
+            InteractivePolicy = InteractivePolicy.Never,
+            AcquisitionMode = AcquisitionMode.SilentOnly,
             CachePolicy = CachePolicyMode.ProductPersistentCacheDisabled,
             CiContext = new CiContext
             {

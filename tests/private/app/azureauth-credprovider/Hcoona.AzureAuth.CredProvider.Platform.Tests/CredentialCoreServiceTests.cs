@@ -43,26 +43,16 @@ public sealed class CredentialCoreServiceTests
     }
 
     [Fact]
-    public void ExecuteDefaultServiceUsesDeterministicFakeProvider()
+    public void ExecuteDefaultServiceFailsClosedWithDirectMsalUnavailable()
     {
         CredentialRequest request = CreateGitRequest();
-        IdentityMaterial expectedIdentity = new DeterministicFakeIdentityProvider().GetIdentity(
-            request
-        );
         var service = new CredentialCoreService();
 
         CredentialResult result = service.Execute(request);
 
-        Assert.Equal(CredentialResultStatus.Success, result.Status);
-        Assert.Equal("AzureDevOps", result.Username);
-        Assert.Equal(expectedIdentity.Account, result.Account);
-        Assert.Equal(expectedIdentity.Tenant, result.Tenant);
-        Assert.Equal(expectedIdentity.ExpiresAt, result.ExpiresAt);
-        Assert.Equal(
-            Assert.IsType<string>(expectedIdentity.Secret),
-            Assert.IsType<string>(result.Password));
-        Assert.Null(result.BearerToken);
-        Assert.Null(result.Error);
+        Assert.Equal(CredentialResultStatus.CredentialUnavailable, result.Status);
+        Assert.Equal("DirectMsalNotImplemented", result.Error?.Code);
+        Assert.False(result.ContainsCredentialMaterial);
     }
 
     [Fact]

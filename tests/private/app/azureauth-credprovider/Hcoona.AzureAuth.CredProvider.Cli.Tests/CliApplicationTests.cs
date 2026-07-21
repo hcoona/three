@@ -1,5 +1,9 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.AzureAuthProvider;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
+using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 using Hcoona.AzureAuth.CredProvider.Platform.Processes;
 using Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
@@ -132,11 +136,20 @@ public sealed class CliApplicationTests
                 product: azureauth-credprovider
                 phase: 15-end-to-end-hardening
                 ci-mode: none
+                composition-mode: Production
+                provider: DirectMsal
+                interactive-readiness: interactive-unavailable
+                interactive-readiness-code: ProviderNotConfigured
+                interactive-blocker: Provider configuration is missing; direct MSAL is the fail-closed default and is not implemented.
+                silent-readiness: silent-unavailable
+                silent-readiness-code: ProviderNotConfigured
+                silent-remediation: Provider configuration is missing; direct MSAL is the fail-closed default and is not implemented.
                 status-shell: ready
                 environment-probing: disabled
                 persistent-cache: disabled
                 persistent-derived-credentials: disabled
-                accepted-identity-flows: browser, device-code, azure-pipelines
+                accepted-identity-flows: browser, azure-pipelines
+                unavailable-identity-flows: device-code
                 deferred-identity-flows: pat-compatibility, service-principal, managed-identity, workload-identity
                 pat-compatibility: deferred-disabled
                 dry-run-rendering: enabled
@@ -219,11 +232,20 @@ public sealed class CliApplicationTests
                 product: azureauth-credprovider
                 phase: 15-end-to-end-hardening
                 ci-mode: azure-pipelines
+                composition-mode: Production
+                provider: DirectMsal
+                interactive-readiness: interactive-unavailable
+                interactive-readiness-code: ProviderNotConfigured
+                interactive-blocker: Provider configuration is missing; direct MSAL is the fail-closed default and is not implemented.
+                silent-readiness: silent-unavailable
+                silent-readiness-code: ProviderNotConfigured
+                silent-remediation: Provider configuration is missing; direct MSAL is the fail-closed default and is not implemented.
                 status-shell: ready
                 environment-probing: disabled
                 persistent-cache: disabled
                 persistent-derived-credentials: disabled
-                accepted-identity-flows: browser, device-code, azure-pipelines
+                accepted-identity-flows: browser, azure-pipelines
+                unavailable-identity-flows: device-code
                 deferred-identity-flows: pat-compatibility, service-principal, managed-identity, workload-identity
                 pat-compatibility: deferred-disabled
                 dry-run-rendering: enabled
@@ -234,16 +256,16 @@ public sealed class CliApplicationTests
         Assert.Equal(string.Empty, result.StdErr);
     }
 
-    [Theory]
-    [InlineData("--browser", "browser")]
-    [InlineData("--device-code", "device-code")]
-    public void LoginAcceptedInteractiveFlowsWriteSafeOutput(
-        string flowOption,
-        string expectedFlow)
+    [Fact]
+    public void LoginAcceptedInteractiveBrowserWritesSafeOutput()
     {
-        CommandResult result = Invoke(
+        CommandResult result = InvokeWithRuntime(
+            new CliRuntimeOptions
+            {
+                CompositionRoot = CreateTestCompositionRoot(),
+            },
             "login",
-            flowOption,
+            "--browser",
             "--account",
             "Alice@Example",
             "--tenant",
@@ -256,7 +278,7 @@ public sealed class CliApplicationTests
                 command: login
                 phase: 15-end-to-end-hardening
                 ci-mode: none
-                identity-flow: {{expectedFlow}}
+                identity-flow: browser
                 status: success
                 account: alice@example
                 tenant: tenanta
@@ -268,6 +290,21 @@ public sealed class CliApplicationTests
         Assert.Equal(string.Empty, result.StdErr);
         Assert.DoesNotContain("fake-token-", result.StdOut, StringComparison.Ordinal);
         Assert.DoesNotContain("fake-secret-", result.StdOut, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LoginDeviceCodeFailsWithStableBrowserRemediation()
+    {
+        CommandResult result = InvokeWithRuntime(
+            new CliRuntimeOptions { CompositionRoot = CreateTestCompositionRoot() },
+            "login",
+            "--device-code");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Equal(string.Empty, result.StdOut);
+        Assert.Equal(
+            "error: Device-code login is unavailable; use interactive-browser login.\n",
+            result.StdErr);
     }
 
     [Fact]
@@ -631,7 +668,7 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
-    public async Task GitCredentialHelperAppHostWritesProtocolStdoutToRealConsole()
+    public async Task GitCredentialHelperAppHostFailsClosedWithoutProvider()
     {
         var runner = new SystemProcessRunner();
 
@@ -648,9 +685,152 @@ public sealed class CliApplicationTests
                     """),
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(0, result.ExitCode);
-        Assert.StartsWith("username=AzureDevOps\npassword=fake-secret-", result.StandardOutput);
-        Assert.Equal(string.Empty, result.StandardError);
+        Assert.Equal(2, result.ExitCode);
+        Assert.Equal(string.Empty, result.StandardOutput);
+        Assert.Contains("SilentAcquisitionUnavailable", result.StandardError, StringComparison.Ordinal);
+    }
+
+    [Fact(Skip = "System secure-store integration is Linux/WSL-specific.", SkipWhen = nameof(IsWindows))]
+    public async Task AppHostMalformedProviderConfigurationFailsClosedForCliAndProtocolButHelpRuns()
+    {
+        const string SecretMarker = "must-not-leak-malformed-secret";
+        string rootPath = Path.Combine(
+            AppContext.BaseDirectory,
+            "malformed-production-" + Guid.NewGuid().ToString("N"));
+        CreateOwnerOnlyDirectory(rootPath);
+        string configurationHome = Path.Combine(rootPath, "configuration-home");
+        CreateOwnerOnlyDirectory(configurationHome);
+        try
+        {
+            var store = new SystemAzureAuthSecureRecordStore(rootPath);
+            Assert.Equal(
+                AzureAuthSecureRecordWriteStatus.Success,
+                store.CompareExchange(
+                    CredentialProviderCompositionRoot.ProviderConfigRecordName,
+                    AzureAuthSecureRecordStoreContract.MissingRevision,
+                    Encoding.UTF8.GetBytes(
+                        $$"""{"schemaVersion":1,"selection":"{{SecretMarker}}"}""")).Status);
+            var environment = new Dictionary<string, string?>
+            {
+                [SystemAzureAuthSecureRecordStoreOptions.ConfigRootEnvironmentVariable] = rootPath,
+                ["HOME"] = configurationHome,
+                ["SYSTEM_ACCESSTOKEN"] = "opaque-ci-token",
+                ["SYSTEM_JOBID"] = "malformed-provider-job",
+            };
+            var runner = new SystemProcessRunner();
+
+            ProcessResult cli = await runner.RunAsync(
+                new ProcessStartSpec(
+                    CliAppHostPath(),
+                    ["status"],
+                    environment: environment),
+                TestContext.Current.CancellationToken);
+            ProcessResult protocol = await runner.RunAsync(
+                new ProcessStartSpec(
+                    CliAppHostPath(),
+                    ["git", "credential-helper", "get"],
+                    environment: environment,
+                    standardInput:
+                        "protocol=https\nhost=dev.azure.com\npath=org/project/_git/repository\n\n"),
+                TestContext.Current.CancellationToken);
+            ProcessResult help = await runner.RunAsync(
+                new ProcessStartSpec(
+                    CliAppHostPath(),
+                    ["--help"],
+                    environment: environment),
+                TestContext.Current.CancellationToken);
+            ProcessResult acceptance = await runner.RunAsync(
+                new ProcessStartSpec(
+                    CliAppHostPath(),
+                    ["acceptance"],
+                    environment: environment),
+                TestContext.Current.CancellationToken);
+            ProcessResult version = await runner.RunAsync(
+                new ProcessStartSpec(
+                    CliAppHostPath(),
+                    ["--version"],
+                    environment: environment),
+                TestContext.Current.CancellationToken);
+            ProcessResult ciLogin = await runner.RunAsync(
+                new ProcessStartSpec(
+                    CliAppHostPath(),
+                    ["login", "--ci", "azure-pipelines"],
+                    environment: environment),
+                TestContext.Current.CancellationToken);
+            ProcessResult cleanup = await runner.RunAsync(
+                new ProcessStartSpec(
+                    CliAppHostPath(),
+                    ["cleanup", "--ci", "azure-pipelines"],
+                    environment: environment),
+                TestContext.Current.CancellationToken);
+            ProcessResult logout = await runner.RunAsync(
+                new ProcessStartSpec(
+                    CliAppHostPath(),
+                    ["logout"],
+                    environment: environment),
+                TestContext.Current.CancellationToken);
+            var teardownResults = new List<ProcessResult>();
+            foreach (string[] teardownArgs in new[]
+            {
+                new[] { "unconfigure", "git" },
+                new[] { "unconfigure", "git", "--dry-run" },
+                new[] { "unconfigure", "nuget" },
+                new[] { "unconfigure", "nuget", "--dry-run" },
+            })
+            {
+                teardownResults.Add(await runner.RunAsync(
+                    new ProcessStartSpec(
+                        CliAppHostPath(),
+                        teardownArgs,
+                        environment: environment),
+                    TestContext.Current.CancellationToken));
+            }
+
+            Assert.Equal(70, cli.ExitCode);
+            Assert.Equal(string.Empty, cli.StandardOutput);
+            Assert.Contains("configuration is unavailable", cli.StandardError, StringComparison.Ordinal);
+            Assert.DoesNotContain(SecretMarker, cli.StandardError, StringComparison.Ordinal);
+            Assert.Equal(70, protocol.ExitCode);
+            Assert.Equal(string.Empty, protocol.StandardOutput);
+            Assert.Contains(
+                "configuration is unavailable",
+                protocol.StandardError,
+                StringComparison.Ordinal);
+            Assert.DoesNotContain(SecretMarker, protocol.StandardError, StringComparison.Ordinal);
+            Assert.Equal(0, help.ExitCode);
+            Assert.Contains("Usage:", help.StandardOutput, StringComparison.Ordinal);
+            Assert.DoesNotContain(SecretMarker, help.StandardError, StringComparison.Ordinal);
+            Assert.Equal(0, acceptance.ExitCode);
+            Assert.Equal(string.Empty, acceptance.StandardError);
+            Assert.Equal(0, version.ExitCode);
+            Assert.StartsWith(
+                "azureauth-credprovider ",
+                version.StandardOutput,
+                StringComparison.Ordinal);
+            Assert.Equal(string.Empty, version.StandardError);
+            Assert.Equal(0, ciLogin.ExitCode);
+            Assert.Contains("identity-flow: azure-pipelines", ciLogin.StandardOutput);
+            Assert.DoesNotContain("opaque-ci-token", ciLogin.StandardOutput);
+            Assert.Equal(0, cleanup.ExitCode);
+            Assert.Equal(string.Empty, cleanup.StandardError);
+            Assert.Equal(0, logout.ExitCode);
+            Assert.Equal(string.Empty, logout.StandardError);
+            Assert.All(
+                teardownResults,
+                result =>
+                {
+                    Assert.Equal(0, result.ExitCode);
+                    Assert.Equal(string.Empty, result.StandardError);
+                    Assert.DoesNotContain(
+                        "configuration is unavailable",
+                        result.StandardOutput,
+                        StringComparison.Ordinal);
+                });
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(rootPath);
+        }
     }
 
     [Fact(Skip = "Non-Windows helper symlink test.", SkipWhen = nameof(IsWindows))]
@@ -680,9 +860,12 @@ public sealed class CliApplicationTests
                         """),
                 TestContext.Current.CancellationToken);
 
-            Assert.Equal(0, result.ExitCode);
-            Assert.StartsWith("username=AzureDevOps\npassword=fake-secret-", result.StandardOutput);
-            Assert.Equal(string.Empty, result.StandardError);
+            Assert.Equal(2, result.ExitCode);
+            Assert.Equal(string.Empty, result.StandardOutput);
+            Assert.Contains(
+                "SilentAcquisitionUnavailable",
+                result.StandardError,
+                StringComparison.Ordinal);
         }
         finally
         {
@@ -719,6 +902,111 @@ public sealed class CliApplicationTests
         Assert.Equal(string.Empty, result.StdErr);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("../unsafe")]
+    public void Phase14DryRunRejectsMissingOrInvalidAzurePipelinesJob(string? jobScopeId)
+    {
+        var runtime = new CliRuntimeOptions
+        {
+            CompositionRoot = CreateTestCompositionRoot(),
+            ConfigurationPhase14Options = new ConfigurationPhase14VerticalSliceOptions
+            {
+                StateDirectoryPath = "/state/phase14-cli-dry-run",
+                AzurePipelinesJobScopeId = jobScopeId,
+                EnvironmentVariableReader = _ => null,
+            },
+        };
+
+        CommandResult configure = InvokeWithRuntime(
+            runtime,
+            "configure",
+            "npm",
+            "--dry-run",
+            "--ci",
+            "azure-pipelines",
+            "--registry-url",
+            "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/");
+        CommandResult unconfigure = InvokeWithRuntime(
+            runtime,
+            "unconfigure",
+            "npm",
+            "--dry-run",
+            "--ci",
+            "azure-pipelines");
+
+        Assert.Equal(1, configure.ExitCode);
+        Assert.Equal(string.Empty, configure.StdOut);
+        Assert.Contains("SYSTEM_JOBID", configure.StdErr, StringComparison.Ordinal);
+        Assert.Equal(1, unconfigure.ExitCode);
+        Assert.Equal(string.Empty, unconfigure.StdOut);
+        Assert.Contains("SYSTEM_JOBID", unconfigure.StdErr, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Phase14DryRunRejectsUnsupportedPythonCiScope()
+    {
+        var runtime = new CliRuntimeOptions
+        {
+            CompositionRoot = CreateTestCompositionRoot(),
+            ConfigurationPhase14Options = CreateConfigurationPhase14Options(
+                "/state/phase14-cli-dry-run"),
+        };
+
+        CommandResult result = InvokeWithRuntime(
+            runtime,
+            "configure",
+            "python",
+            "--dry-run",
+            "--ci",
+            "azure-pipelines");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Equal(string.Empty, result.StdOut);
+        Assert.Contains("supports Python user scope", result.StdErr, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Phase14PythonDryRunRendersActualPlanWithoutMutation()
+    {
+        string parentPath = CreateTestDirectory();
+        string statePath = Path.Combine(parentPath, "phase14-cli-real-dry-run");
+        var runtime = new CliRuntimeOptions
+        {
+            ConfigurationPhase14Options = new ConfigurationPhase14VerticalSliceOptions
+            {
+                StateDirectoryPath = statePath,
+                EnvironmentVariableReader = _ => null,
+            },
+        };
+
+        try
+        {
+            CommandResult result = InvokeWithRuntime(
+                runtime,
+                "configure",
+                "python",
+                "--dry-run");
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains("planned-change-count: 2\n", result.StdOut, StringComparison.Ordinal);
+            Assert.Contains(
+                "1. set product-owned Python keyring backend\n",
+                result.StdOut,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "2. set product-owned Python keyring shim\n",
+                result.StdOut,
+                StringComparison.Ordinal);
+            Assert.False(Directory.Exists(statePath));
+            Assert.Equal(string.Empty, result.StdErr);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(parentPath);
+        }
+    }
+
     [Fact]
     public void DryRunCommandsAllowEqualsDelimitedCiMode()
     {
@@ -745,7 +1033,29 @@ public sealed class CliApplicationTests
         string plannedAction1,
         string plannedAction2)
     {
-        CommandResult result = Invoke(command, ecosystem, "--dry-run", "--ci", ciMode);
+        string[] args = command == "configure"
+            && ecosystem is "npm" or "pnpm" or "yarn"
+            ? [
+                command,
+                ecosystem,
+                "--dry-run",
+                "--ci",
+                ciMode,
+                "--registry-url",
+                "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/",
+            ]
+            : [command, ecosystem, "--dry-run", "--ci", ciMode];
+        CommandResult result = ciMode == "azure-pipelines"
+            && ecosystem is "npm" or "pnpm" or "yarn"
+            ? InvokeWithRuntime(
+                new CliRuntimeOptions
+                {
+                    CompositionRoot = CreateTestCompositionRoot(),
+                    ConfigurationPhase14Options = CreateConfigurationPhase14Options(
+                        "/state/phase14-golden"),
+                },
+                args)
+            : Invoke(args);
 
         Assert.Equal(0, result.ExitCode);
         Assert.Equal(
@@ -762,8 +1072,17 @@ public sealed class CliApplicationTests
         string plannedAction1,
         string plannedAction2)
     {
-        CommandResult implicitCiResult = Invoke(command, ecosystem, "--dry-run");
-        CommandResult explicitCiResult = Invoke(command, ecosystem, "--dry-run", "--ci", "none");
+        string[] registryArguments = command == "configure"
+            && ecosystem is "npm" or "pnpm" or "yarn"
+            ? [
+                "--registry-url",
+                "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/",
+            ]
+            : [];
+        CommandResult implicitCiResult = Invoke(
+            [command, ecosystem, "--dry-run", .. registryArguments]);
+        CommandResult explicitCiResult = Invoke(
+            [command, ecosystem, "--dry-run", "--ci", "none", .. registryArguments]);
         string expectedOutput = GetExpectedDryRunOutput(
             command,
             ecosystem,
@@ -880,6 +1199,44 @@ public sealed class CliApplicationTests
         Assert.Equal(implicitCiResult.StdOut, explicitCiResult.StdOut);
         Assert.Equal(string.Empty, implicitCiResult.StdErr);
         Assert.Equal(string.Empty, explicitCiResult.StdErr);
+    }
+
+    [Theory]
+    [InlineData("git", false)]
+    [InlineData("git", true)]
+    [InlineData("nuget", false)]
+    [InlineData("nuget", true)]
+    public void UnconfigureDoesNotLoadCredentialProviderComposition(
+        string ecosystem,
+        bool dryRun)
+    {
+        string stateDirectory = CreateTestDirectory();
+        var compositionFactoryCalls = 0;
+        CliRuntimeOptions runtimeOptions = CreateGitPhase8RuntimeOptions(stateDirectory) with
+        {
+            CompositionRoot = null,
+            CompositionRootFactory = () =>
+            {
+                compositionFactoryCalls++;
+                throw new InvalidOperationException("Malformed provider configuration.");
+            },
+        };
+        string[] args = dryRun
+            ? ["unconfigure", ecosystem, "--dry-run"]
+            : ["unconfigure", ecosystem];
+
+        try
+        {
+            CommandResult result = InvokeWithRuntime(runtimeOptions, args);
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Equal(string.Empty, result.StdErr);
+            Assert.Equal(0, compositionFactoryCalls);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
     }
 
     [Fact]
@@ -1008,7 +1365,7 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
-    public void DoctorAfterConfigureReportsSuccessWithoutLeakingCredentialMaterial()
+    public void DoctorAfterConfigureReportsScaffoldAsNotReadyWithoutLeakingCredentialMaterial()
     {
         string stateDirectory = CreateTestDirectory();
         CliRuntimeOptions runtimeOptions = CreateGitPhase8RuntimeOptions(stateDirectory);
@@ -1019,7 +1376,7 @@ public sealed class CliApplicationTests
             CommandResult doctorResult = InvokeWithRuntime(runtimeOptions, "doctor");
 
             Assert.True(configureResult.ExitCode == 0, configureResult.StdErr);
-            Assert.Equal(0, doctorResult.ExitCode);
+            Assert.Equal(1, doctorResult.ExitCode);
             Assert.Equal(
                 GetExpectedDoctorOutput(
                     ownedGitEntriesPresent: true,
@@ -2425,6 +2782,219 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
+    public void CiUnconfigureDryRunSucceedsForValidPlanWithoutRequiringFilesystemMutation()
+    {
+        string stateDirectory = CreateTestDirectory();
+        CliRuntimeOptions runtimeOptions = CreateConfigurationRuntimeWithCiToken(stateDirectory);
+        string jobRoot = Path.Combine(stateDirectory, "ci-jobs", "cli-test-job");
+        string npmrcPath = Path.Combine(jobRoot, "npm", "userconfig.npmrc");
+        string manifestPath = Path.Combine(
+            jobRoot,
+            "manifests",
+            "npm-ci-temporary-ownership-manifest.json");
+        try
+        {
+            CommandResult configure = InvokeWithRuntime(
+                runtimeOptions,
+                "configure",
+                "npm",
+                "--ci",
+                "azure-pipelines");
+            Assert.Equal(0, configure.ExitCode);
+            string npmrcBefore = File.ReadAllText(npmrcPath);
+            string manifestBefore = File.ReadAllText(manifestPath);
+
+            CommandResult dryRun = InvokeWithRuntime(
+                runtimeOptions,
+                "unconfigure",
+                "npm",
+                "--ci",
+                "azure-pipelines",
+                "--dry-run");
+
+            Assert.Equal(0, dryRun.ExitCode);
+            Assert.Contains("planned-change-count: 1\n", dryRun.StdOut);
+            Assert.Contains(
+                "1. remove product-owned npm-compatible registry credential\n",
+                dryRun.StdOut,
+                StringComparison.Ordinal);
+            Assert.Equal(string.Empty, dryRun.StdErr);
+            Assert.Equal(npmrcBefore, File.ReadAllText(npmrcPath));
+            Assert.Equal(manifestBefore, File.ReadAllText(manifestPath));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void CiUnconfigureMalformedManifestReportsSameCleanupPlanWithoutDryRunMutation()
+    {
+        const string MalformedManifest = """{"secret":"preserve-for-diagnosis"}""";
+        const string Diagnostic =
+            "error: CI temporary credential cleanup is incomplete; "
+            + "the ownership manifest was preserved for diagnosis.\n";
+        string stateDirectory = CreateTestDirectory();
+        CliRuntimeOptions runtimeOptions = CreateConfigurationRuntimeWithCiToken(stateDirectory);
+        string jobRoot = Path.Combine(stateDirectory, "ci-jobs", "cli-test-job");
+        string npmrcPath = Path.Combine(jobRoot, "npm", "userconfig.npmrc");
+        string manifestPath = Path.Combine(
+            jobRoot,
+            "manifests",
+            "npm-ci-temporary-ownership-manifest.json");
+        try
+        {
+            CommandResult configure = InvokeWithRuntime(
+                runtimeOptions,
+                "configure",
+                "npm",
+                "--ci",
+                "azure-pipelines");
+            Assert.Equal(0, configure.ExitCode);
+            string npmrcBefore = File.ReadAllText(npmrcPath);
+            File.WriteAllText(manifestPath, MalformedManifest);
+
+            CommandResult dryRun = InvokeWithRuntime(
+                runtimeOptions,
+                "unconfigure",
+                "npm",
+                "--ci",
+                "azure-pipelines",
+                "--dry-run");
+
+            Assert.Equal(1, dryRun.ExitCode);
+            Assert.Contains("planned-change-count: 1\n", dryRun.StdOut);
+            Assert.Contains(
+                "1. remove product-owned npm-compatible registry credential\n",
+                dryRun.StdOut,
+                StringComparison.Ordinal);
+            Assert.Equal(Diagnostic, dryRun.StdErr);
+            Assert.Equal(npmrcBefore, File.ReadAllText(npmrcPath));
+            Assert.Equal(MalformedManifest, File.ReadAllText(manifestPath));
+
+            CommandResult executed = InvokeWithRuntime(
+                runtimeOptions,
+                "unconfigure",
+                "npm",
+                "--ci",
+                "azure-pipelines");
+
+            Assert.Equal(1, executed.ExitCode);
+            Assert.Contains("removed-change-count: 1\n", executed.StdOut);
+            Assert.Contains("temporary-container: npmrcfile\n", executed.StdOut);
+            Assert.Equal(Diagnostic, executed.StdErr);
+            Assert.False(File.Exists(npmrcPath));
+            Assert.Equal(MalformedManifest, File.ReadAllText(manifestPath));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void ConfigureNpmWithoutRegistryDeclarationReturnsStableRemediationAndDoesNotWrite()
+    {
+        string stateDirectory = CreateTestDirectory();
+        try
+        {
+            CliRuntimeOptions runtimeOptions = CreateConfigurationRuntimeWithoutRegistries(
+                stateDirectory);
+
+            CommandResult result = InvokeWithRuntime(runtimeOptions, "configure", "npm");
+
+            Assert.Equal(1, result.ExitCode);
+            Assert.Equal(string.Empty, result.StdOut);
+            Assert.Equal(
+                "error: Package registry configuration is required. Run "
+                    + "azureauth-credprovider configure npm --registry-url "
+                    + "<azure-artifacts-npm-url>.\n",
+                result.StdErr);
+            Assert.False(File.Exists(Path.Combine(stateDirectory, "npm", "user.npmrc")));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void ConfigureNpmDryRunRequiresExplicitAzureArtifactsRegistry()
+    {
+        string stateDirectory = CreateTestDirectory();
+        try
+        {
+            CliRuntimeOptions runtimeOptions = CreateConfigurationRuntimeWithoutRegistries(
+                stateDirectory);
+
+            CommandResult missing = InvokeWithRuntime(
+                runtimeOptions,
+                "configure",
+                "npm",
+                "--dry-run");
+            CommandResult nonAzure = InvokeWithRuntime(
+                runtimeOptions,
+                "configure",
+                "npm",
+                "--dry-run",
+                "--registry-url",
+                "https://registry.npmjs.org/");
+
+            Assert.Equal(1, missing.ExitCode);
+            Assert.Contains(
+                "Package registry configuration is required.",
+                missing.StdErr,
+                StringComparison.Ordinal);
+            Assert.Equal(1, nonAzure.ExitCode);
+            Assert.Contains(
+                "Registry declarations must use canonical Azure Artifacts npm registry URLs.",
+                nonAzure.StdErr,
+                StringComparison.Ordinal);
+            Assert.Equal(string.Empty, missing.StdOut);
+            Assert.Equal(string.Empty, nonAzure.StdOut);
+            Assert.False(File.Exists(Path.Combine(stateDirectory, "npm", "user.npmrc")));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void ConfigureNpmExplicitRegistryUrlRoundTripsExactTarget()
+    {
+        string stateDirectory = CreateTestDirectory();
+        try
+        {
+            CliRuntimeOptions runtimeOptions = CreateConfigurationRuntimeWithoutRegistries(
+                stateDirectory);
+            const string RegistryUrl =
+                "https://pkgs.dev.azure.com/real-org/real-project/"
+                + "_packaging/real-feed/npm/registry/";
+
+            CommandResult result = InvokeWithRuntime(
+                runtimeOptions,
+                "configure",
+                "npm",
+                "--registry-url",
+                RegistryUrl);
+
+            Assert.Equal(0, result.ExitCode);
+            string npmrc = File.ReadAllText(
+                Path.Combine(stateDirectory, "npm", "user.npmrc"));
+            Assert.Contains(
+                "//pkgs.dev.azure.com/real-org/real-project/_packaging/real-feed/npm/registry/",
+                npmrc,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
     public void CleanupDryRunWritesPhase14CiTemporaryGuidance()
     {
         CommandResult result = Invoke(
@@ -2883,34 +3453,6 @@ public sealed class CliApplicationTests
                 "prepare temporary Azure Artifacts NuGet credential scaffold"
             },
             {
-                "configure",
-                "python",
-                "none",
-                "register product-owned Python keyring backend scaffold",
-                "register product-owned Python keyring helper scaffold"
-            },
-            {
-                "configure",
-                "python",
-                "azure-pipelines",
-                "prepare temporary Azure Pipelines Python keyring backend scaffold",
-                "prepare temporary Python keyring helper scaffold"
-            },
-            {
-                "configure",
-                "npm",
-                "none",
-                "register product-owned npm auth refresh scaffold",
-                "register product-owned npm registry credential scaffold"
-            },
-            {
-                "configure",
-                "npm",
-                "azure-pipelines",
-                "prepare temporary Azure Pipelines npm auth refresh scaffold",
-                "prepare temporary npm registry credential scaffold"
-            },
-            {
                 "unconfigure",
                 "git",
                 "none",
@@ -2931,68 +3473,16 @@ public sealed class CliApplicationTests
                 "remove temporary Azure Pipelines NuGet plugin discovery scaffold",
                 "remove temporary Azure Artifacts NuGet credential scaffold"
             },
-            {
-                "unconfigure",
-                "python",
-                "none",
-                "remove product-owned Python keyring backend scaffold",
-                "remove product-owned Python keyring helper scaffold"
-            },
-            {
-                "unconfigure",
-                "python",
-                "azure-pipelines",
-                "remove temporary Azure Pipelines Python keyring backend scaffold",
-                "remove temporary Python keyring helper scaffold"
-            },
-            {
-                "unconfigure",
-                "npm",
-                "none",
-                "remove product-owned npm auth refresh scaffold",
-                "remove product-owned npm registry credential scaffold"
-            },
-            {
-                "unconfigure",
-                "npm",
-                "azure-pipelines",
-                "remove temporary Azure Pipelines npm auth refresh scaffold",
-                "remove temporary npm registry credential scaffold"
-            },
         };
 
     public static TheoryData<string, string, string, string> DryRunDefaultCiGoldenCases =>
         new()
         {
             {
-                "configure",
-                "python",
-                "register product-owned Python keyring backend scaffold",
-                "register product-owned Python keyring helper scaffold"
-            },
-            {
-                "configure",
-                "npm",
-                "register product-owned npm auth refresh scaffold",
-                "register product-owned npm registry credential scaffold"
-            },
-            {
                 "unconfigure",
                 "git",
                 "remove product-owned git credential.helper entry",
                 "remove product-owned dev.azure.com useHttpPath entry"
-            },
-            {
-                "unconfigure",
-                "python",
-                "remove product-owned Python keyring backend scaffold",
-                "remove product-owned Python keyring helper scaffold"
-            },
-            {
-                "unconfigure",
-                "npm",
-                "remove product-owned npm auth refresh scaffold",
-                "remove product-owned npm registry credential scaffold"
             },
         };
 
@@ -3255,7 +3745,7 @@ public sealed class CliApplicationTests
                     """
                     + "\n"
                     + "  azureauth-credprovider configure <ecosystem> [--dry-run] [--ci <mode>] "
-                    + "[--help]\n"
+                    + "[--registry-url <url>] [--help]\n"
                     + """
 
                     Ecosystems:
@@ -3273,6 +3763,8 @@ public sealed class CliApplicationTests
                     + "mutating files.\n"
                     + "  --ci <mode>                  Select CI mode explicitly: "
                     + "none | azure-pipelines.\n"
+                    + "  --registry-url <url>         Required Azure Artifacts npm URL for "
+                    + "package configure.\n"
                     + """
                       -h, --help                   Show help.
                     """,
@@ -3504,18 +3996,27 @@ public sealed class CliApplicationTests
                 [
                     "command: doctor",
                     "phase: 15-end-to-end-hardening",
+                    "composition-mode: TestScaffold",
+                    "provider: DirectMsal",
+                    "interactive-readiness: unavailable",
+                    "interactive-readiness-code: TestScaffold",
+                    "interactive-blocker: Explicit deterministic test scaffold; not production-ready.",
+                    "silent-readiness: silent-unavailable",
+                    "silent-readiness-code: TestScaffold",
+                    "silent-remediation: Explicit deterministic test scaffold; not production-ready.",
                     $"configuration-plan: {(configurationPlanValid ? "pass" : "fail")}",
                     $"owned-git-entries: {(ownedGitEntriesPresent ? "present" : "absent")}",
                     $"ownership-manifest: {(ownershipManifestPresent ? "present" : "absent")}",
                     "dev.azure.com-useHttpPath: "
                         + (devAzureUseHttpPathPresent ? "present" : "absent"),
-                    "fake-credential-core: pass",
+                    "credential-core: pass",
                     "git-credential-helper-get: pass",
                     "git-credential-helper-store: pass",
                     "git-credential-helper-erase: pass",
                     "local-shell-helper-shorthand: " + (localShellSuccess ? "pass" : "fail"),
                     "protocol-payload: captured-not-printed",
-                    "auth-accepted-identity-flows: browser, device-code, azure-pipelines",
+                    "auth-accepted-identity-flows: browser, azure-pipelines",
+                    "auth-unavailable-identity-flows: device-code",
                     "auth-deferred-identity-flows: "
                         + "pat-compatibility, service-principal, managed-identity, workload-identity",
                     "auth-pat-compatibility: deferred-disabled",
@@ -3527,7 +4028,7 @@ public sealed class CliApplicationTests
                     "nuget-netcore-plugin-entrypoint: fail",
                     "nuget-plugin-mode-entrypoint: fail",
                     "nuget-azure-artifacts-source: pass",
-                    "nuget-interactive-policy: pass",
+                    "nuget-interactive-policy: fail",
                     "nuget-environment-overrides: absent",
                     "configuration-aggregation: pass",
                     "npm-user-configuration-plan: pass",
@@ -3590,6 +4091,8 @@ public sealed class CliApplicationTests
         {
             AuthPhase14Options = new AuthPhase14VerticalSliceOptions
             {
+                CredentialCoreService = new CredentialCoreService(
+                    new DeterministicFakeIdentityProvider()),
                 EnvironmentVariableReader = name =>
                     environment.TryGetValue(name, out string? value) ? value : null,
             },
@@ -3600,6 +4103,22 @@ public sealed class CliApplicationTests
     {
         return new CliRuntimeOptions
         {
+            CompositionRoot = CreateTestCompositionRoot(),
+            ConfigurationPhase14Options = new ConfigurationPhase14VerticalSliceOptions
+            {
+                StateDirectoryPath = stateDirectoryPath,
+                AzurePipelinesJobScopeId = "cli-test-job",
+                EnvironmentVariableReader = _ => null,
+                RegistryUrls = CreateTestRegistryUrls(),
+            },
+        };
+    }
+
+    private static CliRuntimeOptions CreateConfigurationRuntimeWithoutRegistries(
+        string stateDirectoryPath) =>
+        new()
+        {
+            CompositionRoot = CreateTestCompositionRoot(),
             ConfigurationPhase14Options = new ConfigurationPhase14VerticalSliceOptions
             {
                 StateDirectoryPath = stateDirectoryPath,
@@ -3607,7 +4126,6 @@ public sealed class CliApplicationTests
                 EnvironmentVariableReader = _ => null,
             },
         };
-    }
 
     private static CliRuntimeOptions CreateConfigurationRuntimeWithCiToken(
         string stateDirectoryPath,
@@ -3615,6 +4133,7 @@ public sealed class CliApplicationTests
     {
         return new CliRuntimeOptions
         {
+            CompositionRoot = CreateTestCompositionRoot(),
             ConfigurationPhase14Options = new ConfigurationPhase14VerticalSliceOptions
             {
                 StateDirectoryPath = stateDirectoryPath,
@@ -3623,6 +4142,7 @@ public sealed class CliApplicationTests
                     string.Equals(name, "SYSTEM_ACCESSTOKEN", StringComparison.Ordinal)
                         ? token
                         : null,
+                RegistryUrls = CreateTestRegistryUrls(),
             },
         };
     }
@@ -3639,7 +4159,7 @@ public sealed class CliApplicationTests
             args,
             stdout,
             stderr,
-            runtimeOptions: null,
+            new CliRuntimeOptions { CompositionRoot = CreateTestCompositionRoot() },
             new StringReader(standardInput),
             executablePath);
 
@@ -3653,6 +4173,7 @@ public sealed class CliApplicationTests
     {
         return new CliRuntimeOptions
         {
+            CompositionRoot = CreateTestCompositionRoot(),
             GitPhase8Options = new GitPhase8VerticalSliceOptions
             {
                 StateDirectoryPath = stateDirectory,
@@ -3664,6 +4185,10 @@ public sealed class CliApplicationTests
         };
     }
 
+    private static CredentialProviderCompositionRoot CreateTestCompositionRoot() =>
+        CredentialProviderCompositionRoot.CreateExplicitTestScaffold(
+            new TestScaffoldAcquisitionService());
+
     private static ConfigurationPhase14VerticalSliceOptions CreateConfigurationPhase14Options(
         string stateDirectoryPath) =>
         new()
@@ -3671,6 +4196,18 @@ public sealed class CliApplicationTests
             StateDirectoryPath = Path.Combine(stateDirectoryPath, "configuration"),
             AzurePipelinesJobScopeId = "cli-test-job",
             EnvironmentVariableReader = _ => null,
+            RegistryUrls = CreateTestRegistryUrls(),
+        };
+
+    private static Dictionary<CredentialEcosystem, Uri> CreateTestRegistryUrls() =>
+        new Dictionary<CredentialEcosystem, Uri>
+        {
+            [CredentialEcosystem.Npm] = new(
+                "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"),
+            [CredentialEcosystem.Pnpm] = new(
+                "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"),
+            [CredentialEcosystem.Yarn] = new(
+                "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"),
         };
 
     private static CliRuntimeOptions CreateNuGetPhase10DryRunRuntimeOptions()
@@ -3737,6 +4274,36 @@ public sealed class CliApplicationTests
         }
 
         return appHostPath;
+    }
+
+    private sealed class TestScaffoldAcquisitionService : ICredentialAcquisitionService
+    {
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(
+                request.CredentialKind is CredentialKind.BasicPassword
+                    or CredentialKind.NuGetPluginCredential
+                    ? new CredentialResult
+                    {
+                        Status = CredentialResultStatus.Success,
+                        Username = "AzureDevOps",
+                        Password = "fake-secret-test",
+                        Account = request.AccountHint?.ToLowerInvariant() ?? "unbound",
+                        Tenant = request.TenantHint?.ToLowerInvariant() ?? "unbound",
+                        DiagnosticsCorrelationId = "cli-test-scaffold",
+                    }
+                    : new CredentialResult
+                    {
+                        Status = CredentialResultStatus.Success,
+                        BearerToken = "fake-token-test",
+                        Account = request.AccountHint?.ToLowerInvariant() ?? "unbound",
+                        Tenant = request.TenantHint?.ToLowerInvariant() ?? "unbound",
+                        DiagnosticsCorrelationId = "cli-test-scaffold",
+                    });
+        }
     }
 
     private sealed class PassingGitDiscoveryProcessRunner : IProcessRunner

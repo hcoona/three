@@ -4582,14 +4582,31 @@ public static class CredentialRequestV2Policy
         return request.AcquisitionMode switch
         {
             AcquisitionMode.Unspecified => null,
-            AcquisitionMode.SilentOnly =>
-                "Unsupported acquisition mode: SilentOnly forbids active interaction, but no "
-                    + "current work-package-1 identity flow has a source-proved silent cache "
-                    + "or broker acquisition source.",
+            AcquisitionMode.SilentOnly => GetSilentOnlyViolation(request),
             AcquisitionMode.InteractionAllowed => GetInteractionAllowedViolation(request),
             _ => "Protocol violation: credential request v2 contains an unsupported "
                 + "acquisition mode.",
         };
+    }
+
+    private static string? GetSilentOnlyViolation(CredentialRequestV2 request)
+    {
+        if (request.InteractivePolicy != InteractivePolicy.Never)
+        {
+            return "Protocol violation: SilentOnly requires interactivePolicy never.";
+        }
+
+        if (request.CiContext is { ExplicitCiMode: true })
+        {
+            return "Protocol violation: SilentOnly is not valid for explicit CI mode.";
+        }
+
+        if (request.IdentityFlow == IdentityFlow.AzurePipelinesSystemAccessToken)
+        {
+            return "Protocol violation: SilentOnly is not valid for opaque CI tokens.";
+        }
+
+        return null;
     }
 
     private static string? GetInteractionAllowedViolation(CredentialRequestV2 request)

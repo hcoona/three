@@ -1,4 +1,6 @@
 using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
 using Hcoona.AzureAuth.CredProvider.Platform.Tests.TestDoubles;
@@ -10,6 +12,74 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.Tests;
 [Collection("ConfigurationManagerExecution")]
 public sealed class ConfigurationPhase14VerticalSliceServiceTests
 {
+    [Fact]
+    public async Task ProductionConfigureWithoutRegistryDeclarationFailsBeforeAnyWrite()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        CredentialProviderCompositionRoot root = CredentialProviderCompositionRoot.CreateProduction(
+            new CredentialProviderProductionOptions
+            {
+                FileSystem = fileSystem,
+                ConfigurationOptions = new ConfigurationPhase14VerticalSliceOptions
+                {
+                    FileSystem = fileSystem,
+                    StateDirectoryPath = "/state/production",
+                    EnvironmentVariableReader = _ => null,
+                },
+            });
+        ConfigurationPhase14VerticalSliceService service = root.CreateConfigurationService();
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await service.ConfigureAsync(
+                CredentialEcosystem.Npm,
+                ConfigurationPhase14Scope.User,
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(
+            "Package registry configuration is required. Run azureauth-credprovider configure "
+                + "npm --registry-url <azure-artifacts-npm-url>.",
+            exception.Message);
+        Assert.False(fileSystem.FileExists(service.Paths.NpmUserNpmrcPath));
+        Assert.False(fileSystem.DirectoryExists(service.Paths.ManifestDirectoryPath));
+    }
+
+    [Fact]
+    public async Task ExplicitRegistryDeclarationRoundTripsWithoutSyntheticTarget()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        Uri registryUrl = new(
+            "https://pkgs.dev.azure.com/real-org/real-project/"
+                + "_packaging/real-feed/npm/registry/");
+        var service = new ConfigurationPhase14VerticalSliceService(
+            new ConfigurationPhase14VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                StateDirectoryPath = "/state/explicit",
+                CredentialAcquisition = new BoundedCredentialAcquisitionAdapter(
+                    new SilentTestAcquisitionService()),
+                EnvironmentVariableReader = _ => null,
+                RegistryUrls = new Dictionary<CredentialEcosystem, Uri>
+                {
+                    [CredentialEcosystem.Npm] = registryUrl,
+                },
+            });
+
+        await service.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken);
+
+        string configured = fileSystem.ReadAllText(service.Paths.NpmUserNpmrcPath);
+        Assert.Contains(
+            "//pkgs.dev.azure.com/real-org/real-project/_packaging/real-feed/npm/registry/",
+            configured,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "pkgs.dev.azure.com/org/_packaging/feed",
+            configured,
+            StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task ConfigureAndUnconfigureNpmApplyAndRemoveOwnedNpmrcToken()
     {
@@ -42,6 +112,210 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             fileSystem.ReadAllText(service.Paths.NpmUserNpmrcPath),
             StringComparison.Ordinal
         );
+    }
+
+    [Fact]
+    public async Task PythonDryRunAndExecutionProduceEquivalentPlansWithoutDryRunMutation()
+    {
+        var dryRunFileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var executionFileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var dryRunService = CreateService(dryRunFileSystem);
+        var executionService = CreateService(executionFileSystem);
+
+        ConfigurationPhase14PlanResult dryRun = await dryRunService.DryRunConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken);
+        ConfigurationPhase14PlanResult executed = await executionService.ConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(executed.ChangeCount, dryRun.ChangeCount);
+        Assert.Equal(
+            executed.PlanResults.Select(static result => (
+                result.Plan.PlanId,
+                result.Plan.ChangeSetId,
+                result.Plan.Scope,
+                result.Plan.Manifest.PreviousOwnedEntryHash)),
+            dryRun.PlanResults.Select(static result => (
+                result.Plan.PlanId,
+                result.Plan.ChangeSetId,
+                result.Plan.Scope,
+                result.Plan.Manifest.PreviousOwnedEntryHash)));
+        Assert.Equal(
+            executed.PlanResults.SelectMany(static result => result.Changes),
+            dryRun.PlanResults.SelectMany(static result => result.Changes));
+        Assert.All(
+            dryRun.PlanResults,
+            static result => Assert.Equal(ConfigurationPlanState.Planned, result.State));
+        Assert.False(dryRunFileSystem.DirectoryExists(dryRunService.Paths.ManifestDirectoryPath));
+        Assert.False(dryRun.OwnershipManifestPresent);
+    }
+
+    [Fact]
+    public async Task PythonUnconfigureDryRunAndExecutionProduceEquivalentRemovalPlans()
+    {
+        var dryRunFileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var executionFileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var dryRunService = CreateService(dryRunFileSystem);
+        var executionService = CreateService(executionFileSystem);
+        await dryRunService.ConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken);
+        await executionService.ConfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken);
+
+        ConfigurationPhase14PlanResult dryRun = await dryRunService.DryRunUnconfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken);
+        ConfigurationPhase14PlanResult executed = await executionService.UnconfigureAsync(
+            CredentialEcosystem.Python,
+            ConfigurationPhase14Scope.User,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(executed.ChangeCount, dryRun.ChangeCount);
+        Assert.Equal(
+            executed.PlanResults.Select(static result => (
+                result.Plan.PlanId,
+                result.Plan.ChangeSetId,
+                result.Plan.Scope,
+                result.Plan.Manifest.PreviousOwnedEntryHash)),
+            dryRun.PlanResults.Select(static result => (
+                result.Plan.PlanId,
+                result.Plan.ChangeSetId,
+                result.Plan.Scope,
+                result.Plan.Manifest.PreviousOwnedEntryHash)));
+        Assert.Equal(
+            executed.PlanResults.SelectMany(static result => result.Changes),
+            dryRun.PlanResults.SelectMany(static result => result.Changes));
+        Assert.True(dryRun.OwnershipManifestPresent);
+        Assert.False(executed.OwnershipManifestPresent);
+    }
+
+    [Fact]
+    public async Task UnconfigureDryRunAndExecutionBothRejectMalformedOwnershipManifest()
+    {
+        var dryRunFileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var executionFileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var dryRunService = CreateService(dryRunFileSystem);
+        var executionService = CreateService(executionFileSystem);
+        string dryRunManifestPath = Path.Combine(
+            dryRunService.Paths.ManifestDirectoryPath,
+            "python-user-ownership-manifest.json");
+        string executionManifestPath = Path.Combine(
+            executionService.Paths.ManifestDirectoryPath,
+            "python-user-ownership-manifest.json");
+        dryRunFileSystem.CreateDirectory(dryRunService.Paths.ManifestDirectoryPath);
+        executionFileSystem.CreateDirectory(executionService.Paths.ManifestDirectoryPath);
+        dryRunFileSystem.WriteAllText(dryRunManifestPath, """{"malformed":true}""");
+        executionFileSystem.WriteAllText(executionManifestPath, """{"malformed":true}""");
+
+        await Assert.ThrowsAnyAsync<Exception>(
+            async () => await dryRunService.DryRunUnconfigureAsync(
+                CredentialEcosystem.Python,
+                ConfigurationPhase14Scope.User,
+                TestContext.Current.CancellationToken));
+        await Assert.ThrowsAnyAsync<Exception>(
+            async () => await executionService.UnconfigureAsync(
+                CredentialEcosystem.Python,
+                ConfigurationPhase14Scope.User,
+                TestContext.Current.CancellationToken));
+        Assert.Equal(
+            """{"malformed":true}""",
+            dryRunFileSystem.ReadAllText(dryRunManifestPath));
+        Assert.Equal(
+            """{"malformed":true}""",
+            executionFileSystem.ReadAllText(executionManifestPath));
+    }
+
+    [Theory]
+    [InlineData(CredentialEcosystem.Npm)]
+    [InlineData(CredentialEcosystem.Pnpm)]
+    [InlineData(CredentialEcosystem.Yarn)]
+    public async Task CiUnconfigureMalformedManifestPlansKnownContainerAndDryRunDoesNotMutate(
+        CredentialEcosystem ecosystem)
+    {
+        const string MalformedManifest = """{"malformed":true}""";
+        var dryRunFileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var executionFileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var dryRunService = CreateService(dryRunFileSystem);
+        var executionService = CreateService(executionFileSystem);
+        string manifestName = ecosystem.ToString().ToLowerInvariant()
+            + "-ci-temporary-ownership-manifest.json";
+        string dryRunManifestPath = Path.Combine(
+            dryRunService.Paths.CiTemporaryManifestDirectoryPath,
+            manifestName);
+        string executionManifestPath = Path.Combine(
+            executionService.Paths.CiTemporaryManifestDirectoryPath,
+            manifestName);
+        string dryRunContainerPath = CreateKnownCiContainer(
+            dryRunFileSystem,
+            dryRunService.Paths,
+            ecosystem);
+        string executionContainerPath = CreateKnownCiContainer(
+            executionFileSystem,
+            executionService.Paths,
+            ecosystem);
+        dryRunFileSystem.CreateDirectory(dryRunService.Paths.CiTemporaryManifestDirectoryPath);
+        executionFileSystem.CreateDirectory(executionService.Paths.CiTemporaryManifestDirectoryPath);
+        dryRunFileSystem.WriteAllText(dryRunManifestPath, MalformedManifest);
+        executionFileSystem.WriteAllText(executionManifestPath, MalformedManifest);
+
+        ConfigurationPhase14PlanResult dryRun = await dryRunService.DryRunUnconfigureAsync(
+            ecosystem,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken);
+        ConfigurationPhase14PlanResult executed = await executionService.UnconfigureAsync(
+            ecosystem,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(dryRun.OwnershipManifestCleanupIncomplete);
+        Assert.True(executed.OwnershipManifestCleanupIncomplete);
+        Assert.Equal(ConfigurationPlanOperation.DryRun, dryRun.PlanResult.Operation);
+        Assert.Equal(ConfigurationPlanOperation.Remove, executed.PlanResult.Operation);
+        Assert.Equal(ConfigurationPlanState.Planned, dryRun.PlanResult.State);
+        Assert.Equal(ConfigurationPlanState.Applied, executed.PlanResult.State);
+        Assert.Equal(executed.PlanResult.Plan.PlanId, dryRun.PlanResult.Plan.PlanId);
+        Assert.Equal(executed.PlanResult.Plan.ChangeSetId, dryRun.PlanResult.Plan.ChangeSetId);
+        Assert.Equal(executed.PlanResult.Plan.Scope, dryRun.PlanResult.Plan.Scope);
+        Assert.Equal(
+            executed.PlanResult.Plan.DeclarationPreservation,
+            dryRun.PlanResult.Plan.DeclarationPreservation);
+        Assert.Equal(
+            executed.PlanResult.Plan.TemporaryContainer!.Kind,
+            dryRun.PlanResult.Plan.TemporaryContainer!.Kind);
+        Assert.Equal(
+            executed.PlanResult.Plan.TemporaryContainer.ProductOwnedPath,
+            dryRun.PlanResult.Plan.TemporaryContainer.ProductOwnedPath);
+        Assert.Equal(executed.PlanResult.Changes, dryRun.PlanResult.Changes);
+        ConfigurationPlannedChange action = Assert.Single(dryRun.PlanResult.Changes);
+        Assert.Equal(ConfigurationChangeOperation.Remove, action.Operation);
+        Assert.Equal(
+            ecosystem == CredentialEcosystem.Yarn
+                ? ConfigurationTargetKind.Yarnrc
+                : ConfigurationTargetKind.Npmrc,
+            action.TargetKind);
+        Assert.Equal(
+            ecosystem == CredentialEcosystem.Yarn
+                ? Path.Combine(dryRunContainerPath, ".yarnrc.yml")
+                : dryRunContainerPath,
+            action.TargetPathOrName);
+        Assert.Equal(
+            executionContainerPath,
+            executed.PlanResult.Plan.TemporaryContainer!.ProductOwnedPath);
+        Assert.True(KnownCiContainerExists(dryRunFileSystem, dryRunContainerPath, ecosystem));
+        Assert.False(KnownCiContainerExists(
+            executionFileSystem,
+            executionContainerPath,
+            ecosystem));
+        Assert.Equal(MalformedManifest, dryRunFileSystem.ReadAllText(dryRunManifestPath));
+        Assert.Equal(MalformedManifest, executionFileSystem.ReadAllText(executionManifestPath));
     }
 
     [Fact]
@@ -490,6 +764,66 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.False(fileSystem.DirectoryExists(service.Paths.YarnCiTemporaryHomePath));
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("../unsafe")]
+    public void DryRunValidationRejectsMissingOrInvalidCiJobScope(string? jobScopeId)
+    {
+        var service = new ConfigurationPhase14VerticalSliceService(
+            new ConfigurationPhase14VerticalSliceOptions
+            {
+                FileSystem = new InMemoryFileSystem(),
+                StateDirectoryPath = "/state/phase14-dry-run",
+                AzurePipelinesJobScopeId = jobScopeId,
+                CredentialAcquisition = new BoundedCredentialAcquisitionAdapter(
+                    new SilentTestAcquisitionService()),
+                EnvironmentVariableReader = _ => null,
+                RegistryUrls = new Dictionary<CredentialEcosystem, Uri>
+                {
+                    [CredentialEcosystem.Npm] = new(
+                        "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"),
+                },
+            });
+
+        Assert.Throws<InvalidOperationException>(() =>
+            service.ValidateConfigureRequest(
+                CredentialEcosystem.Npm,
+                ConfigurationPhase14Scope.CiTemporary));
+        Assert.Throws<InvalidOperationException>(() =>
+            service.ValidateUnconfigureRequest(
+                CredentialEcosystem.Npm,
+                ConfigurationPhase14Scope.CiTemporary));
+    }
+
+    [Fact]
+    public void DryRunValidationRejectsUnsupportedScopeAndMissingRegistry()
+    {
+        var service = new ConfigurationPhase14VerticalSliceService(
+            new ConfigurationPhase14VerticalSliceOptions
+            {
+                FileSystem = new InMemoryFileSystem(),
+                StateDirectoryPath = "/state/phase14-dry-run",
+                AzurePipelinesJobScopeId = "job-1",
+                CredentialAcquisition = new BoundedCredentialAcquisitionAdapter(
+                    new SilentTestAcquisitionService()),
+                EnvironmentVariableReader = _ => null,
+            });
+
+        Assert.Throws<NotSupportedException>(() =>
+            service.ValidateConfigureRequest(
+                CredentialEcosystem.Python,
+                ConfigurationPhase14Scope.CiTemporary));
+        Assert.Throws<NotSupportedException>(() =>
+            service.ValidateUnconfigureRequest(
+                CredentialEcosystem.Python,
+                ConfigurationPhase14Scope.CiTemporary));
+        Assert.Throws<InvalidOperationException>(() =>
+            service.ValidateConfigureRequest(
+                CredentialEcosystem.Npm,
+                ConfigurationPhase14Scope.User));
+    }
+
     private static ConfigurationPhase14VerticalSliceService CreateService(
         InMemoryFileSystem fileSystem,
         IIdentityProvider? identityProvider = null,
@@ -501,10 +835,23 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 FileSystem = fileSystem,
                 StateDirectoryPath = "/state/phase14",
                 AzurePipelinesJobScopeId = "phase14-test-job",
+                CredentialAcquisition = identityProvider is null
+                    ? new BoundedCredentialAcquisitionAdapter(
+                        new SilentTestAcquisitionService())
+                    : null,
                 CredentialCoreService = identityProvider is null
                     ? null
                     : new CredentialCoreService(identityProvider),
                 EnvironmentVariableReader = environmentVariableReader ?? (_ => null),
+                RegistryUrls = new Dictionary<CredentialEcosystem, Uri>
+                {
+                    [CredentialEcosystem.Npm] = new(
+                        "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"),
+                    [CredentialEcosystem.Pnpm] = new(
+                        "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"),
+                    [CredentialEcosystem.Yarn] = new(
+                        "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"),
+                },
             }
         );
 
@@ -512,6 +859,40 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         string.Equals(name, "SYSTEM_ACCESSTOKEN", StringComparison.Ordinal)
             ? "system-token"
             : null;
+
+    private static string CreateKnownCiContainer(
+        InMemoryFileSystem fileSystem,
+        ConfigurationPhase14ResolvedPaths paths,
+        CredentialEcosystem ecosystem)
+    {
+        string path = ecosystem switch
+        {
+            CredentialEcosystem.Npm => paths.NpmCiTemporaryNpmrcPath,
+            CredentialEcosystem.Pnpm => paths.PnpmCiTemporaryNpmrcPath,
+            CredentialEcosystem.Yarn => paths.YarnCiTemporaryHomePath,
+            _ => throw new ArgumentOutOfRangeException(nameof(ecosystem)),
+        };
+        if (ecosystem == CredentialEcosystem.Yarn)
+        {
+            fileSystem.CreateDirectory(path);
+            fileSystem.WriteAllText(Path.Combine(path, ".yarnrc.yml"), "owned");
+        }
+        else
+        {
+            fileSystem.CreateDirectory(Path.GetDirectoryName(path)!);
+            fileSystem.WriteAllText(path, "owned");
+        }
+
+        return path;
+    }
+
+    private static bool KnownCiContainerExists(
+        InMemoryFileSystem fileSystem,
+        string path,
+        CredentialEcosystem ecosystem) =>
+        ecosystem == CredentialEcosystem.Yarn
+            ? fileSystem.DirectoryExists(path)
+            : fileSystem.FileExists(path);
 
     private sealed class CapturingIdentityProvider : IIdentityProvider
     {
@@ -527,6 +908,27 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
                 AccessToken = "identity-token",
                 ExpiresAt = new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero),
             };
+        }
+    }
+
+    private sealed class SilentTestAcquisitionService : ICredentialAcquisitionService
+    {
+        public ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default)
+        {
+            Assert.Equal(AcquisitionMode.SilentOnly, request.AcquisitionMode);
+            Assert.Equal(InteractivePolicy.Never, request.InteractivePolicy);
+            Assert.True(
+                CredentialRequestV2Policy.IsValid(request),
+                CredentialRequestV2Policy.GetViolation(request));
+            return ValueTask.FromResult(
+                new CredentialResult
+                {
+                    Status = CredentialResultStatus.Success,
+                    BearerToken = "fake-token-silent",
+                    DiagnosticsCorrelationId = "phase14-silent-test",
+                });
         }
     }
 }

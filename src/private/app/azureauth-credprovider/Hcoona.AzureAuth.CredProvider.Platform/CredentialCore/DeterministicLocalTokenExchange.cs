@@ -2,7 +2,7 @@ using Hcoona.AzureAuth.CredProvider.Contracts;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 
-internal sealed class DeterministicLocalTokenExchange : ITokenExchange
+internal sealed class IdentityMaterialTokenExchange : ITokenExchange
 {
     private const string AzureDevOpsUsername = "AzureDevOps";
 
@@ -24,8 +24,7 @@ internal sealed class DeterministicLocalTokenExchange : ITokenExchange
                         BearerToken = identity.AccessToken
                             ?? throw new InvalidOperationException(
                                 "Identity provider returned incomplete credential core material."),
-                    }
-                ),
+                    }),
             CredentialKind.BasicPassword
             or CredentialKind.NuGetPluginCredential
             or CredentialKind.PatCompatibility => TokenExchangeResult.Success(
@@ -35,10 +34,20 @@ internal sealed class DeterministicLocalTokenExchange : ITokenExchange
                     Password = identity.Secret
                         ?? throw new InvalidOperationException(
                             "Identity provider returned incomplete credential core material."),
-                }
-            ),
+                }),
             _ => throw new InvalidOperationException(
                 "Credential kind is not supported by the credential core scaffold."),
         };
     }
+}
+
+internal sealed class DeterministicLocalTokenExchange : ITokenExchange
+{
+    private readonly IdentityMaterialTokenExchange inner = new();
+
+    public TokenExchangeResult Exchange(
+        CredentialRequest request,
+        IdentityMaterial identity,
+        CacheKey cacheKey) =>
+        inner.Exchange(request, identity, cacheKey);
 }
