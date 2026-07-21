@@ -29,7 +29,6 @@ public static class TrustedLocalCopy
             request.ProjectRoot,
             request.WorkspaceRoot,
             request.SurveyAlias);
-        AtlasDiscovery.ValidatePrivateWorkspace(layout, io);
         if (AtlasIntakeContracts.PathEquals(
                 request.ApprovedStatePath,
                 layout.CanonicalApprovedStatePath)

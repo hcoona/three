@@ -293,45 +293,6 @@ public sealed class AtlasIntakeContractTests
     }
 
     [Fact]
-    public async Task PrivateWorkspaceGitIgnoreAllowsOnlyExactNormalizedPolicy()
-    {
-        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
-        await File.WriteAllTextAsync(
-            workspace.Layout.PrivateGitIgnorePath,
-            "*\r\n!.gitignore\r\n",
-            new UTF8Encoding(false),
-            TestContext.Current.CancellationToken);
-
-        AtlasDiscovery.ValidatePrivateWorkspace(workspace.Layout, AtlasIoSeams.Default);
-
-        string[] invalidPolicies =
-        [
-            "*\n!.gitignore\n!snapshot/\n",
-            "*\n!.gitignore\n# comment\n",
-            "*\n!.gitignore\n\n",
-        ];
-
-        foreach (string invalidPolicy in invalidPolicies)
-        {
-            await File.WriteAllTextAsync(
-                workspace.Layout.PrivateGitIgnorePath,
-                invalidPolicy,
-                new UTF8Encoding(false),
-                TestContext.Current.CancellationToken);
-
-            Assert.Throws<AtlasSafetyException>(() =>
-                AtlasDiscovery.ValidatePrivateWorkspace(
-                    workspace.Layout,
-                    AtlasIoSeams.Default));
-        }
-
-        AtlasIoSeams bomIo = AtlasTestSupport.CreateIo(
-            readAllText: _ => "\uFEFF*\n!.gitignore\n");
-        Assert.Throws<AtlasSafetyException>(() =>
-            AtlasDiscovery.ValidatePrivateWorkspace(workspace.Layout, bomIo));
-    }
-
-    [Fact]
     public async Task OutputSchemasCoverSerializedNestedProperties()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
@@ -1658,7 +1619,6 @@ internal static class AtlasTestSupport
 {
     public static AtlasIoSeams CreateIo(
         Func<string, CancellationToken, ValueTask<byte[]>>? readAllBytesAsync = null,
-        Func<string, string>? readAllText = null,
         Func<string, bool>? fileExists = null,
         Func<string, bool>? directoryExists = null,
         Func<string, FileAttributes>? getAttributes = null,
@@ -1676,7 +1636,6 @@ internal static class AtlasTestSupport
         new()
         {
             ReadAllBytesAsync = readAllBytesAsync ?? AtlasIoSeams.Default.ReadAllBytesAsync,
-            ReadAllText = readAllText ?? AtlasIoSeams.Default.ReadAllText,
             FileExists = fileExists ?? AtlasIoSeams.Default.FileExists,
             DirectoryExists = directoryExists ?? AtlasIoSeams.Default.DirectoryExists,
             GetAttributes = getAttributes ?? AtlasIoSeams.Default.GetAttributes,
@@ -2017,11 +1976,6 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
         Directory.CreateDirectory(Path.Combine(DefinitionRootPath, "www", "data"));
         Directory.CreateDirectory(Path.Combine(DefinitionRootPath, "www", "notes"));
 
-        await File.WriteAllTextAsync(
-            Layout.PrivateGitIgnorePath,
-            "*\n!.gitignore\n",
-            new UTF8Encoding(false),
-            TestContext.Current.CancellationToken);
         await CreateSyntheticSaveFilesAsync(baselineManifest.SaveEntries);
         await File.WriteAllTextAsync(
             GameExecutablePath,

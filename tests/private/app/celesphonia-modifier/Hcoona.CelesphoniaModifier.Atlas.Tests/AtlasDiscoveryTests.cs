@@ -303,25 +303,6 @@ public sealed class AtlasDiscoveryTests
     }
 
     [Fact]
-    public async Task DiscoverAsyncCategorizesInvalidPrivateWorkspacePolicy()
-    {
-        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
-        AtlasIoSeams io = AtlasTestSupport.CreateIo(
-            readAllText: path =>
-                AtlasIntakeContracts.PathEquals(path, workspace.Layout.PrivateGitIgnorePath)
-                    ? "invalid"
-                    : AtlasIoSeams.Default.ReadAllText(path));
-
-        AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
-            () => AtlasDiscovery.DiscoverAsync(
-                workspace.Layout.CanonicalDiscoverRequestPath,
-                io,
-                TestContext.Current.CancellationToken).AsTask());
-
-        Assert.Equal(AtlasDiscoveryFailureStage.PrivateWorkspacePolicy, exception.DiscoveryStage);
-    }
-
-    [Fact]
     public async Task DiscoverAsyncPublishesPendingManifestRootMapCopyPlanAndState()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
@@ -1586,10 +1567,6 @@ public sealed class AtlasDiscoveryTests
                     ? ValueTask.FromException<byte[]>(
                         new InvalidOperationException("Opaque content was read."))
                     : AtlasIoSeams.Default.ReadAllBytesAsync(path, cancellationToken),
-            readAllText: path =>
-                IsOpaqueContentPath(path)
-                    ? throw new InvalidOperationException("Opaque content was read.")
-                    : AtlasIoSeams.Default.ReadAllText(path),
             enumerateFileSystemEntries: (path, searchOption) =>
                 IsOpaqueDirectoryPath(path)
                     ? throw new InvalidOperationException("Opaque content was enumerated.")

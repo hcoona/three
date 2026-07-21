@@ -37,8 +37,6 @@ public static class AtlasDiscovery
                 request.ProjectRoot,
                 request.WorkspaceRoot,
                 request.SurveyAlias);
-            failureStage = AtlasDiscoveryFailureStage.PrivateWorkspacePolicy;
-            ValidatePrivateWorkspace(layout, io);
             failureStage = AtlasDiscoveryFailureStage.DiscoveryCanonicalPaths;
             ValidateDiscoveryCanonicalPaths(loadedRequest.AbsolutePath, request, layout, io);
             failureStage = AtlasDiscoveryFailureStage.CommandWorkspaceCensus;
@@ -230,7 +228,6 @@ public static class AtlasDiscovery
             request.ProjectRoot,
             request.WorkspaceRoot,
             request.SurveyAlias);
-        ValidatePrivateWorkspace(layout, io);
         if (AtlasIntakeContracts.PathEquals(
                 request.DiscoveredStatePath,
                 layout.CanonicalDiscoveredStatePath)
@@ -403,24 +400,6 @@ public static class AtlasDiscovery
                 io,
                 cancellationToken)
             .ConfigureAwait(false);
-    }
-
-    internal static void ValidatePrivateWorkspace(AtlasWorkspaceLayout layout, AtlasIoSeams io)
-    {
-        ValidateExistingOrdinaryFile(layout.PrivateGitIgnorePath, io);
-        string contents = io.ReadAllText(layout.PrivateGitIgnorePath);
-        if (contents.Length > 0 && contents[0] == '\uFEFF')
-        {
-            throw new AtlasSafetyException("The .private .gitignore rules are invalid.");
-        }
-
-        string normalized = contents.Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace('\r', '\n');
-        if (!StringComparer.Ordinal.Equals(normalized, "*\n!.gitignore\n")
-            && !StringComparer.Ordinal.Equals(normalized, "*\n!.gitignore"))
-        {
-            throw new AtlasSafetyException("The .private .gitignore rules are invalid.");
-        }
     }
 
     internal static ValueTask<bool> TryReturnValidatedDiscoveryAsync(
@@ -3825,8 +3804,6 @@ internal sealed class AtlasIoSeams
     public Func<string, CancellationToken, ValueTask<byte[]>> ReadAllBytesAsync { get; init; } =
         static async (path, cancellationToken) =>
             await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
-
-    public Func<string, string> ReadAllText { get; init; } = File.ReadAllText;
 
     public Func<string, bool> FileExists { get; init; } = File.Exists;
 

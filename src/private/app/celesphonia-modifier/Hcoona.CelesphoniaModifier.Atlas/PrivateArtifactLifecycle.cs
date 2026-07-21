@@ -26,7 +26,6 @@ public static class PrivateArtifactLifecycle
             request.ProjectRoot,
             request.WorkspaceRoot,
             request.SurveyAlias);
-        AtlasDiscovery.ValidatePrivateWorkspace(layout, io);
         if (AtlasIntakeContracts.PathEquals(
                 request.QualifiedStatePath,
                 layout.CanonicalQualifiedStatePath)

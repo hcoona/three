@@ -275,9 +275,12 @@ paths and state artifact bindings let later increments locate and rehash retaine
 adding paths to the inventory schema.
 
 `projectRoot` is the repository root. `workspaceRoot` must equal the full-path result of joining it
-with `src\private\app\celesphonia-modifier\.private\atlas-v0\<surveyAlias>`. The tool also requires
-the parent `.private\.gitignore` to be an ordinary non-reparse file whose effective rules include
-`*` and `!.gitignore`. Every request tests this invariant before creating output.
+with `src\private\app\celesphonia-modifier\.private\atlas-v0\<surveyAlias>`.
+
+Repository ignore policy is not an Atlas runtime input. The tracked `.private\.gitignore`, reviewed
+clean-worktree wrapper, hooks, CI, and release gates protect repository hygiene. Atlas commands
+validate only their actual request, output, source, manifest, inventory, state, copy, and lifecycle
+paths and content.
 
 Requests and operational outputs are private. Their C# types and synthetic examples are
 repository-safe; no real request or path enters Git.
@@ -402,12 +405,13 @@ Safety check failed: canonical-paths.
 Safety check failed: workspace-census.
 ```
 
-The legacy `workspace-preflight` line remains mapped for compatibility; new discovery execution
-uses the three refined tokens. An unspecified or unknown discovery stage retains
-`Safety check failed.`. `empty-survey`, `intake-confirm`, `intake-copy`, and `cleanup-preflight`
-also retain the generic diagnostic even if an internal exception carries a discovery stage. These
-tokens identify only the fixed control-flow boundary; they never incorporate exception text or
-runtime data.
+The legacy `workspace-preflight` and `private-workspace-policy` lines remain mapped for
+compatibility; new discovery execution proceeds from request preflight directly to
+`canonical-paths`, followed by `workspace-census`. An unspecified or unknown discovery stage
+retains `Safety check failed.`. `empty-survey`, `intake-confirm`, `intake-copy`, and
+`cleanup-preflight` also retain the generic diagnostic even if an internal exception carries a
+discovery stage. These tokens identify only the fixed control-flow boundary; they never incorporate
+exception text or runtime data.
 
 Missing or inaccessible requests, sharing violations, and failed output operations are I/O
 failures. Invalid JSON, schema versions, properties, values, and path syntax are argument failures.

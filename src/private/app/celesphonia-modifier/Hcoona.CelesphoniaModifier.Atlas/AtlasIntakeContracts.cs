@@ -3579,15 +3579,6 @@ internal sealed record AtlasWorkspaceLayout(
 
     public string CanonicalCleanupPreflightReportPath =>
         Path.Combine(CleanupDirectory, "a2-preflight.json");
-
-    public string PrivateGitIgnorePath => Path.Combine(
-        ProjectRoot,
-        "src",
-        "private",
-        "app",
-        "celesphonia-modifier",
-        ".private",
-        ".gitignore");
 }
 
 public sealed class AtlasRequestException(string message, Exception? innerException = null)
