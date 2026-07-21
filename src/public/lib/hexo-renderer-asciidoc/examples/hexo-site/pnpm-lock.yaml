@@ -432,8 +432,8 @@ packages:
   lower-case@2.0.2:
     resolution: {integrity: sha512-7fm3l3NAF9WfN6W3JOmf5drwpVqX78JtoGJ3A6W0a6ZnldM41w2fV5D490psKFTpMds8TJse/eHLFFsNHHjHgg==}
 
-  marked@18.0.6:
-    resolution: {integrity: sha512-MrV5puXBfuiy6wl6DLaq3BtIJQAJToAd5zt/ZKhRfGRAuFPALE7/4Y7jnxRQoEgK/pBgurGqLyAuRgZ2xOjr6w==}
+  marked@18.0.7:
+    resolution: {integrity: sha512-iDVQ5ldaiKXn6b2JroX5kgRfmwgqolW7NpaEzTl1k/2Zh1njIEN9yniyLV/mOvWwtsE8OGgkjsCYvijuPk1dtA==}
     engines: {node: '>= 20'}
     hasBin: true
 
@@ -1013,7 +1013,7 @@ snapshots:
     dependencies:
       hexo: 8.1.2(chokidar@3.6.0)
       hexo-pagination: 4.0.0
-      marked: 18.0.6
+      marked: 18.0.7
     transitivePeerDependencies:
       - chokidar
 
@@ -1143,7 +1143,7 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  marked@18.0.6: {}
+  marked@18.0.7: {}
 
   micro-memoize@4.2.0: {}
 
