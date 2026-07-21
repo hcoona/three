@@ -226,8 +226,8 @@ numbers increase by one without reuse. A2 accepts released A0 revision 3 as its 
 publishes pending revision 4, and publishes approved revision 5. Any other predecessor or additional
 revision stops A2. An existing target is handled only by the recovery matrix in section 12.
 
-Released A0 save aliases follow root-alias ordinal order, then normalized relative-path
-case-insensitive ordinal order with an ordinal tie-breaker. The save-entry array follows source-alias
+Released A0 save aliases follow root-alias ordinal order. Normalized relative paths then use
+case-insensitive ordinal order with ordinal tie-breaking. The save-entry array follows source-alias
 ordinal order. Exact baseline compatibility retains this complete alias-to-locator assignment.
 
 Discovery preserves every baseline `rootAlias` by location role and every `sourceAlias` by its
