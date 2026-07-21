@@ -66,36 +66,32 @@ public sealed class CredentialCoreServiceTests
     }
 
     [Fact]
-    public void ExecutePatCompatibilityRequestReturnsSuccessAndValidCacheKey()
+    public void ExecutePatCompatibilityFailsClosedBeforeProviderCacheOrExchange()
     {
-        var provider = new DeterministicFakeIdentityProvider();
-        var service = new CredentialCoreService(provider);
+        IdentityMaterial identity = CreateIdentityMaterial();
+        var provider = new StaticIdentityProvider(identity);
+        var cache = new ReportingDerivedCredentialCache(
+            DerivedCredentialCacheAvailability.Available);
+        var exchange = new CountingTokenExchange((_, _, _) =>
+            throw new InvalidOperationException("must not exchange"));
+        var service = new CredentialCoreService(provider, null, cache, exchange);
         CredentialRequest request = CreateGitRequest(
             flow: IdentityFlow.PatCompatibility,
-            kind: CredentialKind.PatCompatibility);
-        IdentityMaterial expectedIdentity = new DeterministicFakeIdentityProvider()
-            .GetIdentity(request);
+            kind: CredentialKind.PatCompatibility,
+            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested);
 
         CredentialResult result = service.Execute(request);
 
-        Assert.Equal(CredentialResultStatus.Success, result.Status);
-        Assert.Equal(1, provider.InvocationCount);
-        Assert.Equal("AzureDevOps", result.Username);
-        Assert.Equal(expectedIdentity.Account, result.Account);
-        Assert.Equal(expectedIdentity.Tenant, result.Tenant);
-        Assert.Equal(expectedIdentity.ExpiresAt, result.ExpiresAt);
-
-        string password = Assert.IsType<string>(result.Password);
-        Assert.Equal(Assert.IsType<string>(expectedIdentity.Secret), password);
-        Assert.Null(result.BearerToken);
-        Assert.Null(result.Error);
-        Assert.True(CorrelationId.TryParse(result.DiagnosticsCorrelationId, out _));
-
-        CacheKey cacheKey = Assert.IsType<CacheKey>(result.CacheKey);
-        Assert.True(CacheKeySchema.IsValid(cacheKey));
-        Assert.Equal(
-            CacheKeySchema.Create(request, expectedIdentity.Account, expectedIdentity.Tenant).Value,
-            cacheKey.Value);
+        Assert.Equal(CredentialResultStatus.FlowDeferred, result.Status);
+        Assert.Equal(0, provider.InvocationCount);
+        Assert.Equal(0, cache.PersistentAvailabilityCheckCount);
+        Assert.Equal(0, cache.PersistentReadCount);
+        Assert.Equal(0, cache.PersistentWriteCount);
+        Assert.Equal(0, exchange.InvocationCount);
+        AssertClosedFailureResult(result, identity);
+        CredentialError error = Assert.IsType<CredentialError>(result.Error);
+        Assert.Equal("PatCompatibilityDeferred", error.Code);
+        Assert.DoesNotContain("token", error.SafeMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -218,6 +214,7 @@ public sealed class CredentialCoreServiceTests
         Assert.Null(result.Account);
         Assert.Null(result.Tenant);
         Assert.Null(result.CacheKey);
+        Assert.Null(result.ExpiresAt);
         Assert.Null(result.Username);
         Assert.Null(result.Password);
         Assert.Null(result.BearerToken);
@@ -376,9 +373,14 @@ public sealed class CredentialCoreServiceTests
         var service = new CredentialCoreService(new DeterministicFakeIdentityProvider(), router);
 
         CredentialResult result = service.Execute(
-            CreateAzurePipelinesSystemAccessTokenRequest(
-                CachePolicyMode.NonPersistentCi,
-                ciContext: null));
+            CreateGitRequest() with
+            {
+                CiContext = new CiContext
+                {
+                    ExplicitCiMode = false,
+                    AllowsPersistentWrites = true,
+                },
+            });
 
         Assert.Equal(CredentialResultStatus.FlowDisabled, result.Status);
 
@@ -1380,11 +1382,16 @@ public sealed class CredentialCoreServiceTests
     }
 
     [Fact]
-    public void ExecuteAllowsOnlyExplicitAzurePipelinesSystemAccessTokenWithNonPersistentCi()
+    public void ExecuteAzurePipelinesSystemAccessTokenRequiresDedicatedOpaqueService()
     {
-        var acceptedProvider = new DeterministicFakeIdentityProvider();
-        var acceptedService = new CredentialCoreService(acceptedProvider);
-        CredentialRequest acceptedRequest = CreateAzurePipelinesSystemAccessTokenRequest(
+        IdentityMaterial identity = CreateIdentityMaterial();
+        var provider = new StaticIdentityProvider(identity);
+        var cache = new ReportingDerivedCredentialCache(
+            DerivedCredentialCacheAvailability.Available);
+        var exchange = new CountingTokenExchange((_, _, _) =>
+            throw new InvalidOperationException("must not exchange"));
+        var service = new CredentialCoreService(provider, null, cache, exchange);
+        CredentialRequest request = CreateAzurePipelinesSystemAccessTokenRequest(
             CachePolicyMode.NonPersistentCi,
             new CiContext
             {
@@ -1394,22 +1401,47 @@ public sealed class CredentialCoreServiceTests
                 AllowsPersistentWrites = false,
             });
 
-        CredentialResult acceptedResult = acceptedService.Execute(acceptedRequest);
+        CredentialResult result = service.Execute(request);
 
-        Assert.Equal(CredentialResultStatus.Success, acceptedResult.Status);
-        Assert.Equal(1, acceptedProvider.InvocationCount);
-        Assert.NotNull(acceptedResult.BearerToken);
+        Assert.Equal(CredentialResultStatus.CredentialUnavailable, result.Status);
+        Assert.Equal(0, provider.InvocationCount);
+        Assert.Equal(0, cache.PersistentAvailabilityCheckCount);
+        Assert.Equal(0, cache.PersistentReadCount);
+        Assert.Equal(0, cache.PersistentWriteCount);
+        Assert.Equal(0, exchange.InvocationCount);
+        AssertClosedFailureResult(result, identity);
+        CredentialError error = Assert.IsType<CredentialError>(result.Error);
+        Assert.Equal(
+            "AzurePipelinesSystemAccessTokenDedicatedServiceRequired",
+            error.Code);
+        Assert.DoesNotContain("SYSTEM_ACCESSTOKEN", error.SafeMessage, StringComparison.Ordinal);
+    }
 
-        foreach (CredentialRequest rejectedRequest in RejectedAzurePipelinesRequests())
-        {
-            var rejectedProvider = new DeterministicFakeIdentityProvider();
-            var rejectedService = new CredentialCoreService(rejectedProvider);
+    [Theory]
+    [MemberData(nameof(MalformedWp5FlowRequests))]
+    public void ExecuteMalformedWp5FlowRequestReturnsProtocolViolationBeforeFlowPolicy(
+        CredentialRequest request)
+    {
+        IdentityMaterial identity = CreateIdentityMaterial();
+        var provider = new StaticIdentityProvider(identity);
+        var cache = new ReportingDerivedCredentialCache(
+            DerivedCredentialCacheAvailability.Available);
+        var exchange = new CountingTokenExchange((_, _, _) =>
+            throw new InvalidOperationException("must not exchange"));
+        var service = new CredentialCoreService(provider, null, cache, exchange);
 
-            CredentialResult rejectedResult = rejectedService.Execute(rejectedRequest);
+        CredentialResult result = service.Execute(request);
 
-            Assert.Equal(CredentialResultStatus.FlowDisabled, rejectedResult.Status);
-            Assert.Equal(0, rejectedProvider.InvocationCount);
-        }
+        Assert.Equal(CredentialResultStatus.ProtocolViolation, result.Status);
+        Assert.Equal(0, provider.InvocationCount);
+        Assert.Equal(0, cache.PersistentAvailabilityCheckCount);
+        Assert.Equal(0, cache.PersistentReadCount);
+        Assert.Equal(0, cache.PersistentWriteCount);
+        Assert.Equal(0, exchange.InvocationCount);
+        AssertClosedFailureResult(result, identity);
+        CredentialError error = Assert.IsType<CredentialError>(result.Error);
+        Assert.Equal(CredentialErrorKind.ProtocolViolation, error.Kind);
+        Assert.Equal("ProtocolViolation", error.Code);
     }
 
     [Fact]
@@ -1425,7 +1457,7 @@ public sealed class CredentialCoreServiceTests
 
         CredentialResult result = service.Execute(request);
 
-        Assert.Equal(CredentialResultStatus.FlowDisabled, result.Status);
+        Assert.Equal(CredentialResultStatus.CredentialUnavailable, result.Status);
         Assert.Equal(0, provider.InvocationCount);
     }
 
@@ -2081,11 +2113,6 @@ public sealed class CredentialCoreServiceTests
             { CreateGitRequest() },
             { CreateGitRequest(kind: CredentialKind.BearerToken) },
             {
-                CreateGitRequest(
-                    flow: IdentityFlow.PatCompatibility,
-                    kind: CredentialKind.PatCompatibility)
-            },
-            {
                 CreatePackageRequest(CredentialEcosystem.Npm, CredentialKind.NpmAuthToken)
             },
             {
@@ -2099,11 +2126,6 @@ public sealed class CredentialCoreServiceTests
         new()
         {
             { CreateGitRequest() },
-            {
-                    CreateGitRequest(
-                        flow: IdentityFlow.PatCompatibility,
-                        kind: CredentialKind.PatCompatibility)
-            },
             {
                     CreatePackageRequest(
                         CredentialEcosystem.NuGet,
@@ -2242,6 +2264,45 @@ public sealed class CredentialCoreServiceTests
             },
         };
 
+    public static TheoryData<CredentialRequest> MalformedWp5FlowRequests()
+    {
+        CredentialRequest pat = CreateGitRequest(
+            flow: IdentityFlow.PatCompatibility,
+            kind: CredentialKind.PatCompatibility,
+            cachePolicy: CachePolicyMode.FuturePersistentCacheRequested);
+        CredentialRequest systemAccessToken =
+            CreateAzurePipelinesSystemAccessTokenRequest(
+                CachePolicyMode.NonPersistentCi,
+                new CiContext
+                {
+                    ExplicitCiMode = true,
+                    Provider = CiProviderNames.AzurePipelines,
+                    HasAzurePipelinesSystemAccessToken = true,
+                    AllowsPersistentWrites = false,
+                });
+
+        return new TheoryData<CredentialRequest>
+        {
+            pat with { ContractMajor = ContractVersions.CredentialContractV2Major },
+            systemAccessToken with
+            {
+                ContractMajor = ContractVersions.CredentialContractV2Major,
+            },
+            pat with { Operation = (CredentialOperation)int.MaxValue },
+            systemAccessToken with { Operation = CredentialOperation.Unspecified },
+            pat with { Resource = null! },
+            systemAccessToken with { Resource = null! },
+            pat with { AccountHint = "account\u001B" },
+            pat with { TenantHint = "tenant\u009F" },
+            systemAccessToken with { AccountHint = "account\u001B" },
+            systemAccessToken with { TenantHint = "tenant\u009F" },
+            pat with { Ecosystem = (CredentialEcosystem)int.MaxValue },
+            systemAccessToken with { CachePolicy = (CachePolicyMode)int.MaxValue },
+            pat with { CredentialKind = CredentialKind.BearerToken },
+            systemAccessToken with { CredentialKind = CredentialKind.BasicPassword },
+        };
+    }
+
     public static TheoryData<CredentialRequest, CredentialResultStatus>
         BlockedDirectMsalRequests() =>
         new()
@@ -2256,7 +2317,7 @@ public sealed class CredentialCoreServiceTests
                 CreateAzurePipelinesSystemAccessTokenRequest(
                     CachePolicyMode.NonPersistentCi,
                     ciContext: null),
-                CredentialResultStatus.FlowDisabled
+                CredentialResultStatus.CredentialUnavailable
             },
             {
                 CreateGitRequest(

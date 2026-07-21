@@ -1,5 +1,7 @@
 using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.AzurePipelines;
 using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
+using Hcoona.AzureAuth.CredProvider.Platform.TokenMaterialization;
 
 namespace Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
 
@@ -59,7 +61,7 @@ public sealed class AuthPhase14VerticalSliceService
         ValidateLoginRequest(request);
 
         CredentialRequest credentialRequest = CreateCredentialRequest(request);
-        CredentialResult credentialResult = credentialCoreService.Execute(credentialRequest);
+        CredentialResult credentialResult = ExecuteCredentialRequest(credentialRequest);
         return new AuthPhase14LoginResult
         {
             CredentialResult = credentialResult,
@@ -68,10 +70,32 @@ public sealed class AuthPhase14VerticalSliceService
         };
     }
 
+    internal CredentialResult ExecuteCredentialRequest(CredentialRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (CredentialCoreService.TryGetProtocolViolation(
+                request,
+                out string? protocolViolation))
+        {
+            return CreateProtocolViolationResult(protocolViolation);
+        }
+
+        return request.IdentityFlow switch
+        {
+            IdentityFlow.AzurePipelinesSystemAccessToken =>
+                AzurePipelinesSystemAccessTokenService.Handle(
+                        request,
+                        environmentVariableReader(AzurePipelinesSystemAccessTokenVariable))
+                    .CreateProtocolResult("wp5-azure-pipelines-system-access-token"),
+            IdentityFlow.PatCompatibility => CreatePatDeferredResult(request),
+            _ => credentialCoreService.Execute(request),
+        };
+    }
+
     public static AuthPhase14LogoutResult Logout() =>
         new() { PersistentDerivedCredentialsRemoved = false };
 
-    private void ValidateLoginRequest(AuthPhase14LoginRequest request)
+    private static void ValidateLoginRequest(AuthPhase14LoginRequest request)
     {
         IdentityFlowState state = IdentityFlowPolicy.GetMvpState(request.IdentityFlow);
         if (state == IdentityFlowState.Deferred)
@@ -84,36 +108,7 @@ public sealed class AuthPhase14VerticalSliceService
             throw new NotSupportedException("Requested identity flow is not supported for MVP.");
         }
 
-        if (
-            request.IdentityFlow == IdentityFlow.PatCompatibility
-            && !request.ExplicitPatMaterialProvided
-        )
-        {
-            throw new InvalidOperationException(
-                "PAT compatibility login requires an explicit --pat value and does not persist it."
-            );
-        }
-
-        if (request.IdentityFlow != IdentityFlow.AzurePipelinesSystemAccessToken)
-        {
-            return;
-        }
-
-        if (!request.ExplicitAzurePipelinesCiMode)
-        {
-            throw new InvalidOperationException(
-                "Azure Pipelines system access token login requires explicit --ci azure-pipelines."
-            );
-        }
-
-        if (string.IsNullOrWhiteSpace(environmentVariableReader(
-                AzurePipelinesSystemAccessTokenVariable
-            )))
-        {
-            throw new InvalidOperationException(
-                "Azure Pipelines system access token is unavailable in the environment."
-            );
-        }
+        _ = request.ExplicitPatMaterialProvided;
     }
 
     private static CredentialRequest CreateCredentialRequest(AuthPhase14LoginRequest request)
@@ -146,7 +141,7 @@ public sealed class AuthPhase14VerticalSliceService
             CiContext = azurePipelines
                 ? new CiContext
                 {
-                    ExplicitCiMode = true,
+                    ExplicitCiMode = request.ExplicitAzurePipelinesCiMode,
                     Provider = CiProviderNames.AzurePipelines,
                     HasAzurePipelinesSystemAccessToken = true,
                     AllowsPersistentWrites = false,
@@ -154,6 +149,35 @@ public sealed class AuthPhase14VerticalSliceService
                 : null,
         };
     }
+
+    private static CredentialResult CreatePatDeferredResult(CredentialRequest request)
+    {
+        PatCompatibilityPolicyDecision decision = PatCompatibilityPolicy.Evaluate(request);
+        return new CredentialResult
+        {
+            Status = CredentialResultStatus.FlowDeferred,
+            DiagnosticsCorrelationId = "wp5-pat-compatibility-deferred",
+            Error = new CredentialError
+            {
+                Kind = CredentialErrorKind.FlowDeferred,
+                Code = decision.Code,
+                SafeMessage = decision.SafeMessage,
+            },
+        };
+    }
+
+    private static CredentialResult CreateProtocolViolationResult(string safeMessage) =>
+        new()
+        {
+            Status = CredentialResultStatus.ProtocolViolation,
+            DiagnosticsCorrelationId = "wp5-credential-request-protocol-violation",
+            Error = new CredentialError
+            {
+                Kind = CredentialErrorKind.ProtocolViolation,
+                Code = "ProtocolViolation",
+                SafeMessage = safeMessage,
+            },
+        };
 
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();

@@ -167,7 +167,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
-    public async Task ConfigureNpmCiTemporaryUsesAzurePipelinesCredentialRequest()
+    public async Task ConfigureNpmCiTemporaryBypassesIdentityProvider()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         var identityProvider = new CapturingIdentityProvider();
@@ -185,16 +185,15 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             TestContext.Current.CancellationToken
         );
 
-        CredentialRequest request = Assert.Single(identityProvider.Requests);
+        Assert.Empty(identityProvider.Requests);
         Assert.Equal(ConfigurationPlanState.Applied, result.PlanResult.State);
-        Assert.Equal(IdentityFlow.AzurePipelinesSystemAccessToken, request.IdentityFlow);
-        Assert.Equal(InteractivePolicy.Never, request.InteractivePolicy);
-        Assert.Equal(CachePolicyMode.NonPersistentCi, request.CachePolicy);
-        CiContext ciContext = Assert.IsType<CiContext>(request.CiContext);
-        Assert.Equal(CiProviderNames.AzurePipelines, ciContext.Provider);
-        Assert.True(ciContext.ExplicitCiMode);
-        Assert.True(ciContext.HasAzurePipelinesSystemAccessToken);
-        Assert.False(ciContext.AllowsPersistentWrites);
+        Assert.Equal(ConfigurationScope.CiTemporary, result.PlanResult.Plan.Scope);
+        Assert.True(result.PlanResult.Plan.ContainsCredentialMaterial);
+        Assert.Contains(
+            "system-token",
+            fileSystem.ReadAllText(service.Paths.NpmCiTemporaryNpmrcPath),
+            StringComparison.Ordinal
+        );
     }
 
     [Fact]
@@ -316,6 +315,55 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
     }
 
     [Fact]
+    public async Task LogoutWithMalformedManifestRemovesKnownContainersAndContinuesCleanup()
+    {
+        const string MalformedManifest = """{"secret":"must-not-be-reported"}""";
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var service = CreateService(fileSystem, environmentVariableReader: ReadCiEnvironment);
+        foreach (CredentialEcosystem ecosystem in
+            new[] { CredentialEcosystem.Npm, CredentialEcosystem.Pnpm, CredentialEcosystem.Yarn })
+        {
+            await service.ConfigureAsync(
+                ecosystem,
+                ConfigurationPhase14Scope.CiTemporary,
+                TestContext.Current.CancellationToken
+            );
+        }
+
+        string npmManifestPath = Path.Combine(
+            service.Paths.CiTemporaryManifestDirectoryPath,
+            "npm-ci-temporary-ownership-manifest.json"
+        );
+        fileSystem.WriteAllText(npmManifestPath, MalformedManifest);
+
+        ConfigurationPhase14CleanupResult result = await service.LogoutAsync(
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(3, result.Ecosystems.Count);
+        ConfigurationPhase14CleanupEcosystemResult npm = Assert.Single(
+            result.Ecosystems,
+            ecosystem => ecosystem.Ecosystem == CredentialEcosystem.Npm
+        );
+        Assert.Equal("incomplete", npm.State);
+        Assert.True(npm.OwnershipManifestPresent);
+        Assert.False(npm.TemporaryContainerPresent);
+        Assert.Equal(MalformedManifest, fileSystem.ReadAllText(npmManifestPath));
+        Assert.False(fileSystem.FileExists(service.Paths.NpmCiTemporaryNpmrcPath));
+        Assert.False(fileSystem.FileExists(service.Paths.PnpmCiTemporaryNpmrcPath));
+        Assert.False(fileSystem.DirectoryExists(service.Paths.YarnCiTemporaryHomePath));
+        Assert.All(
+            result.Ecosystems.Where(ecosystem => ecosystem.Ecosystem != CredentialEcosystem.Npm),
+            ecosystem =>
+            {
+                Assert.Equal("removed", ecosystem.State);
+                Assert.False(ecosystem.OwnershipManifestPresent);
+                Assert.False(ecosystem.TemporaryContainerPresent);
+            }
+        );
+    }
+
+    [Fact]
     public async Task CleanupCiTemporaryRemovesOrphanedKnownTemporaryContainer()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
@@ -339,6 +387,75 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
         Assert.Equal(0, cleanupResult.ChangeCount);
         Assert.False(cleanupResult.TemporaryContainerPresent);
         Assert.False(fileSystem.FileExists(service.Paths.NpmCiTemporaryNpmrcPath));
+    }
+
+    [Fact]
+    public async Task CleanupCiTemporaryRemovesCompleteOwnedManifestOnlyState()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var service = CreateService(fileSystem, environmentVariableReader: ReadCiEnvironment);
+        await service.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+        string manifestPath = Path.Combine(
+            service.Paths.CiTemporaryManifestDirectoryPath,
+            "npm-ci-temporary-ownership-manifest.json"
+        );
+        fileSystem.DeleteFile(service.Paths.NpmCiTemporaryNpmrcPath);
+
+        ConfigurationPhase14CleanupResult result = await service.CleanupAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14CleanupEcosystemResult cleanupResult = Assert.Single(
+            result.Ecosystems
+        );
+        Assert.Equal("removed", cleanupResult.State);
+        Assert.False(cleanupResult.OwnershipManifestPresent);
+        Assert.False(cleanupResult.TemporaryContainerPresent);
+        Assert.False(fileSystem.FileExists(manifestPath));
+    }
+
+    [Fact]
+    public async Task CleanupCiTemporaryPreservesMismatchedManifestOnlyStateAsIncomplete()
+    {
+        var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
+        var service = CreateService(fileSystem, environmentVariableReader: ReadCiEnvironment);
+        await service.ConfigureAsync(
+            CredentialEcosystem.Npm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+        string npmManifestPath = Path.Combine(
+            service.Paths.CiTemporaryManifestDirectoryPath,
+            "npm-ci-temporary-ownership-manifest.json"
+        );
+        string pnpmManifestPath = Path.Combine(
+            service.Paths.CiTemporaryManifestDirectoryPath,
+            "pnpm-ci-temporary-ownership-manifest.json"
+        );
+        string manifestJson = fileSystem.ReadAllText(npmManifestPath);
+        fileSystem.DeleteFile(service.Paths.NpmCiTemporaryNpmrcPath);
+        fileSystem.DeleteFile(npmManifestPath);
+        fileSystem.WriteAllText(pnpmManifestPath, manifestJson);
+
+        ConfigurationPhase14CleanupResult result = await service.CleanupAsync(
+            CredentialEcosystem.Pnpm,
+            ConfigurationPhase14Scope.CiTemporary,
+            TestContext.Current.CancellationToken
+        );
+
+        ConfigurationPhase14CleanupEcosystemResult cleanupResult = Assert.Single(
+            result.Ecosystems
+        );
+        Assert.Equal("incomplete", cleanupResult.State);
+        Assert.True(cleanupResult.OwnershipManifestPresent);
+        Assert.False(cleanupResult.TemporaryContainerPresent);
+        Assert.True(fileSystem.FileExists(pnpmManifestPath));
     }
 
     [Fact]
@@ -383,6 +500,7 @@ public sealed class ConfigurationPhase14VerticalSliceServiceTests
             {
                 FileSystem = fileSystem,
                 StateDirectoryPath = "/state/phase14",
+                AzurePipelinesJobScopeId = "phase14-test-job",
                 CredentialCoreService = identityProvider is null
                     ? null
                     : new CredentialCoreService(identityProvider),

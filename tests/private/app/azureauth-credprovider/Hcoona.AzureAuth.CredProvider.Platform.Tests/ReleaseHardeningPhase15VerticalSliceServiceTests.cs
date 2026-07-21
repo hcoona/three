@@ -81,6 +81,32 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
     }
 
     [Fact]
+    public void EvaluateRecordsOpaqueCiEvidenceAndPatDeferral()
+    {
+        ReleaseHardeningPhase15MatrixResult result =
+            ReleaseHardeningPhase15VerticalSliceService.Evaluate();
+
+        ReleaseHardeningPhase15Check opaqueCi = Assert.Single(
+            result.Checks,
+            static candidate =>
+                candidate.Id == "opaque-azure-pipelines-system-access-token"
+        );
+        Assert.Equal(ReleaseHardeningPhase15CheckStatus.Pass, opaqueCi.Status);
+        Assert.Contains("no cache", opaqueCi.Notes, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Git bearer", opaqueCi.Notes, StringComparison.Ordinal);
+        Assert.Contains("npm/pnpm/Yarn", opaqueCi.Notes, StringComparison.Ordinal);
+        Assert.Contains("NuGet and Python mappings are disabled", opaqueCi.Notes,
+            StringComparison.Ordinal);
+
+        ReleaseHardeningPhase15Check pat = Assert.Single(
+            result.Checks,
+            static candidate => candidate.Id == "pat-compatibility-production-path"
+        );
+        Assert.Equal(ReleaseHardeningPhase15CheckStatus.DeferredOptionalFeature, pat.Status);
+        Assert.Contains("deferred", pat.Notes, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void EvaluateOptionalAzureAuthWslBackendDoesNotBlockMvpAcceptance()
     {
         ReleaseHardeningPhase15MatrixResult result =

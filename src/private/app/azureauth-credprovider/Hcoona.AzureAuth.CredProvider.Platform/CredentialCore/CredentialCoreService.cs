@@ -14,6 +14,9 @@ public sealed class CredentialCoreService
     private const string ProtocolViolationCode = "ProtocolViolation";
     private const string TokenExchangeFailedCode = "TokenExchangeFailed";
     private const string TokenExchangeUnavailableCode = "TokenExchangeUnavailable";
+    private const string OpaqueAzurePipelinesTokenCode =
+        "AzurePipelinesSystemAccessTokenDedicatedServiceRequired";
+    private const string PatCompatibilityDeferredCode = "PatCompatibilityDeferred";
 
     private readonly DiagnosticRouter? _diagnosticRouter;
     private readonly IDerivedCredentialCache _derivedCredentialCache;
@@ -61,6 +64,29 @@ public sealed class CredentialCoreService
                 CredentialErrorKind.ProtocolViolation,
                 ProtocolViolationCode,
                 protocolViolation);
+        }
+
+        if (request.IdentityFlow == IdentityFlow.AzurePipelinesSystemAccessToken)
+        {
+            return CreateFailureResult(
+                request,
+                correlationId,
+                CredentialResultStatus.CredentialUnavailable,
+                CredentialErrorKind.CredentialUnavailable,
+                OpaqueAzurePipelinesTokenCode,
+                "Azure Pipelines system access tokens require the dedicated opaque credential service.");
+        }
+
+        if (request.IdentityFlow == IdentityFlow.PatCompatibility)
+        {
+            return CreateFailureResult(
+                request,
+                correlationId,
+                CredentialResultStatus.FlowDeferred,
+                CredentialErrorKind.FlowDeferred,
+                PatCompatibilityDeferredCode,
+                "PAT compatibility is deferred and has no production acquisition or materialization path.",
+                IdentityFlowState.Deferred);
         }
 
         if (request.Operation != CredentialOperation.Get)
@@ -609,7 +635,7 @@ public sealed class CredentialCoreService
                 InteractivePolicy = InteractivePolicy.HostToolAllows,
             });
 
-    private static bool TryGetProtocolViolation(
+    internal static bool TryGetProtocolViolation(
         CredentialRequest request,
         [NotNullWhen(true)]
         out string? protocolViolation)

@@ -118,7 +118,7 @@ internal static class CliApplication
                 CliCommand.Cleanup => HandleCleanup(invocation, stdout, stderr, runtimeOptions),
                 CliCommand.Acceptance => HandleAcceptance(invocation, stdout),
                 CliCommand.Login => HandleLogin(invocation, stdout, stderr, runtimeOptions),
-                CliCommand.Logout => HandleLogout(invocation, stdout),
+                CliCommand.Logout => HandleLogout(invocation, stdout, stderr, runtimeOptions),
                 _ => throw new InvalidOperationException("Unsupported CLI command."),
             };
         }
@@ -421,6 +421,16 @@ internal static class CliApplication
                 return NotImplementedExitCode;
             }
 
+            if (invocation.CiMode == CliCiMode.AzurePipelines
+                && unconfigureResult.OwnershipManifestPresent)
+            {
+                TryWriteDiagnosticText(
+                    stderr,
+                    "error: CI temporary credential cleanup is incomplete; "
+                        + "the ownership manifest was preserved for diagnosis.");
+                return NotImplementedExitCode;
+            }
+
             WriteText(stdout, BuildConfigurationPhase14Output(invocation, unconfigureResult));
             return SuccessExitCode;
         }
@@ -573,10 +583,45 @@ internal static class CliApplication
         return SuccessExitCode;
     }
 
-    private static int HandleLogout(CliInvocation invocation, TextWriter stdout)
+    private static int HandleLogout(
+        CliInvocation invocation,
+        TextWriter stdout,
+        TextWriter stderr,
+        CliRuntimeOptions? runtimeOptions)
     {
         AuthPhase14LogoutResult logoutResult = AuthPhase14VerticalSliceService.Logout();
-        WriteText(stdout, BuildLogoutOutput(invocation, logoutResult));
+        ConfigurationPhase14CleanupResult cleanupResult;
+        try
+        {
+            cleanupResult = CreateConfigurationPhase14VerticalSliceService(runtimeOptions)
+                .LogoutAsync()
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (Exception exception)
+            when (exception is IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException
+                or NotSupportedException
+                or ArgumentException
+                or System.Text.Json.JsonException)
+        {
+            TryWriteDiagnosticText(
+                stderr,
+                "error: authentication state was cleared, but CI temporary cleanup failed.");
+            return NotImplementedExitCode;
+        }
+
+        if (!IsConfigurationPhase14CleanupSuccess(cleanupResult))
+        {
+            TryWriteDiagnosticText(
+                stderr,
+                "error: authentication state was cleared, but CI temporary cleanup was incomplete.");
+            return NotImplementedExitCode;
+        }
+
+        WriteText(stdout, BuildLogoutOutput(invocation, logoutResult, cleanupResult));
         return SuccessExitCode;
     }
 
@@ -1417,10 +1462,10 @@ internal static class CliApplication
             $"  {CommandName} login [--browser|--device-code|--pat <value>]",
             $"  {CommandName} login --ci azure-pipelines",
             string.Empty,
-            "Accepted MVP flows:",
+            "Identity flow options:",
             "  --browser                    Use interactive browser authentication.",
             "  --device-code                Use device-code authentication.",
-            "  --pat <value>                Explicit PAT compatibility; never persisted.",
+            "  --pat <value>                Deferred PAT compatibility placeholder; never persisted.",
             "  --ci azure-pipelines         Use SYSTEM_ACCESSTOKEN without persistence.",
             string.Empty,
             "Deferred service identity flows:",
@@ -1442,7 +1487,7 @@ internal static class CliApplication
             $"  {CommandName} logout [--help]",
             string.Empty,
             "Status:",
-            "  Clears product-owned authentication state only.",
+            "  Clears product-owned authentication state, then job-scoped CI temporary state.",
             string.Empty,
             "Options:",
             "  -h, --help                   Show help.");
@@ -1459,8 +1504,9 @@ internal static class CliApplication
             "environment-probing: disabled",
             "persistent-cache: disabled",
             "persistent-derived-credentials: disabled",
-            "accepted-identity-flows: browser, device-code, pat, azure-pipelines",
-            "deferred-identity-flows: service-principal, managed-identity, workload-identity",
+            "accepted-identity-flows: browser, device-code, azure-pipelines",
+            "deferred-identity-flows: pat-compatibility, service-principal, managed-identity, workload-identity",
+            "pat-compatibility: deferred-disabled",
             "dry-run-rendering: enabled",
             "mutating-commands: git-nuget-auth-config-cleanup",
             $"supported-ecosystems: {string.Join(", ", SupportedEcosystems)}");
@@ -1479,6 +1525,7 @@ internal static class CliApplication
             "full-release-evidence: "
                 + (result.FullReleaseEvidenceComplete ? "complete" : "deferred"),
             "blocking-checks: " + (result.BlockingFailuresPresent ? "present" : "none"),
+            "pat-compatibility: deferred-disabled",
             "deferred-non-mvp: " + JoinCheckIds(
                 result.Checks,
                 ReleaseHardeningPhase15CheckStatus.DeferredNonMvp),
@@ -1511,15 +1558,18 @@ internal static class CliApplication
         AuthPhase14LoginResult loginResult)
     {
         CredentialResult credentialResult = loginResult.CredentialResult;
+        bool opaqueAzurePipelinesToken =
+            loginResult.IdentityFlow == IdentityFlow.AzurePipelinesSystemAccessToken;
         return JoinLines(
             "command: login",
             $"phase: {PhaseName}",
             $"ci-mode: {GetCiModeText(invocation.CiMode)}",
             $"identity-flow: {GetIdentityFlowText(loginResult.IdentityFlow)}",
             $"status: {credentialResult.Status.ToString().ToLowerInvariant()}",
-            $"account: {credentialResult.Account ?? "unselected"}",
-            $"tenant: {credentialResult.Tenant ?? "default"}",
-            "credential-material: issued-not-printed",
+            $"account: {credentialResult.Account ?? (opaqueAzurePipelinesToken ? "unbound" : "unselected")}",
+            $"tenant: {credentialResult.Tenant ?? (opaqueAzurePipelinesToken ? "unbound" : "default")}",
+            "credential-material: "
+                + (opaqueAzurePipelinesToken ? "provided-not-printed" : "issued-not-printed"),
             "persistent-derived-credentials: "
                 + (loginResult.PersistentDerivedCredentialsStored ? "stored" : "disabled"),
             "plaintext-fallback: disabled");
@@ -1527,7 +1577,8 @@ internal static class CliApplication
 
     private static string BuildLogoutOutput(
         CliInvocation invocation,
-        AuthPhase14LogoutResult logoutResult)
+        AuthPhase14LogoutResult logoutResult,
+        ConfigurationPhase14CleanupResult cleanupResult)
     {
         return JoinLines(
             "command: logout",
@@ -1535,6 +1586,8 @@ internal static class CliApplication
             $"ci-mode: {GetCiModeText(invocation.CiMode)}",
             "persistent-derived-credentials-removed: "
                 + (logoutResult.PersistentDerivedCredentialsRemoved ? "yes" : "none"),
+            $"ci-temporary-removed-change-count: {cleanupResult.ChangeCount}",
+            "ci-temporary-cleanup: complete",
             "plaintext-fallback: disabled");
     }
 
@@ -1848,8 +1901,9 @@ internal static class CliApplication
                 + GetLocalShellHelperShorthandStatusText(doctorResult),
             "protocol-payload: "
                 + (doctorResult.ProtocolPayloadCaptured ? "captured-not-printed" : "not-captured"),
-            "auth-accepted-identity-flows: browser, device-code, pat, azure-pipelines",
-            "auth-deferred-identity-flows: service-principal, managed-identity, workload-identity",
+            "auth-accepted-identity-flows: browser, device-code, azure-pipelines",
+            "auth-deferred-identity-flows: pat-compatibility, service-principal, managed-identity, workload-identity",
+            "auth-pat-compatibility: deferred-disabled",
             "auth-persistent-derived-credentials: disabled",
             "auth-plaintext-fallback: disabled",
         ];
@@ -2226,7 +2280,9 @@ internal static class CliApplication
         ConfigurationPhase14CleanupResult cleanupResult)
     {
         ArgumentNullException.ThrowIfNull(cleanupResult);
-        return cleanupResult.Ecosystems.All(static result => !result.TemporaryContainerPresent);
+        return cleanupResult.Ecosystems.All(static result =>
+            !result.TemporaryContainerPresent && !result.OwnershipManifestPresent
+        );
     }
 
     private static string JoinCheckIds(

@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
 using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.AzurePipelines;
 using Hcoona.AzureAuth.CredProvider.Platform.Configuration;
 using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Hcoona.AzureAuth.CredProvider.Platform.FileSystem;
@@ -10,6 +11,10 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
 
 public sealed record ConfigurationPhase14VerticalSliceOptions
 {
+    public string? AzurePipelinesJobScopeId { get; init; }
+
+    public string? CiTemporaryProductRootPath { get; init; }
+
     public string? StateDirectoryPath { get; init; }
 
     public IFileSystem? FileSystem { get; init; }
@@ -24,6 +29,10 @@ public sealed record ConfigurationPhase14ResolvedPaths
     public required string StateDirectoryPath { get; init; }
 
     public required string ManifestDirectoryPath { get; init; }
+
+    public required string CiTemporaryRootPath { get; init; }
+
+    public required string CiTemporaryManifestDirectoryPath { get; init; }
 
     public required string OwnershipManifestPath { get; init; }
 
@@ -122,8 +131,12 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private const string PythonPlanId = "phase14-python-keyring-configure-plan";
     private const string PythonChangeSetId = "phase14-python-keyring-configure-changeset";
     private const string PythonManifestId = "phase14-python-keyring";
+    private const string NpmCredentialManifestId = "phase12-npmrc-credential";
+    private const string YarnCredentialManifestId = "phase13-yarnrc-credential";
     private const string PhysicalTargetKey = "physical-target";
     private const string AzurePipelinesSystemAccessTokenVariable = "SYSTEM_ACCESSTOKEN";
+    private const string AzurePipelinesJobScopeIdVariable = "SYSTEM_JOBID";
+    private const int MaximumJobScopeIdLength = 128;
     private const string NpmUserConfigEnvironmentVariable = "NPM_CONFIG_USERCONFIG";
     private const string LowercaseNpmUserConfigEnvironmentVariable = "npm_config_userconfig";
     private const string CleanupStateNotNeeded = "not-needed";
@@ -139,6 +152,8 @@ public sealed class ConfigurationPhase14VerticalSliceService
     private readonly CredentialCoreService credentialCoreService;
     private readonly Func<string, string?> environmentVariableReader;
     private readonly IFileSystem fileSystem;
+    private readonly string? jobScopeId;
+    private readonly string? rawJobScopeId;
     private readonly ConfigurationPhase14ResolvedPaths paths;
 
     public ConfigurationPhase14VerticalSliceService(
@@ -150,7 +165,10 @@ public sealed class ConfigurationPhase14VerticalSliceService
         credentialCoreService = options.CredentialCoreService ?? new CredentialCoreService();
         environmentVariableReader =
             options.EnvironmentVariableReader ?? Environment.GetEnvironmentVariable;
-        paths = ResolvePaths(options, fileSystem);
+        rawJobScopeId = options.AzurePipelinesJobScopeId
+            ?? environmentVariableReader(AzurePipelinesJobScopeIdVariable);
+        jobScopeId = IsValidJobScopeId(rawJobScopeId) ? rawJobScopeId : null;
+        paths = ResolvePaths(options, fileSystem, jobScopeId);
     }
 
     public ConfigurationPhase14ResolvedPaths Paths => paths;
@@ -161,6 +179,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
         CancellationToken cancellationToken = default
     )
     {
+        EnsureCiJobScope(scope);
         string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
         List<ConfigurationPlanResult> planResults = [];
         foreach (ConfigurationChangePlan plan in CreateApplyPlans(ecosystem, scope))
@@ -182,11 +201,33 @@ public sealed class ConfigurationPhase14VerticalSliceService
         CancellationToken cancellationToken = default
     )
     {
+        EnsureCiJobScope(scope);
         string ownershipManifestPath = GetOwnershipManifestPath(ecosystem, scope);
-        if (!TryLoadOwnershipManifest(
-                ownershipManifestPath,
-                out ConfigurationOwnershipManifest? manifest,
-                out string? manifestJson))
+        ConfigurationOwnershipManifest? manifest;
+        string? manifestJson;
+        try
+        {
+            if (!TryLoadOwnershipManifest(
+                    ownershipManifestPath,
+                    out manifest,
+                    out manifestJson))
+            {
+                return CreateResult(
+                    [CreateNoOpPlanResult(ConfigurationPlanOperation.Remove)],
+                    ownershipManifestPath);
+            }
+        }
+        catch (Exception exception)
+            when (scope == ConfigurationPhase14Scope.CiTemporary
+                && IsExpectedOwnershipManifestReadOrParseFailure(exception))
+        {
+            DeleteKnownCiTemporaryContainer(ecosystem);
+            return CreateResult(
+                [CreateNoOpPlanResult(ConfigurationPlanOperation.Remove)],
+                ownershipManifestPath);
+        }
+
+        if (!OwnershipManifestMatchesExpectedState(manifest, ecosystem, scope))
         {
             return CreateResult(
                 [CreateNoOpPlanResult(ConfigurationPlanOperation.Remove)],
@@ -271,6 +312,7 @@ public sealed class ConfigurationPhase14VerticalSliceService
             };
         }
 
+        EnsureCiJobScope(scope);
         List<ConfigurationPhase14CleanupEcosystemResult> cleanupResults = [];
         foreach (CredentialEcosystem targetEcosystem in GetCleanupEcosystems(ecosystem))
         {
@@ -287,6 +329,28 @@ public sealed class ConfigurationPhase14VerticalSliceService
             Ecosystems = cleanupResults,
             PersistentDerivedCredentialsRemoved = false,
         };
+    }
+
+    public ValueTask<ConfigurationPhase14CleanupResult> LogoutAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (rawJobScopeId is null)
+        {
+            return ValueTask.FromResult(new ConfigurationPhase14CleanupResult
+            {
+                Paths = paths,
+                Scope = ConfigurationPhase14Scope.CiTemporary,
+                Ecosystems = [],
+                PersistentDerivedCredentialsRemoved = false,
+            });
+        }
+
+        return CleanupAsync(
+            ecosystem: null,
+            ConfigurationPhase14Scope.CiTemporary,
+            cancellationToken
+        );
     }
 
     private IReadOnlyList<ConfigurationChangePlan> CreateApplyPlans(
@@ -422,51 +486,47 @@ public sealed class ConfigurationPhase14VerticalSliceService
     )
     {
         bool ciTemporary = scope == ConfigurationPhase14Scope.CiTemporary;
-        if (
-            ciTemporary
-            && string.IsNullOrWhiteSpace(environmentVariableReader(
-                AzurePipelinesSystemAccessTokenVariable
-            ))
-        )
+        var request = new CredentialRequest
         {
-            throw new InvalidOperationException(
-                "Azure Pipelines system access token is unavailable in the environment."
-            );
-        }
-
-        CredentialResult result = credentialCoreService.Execute(
-            new CredentialRequest
-            {
-                Ecosystem = ecosystem,
-                Operation = CredentialOperation.Get,
-                Resource = resource,
-                ServiceIdentity = "default",
-                RequestedAudience = TokenAudience.AzureArtifacts,
-                CredentialKind = CredentialKind.NpmAuthToken,
-                IdentityFlow = ciTemporary
-                    ? IdentityFlow.AzurePipelinesSystemAccessToken
-                    : IdentityFlow.DeviceCode,
-                InteractivePolicy = ciTemporary
-                    ? InteractivePolicy.Never
-                    : InteractivePolicy.UserAllowed,
-                CachePolicy = ciTemporary
-                    ? CachePolicyMode.NonPersistentCi
-                    : CachePolicyMode.ProductPersistentCacheDisabled,
-                CiContext = ciTemporary
-                    ? new CiContext
-                    {
-                        ExplicitCiMode = true,
-                        Provider = CiProviderNames.AzurePipelines,
-                        HasAzurePipelinesSystemAccessToken = true,
-                        AllowsPersistentWrites = false,
-                    }
-                    : null,
-            }
-        );
+            Ecosystem = ecosystem,
+            Operation = CredentialOperation.Get,
+            Resource = resource,
+            ServiceIdentity = "default",
+            RequestedAudience = TokenAudience.AzureArtifacts,
+            CredentialKind = CredentialKind.NpmAuthToken,
+            IdentityFlow = ciTemporary
+                ? IdentityFlow.AzurePipelinesSystemAccessToken
+                : IdentityFlow.DeviceCode,
+            InteractivePolicy = ciTemporary
+                ? InteractivePolicy.Never
+                : InteractivePolicy.UserAllowed,
+            CachePolicy = ciTemporary
+                ? CachePolicyMode.NonPersistentCi
+                : CachePolicyMode.ProductPersistentCacheDisabled,
+            CiContext = ciTemporary
+                ? new CiContext
+                {
+                    ExplicitCiMode = true,
+                    Provider = CiProviderNames.AzurePipelines,
+                    HasAzurePipelinesSystemAccessToken = true,
+                    AllowsPersistentWrites = false,
+                }
+                : null,
+        };
+        CredentialResult result = ciTemporary
+            ? AzurePipelinesSystemAccessTokenService
+                .Handle(
+                    request,
+                    environmentVariableReader(AzurePipelinesSystemAccessTokenVariable)
+                )
+                .CreateProtocolResult("wp5-ci-temporary-configuration")
+            : credentialCoreService.Execute(request);
         return result.Status == CredentialResultStatus.Success
             && !string.IsNullOrWhiteSpace(result.BearerToken)
             ? result.BearerToken
-            : throw new InvalidOperationException("Failed to create a fake package auth token.");
+            : throw new InvalidOperationException(
+                result.Error?.SafeMessage ?? "Failed to create a fake package auth token."
+            );
     }
 
     private string GetNpmTargetPath(CredentialEcosystem ecosystem, ConfigurationPhase14Scope scope)
@@ -530,11 +590,25 @@ public sealed class ConfigurationPhase14VerticalSliceService
             ecosystem,
             ConfigurationPhase14Scope.CiTemporary
         );
-        ConfigurationPhase14PlanResult result = await UnconfigureAsync(
+        string ownershipManifestPath = GetOwnershipManifestPath(
             ecosystem,
-            ConfigurationPhase14Scope.CiTemporary,
-            cancellationToken
+            ConfigurationPhase14Scope.CiTemporary
         );
+        bool ownershipManifestBefore = SafeFileExists(ownershipManifestPath);
+        ConfigurationPhase14PlanResult result;
+        if (ownershipManifestBefore && !temporaryContainerBefore)
+        {
+            result = RemoveExpectedManifestOnlyState(ecosystem, ownershipManifestPath);
+        }
+        else
+        {
+            result = await UnconfigureAsync(
+                ecosystem,
+                ConfigurationPhase14Scope.CiTemporary,
+                cancellationToken
+            );
+        }
+
         bool temporaryContainerAfter = TemporaryContainerExists(
             ecosystem,
             ConfigurationPhase14Scope.CiTemporary
@@ -548,11 +622,12 @@ public sealed class ConfigurationPhase14VerticalSliceService
             );
         }
 
-        string state = result.ChangeCount > 0 || temporaryContainerBefore
-            ? temporaryContainerAfter
-                ? CleanupStateIncomplete
-                : CleanupStateRemoved
-            : CleanupStateNotNeeded;
+        bool ownershipManifestAfter = SafeFileExists(ownershipManifestPath);
+        string state = temporaryContainerAfter || ownershipManifestAfter
+            ? CleanupStateIncomplete
+            : result.ChangeCount > 0 || temporaryContainerBefore || ownershipManifestBefore
+                ? CleanupStateRemoved
+                : CleanupStateNotNeeded;
 
         return new ConfigurationPhase14CleanupEcosystemResult
         {
@@ -560,10 +635,147 @@ public sealed class ConfigurationPhase14VerticalSliceService
             Scope = ConfigurationPhase14Scope.CiTemporary,
             State = state,
             ChangeCount = result.ChangeCount,
-            OwnershipManifestPresent = result.OwnershipManifestPresent,
+            OwnershipManifestPresent = ownershipManifestAfter,
             TemporaryContainerPresent = temporaryContainerAfter,
         };
     }
+
+    private ConfigurationPhase14PlanResult RemoveExpectedManifestOnlyState(
+        CredentialEcosystem ecosystem,
+        string ownershipManifestPath
+    )
+    {
+        ConfigurationOwnershipManifest? manifest;
+        string? manifestJson;
+        try
+        {
+            _ = TryLoadOwnershipManifest(
+                ownershipManifestPath,
+                out manifest,
+                out manifestJson);
+        }
+        catch (Exception exception)
+            when (IsExpectedOwnershipManifestReadOrParseFailure(exception))
+        {
+            return CreateResult(
+                [CreateNoOpPlanResult(ConfigurationPlanOperation.Remove)],
+                ownershipManifestPath
+            );
+        }
+
+        if (manifest is not null
+            && OwnershipManifestMatchesExpectedState(
+                manifest,
+                ecosystem,
+                ConfigurationPhase14Scope.CiTemporary
+            )
+            && fileSystem.GetOwner(ownershipManifestPath) == fileSystem.GetCurrentOwner())
+        {
+            fileSystem.DeleteFile(
+                ownershipManifestPath,
+                FileMutationExpectation.Existing(ComputeSha256(manifestJson!))
+            );
+        }
+
+        return CreateResult(
+            [CreateNoOpPlanResult(ConfigurationPlanOperation.Remove)],
+            ownershipManifestPath
+        );
+    }
+
+    private bool OwnershipManifestMatchesExpectedState(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem,
+        ConfigurationPhase14Scope scope
+    )
+    {
+        if (scope != ConfigurationPhase14Scope.CiTemporary)
+        {
+            return true;
+        }
+
+        if (!string.Equals(manifest.OwnerProductId, ProductId, StringComparison.Ordinal)
+            || manifest.Scope != ConfigurationScope.CiTemporary
+            || !manifest.SafeMetadata.TryGetValue("ecosystem", out string? manifestEcosystem)
+            || !string.Equals(
+                manifestEcosystem,
+                ToContractEcosystemName(ecosystem),
+                StringComparison.Ordinal
+            ))
+        {
+            return false;
+        }
+
+        return ecosystem switch
+        {
+            CredentialEcosystem.Npm or CredentialEcosystem.Pnpm =>
+                string.Equals(
+                    manifest.ManifestId,
+                    NpmCredentialManifestId,
+                    StringComparison.Ordinal
+                )
+                && ManifestEntriesMatchNpmCompatibleState(manifest, ecosystem),
+            CredentialEcosystem.Yarn =>
+                string.Equals(
+                    manifest.ManifestId,
+                    YarnCredentialManifestId,
+                    StringComparison.Ordinal
+                )
+                && ManifestEntriesMatchYarnState(manifest),
+            _ => false,
+        };
+    }
+
+    private bool ManifestEntriesMatchNpmCompatibleState(
+        ConfigurationOwnershipManifest manifest,
+        CredentialEcosystem ecosystem
+    )
+    {
+        ConfigurationOwnershipManifestEntry? entry = manifest.Entries.Count == 1
+            ? manifest.Entries[0]
+            : null;
+        return entry is not null
+            && entry.Operation == ConfigurationChangeOperation.Set
+            && entry.TargetKind == ConfigurationTargetKind.Npmrc
+            && string.Equals(
+                entry.TargetPathOrName,
+                GetNpmTargetPath(ecosystem, ConfigurationPhase14Scope.CiTemporary),
+                StringComparison.Ordinal
+            )
+            && string.Equals(entry.Key, manifest.EntrySelector, StringComparison.Ordinal)
+            && entry.HasPlannedValue
+            && entry.IsSecretValue;
+    }
+
+    private bool ManifestEntriesMatchYarnState(ConfigurationOwnershipManifest manifest)
+    {
+        string targetPath = fileSystem.GetFullPath(
+            Path.Combine(paths.YarnCiTemporaryHomePath, ".yarnrc.yml")
+        );
+        return manifest.Entries.Count == 2
+            && manifest.Entries.All(entry =>
+                entry.Operation == ConfigurationChangeOperation.Set
+                && entry.TargetKind == ConfigurationTargetKind.Yarnrc
+                && string.Equals(entry.TargetPathOrName, targetPath, StringComparison.Ordinal)
+                && entry.HasPlannedValue
+            )
+            && manifest.Entries.Count(entry =>
+                entry.IsSecretValue
+                && string.Equals(entry.Key, manifest.EntrySelector, StringComparison.Ordinal)
+            ) == 1
+            && manifest.Entries.Count(entry =>
+                !entry.IsSecretValue
+                && entry.Key.EndsWith("npmAlwaysAuth", StringComparison.Ordinal)
+            ) == 1;
+    }
+
+    private static bool IsExpectedOwnershipManifestReadOrParseFailure(Exception exception) =>
+        exception is IOException
+            or UnauthorizedAccessException
+            or InvalidOperationException
+            or NotSupportedException
+            or ArgumentException
+            or System.Text.Json.JsonException;
 
     private void DeleteKnownCiTemporaryContainer(CredentialEcosystem ecosystem)
     {
@@ -1190,17 +1402,33 @@ public sealed class ConfigurationPhase14VerticalSliceService
 
     private static ConfigurationPhase14ResolvedPaths ResolvePaths(
         ConfigurationPhase14VerticalSliceOptions options,
-        IFileSystem fileSystem
+        IFileSystem fileSystem,
+        string? jobScopeId
     )
     {
         string stateDirectoryPath = fileSystem.GetFullPath(
             options.StateDirectoryPath ?? GetDefaultStateDirectoryPath()
+        );
+        string ciTemporaryProductRootPath = fileSystem.GetFullPath(
+            options.CiTemporaryProductRootPath
+                ?? (options.StateDirectoryPath is null
+                    ? GetDefaultCiTemporaryProductRootPath()
+                    : Path.Combine(stateDirectoryPath, "ci-jobs"))
+        );
+        string ciTemporaryRootPath = fileSystem.GetFullPath(
+            jobScopeId is null
+                ? ciTemporaryProductRootPath
+                : Path.Combine(ciTemporaryProductRootPath, jobScopeId)
         );
         return new ConfigurationPhase14ResolvedPaths
         {
             StateDirectoryPath = stateDirectoryPath,
             ManifestDirectoryPath = fileSystem.GetFullPath(
                 Path.Combine(stateDirectoryPath, "manifests")
+            ),
+            CiTemporaryRootPath = ciTemporaryRootPath,
+            CiTemporaryManifestDirectoryPath = fileSystem.GetFullPath(
+                Path.Combine(ciTemporaryRootPath, "manifests")
             ),
             OwnershipManifestPath = fileSystem.GetFullPath(
                 Path.Combine(
@@ -1216,16 +1444,16 @@ public sealed class ConfigurationPhase14VerticalSliceService
                 Path.Combine(stateDirectoryPath, "pnpm", "user.npmrc")
             ),
             NpmCiTemporaryNpmrcPath = fileSystem.GetFullPath(
-                Path.Combine(stateDirectoryPath, "npm", "ci", "userconfig.npmrc")
+                Path.Combine(ciTemporaryRootPath, "npm", "userconfig.npmrc")
             ),
             PnpmCiTemporaryNpmrcPath = fileSystem.GetFullPath(
-                Path.Combine(stateDirectoryPath, "pnpm", "ci", "userconfig.npmrc")
+                Path.Combine(ciTemporaryRootPath, "pnpm", "userconfig.npmrc")
             ),
             YarnUserYarnrcPath = fileSystem.GetFullPath(
                 Path.Combine(stateDirectoryPath, "yarn", "user.yarnrc.yml")
             ),
             YarnCiTemporaryHomePath = fileSystem.GetFullPath(
-                Path.Combine(stateDirectoryPath, "yarn", "ci", "home")
+                Path.Combine(ciTemporaryRootPath, "yarn", "home")
             ),
         };
     }
@@ -1248,6 +1476,9 @@ public sealed class ConfigurationPhase14VerticalSliceService
 
         return Path.Combine(Path.GetTempPath(), ProductId, "phase14.2");
     }
+
+    private static string GetDefaultCiTemporaryProductRootPath() =>
+        Path.Combine(Path.GetTempPath(), ProductId, "phase14.2", "ci-jobs");
 
     private static string GetHomeDirectory()
     {
@@ -1296,7 +1527,44 @@ public sealed class ConfigurationPhase14VerticalSliceService
             ),
         };
 
-        return fileSystem.GetFullPath(Path.Combine(paths.ManifestDirectoryPath, fileName));
+        string manifestDirectory = scope == ConfigurationPhase14Scope.CiTemporary
+            ? paths.CiTemporaryManifestDirectoryPath
+            : paths.ManifestDirectoryPath;
+        return fileSystem.GetFullPath(Path.Combine(manifestDirectory, fileName));
+    }
+
+    private void EnsureCiJobScope(ConfigurationPhase14Scope scope)
+    {
+        if (scope != ConfigurationPhase14Scope.CiTemporary)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(rawJobScopeId))
+        {
+            throw new InvalidOperationException(
+                "Azure Pipelines CI temporary configuration requires SYSTEM_JOBID.");
+        }
+
+        if (jobScopeId is null)
+        {
+            throw new InvalidOperationException(
+                "Azure Pipelines SYSTEM_JOBID is invalid for temporary configuration.");
+        }
+    }
+
+    private static bool IsValidJobScopeId(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)
+            || value.Length > MaximumJobScopeIdLength
+            || value is "." or "..")
+        {
+            return false;
+        }
+
+        return value.All(static character =>
+            char.IsAsciiLetterOrDigit(character)
+            || character is '-' or '_' or '.');
     }
 
     private bool TryLoadOwnershipManifest(

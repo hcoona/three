@@ -136,8 +136,9 @@ public sealed class CliApplicationTests
                 environment-probing: disabled
                 persistent-cache: disabled
                 persistent-derived-credentials: disabled
-                accepted-identity-flows: browser, device-code, pat, azure-pipelines
-                deferred-identity-flows: service-principal, managed-identity, workload-identity
+                accepted-identity-flows: browser, device-code, azure-pipelines
+                deferred-identity-flows: pat-compatibility, service-principal, managed-identity, workload-identity
+                pat-compatibility: deferred-disabled
                 dry-run-rendering: enabled
                 mutating-commands: git-nuget-auth-config-cleanup
                 supported-ecosystems: git, nuget, python, npm, pnpm, yarn
@@ -164,6 +165,10 @@ public sealed class CliApplicationTests
             StringComparison.Ordinal
         );
         Assert.Contains("blocking-checks: none\n", result.StdOut, StringComparison.Ordinal);
+        Assert.Contains(
+            "pat-compatibility: deferred-disabled\n",
+            result.StdOut,
+            StringComparison.Ordinal);
         Assert.Contains(
             "git-for-windows-helper-discovery: deferred-non-mvp\n",
             result.StdOut,
@@ -218,8 +223,9 @@ public sealed class CliApplicationTests
                 environment-probing: disabled
                 persistent-cache: disabled
                 persistent-derived-credentials: disabled
-                accepted-identity-flows: browser, device-code, pat, azure-pipelines
-                deferred-identity-flows: service-principal, managed-identity, workload-identity
+                accepted-identity-flows: browser, device-code, azure-pipelines
+                deferred-identity-flows: pat-compatibility, service-principal, managed-identity, workload-identity
+                pat-compatibility: deferred-disabled
                 dry-run-rendering: enabled
                 mutating-commands: git-nuget-auth-config-cleanup
                 supported-ecosystems: git, nuget, python, npm, pnpm, yarn
@@ -265,18 +271,18 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
-    public void LoginPatCompatibilityRequiresExplicitPatAndNeverEchoesIt()
+    public void LoginPatCompatibilityIsDeferredAndNeverEchoesIt()
     {
         const string Secret = "super-secret-pat";
 
         CommandResult result = Invoke("login", "--pat", Secret);
 
-        Assert.Equal(0, result.ExitCode);
-        Assert.Contains("identity-flow: pat\n", result.StdOut, StringComparison.Ordinal);
-        Assert.Contains(
-            "persistent-derived-credentials: disabled\n",
-            result.StdOut,
-            StringComparison.Ordinal);
+        Assert.Equal(1, result.ExitCode);
+        Assert.Equal(string.Empty, result.StdOut);
+        Assert.Equal(
+            "error: PAT compatibility is deferred and has no production acquisition or materialization path.\n",
+            result.StdErr
+        );
         Assert.DoesNotContain(Secret, result.StdOut, StringComparison.Ordinal);
         Assert.DoesNotContain(Secret, result.StdErr, StringComparison.Ordinal);
     }
@@ -331,9 +337,9 @@ public sealed class CliApplicationTests
                 ci-mode: azure-pipelines
                 identity-flow: azure-pipelines
                 status: success
-                account: build-service@phase14
-                tenant: phase14-tenant
-                credential-material: issued-not-printed
+                account: unbound
+                tenant: unbound
+                credential-material: provided-not-printed
                 persistent-derived-credentials: disabled
                 plaintext-fallback: disabled
                 """),
@@ -372,10 +378,215 @@ public sealed class CliApplicationTests
                 phase: 15-end-to-end-hardening
                 ci-mode: none
                 persistent-derived-credentials-removed: none
+                ci-temporary-removed-change-count: 0
+                ci-temporary-cleanup: complete
                 plaintext-fallback: disabled
                 """),
             result.StdOut);
         Assert.Equal(string.Empty, result.StdErr);
+    }
+
+    [Fact]
+    public void LogoutRemovesCurrentJobTokenFilesAndOwnershipManifests()
+    {
+        const string Secret = "logout-system-access-token";
+        string stateDirectory = CreateTestDirectory();
+        CliRuntimeOptions runtimeOptions = CreateConfigurationRuntimeWithCiToken(
+            stateDirectory,
+            Secret);
+
+        try
+        {
+            foreach (string ecosystem in new[] { "npm", "pnpm", "yarn" })
+            {
+                CommandResult configure = InvokeWithRuntime(
+                    runtimeOptions,
+                    "configure",
+                    ecosystem,
+                    "--ci",
+                    "azure-pipelines");
+                Assert.Equal(0, configure.ExitCode);
+            }
+
+            string jobRoot = Path.Combine(stateDirectory, "ci-jobs", "cli-test-job");
+            Assert.Contains(
+                Secret,
+                File.ReadAllText(Path.Combine(jobRoot, "npm", "userconfig.npmrc")),
+                StringComparison.Ordinal);
+            Assert.Equal(3, Directory.GetFiles(
+                Path.Combine(jobRoot, "manifests"),
+                "*-ci-temporary-ownership-manifest.json").Length);
+
+            CommandResult logout = InvokeWithRuntime(runtimeOptions, "logout");
+
+            Assert.Equal(0, logout.ExitCode);
+            Assert.Contains(
+                "ci-temporary-removed-change-count: 4\n",
+                logout.StdOut,
+                StringComparison.Ordinal);
+            Assert.Contains("ci-temporary-cleanup: complete\n", logout.StdOut);
+            Assert.Equal(string.Empty, logout.StdErr);
+            Assert.False(File.Exists(Path.Combine(jobRoot, "npm", "userconfig.npmrc")));
+            Assert.False(File.Exists(Path.Combine(jobRoot, "pnpm", "userconfig.npmrc")));
+            Assert.False(Directory.Exists(Path.Combine(jobRoot, "yarn", "home")));
+            foreach (string ecosystem in new[] { "npm", "pnpm", "yarn" })
+            {
+                Assert.False(File.Exists(Path.Combine(
+                    jobRoot,
+                    "manifests",
+                    ecosystem + "-ci-temporary-ownership-manifest.json")));
+            }
+            Assert.DoesNotContain(Secret, logout.StdOut, StringComparison.Ordinal);
+            Assert.DoesNotContain(Secret, logout.StdErr, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void LogoutSurfacesTemporaryCleanupFailureWithoutLeakingSecret()
+    {
+        const string Secret = "logout-failure-system-access-token";
+        string stateDirectory = CreateTestDirectory();
+        CliRuntimeOptions runtimeOptions = CreateConfigurationRuntimeWithCiToken(
+            stateDirectory,
+            Secret);
+
+        try
+        {
+            foreach (string ecosystem in new[] { "npm", "pnpm", "yarn" })
+            {
+                CommandResult configure = InvokeWithRuntime(
+                    runtimeOptions,
+                    "configure",
+                    ecosystem,
+                    "--ci",
+                    "azure-pipelines");
+                Assert.Equal(0, configure.ExitCode);
+            }
+            string jobRoot = Path.Combine(stateDirectory, "ci-jobs", "cli-test-job");
+            string manifestPath = Path.Combine(
+                jobRoot,
+                "manifests",
+                "npm-ci-temporary-ownership-manifest.json");
+            File.WriteAllText(manifestPath, Secret);
+
+            CommandResult logout = InvokeWithRuntime(runtimeOptions, "logout");
+
+            Assert.Equal(1, logout.ExitCode);
+            Assert.Equal(string.Empty, logout.StdOut);
+            Assert.Equal(
+                "error: authentication state was cleared, but CI temporary cleanup was incomplete.\n",
+                logout.StdErr);
+            Assert.True(File.Exists(manifestPath));
+            Assert.Equal(Secret, File.ReadAllText(manifestPath));
+            Assert.False(File.Exists(Path.Combine(jobRoot, "npm", "userconfig.npmrc")));
+            Assert.False(File.Exists(Path.Combine(jobRoot, "pnpm", "userconfig.npmrc")));
+            Assert.False(Directory.Exists(Path.Combine(jobRoot, "yarn", "home")));
+            Assert.False(File.Exists(Path.Combine(
+                jobRoot,
+                "manifests",
+                "pnpm-ci-temporary-ownership-manifest.json")));
+            Assert.False(File.Exists(Path.Combine(
+                jobRoot,
+                "manifests",
+                "yarn-ci-temporary-ownership-manifest.json")));
+            Assert.DoesNotContain(Secret, logout.StdErr, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void LogoutRemovesCompleteOwnedManifestOnlyState()
+    {
+        string stateDirectory = CreateTestDirectory();
+        CliRuntimeOptions runtimeOptions = CreateConfigurationRuntimeWithCiToken(stateDirectory);
+
+        try
+        {
+            CommandResult configure = InvokeWithRuntime(
+                runtimeOptions,
+                "configure",
+                "npm",
+                "--ci",
+                "azure-pipelines"
+            );
+            Assert.Equal(0, configure.ExitCode);
+            string jobRoot = Path.Combine(stateDirectory, "ci-jobs", "cli-test-job");
+            string manifestPath = Path.Combine(
+                jobRoot,
+                "manifests",
+                "npm-ci-temporary-ownership-manifest.json"
+            );
+            File.Delete(Path.Combine(jobRoot, "npm", "userconfig.npmrc"));
+
+            CommandResult logout = InvokeWithRuntime(runtimeOptions, "logout");
+
+            Assert.Equal(0, logout.ExitCode);
+            Assert.Contains("ci-temporary-cleanup: complete\n", logout.StdOut);
+            Assert.Equal(string.Empty, logout.StdErr);
+            Assert.False(File.Exists(manifestPath));
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
+    }
+
+    [Fact]
+    public void LogoutReportsMismatchedManifestOnlyStateWithoutDeletingIt()
+    {
+        const string Secret = "logout-mismatched-manifest-system-access-token";
+        string stateDirectory = CreateTestDirectory();
+        CliRuntimeOptions runtimeOptions = CreateConfigurationRuntimeWithCiToken(
+            stateDirectory,
+            Secret
+        );
+
+        try
+        {
+            CommandResult configure = InvokeWithRuntime(
+                runtimeOptions,
+                "configure",
+                "npm",
+                "--ci",
+                "azure-pipelines"
+            );
+            Assert.Equal(0, configure.ExitCode);
+            string jobRoot = Path.Combine(stateDirectory, "ci-jobs", "cli-test-job");
+            string npmManifestPath = Path.Combine(
+                jobRoot,
+                "manifests",
+                "npm-ci-temporary-ownership-manifest.json"
+            );
+            string pnpmManifestPath = Path.Combine(
+                jobRoot,
+                "manifests",
+                "pnpm-ci-temporary-ownership-manifest.json"
+            );
+            File.Delete(Path.Combine(jobRoot, "npm", "userconfig.npmrc"));
+            File.Move(npmManifestPath, pnpmManifestPath);
+
+            CommandResult logout = InvokeWithRuntime(runtimeOptions, "logout");
+
+            Assert.Equal(1, logout.ExitCode);
+            Assert.Equal(string.Empty, logout.StdOut);
+            Assert.Equal(
+                "error: authentication state was cleared, but CI temporary cleanup was incomplete.\n",
+                logout.StdErr
+            );
+            Assert.True(File.Exists(pnpmManifestPath));
+            Assert.DoesNotContain(Secret, logout.StdErr, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(stateDirectory);
+        }
     }
 
     [Fact]
@@ -2254,7 +2465,12 @@ public sealed class CliApplicationTests
                 "npm",
                 "--ci",
                 "azure-pipelines");
-            string npmrcPath = Path.Combine(stateDirectory, "npm", "ci", "userconfig.npmrc");
+            string npmrcPath = Path.Combine(
+                stateDirectory,
+                "ci-jobs",
+                "cli-test-job",
+                "npm",
+                "userconfig.npmrc");
             Assert.Equal(0, configureResult.ExitCode);
             Assert.True(File.Exists(npmrcPath));
 
@@ -2300,7 +2516,12 @@ public sealed class CliApplicationTests
     {
         string stateDirectory = CreateTestDirectory();
         CliRuntimeOptions runtimeOptions = CreateConfigurationRuntime(stateDirectory);
-        string npmrcPath = Path.Combine(stateDirectory, "npm", "ci", "userconfig.npmrc");
+        string npmrcPath = Path.Combine(
+            stateDirectory,
+            "ci-jobs",
+            "cli-test-job",
+            "npm",
+            "userconfig.npmrc");
 
         try
         {
@@ -3141,10 +3362,10 @@ public sealed class CliApplicationTests
                       azureauth-credprovider login [--browser|--device-code|--pat <value>]
                       azureauth-credprovider login --ci azure-pipelines
 
-                    Accepted MVP flows:
+                    Identity flow options:
                       --browser                    Use interactive browser authentication.
                       --device-code                Use device-code authentication.
-                      --pat <value>                Explicit PAT compatibility; never persisted.
+                      --pat <value>                Deferred PAT compatibility placeholder; never persisted.
                       --ci azure-pipelines         Use SYSTEM_ACCESSTOKEN without persistence.
 
                     Deferred service identity flows:
@@ -3164,7 +3385,7 @@ public sealed class CliApplicationTests
                       azureauth-credprovider logout [--help]
 
                     Status:
-                      Clears product-owned authentication state only.
+                      Clears product-owned authentication state, then job-scoped CI temporary state.
 
                     Options:
                       -h, --help                   Show help.
@@ -3294,9 +3515,10 @@ public sealed class CliApplicationTests
                     "git-credential-helper-erase: pass",
                     "local-shell-helper-shorthand: " + (localShellSuccess ? "pass" : "fail"),
                     "protocol-payload: captured-not-printed",
-                    "auth-accepted-identity-flows: browser, device-code, pat, azure-pipelines",
+                    "auth-accepted-identity-flows: browser, device-code, azure-pipelines",
                     "auth-deferred-identity-flows: "
-                        + "service-principal, managed-identity, workload-identity",
+                        + "pat-compatibility, service-principal, managed-identity, workload-identity",
+                    "auth-pat-compatibility: deferred-disabled",
                     "auth-persistent-derived-credentials: disabled",
                     "auth-plaintext-fallback: disabled",
                     "nuget-configuration-plan: pass",
@@ -3381,22 +3603,25 @@ public sealed class CliApplicationTests
             ConfigurationPhase14Options = new ConfigurationPhase14VerticalSliceOptions
             {
                 StateDirectoryPath = stateDirectoryPath,
+                AzurePipelinesJobScopeId = "cli-test-job",
                 EnvironmentVariableReader = _ => null,
             },
         };
     }
 
     private static CliRuntimeOptions CreateConfigurationRuntimeWithCiToken(
-        string stateDirectoryPath)
+        string stateDirectoryPath,
+        string token = "system-token")
     {
         return new CliRuntimeOptions
         {
             ConfigurationPhase14Options = new ConfigurationPhase14VerticalSliceOptions
             {
                 StateDirectoryPath = stateDirectoryPath,
+                AzurePipelinesJobScopeId = "cli-test-job",
                 EnvironmentVariableReader = name =>
                     string.Equals(name, "SYSTEM_ACCESSTOKEN", StringComparison.Ordinal)
-                        ? "system-token"
+                        ? token
                         : null,
             },
         };
@@ -3444,6 +3669,7 @@ public sealed class CliApplicationTests
         new()
         {
             StateDirectoryPath = Path.Combine(stateDirectoryPath, "configuration"),
+            AzurePipelinesJobScopeId = "cli-test-job",
             EnvironmentVariableReader = _ => null,
         };
 

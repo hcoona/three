@@ -57,23 +57,35 @@ public static class ReleaseHardeningPhase15VerticalSliceService
                     "cross-ecosystem",
                     requiredForFullRelease: true,
                     "CliApplicationTests; ConfigurationPhase14VerticalSliceServiceTests",
-                    "Exercises Git, NuGet, Python, npm, pnpm, and Yarn orchestration with fake "
-                        + "credential material only."),
+                    "Exercises Git, NuGet, Python, npm, pnpm, and Yarn local orchestration. "
+                        + "Azure Pipelines coverage is deterministic plan/lifecycle evidence, "
+                        + "not live acceptance."),
                 Pass(
                     "headless-ci-temporary-configuration",
                     "ci",
                     requiredForFullRelease: true,
                     "ConfigurationPhase14VerticalSliceServiceTests."
                         + "CleanupCiTemporaryRemovesAllOwnedPackageContainers",
-                    "Validates CI temporary package-manager state and cleanup without "
-                        + "repository-local credential writes."),
+                    "Validates WP5 opaque caller-provided token plans, secret markers, "
+                        + "temporary package-manager state, and cleanup without claiming live "
+                        + "runner acceptance or production composition."),
+                Pass(
+                    "opaque-azure-pipelines-system-access-token",
+                    "identity",
+                    requiredForFullRelease: true,
+                    "AzurePipelinesSystemAccessTokenWp5Tests; "
+                        + "phase-wp5-azure-pipelines-system-access-token",
+                    "Validates direct Git bearer and npm/pnpm/Yarn registry-token forms, "
+                        + "job-scoped isolation, unknown expiry, no identity binding, no cache, "
+                        + "and secret-safe diagnostics. Direct NuGet and Python mappings are disabled."),
                 Pass(
                     "secret-redaction-audit",
                     "security",
                     requiredForFullRelease: true,
-                    "SecretRedactorTests; CliApplicationTests",
-                    "Covers redaction helpers and CLI stdout/stderr paths for fake PAT, token, "
-                        + "and system-access-token values."),
+                    "SecretRedactorTests; CliApplicationTests; "
+                        + "AzurePipelinesSystemAccessTokenWp5Tests",
+                    "Covers redaction helpers, deferred PAT input, and opaque system-access-token "
+                        + "result, plan, manifest, and CLI paths."),
                 Pass(
                     "persistent-derived-cache-claim-audit",
                     "security",
@@ -147,6 +159,13 @@ public static class ReleaseHardeningPhase15VerticalSliceService
                     "project-breakdown phase 15",
                     "The fake adapter scaffold is validated locally; final installer package "
                         + "install/uninstall evidence must be recorded with release artifacts."),
+                DeferredOptionalFeature(
+                    "pat-compatibility-production-path",
+                    "identity",
+                    "phase-wp5-azure-pipelines-system-access-token",
+                    "The frozen PAT enum and wire value remain compatible, but reusable production "
+                        + "PAT acquisition and materialization are explicitly deferred with no "
+                        + "fallback, cache, or invented identity."),
                 DeferredOptionalFeature(
                     "optional-azureauth-wsl-backend",
                     "identity",
