@@ -80,8 +80,8 @@ semantic scanning, write authority, WinUI, network access, and private data from
   accepted A2R5 plan and authorizes only its bounded implementation.
 - `reviews/atlas-v0-a2-workspace-preflight-refinement-release-gate.md` established A2R5 completion.
   Its authorized retry stopped at the fixed `private-workspace-policy` boundary.
-- `reviews/atlas-v0-a2-repository-hygiene-decoupling-plan-review.md` binds the independently accepted
-  A2R6 plan and authorizes only its bounded implementation.
+- `reviews/atlas-v0-a2-repository-hygiene-decoupling-plan-review.md` binds the accepted A2R6 plan
+  after independent review and authorizes only its bounded implementation.
 - `reviews/atlas-v0-a2-repository-hygiene-decoupling-release-gate.md` established A2R6 completion.
   Its private-retry authority is superseded by A2R7.
 - `reviews/atlas-v0-a2-released-a0-save-alias-compatibility-plan-review.md` binds the independently
