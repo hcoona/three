@@ -629,19 +629,37 @@ public sealed class AtlasIntakeContractTests
                 AtlasIntakeContracts.ExcludeSteamAutoCloudDecision
             ),
         ];
+        string[] releasedRoles =
+        [
+            "config",
+            .. Enumerable.Repeat("slot", 19),
+            "global",
+            "steam-autocloud",
+            "steam-autocloud",
+        ];
+        string[] releasedDecisions =
+        [
+            .. Enumerable.Repeat("include-save", 21),
+            "exclude-steam-autocloud",
+            "exclude-steam-autocloud",
+        ];
 
         AtlasManifestSaveEntry[] actual = AtlasIntakeContracts.GetExactFrozenSaveEntries();
 
         Assert.Equal(expected.Length, actual.Length);
+        Assert.Equal(expected.Length, releasedRoles.Length);
+        Assert.Equal(expected.Length, releasedDecisions.Length);
         for (int index = 0; index < expected.Length; index++)
         {
             Assert.Equal(expected[index].SourceAlias, actual[index].SourceAlias);
             Assert.Equal(expected[index].RootAlias, actual[index].RootAlias);
             Assert.Equal(expected[index].RelativePath, actual[index].RelativePath);
+            Assert.Equal(releasedRoles[index], expected[index].Role);
             Assert.Equal(expected[index].Role, actual[index].Role);
             Assert.Equal(expected[index].SlotNumber, actual[index].SlotNumber);
+            Assert.Equal(releasedDecisions[index], expected[index].Decision);
             Assert.Equal(expected[index].Decision, actual[index].Decision);
-            Assert.Equal(AtlasIntakeContracts.FileEntryType, actual[index].EntryType);
+            Assert.Equal("file", actual[index].EntryType);
             Assert.False(actual[index].IsReparsePoint);
         }
     }

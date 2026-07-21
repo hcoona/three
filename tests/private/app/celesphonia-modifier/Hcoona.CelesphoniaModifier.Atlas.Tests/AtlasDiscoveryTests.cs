@@ -369,6 +369,7 @@ public sealed class AtlasDiscoveryTests
                 Assert.Equal(expected.Role, actual.Role);
                 Assert.Equal(expected.SlotNumber, actual.SlotNumber);
                 Assert.Equal(expected.Decision, actual.Decision);
+                Assert.Equal(expected.ReasonCode, actual.ReasonCode);
                 Assert.Equal(expected.EntryType, actual.EntryType);
                 Assert.Equal(expected.IsReparsePoint, actual.IsReparsePoint);
             });
