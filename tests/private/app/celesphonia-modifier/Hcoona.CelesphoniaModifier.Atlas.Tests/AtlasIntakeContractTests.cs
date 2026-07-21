@@ -433,6 +433,220 @@ public sealed class AtlasIntakeContractTests
     }
 
     [Fact]
+    public void FrozenSaveEntriesMatchReleasedA0AliasContract()
+    {
+        (
+            string SourceAlias,
+            string RootAlias,
+            string RelativePath,
+            string Role,
+            int? SlotNumber,
+            string Decision
+        )[] expected =
+        [
+            (
+                "save-source-0001",
+                "save-root-0001",
+                "config.rpgsave",
+                AtlasIntakeContracts.ConfigSaveRole,
+                null,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0002",
+                "save-root-0001",
+                "file1.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                1,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0003",
+                "save-root-0001",
+                "file10.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                10,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0004",
+                "save-root-0001",
+                "file11.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                11,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0005",
+                "save-root-0001",
+                "file12.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                12,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0006",
+                "save-root-0001",
+                "file13.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                13,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0007",
+                "save-root-0001",
+                "file14.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                14,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0008",
+                "save-root-0001",
+                "file15.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                15,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0009",
+                "save-root-0001",
+                "file16.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                16,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0010",
+                "save-root-0001",
+                "file17.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                17,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0011",
+                "save-root-0001",
+                "file18.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                18,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0012",
+                "save-root-0001",
+                "file19.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                19,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0013",
+                "save-root-0001",
+                "file2.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                2,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0014",
+                "save-root-0001",
+                "file20.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                20,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0015",
+                "save-root-0001",
+                "file3.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                3,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0016",
+                "save-root-0001",
+                "file4.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                4,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0017",
+                "save-root-0001",
+                "file5.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                5,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0018",
+                "save-root-0001",
+                "file6.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                6,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0019",
+                "save-root-0001",
+                "file7.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                7,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0020",
+                "save-root-0001",
+                "file9.rpgsave",
+                AtlasIntakeContracts.SlotSaveRole,
+                9,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0021",
+                "save-root-0001",
+                "global.rpgsave",
+                AtlasIntakeContracts.GlobalSaveRole,
+                null,
+                AtlasIntakeContracts.IncludeSaveDecision
+            ),
+            (
+                "save-source-0022",
+                "save-root-0001",
+                "steam_autocloud.vdf",
+                AtlasIntakeContracts.SteamAutoCloudSaveRole,
+                null,
+                AtlasIntakeContracts.ExcludeSteamAutoCloudDecision
+            ),
+            (
+                "save-source-0023",
+                "save-root-0002",
+                "steam_autocloud.vdf",
+                AtlasIntakeContracts.SteamAutoCloudSaveRole,
+                null,
+                AtlasIntakeContracts.ExcludeSteamAutoCloudDecision
+            ),
+        ];
+
+        AtlasManifestSaveEntry[] actual = AtlasIntakeContracts.GetExactFrozenSaveEntries();
+
+        Assert.Equal(expected.Length, actual.Length);
+        for (int index = 0; index < expected.Length; index++)
+        {
+            Assert.Equal(expected[index].SourceAlias, actual[index].SourceAlias);
+            Assert.Equal(expected[index].RootAlias, actual[index].RootAlias);
+            Assert.Equal(expected[index].RelativePath, actual[index].RelativePath);
+            Assert.Equal(expected[index].Role, actual[index].Role);
+            Assert.Equal(expected[index].SlotNumber, actual[index].SlotNumber);
+            Assert.Equal(expected[index].Decision, actual[index].Decision);
+            Assert.Equal(AtlasIntakeContracts.FileEntryType, actual[index].EntryType);
+            Assert.False(actual[index].IsReparsePoint);
+        }
+    }
+
+    [Fact]
     public async Task PipelineUsesExactApprovedCensus()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();

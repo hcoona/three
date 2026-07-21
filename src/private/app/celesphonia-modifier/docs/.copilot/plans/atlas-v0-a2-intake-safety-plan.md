@@ -1,6 +1,6 @@
 # Atlas V0 A2 Intake and Safety Plan
 
-**Status:** Active; A2R5 workspace refinement requires verified shared `G` before discovery retry
+**Status:** Active; private discovery requires verified shared A2R7 `G`
 
 **Increment:** A2 - Intake and Safety Harness
 
@@ -29,6 +29,15 @@
 > `atlas-v0-a2-workspace-preflight-refinement.md` governs the A2R5 refinement of the observed
 > `workspace-preflight` refusal into three fixed call-boundary tokens. It changes no validator or
 > safety decision. Only verified shared release gate `G` authorizes another metadata-only attempt.
+> **Repository-hygiene decoupling**
+> `atlas-v0-a2-repository-hygiene-decoupling.md` governs the released A2R6 correction that removes
+> repository `.gitignore` policy from Atlas runtime validation. A2R7 supersedes its private-retry
+> authority.
+> **Released-A0 save-alias compatibility**
+> `atlas-v0-a2-released-a0-save-alias-compatibility.md` governs A2R7. It restores the exact released
+> A0 alias-to-locator mapping without changing aliases, semantic entries, or downstream algorithms.
+> No private retry is authorized before verified shared A2R7 `G`. A successful retry stops for a new
+> persisted continuation plan before the A2 approval record is created.
 
 ## 1. Outcome
 
@@ -216,6 +225,10 @@ Manifest revisions are create-new files named
 numbers increase by one without reuse. A2 accepts released A0 revision 3 as its only baseline,
 publishes pending revision 4, and publishes approved revision 5. Any other predecessor or additional
 revision stops A2. An existing target is handled only by the recovery matrix in section 12.
+
+Released A0 save aliases follow root-alias ordinal order, then normalized relative-path
+case-insensitive ordinal order with an ordinal tie-breaker. The save-entry array follows source-alias
+ordinal order. Exact baseline compatibility retains this complete alias-to-locator assignment.
 
 Discovery preserves every baseline `rootAlias` by location role and every `sourceAlias` by its
 root-or-group identity plus relative path. New aliases append after the greatest existing ordinal

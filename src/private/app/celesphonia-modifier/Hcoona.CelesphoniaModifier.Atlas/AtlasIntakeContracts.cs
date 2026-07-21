@@ -2733,12 +2733,11 @@ public static class AtlasIntakeContracts
 
     private static ExactSaveEntryContract[] CreateExactFrozenSaveEntryContracts()
     {
-        List<ExactSaveEntryContract> contracts = [];
-        int nextSourceOrdinal = 1;
+        List<ExactSaveEntryContract> semanticContracts = [];
         foreach (int slot in ExactIncludedSaveSlots)
         {
-            contracts.Add(new ExactSaveEntryContract(
-                $"save-source-{nextSourceOrdinal++:0000}",
+            semanticContracts.Add(new ExactSaveEntryContract(
+                string.Empty,
                 "save-root-0001",
                 $"file{slot}.rpgsave",
                 SlotSaveRole,
@@ -2746,35 +2745,50 @@ public static class AtlasIntakeContracts
                 IncludeSaveDecision));
         }
 
-        contracts.Add(new ExactSaveEntryContract(
-            $"save-source-{nextSourceOrdinal++:0000}",
+        semanticContracts.Add(new ExactSaveEntryContract(
+            string.Empty,
             "save-root-0001",
             "global.rpgsave",
             GlobalSaveRole,
             null,
             IncludeSaveDecision));
-        contracts.Add(new ExactSaveEntryContract(
-            $"save-source-{nextSourceOrdinal++:0000}",
+        semanticContracts.Add(new ExactSaveEntryContract(
+            string.Empty,
             "save-root-0001",
             "config.rpgsave",
             ConfigSaveRole,
             null,
             IncludeSaveDecision));
-        contracts.Add(new ExactSaveEntryContract(
-            $"save-source-{nextSourceOrdinal++:0000}",
+        semanticContracts.Add(new ExactSaveEntryContract(
+            string.Empty,
             "save-root-0001",
             "steam_autocloud.vdf",
             SteamAutoCloudSaveRole,
             null,
             ExcludeSteamAutoCloudDecision));
-        contracts.Add(new ExactSaveEntryContract(
-            $"save-source-{nextSourceOrdinal:0000}",
+        semanticContracts.Add(new ExactSaveEntryContract(
+            string.Empty,
             "save-root-0002",
             "steam_autocloud.vdf",
             SteamAutoCloudSaveRole,
             null,
             ExcludeSteamAutoCloudDecision));
-        return [.. contracts];
+        return
+        [
+            .. semanticContracts
+                .OrderBy(static contract => contract.RootAlias, StringComparer.Ordinal)
+                .ThenBy(
+                    static contract => NormalizeRelativePath(contract.RelativePath),
+                    StringComparer.OrdinalIgnoreCase)
+                .ThenBy(
+                    static contract => NormalizeRelativePath(contract.RelativePath),
+                    StringComparer.Ordinal)
+                .Select(
+                    static (contract, index) => contract with
+                    {
+                        SourceAlias = $"save-source-{index + 1:0000}",
+                    }),
+        ];
     }
 
     internal static readonly IReadOnlyDictionary<string, int> AtlasMilestoneOrder =

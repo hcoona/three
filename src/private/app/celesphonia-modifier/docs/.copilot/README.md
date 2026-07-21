@@ -39,8 +39,11 @@ semantic scanning, write authority, WinUI, network access, and private data from
   that permits only fixed, payload-free stage tokens for `intake-discover` safety refusals.
 - `plans/atlas-v0-a2-workspace-preflight-refinement.md` is the released subordinate A2R5 correction
   that refined only the observed workspace-preflight call boundary.
-- `plans/atlas-v0-a2-repository-hygiene-decoupling.md` is the active subordinate A2R6 correction
+- `plans/atlas-v0-a2-repository-hygiene-decoupling.md` is the released subordinate A2R6 correction
   that removes repository `.gitignore` policy from Atlas runtime validation.
+- `plans/atlas-v0-a2-released-a0-save-alias-compatibility.md` is the gate-conditional subordinate
+  A2R7 correction that restores the released A0 alias-to-locator assignment. A2R7 supersedes A2R6
+  private-retry authority.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -79,6 +82,12 @@ semantic scanning, write authority, WinUI, network access, and private data from
   Its authorized retry stopped at the fixed `private-workspace-policy` boundary.
 - `reviews/atlas-v0-a2-repository-hygiene-decoupling-plan-review.md` binds the independently accepted
   A2R6 plan and authorizes only its bounded implementation.
+- `reviews/atlas-v0-a2-repository-hygiene-decoupling-release-gate.md` established A2R6 completion.
+  Its private-retry authority is superseded by A2R7.
+- `reviews/atlas-v0-a2-released-a0-save-alias-compatibility-plan-review.md` binds the independently
+  accepted A2R7 plan and authorizes only its bounded implementation.
+- `reviews/atlas-v0-a2-released-a0-save-alias-compatibility-release-gate.md` will establish A2R7
+  completion only when its exact reviewed record is committed and pushed as verified shared `G`.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` will use the original A2 repository-safe fields.
   It never carries private hashes, paths, names, document bytes, or package-provenance claims.
 

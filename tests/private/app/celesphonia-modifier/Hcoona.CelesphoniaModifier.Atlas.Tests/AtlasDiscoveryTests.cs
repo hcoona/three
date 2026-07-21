@@ -306,6 +306,10 @@ public sealed class AtlasDiscoveryTests
     public async Task DiscoverAsyncPublishesPendingManifestRootMapCopyPlanAndState()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        AtlasLoadedDocument<AtlasCorpusIntakeManifest> baselineManifest =
+            await AtlasIntakeContracts.ReadManifestAsync(
+                workspace.Layout.CanonicalBaselineManifestPath,
+                TestContext.Current.CancellationToken);
 
         await AtlasDiscovery.DiscoverAsync(
             workspace.Layout.CanonicalDiscoverRequestPath,
@@ -341,6 +345,33 @@ public sealed class AtlasDiscoveryTests
         Assert.Equal(
             AtlasIntakeContracts.AtlasToolValidationMethod,
             pendingManifest.Document.Validation.Method);
+        Dictionary<string, AtlasManifestSaveEntry> baselineSaveEntries =
+            baselineManifest.Document.SaveEntries.ToDictionary(
+                static entry => AtlasDiscovery.CreateSaveEntryIdentity(
+                    entry.RootAlias,
+                    entry.RelativePath),
+                StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(
+            baselineSaveEntries.Count,
+            pendingManifest.Document.SaveEntries.Length);
+        Assert.All(
+            pendingManifest.Document.SaveEntries,
+            actual =>
+            {
+                string identity = AtlasDiscovery.CreateSaveEntryIdentity(
+                    actual.RootAlias,
+                    actual.RelativePath);
+                Assert.True(baselineSaveEntries.ContainsKey(identity));
+                AtlasManifestSaveEntry expected = baselineSaveEntries[identity];
+                Assert.Equal(expected.SourceAlias, actual.SourceAlias);
+                Assert.Equal(expected.RootAlias, actual.RootAlias);
+                Assert.Equal(expected.RelativePath, actual.RelativePath);
+                Assert.Equal(expected.Role, actual.Role);
+                Assert.Equal(expected.SlotNumber, actual.SlotNumber);
+                Assert.Equal(expected.Decision, actual.Decision);
+                Assert.Equal(expected.EntryType, actual.EntryType);
+                Assert.Equal(expected.IsReparsePoint, actual.IsReparsePoint);
+            });
         Assert.Equal(
             AtlasIntakeContracts.GetExactFrozenDefinitionGroups()
                 .Select(static group => group.GroupId)
