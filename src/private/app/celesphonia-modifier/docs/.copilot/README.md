@@ -41,9 +41,11 @@ semantic scanning, write authority, WinUI, network access, and private data from
   that refined only the observed workspace-preflight call boundary.
 - `plans/atlas-v0-a2-repository-hygiene-decoupling.md` is the released subordinate A2R6 correction
   that removes repository `.gitignore` policy from Atlas runtime validation.
-- `plans/atlas-v0-a2-released-a0-save-alias-compatibility.md` is the gate-conditional subordinate
-  A2R7 correction that restores the released A0 alias-to-locator assignment. A2R7 supersedes A2R6
-  private-retry authority.
+- `plans/atlas-v0-a2-released-a0-save-alias-compatibility.md` is the historical released A2R7
+  correction that restored the released A0 alias-to-locator assignment.
+- `plans/atlas-v0-a2-approved-manifest-authority-correction.md` is the planning-gated A2R8
+  architectural correction. It removes duplicate public corpus reconstruction and makes the
+  approved A0 manifest authoritative. A2R8 supersedes A2R7 private-retry authority.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -86,8 +88,9 @@ semantic scanning, write authority, WinUI, network access, and private data from
   Its private-retry authority is superseded by A2R7.
 - `reviews/atlas-v0-a2-released-a0-save-alias-compatibility-plan-review.md` binds the independently
   accepted A2R7 plan and authorizes only its bounded implementation.
-- `reviews/atlas-v0-a2-released-a0-save-alias-compatibility-release-gate.md` will establish A2R7
-  completion only when its exact reviewed record is committed and pushed as verified shared `G`.
+- `reviews/atlas-v0-a2-released-a0-save-alias-compatibility-release-gate.md` established A2R7
+  completion at verified shared `G`
+  `904a14f66ac2fb6cd5f735cd6668a03123ab4ab3`. Its retry authority is superseded by A2R8.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` will use the original A2 repository-safe fields.
   It never carries private hashes, paths, names, document bytes, or package-provenance claims.
 

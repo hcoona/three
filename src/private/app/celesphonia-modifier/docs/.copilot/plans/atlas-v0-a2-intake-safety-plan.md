@@ -1,6 +1,6 @@
 # Atlas V0 A2 Intake and Safety Plan
 
-**Status:** Active; private discovery requires verified shared A2R7 `G`
+**Status:** Active; private discovery requires verified shared A2R8 `G`
 
 **Increment:** A2 - Intake and Safety Harness
 
@@ -34,10 +34,13 @@
 > repository `.gitignore` policy from Atlas runtime validation. A2R7 supersedes its private-retry
 > authority.
 > **Released-A0 save-alias compatibility**
-> `atlas-v0-a2-released-a0-save-alias-compatibility.md` governs A2R7. It restores the exact released
-> A0 alias-to-locator mapping without changing aliases, semantic entries, or downstream algorithms.
-> No private retry is authorized before verified shared A2R7 `G`. A successful retry stops for a new
-> persisted continuation plan before the A2 approval record is created.
+> `atlas-v0-a2-released-a0-save-alias-compatibility.md` governed released A2R7. Its private-retry
+> authority is superseded by A2R8.
+> **Approved-manifest authority correction**
+> `atlas-v0-a2-approved-manifest-authority-correction.md` governs A2R8. It removes the duplicate
+> public A0 corpus reconstruction and makes the approved manifest the sole corpus authority while
+> preserving strict live reconciliation and per-file fidelity proof. No private command is
+> authorized before verified shared A2R8 `G`.
 
 ## 1. Outcome
 
@@ -110,8 +113,9 @@ A2 implementation may begin only when:
 - that record passes its parent, path, content, and upstream checks; and
 - the tracked worktree is clean.
 
-Private discovery requires the source-safety gate in section 17. Copying additionally requires the
-human approval gate in section 10.
+Current progression is governed by A2R8. Only verified shared A2R8 `G` permits one metadata-only
+discovery attempt. Confirmation, copying, and cleanup require a separately persisted and reviewed
+continuation plan after that discovery.
 
 ## 4. Scope
 
@@ -119,7 +123,7 @@ human approval gate in section 10.
 
 - Existing Atlas library, CLI, and test projects.
 - Metadata-only discovery for the two approved save-root roles.
-- Metadata-only discovery for the frozen installed-definition rules.
+- Metadata-only discovery using the approved manifest's ordered installed-definition rules.
 - Existing `atlas-intake/v2` and `atlas-private-inventory/v1` contracts.
 - New private root-map, intake-state, copy-plan, copy-receipt, and cleanup-report contracts.
 - Strict private request parsing with source-generated `System.Text.Json` metadata.
@@ -127,7 +131,7 @@ human approval gate in section 10.
 - Deterministic deny-by-default locator-key aliases.
 - Non-deleting private lifecycle preflight.
 - Synthetic, repository-safe automated tests.
-- One human-operated private A2 run after exact manifest approval.
+- One human-operated metadata-only discovery after verified shared A2R8 `G`.
 
 ### Out of scope
 
@@ -226,13 +230,10 @@ numbers increase by one without reuse. A2 accepts released A0 revision 3 as its 
 publishes pending revision 4, and publishes approved revision 5. Any other predecessor or additional
 revision stops A2. An existing target is handled only by the recovery matrix in section 12.
 
-Released A0 save aliases follow root-alias ordinal order. Normalized relative paths then use
-case-insensitive ordinal order with ordinal tie-breaking. The save-entry array follows source-alias
-ordinal order. Exact baseline compatibility retains this complete alias-to-locator assignment.
-
-Discovery preserves every baseline `rootAlias` by location role and every `sourceAlias` by its
-root-or-group identity plus relative path. New aliases append after the greatest existing ordinal
-in deterministic ordinal path order. An existing locator may never receive a new alias.
+Released A0 supplies every corpus `rootAlias`, `sourceAlias`, and manifest array order. Discovery
+preserves each value verbatim by its approved locator identity. It neither derives nor reallocates
+corpus aliases. A new locator, missing locator, duplicate alias, or rebound alias fails discovery
+and reopens A0. Monotonic allocation remains only for new control and destination artifact aliases.
 
 The source-root map uses `atlas-source-root-map/v1` and contains `schemaVersion`, `surveyAlias`,
 discovery revision, public application and build identifiers, two `rootAlias`/absolute-path save
@@ -249,8 +250,8 @@ aliases and reservations. Destination aliases enter the inventory only on succes
 publication.
 
 Save destinations are `saves/<sourceAlias>.rpgsave`. Definition destinations are
-`definitions/<sourceAlias><lowercase-source-extension>`. Source aliases are unique, allowed
-extensions are frozen by A0, and any duplicate destination is a safety failure.
+`definitions/<sourceAlias><lowercase-source-extension>`. Source aliases are unique, source
+extensions must be supported by the protocol, and any duplicate destination is a safety failure.
 
 The one-shot state sequence uses create-new files:
 
@@ -441,72 +442,38 @@ private path, source name, hash, value, count, exception message, or stack trace
 
 `intake-discover` reads metadata only and never opens source contents. It:
 
-1. validates the request, baseline manifest digest, path policy, A0 roots, and next revision;
+1. validates the request, independently bound manifest and inventory bytes, the exact baseline
+   inventory row, path policy, A0 roots, and next revision;
 2. enumerates every immediate entry in both save roots;
-3. applies the exact A0 save-role and terminal-decision rules;
-4. enumerates the complete installed-definition universe under the frozen A0 rules;
+3. classifies live save metadata under protocol rules and requires an exact manifest match;
+4. enumerates the complete definition universe under the approved manifest's ordered rules;
 5. terminally classifies every candidate;
-6. preserves or assigns aliases under section 6;
+6. preserves every approved corpus alias and rejects any new or rebound locator;
 7. reconciles all root, group, included, excluded, unsupported, and unreadable counts;
 8. publishes the source-root map, copy plan, and pending `atlas-intake/v2` revision;
 9. safely updates the inventory with discovery and control-artifact entries; and
 10. publishes intake-state revision 1 last as the authoritative discovery-completion signal.
 
-`steam_autocloud.vdf` is always `exclude-steam-autocloud`. A reparse-backed root or entry is
-`unsupported` and stops A2. Any root, denominator, selection-rule, or terminal-policy difference
-reopens A0; A2 cannot approve a narrowing itself.
+The protocol classifies `steam_autocloud.vdf` as `exclude-steam-autocloud`; the approved manifest
+must agree. This semantic rule is a supported-role constraint, not a corpus reconstruction. A
+reparse-backed root or entry is `unsupported` and stops A2. Any root, denominator, selection-rule,
+or terminal-policy difference reopens A0; A2 cannot approve a narrowing itself.
 
-## 10. Human-operated private approval
+## 10. Human-operated private approval - currently blocked
 
-The pending manifest and private binding documents are never supplied to Copilot or a subagent. The
-project leader performs the private phase:
+A2R8 `G` does not authorize approval or `intake-confirm`. After a successful metadata-only
+discovery, preserve the pending manifest and binding documents locally and stop. Supply none of
+their paths, hashes, counts, differences, names, or contents to Copilot, a subagent, process output,
+or Git.
 
-1. creates the private request without placing its path in an Agent transcript;
-2. confirms that the requested roots are the intended observed installation and save locations;
-3. runs the reviewed source candidate from a clean checkout;
-4. opens the exact pending manifest, source-root map, copy plan, and discovered state in a local
-   editor;
-5. verifies their revisions, roots, mappings, decisions, counts, bindings, and private SHA-256
-   values;
-6. reports only approved repository-safe aggregate counts and contract differences;
-7. explicitly approves or rejects that survey alias and revision;
-8. supplies the discovered-state SHA-256 only to the local confirmation request; and
-9. runs confirmation only after the approval record commit is pushed.
+A separately persisted and independently reviewed continuation plan must bind A2R8 `G`, define the
+exact local review procedure, repository-safe decision record, ancestry, and fixed diagnostics, and
+receive project-leader confirmation before approval resumes.
 
-The approval record at `../reviews/atlas-v0-a2-intake-approval.md` contains:
-
-- survey alias and pending manifest revision;
-- safe aggregate counts and public game-build identifiers;
-- the public game-build identifiers as descriptive A0 labels;
-- `trusted-local-filesystem/v1` and its accepted residual risks;
-- the exact source-safety candidate commit and tree;
-- the project leader's decision; and
-- an explicit statement that no private path, name, hash, value, or source text is recorded.
-
-The record is independently reviewed as an exact staged blob, committed unchanged as the only child
-of the approved source-safety record, pushed, and verified for parent, path, content, and upstream.
-
-`intake-confirm` verifies state revision 1 and every document digest it binds. It writes manifest
-revision 5, differing from revision 4 only in revision and confirmation: `approved`,
-`project-leader`, and the exact approval-record commit. It updates the control-artifact inventory
-and publishes state revision 2 last. Copy trusts only revision 2 and revalidates every referenced
-document.
-
-This is a trusted human-operated gate, not a claim that the CLI proves Git authority. The operator
-privately hashes state revision 2 and places only that digest in the copy request. State revision 2
-binds the approved-manifest digest; the copy command rehashes the manifest and compares it with that
-binding.
-
-During copy, the tool hashes `Game.exe` under the same held-handle stability rules as copied files.
-Together with every included definition hash and the public identifiers, this establishes the
-game-content portion of A0 fingerprint evidence. Atlas tool, schema, redaction-policy, and
-configuration digests remain outside A2 and are added to the final Atlas snapshot under A8.
-
-This one-shot A2 run establishes the first qualified game-content fingerprint. A changed root-role
-set, selected relative-path corpus, denominator, selection rule, or terminal policy reopens A0.
-Byte changes within the same approved finite corpus are captured by the new private fingerprint and
-do not by themselves reopen A0. Comparing a later installation requires a separately approved
-intake plan. No private fingerprint enters the approval record or process output.
+Any future confirmation must still verify state revision 1 and every bound document digest, publish
+approved manifest revision 5 and state revision 2 with create-new semantics, and preserve all
+privacy and trusted-local-filesystem constraints. These invariants define future behavior but grant
+no current execution authority.
 
 ## 11. Copy and qualification
 
@@ -811,23 +778,19 @@ No other production, test, project, package, lock, schema, traversal, configurat
 path changes occur in A2. A newly required path stops implementation and requires a reviewed plan
 revision.
 
-Record-only commits are outside the implementation candidate and may change exactly one listed
-path:
+The preceding path inventory records the original A2 implementation and is historical. Current
+A2R8 implementation and record path authority comes only from
+`atlas-v0-a2-approved-manifest-authority-correction.md`.
 
 ```text
 src/private/app/celesphonia-modifier/docs/.copilot/reviews/
-  atlas-v0-a2-plan-review.md
-  atlas-v0-a2-tool-safety-review.md
-  atlas-v0-a2-intake-approval.md
-  atlas-v0-a2-release-gate.md
+  atlas-v0-a2-approved-manifest-authority-correction-plan-review.md
+  atlas-v0-a2-approved-manifest-authority-correction-release-gate.md
 ```
 
-The source-safety candidate compares from the plan-review record and contains only the production,
-test, schema, and implementation-candidate documentation paths above. The final release candidate
-uses the same base and adds only the tool-safety and intake-approval record paths.
-
-The release-record child changes only `atlas-v0-a2-release-gate.md`. The plan-review record precedes
-and is the base of all three comparisons; it is not repeated in their diffs.
+Historical A2 plan-review, tool-safety, intake-approval, and release records remain unchanged
+evidence and grant no current chain or execution authority. A2R8 uses only its exact `B/P/R/I/G`
+direct-child chain and path sets.
 
 ## 17. Tests and execution stages
 
@@ -861,62 +824,47 @@ Apphost tests cover synthetic success, usage, approval, safety, and I/O results.
 mapping is tested directly; A2 makes no new claim that apphost tests synthesize a Windows console
 cancel signal.
 
-### A2.1 Implement without private access
+### A2.1 Implement A2R8 without private access
 
-Implement and validate the exact tracked scope. Do not inspect the installed game, live saves,
-private workspace, or A0 private artifacts.
+Implement and validate the exact A2R8 tracked scope. Do not inspect the installed game, live saves,
+private workspace, or A0 private artifacts. The historical A2 tool-safety record remains evidence
+for its reviewed candidate but grants no current execution authority.
 
-Commit and push a source-safety candidate. Its record binds the exact commit and tree, pinned SDK,
-locked dependency graph, build command, tests, and residual trusted-toolchain assumption. A fresh
-independent subagent reviews its cumulative diff until exact `No findings`.
+The A2R8 plan review, implementation review, release-record review, direct-child chain, and release
+gate follow `atlas-v0-a2-approved-manifest-authority-correction.md`. Any tracked source, project,
+dependency, or build-procedure change after final review invalidates that candidate.
 
-Persist `../reviews/atlas-v0-a2-tool-safety-review.md` as a reviewed staged blob and unchanged
-record-only child. Verify its parent, path, content, and upstream. It authorizes the project leader
-to build and run the exact reviewed source from a clean checkout; it does not attest an untracked
-binary digest and does not authorize copying.
+### A2.2 Human-operated metadata-only discovery
 
-Any tracked source, project, dependency, or build-procedure change invalidates this gate and every
-downstream A2 private-run record. A2 restarts at A2.1.
+Only verified shared A2R8 `G` permits the reviewed session wrapper to be rebound, independently
+reviewed, and run once for metadata-only discovery. Only the local operator receives its fixed
+command token, which is not retained in Git or supplied to an agent. Preserve the private inputs and
+outputs and stop locally after either success or the first fixed failure.
 
-### A2.2 Human-operated discovery and approval
+### A2.3 Confirmation, copy, and preflight remain blocked
 
-The project leader runs metadata-only discovery under section 9 and follows the private procedure in
-section 10. Copilot receives only safe counts and contract differences and reconciles them against
-A0. Any denominator or policy change reopens A0.
+A successful discovery does not authorize `intake-confirm`, `intake-copy`, cleanup preflight,
+deletion, decoding, or semantic scanning. A separately persisted and independently reviewed
+continuation plan must be created after the attempt and bind only A2R8 `G` plus repository-safe
+governance evidence. It must not bind or disclose the private discovery disposition.
 
-Stop for explicit approval of the exact local pending manifest. Independently review, commit, push,
-and verify the repository-safe approval record. The project leader then runs `intake-confirm`
-locally. Rejection, an unsupported source, or any unexpected revision stops copying.
+### A2.4 A2R8 release
 
-### A2.3 Human-operated copy and preflight
-
-The project leader privately hashes intake-state revision 2, creates the copy request, runs
-`intake-copy`, and reports only repository-safe acceptance aggregates. Do not decode or scan the
-snapshots.
-
-Run cleanup preflight, but perform no deletion.
-
-### A2.4 Release
-
-Treat the verified intake-approval record commit as the final repository-safe candidate. Relative
-to the plan-review base, it contains the implementation-candidate paths plus only the tool-safety
-and intake-approval records defined in section 16.
-
-A fresh independent subagent reviews that complete cumulative candidate and safe acceptance
-evidence. Resolve every finding and repeat until exact `No findings`.
-
-Persist `../reviews/atlas-v0-a2-release-gate.md` as a reviewed staged blob and unchanged record-only
-child. Verify and push it before marking A2 complete.
+The A2R8 release gate is the reviewed record-only direct child defined by the correction plan.
+Verify and push it as shared `G` before rebinding or running the metadata-only wrapper.
 
 ## 18. Acceptance criteria
 
 A2 is accepted only when:
 
+Criteria for confirmation, copy, and preflight remain eventual A2 requirements. They do not grant
+current execution authority; section 17 requires a new continuation plan after A2R8 discovery.
+
 1. the implementation matches the exact tracked scope and three-project boundary;
 2. production projects retain zero project-local package references;
 3. requests are strict, explicit, private, duplicate-free, and free of ambient discovery;
 4. metadata-only discovery precedes every source-content read;
-5. exactly 21 save inputs and 496 definitions from released A0 revision 3 are approved;
+5. every manifest-derived included save and definition identity is approved;
 6. every source has exactly one terminal status and Steam cloud metadata is excluded;
 7. the project leader approves exact pending manifest bytes before confirmation or copy;
 8. intake-state revision 2 binds approved manifest revision 5 and every private input digest;
@@ -924,7 +872,7 @@ A2 is accepted only when:
 10. path checks reject every tested reparse, outside-root, non-fixed, malformed, or existing output;
 11. every destination uses create-new semantics and matches source length and SHA-256;
 12. every included source produces one provisional verified copy before state revision 3;
-13. all 21 save copies and 496 definition copies have matching private provenance;
+13. every manifest-included save and definition copy has matching private provenance;
 14. source metadata remains stable while each handle is held and directory entry sets remain stable;
 15. valid state revision 3 is the sole qualification signal and requires receipt/inventory
     agreement;
@@ -934,11 +882,11 @@ A2 is accepted only when:
 18. locator redaction cannot emit or remap a literal source key;
 19. lifecycle preflight deletes nothing, reports every state-3 inventory artifact, adds exactly its
     request, report, state-4, and inventory-backup entries, and publishes state revision 4;
-20. no private path, hash, name, value, source text, request, or unapproved count enters process
-    output or Git; section 20 lists the only repository-safe aggregate counts;
+20. no private path, hash, name, value, source text, request, difference, or census enters process
+    output or Git;
 21. every command result follows the declared fixed bytes, exit code, and A1 precedence;
 22. locked restore, build, formatting, targeted tests, apphost checks, and HK pass;
-23. source-safety review reports `No findings` before private discovery;
+23. verified shared A2R8 `G` and the reviewed wrapper precede private discovery;
 24. cleanup preflight reports every valid state-3 inventory row, reports zero invalid rows,
     performs zero deletions, and publishes valid state revision 4;
 25. final independent review reports `No findings`; and
@@ -977,40 +925,33 @@ The implementation candidate must pass:
 - the complete A2 tests through Microsoft.Testing.Platform;
 - direct apphost smoke commands;
 - evaluated project-reference and package-reference checks;
-- exact no-renames tracked-path comparisons for the source-safety candidate, final release
-  candidate, and release-record child defined in section 16;
+- exact no-renames tracked-path comparisons for A2R8 `P`, `R`, `I`, and `G`;
 - ref-bound HK checks;
 - `git diff --check`;
 - committed-file line-length and LF checks; and
 - candidate tree, ancestry, upstream, and clean-worktree checks.
 
 No retained command transcript may contain a private path, hash, manifest, request, provenance,
-inventory, source name, granular count, or copy. Repository-safe aggregate acceptance counts are
-recorded in review documents, not emitted by a command.
+inventory, source name, count, difference, disposition, or copy. A2R8 records only repository-safe
+governance checks and public synthetic-test results. Local discovery output is not retained or
+disclosed. Existing corpus counts in immutable historical records remain historical evidence; they
+are not active requirements, production constants, or future publication fields.
 
-The only counts permitted in Git are: save denominator 23, included saves 21, excluded Steam
-metadata 2, definition denominator 580, included definitions 496, excluded definitions 84, copy
-successes 21 and 496, copy failures 0, unsupported/unreadable 0, invalid inventory rows 0, and
-deletions 0. `Invalid inventory rows` is the strict validation result for the state-3-bound
-inventory, not a workspace census. The only safe difference categories are root set, denominator,
-selection rule, public build, unsupported/unreadable, or no difference. Every name and every other
-count is private.
+The current plan-review record path is
+`../reviews/atlas-v0-a2-approved-manifest-authority-correction-plan-review.md`. It binds:
 
-The plan-review record path is `../reviews/atlas-v0-a2-plan-review.md`. It binds:
-
-- the final plan commit and tree;
-- the exact A1 release record and its verification;
-- all reviewed and governing paths;
+- exact A2R8 `B`, plan commit and tree;
+- all reviewed, governing, and changed paths;
 - the trusted-local-filesystem decision;
 - every review iteration and disposition;
 - plan validation outcomes; and
 - the implementation diff base.
 
-The reviewed plan candidate contains this plan, the A0 contract, A0 scope-review lifecycle banner,
-Atlas execution plan, Save Semantic Atlas plan, and `.copilot` index. No other path belongs to the
-plan candidate.
+The exact A2R8 plan, review, implementation, and release candidates use only the path sets in the
+A2R8 correction plan. Historical candidate descriptions in this plan grant no current path
+authority.
 
-Every plan-review, source-safety, approval, and release record follows sections 16 and 17 of
+Every A2R8 plan-review and release record follows the correction plan and sections 16 and 17 of
 `project-operating-model.md`: independently review its exact staged blob, commit it unchanged as a
 record-only child, push it, and verify parent, path, content, and upstream.
 
@@ -1018,21 +959,20 @@ record-only child, push it, and verify parent, path, content, and upstream.
 
 Expected private outputs are:
 
-- create-new pending and approved manifest revisions;
-- request documents, live-discovery metadata, intake states, and copy plans;
-- save and definition snapshots;
-- private receipts, inventory, and completion signals;
-- cleanup-preflight report; and
-- unusable incomplete evidence retained only when removal fails.
+- A2R8 discovery may create only its request-bound pending manifest, source-root map, copy plan,
+  discovered state, inventory update, and inventory backup;
+- later approved manifests, qualified states, snapshots, receipts, and cleanup reports remain
+  expected A2 artifacts but are not authorized by A2R8 `G`; and
+- unusable incomplete evidence is retained only when safe removal fails.
 
 All remain under the protected Git-ignored Atlas workspace and follow A0 lifecycle milestones.
 
 To resume A2:
 
 1. read all applicable `AGENTS.md` files and the governing plans;
-2. verify the A2 plan-review record, exact diff base, upstream, and clean worktree;
+2. verify A2R8 `R`, final implementation review, shared `G`, upstream, and clean worktree;
 3. identify the first incomplete stage;
-4. do not enter the private phase without the exact source-safety record;
-5. leave private request creation, execution, manifest review, and hashing to the project leader;
-6. do not copy without the verified approval record and valid intake-state revision 2; and
+4. do not run discovery without exact A2R8 `G` and the independently reviewed bound wrapper;
+5. leave private request creation and execution to the local reviewed procedure;
+6. do not confirm, copy, or preflight without a new persisted continuation plan; and
 7. infer neither private state nor authority from conversation history.
