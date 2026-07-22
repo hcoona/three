@@ -3389,21 +3389,29 @@ public static class AtlasDiscovery
 
         List<AtlasManifestDefinitionEntry> results = [];
         HashSet<string> seenPaths = new(StringComparer.OrdinalIgnoreCase);
-        HashSet<string> approvedDirectoryPaths = new(StringComparer.OrdinalIgnoreCase);
-        foreach (string baselinePath in baselineDefinitionEntries.Keys)
-        {
-            string directoryPath = baselinePath;
-            while (directoryPath.LastIndexOf('/') is int separatorIndex and >= 0)
-            {
-                directoryPath = directoryPath[..separatorIndex];
-                approvedDirectoryPaths.Add(directoryPath);
-            }
-        }
-
         string[] excludedRoots = excludedDirectories
             .Select(AtlasIntakeContracts.NormalizePath)
             .OrderBy(static path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        HashSet<string> approvedDirectoryPaths = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string baselinePath in baselineDefinitionEntries.Keys)
+        {
+            AddApprovedDirectoryAncestors(baselinePath);
+        }
+
+        foreach (string excludedRoot in excludedRoots)
+        {
+            if (!AtlasDiscovery.ContainsPath(definitionRoot, excludedRoot)
+                || AtlasIntakeContracts.PathEquals(definitionRoot, excludedRoot))
+            {
+                continue;
+            }
+
+            AddApprovedDirectoryAncestors(
+                AtlasIntakeContracts.NormalizeRelativePath(
+                    Path.GetRelativePath(definitionRoot, excludedRoot)));
+        }
+
         EnumerateDirectory(definitionRoot);
         if (seenPaths.Count != baselineDefinitionEntries.Count)
         {
@@ -3484,6 +3492,16 @@ public static class AtlasDiscovery
                     EntryType = AtlasIntakeContracts.FileEntryType,
                     IsReparsePoint = false,
                 });
+            }
+        }
+
+        void AddApprovedDirectoryAncestors(string relativePath)
+        {
+            string directoryPath = relativePath;
+            while (directoryPath.LastIndexOf('/') is int separatorIndex and >= 0)
+            {
+                directoryPath = directoryPath[..separatorIndex];
+                approvedDirectoryPaths.Add(directoryPath);
             }
         }
     }

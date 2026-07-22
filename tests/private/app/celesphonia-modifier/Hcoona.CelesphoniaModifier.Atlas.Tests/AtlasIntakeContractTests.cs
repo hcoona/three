@@ -1788,6 +1788,8 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
     internal const string SurveyAlias = "survey-000001";
     internal const string BaselineManifestArtifactAlias =
         "private-artifact-000010";
+    internal const string IncludedDefinitionRelativePath =
+        "synthetic-corpus/content/definition-000001.json";
     private const string ApprovalCommit = "3610d5e2a69073672bda665eed25a545a141c06b";
 
     private readonly string rootPath;
@@ -1808,6 +1810,10 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
     public AtlasWorkspaceLayout Layout { get; }
 
     public string DefinitionRootPath { get; }
+
+    public string IncludedDefinitionPath => Path.Combine(
+        DefinitionRootPath,
+        IncludedDefinitionRelativePath.Replace('/', Path.DirectorySeparatorChar));
 
     public string GameExecutablePath { get; }
 
@@ -2038,7 +2044,6 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
         Directory.CreateDirectory(Layout.CleanupDirectory);
         Directory.CreateDirectory(SaveRootPath);
         Directory.CreateDirectory(WebSaveRootPath);
-        Directory.CreateDirectory(Path.Combine(DefinitionRootPath, "www", "data"));
 
         await CreateSyntheticSaveFilesAsync(baselineManifest.SaveEntries);
         await File.WriteAllTextAsync(
@@ -2188,7 +2193,7 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
             new()
             {
                 SourceAlias = "definition-source-010001",
-                RelativePath = "www/data/definition-000001.json",
+                RelativePath = IncludedDefinitionRelativePath,
                 GroupId = "test-json-specific",
                 Decision = AtlasIntakeContracts.IncludeDefinitionDecision,
                 EntryType = AtlasIntakeContracts.FileEntryType,
@@ -2197,7 +2202,7 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
             new()
             {
                 SourceAlias = "definition-source-010002",
-                RelativePath = "www/data/notes.txt",
+                RelativePath = "synthetic-corpus/content/notes.txt",
                 GroupId = "test-data-fallback",
                 Decision = AtlasIntakeContracts.ExcludeDefinitionDecision,
                 EntryType = AtlasIntakeContracts.FileEntryType,
@@ -2206,7 +2211,7 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
             new()
             {
                 SourceAlias = "definition-source-010003",
-                RelativePath = "www/log/test.txt",
+                RelativePath = "synthetic-corpus/log/test.txt",
                 GroupId = "test-log",
                 Decision = AtlasIntakeContracts.IncludeDefinitionDecision,
                 EntryType = AtlasIntakeContracts.FileEntryType,
@@ -2218,7 +2223,7 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
             new()
             {
                 GroupId = "test-json-specific",
-                SelectionRule = "www/data/*.json",
+                SelectionRule = "synthetic-corpus/content/*.json",
                 DiscoveredCount = definitionEntries.Count(static entry =>
                     entry.GroupId == "test-json-specific"),
                 Decision = AtlasIntakeContracts.IncludeDefinitionDecision,
@@ -2226,7 +2231,7 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
             new()
             {
                 GroupId = "test-data-fallback",
-                SelectionRule = "www/data/*",
+                SelectionRule = "synthetic-corpus/content/*",
                 DiscoveredCount = definitionEntries.Count(static entry =>
                     entry.GroupId == "test-data-fallback"),
                 Decision = AtlasIntakeContracts.ExcludeDefinitionDecision,
@@ -2234,7 +2239,7 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
             new()
             {
                 GroupId = "test-log",
-                SelectionRule = "www/log/*.txt",
+                SelectionRule = "synthetic-corpus/log/*.txt",
                 DiscoveredCount = definitionEntries.Count(static entry =>
                     entry.GroupId == "test-log"),
                 Decision = AtlasIntakeContracts.IncludeDefinitionDecision,

@@ -1086,8 +1086,7 @@ public sealed class TrustedLocalCopyTests
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
         await PrepareApprovedWorkspaceAsync(workspace);
         workspace.WriteRequest(workspace.CreateCopyRequest());
-        string firstTrackedSource = Path.Combine(workspace.DefinitionRootPath, "www", "data");
-        firstTrackedSource = Path.Combine(firstTrackedSource, "definition-000001.json");
+        string firstTrackedSource = workspace.IncludedDefinitionPath;
         AtlasIoSeams failingIo = AtlasTestSupport.CreateIo(
             openFile: (path, mode, access, share, options) =>
                 AtlasIntakeContracts.PathEquals(path, firstTrackedSource)
@@ -1155,11 +1154,7 @@ public sealed class TrustedLocalCopyTests
         Assert.Equal(
             priorInventorySha256,
             AtlasSyntheticWorkspace.ComputeSha256(workspace.Layout.CanonicalInventoryPath));
-        Assert.True(File.Exists(Path.Combine(
-            workspace.DefinitionRootPath,
-            "www",
-            "data",
-            "definition-000001.json")));
+        Assert.True(File.Exists(workspace.IncludedDefinitionPath));
 
         AtlasLoadedDocument<AtlasCopyPlanDocument> copyPlan =
             await AtlasIntakeContracts.ReadCopyPlanAsync(
@@ -1256,11 +1251,7 @@ public sealed class TrustedLocalCopyTests
                 TestContext.Current.CancellationToken);
         ResolvedCopySource source = new(
             copyPlan.Document.Entries[0],
-            Path.Combine(
-                workspace.DefinitionRootPath,
-                "www",
-                "data",
-                "definition-000001.json"));
+            workspace.IncludedDefinitionPath);
 
         string shortReadDestination = Path.Combine(
             workspace.Layout.CopiesDirectory,

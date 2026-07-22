@@ -148,7 +148,7 @@ public sealed class AtlasDiscoveryTests
                 "definition-group-rule",
                 json =>
                     ((JsonObject)((JsonArray)json["definitionGroups"]!)[0]!)["selectionRule"] =
-                        "www/data/[invalid].json");
+                        "synthetic-corpus/content/[invalid].json");
             data.Add(
                 "save-count",
                 json => json["includedSaveCount"] =
@@ -872,11 +872,7 @@ public sealed class AtlasDiscoveryTests
     public async Task DiscoverAsyncRejectsChangedDefinitionDenominator()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
-        File.Delete(Path.Combine(
-            workspace.DefinitionRootPath,
-            "www",
-            "data",
-            "definition-000001.json"));
+        File.Delete(workspace.IncludedDefinitionPath);
 
         AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
             () => AtlasDiscovery.DiscoverAsync(
