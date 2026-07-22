@@ -91,8 +91,8 @@ semantic scanning, write authority, WinUI, network access, and private data from
 - `reviews/atlas-v0-a2-released-a0-save-alias-compatibility-release-gate.md` established A2R7
   completion at verified shared `G`
   `904a14f66ac2fb6cd5f735cd6668a03123ab4ab3`. Its retry authority is superseded by A2R8.
-- `reviews/atlas-v0-a2-private-run-acceptance.md` will use the original A2 repository-safe fields.
-  It never carries private hashes, paths, names, document bytes, or package-provenance claims.
+- `reviews/atlas-v0-a2-private-run-acceptance.md` is obsolete and blocked. A2R8 publishes no private
+  discovery token, disposition, outcome, count, difference, hash, path, name, or document content.
 
 ## Workflow-policy artifacts
 

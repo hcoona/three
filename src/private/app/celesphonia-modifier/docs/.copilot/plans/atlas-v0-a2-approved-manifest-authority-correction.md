@@ -63,7 +63,7 @@ A2 identifies the authorized baseline directly:
 1. strict JSON must satisfy the existing `atlas-intake/v2` contract;
 2. the survey alias must be `survey-000001`;
 3. the manifest revision must be 3;
-4. validation must be `manual-a0-review/v1`;
+4. validation must be `manual-a0`;
 5. confirmation must be approved by the project-leader role;
 6. the decision reference must be exactly
    `commit:3610d5e2a69073672bda665eed25a545a141c06b`;
@@ -302,7 +302,7 @@ release evidence.
 
 ## 7. Exact repository candidates
 
-`P` is the direct child of base `B` and changes only:
+`P1` is the direct child of base `B` and changes only:
 
 ```text
 src/private/app/celesphonia-modifier/docs/.copilot/
@@ -312,7 +312,10 @@ src/private/app/celesphonia-modifier/docs/.copilot/
     atlas-v0-a2-intake-safety-plan.md
 ```
 
-`R` is the direct child of `P` and adds only:
+Any plan-review remediation candidates after `P1` form a direct-child chain and may change only the
+same three planning paths. Final plan candidate `P` is the last plan-correction commit.
+
+`R` is the direct child of final `P` and adds only:
 
 ```text
 src/private/app/celesphonia-modifier/docs/.copilot/reviews/
@@ -353,7 +356,8 @@ The required chain is:
 
 ```text
 B = 904a14f66ac2fb6cd5f735cd6668a03123ab4ab3
-P = reviewed plan candidate
+P1, P2, ... = plan and committed-review remediation children
+P = final reviewed plan candidate
 R = record-only plan-review child
 I1..In = implementation and review-remediation children
 I = final implementation candidate
@@ -362,21 +366,23 @@ G = reviewed record-only release-gate child
 
 Before implementation:
 
-1. review the exact staged `B..P` candidate independently;
-2. iterate the candidate until a fresh reviewer reports `No findings`;
-3. commit and push `P`;
-4. create the plan-review record with exact commit, tree, path, and review evidence;
-5. independently review that staged record until `No findings`;
-6. commit and push record-only `R`; and
-7. verify ancestry, paths, blobs, upstream equality, index, and clean worktree.
+1. review the exact staged `B..P1` candidate independently;
+2. commit and push `P1` after a fresh reviewer reports `No findings`;
+3. review the exact committed plan and fix findings only in direct-child plan corrections;
+4. independently review every remediation and designate the final `No findings` tip as `P`;
+5. create the plan-review record with every plan commit, tree, path, and review result;
+6. independently review that staged record until `No findings`;
+7. commit and push record-only `R`; and
+8. verify ancestry, paths, blobs, upstream equality, index, and clean worktree.
 
 Every implementation candidate must receive a fresh independent cumulative `R..In` review. Findings
 are fixed in a new direct-child candidate. Release is blocked until the reviewer reports
 `No findings`.
 
-The release-gate record must bind exact `B`, `P`, `R`, every `I` iteration, final tree, changed
-paths, validation results, removal searches, reviewer identities, and the final disposition. Review
-the exact staged record independently until `No findings`, then commit it unchanged as `G`.
+The release-gate record must bind exact `B`, every `P` iteration, final `P`, `R`, every `I`
+iteration, final tree, changed paths, validation results, removal searches, reviewer identities,
+and the final disposition. Review the exact staged record independently until `No findings`, then
+commit it unchanged as `G`.
 
 ## 9. Validation
 
