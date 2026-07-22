@@ -3216,7 +3216,7 @@ public static class AtlasDiscovery
             request.DefinitionRoot,
             baselineManifest.DefinitionGroups,
             baselineDefinitionEntries,
-            baselineSaveRootPaths.Values,
+            baselineSaveRootPaths.Values.Append(request.GameExecutablePath),
             io);
         if (discoveredDefinitionEntries.Count != baselineManifest.DefinitionEntries.Length)
         {
@@ -3389,6 +3389,17 @@ public static class AtlasDiscovery
 
         List<AtlasManifestDefinitionEntry> results = [];
         HashSet<string> seenPaths = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> approvedDirectoryPaths = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string baselinePath in baselineDefinitionEntries.Keys)
+        {
+            string directoryPath = baselinePath;
+            while (directoryPath.LastIndexOf('/') is int separatorIndex and >= 0)
+            {
+                directoryPath = directoryPath[..separatorIndex];
+                approvedDirectoryPaths.Add(directoryPath);
+            }
+        }
+
         string[] excludedRoots = excludedDirectories
             .Select(AtlasIntakeContracts.NormalizePath)
             .OrderBy(static path => path, StringComparer.OrdinalIgnoreCase)
@@ -3421,8 +3432,22 @@ public static class AtlasDiscovery
                     throw new AtlasSafetyException("A definition entry is reparse-backed.");
                 }
 
+                if (excludedRoots.Any(excludedRoot =>
+                        AtlasDiscovery.ContainsPath(excludedRoot, entryPath)))
+                {
+                    continue;
+                }
+
                 if ((attributes & FileAttributes.Directory) != 0)
                 {
+                    string relativeDirectoryPath = AtlasIntakeContracts.NormalizeRelativePath(
+                        Path.GetRelativePath(definitionRoot, entryPath));
+                    if (!approvedDirectoryPaths.Contains(relativeDirectoryPath))
+                    {
+                        throw new AtlasSafetyException(
+                            "The definition discovery denominator changed.");
+                    }
+
                     EnumerateDirectory(entryPath);
                     continue;
                 }
@@ -3434,7 +3459,8 @@ public static class AtlasDiscovery
                     relativePath);
                 if (definitionGroup is null)
                 {
-                    continue;
+                    throw new AtlasSafetyException(
+                        "The definition discovery denominator changed.");
                 }
 
                 if (!baselineDefinitionEntries.TryGetValue(

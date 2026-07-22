@@ -1976,7 +1976,6 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
         Directory.CreateDirectory(SaveRootPath);
         Directory.CreateDirectory(WebSaveRootPath);
         Directory.CreateDirectory(Path.Combine(DefinitionRootPath, "www", "data"));
-        Directory.CreateDirectory(Path.Combine(DefinitionRootPath, "www", "notes"));
 
         await CreateSyntheticSaveFilesAsync(baselineManifest.SaveEntries);
         await File.WriteAllTextAsync(

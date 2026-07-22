@@ -887,6 +887,24 @@ public sealed class AtlasDiscoveryTests
     }
 
     [Fact]
+    public async Task DiscoverAsyncRejectsNewDefinitionPathOutsideEverySelectionRule()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await File.WriteAllTextAsync(
+            Path.Combine(workspace.DefinitionRootPath, "unexpected.bin"),
+            "unexpected",
+            TestContext.Current.CancellationToken);
+
+        AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Contains("denominator", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(AtlasDiscoveryFailureStage.CorpusReconciliation, exception.DiscoveryStage);
+    }
+
+    [Fact]
     public void EnumerateDefinitionEntriesRejectsNovelExtensionMatchedByRecursiveAllRule()
     {
         string definitionRoot = CreateTemporaryDirectory();
@@ -931,7 +949,7 @@ public sealed class AtlasDiscoveryTests
     }
 
     [Fact]
-    public void EnumerateDefinitionEntriesTreatsNonRecursiveRuleLiterally()
+    public void EnumerateDefinitionEntriesRejectsFileOutsideEverySelectionRule()
     {
         string definitionRoot = CreateTemporaryDirectory();
         try
@@ -960,16 +978,54 @@ public sealed class AtlasDiscoveryTests
                         "root-only",
                         AtlasIntakeContracts.IncludeDefinitionDecision));
 
-            List<AtlasManifestDefinitionEntry> entries = AtlasDiscovery.EnumerateDefinitionEntries(
-                definitionRoot,
-                groups,
-                baselineEntries,
-                [],
-                AtlasIoSeams.Default);
+            Assert.Throws<AtlasSafetyException>(() =>
+                AtlasDiscovery.EnumerateDefinitionEntries(
+                    definitionRoot,
+                    groups,
+                    baselineEntries,
+                    [],
+                    AtlasIoSeams.Default));
+        }
+        finally
+        {
+            Directory.Delete(definitionRoot, recursive: true);
+        }
+    }
 
-            Assert.Equal(
-                ["content/root.json"],
-                entries.Select(entry => entry.RelativePath).ToArray());
+    [Fact]
+    public void EnumerateDefinitionEntriesRejectsUnapprovedEmptyDirectory()
+    {
+        string definitionRoot = CreateTemporaryDirectory();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(definitionRoot, "content"));
+            Directory.CreateDirectory(Path.Combine(definitionRoot, "unapproved"));
+            File.WriteAllText(
+                Path.Combine(definitionRoot, "content", "known.json"),
+                "{}",
+                Encoding.UTF8);
+            AtlasManifestDefinitionGroup[] groups =
+            [
+                CreateDefinitionGroup(
+                    "recursive-json",
+                    "content/**/*.json",
+                    AtlasIntakeContracts.IncludeDefinitionDecision),
+            ];
+            Dictionary<string, AtlasManifestDefinitionEntry> baselineEntries =
+                CreateDefinitionEntryMap(
+                    CreateDefinitionEntry(
+                        "definition-source-000001",
+                        "content/known.json",
+                        "recursive-json",
+                        AtlasIntakeContracts.IncludeDefinitionDecision));
+
+            Assert.Throws<AtlasSafetyException>(() =>
+                AtlasDiscovery.EnumerateDefinitionEntries(
+                    definitionRoot,
+                    groups,
+                    baselineEntries,
+                    [],
+                    AtlasIoSeams.Default));
         }
         finally
         {

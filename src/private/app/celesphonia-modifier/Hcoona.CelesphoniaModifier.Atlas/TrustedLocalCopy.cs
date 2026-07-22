@@ -1392,6 +1392,7 @@ public static class TrustedLocalCopy
                     }),
                 ],
                 DefinitionRoot = sourceRootMap.DefinitionRootPath,
+                GameExecutablePath = sourceRootMap.GameExecutablePath,
             },
             manifest,
             io);

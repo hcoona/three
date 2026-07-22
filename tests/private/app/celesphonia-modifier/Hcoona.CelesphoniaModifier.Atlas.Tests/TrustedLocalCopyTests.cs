@@ -1058,6 +1058,29 @@ public sealed class TrustedLocalCopyTests
     }
 
     [Fact]
+    public async Task CopyAsyncRejectsNewDefinitionPathBeforeSourceAccess()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareApprovedWorkspaceAsync(workspace);
+        workspace.WriteRequest(workspace.CreateCopyRequest());
+        await File.WriteAllTextAsync(
+            Path.Combine(workspace.DefinitionRootPath, "unexpected.bin"),
+            "unexpected",
+            TestContext.Current.CancellationToken);
+        int liveSourceOpenCount = 0;
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => TrustedLocalCopy.CopyAsync(
+                workspace.Layout.CanonicalCopyRequestPath,
+                AtlasTestSupport.CreateSourceReadCountingIo(
+                    workspace,
+                    () => liveSourceOpenCount++),
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(0, liveSourceOpenCount);
+    }
+
+    [Fact]
     public async Task CopyAsyncPropagatesSharingViolation()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
