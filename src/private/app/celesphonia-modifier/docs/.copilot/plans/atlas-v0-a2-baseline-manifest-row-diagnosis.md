@@ -1,0 +1,172 @@
+# Atlas V0 A2 Baseline Manifest Row Diagnosis
+
+**Lifecycle:** Active subordinate; planning-only before verified shared `R11`
+
+**Status:** Diagnostic source change blocked
+
+**Increment:** A2R11 - Baseline Manifest Row Diagnosis
+
+**Decision owner:** Project leader
+
+**Purpose:** Identify which fixed released baseline-manifest inventory-row predicate requires
+correction without publishing private values or authorizing a state change.
+
+**Implementation language:** Session-only C#
+
+**Base:** `c7300d9fbbe93b62262dc80a25aa1aa550b3e3fa`
+
+**Governing sources:**
+
+- `project-operating-model.md`;
+- `atlas-v0-a2-intake-safety-plan.md`.
+
+**Historical provenance:**
+
+- `atlas-v0-a2-current-baseline-observation.md`; and
+- `../reviews/atlas-v0-a2-current-baseline-observation-completion.md`.
+
+The completed A2R10 sources establish the protected input class and grant no A2R11 authority.
+
+**Dependencies:** Verified shared A2R10 `G10`, its protected observation report, unchanged released
+Atlas source, preserved current inventory, and independent review of this plan and exact diagnostic
+source.
+
+**Planned plan-review record:**
+`../reviews/atlas-v0-a2-baseline-manifest-row-diagnosis-plan-review.md`
+
+**Planned completion record:**
+`../reviews/atlas-v0-a2-baseline-manifest-row-diagnosis-completion.md`
+
+## 1. Safe conclusion and claim
+
+A2R10 completed one current-state observation. Its protected result supports the repository-safe
+conclusion that the released baseline-manifest inventory-row relationship requires one narrower
+diagnosis before A2 can continue. This statement reveals no path, hash, value, row content, or
+predicate result.
+
+A2R11 classifies only that released relationship. It does not claim the row is wrong, the validator
+is wrong, or remediation is authorized. Its result selects a separately planned production
+correction, private remediation, or authority clarification.
+
+## 2. Scope
+
+In scope:
+
+- reuse the exact A2R10 session observer project and protected report directory;
+- read the single protected A2R10 report and require its current-inventory fingerprint;
+- locate and strictly read the single current canonical inventory;
+- require its byte length and SHA-256 to match the A2R10 fingerprint;
+- select rows with released purpose `ManifestRevision3Purpose`;
+- classify cardinality and each predicate in `ValidateBaselineManifestArtifact`;
+- write one create-new private diagnosis report;
+- emit only the existing fixed report-recorded signal; and
+- retain all private evidence under protected session state.
+
+Out of scope:
+
+- reading the request, manifest, backup, wrapper, game, saves, definitions, or generated Atlas
+  outputs other than the current inventory;
+- publishing a literal row field, alias, path, hash, count, value, or document fragment;
+- changing production, tests, schemas, packages, tracked projects, or CLI behavior;
+- modifying any existing private input or operational Atlas artifact;
+- discovery, confirmation, copy, cleanup, repair, or private remediation;
+- historical identity, cross-file atomicity, hostile-local defense, or one-shot authority; and
+- deciding the final correction before the private diagnosis exists.
+
+## 3. Diagnostic contract
+
+The exact reviewed program gains a `--diagnose-manifest-row` mode that receives the public
+repository root and a 32-character lowercase hexadecimal run identifier. It:
+
+1. derives the protected session `files` root and observer project directory from the exact
+   `a2r10-current-baseline-observer/bin/Release/<target-framework>/` location, validates both as
+   ordinary non-reparse directories, and confines both source and diagnosis reports to that project
+   directory;
+2. requires exactly one well-formed A2R10 observation report in that directory;
+3. requires the A2R10 report schema and exactly one `current-inventory` fingerprint;
+4. locates exactly one canonical Atlas workspace;
+5. validates the current inventory as an ordinary non-reparse file;
+6. loads it through `AtlasIntakeContracts.ReadInventoryAsync`;
+7. requires the returned byte length and SHA-256 to match the A2R10 fingerprint;
+8. selects rows with the exact released baseline-manifest purpose; and
+9. records the fixed predicate results in memory before one create-new report write.
+
+The diagnosis report schema is `atlas-a2-baseline-manifest-row-diagnosis/v1`. It contains:
+
+- outcome `diagnosed` or `source-refused`;
+- only for `diagnosed`, cardinality `zero`, `one`, or `multiple`; and
+- only for diagnosed cardinality `one`, a fixed mismatch-name array drawn from:
+  `artifact-class`, `custodian-role`, `lineage`, `last-use`, `expiry`, `disposition`, `status`,
+  `qualification`, and `verification-method`.
+
+`source-refused` omits cardinality and mismatch names. The report contains no literal row value,
+alias, path, source hash, content, or dynamic exception detail. An empty mismatch array means the
+released helper must accept the same row. A nonempty array means the released helper must refuse it.
+Synthetic tests prove both reconciliation directions.
+
+The report filename is
+`a2r11-baseline-manifest-row-diagnosis-<run-id>.json` beneath the validated session project
+directory. It uses create-new semantics. Standard output remains exactly
+`observation-recorded\n` or `observation-not-recorded\n`; standard error remains empty.
+
+## 4. Candidates and gates
+
+Plan candidate `P11` is the direct child of A2R10 `G10` and may change only:
+
+```text
+src/private/app/celesphonia-modifier/docs/.copilot/
+  README.md
+  plans/
+    atlas-v0-a2-baseline-manifest-row-diagnosis.md
+    atlas-v0-a2-current-baseline-observation.md
+    atlas-v0-a2-intake-safety-plan.md
+```
+
+Plan-review `R11` is the direct child of final `P11` and adds only:
+
+```text
+src/private/app/celesphonia-modifier/docs/.copilot/reviews/
+  atlas-v0-a2-baseline-manifest-row-diagnosis-plan-review.md
+```
+
+Only after verified shared `R11`, modify and rebuild the existing session observer source. Before
+private diagnosis:
+
+1. bind clean `HEAD` and upstream to exact `R11`;
+2. prove released Atlas source remains unchanged from A2R8 `G`;
+3. run the exact existing A2R10 self-tests and new A2R11 synthetic tests;
+4. retain exact source, observer assembly, and Atlas assembly hashes; and
+5. independently review the complete exact source until `No findings`.
+
+Completion `G11` is the direct child of `R11` and adds only:
+
+```text
+src/private/app/celesphonia-modifier/docs/.copilot/reviews/
+  atlas-v0-a2-baseline-manifest-row-diagnosis-completion.md
+```
+
+It records public provenance, source hashes, validation, privacy, and that a diagnosis report was
+recorded. It omits the report hash, outcome, cardinality, mismatch names, and future route.
+
+## 5. Acceptance and handoff
+
+A2R11 may enter private diagnosis only when:
+
+1. `P11` and `R11` are reviewed, pushed, and verified;
+2. the complete source builds with zero warnings and errors;
+3. static review finds no input write, state-changing command, dynamic output, or unlisted read;
+4. synthetic tests cover A2R10 report selection, schema, role cardinality, fingerprint mismatch,
+   and source-refused field omission;
+5. every cardinality and fixed predicate mismatch has exact synthetic coverage;
+6. synthetic tests reconcile the fixed classification with the released helper;
+7. report create-new, exact signal, and empty standard error are proved;
+8. every finding receives `TP` or `FP` adjudication; and
+9. a fresh independent reviewer returns `No findings`.
+
+A2R11 closes when one final private diagnosis report is recorded, the record parses against the
+closed schema, existing inputs remain unchanged, the result-free completion receives independent
+`No findings`, and record-only `G11` is the clean shared tip.
+
+If source selection, fingerprint binding, or report publication fails, retry with a fresh run
+identifier is allowed because diagnosis is repeatable and read-only. A2R11 authorizes no action on
+its result. The next plan starts only after verified shared `G11`.

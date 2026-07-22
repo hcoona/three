@@ -1,8 +1,8 @@
 # Atlas V0 A2 Current Baseline Observation
 
-**Lifecycle:** Active subordinate; planning-only before verified shared `R10`
+**Lifecycle:** Historical supporting; completed at verified shared `G10`
 
-**Status:** Observer construction blocked
+**Status:** Completed at `c7300d9fbbe93b62262dc80a25aa1aa550b3e3fa`
 
 **Increment:** A2R10 - Current Baseline Observation
 
@@ -35,10 +35,10 @@ do not import A2R9 execution controls.
 the approved `trusted-local-filesystem/v1` profile, and independent review of this plan and the
 exact session observer source.
 
-**Planned plan-review record:**
+**Plan-review record:**
 `../reviews/atlas-v0-a2-current-baseline-observation-plan-review.md`
 
-**Planned completion record:**
+**Completion record:**
 `../reviews/atlas-v0-a2-current-baseline-observation-completion.md`
 
 ## 1. Correction and claim

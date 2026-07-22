@@ -50,6 +50,10 @@
 > `atlas-v0-a2-current-baseline-observation.md` governs planning-only A2R10. It may record per-file
 > current baseline fingerprints after verified shared plan-review `R10`. It makes no historical or
 > simultaneous-filesystem-snapshot claim.
+> A2R10 completed at verified shared `G10`.
+> **Baseline manifest row diagnosis**
+> `atlas-v0-a2-baseline-manifest-row-diagnosis.md` governs planning-only A2R11. It may classify only
+> the fixed released baseline-manifest inventory-row predicates after verified shared `R11`.
 
 ## 1. Outcome
 
@@ -122,9 +126,10 @@ A2 implementation may begin only when:
 - that record passes its parent, path, content, and upstream checks; and
 - the tracked worktree is clean.
 
-Current progression is governed by A2R10. A2R8 attempt authority is consumed, and A2R9 stopped
-before private reads. Discovery, confirmation, copying, cleanup, correction, and private remediation
-remain blocked except for the read-only current-baseline observation after verified shared `R10`.
+Current progression is governed by A2R11. A2R8 attempt authority is consumed, A2R9 stopped before
+private reads, and A2R10 recorded current state. Discovery, confirmation, copying, cleanup,
+correction, and private remediation remain blocked except for the read-only row diagnosis after
+verified shared `R11`.
 
 ## 4. Scope
 
@@ -149,7 +154,7 @@ remain blocked except for the read-only current-baseline observation after verif
 - One simultaneous corpus snapshot.
 - Full Windows identity, volume, link-count, final-path, or reparse-tag proof.
 - Native interop, CsWin32, a Windows-specific target framework, or a new tracked project. The
-  disposable session-only A2R10 observer project is governed by its subordinate plan.
+  disposable session-only A2R10/A2R11 observer project is governed by its subordinate plans.
 - Network access, telemetry, private-data logging, or exception-detail output.
 - WinUI, dependency injection, Generic Host, a database, or an Agent runtime.
 - Promoting or scanning the pre-A2 preservation snapshot.
@@ -475,10 +480,10 @@ A2R8 `G` does not authorize approval or `intake-confirm`. Preserve all existing 
 locally and stop. Supply none of their paths, hashes, counts, differences, names, contents,
 disposition, or outcome to a subagent, process output, or Git.
 
-A separately persisted and independently reviewed continuation plan after A2R10 must bind A2R8 `G`
-and verified shared A2R10 `G10`, define the exact local review procedure, repository-safe decision
-record, ancestry, and fixed diagnostics, and receive project-leader confirmation before approval
-resumes.
+A separately persisted and independently reviewed continuation plan after A2R11 must bind A2R8 `G`,
+verified shared A2R10 `G10`, and verified shared A2R11 `G11`, define the exact local review
+procedure, repository-safe decision record, ancestry, and fixed diagnostics, and receive
+project-leader confirmation before approval resumes.
 
 Any future confirmation must still verify state revision 1 and every bound document digest, publish
 approved manifest revision 5 and state revision 2 with create-new semantics, and preserve all
@@ -564,9 +569,9 @@ Every create-new operational Atlas JSON output uses one publication procedure:
 4. move it to a nonexistent final filename; and
 5. retain no success claim if any step fails.
 
-The session-only A2R10 observation report is diagnostic evidence rather than an operational Atlas
-document. Its subordinate plan exclusively governs its direct create-new publication under
-protected session state.
+The session-only A2R10 observation and A2R11 diagnosis reports are diagnostic evidence rather than
+operational Atlas documents. Their subordinate plans exclusively govern direct create-new
+publication under protected session state.
 
 A staging file is never a revision or completion signal. Deterministic control-document staging may
 be validated and promoted by the same request. A staged copy receipt is captured point-in-time
@@ -854,13 +859,13 @@ Verified shared A2R8 `G` permitted one reviewed metadata-only attempt. Its first
 consumed that authority. Its disposition and outcome remain protected local evidence. No A2R8
 prerequisite, wrapper binding, or historical instruction authorizes another attempt.
 
-### A2.3 Current A2R10 observation boundary
+### A2.3 Current A2R11 diagnosis boundary
 
 A2R9 authorizes no diagnostic because its retained-prior-request-identity gate was unsatisfied.
-A2R10 may authorize only its exact reviewed session-only, read-only current-baseline observation
-after verified shared plan-review `R10`. It authorizes no discovery retry,
-confirmation, copy, cleanup preflight, deletion, decoding, semantic scanning, production correction,
-or private remediation.
+A2R10 completed its current-baseline observation at verified shared `G10`. A2R11 may authorize only
+its exact reviewed session-only, read-only baseline-manifest-row diagnosis after verified shared
+plan-review `R11`. It authorizes no discovery retry, confirmation, copy, cleanup preflight,
+deletion, decoding, semantic scanning, production correction, or private remediation.
 
 ### A2.4 Historical A2R8 release
 
@@ -872,7 +877,7 @@ execution authority.
 A2 is accepted only when:
 
 Criteria for confirmation, copy, and preflight remain eventual A2 requirements. They do not grant
-current execution authority; section 17 limits current work to the reviewed A2R10 observation.
+current execution authority; section 17 limits current work to the reviewed A2R11 diagnosis.
 
 1. the implementation matches the exact tracked scope and three-project boundary;
 2. production projects retain zero project-local package references;
@@ -967,8 +972,9 @@ A2R8 correction plan. Historical candidate descriptions in this plan grant no cu
 authority.
 
 Every A2R8 plan-review and release record followed the correction plan and sections 16 and 17 of
-`project-operating-model.md`. A2R9 remains blocked review evidence. The current A2R10 gate and chain
-are defined only by `atlas-v0-a2-current-baseline-observation.md`.
+`project-operating-model.md`. A2R9 remains blocked review evidence, and A2R10 is completed evidence.
+The current A2R11 gate and chain are defined only by
+`atlas-v0-a2-baseline-manifest-row-diagnosis.md`.
 
 ## 21. Private outputs and handoff
 
@@ -980,18 +986,20 @@ Expected private outputs are:
   expected A2 artifacts but are not authorized by A2R8 `G`; and
 - unusable incomplete evidence is retained only when safe removal fails; and
 - A2R10 creates one private observation report under protected Copilot session state, governed only
+  by its subordinate plan; and
+- A2R11 creates one private diagnosis report under protected Copilot session state, governed only
   by its subordinate plan.
 
 Operational Atlas outputs remain under the protected Git-ignored Atlas workspace and follow A0
-lifecycle milestones. The A2R10 report remains outside that workspace and never becomes an Atlas
-operational artifact.
+lifecycle milestones. The A2R10 and A2R11 reports remain outside that workspace and never become
+Atlas operational artifacts.
 
 To resume A2:
 
 1. read all applicable `AGENTS.md` files and the governing plans;
-2. verify A2R8 `G`, blocked A2R9 `R`, upstream, and clean worktree;
-3. persist and independently review A2R10 through its exact plan-review `R10`;
-4. execute only the exact A2R10 current-baseline observation after all of its gates pass;
+2. verify A2R8 `G`, blocked A2R9 `R`, completed A2R10 `G10`, upstream, and clean worktree;
+3. persist and independently review A2R11 through its exact plan-review `R11`;
+4. execute only the exact A2R11 baseline-manifest-row diagnosis after all of its gates pass;
 5. do not run discovery, confirmation, copy, cleanup, correction, or remediation;
-6. require a separate post-A2R10 persisted plan for any later operation; and
+6. require a separate post-A2R11 persisted plan for any later operation; and
 7. infer neither private state nor authority from conversation history or historical instructions.
