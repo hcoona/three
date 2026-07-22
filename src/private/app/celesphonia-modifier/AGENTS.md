@@ -38,6 +38,35 @@ Reusable work follows the project's declared implementation policy from the star
 experiment must be explicitly bounded, carry no hidden migration assumption, and remain outside the
 reusable production path.
 
+## Planning correction
+
+Before remediating a review round, run a planning-drift gate against the accepted outcome, claim,
+in-scope scenarios, threat model, exclusions, and acceptance evidence. For a formal execution
+increment or material candidate, use its persisted plan as the baseline. Re-derive the ideal minimal
+shape before considering the current implementation. Do not turn every conceivable failure into an
+in-scope requirement.
+
+Treat each review finding as a hypothesis, not an instruction:
+
+1. Make mixed findings atomic, then classify every finding as a true positive (`TP`) or false
+   positive (`FP`) with evidence and a proportionately documented rationale.
+2. A `TP` demonstrates an in-scope violation or an unmet acceptance criterion. Resolve it by
+   correcting the defect or narrowing the claim. If the resolution changes a persisted outcome,
+   claim, scope, threat model, exclusion, acceptance criterion, stop condition, output, authority,
+   risk, or resume procedure, obtain approval and persist the revised plan before execution
+   continues. Prefer deleting machinery or narrowing a claim over adding controls.
+3. An `FP` depends on a false premise, an out-of-scope threat, or behavior already covered by the
+   candidate. Do not change the candidate merely to silence it. For a formal execution increment or
+   material candidate, record the disposition and obtain independent concurrence. For ordinary
+   local work, a reasoned disposition is sufficient unless it is material or disputed. Escalate
+   unresolved disagreement to the user.
+
+Stop patching and return to planning when remediation would introduce a new process, persistent
+state, protocol, recovery path, trust boundary, or threat assumption not required by the accepted
+plan. Also reset to the ideal minimal design after two consecutive review rounds with structural
+findings, or whenever complexity grows without corresponding acceptance evidence. Persist and
+review any resulting material scope or architecture change before resuming execution.
+
 ## Evidence and data safety
 
 Separate observed facts, inferences, assumptions, and decisions. Bind consequential claims and
@@ -55,10 +84,13 @@ Authorship does not confer approval. Every execution increment remains in progre
 independent subagent reviews the full exact candidate against its persisted plan and returns
 `No findings`.
 
-Resolve every actionable finding, including documentation and non-blocking findings, or obtain a
-separately approved and persisted scope change. Re-review the complete new candidate, not only the
-remediation diff. Preserve reviewer independence and do not override configured reviewer models
-unless the user explicitly requests it or the task requires a specific available model.
+Do not apply findings before the required `TP`/`FP` adjudication. Resolve every adjudicated `TP`,
+including documentation and non-blocking findings, or obtain a separately approved and persisted
+scope change. Return independently concurred `FP` dispositions to the review loop without changing
+the candidate merely to silence them. Re-review the complete candidate and dispositions, not only
+the remediation diff, until the reviewer returns `No findings`. Preserve reviewer independence and
+do not override configured reviewer models unless the user explicitly requests it or the task
+requires a specific available model.
 
 Release authority comes from the applicable persisted gate evidence, not from local task state,
 conversation history, elapsed time, or artifact presence. Follow the detailed persistence,
