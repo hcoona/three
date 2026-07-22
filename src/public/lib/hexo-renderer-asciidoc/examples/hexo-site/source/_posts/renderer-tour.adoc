@@ -17,45 +17,76 @@ Want to see what happens between your `.adoc` file and the HTML that lands in
 
 == Step 1 – Asciidoctor conversion
 
-The plugin bootstraps Asciidoctor once and reuses it for every render. Each
-call runs `convert()` with:
+Each render awaits the named `convert()` API from `@asciidoctor/core` 4.0.4.
+Every call uses:
 
 * `doctype=article`
 * `safe=server`
-* `source-highlighter=html-pipeline`
+* `to_file=false`
 
-Those defaults match Hexo's static hosting assumptions while keeping dangerous
-macros disabled.
+The renderer does not pass `base_dir`, so relative includes resolve from the
+conversion-time current working directory. `data.path` and the Hexo site root
+do not change that behavior.
+
+This renderer is *not safe for untrusted AsciiDoc*. `safe=server` still permits
+local includes, and symlink targets can escape an assumed directory boundary.
+The current working directory is not a jail. Render only trusted input in an
+isolated or sandboxed working directory containing no secrets.
 
 == Step 2 – Static highlighting
 
-After Asciidoctor returns HTML, we pass every `<pre><code>` block through
-`hexo-util.highlight`. That keeps code fences visually consistent with the rest
-of the Hexo ecosystem even though the source language is AsciiDoc.
+After Asciidoctor returns HTML, the package rewrites only the recognized direct
+listing-block chain `div.listingblock > div.content > pre > code`. That keeps
+code fences visually consistent with the rest of the Hexo ecosystem without
+rewriting arbitrary passthrough `<pre><code>` HTML.
+
+The highlighter path uses fixed options:
+
+* `autoDetect=false`
+* `gutter=false`
+* `wrap=false`
+
+The package does not set `source-highlighter=html-pipeline`. The public
+renderer's controlled `safe=server` options ignore a document-level setting and
+use Asciidoctor's default output. Its internal highlighter recognizes the
+supported default and html-pipeline marker shapes for compatibility, but this
+API exposes no arbitrary highlighter configuration.
 
 [source,typescript]
 ----
 import renderer from 'hexo-renderer-asciidoc';
 
-const html = renderer({ text: '== Sample ==' });
-// html already contains Hexo-flavoured <figure class="highlight"> wrappers
+const html = await renderer({ text: '== Sample ==' });
+// html already contains syntax-highlighted listing-block markup
 ----
 
-== Step 3 – Curly brace sanitisation
+== Step 3 – Curly brace escaping
 
-Hexo themes (including the default `landscape`) use `pass:[{% helper %}]` syntax. To
-prevent fragment re-processing, we escape any literal `{` or `}` sequences that
-survive Asciidoctor. You can confirm this by viewing page source—the braces in
-inline code samples become HTML entities until Hexo finishes rendering.
+After highlighting, the renderer globally encodes every literal `{` and `}` in
+the generated HTML as `&#123;` and `&#125;`. This prevents downstream Hexo tag
+or template interpretation where applicable. Browsers decode numeric character
+references in ordinary HTML text and attribute values for display or use, but
+HTML raw-text elements such as `<script>` and `<style>` do not: the references
+remain literal source text and can alter or break embedded JavaScript or CSS.
+
+Raw HTML remains unsanitized, so this package is *not suitable for untrusted
+input*. Sanitizing output markup cannot prevent an include from disclosing file
+contents.
 
 == Verifying the pipeline locally
 
+After completing the root-invoked clean-checkout setup documented in
+`examples/hexo-site/README.md`, stay at the repository root and run:
+
 [source,bash]
 ----
-pnpm generate
-xdg-open public/index.html
+mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc run build
+mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site run generate
+xdg-open src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/public/index.html
 ----
 
 Inspect the resulting markup and you'll see the three stages above reflected
-verbatim. Adjust the renderer under `src/core/` and regenerate to watch the
-output evolve.
+verbatim. After adjusting the parent renderer under `src/core/`, rerun the
+parent-package build before regenerating the example with the commands above.
+If you script the package directly instead of going through Hexo, remember that
+`renderSync` is unsupported and `renderer(...)` must be awaited.

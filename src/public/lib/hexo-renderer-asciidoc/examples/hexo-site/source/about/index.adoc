@@ -13,23 +13,56 @@ This static page explains how the sample Hexo site consumes the renderer.
 
 * Showcase the `hexo-renderer-asciidoc` integration without publishing to npm.
 * Provide ready-to-edit `.adoc` sources for posts _and_ pages.
-* Demonstrate Hexo's default theme + highlight pipeline with zero extra tweaks.
+* Demonstrate Hexo's async renderer registration and listing-block highlighting
+  with zero renderer-specific configuration.
 
 == How it works
 
-. `package.json` points `hexo-renderer-asciidoc` to the repository root via a
+. `package.json` points `hexo-renderer-asciidoc` to the parent package via a
   local `link:` dependency.
-. Run `pnpm install` **inside `examples/hexo-site`**. The example intentionally
-  stays out of the main pnpm workspace so it can pin its own Hexo toolchain.
-. Hexo discovers the renderer automatically and wires it as the handler for
-  `.ad`, `.adoc`, and `.asciidoc` files.
+. From a clean checkout, first follow the exact build/install/generate sequence
+  in `examples/hexo-site/README.md` so the linked `dist/` files exist before
+  Hexo installs or generates the site.
+. Run `pnpm install` **inside `examples/hexo-site`** for later local-only
+  changes. The example intentionally stays out of the main pnpm workspace so it
+  can pin its own Hexo toolchain.
+. Hexo discovers the renderer automatically, registers `.ad`, `.adoc`, and
+  `.asciidoc` asynchronously, and awaits the renderer during normal async site
+  generation.
 
-== Customising
+== Customizing
 
-The renderer currently ships a fixed Asciidoctor configuration (`doctype`
-`article`, `safe` `server`, `source-highlighter` `html-pipeline`). If you need
-different attributes, fork the package, tweak `src/core/asciidoctor.ts`, and
-publish or link your build the same way this example does.
+The renderer currently ships a fixed Asciidoctor configuration:
+
+* `doctype=article`
+* `safe=server`
+* `to_file=false`
+
+It does **not** set `base_dir`, so includes resolve from the conversion-time
+current working directory. `data.path` and the Hexo site root do not change
+that behavior.
+
+This renderer is *not safe for untrusted AsciiDoc*. `safe=server` still permits
+local includes, and symlink targets can escape an assumed directory boundary.
+The current working directory is not a jail. Render only trusted input in an
+isolated or sandboxed working directory containing no secrets.
+
+The package does not set `source-highlighter=html-pipeline`. The public
+renderer's controlled `safe=server` options ignore a document-level setting and
+use Asciidoctor's default output. It re-highlights recognized direct
+listing-block structures with fixed `hexo-util.highlight` options
+(`autoDetect: false`, `gutter: false`, `wrap: false`). Its internal highlighter
+recognizes the supported marker shapes for compatibility, but this API exposes
+no arbitrary highlighter configuration.
+
+After highlighting, the renderer globally encodes every literal brace in the
+generated HTML as `&#123;` or `&#125;`. Browsers decode numeric character
+references in ordinary HTML text and attribute values for display or use, but
+HTML raw-text elements such as `<script>` and `<style>` do not: the references
+remain literal source text and can alter or break embedded JavaScript or CSS.
+Raw HTML remains unsanitized, so this package is not suitable for untrusted
+input. Sanitizing output markup cannot prevent an include from disclosing file
+contents.
 
 Need a different Hexo theme? Install it with `pnpm add <theme>` inside the
 example folder and update `_config.yml` accordingly.

@@ -14,47 +14,67 @@ tags:
 :toc: macro
 
 This demo blog exists to showcase how the renderer plugs AsciiDoc into Hexo 8.
-Every page you are reading—including this one—is rendered by the exact same
-code that ships to npm.
+Every authored AsciiDoc source page and post in this example—including this
+one—is rendered by the linked local build from this repository branch. Hexo
+generates index, archive, category, tag, and theme pages separately.
 
 == Why this renderer
 
-* Converts `.ad`, `.adoc`, and `.asciidoc` sources with Asciidoctor 3.0.4 using
-  `doctype=article` and `safe=server`.
-* Re-runs Hexo's static syntax highlighter so code blocks look identical to the
-  Markdown pipeline.
-* Escapes `{` / `}` pairs before returning HTML to Hexo, preventing theme
-  helpers from misinterpreting template expressions.
+* Converts `.ad`, `.adoc`, and `.asciidoc` sources with `@asciidoctor/core`
+  4.0.4 using `doctype=article`, `safe=server`, and `to_file=false`.
+* Registers asynchronously with Hexo, so normal Hexo rendering awaits the
+  renderer and programmatic callers must `await renderer(...)`.
+* Re-runs Hexo's static syntax highlighter only for recognized AsciiDoc listing
+  blocks, then encodes every literal `{` / `}` as a numeric character reference
+  before returning HTML to Hexo.
 
 == How to wire it into your site
 
-. Add the dependency inside your Hexo project:
+This repository branch documents the upcoming 4.x beta migration. As of July 22,
+2026, npm publishes only stable v3 on the `latest` dist-tag; no v4 prerelease or
+`beta` dist-tag is available yet. Do not install the unqualified package to test
+the v4 behavior, because it resolves to v3. Until a v4 prerelease is published,
+use the clean-checkout build and local-link workflow in
+<<_what_this_example_proves>>.
+
+. Once a v4 prerelease is published under the `beta` dist-tag, add it inside your
+  Hexo project:
 +
 [source,bash]
 ----
-pnpm add hexo-renderer-asciidoc
+pnpm add hexo-renderer-asciidoc@beta
 ----
 . Restart Hexo. The framework auto-discovers renderers and routes the supported
-  extensions through this package—no extra configuration necessary.
+  extensions through this package asynchronously—no extra registration code is
+  necessary.
+. If you call the renderer directly, use `await renderer(...)`. `renderSync` is
+  unsupported for AsciiDoc input.
 . Keep your posts under `source/_posts/*.adoc` and Hexo will take care of the
   rest.
 
 == What this example proves
 
-This repository depends on `hexo-renderer-asciidoc` via a local `link:` dependency.
-When you run the commands below inside `examples/hexo-site`, Hexo executes the
-fresh TypeScript build from the monorepo root, so you can iterate on the
-renderer and the demo simultaneously.
-
-[source,bash]
-----
-pnpm install
-pnpm dev
-----
+This repository depends on `hexo-renderer-asciidoc` via a local `link:`
+dependency. From a clean clone, first follow the exact build/install/generate
+sequence in `examples/hexo-site/README.md`. After that, you can run `pnpm dev`
+inside `examples/hexo-site` and iterate on the renderer and the demo
+simultaneously.
 
 Open <http://localhost:4000> and inspect the generated HTML via the browser dev
-tools—you will see that the renderer already ships pre-highlighted code blocks
-and sanitized markup.
+tools—you will see that recognized listing blocks are already pre-highlighted.
+After highlighting, the renderer globally encodes every literal brace in the
+generated HTML as `&#123;` or `&#125;`. Browsers decode numeric character
+references in ordinary HTML text and attribute values for display or use, but
+HTML raw-text elements such as `<script>` and `<style>` do not: the references
+remain literal source text and can alter or break embedded JavaScript or CSS.
+Raw HTML remains unsanitized, so this package is not suitable for untrusted
+input.
+
+This renderer is *not safe for untrusted AsciiDoc*. `safe=server` still permits
+local includes from the conversion-time current working directory, and symlink
+targets can escape an assumed directory boundary. That directory is not a jail.
+Render only trusted input in an isolated or sandboxed working directory with no
+secrets. Sanitizing output markup cannot prevent file-content disclosure.
 
 == Key defaults to remember
 
@@ -67,9 +87,27 @@ and sanitized markup.
 | Doctype
 | `article`
 
-| Source highlighter
-| `html-pipeline` + Hexo's `hexo-util.highlight`
+| Source highlighter default
+| Asciidoctor default output; document-level `html-pipeline` is ignored
+
+| Highlight scope
+| direct `div.listingblock > div.content > pre > code` only
+
+| Include base directory
+| conversion-time `process.cwd()`
 |===
 
-Need a different behaviour? Fork the renderer, tweak `src/core/asciidoctor.ts`,
-and re-run `pnpm build` before pointing your Hexo site to the new bundle.
+The internal highlighter recognizes supported default and html-pipeline marker
+shapes for compatibility, but the public API cannot configure arbitrary
+highlighter options.
+
+Need different behavior? Fork the renderer and tweak `src/core/asciidoctor.ts`.
+To rebuild the linked parent package and then regenerate this example, stay at
+the repository root and run:
+
+[source,bash]
+----
+mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc run build
+mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site run generate
+xdg-open src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/public/index.html
+----
