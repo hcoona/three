@@ -30,15 +30,46 @@ public sealed class TrustedLocalCopyTests
             await AtlasIntakeContracts.ReadInventoryAsync(
                 workspace.Layout.CanonicalInventoryPath,
                 TestContext.Current.CancellationToken);
+        AtlasLoadedDocument<AtlasCorpusIntakeManifest> approvedManifest =
+            await AtlasIntakeContracts.ReadManifestAsync(
+                workspace.Layout.CanonicalApprovedManifestPath,
+                TestContext.Current.CancellationToken);
+        AtlasLoadedDocument<AtlasCopyPlanDocument> copyPlan =
+            await AtlasIntakeContracts.ReadCopyPlanAsync(
+                workspace.Layout.CanonicalCopyPlanPath,
+                TestContext.Current.CancellationToken);
 
-        Assert.Equal(AtlasIntakeContracts.ExactIncludedSaveCount, receipt.Document.SaveCount);
+        Assert.Equal(approvedManifest.Document.IncludedSaveCount, receipt.Document.SaveCount);
         Assert.Equal(
-            AtlasIntakeContracts.ExactIncludedDefinitionCount,
+            approvedManifest.Document.IncludedDefinitionCount,
             receipt.Document.DefinitionCount);
         Assert.Equal(
-            AtlasIntakeContracts.ExactIncludedSaveCount
-            + AtlasIntakeContracts.ExactIncludedDefinitionCount,
+            approvedManifest.Document.IncludedSaveCount
+            + approvedManifest.Document.IncludedDefinitionCount,
             receipt.Document.Entries.Length);
+        Assert.Equal(copyPlan.Document.Entries.Length, receipt.Document.Entries.Length);
+        foreach (AtlasCopyPlanEntry plannedEntry in copyPlan.Document.Entries)
+        {
+            AtlasCopyReceiptEntry receiptEntry = receipt.Document.Entries.Single(
+                entry => entry.SourceAlias == plannedEntry.SourceAlias);
+            Assert.Equal(
+                plannedEntry.DestinationArtifactAlias,
+                receiptEntry.DestinationArtifactAlias);
+            Assert.Equal(plannedEntry.ArtifactClass, receiptEntry.ArtifactClass);
+            Assert.Equal(
+                plannedEntry.DestinationRelativePath,
+                receiptEntry.DestinationRelativePath);
+            string copiedPath = Path.Combine(
+                workspace.Layout.CanonicalFinalCopyPath,
+                receiptEntry.DestinationRelativePath.Replace(
+                    '/',
+                    Path.DirectorySeparatorChar));
+            Assert.Equal(receiptEntry.SourceLength, new FileInfo(copiedPath).Length);
+            Assert.Equal(
+                receiptEntry.SourceSha256,
+                AtlasSyntheticWorkspace.ComputeSha256(copiedPath));
+        }
+
         Assert.Equal(AtlasIntakeContracts.QualifiedPhase, state.Document.Phase);
         Assert.Equal(
             AtlasIntakeContracts.SaveSnapshotRelativeRoot,

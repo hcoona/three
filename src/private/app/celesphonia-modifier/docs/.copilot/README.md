@@ -43,9 +43,10 @@ semantic scanning, write authority, WinUI, network access, and private data from
   that removes repository `.gitignore` policy from Atlas runtime validation.
 - `plans/atlas-v0-a2-released-a0-save-alias-compatibility.md` is the historical released A2R7
   correction that restored the released A0 alias-to-locator assignment.
-- `plans/atlas-v0-a2-approved-manifest-authority-correction.md` is the planning-gated A2R8
-  architectural correction. It removes duplicate public corpus reconstruction and makes the
-  approved A0 manifest authoritative. A2R8 supersedes A2R7 private-retry authority.
+- `plans/atlas-v0-a2-approved-manifest-authority-correction.md` is the implementation-review-gated
+  A2R8 architectural correction. It removes duplicate public corpus reconstruction and makes the
+  approved A0 manifest authoritative. A2R8 supersedes A2R7 private-retry authority; no private
+  command is authorized before its reviewed release gate.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.

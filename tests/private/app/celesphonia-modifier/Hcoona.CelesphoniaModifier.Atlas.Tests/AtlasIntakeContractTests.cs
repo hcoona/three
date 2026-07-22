@@ -433,239 +433,7 @@ public sealed class AtlasIntakeContractTests
     }
 
     [Fact]
-    public void FrozenSaveEntriesMatchReleasedA0AliasContract()
-    {
-        (
-            string SourceAlias,
-            string RootAlias,
-            string RelativePath,
-            string Role,
-            int? SlotNumber,
-            string Decision
-        )[] expected =
-        [
-            (
-                "save-source-0001",
-                "save-root-0001",
-                "config.rpgsave",
-                AtlasIntakeContracts.ConfigSaveRole,
-                null,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0002",
-                "save-root-0001",
-                "file1.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                1,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0003",
-                "save-root-0001",
-                "file10.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                10,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0004",
-                "save-root-0001",
-                "file11.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                11,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0005",
-                "save-root-0001",
-                "file12.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                12,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0006",
-                "save-root-0001",
-                "file13.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                13,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0007",
-                "save-root-0001",
-                "file14.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                14,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0008",
-                "save-root-0001",
-                "file15.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                15,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0009",
-                "save-root-0001",
-                "file16.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                16,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0010",
-                "save-root-0001",
-                "file17.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                17,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0011",
-                "save-root-0001",
-                "file18.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                18,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0012",
-                "save-root-0001",
-                "file19.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                19,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0013",
-                "save-root-0001",
-                "file2.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                2,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0014",
-                "save-root-0001",
-                "file20.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                20,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0015",
-                "save-root-0001",
-                "file3.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                3,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0016",
-                "save-root-0001",
-                "file4.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                4,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0017",
-                "save-root-0001",
-                "file5.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                5,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0018",
-                "save-root-0001",
-                "file6.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                6,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0019",
-                "save-root-0001",
-                "file7.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                7,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0020",
-                "save-root-0001",
-                "file9.rpgsave",
-                AtlasIntakeContracts.SlotSaveRole,
-                9,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0021",
-                "save-root-0001",
-                "global.rpgsave",
-                AtlasIntakeContracts.GlobalSaveRole,
-                null,
-                AtlasIntakeContracts.IncludeSaveDecision
-            ),
-            (
-                "save-source-0022",
-                "save-root-0001",
-                "steam_autocloud.vdf",
-                AtlasIntakeContracts.SteamAutoCloudSaveRole,
-                null,
-                AtlasIntakeContracts.ExcludeSteamAutoCloudDecision
-            ),
-            (
-                "save-source-0023",
-                "save-root-0002",
-                "steam_autocloud.vdf",
-                AtlasIntakeContracts.SteamAutoCloudSaveRole,
-                null,
-                AtlasIntakeContracts.ExcludeSteamAutoCloudDecision
-            ),
-        ];
-        string[] releasedRoles =
-        [
-            "config",
-            .. Enumerable.Repeat("slot", 19),
-            "global",
-            "steam-autocloud",
-            "steam-autocloud",
-        ];
-        string[] releasedDecisions =
-        [
-            .. Enumerable.Repeat("include-save", 21),
-            "exclude-steam-autocloud",
-            "exclude-steam-autocloud",
-        ];
-
-        AtlasManifestSaveEntry[] actual = AtlasIntakeContracts.GetExactFrozenSaveEntries();
-
-        Assert.Equal(expected.Length, actual.Length);
-        Assert.Equal(expected.Length, releasedRoles.Length);
-        Assert.Equal(expected.Length, releasedDecisions.Length);
-        for (int index = 0; index < expected.Length; index++)
-        {
-            Assert.Equal(expected[index].SourceAlias, actual[index].SourceAlias);
-            Assert.Equal(expected[index].RootAlias, actual[index].RootAlias);
-            Assert.Equal(expected[index].RelativePath, actual[index].RelativePath);
-            Assert.Equal(releasedRoles[index], expected[index].Role);
-            Assert.Equal(expected[index].Role, actual[index].Role);
-            Assert.Equal(expected[index].SlotNumber, actual[index].SlotNumber);
-            Assert.Equal(releasedDecisions[index], expected[index].Decision);
-            Assert.Equal(expected[index].Decision, actual[index].Decision);
-            Assert.Equal("file", actual[index].EntryType);
-            Assert.False(actual[index].IsReparsePoint);
-        }
-    }
-
-    [Fact]
-    public async Task PipelineUsesExactApprovedCensus()
+    public async Task PipelineUsesManifestDerivedCensus()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
         await PrepareWorkspaceThroughPreflightAsync(workspace);
@@ -696,20 +464,22 @@ public sealed class AtlasIntakeContractTests
                 TestContext.Current.CancellationToken);
 
         Assert.Equal(
-            AtlasIntakeContracts.ExactSaveEntryCount,
+            pendingManifest.Document.DiscoveredSaveDirectoryEntryCount,
             pendingManifest.Document.SaveEntries.Length);
         Assert.Equal(
-            AtlasIntakeContracts.ExactIncludedSaveCount,
+            pendingManifest.Document.SaveEntries.Count(static entry =>
+                entry.Decision == AtlasIntakeContracts.IncludeSaveDecision),
             pendingManifest.Document.IncludedSaveCount);
         Assert.Equal(
-            AtlasIntakeContracts.ExactDefinitionEntryCount,
+            pendingManifest.Document.DiscoveredDefinitionEntryCount,
             pendingManifest.Document.DefinitionEntries.Length);
         Assert.Equal(
-            AtlasIntakeContracts.ExactIncludedDefinitionCount,
+            pendingManifest.Document.DefinitionEntries.Count(static entry =>
+                entry.Decision == AtlasIntakeContracts.IncludeDefinitionDecision),
             pendingManifest.Document.IncludedDefinitionCount);
         Assert.Equal(
-            AtlasIntakeContracts.ExactIncludedSaveCount
-            + AtlasIntakeContracts.ExactIncludedDefinitionCount,
+            pendingManifest.Document.IncludedSaveCount
+            + pendingManifest.Document.IncludedDefinitionCount,
             copyPlan.Document.Entries.Length);
         Assert.Equal(copyPlan.Document.Entries.Length, receipt.Document.Entries.Length);
         Assert.Equal(
@@ -1607,19 +1377,19 @@ public sealed class AtlasIntakeContractTests
                 typeof(AtlasApprovalException),
                 json => ((JsonObject)((JsonArray)json["saveRoots"]!)[0]!)["reasonCode"] = null),
             new(
-                "approved-manifest.saveEntries[19].slotNumber",
+                "approved-manifest.saveEntries[1].slotNumber",
                 workspace.Layout.CanonicalApprovedManifestPath,
                 static (path, cancellationToken) =>
                     AtlasIntakeContracts.ReadManifestAsync(path, cancellationToken).AsTask(),
                 typeof(AtlasApprovalException),
-                json => ((JsonObject)((JsonArray)json["saveEntries"]!)[19]!)["slotNumber"] = null),
+                json => ((JsonObject)((JsonArray)json["saveEntries"]!)[1]!)["slotNumber"] = null),
             new(
-                "approved-manifest.saveEntries[19].reasonCode",
+                "approved-manifest.saveEntries[1].reasonCode",
                 workspace.Layout.CanonicalApprovedManifestPath,
                 static (path, cancellationToken) =>
                     AtlasIntakeContracts.ReadManifestAsync(path, cancellationToken).AsTask(),
                 typeof(AtlasApprovalException),
-                json => ((JsonObject)((JsonArray)json["saveEntries"]!)[19]!)["reasonCode"] = null),
+                json => ((JsonObject)((JsonArray)json["saveEntries"]!)[1]!)["reasonCode"] = null),
             new(
                 "approved-manifest.definitionGroups[0].reasonCode",
                 workspace.Layout.CanonicalApprovedManifestPath,
@@ -1955,7 +1725,7 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
     internal const string SurveyAlias = "survey-000001";
     internal const string BaselineManifestArtifactAlias =
         "private-artifact-000010";
-    private const string ApprovalCommit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    private const string ApprovalCommit = "3610d5e2a69073672bda665eed25a545a141c06b";
 
     private readonly string rootPath;
 
@@ -2228,8 +1998,8 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
     {
         Dictionary<string, string> saveRoots = new(StringComparer.Ordinal)
         {
-            ["save-root-0001"] = SaveRootPath,
-            ["save-root-0002"] = WebSaveRootPath,
+            ["save-root-0101"] = SaveRootPath,
+            ["save-root-0102"] = WebSaveRootPath,
         };
         foreach (AtlasManifestSaveEntry entry in saveEntries)
         {
@@ -2284,21 +2054,143 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
 
     private static AtlasCorpusIntakeManifest CreateBaselineManifest()
     {
-        AtlasManifestSaveEntry[] saveEntries = AtlasIntakeContracts.GetExactFrozenSaveEntries();
+        AtlasManifestSaveEntry[] saveEntries =
+        [
+            new()
+            {
+                SourceAlias = "save-source-0101",
+                RootAlias = "save-root-0101",
+                RelativePath = "file1.rpgsave",
+                Role = AtlasIntakeContracts.SlotSaveRole,
+                SlotNumber = 1,
+                Decision = AtlasIntakeContracts.IncludeSaveDecision,
+                EntryType = AtlasIntakeContracts.FileEntryType,
+                IsReparsePoint = false,
+            },
+            new()
+            {
+                SourceAlias = "save-source-0102",
+                RootAlias = "save-root-0101",
+                RelativePath = "global.rpgsave",
+                Role = AtlasIntakeContracts.GlobalSaveRole,
+                Decision = AtlasIntakeContracts.IncludeSaveDecision,
+                EntryType = AtlasIntakeContracts.FileEntryType,
+                IsReparsePoint = false,
+            },
+            new()
+            {
+                SourceAlias = "save-source-0103",
+                RootAlias = "save-root-0101",
+                RelativePath = "steam_autocloud.vdf",
+                Role = AtlasIntakeContracts.SteamAutoCloudSaveRole,
+                Decision = AtlasIntakeContracts.ExcludeSteamAutoCloudDecision,
+                EntryType = AtlasIntakeContracts.FileEntryType,
+                IsReparsePoint = false,
+            },
+            new()
+            {
+                SourceAlias = "save-source-0104",
+                RootAlias = "save-root-0102",
+                RelativePath = "steam_autocloud.vdf",
+                Role = AtlasIntakeContracts.SteamAutoCloudSaveRole,
+                Decision = AtlasIntakeContracts.ExcludeSteamAutoCloudDecision,
+                EntryType = AtlasIntakeContracts.FileEntryType,
+                IsReparsePoint = false,
+            },
+        ];
+        AtlasManifestSaveRoot[] saveRoots =
+        [
+            new()
+            {
+                RootAlias = "save-root-0101",
+                LocationRole = AtlasIntakeContracts.DeploymentRootSaveRole,
+                Activity = AtlasIntakeContracts.ActiveSaveRootActivity,
+                Decision = AtlasIntakeContracts.IncludeSaveRootDecision,
+                ObservedEntryCount = saveEntries.Count(static entry =>
+                    entry.RootAlias == "save-root-0101"),
+                IsReparsePoint = false,
+            },
+            new()
+            {
+                RootAlias = "save-root-0102",
+                LocationRole = AtlasIntakeContracts.WebRootSaveRole,
+                Activity = AtlasIntakeContracts.InactiveSaveRootActivity,
+                Decision = AtlasIntakeContracts.ExcludeNoSaveInputsDecision,
+                ObservedEntryCount = saveEntries.Count(static entry =>
+                    entry.RootAlias == "save-root-0102"),
+                IsReparsePoint = false,
+            },
+        ];
+        AtlasManifestDefinitionEntry[] definitionEntries =
+        [
+            new()
+            {
+                SourceAlias = "definition-source-010001",
+                RelativePath = "www/data/definition-000001.json",
+                GroupId = "test-json-specific",
+                Decision = AtlasIntakeContracts.IncludeDefinitionDecision,
+                EntryType = AtlasIntakeContracts.FileEntryType,
+                IsReparsePoint = false,
+            },
+            new()
+            {
+                SourceAlias = "definition-source-010002",
+                RelativePath = "www/data/notes.txt",
+                GroupId = "test-data-fallback",
+                Decision = AtlasIntakeContracts.ExcludeDefinitionDecision,
+                EntryType = AtlasIntakeContracts.FileEntryType,
+                IsReparsePoint = false,
+            },
+            new()
+            {
+                SourceAlias = "definition-source-010003",
+                RelativePath = "www/log/test.txt",
+                GroupId = "test-log",
+                Decision = AtlasIntakeContracts.IncludeDefinitionDecision,
+                EntryType = AtlasIntakeContracts.FileEntryType,
+                IsReparsePoint = false,
+            },
+        ];
         AtlasManifestDefinitionGroup[] definitionGroups =
-            AtlasIntakeContracts.GetExactFrozenDefinitionGroups();
-        AtlasManifestDefinitionEntry[] definitionEntries = CreateBaselineDefinitionEntries();
+        [
+            new()
+            {
+                GroupId = "test-json-specific",
+                SelectionRule = "www/data/*.json",
+                DiscoveredCount = definitionEntries.Count(static entry =>
+                    entry.GroupId == "test-json-specific"),
+                Decision = AtlasIntakeContracts.IncludeDefinitionDecision,
+            },
+            new()
+            {
+                GroupId = "test-data-fallback",
+                SelectionRule = "www/data/*",
+                DiscoveredCount = definitionEntries.Count(static entry =>
+                    entry.GroupId == "test-data-fallback"),
+                Decision = AtlasIntakeContracts.ExcludeDefinitionDecision,
+            },
+            new()
+            {
+                GroupId = "test-log",
+                SelectionRule = "www/log/*.txt",
+                DiscoveredCount = definitionEntries.Count(static entry =>
+                    entry.GroupId == "test-log"),
+                Decision = AtlasIntakeContracts.IncludeDefinitionDecision,
+            },
+        ];
         return new AtlasCorpusIntakeManifest
         {
             SchemaVersion = AtlasIntakeContracts.IntakeManifestSchemaVersion,
             SurveyAlias = SurveyAlias,
             ManifestRevision = AtlasIntakeContracts.BaselineManifestRevision,
-            SaveRoots = AtlasIntakeContracts.GetExactFrozenSaveRoots(),
-            DiscoveredSaveDirectoryEntryCount = AtlasIntakeContracts.ExactSaveEntryCount,
-            IncludedSaveCount = AtlasIntakeContracts.ExactIncludedSaveCount,
+            SaveRoots = saveRoots,
+            DiscoveredSaveDirectoryEntryCount = saveEntries.Length,
+            IncludedSaveCount = saveEntries.Count(static entry =>
+                entry.Decision == AtlasIntakeContracts.IncludeSaveDecision),
             SaveEntries = saveEntries,
-            DiscoveredDefinitionEntryCount = AtlasIntakeContracts.ExactDefinitionEntryCount,
-            IncludedDefinitionCount = AtlasIntakeContracts.ExactIncludedDefinitionCount,
+            DiscoveredDefinitionEntryCount = definitionEntries.Length,
+            IncludedDefinitionCount = definitionEntries.Count(static entry =>
+                entry.Decision == AtlasIntakeContracts.IncludeDefinitionDecision),
             DefinitionGroups = definitionGroups,
             DefinitionEntries = definitionEntries,
             Validation = new AtlasManifestValidation
@@ -2321,80 +2213,5 @@ internal sealed class AtlasSyntheticWorkspace : IAsyncDisposable
                 DecisionReference = "commit:" + ApprovalCommit,
             },
         };
-    }
-
-    private static AtlasManifestDefinitionEntry[] CreateBaselineDefinitionEntries()
-    {
-        List<AtlasManifestDefinitionEntry> entries = [];
-        int nextOrdinal = 1;
-
-        void AddDefinitionEntries(
-            string groupId,
-            string decision,
-            IEnumerable<string> relativePaths)
-        {
-            foreach (string relativePath in relativePaths)
-            {
-                entries.Add(new AtlasManifestDefinitionEntry
-                {
-                    SourceAlias = $"definition-source-{nextOrdinal++:000000}",
-                    RelativePath = relativePath,
-                    GroupId = groupId,
-                    Decision = decision,
-                    EntryType = AtlasIntakeContracts.FileEntryType,
-                    IsReparsePoint = false,
-                });
-            }
-        }
-
-        AddDefinitionEntries(
-            AtlasIntakeContracts.RootPackageDefinitionGroupId,
-            AtlasIntakeContracts.IncludeDefinitionDecision,
-            ["package.json"]);
-        AddDefinitionEntries(
-            AtlasIntakeContracts.WebPackageDefinitionGroupId,
-            AtlasIntakeContracts.IncludeDefinitionDecision,
-            ["www/package.json"]);
-        AddDefinitionEntries(
-            AtlasIntakeContracts.WebEntryDefinitionGroupId,
-            AtlasIntakeContracts.IncludeDefinitionDecision,
-            ["www/index.html"]);
-        AddDefinitionEntries(
-            AtlasIntakeContracts.GameDataDefinitionGroupId,
-            AtlasIntakeContracts.IncludeDefinitionDecision,
-            Enumerable.Range(1, 327)
-                .Select(index => $"www/data/definition-{index:000000}.json"));
-        AddDefinitionEntries(
-            AtlasIntakeContracts.EngineScriptsDefinitionGroupId,
-            AtlasIntakeContracts.IncludeDefinitionDecision,
-            Enumerable.Range(1, 8)
-                .Select(index => $"www/js/engine-{index:0000}.js"));
-        AddDefinitionEntries(
-            AtlasIntakeContracts.PluginScriptsDefinitionGroupId,
-            AtlasIntakeContracts.IncludeDefinitionDecision,
-            Enumerable.Range(1, 157)
-                .Select(index => $"www/js/plugins/plugin-{index:000000}.js"));
-        AddDefinitionEntries(
-            AtlasIntakeContracts.CodecReferenceDefinitionGroupId,
-            AtlasIntakeContracts.IncludeDefinitionDecision,
-            ["www/js/libs/lz-string.js"]);
-        AddDefinitionEntries(
-            AtlasIntakeContracts.RuntimeLibsDefinitionGroupId,
-            AtlasIntakeContracts.ExcludeDefinitionDecision,
-            Enumerable.Range(1, 5)
-                .Select(index => $"www/js/libs/runtime-{index:0000}.js"));
-        AddDefinitionEntries(
-            AtlasIntakeContracts.AuxiliaryDefinitionGroupId,
-            AtlasIntakeContracts.ExcludeDefinitionDecision,
-            Enumerable.Range(1, 44)
-                .Select(index => $"www/notes/auxiliary-{index:000000}.txt"));
-        AddDefinitionEntries(
-            AtlasIntakeContracts.DetachedDlcDefinitionGroupId,
-            AtlasIntakeContracts.ExcludeDefinitionDecision,
-            Enumerable.Range(1, 35)
-                .Select(index =>
-                    "Celesphonia Cosplay DLC 2/gallery/item-"
-                    + $"{index:000000}.html"));
-        return [.. entries];
     }
 }

@@ -31,12 +31,6 @@ public static class AtlasIntakeContracts
     public const string ExactSurveyAlias = "survey-000001";
     public const int ExactSteamAppId = 1786790;
     public const int ExactBuildId = 13624401;
-    public const int ExactSaveEntryCount = 23;
-    public const int ExactIncludedSaveCount = 21;
-    public const int ExactExcludedSteamMetadataCount = 2;
-    public const int ExactDefinitionEntryCount = 580;
-    public const int ExactIncludedDefinitionCount = 496;
-    public const int ExactExcludedDefinitionCount = 84;
     public const int MaxJsonDepth = 32;
     public const int BaselineManifestRevision = 3;
     public const int PendingManifestRevision = 4;
@@ -143,122 +137,11 @@ public static class AtlasIntakeContracts
     internal const string ConfirmRequestPurpose = "request:confirm";
     internal const string CopyRequestPurpose = "request:copy";
     internal const string CleanupPreflightRequestPurpose = "request:cleanup-preflight";
-    internal const string RootPackageDefinitionGroupId = "root-package";
-    internal const string WebPackageDefinitionGroupId = "web-package";
-    internal const string WebEntryDefinitionGroupId = "web-entry";
-    internal const string GameDataDefinitionGroupId = "game-data";
-    internal const string EngineScriptsDefinitionGroupId = "engine-scripts";
-    internal const string PluginScriptsDefinitionGroupId = "plugin-scripts";
-    internal const string CodecReferenceDefinitionGroupId = "codec-reference";
-    internal const string RuntimeLibsDefinitionGroupId = "non-semantic-runtime-libs";
-    internal const string AuxiliaryDefinitionGroupId = "auxiliary-definition-probes";
-    internal const string DetachedDlcDefinitionGroupId = "detached-dlc-probe";
-    internal const string RootPackageSelectionRule = "package.json";
-    internal const string WebPackageSelectionRule = "www/package.json";
-    internal const string WebEntrySelectionRule = "www/index.html";
-    internal const string GameDataSelectionRule = "www/data/*.json";
-    internal const string EngineScriptsSelectionRule = "www/js/*.js";
-    internal const string PluginScriptsSelectionRule = "www/js/plugins/*.js";
-    internal const string CodecReferenceSelectionRule = "www/js/libs/lz-string.js";
-    internal const string RuntimeLibsSelectionRule = "www/js/libs/*.js";
-    internal const string AuxiliaryDefinitionSelectionRule =
-        "www/**/*.{json,csv,txt,xml,yaml,yml,xlsx}";
-    internal const string DetachedDlcSelectionRule = "Celesphonia Cosplay DLC 2/**/*";
+    internal const string BaselineApprovalDecisionReference =
+        "commit:3610d5e2a69073672bda665eed25a545a141c06b";
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private static readonly AtlasJsonContext JsonContext = new(JsonOptions);
-    internal static readonly IReadOnlyList<int> ExactIncludedSaveSlots =
-    [
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        9,
-        10,
-        11,
-        12,
-        13,
-        14,
-        15,
-        16,
-        17,
-        18,
-        19,
-        20,
-    ];
-    private static readonly ExactSaveRootContract[] ExactFrozenSaveRoots =
-    [
-        new(
-            "save-root-0001",
-            DeploymentRootSaveRole,
-            ActiveSaveRootActivity,
-            IncludeSaveRootDecision,
-            22),
-        new(
-            "save-root-0002",
-            WebRootSaveRole,
-            InactiveSaveRootActivity,
-            ExcludeNoSaveInputsDecision,
-            1),
-    ];
-    private static readonly ExactSaveEntryContract[] ExactFrozenSaveEntries =
-        CreateExactFrozenSaveEntryContracts();
-    private static readonly ExactDefinitionGroupContract[] ExactFrozenDefinitionGroups =
-    [
-        new(
-            RootPackageDefinitionGroupId,
-            RootPackageSelectionRule,
-            1,
-            IncludeDefinitionDecision),
-        new(
-            WebPackageDefinitionGroupId,
-            WebPackageSelectionRule,
-            1,
-            IncludeDefinitionDecision),
-        new(
-            WebEntryDefinitionGroupId,
-            WebEntrySelectionRule,
-            1,
-            IncludeDefinitionDecision),
-        new(
-            GameDataDefinitionGroupId,
-            GameDataSelectionRule,
-            327,
-            IncludeDefinitionDecision),
-        new(
-            EngineScriptsDefinitionGroupId,
-            EngineScriptsSelectionRule,
-            8,
-            IncludeDefinitionDecision),
-        new(
-            PluginScriptsDefinitionGroupId,
-            PluginScriptsSelectionRule,
-            157,
-            IncludeDefinitionDecision),
-        new(
-            CodecReferenceDefinitionGroupId,
-            CodecReferenceSelectionRule,
-            1,
-            IncludeDefinitionDecision),
-        new(
-            RuntimeLibsDefinitionGroupId,
-            RuntimeLibsSelectionRule,
-            5,
-            ExcludeDefinitionDecision),
-        new(
-            AuxiliaryDefinitionGroupId,
-            AuxiliaryDefinitionSelectionRule,
-            44,
-            ExcludeDefinitionDecision),
-        new(
-            DetachedDlcDefinitionGroupId,
-            DetachedDlcSelectionRule,
-            35,
-            ExcludeDefinitionDecision),
-    ];
     private static readonly HashSet<string> AllowedInventoryArtifactClasses =
         new(StringComparer.Ordinal)
         {
@@ -540,6 +423,34 @@ public static class AtlasIntakeContracts
         return relativePath.Split(['\\', '/'], StringSplitOptions.None);
     }
 
+    internal static bool TrySplitDefinitionSelectionRule(
+        string selectionRule,
+        out string[] segments)
+    {
+        segments = [];
+        if (string.IsNullOrWhiteSpace(selectionRule))
+        {
+            return false;
+        }
+
+        string[] candidateSegments =
+            selectionRule.Split(['\\', '/'], StringSplitOptions.None);
+        foreach (string segment in candidateSegments)
+        {
+            if (segment.Length == 0
+                || StringComparer.Ordinal.Equals(segment, ".")
+                || StringComparer.Ordinal.Equals(segment, "..")
+                || segment.Contains(':')
+                || !IsValidDefinitionSelectionRuleSegment(segment))
+            {
+                return false;
+            }
+        }
+
+        segments = candidateSegments;
+        return true;
+    }
+
     internal static bool PathEquals(string first, string second) =>
         StringComparer.OrdinalIgnoreCase.Equals(
             NormalizePath(first).TrimEnd(Path.DirectorySeparatorChar, '/'),
@@ -658,46 +569,6 @@ public static class AtlasIntakeContracts
         + "/copy-receipt.json";
 
     internal static string GetCleanupPreflightReportRelativePath() => "cleanup/a2-preflight.json";
-
-    internal static AtlasManifestSaveRoot[] GetExactFrozenSaveRoots() =>
-        [
-            .. ExactFrozenSaveRoots.Select(static contract => new AtlasManifestSaveRoot
-            {
-                RootAlias = contract.RootAlias,
-                LocationRole = contract.LocationRole,
-                Activity = contract.Activity,
-                Decision = contract.Decision,
-                ObservedEntryCount = contract.ObservedEntryCount,
-                IsReparsePoint = false,
-            }),
-        ];
-
-    internal static AtlasManifestSaveEntry[] GetExactFrozenSaveEntries() =>
-        [
-            .. ExactFrozenSaveEntries.Select(static contract => new AtlasManifestSaveEntry
-            {
-                SourceAlias = contract.SourceAlias,
-                RootAlias = contract.RootAlias,
-                RelativePath = contract.RelativePath,
-                Role = contract.Role,
-                SlotNumber = contract.SlotNumber,
-                Decision = contract.Decision,
-                EntryType = FileEntryType,
-                IsReparsePoint = false,
-            }),
-        ];
-
-    internal static AtlasManifestDefinitionGroup[] GetExactFrozenDefinitionGroups() =>
-        [
-            .. ExactFrozenDefinitionGroups.Select(
-                static contract => new AtlasManifestDefinitionGroup
-                {
-                    GroupId = contract.GroupId,
-                    SelectionRule = contract.SelectionRule,
-                    DiscoveredCount = contract.DiscoveredCount,
-                    Decision = contract.Decision,
-                }),
-        ];
 
     internal static AtlasWorkspaceLayout CreateWorkspaceLayout(
         string projectRoot,
@@ -1447,17 +1318,17 @@ public static class AtlasIntakeContracts
         }
 
         if (manifest.SaveRoots.Length != 2
-            || manifest.SaveEntries.Length != ExactSaveEntryCount
-            || manifest.DiscoveredSaveDirectoryEntryCount != ExactSaveEntryCount
-            || manifest.IncludedSaveCount != ExactIncludedSaveCount)
+            || manifest.DiscoveredSaveDirectoryEntryCount != manifest.SaveEntries.Length
+            || manifest.IncludedSaveCount != manifest.SaveEntries.Count(static entry =>
+                StringComparer.Ordinal.Equals(entry.Decision, IncludeSaveDecision)))
         {
             throw new AtlasValidationException();
         }
 
         if (manifest.DefinitionGroups.Length == 0
-            || manifest.DefinitionEntries.Length != ExactDefinitionEntryCount
-            || manifest.DiscoveredDefinitionEntryCount != ExactDefinitionEntryCount
-            || manifest.IncludedDefinitionCount != ExactIncludedDefinitionCount)
+            || manifest.DiscoveredDefinitionEntryCount != manifest.DefinitionEntries.Length
+            || manifest.IncludedDefinitionCount != manifest.DefinitionEntries.Count(static entry =>
+                StringComparer.Ordinal.Equals(entry.Decision, IncludeDefinitionDecision)))
         {
             throw new AtlasValidationException();
         }
@@ -1468,7 +1339,6 @@ public static class AtlasIntakeContracts
         ValidateManifestSaveEntries(manifest.SaveEntries);
         ValidateManifestDefinitions(manifest.DefinitionGroups, manifest.DefinitionEntries);
         ValidateManifestRevisionPolicy(manifest);
-        ValidateExactManifestCorpus(manifest);
     }
 
     private static void ValidateManifestSaveRoots(
@@ -1586,8 +1456,8 @@ public static class AtlasIntakeContracts
         HashSet<string> groupIds = new(StringComparer.Ordinal);
         foreach (AtlasManifestDefinitionGroup group in groups)
         {
-            if (string.IsNullOrWhiteSpace(group.GroupId)
-                || string.IsNullOrWhiteSpace(group.SelectionRule)
+            if (!IsValidDefinitionGroupId(group.GroupId)
+                || !TrySplitDefinitionSelectionRule(group.SelectionRule, out _)
                 || group.DiscoveredCount < 0
                 || (!StringComparer.Ordinal.Equals(group.Decision, IncludeDefinitionDecision)
                     && !StringComparer.Ordinal.Equals(
@@ -1906,8 +1776,7 @@ public static class AtlasIntakeContracts
     private static void ValidateCopyPlan(AtlasCopyPlanDocument document)
     {
         if (!StringComparer.Ordinal.Equals(document.SchemaVersion, CopyPlanSchemaVersion)
-            || document.ManifestRevision != PendingManifestRevision
-            || document.Entries.Length != ExactIncludedSaveCount + ExactIncludedDefinitionCount)
+            || document.ManifestRevision != PendingManifestRevision)
         {
             throw new AtlasValidationException();
         }
@@ -1916,8 +1785,6 @@ public static class AtlasIntakeContracts
         HashSet<string> sourceAliases = new(StringComparer.Ordinal);
         HashSet<string> destinationAliases = new(StringComparer.Ordinal);
         HashSet<string> destinationPaths = new(StringComparer.Ordinal);
-        int saveCount = 0;
-        int definitionCount = 0;
         foreach (AtlasCopyPlanEntry entry in document.Entries)
         {
             ValidateSourceAliasByArtifactClass(entry.SourceAlias, entry.ArtifactClass);
@@ -1934,23 +1801,16 @@ public static class AtlasIntakeContracts
 
             if (StringComparer.Ordinal.Equals(entry.ArtifactClass, SaveCopyArtifactClass))
             {
-                saveCount++;
+                continue;
             }
-            else if (StringComparer.Ordinal.Equals(
+
+            if (StringComparer.Ordinal.Equals(
                 entry.ArtifactClass,
                 DefinitionCopyArtifactClass))
             {
-                definitionCount++;
+                continue;
             }
-            else
-            {
-                throw new AtlasValidationException();
-            }
-        }
 
-        if (saveCount != ExactIncludedSaveCount
-            || definitionCount != ExactIncludedDefinitionCount)
-        {
             throw new AtlasValidationException();
         }
     }
@@ -2118,10 +1978,7 @@ public static class AtlasIntakeContracts
         if (!StringComparer.Ordinal.Equals(document.SchemaVersion, CopyReceiptSchemaVersion)
             || !StringComparer.Ordinal.Equals(document.Profile, TrustedLocalFilesystemProfile)
             || document.SteamAppId != ExactSteamAppId
-            || document.BuildId != ExactBuildId
-            || document.SaveCount != ExactIncludedSaveCount
-            || document.DefinitionCount != ExactIncludedDefinitionCount
-            || document.Entries.Length != ExactIncludedSaveCount + ExactIncludedDefinitionCount)
+            || document.BuildId != ExactBuildId)
         {
             throw new AtlasValidationException();
         }
@@ -2407,7 +2264,10 @@ public static class AtlasIntakeContracts
                     ManualA0ValidationMethod)
                 || !StringComparer.Ordinal.Equals(
                     manifest.Confirmation.Status,
-                    ApprovedConfirmationStatus))
+                    ApprovedConfirmationStatus)
+                || !StringComparer.Ordinal.Equals(
+                    manifest.Confirmation.DecisionReference,
+                    BaselineApprovalDecisionReference))
             {
                 throw new AtlasValidationException();
             }
@@ -2439,82 +2299,6 @@ public static class AtlasIntakeContracts
                 ApprovedConfirmationStatus))
         {
             throw new AtlasValidationException();
-        }
-    }
-
-    private static void ValidateExactManifestCorpus(AtlasCorpusIntakeManifest manifest)
-    {
-        RequireExactSaveRootContract(manifest.SaveRoots);
-        RequireExactSaveEntryContract(manifest.SaveEntries);
-        RequireExactDefinitionGroupContract(manifest.DefinitionGroups);
-    }
-
-    private static void RequireExactSaveRootContract(AtlasManifestSaveRoot[] saveRoots)
-    {
-        if (saveRoots.Length != ExactFrozenSaveRoots.Length)
-        {
-            throw new AtlasValidationException();
-        }
-
-        for (int index = 0; index < ExactFrozenSaveRoots.Length; index++)
-        {
-            AtlasManifestSaveRoot actual = saveRoots[index];
-            ExactSaveRootContract expected = ExactFrozenSaveRoots[index];
-            if (!StringComparer.Ordinal.Equals(actual.RootAlias, expected.RootAlias)
-                || !StringComparer.Ordinal.Equals(actual.LocationRole, expected.LocationRole)
-                || !StringComparer.Ordinal.Equals(actual.Activity, expected.Activity)
-                || !StringComparer.Ordinal.Equals(actual.Decision, expected.Decision)
-                || actual.ObservedEntryCount != expected.ObservedEntryCount)
-            {
-                throw new AtlasValidationException();
-            }
-        }
-    }
-
-    private static void RequireExactSaveEntryContract(AtlasManifestSaveEntry[] saveEntries)
-    {
-        if (saveEntries.Length != ExactFrozenSaveEntries.Length)
-        {
-            throw new AtlasValidationException();
-        }
-
-        for (int index = 0; index < ExactFrozenSaveEntries.Length; index++)
-        {
-            AtlasManifestSaveEntry actual = saveEntries[index];
-            ExactSaveEntryContract expected = ExactFrozenSaveEntries[index];
-            if (!StringComparer.Ordinal.Equals(actual.SourceAlias, expected.SourceAlias)
-                || !StringComparer.Ordinal.Equals(actual.RootAlias, expected.RootAlias)
-                || !StringComparer.Ordinal.Equals(
-                    NormalizeRelativePath(actual.RelativePath),
-                    expected.RelativePath)
-                || !StringComparer.Ordinal.Equals(actual.Role, expected.Role)
-                || actual.SlotNumber != expected.SlotNumber
-                || !StringComparer.Ordinal.Equals(actual.Decision, expected.Decision))
-            {
-                throw new AtlasValidationException();
-            }
-        }
-    }
-
-    private static void RequireExactDefinitionGroupContract(
-        AtlasManifestDefinitionGroup[] definitionGroups)
-    {
-        if (definitionGroups.Length != ExactFrozenDefinitionGroups.Length)
-        {
-            throw new AtlasValidationException();
-        }
-
-        for (int index = 0; index < ExactFrozenDefinitionGroups.Length; index++)
-        {
-            AtlasManifestDefinitionGroup actual = definitionGroups[index];
-            ExactDefinitionGroupContract expected = ExactFrozenDefinitionGroups[index];
-            if (!StringComparer.Ordinal.Equals(actual.GroupId, expected.GroupId)
-                || !StringComparer.Ordinal.Equals(actual.SelectionRule, expected.SelectionRule)
-                || actual.DiscoveredCount != expected.DiscoveredCount
-                || !StringComparer.Ordinal.Equals(actual.Decision, expected.Decision))
-            {
-                throw new AtlasValidationException();
-            }
         }
     }
 
@@ -2627,6 +2411,91 @@ public static class AtlasIntakeContracts
         }
     }
 
+    private static bool IsValidDefinitionGroupId(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return false;
+        }
+
+        foreach (char character in value)
+        {
+            if (!(IsLowerAsciiLetter(character)
+                    || char.IsAsciiDigit(character)
+                    || character == '-'))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsValidDefinitionSelectionRuleSegment(string segment)
+    {
+        if (StringComparer.Ordinal.Equals(segment, "**"))
+        {
+            return true;
+        }
+
+        if (segment.Contains("**", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        bool inBrace = false;
+        bool sawBraceContent = false;
+        bool lastWasComma = false;
+        foreach (char character in segment)
+        {
+            if (character is '?' or '[' or ']')
+            {
+                return false;
+            }
+
+            if (character == '{')
+            {
+                if (inBrace)
+                {
+                    return false;
+                }
+
+                inBrace = true;
+                sawBraceContent = false;
+                lastWasComma = false;
+                continue;
+            }
+
+            if (character == '}')
+            {
+                if (!inBrace || !sawBraceContent || lastWasComma)
+                {
+                    return false;
+                }
+
+                inBrace = false;
+                continue;
+            }
+
+            if (character == ',')
+            {
+                if (!inBrace || !sawBraceContent)
+                {
+                    return false;
+                }
+
+                sawBraceContent = false;
+                lastWasComma = true;
+                continue;
+            }
+
+            sawBraceContent = true;
+            lastWasComma = false;
+        }
+
+        return !inBrace;
+    }
+
     private static void ValidateNonEmptyToken(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -2731,66 +2600,6 @@ public static class AtlasIntakeContracts
         }
     }
 
-    private static ExactSaveEntryContract[] CreateExactFrozenSaveEntryContracts()
-    {
-        List<ExactSaveEntryContract> semanticContracts = [];
-        foreach (int slot in ExactIncludedSaveSlots)
-        {
-            semanticContracts.Add(new ExactSaveEntryContract(
-                string.Empty,
-                "save-root-0001",
-                $"file{slot}.rpgsave",
-                SlotSaveRole,
-                slot,
-                IncludeSaveDecision));
-        }
-
-        semanticContracts.Add(new ExactSaveEntryContract(
-            string.Empty,
-            "save-root-0001",
-            "global.rpgsave",
-            GlobalSaveRole,
-            null,
-            IncludeSaveDecision));
-        semanticContracts.Add(new ExactSaveEntryContract(
-            string.Empty,
-            "save-root-0001",
-            "config.rpgsave",
-            ConfigSaveRole,
-            null,
-            IncludeSaveDecision));
-        semanticContracts.Add(new ExactSaveEntryContract(
-            string.Empty,
-            "save-root-0001",
-            "steam_autocloud.vdf",
-            SteamAutoCloudSaveRole,
-            null,
-            ExcludeSteamAutoCloudDecision));
-        semanticContracts.Add(new ExactSaveEntryContract(
-            string.Empty,
-            "save-root-0002",
-            "steam_autocloud.vdf",
-            SteamAutoCloudSaveRole,
-            null,
-            ExcludeSteamAutoCloudDecision));
-        return
-        [
-            .. semanticContracts
-                .OrderBy(static contract => contract.RootAlias, StringComparer.Ordinal)
-                .ThenBy(
-                    static contract => NormalizeRelativePath(contract.RelativePath),
-                    StringComparer.OrdinalIgnoreCase)
-                .ThenBy(
-                    static contract => NormalizeRelativePath(contract.RelativePath),
-                    StringComparer.Ordinal)
-                .Select(
-                    static (contract, index) => contract with
-                    {
-                        SourceAlias = $"save-source-{index + 1:0000}",
-                    }),
-        ];
-    }
-
     internal static readonly IReadOnlyDictionary<string, int> AtlasMilestoneOrder =
         new Dictionary<string, int>(StringComparer.Ordinal)
         {
@@ -2803,27 +2612,6 @@ public static class AtlasIntakeContracts
             ["A8"] = 6,
             ["post-A8-appeal"] = 7,
         };
-
-    private readonly record struct ExactSaveRootContract(
-        string RootAlias,
-        string LocationRole,
-        string Activity,
-        string Decision,
-        int ObservedEntryCount);
-
-    private readonly record struct ExactSaveEntryContract(
-        string SourceAlias,
-        string RootAlias,
-        string RelativePath,
-        string Role,
-        int? SlotNumber,
-        string Decision);
-
-    private readonly record struct ExactDefinitionGroupContract(
-        string GroupId,
-        string SelectionRule,
-        int DiscoveredCount,
-        string Decision);
 
     private readonly record struct ExactBindingContract(string Role, string RelativePath);
 }

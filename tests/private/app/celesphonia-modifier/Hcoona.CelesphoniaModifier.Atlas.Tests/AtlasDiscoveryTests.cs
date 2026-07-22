@@ -106,49 +106,16 @@ public sealed class AtlasDiscoveryTests
         }
     }
 
-    public static TheoryData<string, Action<JsonObject>> FrozenA0ManifestMutationCases
+    public static TheoryData<string, Action<JsonObject>> ManifestConsistencyMutationCases
     {
         get
         {
             TheoryData<string, Action<JsonObject>> data = [];
             data.Add(
-                "save-root-order",
-                json =>
-                {
-                    JsonArray saveRoots = (JsonArray)json["saveRoots"]!;
-                    SwapArrayItems(saveRoots, 0, 1);
-                });
-            data.Add(
                 "save-root-role",
                 json =>
                     ((JsonObject)((JsonArray)json["saveRoots"]!)[0]!)["locationRole"] =
                         AtlasIntakeContracts.WebRootSaveRole);
-            data.Add(
-                "save-entry-order",
-                json =>
-                {
-                    JsonArray saveEntries = (JsonArray)json["saveEntries"]!;
-                    SwapArrayItems(saveEntries, 0, 1);
-                });
-            data.Add(
-                "save-entry-slot",
-                json => ((JsonObject)((JsonArray)json["saveEntries"]!)[7]!)["slotNumber"] = 8);
-            data.Add(
-                "save-entry-alias-renumber",
-                json =>
-                    ((JsonObject)((JsonArray)json["saveEntries"]!)[0]!)["sourceAlias"] =
-                        "save-source-9999");
-            data.Add(
-                "save-entry-alias-swap",
-                json =>
-                {
-                    JsonArray entries = (JsonArray)json["saveEntries"]!;
-                    JsonObject first = (JsonObject)entries[0]!;
-                    JsonObject second = (JsonObject)entries[1]!;
-                    string firstAlias = first["sourceAlias"]!.GetValue<string>();
-                    first["sourceAlias"] = second["sourceAlias"]!.GetValue<string>();
-                    second["sourceAlias"] = firstAlias;
-                });
             data.Add(
                 "save-entry-alias-duplicate",
                 json =>
@@ -161,18 +128,101 @@ public sealed class AtlasDiscoveryTests
                 "definition-group-id",
                 json =>
                     ((JsonObject)((JsonArray)json["definitionGroups"]!)[0]!)["groupId"] =
-                        "unexpected-group");
+                        "Unexpected");
+            data.Add(
+                "definition-group-id-underscore",
+                json =>
+                    ((JsonObject)((JsonArray)json["definitionGroups"]!)[0]!)["groupId"] =
+                        "unexpected_group");
+            data.Add(
+                "definition-group-id-whitespace",
+                json =>
+                    ((JsonObject)((JsonArray)json["definitionGroups"]!)[0]!)["groupId"] =
+                        "unexpected group");
+            data.Add(
+                "definition-group-id-other",
+                json =>
+                    ((JsonObject)((JsonArray)json["definitionGroups"]!)[0]!)["groupId"] =
+                        "unexpected.group");
             data.Add(
                 "definition-group-rule",
                 json =>
                     ((JsonObject)((JsonArray)json["definitionGroups"]!)[0]!)["selectionRule"] =
-                        "package-lock.json");
+                        "www/data/[invalid].json");
+            data.Add(
+                "save-count",
+                json => json["includedSaveCount"] =
+                    json["includedSaveCount"]!.GetValue<int>() - 1);
+            data.Add(
+                "definition-count",
+                json => json["discoveredDefinitionEntryCount"] =
+                    json["discoveredDefinitionEntryCount"]!.GetValue<int>() + 1);
+            return data;
+        }
+    }
+
+    public static TheoryData<string, Action<JsonObject>> ManifestAuthorityVariationCases
+    {
+        get
+        {
+            TheoryData<string, Action<JsonObject>> data = [];
+            data.Add(
+                "save-root-order",
+                json => SwapArrayItems((JsonArray)json["saveRoots"]!, 0, 1));
+            data.Add(
+                "save-entry-order",
+                json => SwapArrayItems((JsonArray)json["saveEntries"]!, 0, 1));
+            data.Add(
+                "save-root-aliases",
+                json =>
+                {
+                    JsonArray roots = (JsonArray)json["saveRoots"]!;
+                    ((JsonObject)roots[0]!)["rootAlias"] = "save-root-0201";
+                    ((JsonObject)roots[1]!)["rootAlias"] = "save-root-0202";
+                    foreach (JsonNode? entryNode in (JsonArray)json["saveEntries"]!)
+                    {
+                        JsonObject entry = (JsonObject)entryNode!;
+                        entry["rootAlias"] =
+                            entry["rootAlias"]!.GetValue<string>() == "save-root-0101"
+                                ? "save-root-0201"
+                                : "save-root-0202";
+                    }
+                });
+            data.Add(
+                "source-aliases",
+                json =>
+                {
+                    JsonArray saveEntries = (JsonArray)json["saveEntries"]!;
+                    for (int index = 0; index < saveEntries.Count; index++)
+                    {
+                        ((JsonObject)saveEntries[index]!)["sourceAlias"] =
+                            $"save-source-{index + 201:0000}";
+                    }
+
+                    JsonArray definitionEntries = (JsonArray)json["definitionEntries"]!;
+                    for (int index = 0; index < definitionEntries.Count; index++)
+                    {
+                        ((JsonObject)definitionEntries[index]!)["sourceAlias"] =
+                            $"definition-source-{index + 20001:000000}";
+                    }
+                });
+            data.Add(
+                "definition-group-ids",
+                json =>
+                {
+                    JsonArray groups = (JsonArray)json["definitionGroups"]!;
+                    ((JsonObject)groups[0]!)["groupId"] = "alternate-json-specific";
+                    ((JsonObject)groups[1]!)["groupId"] = "alternate-data-fallback";
+                    JsonArray entries = (JsonArray)json["definitionEntries"]!;
+                    ((JsonObject)entries[0]!)["groupId"] = "alternate-json-specific";
+                    ((JsonObject)entries[1]!)["groupId"] = "alternate-data-fallback";
+                });
             data.Add(
                 "definition-group-order",
                 json =>
                 {
                     JsonArray groups = (JsonArray)json["definitionGroups"]!;
-                    SwapArrayItems(groups, 6, 7);
+                    SwapArrayItems(groups, 1, 2);
                 });
             return data;
         }
@@ -192,37 +242,22 @@ public sealed class AtlasDiscoveryTests
                 "alias",
                 static manifest => SwapDefinitionIdentityFields(
                     manifest,
-                    3,
-                    4,
+                    0,
+                    1,
                     swapAlias: true));
             data.Add(
                 "path",
                 static manifest => SwapDefinitionIdentityFields(
                     manifest,
-                    3,
-                    4,
-                    swapPath: true));
-            data.Add(
-                "group",
-                static manifest => SwapDefinitionIdentityFields(
-                    manifest,
                     0,
                     1,
-                    swapGroup: true));
-            data.Add(
-                "decision",
-                static manifest => SwapDefinitionIdentityFields(
-                    manifest,
-                    3,
-                    496,
-                    swapGroup: true,
-                    swapDecision: true));
+                    swapPath: true));
             data.Add(
                 "combined",
                 static manifest => SwapDefinitionIdentityFields(
                     manifest,
                     0,
-                    496,
+                    1,
                     swapAlias: true,
                     swapPath: true,
                     swapGroup: true,
@@ -374,17 +409,48 @@ public sealed class AtlasDiscoveryTests
                 Assert.Equal(expected.IsReparsePoint, actual.IsReparsePoint);
             });
         Assert.Equal(
-            AtlasIntakeContracts.GetExactFrozenDefinitionGroups()
-                .Select(static group => group.GroupId)
-                .ToArray(),
+            baselineManifest.Document.DefinitionGroups,
             pendingManifest.Document.DefinitionGroups
-                .Select(static group => group.GroupId)
                 .ToArray());
-        Assert.Equal(2, rootMap.Document.SaveRoots.Length);
+        Dictionary<string, AtlasManifestDefinitionEntry> baselineDefinitionEntries =
+            baselineManifest.Document.DefinitionEntries.ToDictionary(
+                static entry => AtlasIntakeContracts.NormalizeRelativePath(entry.RelativePath),
+                StringComparer.OrdinalIgnoreCase);
         Assert.Equal(
-            AtlasIntakeContracts.ExactIncludedSaveCount
-            + AtlasIntakeContracts.ExactIncludedDefinitionCount,
-            copyPlan.Document.Entries.Length);
+            baselineDefinitionEntries.Count,
+            pendingManifest.Document.DefinitionEntries.Length);
+        Assert.All(
+            pendingManifest.Document.DefinitionEntries,
+            actual =>
+            {
+                AtlasManifestDefinitionEntry expected =
+                    baselineDefinitionEntries[
+                        AtlasIntakeContracts.NormalizeRelativePath(actual.RelativePath)];
+                Assert.Equal(expected.SourceAlias, actual.SourceAlias);
+                Assert.Equal(expected.RelativePath, actual.RelativePath);
+                Assert.Equal(expected.GroupId, actual.GroupId);
+                Assert.Equal(expected.Decision, actual.Decision);
+                Assert.Equal(expected.ReasonCode, actual.ReasonCode);
+                Assert.Equal(expected.EntryType, actual.EntryType);
+                Assert.Equal(expected.IsReparsePoint, actual.IsReparsePoint);
+            });
+        Assert.Equal(2, rootMap.Document.SaveRoots.Length);
+        HashSet<string> expectedCopySources =
+        [
+            .. baselineManifest.Document.SaveEntries
+                .Where(static entry =>
+                    entry.Decision == AtlasIntakeContracts.IncludeSaveDecision)
+                .Select(static entry => entry.SourceAlias),
+            .. baselineManifest.Document.DefinitionEntries
+                .Where(static entry =>
+                    entry.Decision == AtlasIntakeContracts.IncludeDefinitionDecision)
+                .Select(static entry => entry.SourceAlias),
+        ];
+        HashSet<string> actualCopySources = copyPlan.Document.Entries
+            .Select(static entry => entry.SourceAlias)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Equal(expectedCopySources.Count, actualCopySources.Count);
+        Assert.True(expectedCopySources.SetEquals(actualCopySources));
         Assert.Equal(AtlasIntakeContracts.DiscoveredPhase, state.Document.Phase);
         Assert.Contains(
             inventory.Document.Artifacts,
@@ -620,7 +686,7 @@ public sealed class AtlasDiscoveryTests
 
     [Theory]
     [MemberData(nameof(ValidDiscoverySourceRootLayouts))]
-    public async Task DiscoverAsyncAcceptsFrozenA0SourceRootLayout(string caseName)
+    public async Task DiscoverAsyncAcceptsApprovedSourceRootLayout(string caseName)
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
         workspace.WriteRequest(CreateDiscoverySourceRootLayoutCase(workspace, caseName));
@@ -634,7 +700,7 @@ public sealed class AtlasDiscoveryTests
 
     [Theory]
     [MemberData(nameof(InvalidDiscoverySourceRootLayouts))]
-    public async Task DiscoverAsyncRejectsNonA0SourceRootLayout(string caseName)
+    public async Task DiscoverAsyncRejectsUnapprovedSourceRootLayout(string caseName)
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
         workspace.WriteRequest(CreateDiscoverySourceRootLayoutCase(workspace, caseName));
@@ -648,7 +714,7 @@ public sealed class AtlasDiscoveryTests
     }
 
     [Fact]
-    public async Task ExactFrozenA0CorpusQualifiesThroughCopy()
+    public async Task ManifestOwnedCorpusQualifiesThroughCopy()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
         await AtlasDiscovery.DiscoverAsync(
@@ -673,8 +739,8 @@ public sealed class AtlasDiscoveryTests
     }
 
     [Theory]
-    [MemberData(nameof(FrozenA0ManifestMutationCases))]
-    public async Task DiscoverAsyncRejectsFrozenA0ManifestMutations(
+    [MemberData(nameof(ManifestConsistencyMutationCases))]
+    public async Task DiscoverAsyncRejectsManifestConsistencyMutations(
         string caseName,
         Action<JsonObject> mutate)
     {
@@ -689,6 +755,99 @@ public sealed class AtlasDiscoveryTests
         Assert.NotNull(caseName);
         Assert.False(File.Exists(workspace.Layout.CanonicalPendingManifestPath));
         Assert.Contains("invalid", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task DiscoverAsyncRejectsManifestClassificationDivergence()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await MutateBaselineManifestAsync(
+            workspace,
+            json => ((JsonObject)((JsonArray)json["saveEntries"]!)[0]!)["slotNumber"] = 8);
+
+        AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(AtlasDiscoveryFailureStage.CorpusReconciliation, exception.DiscoveryStage);
+        Assert.False(File.Exists(workspace.Layout.CanonicalPendingManifestPath));
+    }
+
+    [Fact]
+    public async Task DiscoverAsyncRejectsWrongBaselineApprovalBeforeLiveEnumeration()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await MutateBaselineManifestAsync(
+            workspace,
+            json =>
+                ((JsonObject)json["confirmation"]!)["decisionReference"] =
+                    "commit:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        int liveEnumerationCount = 0;
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            enumerateFileSystemEntries: (path, searchOption) =>
+            {
+                if (AtlasDiscovery.ContainsPath(workspace.GameRootPath, path))
+                {
+                    liveEnumerationCount++;
+                }
+
+                return AtlasIoSeams.Default.EnumerateFileSystemEntries(path, searchOption);
+            });
+
+        await Assert.ThrowsAsync<AtlasApprovalException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                io,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(0, liveEnumerationCount);
+        Assert.False(File.Exists(workspace.Layout.CanonicalPendingManifestPath));
+    }
+
+    [Fact]
+    public async Task DiscoverAsyncRejectsOverlappingRuleReorderThatChangesMembership()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await MutateBaselineManifestAsync(
+            workspace,
+            json => SwapArrayItems((JsonArray)json["definitionGroups"]!, 0, 1));
+
+        AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(AtlasDiscoveryFailureStage.CorpusReconciliation, exception.DiscoveryStage);
+        Assert.False(File.Exists(workspace.Layout.CanonicalPendingManifestPath));
+    }
+
+    [Theory]
+    [MemberData(nameof(ManifestAuthorityVariationCases))]
+    public async Task DiscoverAsyncPreservesManifestAuthorityVariations(
+        string caseName,
+        Action<JsonObject> mutate)
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await MutateBaselineManifestAsync(workspace, mutate);
+        AtlasLoadedDocument<AtlasCorpusIntakeManifest> baseline =
+            await AtlasIntakeContracts.ReadManifestAsync(
+                workspace.Layout.CanonicalBaselineManifestPath,
+                TestContext.Current.CancellationToken);
+
+        await AtlasDiscovery.DiscoverAsync(
+            workspace.Layout.CanonicalDiscoverRequestPath,
+            TestContext.Current.CancellationToken);
+
+        AtlasLoadedDocument<AtlasCorpusIntakeManifest> pending =
+            await AtlasIntakeContracts.ReadManifestAsync(
+                workspace.Layout.CanonicalPendingManifestPath,
+                TestContext.Current.CancellationToken);
+        Assert.NotNull(caseName);
+        Assert.Equal(baseline.Document.SaveRoots, pending.Document.SaveRoots);
+        Assert.Equal(baseline.Document.SaveEntries, pending.Document.SaveEntries);
+        Assert.Equal(baseline.Document.DefinitionGroups, pending.Document.DefinitionGroups);
+        Assert.Equal(baseline.Document.DefinitionEntries, pending.Document.DefinitionEntries);
     }
 
     [Fact]
@@ -1127,7 +1286,7 @@ public sealed class AtlasDiscoveryTests
             workspace.Layout.CanonicalBaselineManifestPath,
             TestContext.Current.CancellationToken);
         baselineManifest["includedDefinitionCount"] =
-            AtlasIntakeContracts.ExactIncludedDefinitionCount - 1;
+            baselineManifest["includedDefinitionCount"]!.GetValue<int>() - 1;
         byte[] invalidBytes = Encoding.UTF8.GetBytes(baselineManifest.ToJsonString());
         string finalPath = Path.Combine(
             workspace.Layout.ManifestRevisionDirectory,

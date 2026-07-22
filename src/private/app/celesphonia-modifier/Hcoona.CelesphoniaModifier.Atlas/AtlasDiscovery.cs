@@ -1309,7 +1309,7 @@ public static class AtlasDiscovery
             }
         }
 
-        ValidateFrozenA0SourceRootLayout(
+        ValidateApprovedSourceRootLayout(
             sourceRootMap.DefinitionRootPath,
             sourceRootMap.GameExecutablePath,
             sourceRootPaths);
@@ -1453,7 +1453,7 @@ public static class AtlasDiscovery
         string webSaveRoot = GetRequiredSaveRootPath(
             sourceRootPaths,
             AtlasIntakeContracts.WebRootSaveRole);
-        ValidateFrozenA0SourceRootLayout(
+        ValidateApprovedSourceRootLayout(
             request.DefinitionRoot,
             request.GameExecutablePath,
             sourceRootPaths);
@@ -2004,7 +2004,7 @@ public static class AtlasDiscovery
         }
     }
 
-    internal static void ValidateFrozenA0SourceRootLayout(
+    internal static void ValidateApprovedSourceRootLayout(
         string definitionRoot,
         string gameExecutablePath,
         IReadOnlyDictionary<string, string> saveRootPaths)
@@ -3235,27 +3235,19 @@ public static class AtlasDiscovery
         AtlasCorpusIntakeManifest pendingManifest = baselineManifest with
         {
             ManifestRevision = AtlasIntakeContracts.PendingManifestRevision,
-            SaveRoots = discoveredSaveRoots.OrderBy(
-                static root => root.LocationRole,
-                StringComparer.Ordinal).ToArray(),
+            SaveRoots = discoveredSaveRoots,
             DiscoveredSaveDirectoryEntryCount = discoveredSaveEntries.Count,
             IncludedSaveCount = discoveredSaveEntries.Count(
                 entry =>
                     StringComparer.Ordinal.Equals(
                         entry.Decision,
                         AtlasIntakeContracts.IncludeSaveDecision)),
-            SaveEntries = discoveredSaveEntries.OrderBy(
-                    static entry => entry.SourceAlias,
-                    StringComparer.Ordinal)
-                .ToArray(),
+            SaveEntries = [.. baselineManifest.SaveEntries],
             DiscoveredDefinitionEntryCount = discoveredDefinitionEntries.Count,
             IncludedDefinitionCount = discoveredDefinitionEntries.Count(entry =>
                 StringComparer.Ordinal.Equals(entry.Decision, "include")),
             DefinitionGroups = discoveredDefinitionGroups,
-            DefinitionEntries = discoveredDefinitionEntries.OrderBy(
-                    static entry => entry.SourceAlias,
-                    StringComparer.Ordinal)
-                .ToArray(),
+            DefinitionEntries = [.. baselineManifest.DefinitionEntries],
         };
 
         Dictionary<string, string> saveRootPaths = pendingManifest.SaveRoots.ToDictionary(
@@ -3387,7 +3379,12 @@ public static class AtlasDiscovery
     {
         foreach (AtlasManifestDefinitionGroup definitionGroup in definitionGroups)
         {
-            _ = SplitDefinitionSelectionRule(definitionGroup.SelectionRule);
+            if (!AtlasIntakeContracts.TrySplitDefinitionSelectionRule(
+                definitionGroup.SelectionRule,
+                out _))
+            {
+                throw new AtlasSafetyException("The definition selection rule is invalid.");
+            }
         }
 
         List<AtlasManifestDefinitionEntry> results = [];
@@ -3484,98 +3481,16 @@ public static class AtlasDiscovery
 
     private static bool MatchesDefinitionSelectionRule(string selectionRule, string relativePath)
     {
-        string[] ruleSegments = SplitDefinitionSelectionRule(selectionRule);
+        if (!AtlasIntakeContracts.TrySplitDefinitionSelectionRule(
+            selectionRule,
+            out string[] ruleSegments))
+        {
+            throw new AtlasSafetyException("The definition selection rule is invalid.");
+        }
+
         string[] pathSegments = AtlasIntakeContracts.NormalizeRelativePath(relativePath)
             .Split('/', StringSplitOptions.None);
         return MatchesDefinitionSelectionRule(ruleSegments, 0, pathSegments, 0);
-    }
-
-    private static string[] SplitDefinitionSelectionRule(string selectionRule)
-    {
-        string[] segments = AtlasIntakeContracts.SplitRelativePath(selectionRule);
-        if (segments.Any(segment =>
-                segment.Length == 0
-                || StringComparer.Ordinal.Equals(segment, ".")
-                || StringComparer.Ordinal.Equals(segment, "..")
-                || segment.Contains(':')))
-        {
-            throw new AtlasSafetyException("The definition selection rule is invalid.");
-        }
-
-        foreach (string segment in segments)
-        {
-            ValidateDefinitionSelectionRuleSegment(segment);
-        }
-
-        return segments;
-    }
-
-    private static void ValidateDefinitionSelectionRuleSegment(string segment)
-    {
-        if (StringComparer.Ordinal.Equals(segment, "**"))
-        {
-            return;
-        }
-
-        if (segment.Contains("**", StringComparison.Ordinal))
-        {
-            throw new AtlasSafetyException("The definition selection rule is invalid.");
-        }
-
-        bool inBrace = false;
-        bool sawBraceContent = false;
-        bool lastWasComma = false;
-        foreach (char character in segment)
-        {
-            if (character is '?' or '[' or ']')
-            {
-                throw new AtlasSafetyException("The definition selection rule is invalid.");
-            }
-
-            if (character == '{')
-            {
-                if (inBrace)
-                {
-                    throw new AtlasSafetyException("The definition selection rule is invalid.");
-                }
-
-                inBrace = true;
-                sawBraceContent = false;
-                lastWasComma = false;
-                continue;
-            }
-
-            if (character == '}')
-            {
-                if (!inBrace || !sawBraceContent || lastWasComma)
-                {
-                    throw new AtlasSafetyException("The definition selection rule is invalid.");
-                }
-
-                inBrace = false;
-                continue;
-            }
-
-            if (character == ',')
-            {
-                if (!inBrace || !sawBraceContent)
-                {
-                    throw new AtlasSafetyException("The definition selection rule is invalid.");
-                }
-
-                sawBraceContent = false;
-                lastWasComma = true;
-                continue;
-            }
-
-            sawBraceContent = true;
-            lastWasComma = false;
-        }
-
-        if (inBrace)
-        {
-            throw new AtlasSafetyException("The definition selection rule is invalid.");
-        }
     }
 
     private static bool MatchesDefinitionSelectionRule(

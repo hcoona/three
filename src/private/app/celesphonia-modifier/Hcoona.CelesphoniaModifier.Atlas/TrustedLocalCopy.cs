@@ -1193,9 +1193,7 @@ public static class TrustedLocalCopy
         }
 
         if (receipt.SaveCount != approvedManifest.Document.IncludedSaveCount
-            || receipt.SaveCount != AtlasIntakeContracts.ExactIncludedSaveCount
             || receipt.DefinitionCount != approvedManifest.Document.IncludedDefinitionCount
-            || receipt.DefinitionCount != AtlasIntakeContracts.ExactIncludedDefinitionCount
             || saveCount != receipt.SaveCount
             || definitionCount != receipt.DefinitionCount)
         {
