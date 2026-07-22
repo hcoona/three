@@ -1,6 +1,6 @@
 # Atlas V0 A2 Intake and Safety Plan
 
-**Status:** Active; private discovery requires verified shared A2R8 `G`
+**Status:** Active; discovery retry blocked after the consumed A2R8 attempt
 
 **Increment:** A2 - Intake and Safety Harness
 
@@ -15,20 +15,20 @@
 > `atlas-v0-a2-post-patch-baseline-correction.md` supersedes the inaccurate unmodified-installation
 > wording and the later package-provenance amendment. The patch package and installation history are
 > descriptive context, not intake identity or authorization evidence. The original A2 source remains
-> unchanged, but private discovery requires the correction plan review and release gate.
+> unchanged. Its historical private-run authority is consumed.
 > **Released-A0 workspace compatibility**
 > `atlas-v0-a2-released-a0-workspace-compatibility.md` governs the exact A2R3 census correction.
 > The correction recognizes only the released A0 `intake/private-provenance.json`,
 > `copies/save-snapshot-20260717T210224Z`, and top-level `decoded`, `evidence`, `agent-envelopes`,
-> and `validation` entries. Only verified shared release gate `G` renews metadata-only discovery.
+> and `validation` entries. Its historical private-run authority is consumed.
 > **Safe discovery failure stages**
 > `atlas-v0-a2-safe-failure-stage-diagnostics.md` governs the A2R4 discover-only diagnostic
 > correction. It may expose only a fixed stage token for a categorized discovery safety refusal.
-> Only verified shared release gate `G` authorizes another private metadata-only discovery attempt.
+> Its historical private-run authority is consumed.
 > **Workspace-preflight refinement**
 > `atlas-v0-a2-workspace-preflight-refinement.md` governs the A2R5 refinement of the observed
 > `workspace-preflight` refusal into three fixed call-boundary tokens. It changes no validator or
-> safety decision. Only verified shared release gate `G` authorizes another metadata-only attempt.
+> safety decision. Its historical private-run authority is consumed.
 > **Repository-hygiene decoupling**
 > `atlas-v0-a2-repository-hygiene-decoupling.md` governs the released A2R6 correction that removes
 > repository `.gitignore` policy from Atlas runtime validation. A2R7 supersedes its private-retry
@@ -39,8 +39,12 @@
 > **Approved-manifest authority correction**
 > `atlas-v0-a2-approved-manifest-authority-correction.md` governs A2R8. It removes the duplicate
 > public A0 corpus reconstruction and makes the approved manifest the sole corpus authority while
-> preserving strict live reconciliation and per-file fidelity proof. No private command is
-> authorized before verified shared A2R8 `G`.
+> preserving strict live reconciliation and per-file fidelity proof. A2R8 released at verified
+> shared `G` `4dc1572cc4439e6e5fade2827c3fa40230565ef2`; its one metadata-only attempt is consumed.
+> **Baseline authority diagnosis**
+> `atlas-v0-a2-baseline-authority-diagnosis.md` governs planning-only A2R9. It may authorize one
+> reviewed, session-only, read-only, fixed-output diagnostic after verified shared plan-review `R`.
+> It authorizes no discovery retry, production correction, private remediation, or private write.
 
 ## 1. Outcome
 
@@ -113,9 +117,9 @@ A2 implementation may begin only when:
 - that record passes its parent, path, content, and upstream checks; and
 - the tracked worktree is clean.
 
-Current progression is governed by A2R8. Only verified shared A2R8 `G` permits one metadata-only
-discovery attempt. Confirmation, copying, and cleanup require a separately persisted and reviewed
-continuation plan after that discovery.
+Current progression is governed by A2R9. The A2R8 metadata-only attempt is consumed. Discovery,
+confirmation, copying, cleanup, diagnosis-driven correction, and private remediation remain blocked
+except for the exact read-only diagnostic procedure authorized after verified shared A2R9 `R`.
 
 ## 4. Scope
 
@@ -131,7 +135,7 @@ continuation plan after that discovery.
 - Deterministic deny-by-default locator-key aliases.
 - Non-deleting private lifecycle preflight.
 - Synthetic, repository-safe automated tests.
-- One human-operated metadata-only discovery after verified shared A2R8 `G`.
+- The consumed human-operated A2R8 metadata-only attempt as historical evidence; no retry.
 
 ### Out of scope
 
@@ -461,14 +465,14 @@ or terminal-policy difference reopens A0; A2 cannot approve a narrowing itself.
 
 ## 10. Human-operated private approval - currently blocked
 
-A2R8 `G` does not authorize approval or `intake-confirm`. After a successful metadata-only
-discovery, preserve the pending manifest and binding documents locally and stop. Supply none of
-their paths, hashes, counts, differences, names, or contents to Copilot, a subagent, process output,
-or Git.
+A2R8 `G` does not authorize approval or `intake-confirm`. Preserve all existing private artifacts
+locally and stop. Supply none of their paths, hashes, counts, differences, names, contents,
+disposition, or outcome to a subagent, process output, or Git.
 
-A separately persisted and independently reviewed continuation plan must bind A2R8 `G`, define the
-exact local review procedure, repository-safe decision record, ancestry, and fixed diagnostics, and
-receive project-leader confirmation before approval resumes.
+A separately persisted and independently reviewed continuation plan after A2R9 must bind A2R8 `G`
+and verified shared A2R9 `G`, define the exact local review procedure, repository-safe decision
+record, ancestry, and fixed diagnostics, and receive project-leader confirmation before approval
+resumes.
 
 Any future confirmation must still verify state revision 1 and every bound document digest, publish
 approved manifest revision 5 and state revision 2 with create-new semantics, and preserve all
@@ -824,41 +828,39 @@ Apphost tests cover synthetic success, usage, approval, safety, and I/O results.
 mapping is tested directly; A2 makes no new claim that apphost tests synthesize a Windows console
 cancel signal.
 
-### A2.1 Implement A2R8 without private access
+### A2.1 Historical A2R8 implementation
 
-Implement and validate the exact A2R8 tracked scope. Do not inspect the installed game, live saves,
-private workspace, or A0 private artifacts. The historical A2 tool-safety record remains evidence
-for its reviewed candidate but grants no current execution authority.
+A2R8 implemented and validated its exact tracked scope without inspecting the installed game, live
+saves, private workspace, or A0 private artifacts. The historical A2 tool-safety record remains
+evidence for its reviewed candidate but grants no current execution authority.
 
 The A2R8 plan review, implementation review, release-record review, direct-child chain, and release
 gate follow `atlas-v0-a2-approved-manifest-authority-correction.md`. Any tracked source, project,
 dependency, or build-procedure change after final review invalidates that candidate.
 
-### A2.2 Human-operated metadata-only discovery
+### A2.2 Consumed A2R8 metadata-only discovery
 
-Only verified shared A2R8 `G` permits the reviewed session wrapper to be rebound, independently
-reviewed, and run once for metadata-only discovery. Only the local operator receives its fixed
-command token, which is not retained in Git or supplied to an agent. Preserve the private inputs and
-outputs and stop locally after either success or the first fixed failure.
+Verified shared A2R8 `G` permitted one reviewed metadata-only attempt. Its first process start
+consumed that authority. Its disposition and outcome remain protected local evidence. No A2R8
+prerequisite, wrapper binding, or historical instruction authorizes another attempt.
 
-### A2.3 Confirmation, copy, and preflight remain blocked
+### A2.3 Current A2R9 diagnosis boundary
 
-A successful discovery does not authorize `intake-confirm`, `intake-copy`, cleanup preflight,
-deletion, decoding, or semantic scanning. A separately persisted and independently reviewed
-continuation plan must be created after the attempt and bind only A2R8 `G` plus repository-safe
-governance evidence. It must not bind or disclose the private discovery disposition.
+A2R9 may authorize only its exact reviewed session-only, read-only, fixed-output diagnostic after
+verified shared plan-review `R`. It authorizes no discovery retry, confirmation, copy, cleanup
+preflight, deletion, decoding, semantic scanning, production correction, or private remediation.
 
-### A2.4 A2R8 release
+### A2.4 Historical A2R8 release
 
-The A2R8 release gate is the reviewed record-only direct child defined by the correction plan.
-Verify and push it as shared `G` before rebinding or running the metadata-only wrapper.
+The reviewed A2R8 release gate remains immutable completion evidence. It grants no current private
+execution authority.
 
 ## 18. Acceptance criteria
 
 A2 is accepted only when:
 
 Criteria for confirmation, copy, and preflight remain eventual A2 requirements. They do not grant
-current execution authority; section 17 requires a new continuation plan after A2R8 discovery.
+current execution authority; section 17 limits current work to the reviewed A2R9 diagnostic.
 
 1. the implementation matches the exact tracked scope and three-project boundary;
 2. production projects retain zero project-local package references;
@@ -886,7 +888,7 @@ current execution authority; section 17 requires a new continuation plan after A
     output or Git;
 21. every command result follows the declared fixed bytes, exit code, and A1 precedence;
 22. locked restore, build, formatting, targeted tests, apphost checks, and HK pass;
-23. verified shared A2R8 `G` and the reviewed wrapper precede private discovery;
+23. verified shared A2R8 `G` and the reviewed wrapper preceded the consumed private attempt;
 24. cleanup preflight reports every valid state-3 inventory row, reports zero invalid rows,
     performs zero deletions, and publishes valid state revision 4;
 25. final independent review reports `No findings`; and
@@ -937,8 +939,8 @@ governance checks and public synthetic-test results. Local discovery output is n
 disclosed. Existing corpus counts in immutable historical records remain historical evidence; they
 are not active requirements, production constants, or future publication fields.
 
-The current plan-review record path is
-`../reviews/atlas-v0-a2-approved-manifest-authority-correction-plan-review.md`. It binds:
+The historical A2R8 plan-review record path is
+`../reviews/atlas-v0-a2-approved-manifest-authority-correction-plan-review.md`. It bound:
 
 - exact A2R8 `B`, plan commit and tree;
 - all reviewed, governing, and changed paths;
@@ -951,16 +953,16 @@ The exact A2R8 plan, review, implementation, and release candidates use only the
 A2R8 correction plan. Historical candidate descriptions in this plan grant no current path
 authority.
 
-Every A2R8 plan-review and release record follows the correction plan and sections 16 and 17 of
-`project-operating-model.md`: independently review its exact staged blob, commit it unchanged as a
-record-only child, push it, and verify parent, path, content, and upstream.
+Every A2R8 plan-review and release record followed the correction plan and sections 16 and 17 of
+`project-operating-model.md`. The current A2R9 review gate and chain are defined only by
+`atlas-v0-a2-baseline-authority-diagnosis.md`.
 
 ## 21. Private outputs and handoff
 
 Expected private outputs are:
 
-- A2R8 discovery may create only its request-bound pending manifest, source-root map, copy plan,
-  discovered state, inventory update, and inventory backup;
+- the consumed A2R8 attempt could create only its request-bound pending manifest, source-root map,
+  copy plan, discovered state, inventory update, and inventory backup;
 - later approved manifests, qualified states, snapshots, receipts, and cleanup reports remain
   expected A2 artifacts but are not authorized by A2R8 `G`; and
 - unusable incomplete evidence is retained only when safe removal fails.
@@ -970,9 +972,9 @@ All remain under the protected Git-ignored Atlas workspace and follow A0 lifecyc
 To resume A2:
 
 1. read all applicable `AGENTS.md` files and the governing plans;
-2. verify A2R8 `R`, final implementation review, shared `G`, upstream, and clean worktree;
-3. identify the first incomplete stage;
-4. do not run discovery without exact A2R8 `G` and the independently reviewed bound wrapper;
-5. leave private request creation and execution to the local reviewed procedure;
-6. do not confirm, copy, or preflight without a new persisted continuation plan; and
-7. infer neither private state nor authority from conversation history.
+2. verify A2R8 `G`, the consumed-attempt boundary, upstream, and clean worktree;
+3. persist and independently review A2R9 through its exact plan-review `R`;
+4. execute only the exact A2R9 session diagnostic after all of its gates pass;
+5. do not run discovery, confirmation, copy, cleanup, correction, or remediation;
+6. require a separate post-A2R9 persisted plan for any later operation; and
+7. infer neither private state nor authority from conversation history or historical instructions.

@@ -43,10 +43,12 @@ semantic scanning, write authority, WinUI, network access, and private data from
   that removes repository `.gitignore` policy from Atlas runtime validation.
 - `plans/atlas-v0-a2-released-a0-save-alias-compatibility.md` is the historical released A2R7
   correction that restored the released A0 alias-to-locator assignment.
-- `plans/atlas-v0-a2-approved-manifest-authority-correction.md` is the implementation-review-gated
-  A2R8 architectural correction. It removes duplicate public corpus reconstruction and makes the
-  approved A0 manifest authoritative. A2R8 supersedes A2R7 private-retry authority; no private
-  command is authorized before its reviewed release gate.
+- `plans/atlas-v0-a2-approved-manifest-authority-correction.md` is the released A2R8 architectural
+  correction. It removes duplicate public corpus reconstruction and makes the approved A0 manifest
+  authoritative.
+- `plans/atlas-v0-a2-baseline-authority-diagnosis.md` is the planning-only A2R9 diagnosis of the
+  preserved A2 baseline authority. Its gates may authorize only the read-only diagnostic; they never
+  authorize retry, repair, or a private write.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -92,6 +94,16 @@ semantic scanning, write authority, WinUI, network access, and private data from
 - `reviews/atlas-v0-a2-released-a0-save-alias-compatibility-release-gate.md` established A2R7
   completion at verified shared `G`
   `904a14f66ac2fb6cd5f735cd6668a03123ab4ab3`. Its retry authority is superseded by A2R8.
+- `reviews/atlas-v0-a2-approved-manifest-authority-correction-plan-review.md` binds the accepted
+  A2R8 authority correction plan.
+- `reviews/atlas-v0-a2-approved-manifest-authority-correction-release-gate.md` established A2R8
+  completion at verified shared `G`
+  `4dc1572cc4439e6e5fade2827c3fa40230565ef2`. Its one metadata-only attempt is consumed; no retry is
+  authorized.
+- `reviews/atlas-v0-a2-baseline-authority-diagnosis-plan-review.md` is planned to bind A2R9 before
+  any private diagnostic read.
+- `reviews/atlas-v0-a2-baseline-authority-diagnosis-completion.md` is planned to close A2R9 without
+  publishing its local fixed token.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` is obsolete and blocked. A2R8 publishes no private
   discovery token, disposition, outcome, count, difference, hash, path, name, or document content.
 
