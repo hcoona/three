@@ -82,27 +82,75 @@ repository root and a 32-character lowercase hexadecimal run identifier. It:
    `a2r10-current-baseline-observer/bin/Release/<target-framework>/` location, validates both as
    ordinary non-reparse directories, and confines both source and diagnosis reports to that project
    directory;
-2. requires exactly one well-formed A2R10 observation report in that directory;
-3. requires the A2R10 report schema and exactly one `current-inventory` fingerprint;
-4. locates exactly one canonical Atlas workspace;
-5. validates the current inventory as an ordinary non-reparse file;
-6. loads it through `AtlasIntakeContracts.ReadInventoryAsync`;
-7. requires the returned byte length and SHA-256 to match the A2R10 fingerprint;
-8. selects rows with the exact released baseline-manifest purpose; and
-9. records the fixed predicate results in memory before one create-new report write.
+2. enumerates only direct ordinary files named
+   `a2r10-current-baseline-observation-<32-lowercase-hex>.json` and requires exactly one;
+3. strictly parses that report as a JSON object with exactly case-sensitive members
+   `schemaVersion`, `outcome`, `terminalStage`, and `files`, rejecting unknown, missing, duplicate,
+   or differently cased members;
+4. requires schema `atlas-a2-current-baseline-observation/v1`, outcome `valid` or `refused`, a
+   released terminal-stage name, and a `files` array whose entries have exactly `role`,
+   `byteLength`, and `sha256`;
+5. requires each fingerprint role to be one of `request`, `baseline-manifest`,
+   `current-inventory`, or `inventory-backup`, its byte length to be a nonnegative JSON integer, and
+   its SHA-256 to be 64 lowercase hexadecimal characters, then requires exactly one
+   `current-inventory` entry;
+6. derives
+   `src/private/app/celesphonia-modifier/.private/atlas-v0` from the normalized public repository
+   root, validates it as an ordinary non-reparse directory, enumerates only its immediate ordinary
+   non-reparse child directories, and requires exactly one child containing
+   `intake/requests/discover.json`;
+7. derives that child's `intake/private-artifact-inventory.json`, validates it as an ordinary
+   non-reparse file, and loads it through `AtlasIntakeContracts.ReadInventoryAsync`;
+8. requires the returned byte length and SHA-256 to match the A2R10 fingerprint;
+9. selects rows with the exact released baseline-manifest purpose; and
+10. records the fixed predicate results in memory before one create-new report write.
 
-The diagnosis report schema is `atlas-a2-baseline-manifest-row-diagnosis/v1`. It contains:
+The released terminal-stage names accepted in step 4 are `workspace-selection`, `request`, `layout`,
+`baseline-manifest`, `inventory-transition`, `discovery-aliases`, `manifest-row`, `next-ordinal`,
+and `complete`. Invalid UTF-8, malformed JSON, trailing JSON content, a non-object root, or any
+failed requirement above is source refusal and never enters process output.
 
-- outcome `diagnosed` or `source-refused`;
-- only for `diagnosed`, cardinality `zero`, `one`, or `multiple`; and
-- only for diagnosed cardinality `one`, a fixed mismatch-name array drawn from:
-  `artifact-class`, `custodian-role`, `lineage`, `last-use`, `expiry`, `disposition`, `status`,
-  `qualification`, and `verification-method`.
+The diagnosis report is exactly one of these closed, case-sensitive JSON object shapes:
 
-`source-refused` omits cardinality and mismatch names. The report contains no literal row value,
-alias, path, source hash, content, or dynamic exception detail. An empty mismatch array means the
-released helper must accept the same row. A nonempty array means the released helper must refuse it.
-Synthetic tests prove both reconciliation directions.
+```json
+{
+    "schemaVersion": "atlas-a2-baseline-manifest-row-diagnosis/v1",
+    "outcome": "source-refused"
+}
+```
+
+```json
+{
+    "schemaVersion": "atlas-a2-baseline-manifest-row-diagnosis/v1",
+    "outcome": "diagnosed",
+    "cardinality": "zero"
+}
+```
+
+```json
+{
+    "schemaVersion": "atlas-a2-baseline-manifest-row-diagnosis/v1",
+    "outcome": "diagnosed",
+    "cardinality": "multiple"
+}
+```
+
+```json
+{
+    "schemaVersion": "atlas-a2-baseline-manifest-row-diagnosis/v1",
+    "outcome": "diagnosed",
+    "cardinality": "one",
+    "mismatches": []
+}
+```
+
+For cardinality `one`, `mismatches` contains each failed predicate at most once and in this fixed
+order: `artifact-class`, `custodian-role`, `lineage`, `last-use`, `expiry`, `disposition`, `status`,
+`qualification`, and `verification-method`. No other member, value, null, duplicate member, or
+differently cased member is valid. The report contains no literal row value, alias, path, source
+hash, content, or dynamic exception detail. An empty mismatch array means the released helper must
+accept the same row. A nonempty array means the released helper must refuse it. Synthetic tests
+prove both reconciliation directions and strict parsing of every report shape.
 
 The report filename is
 `a2r11-baseline-manifest-row-diagnosis-<run-id>.json` beneath the validated session project
@@ -111,7 +159,8 @@ directory. It uses create-new semantics. Standard output remains exactly
 
 ## 4. Candidates and gates
 
-Plan candidate `P11` is the direct child of A2R10 `G10` and may change only:
+The `P11` plan line starts as the direct child of A2R10 `G10`. Until final review releases `R11`,
+every plan-only correction commit may change only:
 
 ```text
 src/private/app/celesphonia-modifier/docs/.copilot/
@@ -122,7 +171,7 @@ src/private/app/celesphonia-modifier/docs/.copilot/
     atlas-v0-a2-intake-safety-plan.md
 ```
 
-Plan-review `R11` is the direct child of final `P11` and adds only:
+Plan-review `R11` is the direct child of the final reviewed `P11` tip and adds only:
 
 ```text
 src/private/app/celesphonia-modifier/docs/.copilot/reviews/
