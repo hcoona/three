@@ -1133,16 +1133,12 @@ public sealed class AtlasDiscoveryTests
         string definitionRoot = CreateTemporaryDirectory();
         try
         {
-            Directory.CreateDirectory(Path.Combine(definitionRoot, "www", "nested"));
+            Directory.CreateDirectory(Path.Combine(definitionRoot, "fixture-tree", "nested"));
             string[] relativePaths =
             [
-                "www/root.json",
-                "www/root.csv",
-                "www/root.txt",
-                "www/nested/root.xml",
-                "www/nested/root.yaml",
-                "www/nested/root.yml",
-                "www/nested/root.xlsx",
+                "fixture-tree/root.alpha",
+                "fixture-tree/root.beta",
+                "fixture-tree/nested/root.gamma",
             ];
             foreach (string relativePath in relativePaths)
             {
@@ -1157,17 +1153,17 @@ public sealed class AtlasDiscoveryTests
             AtlasManifestDefinitionGroup[] groups =
             [
                 CreateDefinitionGroup(
-                    "auxiliary",
-                    @"www\**\*.{JSON,csv,TXT,xml,yaml,yml,xlsx}",
+                    "format-fixtures",
+                    @"fixture-tree\**\*.{ALPHA,beta,GAMMA}",
                     AtlasIntakeContracts.ExcludeDefinitionDecision),
             ];
             Dictionary<string, AtlasManifestDefinitionEntry> baselineEntries =
                 CreateDefinitionEntryMap(
                     relativePaths.Select((path, index) =>
                         CreateDefinitionEntry(
-                            $"definition-source-{index + 1:000000}",
+                            $"definition-source-{index + 90001:000000}",
                             path,
-                            "auxiliary",
+                            "format-fixtures",
                             AtlasIntakeContracts.ExcludeDefinitionDecision)).ToArray());
 
             List<AtlasManifestDefinitionEntry> entries = AtlasDiscovery.EnumerateDefinitionEntries(
