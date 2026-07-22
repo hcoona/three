@@ -14,21 +14,27 @@ Add native [AsciiDoc](https://asciidoc.org/) rendering to Hexo using `@asciidoct
 
 ## Installation
 
-This repository branch documents the upcoming 4.x beta migration. As of July 22,
-2026, npm publishes only stable v3 on the `latest` dist-tag; no v4 prerelease or
-`beta` dist-tag is available yet. Do not install the unqualified package to test
-these v4 behaviors, because it resolves to v3. Before publication, contributors
-and testers must use the clean repository checkout, build, and local-link example
-workflow below.
+Published-prerelease users should first confirm the published dist-tags:
 
-Once a v4 prerelease is published under the `beta` dist-tag, consumers will
-install it with:
+```bash
+npm view hexo-renderer-asciidoc dist-tags
+```
+
+When the output lists the explicitly published `beta` dist-tag, install it with:
 
 ```bash
 npm install hexo-renderer-asciidoc@beta --save
 # or
 pnpm add hexo-renderer-asciidoc@beta
 ```
+
+The unqualified package may still resolve to stable v3 until v4 becomes
+`latest`; do not use it to test v4. Testers of an unpublished candidate must
+use the checkout instructions and evidence from the authoritative migration PR
+or prerelease announcement. That source must designate the immutable candidate
+SHA and the acceptance evidence/check URLs. Do not infer a candidate from
+default `main`, an arbitrary ref, or this README. This README intentionally
+cannot designate or authenticate a future candidate.
 
 After installing, Hexo picks up the renderer automatically. There is nothing to configure or register manually.
 
@@ -68,21 +74,15 @@ The renderer does not add renderer-specific `_config.yml` sections. Feature togg
 
 ### Example site
 
-Need a ready-made playground? Clone the GitHub repository and open `examples/hexo-site`:
+The example is a source-tree contributor fixture that depends on the local
+package via `link:../..`; it is not included as a runnable site in the installed
+package. For an already independently verified and trusted source checkout,
+follow `src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md`. Reviewers of an unpublished candidate
+must use the checkout instructions and acceptance evidence designated by the
+authoritative migration PR or prerelease announcement, as described above.
 
-```bash
-git clone https://github.com/hcoona/three.git
-cd three
-mise trust
-mise exec -- pnpm install --frozen-lockfile
-mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc run build
-mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site install --frozen-lockfile
-mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site run generate
-cd src/public/lib/hexo-renderer-asciidoc/examples/hexo-site
-pnpm dev
-```
-
-That sample Hexo project depends on the local package via `link:../..`, so a fresh package build is required before the example is installed or generated from a clean checkout. The maintained posts and page exercise headings, lists, a table of renderer defaults, and highlighted source listings.
+Published-package users can instead create a regular Hexo site and install the
+explicit `@beta` package as described in [Installation](#installation).
 
 ## Behavior summary
 

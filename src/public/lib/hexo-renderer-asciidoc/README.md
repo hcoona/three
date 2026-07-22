@@ -10,7 +10,7 @@
 [![Node support](https://img.shields.io/node/v/hexo-renderer-asciidoc.svg?logo=node.js)](package.json)
 [![License: LGPL-3.0-or-later](https://img.shields.io/badge/license-LGPL--3.0--or--later-0a76d5.svg)](LICENSE)
 
-Add first-class [AsciiDoc](https://asciidoc.org/) support to Hexo. This repository branch documents the upcoming 4.x beta migration, which uses `@asciidoctor/core` / Asciidoctor.js 4.0.4, returns `Promise<string>`, registers the Hexo renderer asynchronously, re-highlights recognized listing blocks with fixed `hexo-util.highlight` options, and encodes literal braces before returning the resulting HTML to Hexo.
+Add first-class [AsciiDoc](https://asciidoc.org/) support to Hexo. This repository branch documents the 4.x migration, which uses `@asciidoctor/core` / Asciidoctor.js 4.0.4, returns `Promise<string>`, registers the Hexo renderer asynchronously, re-highlights recognized listing blocks with fixed `hexo-util.highlight` options, and encodes literal braces before returning the resulting HTML to Hexo.
 
 ## Rendering contract
 
@@ -32,21 +32,28 @@ Add first-class [AsciiDoc](https://asciidoc.org/) support to Hexo. This reposito
 | Node.js    | 20.19.0         |
 | Hexo       | 8.0.0           |
 
-This repository branch documents the upcoming 4.x beta migration. As of July 22,
-2026, npm publishes only stable v3 on the `latest` dist-tag; no v4 prerelease or
-`beta` dist-tag is available yet. Do not install the unqualified package to test
-these v4 behaviors, because it resolves to v3. Before publication, contributors
-and testers must use the clean-checkout build and local-link example workflow
-below.
+Published-prerelease users should first confirm the published dist-tags:
 
-Once a v4 prerelease is published under the `beta` dist-tag, consumers will
-install it with the package manager that matches their Hexo project:
+```bash
+npm view hexo-renderer-asciidoc dist-tags
+```
+
+When the output lists the explicitly published `beta` dist-tag, install it with
+the package manager that matches the Hexo project:
 
 ```bash
 npm install hexo-renderer-asciidoc@beta --save
 # or
 pnpm add hexo-renderer-asciidoc@beta
 ```
+
+The unqualified package may still resolve to stable v3 until v4 becomes
+`latest`; do not use it to test v4. Testers of an unpublished candidate must
+use the checkout instructions and evidence from the authoritative migration PR
+or prerelease announcement. That source must designate the immutable candidate
+SHA and the acceptance evidence/check URLs. Do not infer a candidate from
+default `main`, an arbitrary ref, or this README. This README intentionally
+cannot designate or authenticate a future candidate.
 
 Once installed, Hexo automatically pipes `.ad`, `.adoc`, and `.asciidoc` files through this renderer, no extra glue code is required.
 
@@ -65,9 +72,17 @@ For AsciiDoc content, this package still uses its own static highlighting pass a
 
 ## Example Hexo site
 
-A self-contained demo lives at `examples/hexo-site`. It links to the local package via `link:../..`, so every change you make to the renderer is reflected after you rebuild the parent package.
+A source-tree contributor fixture lives at `examples/hexo-site`. It links to the
+local package via `link:../..` and is not included as a runnable site in the
+installed package.
 
 If you cloned the monorepo, the demo lives under `src/public/lib/hexo-renderer-asciidoc/examples/hexo-site` from the repository root.
+
+For an already independently verified and trusted source checkout, follow
+[`examples/hexo-site/README.md`](examples/hexo-site/README.md). Reviewers of an
+unpublished candidate must use the checkout instructions and acceptance
+evidence designated by the authoritative migration PR or prerelease
+announcement, as described above.
 
 > [!NOTE]
 > The sample site is intentionally outside the root pnpm workspace. From the repository root, follow the exact `pnpm --dir ...` sequence in `examples/hexo-site/README.md`; it builds the parent package before installing and generating the example. After that setup, either keep using `pnpm --dir src/public/lib/hexo-renderer-asciidoc/examples/hexo-site ...` from the root or `cd` into that directory and run its scripts directly. Its `pnpm-workspace.yaml` and lockfile keep those dependencies isolated.
