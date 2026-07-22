@@ -433,6 +433,69 @@ public sealed class AtlasIntakeContractTests
     }
 
     [Fact]
+    public async Task StrictReadersRejectCoherentEmptyCorpusAndCopyArrays()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        await PrepareWorkspaceThroughPreflightAsync(workspace);
+
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalApprovedManifestPath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadManifestAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasApprovalException),
+            json =>
+            {
+                json["saveEntries"] = new JsonArray();
+                json["discoveredSaveDirectoryEntryCount"] = 0;
+                json["includedSaveCount"] = 0;
+                foreach (JsonObject saveRoot in ((JsonArray)json["saveRoots"]!)
+                             .Select(static node => (JsonObject)node!))
+                {
+                    saveRoot["observedEntryCount"] = 0;
+                    saveRoot["activity"] = AtlasIntakeContracts.InactiveSaveRootActivity;
+                    saveRoot["decision"] = AtlasIntakeContracts.ExcludeNoSaveInputsDecision;
+                }
+            },
+            TestContext.Current.CancellationToken);
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalApprovedManifestPath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadManifestAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasApprovalException),
+            json =>
+            {
+                json["definitionEntries"] = new JsonArray();
+                json["discoveredDefinitionEntryCount"] = 0;
+                json["includedDefinitionCount"] = 0;
+                foreach (JsonObject group in ((JsonArray)json["definitionGroups"]!)
+                             .Select(static node => (JsonObject)node!))
+                {
+                    group["discoveredCount"] = 0;
+                }
+            },
+            TestContext.Current.CancellationToken);
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalCopyPlanPath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadCopyPlanAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasSafetyException),
+            json => json["entries"] = new JsonArray(),
+            TestContext.Current.CancellationToken);
+        await AssertRejectedDocumentMutationAsync(
+            workspace.Layout.CanonicalCopyReceiptPath,
+            static (path, cancellationToken) =>
+                AtlasIntakeContracts.ReadCopyReceiptAsync(path, cancellationToken).AsTask(),
+            typeof(AtlasSafetyException),
+            json =>
+            {
+                json["entries"] = new JsonArray();
+                json["saveCount"] = 0;
+                json["definitionCount"] = 0;
+            },
+            TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task PipelineUsesManifestDerivedCensus()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();

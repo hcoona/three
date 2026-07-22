@@ -1318,6 +1318,7 @@ public static class AtlasIntakeContracts
         }
 
         if (manifest.SaveRoots.Length != 2
+            || manifest.SaveEntries.Length == 0
             || manifest.DiscoveredSaveDirectoryEntryCount != manifest.SaveEntries.Length
             || manifest.IncludedSaveCount != manifest.SaveEntries.Count(static entry =>
                 StringComparer.Ordinal.Equals(entry.Decision, IncludeSaveDecision)))
@@ -1326,6 +1327,7 @@ public static class AtlasIntakeContracts
         }
 
         if (manifest.DefinitionGroups.Length == 0
+            || manifest.DefinitionEntries.Length == 0
             || manifest.DiscoveredDefinitionEntryCount != manifest.DefinitionEntries.Length
             || manifest.IncludedDefinitionCount != manifest.DefinitionEntries.Count(static entry =>
                 StringComparer.Ordinal.Equals(entry.Decision, IncludeDefinitionDecision)))
@@ -1776,7 +1778,8 @@ public static class AtlasIntakeContracts
     private static void ValidateCopyPlan(AtlasCopyPlanDocument document)
     {
         if (!StringComparer.Ordinal.Equals(document.SchemaVersion, CopyPlanSchemaVersion)
-            || document.ManifestRevision != PendingManifestRevision)
+            || document.ManifestRevision != PendingManifestRevision
+            || document.Entries.Length == 0)
         {
             throw new AtlasValidationException();
         }
@@ -1978,7 +1981,8 @@ public static class AtlasIntakeContracts
         if (!StringComparer.Ordinal.Equals(document.SchemaVersion, CopyReceiptSchemaVersion)
             || !StringComparer.Ordinal.Equals(document.Profile, TrustedLocalFilesystemProfile)
             || document.SteamAppId != ExactSteamAppId
-            || document.BuildId != ExactBuildId)
+            || document.BuildId != ExactBuildId
+            || document.Entries.Length == 0)
         {
             throw new AtlasValidationException();
         }
