@@ -3155,6 +3155,7 @@ public static class AtlasDiscovery
 
         AtlasManifestSaveRoot[] discoveredSaveRoots = [.. baselineManifest.SaveRoots];
         List<AtlasManifestSaveEntry> discoveredSaveEntries = [];
+        HashSet<string> discoveredSaveIdentities = new(StringComparer.OrdinalIgnoreCase);
         foreach (AtlasManifestSaveRoot baselineSaveRoot in baselineManifest.SaveRoots
                      .OrderBy(static root => root.LocationRole, StringComparer.Ordinal))
         {
@@ -3188,7 +3189,8 @@ public static class AtlasDiscovery
                 string identity = CreateSaveEntryIdentity(
                     entry.ManifestEntry.RootAlias,
                     entry.ManifestEntry.RelativePath);
-                if (!baselineSaveEntries.TryGetValue(
+                if (!discoveredSaveIdentities.Add(identity)
+                    || !baselineSaveEntries.TryGetValue(
                         identity,
                         out AtlasManifestSaveEntry? baselineEntry))
                 {
@@ -3203,7 +3205,8 @@ public static class AtlasDiscovery
             }
         }
 
-        if (discoveredSaveEntries.Count != baselineManifest.SaveEntries.Length)
+        if (discoveredSaveEntries.Count != baselineManifest.SaveEntries.Length
+            || !discoveredSaveIdentities.SetEquals(baselineSaveEntries.Keys))
         {
             throw new AtlasSafetyException("The save discovery denominator changed.");
         }

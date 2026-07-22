@@ -869,6 +869,40 @@ public sealed class AtlasDiscoveryTests
     }
 
     [Fact]
+    public async Task DiscoverAsyncRejectsCaseCollidingSaveSubstitution()
+    {
+        await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
+        string retainedPath = Path.Combine(workspace.SaveRootPath, "file1.rpgsave");
+        string missingPath = Path.Combine(workspace.SaveRootPath, "global.rpgsave");
+        string collisionPath = Path.Combine(workspace.SaveRootPath, "FILE1.RPGSAVE");
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            getAttributes: path =>
+                AtlasIntakeContracts.PathEquals(path, collisionPath)
+                    ? AtlasIoSeams.Default.GetAttributes(retainedPath)
+                    : AtlasIoSeams.Default.GetAttributes(path),
+            enumerateFileSystemEntries: (path, searchOption) =>
+            {
+                IEnumerable<string> entries =
+                    AtlasIoSeams.Default.EnumerateFileSystemEntries(path, searchOption);
+                return AtlasIntakeContracts.PathEquals(path, workspace.SaveRootPath)
+                    ? entries
+                        .Where(entry => !AtlasIntakeContracts.PathEquals(entry, missingPath))
+                        .Append(collisionPath)
+                    : entries;
+            });
+
+        AtlasSafetyException exception = await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => AtlasDiscovery.DiscoverAsync(
+                workspace.Layout.CanonicalDiscoverRequestPath,
+                io,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Contains("denominator", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(AtlasDiscoveryFailureStage.CorpusReconciliation, exception.DiscoveryStage);
+        Assert.False(File.Exists(workspace.Layout.CanonicalPendingManifestPath));
+    }
+
+    [Fact]
     public async Task DiscoverAsyncRejectsChangedDefinitionDenominator()
     {
         await using AtlasSyntheticWorkspace workspace = await AtlasSyntheticWorkspace.CreateAsync();
