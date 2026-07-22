@@ -925,7 +925,7 @@ public sealed class AtlasDiscoveryTests
             Dictionary<string, AtlasManifestDefinitionEntry> baselineEntries =
                 CreateDefinitionEntryMap(
                     CreateDefinitionEntry(
-                        "definition-source-000001",
+                        "definition-source-091001",
                         "content/known.json",
                         "all-files",
                         AtlasIntakeContracts.IncludeDefinitionDecision));
@@ -969,7 +969,7 @@ public sealed class AtlasDiscoveryTests
             Dictionary<string, AtlasManifestDefinitionEntry> baselineEntries =
                 CreateDefinitionEntryMap(
                     CreateDefinitionEntry(
-                        "definition-source-000001",
+                        "definition-source-091001",
                         "content/root.json",
                         "root-only",
                         AtlasIntakeContracts.IncludeDefinitionDecision));
@@ -1010,7 +1010,7 @@ public sealed class AtlasDiscoveryTests
             Dictionary<string, AtlasManifestDefinitionEntry> baselineEntries =
                 CreateDefinitionEntryMap(
                     CreateDefinitionEntry(
-                        "definition-source-000001",
+                        "definition-source-091001",
                         "content/known.json",
                         "recursive-json",
                         AtlasIntakeContracts.IncludeDefinitionDecision));
@@ -1054,12 +1054,12 @@ public sealed class AtlasDiscoveryTests
             Dictionary<string, AtlasManifestDefinitionEntry> baselineEntries =
                 CreateDefinitionEntryMap(
                     CreateDefinitionEntry(
-                        "definition-source-000001",
+                        "definition-source-091001",
                         "content/root.json",
                         "recursive-json",
                         AtlasIntakeContracts.IncludeDefinitionDecision),
                     CreateDefinitionEntry(
-                        "definition-source-000002",
+                        "definition-source-091002",
                         "content/nested/child.json",
                         "recursive-json",
                         AtlasIntakeContracts.IncludeDefinitionDecision));
@@ -1108,7 +1108,7 @@ public sealed class AtlasDiscoveryTests
             Dictionary<string, AtlasManifestDefinitionEntry> baselineEntries =
                 CreateDefinitionEntryMap(
                     CreateDefinitionEntry(
-                        "definition-source-000001",
+                        "definition-source-091001",
                         "content/known.json",
                         "all-files",
                         AtlasIntakeContracts.IncludeDefinitionDecision));
@@ -1214,12 +1214,12 @@ public sealed class AtlasDiscoveryTests
             Dictionary<string, AtlasManifestDefinitionEntry> baselineEntries =
                 CreateDefinitionEntryMap(
                     CreateDefinitionEntry(
-                        "definition-source-000001",
+                        "definition-source-091001",
                         "content/entry.json",
                         "included-json",
                         AtlasIntakeContracts.IncludeDefinitionDecision),
                     CreateDefinitionEntry(
-                        "definition-source-000002",
+                        "definition-source-091002",
                         "content/entry.txt",
                         "excluded-structured",
                         AtlasIntakeContracts.ExcludeDefinitionDecision));
@@ -1270,7 +1270,7 @@ public sealed class AtlasDiscoveryTests
             Dictionary<string, AtlasManifestDefinitionEntry> baselineEntries =
                 CreateDefinitionEntryMap(
                     CreateDefinitionEntry(
-                        "definition-source-000001",
+                        "definition-source-091001",
                         "content/entry.json",
                         "invalid",
                         AtlasIntakeContracts.IncludeDefinitionDecision));

@@ -598,7 +598,7 @@ public sealed class AtlasIntakeContractTests
                 {
                     ["artifactAlias"] = "private-artifact-999999",
                     ["artifactClass"] = AtlasIntakeContracts.SaveCopyArtifactClass,
-                    ["purpose"] = "snapshot-copy:save-source-0001",
+                    ["purpose"] = "snapshot-copy:save-source-0901",
                     ["custodianRole"] = AtlasIntakeContracts.ProjectLeaderRole,
                     ["lineageAliases"] =
                         new JsonArray(AtlasSyntheticWorkspace.BaselineManifestArtifactAlias),
