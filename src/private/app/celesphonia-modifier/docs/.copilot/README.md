@@ -46,9 +46,11 @@ semantic scanning, write authority, WinUI, network access, and private data from
 - `plans/atlas-v0-a2-approved-manifest-authority-correction.md` is the released A2R8 architectural
   correction. It removes duplicate public corpus reconstruction and makes the approved A0 manifest
   authoritative.
-- `plans/atlas-v0-a2-baseline-authority-diagnosis.md` is the planning-only A2R9 diagnosis of the
-  preserved A2 baseline authority. Its gates may authorize only the read-only diagnostic; they never
-  authorize retry, repair, or a private write.
+- `plans/atlas-v0-a2-baseline-authority-diagnosis.md` is the blocked A2R9 preserved-baseline plan.
+  Its pre-read gate found no retained prior request SHA-256, so it authorizes no diagnostic.
+- `plans/atlas-v0-a2-current-baseline-observation.md` is the planning-only A2R10 observation.
+  It fingerprints each successfully loaded current baseline file independently without claiming
+  prior-byte identity or a simultaneous filesystem snapshot.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -100,10 +102,11 @@ semantic scanning, write authority, WinUI, network access, and private data from
   completion at verified shared `G`
   `4dc1572cc4439e6e5fade2827c3fa40230565ef2`. Its one metadata-only attempt is consumed; no retry is
   authorized.
-- `reviews/atlas-v0-a2-baseline-authority-diagnosis-plan-review.md` is planned to bind A2R9 before
-  any private diagnostic read.
-- `reviews/atlas-v0-a2-baseline-authority-diagnosis-completion.md` is planned to close A2R9 without
-  publishing its local fixed token.
+- `reviews/atlas-v0-a2-baseline-authority-diagnosis-plan-review.md` binds A2R9. Verified shared `R`
+  `6a2de13841105feeb24016af1e715aaa91593236` reached the unsatisfied request-identity gate.
+- `reviews/atlas-v0-a2-current-baseline-observation-plan-review.md` is planned to bind A2R10.
+- `reviews/atlas-v0-a2-current-baseline-observation-completion.md` is planned to close A2R10 without
+  publishing its private observation.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` is obsolete and blocked. A2R8 publishes no private
   discovery token, disposition, outcome, count, difference, hash, path, name, or document content.
 

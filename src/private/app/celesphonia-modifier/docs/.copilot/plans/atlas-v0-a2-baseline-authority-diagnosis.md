@@ -1,8 +1,8 @@
 # Atlas V0 A2 Baseline Authority Diagnosis
 
-**Lifecycle:** Active subordinate; planning-only before verified shared `R`
+**Lifecycle:** Historical supporting; retained as reviewed A2R9 evidence
 
-**Status:** Diagnostic execution blocked
+**Status:** Blocked because prior request SHA-256 evidence is unavailable
 
 **Increment:** A2R9 - Baseline Authority Diagnosis
 
@@ -28,11 +28,16 @@ discovery, changing production code, or exposing private evidence.
 **Dependencies:** Verified shared A2R8 `G`, reviewed Atlas source, preserved existing request and
 baseline inputs, and independent review of the plan and exact local diagnostic.
 
-**Planned plan-review record:**
+**Plan-review record:**
 `../reviews/atlas-v0-a2-baseline-authority-diagnosis-plan-review.md`
 
-**Planned completion record:**
-`../reviews/atlas-v0-a2-baseline-authority-diagnosis-completion.md`
+**Completion record:** Not produced; A2R9 stopped at its pre-read gate
+
+> **Current baseline observation**
+> Verified shared A2R9 `R` reached this plan's pre-read request-identity gate. Protected execution
+> evidence retained the request-path derivation but no prior request SHA-256. No private request was
+> opened. `atlas-v0-a2-current-baseline-observation.md` now governs. This plan and `R` remain
+> review evidence and authorize no diagnostic process start.
 
 ## 1. Observed boundary and decision
 
@@ -80,7 +85,7 @@ Out of scope:
 - another `intake-discover` attempt;
 - production, test, schema, package, project, or CLI changes;
 - creating, rewriting, repairing, moving, backing up, or deleting a private artifact;
-- reading a game, save root, definition root, executable, or generated A2 output other than the exact
+- reading a game, save root, definition root, executable, or generated A2 output other than the
   current inventory and conditional inventory backup allowed in section 3.2;
 - enumerating live sources or validating corpus membership;
 - printing an exception message, stack trace, path, name, value, hash, count, list, fragment, or
