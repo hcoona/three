@@ -54,6 +54,8 @@ semantic scanning, write authority, WinUI, network access, and private data from
   shared `G11` `5955f8c59dd69de1f11a383f373eea59294b2a29`.
 - `plans/atlas-v0-a2-baseline-manifest-row-remediation.md` is the planning-only A2R12 deterministic
   qualification and approval-gated private remediation.
+- `plans/atlas-v0-a2-remediation-backup-directory-readiness.md` is the planning-only A2R12C
+  correction for an absent, not-yet-created remediation backup directory.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.

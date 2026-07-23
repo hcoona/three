@@ -1,6 +1,6 @@
 # Atlas V0 A2 Baseline Manifest Row Remediation
 
-**Lifecycle:** Active subordinate; planning-only before verified shared `R12`
+**Lifecycle:** Active subordinate; qualification correction blocked before verified shared `R12C`
 
 **Status:** Read-only qualification source change blocked
 
@@ -105,11 +105,11 @@ whose row check refused. The A2R11 report must bind the same current source and 
 `diagnosed`. The program locates the current inventory through the exact A2R11 workspace rule and
 derives the workspace root, transient backup, and replacement staging paths from it.
 
-Read-only qualification requires the exact `intake/inventory-backups` directory to exist as an
-ordinary non-reparse directory and requires the transient backup and staging paths to be absent. It
-loads the
-current inventory through `AtlasIntakeContracts.ReadInventoryAsync` and requires its returned byte
-length and SHA-256 to match A2R10.
+Read-only qualification validates the exact `intake/inventory-backups` path through
+`AtlasDiscovery.ValidateCreateNewOutputDirectory`. The directory may be absent; if present it must be
+ordinary and non-reparse. Qualification requires the transient backup and staging paths to be absent,
+loads the current inventory through `AtlasIntakeContracts.ReadInventoryAsync`, and requires its
+returned byte length and SHA-256 to match A2R10.
 
 Eligibility requires all of:
 
@@ -187,15 +187,16 @@ a2r12-baseline-manifest-row-remediation-original-<32-lowercase-hex>.json
 directly beneath the validated session project directory. This protected original uses the same run
 identifier as the approval and remediation reports. Before any write, the program:
 
-1. requires the inventory path to remain the exact selected current inventory;
-2. validates the workspace root and inventory as existing ordinary non-reparse paths;
-3. requires the exact `intake/inventory-backups` directory to exist and validates it through
-   `AtlasDiscovery.ValidateExistingOrdinaryDirectory`, workspace containment, and fixed-drive
-   checks;
-4. validates the exact backup and staging leaves through
+1. requires the protected approval record for the same run identifier and its exact approved scope;
+2. requires the inventory path to remain the exact selected current inventory;
+3. validates the workspace root and inventory as existing ordinary non-reparse paths;
+4. validates the exact `intake/inventory-backups` path through
+   `AtlasDiscovery.ValidateCreateNewOutputDirectory`, creates that directory if absent, and then
+   validates it through `AtlasDiscovery.ValidateExistingOrdinaryDirectory`, workspace containment,
+   and fixed-drive checks;
+5. validates the exact backup and staging leaves through
    `AtlasDiscovery.ValidateCreateNewOutputFile` with the workspace root and restart-aware existing
-   output allowance; and
-5. requires the protected approval record for the same run identifier.
+   output allowance.
 
 The fresh branch requires current bytes to match A2R10, the transient backup to be absent, and any
 existing staging bytes to equal the derived replacement. It evaluates eligibility against current
@@ -298,8 +299,8 @@ src/private/app/celesphonia-modifier/docs/.copilot/reviews/
   atlas-v0-a2-baseline-manifest-row-remediation-plan-review.md
 ```
 
-Only after verified shared `R12` may the existing session observer be extended, built, tested,
-hashed, and independently reviewed. Only the read-only qualification mode may then run.
+Only after verified shared `R12C` may the corrected session observer be built, tested, hashed, and
+independently reviewed. Only the corrected read-only qualification mode may then run.
 
 If qualification is ineligible or approval is declined, no approval record or remediation runs. If
 approval is granted, its record remains protected and the public Git topology does not change.
@@ -311,15 +312,15 @@ src/private/app/celesphonia-modifier/docs/.copilot/reviews/
   atlas-v0-a2-baseline-manifest-row-remediation-completion.md
 ```
 
-`G12` is always the direct child of `R12`. Its content and topology remain compatible with every
-private eligibility, approval, and remediation result.
+`G12` is always the direct child of the verified A2R12C correction review. Its content and topology
+remain compatible with every private eligibility, approval, and remediation result.
 
 ## 7. Acceptance and handoff
 
 Before qualification:
 
-1. exact `P12` and `R12` are reviewed, pushed, and verified;
-2. `HEAD`, upstream, and the clean worktree equal `R12`;
+1. exact `P12`, `R12`, `P12C`, and `R12C` are reviewed, pushed, and verified;
+2. `HEAD`, upstream, and the clean worktree equal `R12C`;
 3. released Atlas source remains unchanged from A2R8 `G`;
 4. the exact source builds with zero warnings and errors;
 5. existing A2R10 and A2R11 synthetic suites still pass;

@@ -58,6 +58,9 @@
 > `atlas-v0-a2-baseline-manifest-row-remediation.md` governs planning-only A2R12. It may first run
 > one read-only deterministic qualification. No inventory write is authorized without a later
 > explicit project-leader approval and its persisted approval record.
+> `atlas-v0-a2-remediation-backup-directory-readiness.md` governs planning-only A2R12C. It may allow
+> the exact remediation backup directory to remain absent during qualification and be created only
+> after protected approval.
 
 ## 1. Outcome
 
@@ -132,7 +135,7 @@ A2 implementation may begin only when:
 
 Current progression is governed by A2R12. A2R8 attempt authority is consumed, A2R9 stopped before
 private reads, and A2R10 and A2R11 completed their protected evidence. Only A2R12 read-only
-qualification may follow verified shared `R12`; private remediation remains blocked until its exact
+qualification may follow verified shared `R12C`; private remediation remains blocked until its exact
 eligibility rule passes and the project leader explicitly approves the purpose-only correction.
 Discovery, confirmation, copying, and cleanup remain blocked.
 
@@ -869,11 +872,11 @@ prerequisite, wrapper binding, or historical instruction authorizes another atte
 A2R9 authorizes no diagnostic because its retained-prior-request-identity gate was unsatisfied.
 A2R10 and A2R11 completed their protected observation and diagnosis at verified shared `G10` and
 `G11`. A2R12 may first authorize only its exact reviewed session-only, read-only deterministic
-qualification after verified shared plan-review `R12`. Inventory replacement remains blocked unless
-the qualification is eligible, the project leader explicitly approves, and the protected approval
-record exists. A2R12 authorizes no discovery retry, confirmation, copy, cleanup preflight, decoding,
-semantic scanning, or production correction. Its only deletion authority is the subordinate plan's
-exact ordinary incomplete staging recovery and verified transient-backup cleanup.
+qualification after verified shared correction review `R12C`. Inventory replacement remains blocked
+unless the qualification is eligible, the project leader explicitly approves, and the protected
+approval record exists. A2R12 authorizes no discovery retry, confirmation, copy, cleanup preflight,
+decoding, semantic scanning, or production correction. Its only deletion authority is the
+subordinate plan's exact ordinary incomplete staging recovery and verified transient-backup cleanup.
 
 ### A2.4 Historical A2R8 release
 
@@ -982,8 +985,8 @@ authority.
 
 Every A2R8 plan-review and release record followed the correction plan and sections 16 and 17 of
 `project-operating-model.md`. A2R9 remains blocked review evidence; A2R10 and A2R11 are completed
-evidence. The current A2R12 gate and chain are defined only by
-`atlas-v0-a2-baseline-manifest-row-remediation.md`.
+evidence. The current A2R12 gate and chain are jointly defined by
+`atlas-v0-a2-baseline-manifest-row-remediation.md` and its A2R12C readiness correction.
 
 ## 21. Private outputs and handoff
 
@@ -1013,8 +1016,8 @@ To resume A2:
 1. read all applicable `AGENTS.md` files and the governing plans;
 2. verify A2R8 `G`, blocked A2R9 `R`, completed A2R10 `G10`, completed A2R11 `G11`, upstream, and
    clean worktree;
-3. persist and independently review A2R12 through its exact plan-review `R12`;
-4. run only its read-only deterministic qualification after verified shared `R12`;
+3. verify A2R12 `R12`, then persist and independently review A2R12C through `R12C`;
+4. run only its corrected read-only deterministic qualification after verified shared `R12C`;
 5. perform no inventory write unless the project leader explicitly approves the eligible
    purpose-only correction and that approval is persisted as defined by A2R12;
 6. do not run discovery, confirmation, copy, or cleanup; and
