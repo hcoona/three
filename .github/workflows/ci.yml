@@ -58,7 +58,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Python 3
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.14'
 
@@ -251,7 +251,7 @@ jobs:
           global-json-file: global.json
 
       - name: Setup Python 3.14
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
