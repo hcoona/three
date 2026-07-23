@@ -871,8 +871,9 @@ A2R10 and A2R11 completed their protected observation and diagnosis at verified 
 `G11`. A2R12 may first authorize only its exact reviewed session-only, read-only deterministic
 qualification after verified shared plan-review `R12`. Inventory replacement remains blocked unless
 the qualification is eligible, the project leader explicitly approves, and the protected approval
-record exists. A2R12 authorizes no discovery retry, confirmation, copy, cleanup preflight, deletion,
-decoding, semantic scanning, or production correction.
+record exists. A2R12 authorizes no discovery retry, confirmation, copy, cleanup preflight, decoding,
+semantic scanning, or production correction. Its only deletion authority is the subordinate plan's
+exact ordinary incomplete staging recovery and verified transient-backup cleanup.
 
 ### A2.4 Historical A2R8 release
 
@@ -997,10 +998,11 @@ Expected private outputs are:
   by its subordinate plan; and
 - A2R11 creates one private diagnosis report under protected Copilot session state, governed only
   by its subordinate plan; and
-- A2R12 may preserve one approval record, one exact original-inventory copy, and one remediation
-  report under protected session state only after deterministic qualification and explicit
-  protected approval. Its workspace backup is transient replacement state and must be removed after
-  the protected original is verified.
+- A2R12 may preserve one closed qualification record per read-only invocation and, after an eligible
+  protected qualification plus explicit protected approval, one approval record, one exact
+  original-inventory copy, and one remediation report under protected session state. Its workspace
+  backup is transient replacement state and must be removed after the protected original is
+  verified.
 
 Operational Atlas outputs remain under the protected Git-ignored Atlas workspace and follow A0
 lifecycle milestones. The A2R10, A2R11, and any A2R12 report remain outside that workspace and never
