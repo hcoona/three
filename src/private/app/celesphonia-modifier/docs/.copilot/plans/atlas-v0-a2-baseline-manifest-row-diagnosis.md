@@ -1,8 +1,8 @@
 # Atlas V0 A2 Baseline Manifest Row Diagnosis
 
-**Lifecycle:** Active subordinate; planning-only before verified shared `R11`
+**Lifecycle:** Historical supporting; completed at verified shared `G11`
 
-**Status:** Diagnostic source change blocked
+**Status:** Completed; grants no current execution authority
 
 **Increment:** A2R11 - Baseline Manifest Row Diagnosis
 

@@ -52,8 +52,12 @@
 > simultaneous-filesystem-snapshot claim.
 > A2R10 completed at verified shared `G10`.
 > **Baseline manifest row diagnosis**
-> `atlas-v0-a2-baseline-manifest-row-diagnosis.md` governs planning-only A2R11. It may classify only
-> the fixed released baseline-manifest inventory-row predicates after verified shared `R11`.
+> `atlas-v0-a2-baseline-manifest-row-diagnosis.md` governed A2R11. It completed at verified shared
+> `G11` without publishing its private result.
+> **Baseline manifest row remediation**
+> `atlas-v0-a2-baseline-manifest-row-remediation.md` governs planning-only A2R12. It may first run
+> one read-only deterministic qualification. No inventory write is authorized without a later
+> explicit project-leader approval and its persisted approval record.
 
 ## 1. Outcome
 
@@ -126,10 +130,11 @@ A2 implementation may begin only when:
 - that record passes its parent, path, content, and upstream checks; and
 - the tracked worktree is clean.
 
-Current progression is governed by A2R11. A2R8 attempt authority is consumed, A2R9 stopped before
-private reads, and A2R10 recorded current state. Discovery, confirmation, copying, cleanup,
-correction, and private remediation remain blocked except for the read-only row diagnosis after
-verified shared `R11`.
+Current progression is governed by A2R12. A2R8 attempt authority is consumed, A2R9 stopped before
+private reads, and A2R10 and A2R11 completed their protected evidence. Only A2R12 read-only
+qualification may follow verified shared `R12`; private remediation remains blocked until its exact
+eligibility rule passes and the project leader explicitly approves the purpose-only correction.
+Discovery, confirmation, copying, and cleanup remain blocked.
 
 ## 4. Scope
 
@@ -859,13 +864,15 @@ Verified shared A2R8 `G` permitted one reviewed metadata-only attempt. Its first
 consumed that authority. Its disposition and outcome remain protected local evidence. No A2R8
 prerequisite, wrapper binding, or historical instruction authorizes another attempt.
 
-### A2.3 Current A2R11 diagnosis boundary
+### A2.3 Current A2R12 remediation boundary
 
 A2R9 authorizes no diagnostic because its retained-prior-request-identity gate was unsatisfied.
-A2R10 completed its current-baseline observation at verified shared `G10`. A2R11 may authorize only
-its exact reviewed session-only, read-only baseline-manifest-row diagnosis after verified shared
-plan-review `R11`. It authorizes no discovery retry, confirmation, copy, cleanup preflight,
-deletion, decoding, semantic scanning, production correction, or private remediation.
+A2R10 and A2R11 completed their protected observation and diagnosis at verified shared `G10` and
+`G11`. A2R12 may first authorize only its exact reviewed session-only, read-only deterministic
+qualification after verified shared plan-review `R12`. Inventory replacement remains blocked unless
+the qualification is eligible, the project leader explicitly approves, and the protected approval
+record exists. A2R12 authorizes no discovery retry, confirmation, copy, cleanup preflight, deletion,
+decoding, semantic scanning, or production correction.
 
 ### A2.4 Historical A2R8 release
 
@@ -877,7 +884,8 @@ execution authority.
 A2 is accepted only when:
 
 Criteria for confirmation, copy, and preflight remain eventual A2 requirements. They do not grant
-current execution authority; section 17 limits current work to the reviewed A2R11 diagnosis.
+current execution authority; section 17 limits current work to the reviewed A2R12 qualification and
+its conditionally approved purpose-only remediation.
 
 1. the implementation matches the exact tracked scope and three-project boundary;
 2. production projects retain zero project-local package references;
@@ -972,9 +980,9 @@ A2R8 correction plan. Historical candidate descriptions in this plan grant no cu
 authority.
 
 Every A2R8 plan-review and release record followed the correction plan and sections 16 and 17 of
-`project-operating-model.md`. A2R9 remains blocked review evidence, and A2R10 is completed evidence.
-The current A2R11 gate and chain are defined only by
-`atlas-v0-a2-baseline-manifest-row-diagnosis.md`.
+`project-operating-model.md`. A2R9 remains blocked review evidence; A2R10 and A2R11 are completed
+evidence. The current A2R12 gate and chain are defined only by
+`atlas-v0-a2-baseline-manifest-row-remediation.md`.
 
 ## 21. Private outputs and handoff
 
@@ -988,18 +996,24 @@ Expected private outputs are:
 - A2R10 creates one private observation report under protected Copilot session state, governed only
   by its subordinate plan; and
 - A2R11 creates one private diagnosis report under protected Copilot session state, governed only
-  by its subordinate plan.
+  by its subordinate plan; and
+- A2R12 may preserve one approval record, one exact original-inventory copy, and one remediation
+  report under protected session state only after deterministic qualification and explicit
+  protected approval. Its workspace backup is transient replacement state and must be removed after
+  the protected original is verified.
 
 Operational Atlas outputs remain under the protected Git-ignored Atlas workspace and follow A0
-lifecycle milestones. The A2R10 and A2R11 reports remain outside that workspace and never become
-Atlas operational artifacts.
+lifecycle milestones. The A2R10, A2R11, and any A2R12 report remain outside that workspace and never
+become Atlas operational artifacts.
 
 To resume A2:
 
 1. read all applicable `AGENTS.md` files and the governing plans;
-2. verify A2R8 `G`, blocked A2R9 `R`, completed A2R10 `G10`, upstream, and clean worktree;
-3. persist and independently review A2R11 through its exact plan-review `R11`;
-4. execute only the exact A2R11 baseline-manifest-row diagnosis after all of its gates pass;
-5. do not run discovery, confirmation, copy, cleanup, correction, or remediation;
-6. require a separate post-A2R11 persisted plan for any later operation; and
+2. verify A2R8 `G`, blocked A2R9 `R`, completed A2R10 `G10`, completed A2R11 `G11`, upstream, and
+   clean worktree;
+3. persist and independently review A2R12 through its exact plan-review `R12`;
+4. run only its read-only deterministic qualification after verified shared `R12`;
+5. perform no inventory write unless the project leader explicitly approves the eligible
+   purpose-only correction and that approval is persisted as defined by A2R12;
+6. do not run discovery, confirmation, copy, or cleanup; and
 7. infer neither private state nor authority from conversation history or historical instructions.

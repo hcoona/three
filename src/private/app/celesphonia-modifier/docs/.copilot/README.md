@@ -50,8 +50,10 @@ semantic scanning, write authority, WinUI, network access, and private data from
   Its pre-read gate found no retained prior request SHA-256, so it authorizes no diagnostic.
 - `plans/atlas-v0-a2-current-baseline-observation.md` is the completed A2R10 observation at verified
   shared `G10` `c7300d9fbbe93b62262dc80a25aa1aa550b3e3fa`.
-- `plans/atlas-v0-a2-baseline-manifest-row-diagnosis.md` is the planning-only A2R11 diagnosis of
-  fixed released baseline-manifest inventory-row predicates.
+- `plans/atlas-v0-a2-baseline-manifest-row-diagnosis.md` is the completed A2R11 diagnosis at verified
+  shared `G11` `5955f8c59dd69de1f11a383f373eea59294b2a29`.
+- `plans/atlas-v0-a2-baseline-manifest-row-remediation.md` is the planning-only A2R12 deterministic
+  qualification and approval-gated private remediation.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -109,9 +111,10 @@ semantic scanning, write authority, WinUI, network access, and private data from
   `R10` `44488e1aff7b0fd8e30fe07ffb0be4510822d1db`.
 - `reviews/atlas-v0-a2-current-baseline-observation-completion.md` closes A2R10 at verified shared
   `G10` without publishing its private observation.
-- `reviews/atlas-v0-a2-baseline-manifest-row-diagnosis-plan-review.md` is planned to bind A2R11.
-- `reviews/atlas-v0-a2-baseline-manifest-row-diagnosis-completion.md` is planned to close A2R11
-  without publishing its private diagnosis.
+- `reviews/atlas-v0-a2-baseline-manifest-row-diagnosis-plan-review.md` binds A2R11 at verified shared
+  `R11` `342c324818d7d238298b60e3ed91feeeaf21616d`.
+- `reviews/atlas-v0-a2-baseline-manifest-row-diagnosis-completion.md` closes A2R11 at verified shared
+  `G11` without publishing its private diagnosis.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` is obsolete and blocked. A2R8 publishes no private
   discovery token, disposition, outcome, count, difference, hash, path, name, or document content.
 
