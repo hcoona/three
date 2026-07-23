@@ -185,6 +185,187 @@ public sealed class UserCommandServiceTests
     }
 
     [Fact]
+    public async Task InstallAsyncPreservesExtensionChangedDuringSecretPrompt()
+    {
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
+        DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
+        string managedHookFilePath = Path.Combine(
+            installRoot.FullName,
+            AppConstants.ManagedHookFileName);
+        string copilotCliExtensionFilePath = CreateCopilotCliExtensionFilePath(installRoot);
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
+
+        try
+        {
+            string installedBinaryPath = Path.Combine(
+                installRoot.FullName,
+                AppPaths.GetManagedExecutableName());
+            ConfigurationApplyResult extensionResult = CopilotCliExtensionManager.Install(
+                copilotCliExtensionFilePath,
+                installedBinaryPath);
+            Assert.True(extensionResult.Applied);
+
+            FakeProcessRunner processRunner = new();
+            processRunner.SeedSecret(AppPaths.GetTelegramBotTokenSecretPath(), "old-token");
+            processRunner.SeedSecret(AppPaths.GetTelegramChatIdSecretPath(), "old-chat-id");
+            const string UserOwnedExtension = "export default { changedDuringPrompt: true };";
+            FakeInteractiveConsole interactiveConsole = new(
+                canPrompt: true,
+                confirmResponses: [false, false],
+                onConfirm: () => File.WriteAllText(
+                    copilotCliExtensionFilePath,
+                    UserOwnedExtension));
+            UserCommandService service = CreateUserCommandService(
+                new RecordingHttpMessageHandler(),
+                loggerFactory: null,
+                new SessionLogFileContext(),
+                processRunner,
+                interactiveConsole);
+
+            int exitCode = await service.InstallAsync(
+                new InstallCommandOptions
+                {
+                    BinaryPath = new FileInfo(CreatePublishedBinary(publishDirectory)),
+                    InstallRoot = installRoot,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    CopilotCliHookFilePath = new FileInfo(
+                        CreateCopilotCliHookFilePath(installRoot)),
+                    CopilotCliExtensionFilePath = new FileInfo(copilotCliExtensionFilePath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                },
+                CancellationToken.None);
+
+            Assert.Equal(1, exitCode);
+            Assert.Equal(UserOwnedExtension, File.ReadAllText(copilotCliExtensionFilePath));
+            Assert.Equal(
+                "old-token",
+                processRunner.GetSecret(AppPaths.GetTelegramBotTokenSecretPath()));
+            Assert.Equal(
+                "old-chat-id",
+                processRunner.GetSecret(AppPaths.GetTelegramChatIdSecretPath()));
+        }
+        finally
+        {
+            installRoot.Delete(recursive: true);
+            publishDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InstallAsyncFailsWithoutMutatingStateWhenStoredSecretCannotBeRead()
+    {
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
+        DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
+        string managedHookFilePath = Path.Combine(
+            installRoot.FullName,
+            AppConstants.ManagedHookFileName);
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
+
+        try
+        {
+            FakeProcessRunner processRunner = new();
+            processRunner.SeedSecret(AppPaths.GetTelegramBotTokenSecretPath(), "old-token");
+            processRunner.SeedSecret(AppPaths.GetTelegramChatIdSecretPath(), "old-chat-id");
+            processRunner.FailSecretRead(
+                AppPaths.GetTelegramChatIdSecretPath(),
+                exitCode: 20);
+            UserCommandService service = CreateUserCommandService(
+                new RecordingHttpMessageHandler(),
+                loggerFactory: null,
+                new SessionLogFileContext(),
+                processRunner,
+                new FakeInteractiveConsole(canPrompt: false));
+
+            int exitCode = await service.InstallAsync(
+                new InstallCommandOptions
+                {
+                    BinaryPath = new FileInfo(CreatePublishedBinary(publishDirectory)),
+                    TelegramBotToken = "new-token",
+                    TelegramChatId = "new-chat-id",
+                    InstallRoot = installRoot,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    CopilotCliHookFilePath = new FileInfo(
+                        CreateCopilotCliHookFilePath(installRoot)),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                },
+                CancellationToken.None);
+
+            Assert.Equal(1, exitCode);
+            Assert.Equal(
+                "old-token",
+                processRunner.GetSecret(AppPaths.GetTelegramBotTokenSecretPath()));
+            Assert.Equal(
+                "old-chat-id",
+                processRunner.GetSecret(AppPaths.GetTelegramChatIdSecretPath()));
+            Assert.False(File.Exists(managedHookFilePath));
+            Assert.False(
+                File.Exists(
+                    Path.Combine(
+                        installRoot.FullName,
+                        AppPaths.GetManagedExecutableName())));
+        }
+        finally
+        {
+            installRoot.Delete(recursive: true);
+            publishDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InstallAsyncRollsBackSettingsWhenCompletionLoggingFails()
+    {
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
+        DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
+        string managedHookFilePath = Path.Combine(
+            installRoot.FullName,
+            AppConstants.ManagedHookFileName);
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
+
+        try
+        {
+            FakeProcessRunner processRunner = new();
+            UserCommandService service = CreateUserCommandService(
+                new RecordingHttpMessageHandler(),
+                loggerFactory: null,
+                new SessionLogFileContext(),
+                processRunner,
+                new FakeInteractiveConsole(canPrompt: false),
+                new ThrowOnSuccessfulInstallLogger());
+
+            int exitCode = await service.InstallAsync(
+                new InstallCommandOptions
+                {
+                    BinaryPath = new FileInfo(CreatePublishedBinary(publishDirectory)),
+                    TelegramBotToken = "bot-token",
+                    TelegramChatId = "chat-id",
+                    InstallRoot = installRoot,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    CopilotCliHookFilePath = new FileInfo(
+                        CreateCopilotCliHookFilePath(installRoot)),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                },
+                CancellationToken.None);
+
+            Assert.Equal(1, exitCode);
+            Assert.False(File.Exists(managedHookFilePath));
+            Assert.False(File.Exists(CreateCopilotCliExtensionFilePath(installRoot)));
+            Assert.All(
+                vsCodeSettingsPaths,
+                settingsPath => Assert.False(
+                    VsCodeSettingsManager.IsHookFileRegistered(
+                        settingsPath,
+                        managedHookFilePath)));
+            Assert.Null(processRunner.GetSecret(AppPaths.GetTelegramBotTokenSecretPath()));
+            Assert.Null(processRunner.GetSecret(AppPaths.GetTelegramChatIdSecretPath()));
+        }
+        finally
+        {
+            installRoot.Delete(recursive: true);
+            publishDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task UninstallAsyncRemovesManagedHookFileAndVsCodeRegistration()
     {
         DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
@@ -250,6 +431,114 @@ public sealed class UserCommandServiceTests
     }
 
     [Fact]
+    public async Task UninstallAsyncRestoresRemainingStateWhenOneArtifactCannotBeRestored()
+    {
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
+        DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
+        string managedHookFilePath = Path.Combine(
+            installRoot.FullName,
+            AppConstants.ManagedHookFileName);
+        string copilotCliHookFilePath = CreateCopilotCliHookFilePath(installRoot);
+        string copilotCliExtensionFilePath = CreateCopilotCliExtensionFilePath(installRoot);
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
+
+        try
+        {
+            string sourceBinaryPath = CreatePublishedBinary(publishDirectory);
+            File.WriteAllText(Path.ChangeExtension(sourceBinaryPath, ".pdb"), "symbols");
+            string installedBinaryPath = Path.Combine(
+                installRoot.FullName,
+                AppPaths.GetManagedExecutableName());
+            string installedPdbPath = Path.ChangeExtension(installedBinaryPath, ".pdb");
+            FakeProcessRunner processRunner = new();
+            processRunner.SeedSecret(AppPaths.GetTelegramBotTokenSecretPath(), "bot-token");
+            processRunner.SeedSecret(AppPaths.GetTelegramChatIdSecretPath(), "chat-id");
+            UserCommandService service = CreateUserCommandService(
+                new RecordingHttpMessageHandler(),
+                loggerFactory: null,
+                new SessionLogFileContext(),
+                processRunner,
+                new FakeInteractiveConsole(canPrompt: false));
+
+            int installExitCode = await service.InstallAsync(
+                new InstallCommandOptions
+                {
+                    BinaryPath = new FileInfo(sourceBinaryPath),
+                    InstallRoot = installRoot,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    CopilotCliHookFilePath = new FileInfo(copilotCliHookFilePath),
+                    CopilotCliExtensionFilePath = new FileInfo(copilotCliExtensionFilePath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                    SkipSecretPrompt = true,
+                },
+                CancellationToken.None);
+            Assert.Equal(0, installExitCode);
+            using CancellationTokenSource cancellationSource = new();
+            processRunner.FailSecretRemoval(
+                AppPaths.GetTelegramChatIdSecretPath(),
+                exitCode: 20,
+                onFailure: () =>
+                {
+                    cancellationSource.Cancel();
+                    Directory.CreateDirectory(installedPdbPath);
+                    processRunner.SeedSecret(
+                        AppPaths.GetTelegramBotTokenSecretPath(),
+                        "concurrent-token");
+                },
+                removeBeforeFailure: true);
+
+            int uninstallExitCode = await service.UninstallAsync(
+                new UninstallCommandOptions
+                {
+                    InstallRoot = installRoot,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    CopilotCliHookFilePath = new FileInfo(copilotCliHookFilePath),
+                    CopilotCliExtensionFilePath = new FileInfo(copilotCliExtensionFilePath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                    RemoveSecrets = true,
+                },
+                cancellationSource.Token);
+
+            Assert.Equal(1, uninstallExitCode);
+            Assert.True(File.Exists(installedBinaryPath));
+            Assert.True(Directory.Exists(installedPdbPath));
+            Assert.True(File.Exists(managedHookFilePath));
+            Assert.True(File.Exists(copilotCliExtensionFilePath));
+            Assert.All(
+                vsCodeSettingsPaths,
+                settingsPath => Assert.True(
+                    VsCodeSettingsManager.IsHookFileRegistered(
+                        settingsPath,
+                        managedHookFilePath)));
+            Assert.Equal(
+                "concurrent-token",
+                processRunner.GetSecret(AppPaths.GetTelegramBotTokenSecretPath()));
+            Assert.Equal(
+                "chat-id",
+                processRunner.GetSecret(AppPaths.GetTelegramChatIdSecretPath()));
+        }
+        finally
+        {
+            if (Directory.Exists(Path.ChangeExtension(
+                    Path.Combine(
+                        installRoot.FullName,
+                        AppPaths.GetManagedExecutableName()),
+                    ".pdb")))
+            {
+                Directory.Delete(
+                    Path.ChangeExtension(
+                        Path.Combine(
+                            installRoot.FullName,
+                            AppPaths.GetManagedExecutableName()),
+                        ".pdb"));
+            }
+
+            installRoot.Delete(recursive: true);
+            publishDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task UninstallAsyncPreservesNonCliGenericManagedEntriesInCopilotCliHookFile()
     {
         DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
@@ -286,6 +575,7 @@ public sealed class UserCommandServiceTests
                 CancellationToken.None);
 
             Assert.Equal(0, installExitCode);
+            Directory.CreateDirectory(Path.GetDirectoryName(copilotCliHookFilePath)!);
             File.WriteAllText(
                 copilotCliHookFilePath,
                 """
@@ -382,6 +672,7 @@ public sealed class UserCommandServiceTests
             string[] originalSettingsContents =
                 [.. vsCodeSettingsPaths.Select(File.ReadAllText)];
             const string unparsableCopilotCliHookFileContent = "{";
+            Directory.CreateDirectory(Path.GetDirectoryName(copilotCliHookFilePath)!);
             await File.WriteAllTextAsync(
                 copilotCliHookFilePath,
                 unparsableCopilotCliHookFileContent,
@@ -476,9 +767,22 @@ public sealed class UserCommandServiceTests
                     VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
                 },
                 CancellationToken.None);
+            processRunner.CopilotVersionOutput = "GitHub Copilot CLI 1.0.40";
+            int unsupportedRuntimeHealthExitCode =
+                await service.HealthAsync(
+                    new UserPathOverrides
+                    {
+                        InstallRoot = installRoot,
+                        ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                        CopilotCliHookFilePath = new FileInfo(
+                            CreateCopilotCliHookFilePath(installRoot)),
+                        VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                    },
+                    CancellationToken.None);
 
             Assert.Equal(0, installExitCode);
             Assert.Equal(0, healthExitCode);
+            Assert.Equal(1, unsupportedRuntimeHealthExitCode);
         }
         finally
         {
@@ -657,6 +961,97 @@ public sealed class UserCommandServiceTests
     }
 
     [Fact]
+    public async Task InstallAsyncRestoresUpgradeWhilePreservingConcurrentExtensionChange()
+    {
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
+        DirectoryInfo firstPublishDirectory = Directory.CreateTempSubdirectory();
+        DirectoryInfo secondPublishDirectory = Directory.CreateTempSubdirectory();
+        string managedHookFilePath = Path.Combine(
+            installRoot.FullName,
+            AppConstants.ManagedHookFileName);
+        string copilotCliHookFilePath = CreateCopilotCliHookFilePath(installRoot);
+        string copilotCliExtensionFilePath = CreateCopilotCliExtensionFilePath(installRoot);
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
+        string installedBinaryPath = Path.Combine(
+            installRoot.FullName,
+            AppPaths.GetManagedExecutableName());
+
+        try
+        {
+            string firstBinaryPath = CreatePublishedBinary(firstPublishDirectory);
+            File.WriteAllText(firstBinaryPath, "previous-binary");
+            string secondBinaryPath = CreatePublishedBinary(secondPublishDirectory);
+            File.WriteAllText(secondBinaryPath, "replacement-binary");
+            FakeProcessRunner processRunner = new();
+            FakeInteractiveConsole interactiveConsole = new(
+                canPrompt: true,
+                confirmResponses: [true, true]);
+            UserCommandService service = CreateUserCommandService(
+                new RecordingHttpMessageHandler(),
+                loggerFactory: null,
+                new SessionLogFileContext(),
+                processRunner,
+                interactiveConsole);
+
+            int initialExitCode = await service.InstallAsync(
+                new InstallCommandOptions
+                {
+                    BinaryPath = new FileInfo(firstBinaryPath),
+                    TelegramBotToken = "old-token",
+                    TelegramChatId = "old-chat-id",
+                    InstallRoot = installRoot,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    CopilotCliHookFilePath = new FileInfo(copilotCliHookFilePath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                },
+                CancellationToken.None);
+            Assert.Equal(0, initialExitCode);
+
+            string originalManagedHook = File.ReadAllText(managedHookFilePath);
+            string[] originalSettings = [.. vsCodeSettingsPaths.Select(File.ReadAllText)];
+
+            using IDisposable _ = AtomicTextFileWriter.UseWriterForTesting(
+                new CorruptFileOnPathTextFileWriter(
+                    vsCodeSettingsPaths[1],
+                    copilotCliExtensionFilePath,
+                    "corrupted extension"));
+
+            int upgradeExitCode = await service.InstallAsync(
+                new InstallCommandOptions
+                {
+                    BinaryPath = new FileInfo(secondBinaryPath),
+                    TelegramBotToken = "new-token",
+                    TelegramChatId = "new-chat-id",
+                    InstallRoot = installRoot,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    CopilotCliHookFilePath = new FileInfo(copilotCliHookFilePath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                },
+                CancellationToken.None);
+
+            Assert.Equal(1, upgradeExitCode);
+            Assert.Equal("previous-binary", File.ReadAllText(installedBinaryPath));
+            Assert.Equal(originalManagedHook, File.ReadAllText(managedHookFilePath));
+            Assert.False(File.Exists(copilotCliHookFilePath));
+            Assert.Equal("corrupted extension", File.ReadAllText(copilotCliExtensionFilePath));
+            Assert.Equal(originalSettings[0], File.ReadAllText(vsCodeSettingsPaths[0]));
+            Assert.Equal(originalSettings[1], File.ReadAllText(vsCodeSettingsPaths[1]));
+            Assert.Equal(
+                "old-token",
+                processRunner.GetSecret(AppPaths.GetTelegramBotTokenSecretPath()));
+            Assert.Equal(
+                "old-chat-id",
+                processRunner.GetSecret(AppPaths.GetTelegramChatIdSecretPath()));
+        }
+        finally
+        {
+            installRoot.Delete(recursive: true);
+            firstPublishDirectory.Delete(recursive: true);
+            secondPublishDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task InstallAndHealthAsyncIgnoreNonApplicableVsCodeSettingsTargets()
     {
         DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
@@ -719,13 +1114,8 @@ public sealed class UserCommandServiceTests
         }
     }
 
-    [Theory]
-    [InlineData("wrong-command")]
-    [InlineData("wrong-type")]
-    [InlineData("wrong-timeout")]
-    [InlineData("wrong-event-env")]
-    [InlineData("missing-event-env")]
-    public async Task HealthAsyncRejectsInvalidCopilotCliHookEntries(string invalidEntryKind)
+    [Fact]
+    public async Task HealthAsyncRejectsRemainingLegacyCopilotCliHookEntry()
     {
         DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
         DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
@@ -761,7 +1151,28 @@ public sealed class UserCommandServiceTests
                     SkipSecretPrompt = true,
                 },
                 CancellationToken.None);
-            TamperCopilotCliHookFile(copilotCliHookFilePath, invalidEntryKind);
+            Directory.CreateDirectory(Path.GetDirectoryName(copilotCliHookFilePath)!);
+            File.WriteAllText(
+                copilotCliHookFilePath,
+                """
+                {
+                  "version": 1,
+                  "hooks": {
+                    "notification": [
+                      {
+                        "type": "command",
+                        "command": "legacy managed notification",
+                        "matcher": "permission_prompt|elicitation_dialog",
+                        "timeoutSec": 20,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
+                        }
+                      }
+                    ]
+                  }
+                }
+                """);
 
             int healthExitCode = await service.HealthAsync(
                 new UserPathOverrides
@@ -837,24 +1248,25 @@ public sealed class UserCommandServiceTests
     }
 
     [Fact]
-    public async Task InstallAsyncCleansManagedArtifactsWhenCopilotCliHookWriteThrows()
+    public async Task InstallAsyncCleansManagedArtifactsWhenExtensionWriteThrows()
     {
         DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
         DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
         string managedHookFilePath = Path.Combine(
             installRoot.FullName,
             AppConstants.ManagedHookFileName);
-        string copilotCliHookDirectoryPath = Path.Combine(
+        string copilotCliExtensionDirectoryPath = Path.Combine(
             installRoot.FullName,
-            "copilot-cli-hooks");
-        string copilotCliHookFilePath = Path.Combine(
-            copilotCliHookDirectoryPath,
-            AppConstants.CopilotCliHookFileName);
+            "copilot-cli-extension");
+        string copilotCliExtensionFilePath = Path.Combine(
+            copilotCliExtensionDirectoryPath,
+            AppConstants.CopilotCliExtensionFileName);
+        string copilotCliHookFilePath = CreateCopilotCliHookFilePath(installRoot);
         string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
 
         try
         {
-            File.WriteAllText(copilotCliHookDirectoryPath, "not a directory");
+            File.WriteAllText(copilotCliExtensionDirectoryPath, "not a directory");
             UserCommandService service = CreateUserCommandService(
                 new RecordingHttpMessageHandler(),
                 loggerFactory: null,
@@ -871,6 +1283,7 @@ public sealed class UserCommandServiceTests
                     InstallRoot = installRoot,
                     ManagedHookFilePath = new FileInfo(managedHookFilePath),
                     CopilotCliHookFilePath = new FileInfo(copilotCliHookFilePath),
+                    CopilotCliExtensionFilePath = new FileInfo(copilotCliExtensionFilePath),
                     VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
                 },
                 CancellationToken.None);
@@ -883,6 +1296,7 @@ public sealed class UserCommandServiceTests
                         AppPaths.GetManagedExecutableName())));
             Assert.False(File.Exists(managedHookFilePath));
             Assert.False(File.Exists(copilotCliHookFilePath));
+            Assert.False(File.Exists(copilotCliExtensionFilePath));
             Assert.All(
                 vsCodeSettingsPaths,
                 settingsPath => Assert.False(
@@ -898,7 +1312,7 @@ public sealed class UserCommandServiceTests
     }
 
     [Fact]
-    public async Task InstallAsyncPreservesBinaryWhenCopilotCliCleanupThrows()
+    public async Task InstallAsyncRestoresExistingCopilotCliHookWhenSettingsWriteFails()
     {
         DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
         DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
@@ -914,15 +1328,15 @@ public sealed class UserCommandServiceTests
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(copilotCliHookFilePath)!);
-            File.WriteAllText(
-                copilotCliHookFilePath,
+            const string OriginalCopilotCliHookFileContent =
                 """
                 {
                                         "version": 1,
                                         "owner": "external",
                                         "hooks": {}
                 }
-                """);
+                """;
+            File.WriteAllText(copilotCliHookFilePath, OriginalCopilotCliHookFileContent);
             UserCommandService service = CreateUserCommandService(
                 new RecordingHttpMessageHandler(),
                 loggerFactory: null,
@@ -947,10 +1361,13 @@ public sealed class UserCommandServiceTests
                 CancellationToken.None);
 
             Assert.Equal(1, exitCode);
-            Assert.True(File.Exists(installedBinaryPath));
-            Assert.Equal("native-aot-placeholder", File.ReadAllText(installedBinaryPath));
+            Assert.False(File.Exists(installedBinaryPath));
             Assert.False(File.Exists(managedHookFilePath));
             Assert.True(File.Exists(copilotCliHookFilePath));
+            Assert.Equal(
+                OriginalCopilotCliHookFileContent,
+                File.ReadAllText(copilotCliHookFilePath));
+            Assert.False(File.Exists(CreateCopilotCliExtensionFilePath(installRoot)));
             Assert.False(
                 VsCodeSettingsManager.IsHookFileRegistered(
                     vsCodeSettingsPaths[0],
@@ -964,7 +1381,7 @@ public sealed class UserCommandServiceTests
     }
 
     [Fact]
-    public async Task InstallAsyncPreservesBinaryWhenCopilotCliCleanupReturnsNotApplied()
+    public async Task InstallAsyncRemovesFreshArtifactsWhenCliHookIsCorruptedDuringFailure()
     {
         DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
         DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
@@ -990,8 +1407,8 @@ public sealed class UserCommandServiceTests
                 interactiveConsole: new FakeInteractiveConsole(canPrompt: false));
 
             using IDisposable _ = AtomicTextFileWriter.UseWriterForTesting(
-                new CorruptFileOnWriteNumberTextFileWriter(
-                    4,
+                new CorruptFileOnPathTextFileWriter(
+                    vsCodeSettingsPaths[1],
                     copilotCliHookFilePath,
                     unparseableManagedCopilotCliHookFileContent));
 
@@ -1009,12 +1426,10 @@ public sealed class UserCommandServiceTests
                 CancellationToken.None);
 
             Assert.Equal(1, exitCode);
-            Assert.True(File.Exists(installedBinaryPath));
-            Assert.Equal("native-aot-placeholder", File.ReadAllText(installedBinaryPath));
+            Assert.False(File.Exists(installedBinaryPath));
             Assert.False(File.Exists(managedHookFilePath));
-            Assert.Equal(
-                unparseableManagedCopilotCliHookFileContent,
-                await File.ReadAllTextAsync(copilotCliHookFilePath, CancellationToken.None));
+            Assert.False(File.Exists(copilotCliHookFilePath));
+            Assert.False(File.Exists(CreateCopilotCliExtensionFilePath(installRoot)));
             Assert.All(
                 vsCodeSettingsPaths,
                 settingsPath => Assert.False(
@@ -1030,7 +1445,7 @@ public sealed class UserCommandServiceTests
     }
 
     [Fact]
-    public async Task InstallAsyncPreservesBinaryWhenVsCodeManagedHookCleanupReturnsNotApplied()
+    public async Task InstallAsyncPreservesManagedHookChangedDuringSettingsFailure()
     {
         DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
         DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
@@ -1056,8 +1471,8 @@ public sealed class UserCommandServiceTests
                 interactiveConsole: new FakeInteractiveConsole(canPrompt: false));
 
             using IDisposable _ = AtomicTextFileWriter.UseWriterForTesting(
-                new CorruptFileOnWriteNumberTextFileWriter(
-                    4,
+                new CorruptFileOnPathTextFileWriter(
+                    vsCodeSettingsPaths[1],
                     managedHookFilePath,
                     unparsableManagedHookFileContent));
 
@@ -1075,12 +1490,12 @@ public sealed class UserCommandServiceTests
                 CancellationToken.None);
 
             Assert.Equal(1, exitCode);
-            Assert.True(File.Exists(installedBinaryPath));
-            Assert.Equal("native-aot-placeholder", File.ReadAllText(installedBinaryPath));
+            Assert.False(File.Exists(installedBinaryPath));
             Assert.Equal(
                 unparsableManagedHookFileContent,
-                await File.ReadAllTextAsync(managedHookFilePath, CancellationToken.None));
+                File.ReadAllText(managedHookFilePath));
             Assert.False(File.Exists(copilotCliHookFilePath));
+            Assert.False(File.Exists(CreateCopilotCliExtensionFilePath(installRoot)));
             Assert.All(
                 vsCodeSettingsPaths,
                 settingsPath => Assert.False(
@@ -1819,9 +2234,7 @@ public sealed class UserCommandServiceTests
             ConfigurationApplyResult copilotCliHookFileResult =
                 UserHookConfigurationManager.InstallManagedCopilotCliHookFile(
                     copilotCliHookFilePath,
-                    $"\"{installedBinaryPath}\" hook session-start",
-                    $"\"{installedBinaryPath}\" hook user-prompt-submit",
-                    $"\"{installedBinaryPath}\" hook stop",
+                    $"\"{installedBinaryPath}\" hook notification",
                     "2026-03-14T00:00:00.0000000Z");
             Assert.True(copilotCliHookFileResult.Applied);
 
@@ -1849,7 +2262,7 @@ public sealed class UserCommandServiceTests
                 CancellationToken.None);
 
             Assert.Equal(1, exitCode);
-            Assert.True(File.Exists(copilotCliHookFilePath));
+            Assert.False(File.Exists(copilotCliHookFilePath));
             Assert.True(File.Exists(installedBinaryPath));
             Assert.True(File.Exists(managedHookFilePath));
             Assert.Equal(
@@ -1925,6 +2338,8 @@ public sealed class UserCommandServiceTests
         string managedHookFilePath = Path.Combine(
             installRoot.FullName,
             AppConstants.ManagedHookFileName);
+        string copilotCliHookFilePath = CreateCopilotCliHookFilePath(installRoot);
+        string copilotCliExtensionFilePath = CreateCopilotCliExtensionFilePath(installRoot);
         string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
 
         try
@@ -1945,8 +2360,7 @@ public sealed class UserCommandServiceTests
                     TelegramChatId = "chat-id",
                     InstallRoot = installRoot,
                     ManagedHookFilePath = new FileInfo(managedHookFilePath),
-                    CopilotCliHookFilePath = new FileInfo(
-                        CreateCopilotCliHookFilePath(installRoot)),
+                    CopilotCliHookFilePath = new FileInfo(copilotCliHookFilePath),
                     VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
                     SkipSecretPrompt = true,
                 },
@@ -1962,8 +2376,7 @@ public sealed class UserCommandServiceTests
                 {
                     InstallRoot = installRoot,
                     ManagedHookFilePath = new FileInfo(managedHookFilePath),
-                    CopilotCliHookFilePath = new FileInfo(
-                        CreateCopilotCliHookFilePath(installRoot)),
+                    CopilotCliHookFilePath = new FileInfo(copilotCliHookFilePath),
                     VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
                     RemoveSecrets = true,
                 },
@@ -1976,7 +2389,8 @@ public sealed class UserCommandServiceTests
                         installRoot.FullName,
                         AppPaths.GetManagedExecutableName())));
             Assert.True(File.Exists(managedHookFilePath));
-            Assert.False(File.Exists(CreateCopilotCliHookFilePath(installRoot)));
+            Assert.False(File.Exists(copilotCliHookFilePath));
+            Assert.True(File.Exists(copilotCliExtensionFilePath));
             Assert.True(
                 VsCodeSettingsManager.IsHookFileRegistered(
                     vsCodeSettingsPaths[0],
@@ -1985,6 +2399,109 @@ public sealed class UserCommandServiceTests
                 VsCodeSettingsManager.IsHookFileRegistered(
                     vsCodeSettingsPaths[1],
                     managedHookFilePath));
+            Assert.Equal(
+                "bot-token",
+                processRunner.GetSecret(AppPaths.GetTelegramBotTokenSecretPath()));
+            Assert.Equal(
+                "chat-id",
+                processRunner.GetSecret(AppPaths.GetTelegramChatIdSecretPath()));
+        }
+        finally
+        {
+            installRoot.Delete(recursive: true);
+            publishDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task UninstallAsyncRestoresStateWhilePreservingConcurrentBinaryChange()
+    {
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
+        DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
+        string managedHookFilePath = Path.Combine(
+            installRoot.FullName,
+            AppConstants.ManagedHookFileName);
+        string copilotCliHookFilePath = CreateCopilotCliHookFilePath(installRoot);
+        string copilotCliExtensionFilePath = CreateCopilotCliExtensionFilePath(installRoot);
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
+        string installedBinaryPath = Path.Combine(
+            installRoot.FullName,
+            AppPaths.GetManagedExecutableName());
+
+        try
+        {
+            FakeProcessRunner processRunner = new();
+            UserCommandService service = CreateUserCommandService(
+                new RecordingHttpMessageHandler(),
+                loggerFactory: null,
+                new SessionLogFileContext(),
+                processRunner,
+                new FakeInteractiveConsole(canPrompt: false));
+
+            int installExitCode = await service.InstallAsync(
+                new InstallCommandOptions
+                {
+                    BinaryPath = new FileInfo(CreatePublishedBinary(publishDirectory)),
+                    TelegramBotToken = "bot-token",
+                    TelegramChatId = "chat-id",
+                    InstallRoot = installRoot,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    CopilotCliHookFilePath = new FileInfo(copilotCliHookFilePath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                    SkipSecretPrompt = true,
+                },
+                CancellationToken.None);
+            Assert.Equal(0, installExitCode);
+
+            UserHookSettingsDocument managedHooks = JsonSerializer.Deserialize(
+                    File.ReadAllText(managedHookFilePath),
+                    AppJsonSerializerContext.Default.UserHookSettingsDocument)
+                ?? throw new InvalidOperationException("Expected managed hooks.");
+            managedHooks.Hooks["Stop"].Add(
+                new UserHookEntry
+                {
+                    Type = "command",
+                    Command = "custom stop",
+                    Timeout = 20,
+                    Env = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["CUSTOM_FLAG"] = "1",
+                    },
+                });
+            File.WriteAllText(
+                managedHookFilePath,
+                JsonSerializer.Serialize(
+                    managedHooks,
+                    AppJsonSerializerContext.Default.UserHookSettingsDocument));
+
+            string originalManagedHook = File.ReadAllText(managedHookFilePath);
+            string originalExtension = File.ReadAllText(copilotCliExtensionFilePath);
+            string[] originalSettings = [.. vsCodeSettingsPaths.Select(File.ReadAllText)];
+
+            using IDisposable _ = AtomicTextFileWriter.UseWriterForTesting(
+                new CorruptFileOnPathTextFileWriter(
+                    managedHookFilePath,
+                    installedBinaryPath,
+                    "corrupted binary"));
+
+            int uninstallExitCode = await service.UninstallAsync(
+                new UninstallCommandOptions
+                {
+                    InstallRoot = installRoot,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    CopilotCliHookFilePath = new FileInfo(copilotCliHookFilePath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                    RemoveSecrets = true,
+                },
+                CancellationToken.None);
+
+            Assert.Equal(1, uninstallExitCode);
+            Assert.Equal("corrupted binary", File.ReadAllText(installedBinaryPath));
+            Assert.Equal(originalManagedHook, File.ReadAllText(managedHookFilePath));
+            Assert.False(File.Exists(copilotCliHookFilePath));
+            Assert.Equal(originalExtension, File.ReadAllText(copilotCliExtensionFilePath));
+            Assert.Equal(originalSettings[0], File.ReadAllText(vsCodeSettingsPaths[0]));
+            Assert.Equal(originalSettings[1], File.ReadAllText(vsCodeSettingsPaths[1]));
             Assert.Equal(
                 "bot-token",
                 processRunner.GetSecret(AppPaths.GetTelegramBotTokenSecretPath()));
@@ -2019,9 +2536,7 @@ public sealed class UserCommandServiceTests
             ConfigurationApplyResult copilotCliHookFileResult =
                 UserHookConfigurationManager.InstallManagedCopilotCliHookFile(
                     copilotCliHookFilePath,
-                    $"\"{installedBinaryPath}\" hook session-start",
-                    $"\"{installedBinaryPath}\" hook user-prompt-submit",
-                    $"\"{installedBinaryPath}\" hook stop",
+                    $"\"{installedBinaryPath}\" hook notification",
                     "2026-03-14T00:00:00.0000000Z");
             Assert.True(copilotCliHookFileResult.Applied);
 
@@ -2062,7 +2577,7 @@ public sealed class UserCommandServiceTests
             Assert.False(File.Exists(copilotCliHookFilePath));
             Assert.All(
                 vsCodeSettingsPaths,
-                settingsPath => Assert.False(
+                settingsPath => Assert.True(
                     VsCodeSettingsManager.IsHookFileRegistered(
                         settingsPath,
                         managedHookFilePath)));
@@ -2076,6 +2591,65 @@ public sealed class UserCommandServiceTests
         finally
         {
             installRoot.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task UninstallAsyncPreservesHookWhenExtensionIsUnmanaged()
+    {
+        DirectoryInfo installRoot = CreateHomeScopedTempSubdirectory();
+        DirectoryInfo publishDirectory = Directory.CreateTempSubdirectory();
+        string managedHookFilePath = Path.Combine(
+            installRoot.FullName,
+            AppConstants.ManagedHookFileName);
+        string copilotCliHookFilePath = CreateCopilotCliHookFilePath(installRoot);
+        string copilotCliExtensionFilePath = CreateCopilotCliExtensionFilePath(installRoot);
+        string[] vsCodeSettingsPaths = CreateVsCodeSettingsPaths(installRoot);
+
+        try
+        {
+            UserCommandService service = CreateUserCommandService(
+                new RecordingHttpMessageHandler(),
+                loggerFactory: null,
+                new SessionLogFileContext(),
+                new FakeProcessRunner(),
+                new FakeInteractiveConsole(canPrompt: false));
+            int installExitCode = await service.InstallAsync(
+                new InstallCommandOptions
+                {
+                    BinaryPath = new FileInfo(CreatePublishedBinary(publishDirectory)),
+                    TelegramBotToken = "bot-token",
+                    TelegramChatId = "chat-id",
+                    SkipSecretPrompt = true,
+                    InstallRoot = installRoot,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    CopilotCliHookFilePath = new FileInfo(copilotCliHookFilePath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                },
+                CancellationToken.None);
+            Assert.Equal(0, installExitCode);
+            File.WriteAllText(copilotCliExtensionFilePath, "export default {};");
+
+            int uninstallExitCode = await service.UninstallAsync(
+                new UninstallCommandOptions
+                {
+                    InstallRoot = installRoot,
+                    ManagedHookFilePath = new FileInfo(managedHookFilePath),
+                    CopilotCliHookFilePath = new FileInfo(copilotCliHookFilePath),
+                    VsCodeSettingsPaths = CreateVsCodeSettingsOverrides(vsCodeSettingsPaths),
+                },
+                CancellationToken.None);
+
+            Assert.Equal(1, uninstallExitCode);
+            Assert.True(
+                UserHookConfigurationManager.IsManagedCopilotCliHookFileInstalled(
+                    copilotCliHookFilePath));
+            Assert.Equal("export default {};", File.ReadAllText(copilotCliExtensionFilePath));
+        }
+        finally
+        {
+            installRoot.Delete(recursive: true);
+            publishDirectory.Delete(recursive: true);
         }
     }
 
@@ -2130,7 +2704,8 @@ public sealed class UserCommandServiceTests
         ILoggerFactory? loggerFactory,
         SessionLogFileContext logContext,
         IProcessRunner? processRunner = null,
-        IInteractiveConsole? interactiveConsole = null)
+        IInteractiveConsole? interactiveConsole = null,
+        ILogger<UserCommandService>? userCommandLogger = null)
     {
         HttpClient httpClient = new(handler)
         {
@@ -2149,9 +2724,10 @@ public sealed class UserCommandServiceTests
         return new UserCommandService(
             new TelegramBotClient(httpClient, CreateLogger<TelegramBotClient>(loggerFactory)),
             credentialProvider,
+            new CopilotCliRuntimeProbe(effectiveProcessRunner),
             logContext,
             TimeProvider.System,
-            CreateLogger<UserCommandService>(loggerFactory));
+            userCommandLogger ?? CreateLogger<UserCommandService>(loggerFactory));
     }
 
     private static ILogger<T> CreateLogger<T>(ILoggerFactory? loggerFactory)
@@ -2200,50 +2776,15 @@ public sealed class UserCommandServiceTests
     private static string CreateCopilotCliHookFilePath(DirectoryInfo installRoot)
         => Path.Combine(
             installRoot.FullName,
-            "copilot-cli-hooks",
+            "hooks",
             AppConstants.CopilotCliHookFileName);
 
-    private static void TamperCopilotCliHookFile(string hookFilePath, string invalidEntryKind)
-    {
-        UserHookSettingsDocument document = JsonSerializer.Deserialize(
-                File.ReadAllText(hookFilePath),
-                AppJsonSerializerContext.Default.UserHookSettingsDocument)
-            ?? throw new InvalidOperationException("Expected a valid hook settings document.");
-
-        UserHookEntry sessionStartEntry = document.Hooks["SessionStart"][0];
-        UserHookEntry userPromptSubmitEntry = document.Hooks["UserPromptSubmit"][0];
-        UserHookEntry stopEntry = document.Hooks["Stop"][0];
-        switch (invalidEntryKind)
-        {
-            case "wrong-command":
-                userPromptSubmitEntry.Command = sessionStartEntry.Command;
-                break;
-            case "wrong-type":
-                sessionStartEntry.Type = "shell";
-                break;
-            case "wrong-timeout":
-                stopEntry.TimeoutSec = 10;
-                break;
-            case "wrong-event-env":
-                userPromptSubmitEntry.Env[AppConstants.ManagedHookEventEnvironmentVariable] =
-                    "SessionStart";
-                break;
-            case "missing-event-env":
-                stopEntry.Env.Remove(AppConstants.ManagedHookEventEnvironmentVariable);
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(
-                    nameof(invalidEntryKind),
-                    invalidEntryKind,
-                    "Unexpected invalid entry kind.");
-        }
-
-        File.WriteAllText(
-            hookFilePath,
-            JsonSerializer.Serialize(
-                document,
-                AppJsonSerializerContext.Default.UserHookSettingsDocument));
-    }
+    private static string CreateCopilotCliExtensionFilePath(DirectoryInfo installRoot)
+        => Path.Combine(
+            installRoot.FullName,
+            "extensions",
+            AppConstants.CopilotCliExtensionDirectoryName,
+            AppConstants.CopilotCliExtensionFileName);
 
     private static FileInfo[] CreateVsCodeSettingsOverrides(IEnumerable<string> settingsPaths)
         => [.. settingsPaths.Select(static settingsPath => new FileInfo(settingsPath))];
@@ -2282,6 +2823,14 @@ public sealed class UserCommandServiceTests
     private sealed class FakeProcessRunner : IProcessRunner
     {
         private readonly Dictionary<string, string> secrets = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, int> secretReadFailures = new(StringComparer.Ordinal);
+        private readonly Dictionary<
+            string,
+            (int ExitCode, Action? OnFailure, bool RemoveBeforeFailure)
+        >
+            secretRemovalFailures = new(StringComparer.Ordinal);
+
+        public string CopilotVersionOutput { get; set; } = "GitHub Copilot CLI 1.0.74-2";
 
         public Task<ProcessExecutionResult> RunAsync(
             string fileName,
@@ -2291,6 +2840,15 @@ public sealed class UserCommandServiceTests
             ProcessLogOptions? logOptions,
             CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (string.Equals(fileName, "copilot", StringComparison.Ordinal)
+                && arguments is ["version"])
+            {
+                return Task.FromResult(
+                    new ProcessExecutionResult(0, CopilotVersionOutput, string.Empty));
+            }
+
             if (!string.Equals(fileName, "gopass", StringComparison.Ordinal))
             {
                 throw new InvalidOperationException($"Unexpected process '{fileName}'.");
@@ -2306,10 +2864,19 @@ public sealed class UserCommandServiceTests
                 && string.Equals(arguments[0], "show", StringComparison.Ordinal))
             {
                 string secretPath = arguments[1];
+                if (secretReadFailures.TryGetValue(secretPath, out int failureExitCode))
+                {
+                    return Task.FromResult(
+                        new ProcessExecutionResult(
+                            failureExitCode,
+                            string.Empty,
+                            "simulated secret read failure"));
+                }
+
                 return Task.FromResult(
                     secrets.TryGetValue(secretPath, out string? value)
                         ? new ProcessExecutionResult(0, value + Environment.NewLine, string.Empty)
-                        : new ProcessExecutionResult(1, string.Empty, "secret not found"));
+                        : new ProcessExecutionResult(11, string.Empty, "secret not found"));
             }
 
             if (arguments.Count >= 4
@@ -2323,8 +2890,28 @@ public sealed class UserCommandServiceTests
             if (arguments.Count >= 3
                 && string.Equals(arguments[0], "rm", StringComparison.Ordinal))
             {
-                secrets.Remove(arguments[^1]);
-                return Task.FromResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
+                string secretPath = arguments[^1];
+                if (secretRemovalFailures.TryGetValue(
+                        secretPath,
+                        out (int ExitCode, Action? OnFailure, bool RemoveBeforeFailure) failure))
+                {
+                    if (failure.RemoveBeforeFailure)
+                    {
+                        secrets.Remove(secretPath);
+                    }
+
+                    failure.OnFailure?.Invoke();
+                    return Task.FromResult(
+                        new ProcessExecutionResult(
+                            failure.ExitCode,
+                            string.Empty,
+                            "simulated secret removal failure"));
+                }
+
+                return Task.FromResult(
+                    secrets.Remove(secretPath)
+                        ? new ProcessExecutionResult(0, string.Empty, string.Empty)
+                        : new ProcessExecutionResult(10, string.Empty, "secret not found"));
             }
 
             throw new InvalidOperationException(
@@ -2333,6 +2920,19 @@ public sealed class UserCommandServiceTests
 
         public void SeedSecret(string secretPath, string value)
             => secrets[secretPath] = value;
+
+        public void FailSecretRead(string secretPath, int exitCode)
+            => secretReadFailures[secretPath] = exitCode;
+
+        public void FailSecretRemoval(
+            string secretPath,
+            int exitCode,
+            Action? onFailure = null,
+            bool removeBeforeFailure = false)
+            => secretRemovalFailures[secretPath] = (
+                exitCode,
+                onFailure,
+                removeBeforeFailure);
 
         public string? GetSecret(string secretPath)
             => secrets.TryGetValue(secretPath, out string? value) ? value : null;
@@ -2356,17 +2956,14 @@ public sealed class UserCommandServiceTests
         }
     }
 
-    private sealed class CorruptFileOnWriteNumberTextFileWriter(
-        int failureWriteNumber,
+    private sealed class CorruptFileOnPathTextFileWriter(
+        string failurePath,
         string targetPath,
         string corruptedContent) : ITextFileWriter
     {
-        private int writeCount;
-
         public void WriteAllText(string path, string content)
         {
-            writeCount++;
-            if (writeCount == failureWriteNumber)
+            if (string.Equals(path, failurePath, StringComparison.Ordinal))
             {
                 File.WriteAllText(targetPath, corruptedContent);
                 throw new IOException("Simulated write failure.");
@@ -2378,7 +2975,8 @@ public sealed class UserCommandServiceTests
 
     private sealed class FakeInteractiveConsole(
         bool canPrompt,
-        IEnumerable<bool>? confirmResponses = null) : IInteractiveConsole
+        IEnumerable<bool>? confirmResponses = null,
+        Action? onConfirm = null) : IInteractiveConsole
     {
         private readonly Queue<bool> confirmQueue = new(confirmResponses ?? []);
 
@@ -2393,6 +2991,7 @@ public sealed class UserCommandServiceTests
         public bool Confirm(string prompt, bool defaultAnswer)
         {
             ConfirmationPrompts.Add(prompt);
+            onConfirm?.Invoke();
             return confirmQueue.Count > 0 ? confirmQueue.Dequeue() : defaultAnswer;
         }
 
@@ -2406,6 +3005,30 @@ public sealed class UserCommandServiceTests
         {
             LinePrompts.Add(prompt);
             return string.Empty;
+        }
+    }
+
+    private sealed class ThrowOnSuccessfulInstallLogger : ILogger<UserCommandService>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull
+            => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (eventId.Id == 1601
+                && formatter(state, exception).Contains(
+                    "success=True",
+                    StringComparison.Ordinal))
+            {
+                throw new IOException("Simulated completion logging failure.");
+            }
         }
     }
 }

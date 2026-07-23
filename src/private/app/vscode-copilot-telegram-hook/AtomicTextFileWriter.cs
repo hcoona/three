@@ -70,9 +70,7 @@ internal static class AtomicTextFileWriter
                     writer.Flush();
                     stream.Flush(flushToDisk: true);
                 }
-
                 ReplaceFile(tempPath, fullPath);
-                EnsureOwnerOnlyFile(fullPath);
                 tempPath = string.Empty;
             }
             finally
@@ -133,16 +131,13 @@ internal static class AtomicTextFileWriter
                 return;
             }
 
+            bool directoryExisted = Directory.Exists(directoryPath);
             Directory.CreateDirectory(directoryPath, OwnerOnlyDirectoryMode);
-            File.SetUnixFileMode(directoryPath, OwnerOnlyDirectoryMode);
-        }
-
-        private static void EnsureOwnerOnlyFile(string path)
-        {
-            if (!OperatingSystem.IsWindows())
+            if (!directoryExisted)
             {
-                File.SetUnixFileMode(path, OwnerOnlyFileMode);
+                File.SetUnixFileMode(directoryPath, OwnerOnlyDirectoryMode);
             }
         }
+
     }
 }

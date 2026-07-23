@@ -107,21 +107,22 @@ public sealed class TelegramBotClientTests
     }
 
     [Fact]
-    public async Task SendMessagesAsyncPreservesCallerCancellationAfterPartialSuccess()
+    public async Task SendMessagesAsyncPreservesPartialSuccessCountOnCallerCancellation()
     {
         using CancellationTokenSource cancellation = new();
         CancelAfterFirstSendHandler handler = new(cancellation);
         using ServiceProvider services = CreateServices(handler);
         TelegramBotClient client = services.GetRequiredService<TelegramBotClient>();
 
-        OperationCanceledException exception =
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+        TelegramSendMessagesException exception =
+            await Assert.ThrowsAsync<TelegramSendMessagesException>(
                 () => client.SendMessagesAsync(
                     new TelegramCredentials("123456:ABCdef_token", "7713476101", "environment"),
                     ["<b>First</b>", "<b>Second</b>"],
                     cancellation.Token));
 
-        Assert.IsNotType<TelegramSendMessagesException>(exception);
+        Assert.Equal(1, exception.SuccessfulMessageCount);
+        Assert.IsAssignableFrom<OperationCanceledException>(exception.InnerException);
         Assert.True(cancellation.IsCancellationRequested);
     }
 

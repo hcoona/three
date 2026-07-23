@@ -56,13 +56,6 @@ internal static partial class AppLog
     public static partial void UsingExistingTelegramCredentials(ILogger logger);
 
     [LoggerMessage(
-        EventId = 1206,
-        EventName = nameof(SkippingSecretRemoval),
-        Level = LogLevel.Debug,
-        Message = "Skipping Telegram secret removal because gopass is unavailable.")]
-    public static partial void SkippingSecretRemoval(ILogger logger);
-
-    [LoggerMessage(
         EventId = 1207,
         EventName = nameof(RemovedTelegramCredentials),
         Level = LogLevel.Information,

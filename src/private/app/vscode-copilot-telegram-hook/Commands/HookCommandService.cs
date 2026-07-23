@@ -641,7 +641,9 @@ internal sealed class HookCommandService(
 
             if (!claimedTurnDelivery)
             {
-                WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
+                await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
+                    claimPath,
+                    CancellationToken.None);
                 AppLog.SkippingDuplicateStop(logger, hookInput.SessionId, turn.NotificationTurnId);
                 return 0;
             }
@@ -698,10 +700,14 @@ internal sealed class HookCommandService(
                 || hasDurableDeliveryRecord
             )
             {
-                WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
+                await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
+                    claimPath,
+                    CancellationToken.None);
                 if (ownsTurnDeliveryClaim)
                 {
-                    WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
+                    await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
+                        turnClaimPath,
+                        CancellationToken.None);
                 }
 
                 AppLog.SkippingDuplicateStop(logger, hookInput.SessionId, turn.NotificationTurnId);
@@ -723,10 +729,14 @@ internal sealed class HookCommandService(
                     && !HasStopAttributionForTurn(summaryValidation, turn, hookInput.Timestamp)
                 )
                 {
-                    WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
+                    await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
+                        claimPath,
+                        CancellationToken.None);
                     if (ownsTurnDeliveryClaim)
                     {
-                        WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
+                        await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
+                            turnClaimPath,
+                            CancellationToken.None);
                     }
 
                     AppLog.SkippingDuplicateStop(
@@ -779,10 +789,14 @@ internal sealed class HookCommandService(
                         sentAt,
                         cancellationToken
                     );
-                    WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
+                    await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
+                        claimPath,
+                        CancellationToken.None);
                     if (ownsTurnDeliveryClaim)
                     {
-                        WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
+                        await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
+                            turnClaimPath,
+                            CancellationToken.None);
                     }
 
                     return 0;
@@ -845,10 +859,14 @@ internal sealed class HookCommandService(
             {
                 if (!notificationSent)
                 {
-                    WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
+                    await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
+                        claimPath,
+                        CancellationToken.None);
                     if (ownsTurnDeliveryClaim)
                     {
-                        WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
+                        await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
+                            turnClaimPath,
+                            CancellationToken.None);
                     }
                 }
 
@@ -1015,7 +1033,9 @@ internal sealed class HookCommandService(
         {
             if (!notificationSent)
             {
-                WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
+                await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
+                    claimPath,
+                    CancellationToken.None);
             }
 
             throw;

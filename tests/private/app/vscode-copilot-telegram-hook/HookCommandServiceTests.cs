@@ -13071,7 +13071,9 @@ public sealed class HookCommandServiceTests
                     CancellationToken.None
                 )
             );
-            WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
+            await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
+                turnClaimPath,
+                CancellationToken.None);
             const string newStopTimestamp = "2026-03-14T15:52:50.783Z";
             await WriteSummaryAsync(
                 tempDirectory.FullName,
@@ -14535,7 +14537,9 @@ public sealed class HookCommandServiceTests
             );
             Assert.Equal("open", stillOpenOldTurn?.Status);
 
-            WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
+            await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
+                turnClaimPath,
+                CancellationToken.None);
             await stateStore.MarkTurnAbandonedIfSupersededAsync(
                 tempDirectory.FullName,
                 oldTurn,
@@ -14606,7 +14610,9 @@ public sealed class HookCommandServiceTests
                     Summary = "The older turn completed before deferred abandonment ran.",
                 }
             );
-            WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
+            await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
+                turnClaimPath,
+                CancellationToken.None);
 
             await stateStore.MarkTurnAbandonedIfSupersededAsync(
                 tempDirectory.FullName,

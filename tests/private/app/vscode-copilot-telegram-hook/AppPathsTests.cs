@@ -81,6 +81,14 @@ public sealed class AppPathsTests
         Assert.Equal(
             Path.GetFullPath(copilotCliHookFilePath),
             resolvedPaths.CopilotCliHookFilePath);
+        Assert.Equal(
+            Path.Combine(
+                Path.GetTempPath(),
+                "copilot",
+                "extensions",
+                AppConstants.CopilotCliExtensionDirectoryName,
+                AppConstants.CopilotCliExtensionFileName),
+            resolvedPaths.CopilotCliExtensionFilePath);
         Assert.Collection(
             resolvedPaths.VsCodeSettingsTargets,
             target =>
@@ -93,6 +101,25 @@ public sealed class AppPathsTests
                 Assert.Equal(Path.GetFullPath(serverVsCodeSettingsPath), target.SettingsPath);
                 Assert.True(target.IsApplicable);
             });
+    }
+
+    [Fact]
+    public void ResolveUserPathsDoesNotRelocateExtensionForArbitraryHookOverride()
+    {
+        string arbitraryHookPath = Path.Combine(
+            Path.GetTempPath(),
+            "custom-hooks",
+            AppConstants.CopilotCliHookFileName);
+
+        UserInstallationPaths resolvedPaths = AppPaths.ResolveUserPaths(
+            new UserPathOverrides
+            {
+                CopilotCliHookFilePath = new FileInfo(arbitraryHookPath),
+            });
+
+        Assert.Equal(
+            Path.GetFullPath(AppPaths.GetDefaultCopilotCliExtensionFilePath()),
+            resolvedPaths.CopilotCliExtensionFilePath);
     }
 
     [Fact]
@@ -148,6 +175,9 @@ public sealed class AppPathsTests
                 installedBinaryPath,
                 managedHookFileAliasPath,
                 Path.Combine(installRoot.FullName, AppConstants.CopilotCliHookFileName),
+                Path.Combine(
+                    installRoot.FullName,
+                    AppConstants.CopilotCliExtensionFileName),
                 [],
                 AppPaths.GetUserLogPath(installRoot.FullName));
 
@@ -176,6 +206,9 @@ public sealed class AppPathsTests
                 Path.Combine(installRoot.FullName, AppPaths.GetManagedExecutableName()),
                 managedHookFilePath,
                 Path.Combine(installRoot.FullName, AppConstants.CopilotCliHookFileName),
+                Path.Combine(
+                    installRoot.FullName,
+                    AppConstants.CopilotCliExtensionFileName),
                 [
                     new VsCodeSettingsTarget(
                         managedHookFilePath,

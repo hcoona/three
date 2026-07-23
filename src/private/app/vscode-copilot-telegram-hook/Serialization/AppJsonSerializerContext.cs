@@ -11,6 +11,8 @@ namespace Hcoona.VsCodeCopilotTelegramHook;
 [JsonSerializable(typeof(SessionStartHookInput))]
 [JsonSerializable(typeof(UserPromptSubmitHookInput))]
 [JsonSerializable(typeof(StopHookInput))]
+[JsonSerializable(typeof(CopilotCliNotificationHookInput))]
+[JsonSerializable(typeof(CopilotCliSessionEventInput))]
 [JsonSerializable(typeof(NotificationSession))]
 [JsonSerializable(typeof(PromptObservation))]
 [JsonSerializable(typeof(NotificationTurn))]
@@ -23,6 +25,7 @@ namespace Hcoona.VsCodeCopilotTelegramHook;
 [JsonSerializable(typeof(UserHookSettingsDocument))]
 [JsonSerializable(typeof(VsCodeUserSettingsDocument))]
 [JsonSerializable(typeof(UserHookEntry))]
+[JsonSerializable(typeof(string))]
 internal sealed partial class AppJsonSerializerContext : JsonSerializerContext
 {
 }

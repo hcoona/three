@@ -22,8 +22,13 @@ internal static class AppConstants
     public const string SummaryFileName = "summary.json";
     public const string SessionLogFileName = "hook.log";
     public const string UserCommandLogFileName = "user-command.log";
+    public const string UserOperationLockFilePrefix =
+        "hcoona-vscode-copilot-telegram-hook-user-operation";
     public const string ManagedHookFileName = "vscode-copilot-telegram-hook.hooks.json";
     public const string CopilotCliHookFileName = "vscode-copilot-telegram-hook.json";
+    public const string CopilotCliExtensionDirectoryName = "vscode-copilot-telegram-hook";
+    public const string CopilotCliExtensionFileName = "extension.mjs";
+    public const string CopilotCliEventsDirectoryName = "copilot-cli-events";
     public const string ChatHookFilesLocationsSettingName = "chat.hookFilesLocations";
 
     public const string ManagedHookEnvironmentVariable = "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK";
@@ -46,6 +51,8 @@ internal static class AppConstants
     public const int SummaryReadRetryCount = 3;
     public const int SummaryReadRetryDelayMilliseconds = 50;
     public const int TurnDeliveryClaimStaleAfterMinutes = 5;
+    public const int CopilotCliEventClaimStaleAfterMinutes = 5;
+    public static readonly Version MinimumCopilotCliUserExtensionsVersion = new(1, 0, 41);
 }
 
 internal static class AppPaths
@@ -78,18 +85,27 @@ internal static class AppPaths
         => Path.Combine(GetDefaultCopilotCliHooksDirectory(), AppConstants.CopilotCliHookFileName);
 
     public static string GetDefaultCopilotCliHooksDirectory()
+        => Path.Combine(GetCopilotCliHomeDirectory(), "hooks");
+
+    public static string GetDefaultCopilotCliExtensionFilePath()
+        => Path.Combine(
+            GetCopilotCliHomeDirectory(),
+            "extensions",
+            AppConstants.CopilotCliExtensionDirectoryName,
+            AppConstants.CopilotCliExtensionFileName);
+
+    private static string GetCopilotCliHomeDirectory()
     {
         string? copilotHome = Environment.GetEnvironmentVariable(
             AppConstants.CopilotHomeEnvironmentVariable);
         if (!string.IsNullOrWhiteSpace(copilotHome))
         {
-            return Path.Combine(Path.GetFullPath(copilotHome.Trim()), "hooks");
+            return Path.GetFullPath(copilotHome.Trim());
         }
 
         return Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            AppConstants.CopilotDirectoryName,
-            "hooks");
+            AppConstants.CopilotDirectoryName);
     }
 
     public static string GetDefaultVsCodeSettingsPath()
@@ -149,6 +165,11 @@ internal static class AppPaths
         string copilotCliHookFilePath =
             overrides.CopilotCliHookFilePath?.FullName
             ?? GetDefaultCopilotCliHookFilePath();
+        string copilotCliExtensionFilePath =
+            overrides.CopilotCliExtensionFilePath?.FullName
+            ?? GetCopilotCliExtensionFilePathForHookOverride(
+                overrides.CopilotCliHookFilePath?.FullName)
+            ?? GetDefaultCopilotCliExtensionFilePath();
         IReadOnlyList<VsCodeSettingsTarget> vsCodeSettingsTargets =
             overrides.VsCodeSettingsTargets is { Count: > 0 }
                 ? GetDistinctSettingsTargets(overrides.VsCodeSettingsTargets)
@@ -169,8 +190,33 @@ internal static class AppPaths
             Path.GetFullPath(installedBinaryPath),
             Path.GetFullPath(managedHookFilePath),
             Path.GetFullPath(copilotCliHookFilePath),
+            Path.GetFullPath(copilotCliExtensionFilePath),
             vsCodeSettingsTargets,
             Path.GetFullPath(userLogFilePath));
+    }
+
+    private static string? GetCopilotCliExtensionFilePathForHookOverride(
+        string? copilotCliHookFilePath)
+    {
+        if (string.IsNullOrWhiteSpace(copilotCliHookFilePath))
+        {
+            return null;
+        }
+
+        string? hooksDirectory = Path.GetDirectoryName(Path.GetFullPath(copilotCliHookFilePath));
+        if (!GetPlatformPathComparer().Equals(Path.GetFileName(hooksDirectory), "hooks"))
+        {
+            return null;
+        }
+
+        string? copilotHome = Path.GetDirectoryName(hooksDirectory);
+        return copilotHome is null
+            ? null
+            : Path.Combine(
+                copilotHome,
+                "extensions",
+                AppConstants.CopilotCliExtensionDirectoryName,
+                AppConstants.CopilotCliExtensionFileName);
     }
 
     public static string? ValidateUserArtifactPathCollisions(
@@ -192,6 +238,7 @@ internal static class AppPaths
             ),
             ("VS Code managed hook file", paths.ManagedHookFilePath),
             ("Copilot CLI hook file", paths.CopilotCliHookFilePath),
+            ("Copilot CLI extension file", paths.CopilotCliExtensionFilePath),
             .. paths.VsCodeSettingsTargets
                 .Where(includeVsCodeSettingsTarget)
                 .Select(static target =>
@@ -426,6 +473,39 @@ internal static class AppPaths
             GetSessionDirectoryPath(workspacePath, sessionId),
             AppConstants.ClaimsDirectoryName,
             $"{notificationKey}.reclaim.claim");
+
+    public static string GetCopilotCliEventMarkerPath(
+        string workspacePath,
+        string sessionId,
+        string eventKey)
+        => GetCopilotCliEventPath(workspacePath, sessionId, eventKey, ".sent");
+
+    public static string GetCopilotCliEventClaimPath(
+        string workspacePath,
+        string sessionId,
+        string eventKey)
+        => GetCopilotCliEventPath(workspacePath, sessionId, eventKey, ".claim");
+
+    public static string GetCopilotCliEventReclaimClaimPath(
+        string workspacePath,
+        string sessionId,
+        string eventKey)
+        => GetCopilotCliEventPath(workspacePath, sessionId, eventKey, ".reclaim.claim");
+
+    private static string GetCopilotCliEventPath(
+        string workspacePath,
+        string sessionId,
+        string eventKey,
+        string suffix)
+    {
+        string hash = Convert
+            .ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(eventKey)))[..32]
+            .ToLowerInvariant();
+        return Path.Combine(
+            GetSessionDirectoryPath(workspacePath, sessionId),
+            AppConstants.CopilotCliEventsDirectoryName,
+            hash + suffix);
+    }
 
     public static string GetTurnDeliveryClaimPath(
         string workspacePath,

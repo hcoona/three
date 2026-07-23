@@ -8,15 +8,21 @@ internal static class CliFactory
     public static RootCommand CreateRootCommand(IServiceProvider services)
     {
         HookCommandService hookCommandService = services.GetRequiredService<HookCommandService>();
+        CopilotCliNotificationService copilotCliNotificationService =
+            services.GetRequiredService<CopilotCliNotificationService>();
         UserCommandService userCommandService = services.GetRequiredService<UserCommandService>();
 
         RootCommand rootCommand = new("VS Code Copilot Telegram hook tool.");
-        rootCommand.Subcommands.Add(CreateHookCommand(hookCommandService));
+        rootCommand.Subcommands.Add(
+            CreateHookCommand(hookCommandService, copilotCliNotificationService));
+        rootCommand.Subcommands.Add(CreateCopilotCliCommand(copilotCliNotificationService));
         rootCommand.Subcommands.Add(CreateUserCommand(userCommandService));
         return rootCommand;
     }
 
-    private static Command CreateHookCommand(HookCommandService hookCommandService)
+    private static Command CreateHookCommand(
+        HookCommandService hookCommandService,
+        CopilotCliNotificationService copilotCliNotificationService)
     {
         Command hookCommand = new("hook", "Run hook lifecycle commands.");
 
@@ -47,10 +53,36 @@ internal static class CliFactory
                 Console.OpenStandardOutput(),
                 cancellationToken));
 
+        Command notificationCommand = new(
+            "notification",
+            "Handle a GitHub Copilot CLI notification hook event.");
+        notificationCommand.SetAction((ParseResult _, CancellationToken cancellationToken) =>
+            copilotCliNotificationService.HandleNotificationAsync(
+                Console.OpenStandardInput(),
+                cancellationToken));
+
         hookCommand.Subcommands.Add(sessionStartCommand);
         hookCommand.Subcommands.Add(userPromptSubmitCommand);
         hookCommand.Subcommands.Add(stopCommand);
+        hookCommand.Subcommands.Add(notificationCommand);
         return hookCommand;
+    }
+
+    private static Command CreateCopilotCliCommand(
+        CopilotCliNotificationService copilotCliNotificationService)
+    {
+        Command copilotCliCommand = new(
+            "copilot-cli",
+            "Handle GitHub Copilot CLI extension events.");
+        Command sessionEventCommand = new(
+            "session-event",
+            "Handle a GitHub Copilot CLI session event.");
+        sessionEventCommand.SetAction((ParseResult _, CancellationToken cancellationToken) =>
+            copilotCliNotificationService.HandleSessionEventAsync(
+                Console.OpenStandardInput(),
+                cancellationToken));
+        copilotCliCommand.Subcommands.Add(sessionEventCommand);
+        return copilotCliCommand;
     }
 
     private static Command CreateUserCommand(UserCommandService userCommandService)
@@ -115,6 +147,13 @@ internal static class CliFactory
             Description = "Override the GitHub Copilot CLI user-level hook JSON file path.",
         };
 
+        Option<FileInfo?> copilotCliExtensionFilePathOption =
+            new("--copilot-cli-extension-file-path")
+            {
+                Description =
+                    "Override the GitHub Copilot CLI user-level extension.mjs file path.",
+            };
+
         Option<FileInfo[]> vsCodeSettingsPathsOption = new("--vscode-settings-path")
         {
             Description =
@@ -145,6 +184,7 @@ internal static class CliFactory
             installRootOption,
             hookFilePathOption,
             copilotCliHookFilePathOption,
+            copilotCliExtensionFilePathOption,
             vsCodeSettingsPathsOption,
         };
         installCommand.SetAction((ParseResult parseResult, CancellationToken cancellationToken) =>
@@ -158,6 +198,8 @@ internal static class CliFactory
                     InstallRoot = parseResult.GetValue(installRootOption),
                     ManagedHookFilePath = parseResult.GetValue(hookFilePathOption),
                     CopilotCliHookFilePath = parseResult.GetValue(copilotCliHookFilePathOption),
+                    CopilotCliExtensionFilePath = parseResult.GetValue(
+                        copilotCliExtensionFilePathOption),
                     VsCodeSettingsPaths = parseResult.GetValue(vsCodeSettingsPathsOption),
                 },
                 cancellationToken));
@@ -170,6 +212,7 @@ internal static class CliFactory
             installRootOption,
             hookFilePathOption,
             copilotCliHookFilePathOption,
+            copilotCliExtensionFilePathOption,
             vsCodeSettingsPathsOption,
         };
         uninstallCommand.SetAction((ParseResult parseResult, CancellationToken cancellationToken) =>
@@ -180,6 +223,8 @@ internal static class CliFactory
                     InstallRoot = parseResult.GetValue(installRootOption),
                     ManagedHookFilePath = parseResult.GetValue(hookFilePathOption),
                     CopilotCliHookFilePath = parseResult.GetValue(copilotCliHookFilePathOption),
+                    CopilotCliExtensionFilePath = parseResult.GetValue(
+                        copilotCliExtensionFilePathOption),
                     VsCodeSettingsPaths = parseResult.GetValue(vsCodeSettingsPathsOption),
                 },
                 cancellationToken));
@@ -191,6 +236,7 @@ internal static class CliFactory
             installRootOption,
             hookFilePathOption,
             copilotCliHookFilePathOption,
+            copilotCliExtensionFilePathOption,
             vsCodeSettingsPathsOption,
         };
         healthCommand.SetAction((ParseResult parseResult, CancellationToken cancellationToken) =>
@@ -200,6 +246,8 @@ internal static class CliFactory
                     InstallRoot = parseResult.GetValue(installRootOption),
                     ManagedHookFilePath = parseResult.GetValue(hookFilePathOption),
                     CopilotCliHookFilePath = parseResult.GetValue(copilotCliHookFilePathOption),
+                    CopilotCliExtensionFilePath = parseResult.GetValue(
+                        copilotCliExtensionFilePathOption),
                     VsCodeSettingsPaths = parseResult.GetValue(vsCodeSettingsPathsOption),
                 },
                 cancellationToken));
@@ -211,6 +259,7 @@ internal static class CliFactory
             installRootOption,
             hookFilePathOption,
             copilotCliHookFilePathOption,
+            copilotCliExtensionFilePathOption,
             vsCodeSettingsPathsOption,
         };
         diagnoseCommand.SetAction((ParseResult parseResult, CancellationToken cancellationToken) =>
@@ -220,6 +269,8 @@ internal static class CliFactory
                     InstallRoot = parseResult.GetValue(installRootOption),
                     ManagedHookFilePath = parseResult.GetValue(hookFilePathOption),
                     CopilotCliHookFilePath = parseResult.GetValue(copilotCliHookFilePathOption),
+                    CopilotCliExtensionFilePath = parseResult.GetValue(
+                        copilotCliExtensionFilePathOption),
                     VsCodeSettingsPaths = parseResult.GetValue(vsCodeSettingsPathsOption),
                 },
                 cancellationToken));

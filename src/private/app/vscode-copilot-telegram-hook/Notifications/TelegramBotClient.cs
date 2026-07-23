@@ -22,10 +22,7 @@ internal sealed class TelegramBotClient(
                 await SendMessageAsync(credentials, htmlMessage, cancellationToken);
                 successfulMessageCount++;
             }
-            catch (Exception ex) when (
-                ex is not TelegramSendMessagesException
-                && (ex is not OperationCanceledException
-                    || !cancellationToken.IsCancellationRequested))
+            catch (Exception ex) when (ex is not TelegramSendMessagesException)
             {
                 if (successfulMessageCount == 0)
                 {

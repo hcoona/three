@@ -7,7 +7,6 @@ internal static class UserHookConfigurationManager
     private const int SessionStartTimeoutSeconds = 10;
     private const int UserPromptSubmitTimeoutSeconds = 10;
     private const int StopTimeoutSeconds = 20;
-
     private static readonly JsonSerializerOptions WriteIndentedOptions = new(
         AppJsonSerializerContext.Default.Options)
     {
@@ -33,37 +32,46 @@ internal static class UserHookConfigurationManager
 
     public static ConfigurationApplyResult InstallManagedCopilotCliHookFile(
         string hookFilePath,
-        string sessionStartCommand,
-        string userPromptSubmitCommand,
-        string stopCommand,
+        string notificationCommand,
         string timestamp)
-        => InstallManagedHookFileCore(
+    {
+        _ = notificationCommand;
+        _ = timestamp;
+        ConfigurationApplyResult? preflightResult = PreflightManagedCopilotCliHookFile(
             hookFilePath,
-            sessionStartCommand,
-            userPromptSubmitCommand,
-            stopCommand,
-            timestamp,
-            HookFileFormat.CopilotCli);
+            notificationCommand,
+            timestamp);
+        return preflightResult
+            ?? UninstallManagedCopilotCliHookFile(hookFilePath);
+    }
 
     public static ConfigurationApplyResult? PreflightManagedCopilotCliHookFile(
         string hookFilePath,
-        string sessionStartCommand,
-        string userPromptSubmitCommand,
-        string stopCommand,
+        string notificationCommand,
         string timestamp)
     {
-        UserHookSettingsDocument desiredDocument = CreateManagedHooksDocument(
-            sessionStartCommand,
-            userPromptSubmitCommand,
-            stopCommand,
-            HookFileFormat.CopilotCli);
-        return TryLoadExistingHookFileForInstall(
-            hookFilePath,
-            desiredDocument,
-            timestamp,
-            HookFileFormat.CopilotCli,
-            writeCandidateFileOnFailure: false,
-            out _);
+        _ = notificationCommand;
+        _ = timestamp;
+        if (!File.Exists(hookFilePath))
+        {
+            return null;
+        }
+
+        UserHookSettingsDocument? rootDocument = TryParseSettings(hookFilePath);
+        if (rootDocument is null)
+        {
+            return new ConfigurationApplyResult(
+                false,
+                "The existing Copilot CLI hook file could not be inspected. "
+                + "Manual review is required; no changes were applied.");
+        }
+
+        return rootDocument.Version == 1
+            ? null
+            : new ConfigurationApplyResult(
+                false,
+                "The Copilot CLI hook file uses an unsupported or missing schema version. "
+                + "Manual review is required; no changes were applied.");
     }
 
     private static ConfigurationApplyResult InstallManagedHookFileCore(
@@ -162,11 +170,44 @@ internal static class UserHookConfigurationManager
             RemoveManagedEntries,
             HookFileFormat.VsCode);
 
+    public static ConfigurationApplyResult? PreflightUninstallManagedHookFile(string hookFilePath)
+        => PreflightUninstallManagedHookFileCore(hookFilePath, HookFileFormat.VsCode);
+
     public static ConfigurationApplyResult UninstallManagedCopilotCliHookFile(string hookFilePath)
         => UninstallManagedHookFileCore(
             hookFilePath,
             RemoveManagedCopilotCliEntries,
             HookFileFormat.CopilotCli);
+
+    public static ConfigurationApplyResult? PreflightUninstallManagedCopilotCliHookFile(
+        string hookFilePath)
+        => PreflightUninstallManagedHookFileCore(hookFilePath, HookFileFormat.CopilotCli);
+
+    private static ConfigurationApplyResult? PreflightUninstallManagedHookFileCore(
+        string hookFilePath,
+        HookFileFormat format)
+    {
+        if (!File.Exists(hookFilePath))
+        {
+            return null;
+        }
+
+        UserHookSettingsDocument? rootDocument = TryParseSettings(hookFilePath);
+        if (rootDocument is null)
+        {
+            return new ConfigurationApplyResult(
+                false,
+                "The managed hook file could not be parsed. Manual review is required; "
+                + "no changes were applied.");
+        }
+
+        return format == HookFileFormat.CopilotCli && rootDocument.Version != 1
+            ? new ConfigurationApplyResult(
+                false,
+                "The Copilot CLI hook file uses an unsupported schema version. "
+                + "Manual review is required; no changes were applied.")
+            : null;
+    }
 
     private static ConfigurationApplyResult UninstallManagedHookFileCore(
         string hookFilePath,
@@ -249,47 +290,48 @@ internal static class UserHookConfigurationManager
     }
 
     public static bool IsManagedCopilotCliHookFileInstalled(string hookFilePath)
+        => GetManagedCopilotCliHookFileStatus(hookFilePath).IsClean;
+
+    public static CopilotCliHookFileStatus GetManagedCopilotCliHookFileStatus(
+        string hookFilePath)
     {
+        if (!File.Exists(hookFilePath))
+        {
+            return new CopilotCliHookFileStatus(true, $"{hookFilePath} (absent)");
+        }
+
         UserHookSettingsDocument? rootDocument = TryParseSettings(hookFilePath);
         if (rootDocument is null)
         {
-            return false;
+            return new CopilotCliHookFileStatus(
+                false,
+                $"{hookFilePath} (unreadable or invalid JSON)");
         }
 
-        return rootDocument.Version == 1
-            && rootDocument.Hooks is not null
-            && HasManagedCopilotCliEntry(rootDocument.Hooks, "SessionStart")
-            && HasManagedCopilotCliEntry(rootDocument.Hooks, "UserPromptSubmit")
-            && HasManagedCopilotCliEntry(rootDocument.Hooks, "Stop");
+        if (rootDocument.Version != 1)
+        {
+            return new CopilotCliHookFileStatus(
+                false,
+                $"{hookFilePath} (unsupported hook schema version {rootDocument.Version})");
+        }
+
+        bool managedEntriesRemain = rootDocument.Hooks is not null
+            && rootDocument.Hooks.Values
+                .SelectMany(static entries => entries)
+                .Any(IsManagedCopilotCliHookEntryForRemoval);
+        return new CopilotCliHookFileStatus(
+            !managedEntriesRemain,
+            managedEntriesRemain
+                ? $"{hookFilePath} (legacy managed entries remain)"
+                : $"{hookFilePath} (clean)");
     }
 
     public static bool IsManagedCopilotCliHookFileInstalled(
         string hookFilePath,
         string installedBinaryPath)
     {
-        UserHookSettingsDocument? rootDocument = TryParseSettings(hookFilePath);
-        if (rootDocument is null)
-        {
-            return false;
-        }
-
-        return rootDocument.Version == 1
-            && rootDocument.Hooks is not null
-            && HasStrictManagedCopilotCliEntry(
-                rootDocument.Hooks,
-                eventName: "SessionStart",
-                command: CreateCopilotCliHookCommand(installedBinaryPath, "session-start"),
-                timeoutSeconds: SessionStartTimeoutSeconds)
-            && HasStrictManagedCopilotCliEntry(
-                rootDocument.Hooks,
-                eventName: "UserPromptSubmit",
-                command: CreateCopilotCliHookCommand(installedBinaryPath, "user-prompt-submit"),
-                timeoutSeconds: UserPromptSubmitTimeoutSeconds)
-            && HasStrictManagedCopilotCliEntry(
-                rootDocument.Hooks,
-                eventName: "Stop",
-                command: CreateCopilotCliHookCommand(installedBinaryPath, "stop"),
-                timeoutSeconds: StopTimeoutSeconds);
+        _ = installedBinaryPath;
+        return IsManagedCopilotCliHookFileInstalled(hookFilePath);
     }
 
     public static string CreateCopilotCliHookCommand(
@@ -429,12 +471,14 @@ internal static class UserHookConfigurationManager
         string command,
         string eventName,
         int timeoutSeconds,
-        HookFileFormat format)
+        HookFileFormat format,
+        string? matcher = null)
     {
         UserHookEntry entry = new()
         {
             Type = "command",
             Command = command,
+            Matcher = matcher,
             Env = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [AppConstants.ManagedHookEnvironmentVariable] =
@@ -538,7 +582,8 @@ internal static class UserHookConfigurationManager
         Dictionary<string, List<UserHookEntry>> hooks,
         string eventName,
         string command,
-        int timeoutSeconds)
+        int timeoutSeconds,
+        string? matcher)
     {
         if (!hooks.TryGetValue(eventName, out List<UserHookEntry>? hookEntries)
             || hookEntries is null)
@@ -551,7 +596,8 @@ internal static class UserHookConfigurationManager
                 entry,
                 eventName,
                 command,
-                timeoutSeconds));
+                timeoutSeconds,
+                matcher));
     }
 
     private static bool IsManagedHookEntry(UserHookEntry? entry)
@@ -595,12 +641,14 @@ internal static class UserHookConfigurationManager
         UserHookEntry? entry,
         string eventName,
         string command,
-        int timeoutSeconds)
+        int timeoutSeconds,
+        string? matcher)
     {
         return IsManagedCopilotCliHookEntry(entry)
             && entry is not null
             && string.Equals(entry.Type, "command", StringComparison.Ordinal)
             && string.Equals(entry.Command, command, StringComparison.Ordinal)
+            && string.Equals(entry.Matcher, matcher, StringComparison.Ordinal)
             && entry.TimeoutSec == timeoutSeconds
             && entry.Env.TryGetValue(
                 AppConstants.ManagedHookEventEnvironmentVariable,
@@ -698,3 +746,5 @@ internal static class UserHookConfigurationManager
         CopilotCli,
     }
 }
+
+internal sealed record CopilotCliHookFileStatus(bool IsClean, string Detail);

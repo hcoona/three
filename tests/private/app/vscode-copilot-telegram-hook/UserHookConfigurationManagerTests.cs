@@ -168,7 +168,7 @@ public sealed class UserHookConfigurationManagerTests
     }
 
     [Fact]
-    public void InstallManagedCopilotCliHookFileWritesVersionAndTimeoutSec()
+    public void InstallManagedCopilotCliHookFileLeavesNoHookFileWhenMigrationIsAlreadyComplete()
     {
         DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
 
@@ -184,13 +184,7 @@ public sealed class UserHookConfigurationManagerTests
                     hookFilePath,
                     UserHookConfigurationManager.CreateCopilotCliHookCommand(
                         installedBinaryPath,
-                        "session-start"),
-                    UserHookConfigurationManager.CreateCopilotCliHookCommand(
-                        installedBinaryPath,
-                        "user-prompt-submit"),
-                    UserHookConfigurationManager.CreateCopilotCliHookCommand(
-                        installedBinaryPath,
-                        "stop"),
+                        "notification"),
                     "2026-03-13T12:34:56.789Z");
 
             Assert.True(installResult.Applied);
@@ -200,20 +194,7 @@ public sealed class UserHookConfigurationManagerTests
                 UserHookConfigurationManager.IsManagedCopilotCliHookFileInstalled(
                     hookFilePath,
                     installedBinaryPath));
-
-            string rawJson = File.ReadAllText(hookFilePath);
-            Assert.Contains("\"version\": 1", rawJson, StringComparison.Ordinal);
-            Assert.Contains("\"timeoutSec\": 10", rawJson, StringComparison.Ordinal);
-            Assert.DoesNotContain("\"timeout\":", rawJson, StringComparison.Ordinal);
-
-            UserHookSettingsDocument installedSettings = ReadSettings(hookFilePath);
-            Assert.Equal(1, installedSettings.Version);
-            UserHookEntry stopEntry = Assert.Single(installedSettings.Hooks["Stop"]);
-            Assert.Equal(20, stopEntry.TimeoutSec);
-            Assert.Null(stopEntry.Timeout);
-            Assert.Equal(
-                AppConstants.ManagedHookCopilotCliSurfaceValue,
-                stopEntry.Env[AppConstants.ManagedHookSurfaceEnvironmentVariable]);
+            Assert.False(File.Exists(hookFilePath));
         }
         finally
         {
@@ -282,9 +263,7 @@ public sealed class UserHookConfigurationManagerTests
             ConfigurationApplyResult installResult =
                 UserHookConfigurationManager.InstallManagedCopilotCliHookFile(
                     hookFilePath,
-                    "managed session-start",
-                    "managed user-prompt-submit",
-                    "managed stop",
+                    "managed notification",
                     "2026-03-13T12:34:56.789Z");
 
             Assert.True(installResult.Applied);
@@ -299,19 +278,7 @@ public sealed class UserHookConfigurationManagerTests
             Assert.Contains(
                 installedSettings.Hooks["SessionStart"],
                 static entry => entry.Command == "custom session-start");
-
-            foreach (string eventName in new[] { "SessionStart", "UserPromptSubmit", "Stop" })
-            {
-                UserHookEntry managedEntry = Assert.Single(
-                    installedSettings.Hooks[eventName],
-                    entry => entry.Env.TryGetValue(
-                        AppConstants.ManagedHookSurfaceEnvironmentVariable,
-                        out string? surface)
-                        && surface == AppConstants.ManagedHookCopilotCliSurfaceValue);
-                Assert.Equal(
-                    eventName,
-                    managedEntry.Env[AppConstants.ManagedHookEventEnvironmentVariable]);
-            }
+            Assert.False(installedSettings.Hooks.ContainsKey("notification"));
         }
         finally
         {
@@ -352,9 +319,7 @@ public sealed class UserHookConfigurationManagerTests
             ConfigurationApplyResult installResult =
                 UserHookConfigurationManager.InstallManagedCopilotCliHookFile(
                     hookFilePath,
-                    "managed session-start",
-                    "managed user-prompt-submit",
-                    "managed stop",
+                    "managed notification",
                     "2026-03-13T12:34:56.789Z");
 
             Assert.True(installResult.Applied);
@@ -365,11 +330,7 @@ public sealed class UserHookConfigurationManagerTests
                 .Single(static entry => entry.Command == "custom session-start");
             Assert.True(preservedEntry.TimeoutPropertyPresent);
             Assert.Null(preservedEntry.Timeout);
-            UserHookEntry managedEntry = installedSettings.Hooks["SessionStart"]
-                .Single(static entry => entry.Command == "managed session-start");
-            Assert.False(managedEntry.TimeoutPropertyPresent);
-            Assert.Null(managedEntry.Timeout);
-            Assert.Equal(10, managedEntry.TimeoutSec);
+            Assert.False(installedSettings.Hooks.ContainsKey("notification"));
         }
         finally
         {
@@ -406,21 +367,12 @@ public sealed class UserHookConfigurationManagerTests
             ConfigurationApplyResult installResult =
                 UserHookConfigurationManager.InstallManagedCopilotCliHookFile(
                     hookFilePath,
-                    "managed session-start",
-                    "managed user-prompt-submit",
-                    "managed stop",
+                    "managed notification",
                     "2026-03-13T12:34:56.789Z");
 
             Assert.False(installResult.Applied);
-            Assert.NotNull(installResult.CandidatePath);
-            Assert.True(File.Exists(installResult.CandidatePath));
+            Assert.Null(installResult.CandidatePath);
             Assert.Equal(OriginalContent, File.ReadAllText(hookFilePath));
-
-            UserHookSettingsDocument candidateSettings = ReadSettings(installResult.CandidatePath!);
-            Assert.Equal(1, candidateSettings.Version);
-            Assert.True(
-                UserHookConfigurationManager.IsManagedCopilotCliHookFileInstalled(
-                    installResult.CandidatePath!));
         }
         finally
         {
@@ -456,21 +408,12 @@ public sealed class UserHookConfigurationManagerTests
             ConfigurationApplyResult installResult =
                 UserHookConfigurationManager.InstallManagedCopilotCliHookFile(
                     hookFilePath,
-                    "managed session-start",
-                    "managed user-prompt-submit",
-                    "managed stop",
+                    "managed notification",
                     "2026-03-13T12:34:56.789Z");
 
             Assert.False(installResult.Applied);
-            Assert.NotNull(installResult.CandidatePath);
-            Assert.True(File.Exists(installResult.CandidatePath));
+            Assert.Null(installResult.CandidatePath);
             Assert.Equal(OriginalContent, File.ReadAllText(hookFilePath));
-
-            UserHookSettingsDocument candidateSettings = ReadSettings(installResult.CandidatePath!);
-            Assert.Equal(1, candidateSettings.Version);
-            Assert.True(
-                UserHookConfigurationManager.IsManagedCopilotCliHookFileInstalled(
-                    installResult.CandidatePath!));
         }
         finally
         {
@@ -513,9 +456,7 @@ public sealed class UserHookConfigurationManagerTests
             ConfigurationApplyResult? preflightResult =
                 UserHookConfigurationManager.PreflightManagedCopilotCliHookFile(
                     hookFilePath,
-                    "managed session-start",
-                    "managed user-prompt-submit",
-                    "managed stop",
+                    "managed notification",
                     "2026-03-13T12:34:56.789Z");
 
             Assert.NotNull(preflightResult);
@@ -542,7 +483,7 @@ public sealed class UserHookConfigurationManagerTests
     }
 
     [Fact]
-    public void UninstallManagedCopilotCliHookFileDeletesToolOwnedVersionedHookFile()
+    public void InstallManagedCopilotCliHookFileDeletesToolOwnedLegacyHookFile()
     {
         DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
 
@@ -552,22 +493,35 @@ public sealed class UserHookConfigurationManagerTests
                 tempDirectory.FullName,
                 AppConstants.CopilotCliHookFileName);
 
+            File.WriteAllText(
+                hookFilePath,
+                """
+                {
+                  "version": 1,
+                  "hooks": {
+                    "notification": [
+                      {
+                        "type": "command",
+                        "command": "managed notification",
+                        "matcher": "permission_prompt|elicitation_dialog",
+                        "timeoutSec": 20,
+                        "env": {
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1",
+                          "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE": "copilot-cli"
+                        }
+                      }
+                    ]
+                  }
+                }
+                """);
+
             ConfigurationApplyResult installResult =
                 UserHookConfigurationManager.InstallManagedCopilotCliHookFile(
                     hookFilePath,
-                    "managed session-start",
-                    "managed user-prompt-submit",
-                    "managed stop",
+                    "managed notification",
                     "2026-03-13T12:34:56.789Z");
 
-            UserHookSettingsDocument installedSettings = ReadSettings(hookFilePath);
-            Assert.Equal(1, installedSettings.Version);
-
-            ConfigurationApplyResult uninstallResult =
-                UserHookConfigurationManager.UninstallManagedCopilotCliHookFile(hookFilePath);
-
             Assert.True(installResult.Applied);
-            Assert.True(uninstallResult.Applied);
             Assert.False(File.Exists(hookFilePath));
         }
         finally
@@ -780,9 +734,7 @@ public sealed class UserHookConfigurationManagerTests
             ConfigurationApplyResult installResult =
                 UserHookConfigurationManager.InstallManagedCopilotCliHookFile(
                     hookFilePath,
-                    "managed session-start",
-                    "managed user-prompt-submit",
-                    "managed stop",
+                    "managed notification",
                     "2026-03-13T12:34:56.789Z");
 
             Assert.True(installResult.Applied);
@@ -797,15 +749,7 @@ public sealed class UserHookConfigurationManagerTests
             Assert.Contains(
                 installedSettings.Hooks["Stop"],
                 entry => entry.Command == "generic stop");
-            Assert.Contains(
-                installedSettings.Hooks["SessionStart"],
-                entry => entry.Command == "managed session-start");
-            Assert.Contains(
-                installedSettings.Hooks["UserPromptSubmit"],
-                entry => entry.Command == "managed user-prompt-submit");
-            Assert.Contains(
-                installedSettings.Hooks["Stop"],
-                entry => entry.Command == "managed stop");
+            Assert.False(installedSettings.Hooks.ContainsKey("notification"));
             Assert.DoesNotContain(
                 installedSettings.Hooks["SessionStart"],
                 entry => entry.Command == "old cli session-start");
@@ -1065,7 +1009,7 @@ public sealed class UserHookConfigurationManagerTests
     }
 
     [Fact]
-    public void IsManagedCopilotCliHookFileInstalledRequiresCliTimeoutSecEntries()
+    public void IsManagedCopilotCliHookFileInstalledAcceptsNonCliManagedEntries()
     {
         DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
 
@@ -1088,6 +1032,7 @@ public sealed class UserHookConfigurationManagerTests
                         "env": {
                           "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK": "1"
                         }
+
                       }
                     ],
                     "UserPromptSubmit": [
@@ -1114,8 +1059,30 @@ public sealed class UserHookConfigurationManagerTests
                 }
                 """);
 
-            Assert.False(
+            Assert.True(
                 UserHookConfigurationManager.IsManagedCopilotCliHookFileInstalled(hookFilePath));
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void GetManagedCopilotCliHookFileStatusDistinguishesInvalidJson()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+
+        try
+        {
+            string hookFilePath = Path.Combine(tempDirectory.FullName, "hooks.json");
+            File.WriteAllText(hookFilePath, "{ invalid json");
+
+            CopilotCliHookFileStatus status =
+                UserHookConfigurationManager.GetManagedCopilotCliHookFileStatus(hookFilePath);
+
+            Assert.False(status.IsClean);
+            Assert.Contains("invalid JSON", status.Detail, StringComparison.Ordinal);
         }
         finally
         {

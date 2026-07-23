@@ -64,9 +64,42 @@ public sealed class NotificationComposerTests
         Assert.Contains("...", message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ComposeUsesCustomLifecyclePresentation()
+    {
+        NotificationContext context = CreateContext(
+            heading: "⚠️ Copilot needs attention",
+            identifierLabel: "Event ID",
+            eventTimestampLabel: "Event time",
+            bodyLabel: "Waiting for",
+            eventType: "user_input_requested");
+
+        string message = Assert.Single(
+            NotificationComposer.Compose(
+                context,
+                new NotificationSummary { Summary = "Choose a deployment target." }));
+
+        Assert.Contains("<b>⚠️ Copilot needs attention</b>", message, StringComparison.Ordinal);
+        Assert.Contains("<b>Event ID：</b><code>turn-789</code>", message, StringComparison.Ordinal);
+        Assert.Contains(
+            "<b>Event time：</b><code>2026-03-13T12:34:56.789Z</code>",
+            message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<b>事件类型：</b><code>user_input_requested</code>",
+            message,
+            StringComparison.Ordinal);
+        Assert.Contains("Waiting for：Choose a deployment target.", message, StringComparison.Ordinal);
+    }
+
     private static NotificationContext CreateContext(
         string? workspacePath = null,
-        string? transcriptPath = null)
+        string? transcriptPath = null,
+        string? heading = null,
+        string? identifierLabel = null,
+        string? eventTimestampLabel = null,
+        string? bodyLabel = null,
+        string? eventType = null)
     {
         return new NotificationContext
         {
@@ -81,6 +114,11 @@ public sealed class NotificationComposerTests
             BranchName = "main",
             CommitId = "abcdef123456",
             TranscriptPath = transcriptPath ?? "/tmp/workspace/.copilot/transcript.json",
+            Heading = heading ?? "✅ Copilot 当前轮已完成",
+            IdentifierLabel = identifierLabel ?? "轮次 ID",
+            EventTimestampLabel = eventTimestampLabel ?? "停止时间",
+            BodyLabel = bodyLabel ?? "摘要",
+            EventType = eventType,
         };
     }
 }
