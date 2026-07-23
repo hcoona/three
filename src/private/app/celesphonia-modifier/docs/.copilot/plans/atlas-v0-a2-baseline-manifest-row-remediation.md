@@ -253,9 +253,10 @@ that all postconditions passed and this report was flushed.
 Approval, protected-original, and remediation-report publication each use an exact same-directory
 `.staging` leaf. Publication writes and flushes complete bytes to a create-new staging file,
 strictly validates them, then atomically moves the staging leaf to an absent final leaf. On restart,
-an exact complete final leaf is accepted; an exact complete staging leaf is moved; an incomplete
-ordinary program-owned staging leaf may be deleted and recreated; and any other final or staging
-state refuses. No partially written file becomes a final protected record.
+every existing final or staging leaf is first validated as an ordinary non-reparse file. An exact
+complete final leaf is accepted; an exact complete staging leaf is moved; an incomplete ordinary
+program-owned staging leaf may be deleted and recreated; and any other final or staging state
+refuses. No partially written file becomes a final protected record.
 
 ## 6. Candidates and gates
 
@@ -313,8 +314,8 @@ Before qualification:
    replaced-with-transient-backup restart, post-backup-cleanup restart, and every other
    current/backup/staging refusal without source mutation;
 10. approval and remediation report tests cover exact schemas, create-new behavior, matching run
-    identifiers, atomic publication, partial-staging recovery, fixed signals, and empty standard
-    error;
+    identifiers, atomic publication, existing-final and existing-staging reparse refusal,
+    partial-staging recovery, fixed signals, and empty standard error;
 11. every review finding receives `TP` or `FP` adjudication; and
 12. a fresh independent source reviewer returns `No findings`.
 
