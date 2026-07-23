@@ -9,6 +9,9 @@ const vitestConfig: ViteUserConfigExport = defineConfig({
   test: {
     include: ['test/pipeline-failure.worker.ts'],
     environment: 'node',
+    fileParallelism: false,
+    isolate: true,
+    pool: 'forks',
   },
 });
 

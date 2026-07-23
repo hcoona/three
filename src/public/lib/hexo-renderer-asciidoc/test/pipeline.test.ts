@@ -124,7 +124,7 @@ describe('renderer pipeline', () => {
     expect(pipeline.escape).not.toHaveBeenCalled();
   });
 
-  it('characterizes conversion, highlighting, and escaping failures in an isolated subprocess', async () => {
+  it('runs strict isolated production pipeline failures, drains work, and exits cleanly', async () => {
     const packageRoot = path.resolve(import.meta.dirname, '..');
 
     await expect(

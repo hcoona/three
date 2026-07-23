@@ -7,13 +7,106 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import Hexo from 'hexo';
-import { describe, expect, it } from 'vitest';
-import { convertAsciiDoc } from '../src/core/asciidoctor';
-import { applyStaticHighlighting } from '../src/core/highlight';
-import { escapeCurlyBraces } from '../src/core/sanitize';
-import type { Hexo as HexoContract, Renderer, RendererData } from '../src/types';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Hexo as HexoContract, Renderer } from '../src/types';
 
-const HEXO_ENGINE = 'adoc';
+type StageName = 'convertAsciiDoc' | 'applyStaticHighlighting' | 'escapeCurlyBraces';
+
+type FailureInjection = {
+  sentinel: unknown;
+  stage: StageName;
+};
+
+const pipeline = vi.hoisted(() => ({
+  applyStaticHighlighting: vi.fn(),
+  calls: [] as StageName[],
+  convertAsciiDoc: vi.fn(),
+  escapeCurlyBraces: vi.fn(),
+  failure: null as FailureInjection | null,
+  pendingConversions: 0,
+}));
+
+vi.mock('../src/core/asciidoctor', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/core/asciidoctor')>();
+
+  pipeline.convertAsciiDoc.mockImplementation(async (text: string) => {
+    pipeline.calls.push('convertAsciiDoc');
+    pipeline.pendingConversions += 1;
+
+    try {
+      const failure = pipeline.failure;
+      if (failure?.stage === 'convertAsciiDoc') {
+        pipeline.failure = null;
+        throw failure.sentinel;
+      }
+
+      return await actual.convertAsciiDoc(text);
+    } finally {
+      pipeline.pendingConversions -= 1;
+    }
+  });
+
+  return {
+    ...actual,
+    convertAsciiDoc: pipeline.convertAsciiDoc,
+  };
+});
+
+vi.mock('../src/core/highlight', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/core/highlight')>();
+
+  pipeline.applyStaticHighlighting.mockImplementation((html: string) => {
+    pipeline.calls.push('applyStaticHighlighting');
+
+    const failure = pipeline.failure;
+    if (failure?.stage === 'applyStaticHighlighting') {
+      pipeline.failure = null;
+      throw failure.sentinel;
+    }
+
+    return actual.applyStaticHighlighting(html);
+  });
+
+  return {
+    ...actual,
+    applyStaticHighlighting: pipeline.applyStaticHighlighting,
+  };
+});
+
+vi.mock('../src/core/sanitize', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/core/sanitize')>();
+
+  pipeline.escapeCurlyBraces.mockImplementation((html: string) => {
+    pipeline.calls.push('escapeCurlyBraces');
+
+    const failure = pipeline.failure;
+    if (failure?.stage === 'escapeCurlyBraces') {
+      pipeline.failure = null;
+
+      const throwingHtml = {
+        replace: () => {
+          throw failure.sentinel;
+        },
+      } as unknown as string;
+
+      // Run the production sanitizer so a catch-and-fallback mutation is observable.
+      return actual.escapeCurlyBraces(throwingHtml);
+    }
+
+    return actual.escapeCurlyBraces(html);
+  });
+
+  return {
+    ...actual,
+    escapeCurlyBraces: pipeline.escapeCurlyBraces,
+  };
+});
+
+import renderer from '../src/core/renderer';
+import registerRenderer from '../src/hexo/register';
+
+const SUPPORTED_EXTENSIONS = ['ad', 'adoc', 'asciidoc'] as const;
+const COMPLETE_TRACE: readonly StageName[] = ['convertAsciiDoc', 'applyStaticHighlighting', 'escapeCurlyBraces'];
 const SAMPLE_TEXT = `
 == Pipeline Failure Probe ==
 
@@ -36,20 +129,24 @@ const PINNED_V4_EXPECTED_HTML = `<div class="sect1">
 
 type HexoRenderAPI = {
   render(data: Record<string, unknown>, locals?: Record<string, unknown>): Promise<string>;
+  renderSync(data: Record<string, unknown>, locals?: Record<string, unknown>): string;
+};
+
+type HexoRendererRegistry = HexoContract['extend']['renderer'] & {
+  get(name: string, sync?: boolean): Renderer | undefined;
 };
 
 type HexoTestInstance = HexoContract & {
   base_dir: string;
+  extend: {
+    renderer: HexoRendererRegistry;
+  };
   render: HexoRenderAPI;
   init(): Promise<void>;
   exit(err?: unknown): Promise<void>;
 };
 
 type HexoConstructor = new (baseDir: string, options?: Record<string, unknown>) => HexoTestInstance;
-
-type StageName = 'convert' | 'highlight' | 'escape';
-type ConvertStage = (text: string) => string | Promise<string>;
-type HtmlStage = (html: string) => string;
 
 const HexoClass = Hexo as unknown as HexoConstructor;
 
@@ -64,148 +161,167 @@ const drainPendingTasks = async (): Promise<void> => {
   await new Promise<void>((resolve) => setImmediate(resolve));
 };
 
-/**
- * Test-only seam: compose the real production v4 stages while allowing one stage
- * to be replaced with a throwing sentinel. This keeps product source unchanged.
- */
-const createRendererProbe = ({
-  convert = convertAsciiDoc,
-  highlight = applyStaticHighlighting,
-  escapeStage = escapeCurlyBraces,
-}: {
-  convert?: ConvertStage;
-  highlight?: HtmlStage;
-  escapeStage?: HtmlStage;
-} = {}) => {
-  const calls: StageName[] = [];
-
-  const probeRenderer: Renderer = async (data: RendererData) => {
-    calls.push('convert');
-    const html = await convert(data.text);
-
-    calls.push('highlight');
-    const highlighted = highlight(html);
-
-    calls.push('escape');
-    return escapeStage(highlighted);
-  };
-
-  return {
-    calls,
-    renderer: probeRenderer,
-    reset() {
-      calls.length = 0;
-    },
-  };
+const resetObservations = (): void => {
+  pipeline.calls.length = 0;
+  pipeline.convertAsciiDoc.mockClear();
+  pipeline.applyStaticHighlighting.mockClear();
+  pipeline.escapeCurlyBraces.mockClear();
 };
 
-const renderViaHexo = async (probeRenderer: Renderer, text: string = SAMPLE_TEXT): Promise<string> => {
-  const workspace = createHexoWorkspace();
-  const hexo = new HexoClass(workspace, { silent: true, debug: false });
-  hexo.extend.renderer.register(HEXO_ENGINE, 'html', probeRenderer, false);
+const armFailure = (stage: StageName, sentinel: unknown): void => {
+  if (pipeline.failure !== null) {
+    throw new Error(`A ${pipeline.failure.stage} failure is already armed`);
+  }
 
+  pipeline.failure = { sentinel, stage };
+};
+
+const captureOutcome = async <T>(
+  operation: () => Promise<T>,
+): Promise<{ reason: unknown; status: 'rejected' } | { status: 'fulfilled'; value: T }> => {
   try {
-    await hexo.init();
-    return await hexo.render.render({ text, engine: HEXO_ENGINE });
-  } finally {
+    return { status: 'fulfilled', value: await operation() };
+  } catch (reason) {
+    return { reason, status: 'rejected' };
+  }
+};
+
+const expectExactSentinelRejection = async (operation: () => Promise<unknown>, sentinel: unknown): Promise<void> => {
+  const outcome = await captureOutcome(operation);
+
+  expect(outcome.status).toBe('rejected');
+  if (outcome.status === 'fulfilled') {
+    throw new Error(`Expected rejection, but the renderer returned a ${typeof outcome.value} fallback`);
+  }
+
+  // Identity excludes wrapping, cause-only propagation, and stringification.
+  expect(outcome.reason).toBe(sentinel);
+};
+
+const expectStageTrace = (expected: readonly StageName[]): void => {
+  expect(pipeline.calls).toEqual(expected);
+  expect(pipeline.convertAsciiDoc).toHaveBeenCalledTimes(expected.includes('convertAsciiDoc') ? 1 : 0);
+  expect(pipeline.applyStaticHighlighting).toHaveBeenCalledTimes(expected.includes('applyStaticHighlighting') ? 1 : 0);
+  expect(pipeline.escapeCurlyBraces).toHaveBeenCalledTimes(expected.includes('escapeCurlyBraces') ? 1 : 0);
+};
+
+const expectPendingTasksDrained = async (): Promise<void> => {
+  await drainPendingTasks();
+  expect(pipeline.pendingConversions).toBe(0);
+};
+
+const createSentinel = (stage: StageName): Readonly<{ identity: symbol; stage: StageName }> =>
+  Object.freeze({
+    identity: Symbol(`${stage} sentinel`),
+    stage,
+  });
+
+const FAILURE_CASES = [
+  {
+    expectedTrace: ['convertAsciiDoc'],
+    extension: 'ad',
+    stage: 'convertAsciiDoc',
+  },
+  {
+    expectedTrace: ['convertAsciiDoc', 'applyStaticHighlighting'],
+    extension: 'adoc',
+    stage: 'applyStaticHighlighting',
+  },
+  {
+    expectedTrace: COMPLETE_TRACE,
+    extension: 'asciidoc',
+    stage: 'escapeCurlyBraces',
+  },
+] as const satisfies readonly {
+  expectedTrace: readonly StageName[];
+  extension: (typeof SUPPORTED_EXTENSIONS)[number];
+  stage: StageName;
+}[];
+
+describe.sequential('production pipeline failure worker', () => {
+  let hexoInstance: HexoTestInstance;
+  let workspace: string;
+
+  beforeAll(async () => {
+    workspace = createHexoWorkspace();
+    hexoInstance = new HexoClass(workspace, { silent: true, debug: false });
+    registerRenderer(hexoInstance);
+    await hexoInstance.init();
+  });
+
+  afterAll(async () => {
     try {
       await drainPendingTasks();
-      await hexo.exit();
+      await hexoInstance.exit();
       await drainPendingTasks();
     } finally {
       rmSync(workspace, { recursive: true, force: true });
     }
-  }
-};
-
-describe.sequential('pipeline failure probe worker', () => {
-  it('preserves a conversion sentinel and stops before highlighting or escaping', async () => {
-    const sentinel = new Error('conversion sentinel');
-    const probe = createRendererProbe({
-      convert: () => {
-        throw sentinel;
-      },
-    });
-
-    await expect(probe.renderer({ text: SAMPLE_TEXT })).rejects.toBe(sentinel);
-    expect(probe.calls).toEqual(['convert']);
-
-    probe.reset();
-    await expect(renderViaHexo(probe.renderer)).rejects.toBe(sentinel);
-    expect(probe.calls).toEqual(['convert']);
   });
 
-  it('preserves a highlighting sentinel and stops before escaping', async () => {
-    const sentinel = new Error('highlighting sentinel');
-    const probe = createRendererProbe({
-      highlight: () => {
-        throw sentinel;
-      },
-    });
-
-    await expect(probe.renderer({ text: SAMPLE_TEXT })).rejects.toBe(sentinel);
-    expect(probe.calls).toEqual(['convert', 'highlight']);
-
-    probe.reset();
-    await expect(renderViaHexo(probe.renderer)).rejects.toBe(sentinel);
-    expect(probe.calls).toEqual(['convert', 'highlight']);
+  beforeEach(() => {
+    pipeline.failure = null;
+    resetObservations();
   });
 
-  it('preserves an escaping sentinel after conversion and highlighting', async () => {
-    const sentinel = new Error('escape sentinel');
-    const probe = createRendererProbe({
-      escapeStage: () => {
-        throw sentinel;
-      },
-    });
-
-    await expect(probe.renderer({ text: SAMPLE_TEXT })).rejects.toBe(sentinel);
-    expect(probe.calls).toEqual(['convert', 'highlight', 'escape']);
-
-    probe.reset();
-    await expect(renderViaHexo(probe.renderer)).rejects.toBe(sentinel);
-    expect(probe.calls).toEqual(['convert', 'highlight', 'escape']);
+  afterEach(async () => {
+    pipeline.failure = null;
+    await expectPendingTasksDrained();
   });
 
-  it('still renders successfully after an injected escape failure', async () => {
-    const sentinel = new Error('escape once sentinel');
+  it.each(FAILURE_CASES)(
+    'preserves the exact $stage sentinel through the production renderer and Hexo .$extension rendering',
+    async ({ expectedTrace, extension, stage }) => {
+      const sentinel = createSentinel(stage);
 
-    let directFailed = false;
-    const directProbe = createRendererProbe({
-      escapeStage: (html) => {
-        if (!directFailed) {
-          directFailed = true;
-          throw sentinel;
-        }
+      armFailure(stage, sentinel);
+      await expectExactSentinelRejection(() => renderer({ text: SAMPLE_TEXT }), sentinel);
+      expectStageTrace(expectedTrace);
+      expect(pipeline.failure).toBeNull();
+      await expectPendingTasksDrained();
 
-        return escapeCurlyBraces(html);
-      },
-    });
+      resetObservations();
+      await expect(renderer({ text: SAMPLE_TEXT })).resolves.toBe(PINNED_V4_EXPECTED_HTML);
+      expectStageTrace(COMPLETE_TRACE);
+      await expectPendingTasksDrained();
 
-    await expect(directProbe.renderer({ text: SAMPLE_TEXT })).rejects.toBe(sentinel);
-    expect(directProbe.calls).toEqual(['convert', 'highlight', 'escape']);
+      resetObservations();
+      expect(hexoInstance.extend.renderer.get(extension)).toBe(renderer);
+      armFailure(stage, sentinel);
+      await expectExactSentinelRejection(
+        () => hexoInstance.render.render({ text: SAMPLE_TEXT, engine: extension }),
+        sentinel,
+      );
+      expectStageTrace(expectedTrace);
+      expect(pipeline.failure).toBeNull();
+      await expectPendingTasksDrained();
 
-    directProbe.reset();
-    await expect(directProbe.renderer({ text: SAMPLE_TEXT })).resolves.toBe(PINNED_V4_EXPECTED_HTML);
-    expect(directProbe.calls).toEqual(['convert', 'highlight', 'escape']);
+      resetObservations();
+      await expect(hexoInstance.render.render({ text: SAMPLE_TEXT, engine: extension })).resolves.toBe(
+        PINNED_V4_EXPECTED_HTML,
+      );
+      expectStageTrace(COMPLETE_TRACE);
+      await expectPendingTasksDrained();
+    },
+  );
 
-    let hexoFailed = false;
-    const hexoProbe = createRendererProbe({
-      escapeStage: (html) => {
-        if (!hexoFailed) {
-          hexoFailed = true;
-          throw sentinel;
-        }
+  it.each(SUPPORTED_EXTENSIONS)(
+    'does not invoke the production renderer pipeline from Hexo renderSync for .$extension',
+    (extension) => {
+      const text = `== Sync Zero Invocation ${extension} ==`;
+      const sentinel = createSentinel('convertAsciiDoc');
 
-        return escapeCurlyBraces(html);
-      },
-    });
+      expect(hexoInstance.extend.renderer.get(extension)).toBe(renderer);
+      armFailure('convertAsciiDoc', sentinel);
+      const armedFailure = pipeline.failure;
 
-    await expect(renderViaHexo(hexoProbe.renderer)).rejects.toBe(sentinel);
-    expect(hexoProbe.calls).toEqual(['convert', 'highlight', 'escape']);
+      const output = hexoInstance.render.renderSync({ text, engine: extension });
 
-    hexoProbe.reset();
-    await expect(renderViaHexo(hexoProbe.renderer)).resolves.toBe(PINNED_V4_EXPECTED_HTML);
-    expect(hexoProbe.calls).toEqual(['convert', 'highlight', 'escape']);
-  });
+      expect(output).toBe(text);
+      expect(output).not.toContain('[object Promise]');
+      expectStageTrace([]);
+      expect(pipeline.failure).toBe(armedFailure);
+      pipeline.failure = null;
+    },
+  );
 });
