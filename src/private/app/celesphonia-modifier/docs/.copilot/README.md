@@ -52,10 +52,13 @@ semantic scanning, write authority, WinUI, network access, and private data from
   shared `G10` `c7300d9fbbe93b62262dc80a25aa1aa550b3e3fa`.
 - `plans/atlas-v0-a2-baseline-manifest-row-diagnosis.md` is the completed A2R11 diagnosis at verified
   shared `G11` `5955f8c59dd69de1f11a383f373eea59294b2a29`.
-- `plans/atlas-v0-a2-baseline-manifest-row-remediation.md` is the planning-only A2R12 deterministic
-  qualification and approval-gated private remediation.
-- `plans/atlas-v0-a2-remediation-backup-directory-readiness.md` is the planning-only A2R12C
-  correction for an absent, not-yet-created remediation backup directory.
+- `plans/atlas-v0-a2-baseline-manifest-row-remediation.md` is the completed A2R12 deterministic
+  qualification at verified shared `G12` `661d6f62c56efcf0bb7a1d8fb220b44dad71ef56`.
+- `plans/atlas-v0-a2-remediation-backup-directory-readiness.md` is the completed A2R12C correction
+  for an absent, not-yet-created remediation backup directory.
+- `plans/atlas-v0-a2-clean-workspace-rebuild.md` is the planning-only A2R13 clean-lineage route that
+  preserves the historical workspace and creates one isolated A2 workspace from the current approved
+  A0 manifest.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -117,6 +120,12 @@ semantic scanning, write authority, WinUI, network access, and private data from
   `R11` `342c324818d7d238298b60e3ed91feeeaf21616d`.
 - `reviews/atlas-v0-a2-baseline-manifest-row-diagnosis-completion.md` closes A2R11 at verified shared
   `G11` without publishing its private diagnosis.
+- `reviews/atlas-v0-a2-baseline-manifest-row-remediation-plan-review.md` binds the accepted A2R12
+  plan at verified shared `R12`.
+- `reviews/atlas-v0-a2-remediation-backup-directory-readiness-plan-review.md` binds the accepted
+  A2R12C correction at verified shared `R12C`.
+- `reviews/atlas-v0-a2-baseline-manifest-row-remediation-completion.md` closes A2R12 at verified
+  shared `G12` without publishing its private qualification result or selected branch.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` is obsolete and blocked. A2R8 publishes no private
   discovery token, disposition, outcome, count, difference, hash, path, name, or document content.
 
