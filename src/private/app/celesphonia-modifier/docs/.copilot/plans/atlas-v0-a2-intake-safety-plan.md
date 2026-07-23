@@ -1,6 +1,6 @@
 # Atlas V0 A2 Intake and Safety Plan
 
-**Status:** Active; clean-workspace execution blocked before verified shared A2R13 `R13`
+**Status:** Blocked pending refreshed A0 authority and a separately reviewed A2 rebind
 
 **Increment:** A2 - Intake and Safety Harness
 
@@ -66,6 +66,12 @@
 > `atlas-v0-a2-clean-workspace-rebuild.md` governs planning-only A2R13. It preserves the historical
 > workspace unchanged, creates a fresh isolated project root and inventory lineage from the current
 > approved A0 manifest, and requires exact pending-manifest approval before confirmation or copy.
+> A2R13 completed at verified shared `G13` on its safe-refusal branch before pending-manifest
+> publication.
+> **Current corpus refresh**
+> `atlas-v0-a0-current-corpus-refresh.md` governs A0R1. It may perform one metadata-only current-tree
+> census and obtain exact project-leader approval of a refreshed private baseline. It grants no A2
+> retry or production authority rebind.
 
 ## 1. Outcome
 
@@ -138,11 +144,10 @@ A2 implementation may begin only when:
 - that record passes its parent, path, content, and upstream checks; and
 - the tracked worktree is clean.
 
-Current progression is governed by A2R13. A2R8 attempt authority is consumed, A2R9 stopped before
-private reads, and A2R10 through A2R12 completed their bounded protected work. The historical
-workspace and inventory grant no predecessor authority. Only the clean-lineage sequence defined by
-the exact reviewed A2R13 plan may run after verified shared `R13`. Confirmation and copy remain
-blocked until the project leader approves exact pending manifest bytes.
+Current A2 progression is blocked. A2R8 attempt authority is consumed, A2R9 stopped before private
+reads, and A2R10 through A2R13 completed their bounded work. A2R13's clean-lineage discovery safely
+stopped before pending-manifest publication. A0R1 may refresh corpus authority, but no A2 operation
+may resume until a later A2R14 plan explicitly binds that authority and releases a new clean attempt.
 
 ## 4. Scope
 
@@ -879,16 +884,21 @@ A2R10 and A2R11 completed their protected observation and diagnosis at verified 
 `G11`. A2R12 completed at verified shared `G12`. It grants no continuing inventory-write,
 discovery, confirmation, copy, cleanup, or retry authority.
 
-### A2.4 Current A2R13 clean-workspace boundary
+### A2.4 Completed A2R13 clean-workspace boundary
 
-A2R13 may create one isolated private project root and canonical workspace only after its exact plan
-and source receive independent `No findings`. It may read the historical canonical discovery request
-and approved baseline manifest but may not read or import the historical inventory or other
-workspace artifacts. It may run released discovery in the new workspace. Confirmation and copy
-require an exact protected pending-manifest approval and the reviewed repository-safe decision
-commit. Copy writes only to the new private snapshot; cleanup preflight deletes nothing.
+A2R13 completed at verified shared `G13`. It created one isolated private project root and canonical
+workspace without reading or importing historical inventory state. Released discovery selected the
+safe-refusal branch before pending-manifest publication. A2R13 grants no retry, confirmation, copy,
+preflight, or continuation authority.
 
-### A2.5 Historical A2R8 release
+### A2.5 Current A0R1 refresh boundary
+
+A0R1 may read only the current canonical request and approved baseline manifest, enumerate current
+root metadata, and produce a protected refreshed corpus candidate. It changes no A2 source or state
+and grants no A2 execution authority. Any approved A0R1 manifest requires a separately persisted and
+reviewed A2R14 authority rebind and another fresh lineage.
+
+### A2.6 Historical A2R8 release
 
 The reviewed A2R8 release gate remains immutable completion evidence. It grants no current private
 execution authority.
@@ -898,7 +908,7 @@ execution authority.
 A2 is accepted only when:
 
 Criteria for confirmation, copy, and preflight remain A2 requirements. They grant no authority by
-themselves; section 17 and the exact reviewed A2R13 plan govern the current clean-workspace sequence.
+themselves; A2 is currently blocked pending A0R1 and a separately reviewed A2R14 plan.
 
 1. the implementation matches the exact tracked scope and three-project boundary;
 2. production projects retain zero project-local package references;
@@ -993,9 +1003,9 @@ A2R8 correction plan. Historical candidate descriptions in this plan grant no cu
 authority.
 
 Every A2R8 plan-review and release record followed the correction plan and sections 16 and 17 of
-`project-operating-model.md`. A2R9 remains blocked review evidence; A2R10 through A2R12 are completed
-evidence. The current A2R13 gate and chain are defined by
-`atlas-v0-a2-clean-workspace-rebuild.md`.
+`project-operating-model.md`. A2R9 remains blocked review evidence; A2R10 through A2R13 are completed
+evidence. Current corpus refresh is governed by `atlas-v0-a0-current-corpus-refresh.md`; it grants no
+A2 authority.
 
 ## 21. Private outputs and handoff
 
@@ -1018,7 +1028,9 @@ Expected private outputs are:
 - A2R13 may create one fresh isolated project root, canonical workspace, clean baseline inventory,
   rebased requests, protected manifest decision, released intake states, qualified snapshot,
   receipts, inventory transitions, and non-deleting lifecycle-preflight evidence under its
-  subordinate plan.
+  subordinate plan. Its safe-refusal branch created no pending manifest or downstream state; and
+- A0R1 may create one protected metadata-only current-corpus candidate, decision evidence, and final
+  approved baseline manifest under its own subordinate plan.
 
 Operational Atlas outputs remain under protected Git-ignored Atlas workspaces and follow A0
 lifecycle milestones. The A2R10, A2R11, and A2R12 reports remain outside operational workspaces and
@@ -1027,12 +1039,10 @@ never become Atlas operational artifacts.
 To resume A2:
 
 1. read all applicable `AGENTS.md` files and the governing plans;
-2. verify A2R8 `G`, blocked A2R9 `R`, completed A2R10 `G10`, A2R11 `G11`, A2R12 `G12`, upstream, and
-   clean worktree;
-3. verify the exact current A2R13 `P13`/`R13` chain and unchanged released Atlas source;
-4. use only the independently reviewed A2R13 session utility and one fresh target;
-5. stop after discovery until the project leader approves or declines exact pending manifest bytes;
-6. run confirmation, copy, and non-deleting preflight only on the approved branch defined by A2R13;
-   and
-7. infer neither private state nor authority from conversation history, artifact presence, or
+2. verify A2R8 `G`, blocked A2R9 `R`, completed A2R10 `G10`, A2R11 `G11`, A2R12 `G12`, A2R13 `G13`,
+   upstream, and clean worktree;
+3. complete A0R1 only under its exact reviewed plan;
+4. persist and independently review A2R14 after any approved refreshed manifest;
+5. perform no discovery, confirmation, copy, or preflight before verified A2R14 authority; and
+6. infer neither private state nor authority from conversation history, artifact presence, or
    historical instructions.

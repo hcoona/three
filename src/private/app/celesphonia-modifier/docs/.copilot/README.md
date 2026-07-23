@@ -24,6 +24,9 @@ semantic scanning, write authority, WinUI, network access, and private data from
 - `plans/atlas-v0-a0-research-contract.md` records the approved finite corpus, definition,
   privacy, redaction, Agent-egress, artifact-lifecycle, and handoff contract for increment A0.
   Human scope approval alone does not establish increment completion.
+- `plans/atlas-v0-a0-current-corpus-refresh.md` is the planning-only A0R1 route for a metadata-only
+  current-tree census, stable alias continuity, and exact project-leader approval of a refreshed
+  private baseline manifest.
 - `plans/atlas-v0-a1-foundation-plan.md` defines the exact three-project C# scaffold,
   deterministic empty-survey contract, command behavior, tests, validation, and release gate for
   increment A1.
@@ -57,8 +60,8 @@ semantic scanning, write authority, WinUI, network access, and private data from
 - `plans/atlas-v0-a2-remediation-backup-directory-readiness.md` is the completed A2R12C correction
   for an absent, not-yet-created remediation backup directory.
 - `plans/atlas-v0-a2-clean-workspace-rebuild.md` is the planning-only A2R13 clean-lineage route that
-  preserves the historical workspace and creates one isolated A2 workspace from the current approved
-  A0 manifest.
+  completed at verified shared `G13` after preserving the historical workspace, creating one isolated
+  A2 workspace, and safely stopping before pending-manifest publication.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -126,6 +129,10 @@ semantic scanning, write authority, WinUI, network access, and private data from
   A2R12C correction at verified shared `R12C`.
 - `reviews/atlas-v0-a2-baseline-manifest-row-remediation-completion.md` closes A2R12 at verified
   shared `G12` without publishing its private qualification result or selected branch.
+- `reviews/atlas-v0-a2-clean-workspace-rebuild-plan-review.md` binds the accepted A2R13 plan at
+  verified shared `R13`.
+- `reviews/atlas-v0-a2-clean-workspace-rebuild-completion.md` closes A2R13 at verified shared `G13`
+  on its repository-safe refusal branch.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` is obsolete and blocked. A2R8 publishes no private
   discovery token, disposition, outcome, count, difference, hash, path, name, or document content.
 
