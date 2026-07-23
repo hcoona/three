@@ -200,6 +200,11 @@ replacement. It then recognizes only:
 
 Any other current, backup, or staging combination refuses without another state change.
 
+If current equals the A2R10-bound protected original, the transient backup is absent, and the exact
+ordinary replacement staging leaf exists but is not the complete expected replacement, the program
+may delete only that staging leaf and let the released helper recreate it. This is the sole
+replacement-staging recovery rule.
+
 After replacement, A2R12 requires:
 
 - current bytes equal the serialized replacement;
@@ -214,9 +219,14 @@ For restart after replacement but before report publication, the program revalid
 postconditions from the protected original and finishes the report without invoking replacement
 again.
 
-The only authorized operational deletion is the exact ordinary transient backup leaf, after current
-replacement and protected-original equality are proved. No retained operational artifact is
-created, so A2 inventory custody remains unchanged.
+The only authorized operational deletions are:
+
+- the exact ordinary incomplete replacement staging leaf under the proven-prior and absent-backup
+  recovery rule; and
+- the exact ordinary transient backup leaf after current replacement and protected-original
+  equality are proved.
+
+No retained operational artifact is created, so A2 inventory custody remains unchanged.
 
 ## 5. Private report and process contract
 
@@ -299,9 +309,9 @@ Before qualification:
    field object difference;
 8. path tests cover exact backup/staging containment, ordinary non-reparse components, fresh
    absence, restart presence, and outside/type/reparse refusal;
-9. replacement tests cover fresh success, replacement-staged restart, replaced-with-transient-backup
-   restart, post-backup-cleanup restart, and every other current/backup/staging refusal without
-   source mutation;
+9. replacement tests cover fresh success, complete and incomplete replacement-staged restart,
+   replaced-with-transient-backup restart, post-backup-cleanup restart, and every other
+   current/backup/staging refusal without source mutation;
 10. approval and remediation report tests cover exact schemas, create-new behavior, matching run
     identifiers, atomic publication, partial-staging recovery, fixed signals, and empty standard
     error;
