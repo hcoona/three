@@ -1,8 +1,8 @@
 # Atlas V0 A0 Current Corpus Refresh Governance Remediation
 
-**Lifecycle:** Active subordinate; plan-only before verified shared `R0R1C1`
+**Lifecycle:** Historical supporting after verified shared `G0R1`
 
-**Status:** Governance closure blocked
+**Status:** Completed
 
 **Increment:** A0R1C1 - Post-Refusal Authority Correction
 
@@ -187,3 +187,6 @@ classification, unreadable or unsupported selected entry, private disclosure ris
 need, or any change to the accepted threat model.
 
 This handoff creates no A0R2 execution authority by itself.
+
+`atlas-v0-a0-current-corpus-recovery.md` now governs A0R2. A0R1C1 remains historical evidence for its
+correction and A0R1 closure only.

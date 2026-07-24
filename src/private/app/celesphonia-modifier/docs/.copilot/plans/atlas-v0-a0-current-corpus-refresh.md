@@ -1,8 +1,8 @@
 # Atlas V0 A0 Current Corpus Refresh
 
-**Lifecycle:** Partially superseded for post-refusal closure and Git topology
+**Lifecycle:** Partially superseded; only the A0R2-imported policy sections remain operative
 
-**Status:** First authorized census safely refused; governance closure pending A0R1C1
+**Status:** Completed on first authorized safe refusal at `G0R1`
 
 **Increment:** A0R1 - Current Corpus Refresh
 
@@ -44,11 +44,15 @@ final exact approved bytes.
 `../reviews/atlas-v0-a0-current-corpus-refresh-completion.md`
 
 > **Post-refusal governance correction**
-> `atlas-v0-a0-current-corpus-refresh-governance-remediation.md` governs A0R1C1. The first authorized
+> `atlas-v0-a0-current-corpus-refresh-governance-remediation.md` governed A0R1C1. The first authorized
 > census consumed A0R1 authority on its safe-refusal branch. A later execution had no prospective
-> authority and contributes no acceptance evidence. A0R1C1 supersedes only post-refusal closure and
-> the `G0R1` parent topology; all corpus, privacy, metadata-only, and approval rules below remain
-> operative.
+> authority and contributes no acceptance evidence. A0R1 is closed and all execution, publication,
+> decision, finalization, approval, retry, and Git authority below is historical. A0R2 imports only
+> section 2 corpus/privacy/threat-model constraints, section 4 metadata classification/selection/alias
+> rules, and section 5 revision-3 pending schema/codec invariants.
+>
+> `atlas-v0-a0-current-corpus-recovery.md` governs A0R2 prospectively. It does not reopen A0R1 or
+> authorize use of the later A0R1 execution result.
 
 ## 1. Authority correction and claim
 
