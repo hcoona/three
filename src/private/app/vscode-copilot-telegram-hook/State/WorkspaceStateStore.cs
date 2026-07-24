@@ -20,27 +20,31 @@ internal sealed class WorkspaceStateStore(
         NotificationTurn,
         CancellationToken,
         Task
-    >? OnBeforeAbandonOpenTurnForTestingAsync { get; set; }
+    >? OnBeforeAbandonOpenTurnForTestingAsync
+    { get; set; }
 
     public Func<
         NotificationTurn,
         NotificationTurn,
         CancellationToken,
         Task
-    >? OnBeforeAbandonSupersededTurnForTestingAsync { get; set; }
+    >? OnBeforeAbandonSupersededTurnForTestingAsync
+    { get; set; }
 
     public Func<
         NotificationTurn,
         NotificationTurn,
         CancellationToken,
         Task
-    >? OnAfterAbandonSupersededTurnFinalGuardForTestingAsync { get; set; }
+    >? OnAfterAbandonSupersededTurnFinalGuardForTestingAsync
+    { get; set; }
 
     public Func<
         NotificationTurn,
         CancellationToken,
         Task
-    >? OnSupersedingOpenTurnResolvedForTestingAsync { get; set; }
+    >? OnSupersedingOpenTurnResolvedForTestingAsync
+    { get; set; }
 
     public async Task<NotificationSession> InitializeSessionAsync(
         SessionStartHookInput input,

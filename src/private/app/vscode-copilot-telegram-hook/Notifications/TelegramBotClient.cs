@@ -24,7 +24,8 @@ internal sealed class TelegramBotClient(
             }
             catch (Exception ex) when (
                 ex is not TelegramSendMessagesException
-                && (ex is not OperationCanceledException
+                && (successfulMessageCount > 0
+                    || ex is not OperationCanceledException
                     || !cancellationToken.IsCancellationRequested))
             {
                 if (successfulMessageCount == 0)

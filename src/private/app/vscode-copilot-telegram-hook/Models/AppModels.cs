@@ -67,6 +67,36 @@ internal sealed class StopHookInput
     public bool StopHookActive { get; set; }
 }
 
+internal sealed class CopilotCliSessionEventInput
+{
+    [JsonPropertyName("session_id")]
+    public string SessionId { get; set; } = string.Empty;
+
+    [JsonPropertyName("timestamp")]
+    public string Timestamp { get; set; } = string.Empty;
+
+    [JsonPropertyName("cwd")]
+    public string Cwd { get; set; } = string.Empty;
+
+    [JsonPropertyName("event_id")]
+    public string EventId { get; set; } = string.Empty;
+
+    [JsonPropertyName("event_type")]
+    public string EventType { get; set; } = string.Empty;
+
+    [JsonPropertyName("deliver_after")]
+    public string? DeliverAfter { get; set; }
+
+    [JsonPropertyName("summary")]
+    public string? Summary { get; set; }
+
+    [JsonPropertyName("summary_source")]
+    public string? SummarySource { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+}
+
 internal sealed class HookResponse
 {
     [JsonPropertyName("hookSpecificOutput")]
@@ -709,6 +739,16 @@ internal sealed class NotificationContext
     public string? CommitId { get; init; }
 
     public string? TranscriptPath { get; init; }
+
+    public string Heading { get; init; } = "✅ Copilot 当前轮已完成";
+
+    public string IdentifierLabel { get; init; } = "轮次 ID";
+
+    public string EventTimestampLabel { get; init; } = "Stop 时间";
+
+    public string BodyLabel { get; init; } = "摘要";
+
+    public string MissingBodyText { get; init; } = "当前轮未生成摘要。";
 }
 
 internal sealed record ProcessExecutionResult(

@@ -8,6 +8,8 @@ internal sealed class TelegramCredentialProvider(
     IInteractiveConsole interactiveConsole,
     ILogger<TelegramCredentialProvider> logger)
 {
+    private const int MaxGopassErrorLength = 300;
+
     private static readonly ProcessLogOptions SensitiveProcessLogOptions = new(
         IncludeArgumentsInLogs: false,
         IncludeWorkingDirectoryInLogs: false,
@@ -229,17 +231,26 @@ internal sealed class TelegramCredentialProvider(
         }
     }
 
-    public async Task RemoveStoredSecretsAsync(CancellationToken cancellationToken)
+    public async Task<bool> RemoveStoredSecretsAsync(CancellationToken cancellationToken)
     {
         if (!await IsSecretStoreAvailableAsync(cancellationToken))
         {
             AppLog.SkippingSecretRemoval(logger);
-            return;
+            return false;
         }
 
-        await TryRemoveSecretAsync(AppPaths.GetTelegramBotTokenSecretPath(), cancellationToken);
-        await TryRemoveSecretAsync(AppPaths.GetTelegramChatIdSecretPath(), cancellationToken);
-        AppLog.RemovedTelegramCredentials(logger);
+        bool botTokenRemoved = await TryRemoveSecretAsync(
+            AppPaths.GetTelegramBotTokenSecretPath(),
+            cancellationToken);
+        bool chatIdRemoved = await TryRemoveSecretAsync(
+            AppPaths.GetTelegramChatIdSecretPath(),
+            cancellationToken);
+        if (botTokenRemoved && chatIdRemoved)
+        {
+            AppLog.RemovedTelegramCredentials(logger);
+        }
+
+        return botTokenRemoved && chatIdRemoved;
     }
 
     private async Task EnsureSecretStoreAvailableAsync(CancellationToken cancellationToken)
@@ -256,17 +267,20 @@ internal sealed class TelegramCredentialProvider(
     {
         string? botToken = await TryReadSecretAsync(
             AppPaths.GetTelegramBotTokenSecretPath(),
-            cancellationToken);
+            cancellationToken,
+            failOnReadError: true);
         string? chatId = await TryReadSecretAsync(
             AppPaths.GetTelegramChatIdSecretPath(),
-            cancellationToken);
+            cancellationToken,
+            failOnReadError: true);
 
         return new StoredTelegramSecrets(botToken, chatId);
     }
 
     private async Task<string?> TryReadSecretAsync(
         string secretPath,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool failOnReadError = false)
     {
         try
         {
@@ -280,13 +294,33 @@ internal sealed class TelegramCredentialProvider(
 
             if (!result.Succeeded)
             {
-                AppLog.MissingSecretValue(logger, secretPath);
+                if (IsMissingSecretError(result.StandardError))
+                {
+                    AppLog.MissingSecretValue(logger, secretPath);
+                    return null;
+                }
+
+                if (failOnReadError)
+                {
+                    throw CreateReadSecretException(secretPath, result);
+                }
+
+                AppLog.ReadSecretFailed(
+                    logger,
+                    CreateReadSecretException(secretPath, result),
+                    secretPath);
+                return null;
             }
 
             return result.Succeeded ? NullIfWhitespace(result.StandardOutput.Trim()) : null;
         }
         catch (InvalidOperationException ex)
         {
+            if (failOnReadError)
+            {
+                throw;
+            }
+
             AppLog.ReadSecretFailed(logger, ex, secretPath);
             return null;
         }
@@ -313,7 +347,7 @@ internal sealed class TelegramCredentialProvider(
         }
     }
 
-    private async Task TryRemoveSecretAsync(
+    private async Task<bool> TryRemoveSecretAsync(
         string secretPath,
         CancellationToken cancellationToken)
     {
@@ -327,11 +361,46 @@ internal sealed class TelegramCredentialProvider(
                 SensitiveProcessLogOptions,
                 cancellationToken);
             AppLog.SecretRemovalCompleted(logger, secretPath, result.ExitCode);
+            if (result.Succeeded || IsMissingSecretError(result.StandardError))
+            {
+                return true;
+            }
+
+            AppLog.RemoveSecretFailed(
+                logger,
+                new InvalidOperationException(result.StandardError.Trim()),
+                secretPath);
+            return false;
         }
         catch (InvalidOperationException ex)
         {
             AppLog.RemoveSecretFailed(logger, ex, secretPath);
+            return false;
         }
+    }
+
+    private static bool IsMissingSecretError(string standardError)
+        => standardError.Contains("not found", StringComparison.OrdinalIgnoreCase)
+            || standardError.Contains(
+                "not in the password store",
+                StringComparison.OrdinalIgnoreCase)
+            || standardError.Contains("does not exist", StringComparison.OrdinalIgnoreCase);
+
+    private static InvalidOperationException CreateReadSecretException(
+        string secretPath,
+        ProcessExecutionResult result)
+    {
+        string standardError = result.StandardError.Trim();
+        if (standardError.Length > MaxGopassErrorLength)
+        {
+            standardError = standardError[..MaxGopassErrorLength] + "...";
+        }
+
+        string detail = string.IsNullOrWhiteSpace(standardError)
+            ? $"exit code {result.ExitCode}"
+            : standardError;
+        return new InvalidOperationException(
+            $"Failed to read secret '{secretPath}': {detail}");
     }
 
     private SecretInstallDecision DetermineInstallDecision(

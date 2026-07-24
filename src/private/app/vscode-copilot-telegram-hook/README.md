@@ -7,7 +7,7 @@ It serves the managed/user-level installation flow:
 
 1. A managed VS Code hook JSON file registered through supported same-host VS
    Code settings targets.
-2. A GitHub Copilot CLI hook JSON file under the CLI hooks directory.
+2. A GitHub Copilot CLI user extension that observes the root session lifecycle.
 
 There is intentionally no repository-local `.github/hooks/telegram-notify.json`
 workspace hook entry.
@@ -20,10 +20,11 @@ The implementation follows the official VS Code Copilot hooks preview behavior:
   does not use a repo-local workspace hook for the Telegram notifier.
 - Workspace hooks take precedence over user hooks for the same event when they
   exist.
-- GitHub Copilot CLI loads user-level hook files from `*.json` files under
-  `$COPILOT_HOME/hooks/` when `COPILOT_HOME` is set, otherwise
-  `~/.copilot/hooks/` on Linux and macOS or `%USERPROFILE%\.copilot\hooks\` on
-  Windows.
+- The Copilot CLI integration uses its extension API instead of `Stop` hooks,
+  because hook pauses do not distinguish intermediate idles from a root session
+  that has actually stopped.
+- Root lifecycle events are filtered by `agentId`, so subagent completion and
+  permission activity do not produce user notifications.
 
 ## Files
 
@@ -86,8 +87,10 @@ The installer command:
 - asks before overwriting existing stored secrets and defaults to keeping them,
 - installs the published Native AOT binary into a user-owned data directory,
 - writes a dedicated managed hook JSON file under the install root,
-- writes a GitHub Copilot CLI user-level hook file under the CLI hooks
+- installs a GitHub Copilot CLI user extension under the CLI extensions
   directory,
+- removes this application's legacy Copilot CLI hook entries to prevent duplicate
+  notifications,
 - validates before writing side effects that the managed hook file path can be
   represented in VS Code as a supported `~/...` hook location,
 - registers that managed hook file in the supported same-host VS Code
@@ -109,21 +112,42 @@ paths or `~/...` entries in
 supported `~/...` form rather than as an absolute path.
 
 For GitHub Copilot CLI, the installer writes
-`vscode-copilot-telegram-hook.json` into `$COPILOT_HOME/hooks/` when
-`COPILOT_HOME` is set, otherwise into `~/.copilot/hooks/` on Linux and macOS or
-`%USERPROFILE%\.copilot\hooks\` on Windows. That file uses the Copilot CLI hook
-schema with `version: 1`, `timeoutSec`, PascalCase event names
-(`SessionStart`, `UserPromptSubmit`, and `Stop`), and
-`HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK_SURFACE=copilot-cli`. The PascalCase
-event names make Copilot CLI send VS Code-compatible snake_case input payloads;
-the app-specific surface marker lets this application select
-Copilot CLI-compatible hook output.
+`extensions/vscode-copilot-telegram-hook/extension.mjs` under `$COPILOT_HOME`
+when set, otherwise under `~/.copilot` on Linux and macOS or
+`%USERPROFILE%\.copilot` on Windows. The extension joins the current session,
+ignores events with an `agentId`, and notifies only for:
+
+- a root `session.idle` that is not an intermediate autopilot or queued-turn
+  boundary;
+- an unresolved root permission, elicitation, user-input, plan-approval,
+  model-switch, session-limit, or MCP authorization request.
+
+The extension reuses the final root `session.task_complete` summary or
+`assistant.message`; it does not make an additional model request. It writes the
+event synchronously to `<install-root>/copilot-cli-events/` and starts the
+installed native binary as a detached delivery worker. Completion delivery has a
+short cancellation window for autopilot continuation, and quickly resolved
+attention requests are cancelled before delivery.
+
+Permission-request observation asks once for elevated extension access. If that
+access is denied, the extension falls back to normal session access: completion
+and other observable lifecycle notifications continue, but permission-request
+notifications remain unavailable.
+
+Delivery is best-effort at-least-once. A failed event remains in the spool and is
+retried when a later Copilot CLI session loads the extension. A process crash
+after Telegram accepts a message but before local cleanup can produce a
+duplicate; the implementation intentionally does not add a distributed
+idempotency protocol.
 
 If you need to override the default VS Code settings targets, repeat
 `--vscode-settings-path` once per target file you want the installer to manage.
 If you need to override the default Copilot CLI hook file location, pass
 `--copilot-cli-hook-file-path` to `user install`, `user uninstall`,
-`user health`, or `user diagnose`.
+`user health`, or `user diagnose`. A path whose parent directory is named
+`hooks` also selects that directory's parent as the Copilot home used for the
+extension path. Other arbitrary paths affect only legacy-hook migration; the
+extension remains under the default Copilot home.
 
 If you need to inspect or update stored Telegram secrets after installation,
 use the dedicated secret-management command:
@@ -140,10 +164,11 @@ The CLI also provides:
 
 - `user uninstall`: remove the managed installation.
 - `user health`: validate the installed binary, VS Code managed hook file,
-  Copilot CLI managed hook file, VS Code settings registration, and credential
-  resolution.
+  Copilot CLI extension, absence of legacy managed CLI hooks, VS Code settings
+  registration, and credential resolution.
 - `user diagnose`: print the resolved installation paths, VS Code settings
-  targets, Copilot CLI hook path, credential availability, and log locations.
+  targets, Copilot CLI hook migration path, extension path, credential
+  availability, and log locations.
 - `user secret`: read or update the stored Telegram secrets.
 - `user test-notification`: send a test Telegram message without waiting for a
   Copilot stop event.
@@ -177,6 +202,15 @@ session log path pattern, workspace fallback hook log path, managed hook file
 path, and every targeted VS Code settings path for the directory where you run
 the command.
 
+Copilot CLI event files are stored under
+`<install-root>/copilot-cli-events/`. Ready files end in `.json`, a worker-owned
+claim ends in `.json.working`, and a cancelled delivery has a
+`.json.cancelled` marker. Successful, cancelled, partially delivered, and
+invalid events are removed. A delivery failure restores the ready `.json` file
+for startup recovery. Startup recovery and uninstall cleanup only touch
+protocol-owned hash-named event files and extension temporary files; they do not
+recursively delete the spool.
+
 During runtime, the hook maintains session-scoped notification protocol state
 under `.copilot/notifications/sessions/<safe-session-id>/`, including:
 
@@ -201,7 +235,7 @@ These `.copilot/notifications/sessions/` files are runtime state and should
 remain ignored in git.
 
 The gopass prefix is fixed at `copilot/vscode-copilot-telegram-hook` so the
-managed VS Code hook file and Copilot CLI hook file resolve the same secrets.
+managed VS Code hooks and Copilot CLI extension resolve the same secrets.
 As of the current official VS Code docs, the documented default user-level hook
 file location is still `~/.claude/settings.json`, even when the feature is used
 from VS Code GitHub Copilot. However, manual verification recorded in
@@ -219,7 +253,7 @@ The runtime honors `TG_BOT_TOKEN` and `TG_CHAT_ID` from the process
 environment as explicit overrides, but `gopass` is the primary persisted
 mechanism for the managed user-level installation.
 
-For summary generation, the hook emits a Notification Assignment for
+For VS Code summary generation, the hook emits a Notification Assignment for
 high-confidence main user prompts. Only that assignment authorizes writing a
 summary, and the agent must write only the exact per-turn `summary.json` path.
 The `session_id`, `notification_turn_id`, and `notification_nonce` fields must
@@ -246,7 +280,8 @@ project=./src/private/app/vscode-copilot-telegram-hook/VSCodeCopilotTelegramHook
 tests=./tests/private/app/vscode-copilot-telegram-hook/Hcoona.VsCodeCopilotTelegramHook.Tests.csproj
 
 dotnet build "$project"
-dotnet test "$tests"
+dotnet build "$tests"
+dotnet vstest ./tests/private/app/vscode-copilot-telegram-hook/bin/Debug/net10.0/Hcoona.VsCodeCopilotTelegramHook.Tests.dll
 dotnet publish "$project" -c Release -r linux-x64
 ```
 
