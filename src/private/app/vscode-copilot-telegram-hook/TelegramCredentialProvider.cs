@@ -282,48 +282,52 @@ internal sealed class TelegramCredentialProvider(
         CancellationToken cancellationToken,
         bool failOnReadError = false)
     {
+        ProcessExecutionResult result;
         try
         {
-            ProcessExecutionResult result = await processRunner.RunAsync(
+            result = await processRunner.RunAsync(
                 "gopass",
                 ["show", secretPath],
                 workingDirectory: null,
                 standardInput: null,
                 SensitiveProcessLogOptions,
                 cancellationToken);
-
-            if (!result.Succeeded)
-            {
-                if (IsMissingSecretError(result.StandardError))
-                {
-                    AppLog.MissingSecretValue(logger, secretPath);
-                    return null;
-                }
-
-                if (failOnReadError)
-                {
-                    throw CreateReadSecretException(secretPath, result);
-                }
-
-                AppLog.ReadSecretFailed(
-                    logger,
-                    CreateReadSecretException(secretPath, result),
-                    secretPath);
-                return null;
-            }
-
-            return result.Succeeded ? NullIfWhitespace(result.StandardOutput.Trim()) : null;
         }
         catch (InvalidOperationException ex)
         {
+            InvalidOperationException contextualException = new(
+                $"Failed to read secret '{secretPath}': {ex.Message}",
+                ex);
             if (failOnReadError)
             {
-                throw;
+                throw contextualException;
             }
 
-            AppLog.ReadSecretFailed(logger, ex, secretPath);
+            AppLog.ReadSecretFailed(logger, contextualException, secretPath);
             return null;
         }
+
+        if (!result.Succeeded)
+        {
+            if (IsMissingSecretError(result.StandardError))
+            {
+                AppLog.MissingSecretValue(logger, secretPath);
+                return null;
+            }
+
+            if (failOnReadError)
+            {
+                throw CreateReadSecretException(secretPath, result);
+            }
+
+            AppLog.ReadSecretFailed(
+                logger,
+                CreateReadSecretException(secretPath, result),
+                secretPath);
+            return null;
+        }
+
+        return NullIfWhitespace(result.StandardOutput.Trim());
     }
 
     private async Task StoreSecretAsync(
