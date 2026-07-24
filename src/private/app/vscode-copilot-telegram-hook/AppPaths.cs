@@ -246,9 +246,12 @@ internal static class AppPaths
         ];
 
         StringComparer comparer = GetPlatformPathComparer();
+        string normalizedEventSpoolDirectory = Path.GetFullPath(eventSpoolDirectory);
         foreach ((string label, string path) in managedArtifactPaths)
         {
-            if (label == "Copilot CLI event spool directory")
+            if (comparer.Equals(
+                    Path.GetFullPath(path),
+                    normalizedEventSpoolDirectory))
             {
                 continue;
             }
@@ -260,7 +263,7 @@ internal static class AppPaths
                     path,
                     "Copilot CLI event spool directory",
                     eventSpoolDirectory,
-                    Path.GetFullPath(eventSpoolDirectory));
+                    normalizedEventSpoolDirectory);
             }
         }
 

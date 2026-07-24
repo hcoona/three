@@ -1,5 +1,6 @@
 using Hcoona.VsCodeCopilotTelegramHook.Logging;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Hcoona.VsCodeCopilotTelegramHook.Tests;
@@ -68,6 +69,24 @@ public sealed class TelegramCredentialProviderTests
         }
     }
 
+    [Fact]
+    public async Task ReadStoredSecretsAsyncAddsSecretPathToProcessFailure()
+    {
+        TelegramCredentialProvider provider = new(
+            new ThrowingReadProcessRunner(),
+            new NonInteractiveConsole(),
+            NullLogger<TelegramCredentialProvider>.Instance);
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => provider.ReadStoredSecretsAsync(CancellationToken.None));
+
+        Assert.Contains(
+            AppPaths.GetTelegramBotTokenSecretPath(),
+            exception.Message,
+            StringComparison.Ordinal);
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
+    }
+
     private sealed class FailingReadProcessRunner : IProcessRunner
     {
         public Task<ProcessExecutionResult> RunAsync(
@@ -82,6 +101,26 @@ public sealed class TelegramCredentialProviderTests
                     2,
                     string.Empty,
                     "gopass backend unavailable"));
+    }
+
+    private sealed class ThrowingReadProcessRunner : IProcessRunner
+    {
+        public Task<ProcessExecutionResult> RunAsync(
+            string fileName,
+            IReadOnlyList<string> arguments,
+            string? workingDirectory,
+            string? standardInput,
+            ProcessLogOptions? logOptions,
+            CancellationToken cancellationToken)
+        {
+            if (arguments.Count == 1 && arguments[0] == "version")
+            {
+                return Task.FromResult(
+                    new ProcessExecutionResult(0, "gopass 1.0.0", string.Empty));
+            }
+
+            throw new InvalidOperationException("Failed to start process 'gopass'.");
+        }
     }
 
     private sealed class NonInteractiveConsole : IInteractiveConsole

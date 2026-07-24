@@ -218,6 +218,28 @@ public sealed class AppPathsTests
     }
 
     [Fact]
+    public void ValidateUserArtifactPathCollisionsAcceptsNonCollidingManagedLayout()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "copilot-valid-layout");
+        UserInstallationPaths paths = new(
+            root,
+            Path.Combine(root, AppPaths.GetManagedExecutableName()),
+            Path.Combine(root, AppConstants.ManagedHookFileName),
+            Path.Combine(root, "copilot", "hooks", AppConstants.CopilotCliHookFileName),
+            [
+                new VsCodeSettingsTarget(
+                    Path.Combine(root, "settings.json"),
+                    IsApplicable: true,
+                    DisplayName: "VS Code settings"),
+            ],
+            AppPaths.GetUserLogPath(root));
+
+        string? validationError = AppPaths.ValidateUserArtifactPathCollisions(paths);
+
+        Assert.Null(validationError);
+    }
+
+    [Fact]
     public void ValidateUserArtifactPathCollisionsRejectsFilesInsideEventSpool()
     {
         string root = Path.Combine(Path.GetTempPath(), "copilot-spool-collision");
