@@ -8,6 +8,8 @@ internal sealed class TelegramCredentialProvider(
     IInteractiveConsole interactiveConsole,
     ILogger<TelegramCredentialProvider> logger)
 {
+    private const int MaxGopassErrorLength = 300;
+
     private static readonly ProcessLogOptions SensitiveProcessLogOptions = new(
         IncludeArgumentsInLogs: false,
         IncludeWorkingDirectoryInLogs: false,
@@ -300,12 +302,14 @@ internal sealed class TelegramCredentialProvider(
 
                 if (failOnReadError)
                 {
-                    throw new InvalidOperationException(
-                        $"Failed to read secret '{secretPath}': "
-                        + $"{result.StandardError.Trim()}");
+                    throw CreateReadSecretException(secretPath, result);
                 }
 
-                AppLog.MissingSecretValue(logger, secretPath);
+                AppLog.ReadSecretFailed(
+                    logger,
+                    CreateReadSecretException(secretPath, result),
+                    secretPath);
+                return null;
             }
 
             return result.Succeeded ? NullIfWhitespace(result.StandardOutput.Trim()) : null;
@@ -381,6 +385,23 @@ internal sealed class TelegramCredentialProvider(
                 "not in the password store",
                 StringComparison.OrdinalIgnoreCase)
             || standardError.Contains("does not exist", StringComparison.OrdinalIgnoreCase);
+
+    private static InvalidOperationException CreateReadSecretException(
+        string secretPath,
+        ProcessExecutionResult result)
+    {
+        string standardError = result.StandardError.Trim();
+        if (standardError.Length > MaxGopassErrorLength)
+        {
+            standardError = standardError[..MaxGopassErrorLength] + "...";
+        }
+
+        string detail = string.IsNullOrWhiteSpace(standardError)
+            ? $"exit code {result.ExitCode}"
+            : standardError;
+        return new InvalidOperationException(
+            $"Failed to read secret '{secretPath}': {detail}");
+    }
 
     private SecretInstallDecision DetermineInstallDecision(
         string displayName,

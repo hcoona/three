@@ -12,6 +12,7 @@ using Xunit;
 
 namespace Hcoona.VsCodeCopilotTelegramHook.Tests;
 
+[Collection(TelegramEnvironmentTestGroup.Name)]
 public sealed class HookCommandServiceTests
 {
     [Fact]
