@@ -40,10 +40,10 @@ internal static class NotificationComposer
         List<string> messages = new(messageCount);
         for (int index = 0; index < bodyChunks.Count; index++)
         {
-            string headingText = bodyChunks.Count == 1
-                ? context.Heading
-                : $"{context.Heading}（{index + 1}/{bodyChunks.Count}）";
-            string heading = $"<b>{WebUtility.HtmlEncode(headingText)}</b>";
+            string heading = bodyChunks.Count == 1
+                ? $"<b>{WebUtility.HtmlEncode(context.Heading)}</b>"
+                : $"<b>{WebUtility.HtmlEncode(context.Heading)}"
+                    + $"（{index + 1}/{bodyChunks.Count}）</b>";
 
             string bodyHtml = WebUtility.HtmlEncode(bodyChunks[index]);
             messages.Add($"{heading}\n{headerHtml}\n{bodyHtml}");
@@ -65,7 +65,6 @@ internal static class NotificationComposer
             new("会话 ID", context.SessionId, Optional: false),
             new(context.IdentifierLabel, context.TurnId, Optional: false),
             new(context.EventTimestampLabel, context.StopTimestamp, Optional: false),
-            new("事件类型", context.EventType, Optional: true),
             new("工作区", context.WorkspacePath, Optional: false),
             new("主机", context.HostName, Optional: false),
             new("环境", context.ExecutionEnvironment, Optional: false),

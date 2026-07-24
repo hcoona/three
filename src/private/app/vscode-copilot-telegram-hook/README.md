@@ -1,14 +1,13 @@
 # VS Code Copilot Telegram Hook
 
-This app is the source of truth for the repository's VS Code and GitHub Copilot
-CLI Telegram notifications.
+This app is the source of truth for the repository's VS Code GitHub Copilot
+Telegram notification hooks.
 
 It serves the managed/user-level installation flow:
 
 1. A managed VS Code hook JSON file registered through supported same-host VS
    Code settings targets.
-2. A GitHub Copilot CLI user extension that observes the foreground session.
-3. Migration cleanup for legacy managed Copilot CLI hook entries.
+2. A GitHub Copilot CLI user extension that observes the root session lifecycle.
 
 There is intentionally no repository-local `.github/hooks/telegram-notify.json`
 workspace hook entry.
@@ -21,13 +20,11 @@ The implementation follows the official VS Code Copilot hooks preview behavior:
   does not use a repo-local workspace hook for the Telegram notifier.
 - Workspace hooks take precedence over user hooks for the same event when they
   exist.
-- GitHub Copilot CLI loads user-level hook files from `*.json` files under
-  `$COPILOT_HOME/hooks/` when `COPILOT_HOME` is set, otherwise
-  `~/.copilot/hooks/` on Linux and macOS or `%USERPROFILE%\.copilot\hooks\` on
-  Windows.
-- GitHub Copilot CLI loads user-level extensions from
-  `$COPILOT_HOME/extensions/` when `COPILOT_HOME` is set, otherwise
-  `~/.copilot/extensions/` or `%USERPROFILE%\.copilot\extensions\`.
+- The Copilot CLI integration uses its extension API instead of `Stop` hooks,
+  because hook pauses do not distinguish intermediate idles from a root session
+  that has actually stopped.
+- Root lifecycle events are filtered by `agentId`, so subagent completion and
+  permission activity do not produce user notifications.
 
 ## Files
 
@@ -46,12 +43,6 @@ Only the C# implementation and its managed hook/runtime assets are shipped in
 this directory.
 
 ## User-level installation
-
-This integration requires GitHub Copilot CLI 1.0.41 or later. User extensions
-load by default in those releases; no experimental feature flag is required.
-Earlier releases exposed extensions only through experimental mode and are not
-reported healthy by this application. Run `copilot update` before installation
-when necessary.
 
 Publish a Native AOT binary for the target runtime from the repository root:
 
@@ -96,15 +87,14 @@ The installer command:
 - asks before overwriting existing stored secrets and defaults to keeping them,
 - installs the published Native AOT binary into a user-owned data directory,
 - writes a dedicated managed hook JSON file under the install root,
-- removes legacy managed GitHub Copilot CLI lifecycle and notification hooks
-  while preserving unrelated hook entries,
-- writes a GitHub Copilot CLI user-level `extension.mjs`,
+- installs a GitHub Copilot CLI user extension under the CLI extensions
+  directory,
+- removes this application's legacy Copilot CLI hook entries to prevent duplicate
+  notifications,
 - validates before writing side effects that the managed hook file path can be
   represented in VS Code as a supported `~/...` hook location,
 - registers that managed hook file in the supported same-host VS Code
-  `settings.json` targets through `chat.hookFilesLocations`,
-- snapshots an existing managed installation and restores its artifacts and
-  stored secrets if an upgrade fails.
+  `settings.json` targets through `chat.hookFilesLocations`.
 
 This design follows the manual verification recorded in
 [`docs/h-006-human-confirmation-2026-03-14-user-hook-location.md`](./docs/h-006-human-confirmation-2026-03-14-user-hook-location.md)
@@ -121,74 +111,43 @@ paths or `~/...` entries in
 `chat.hookFilesLocations`, the installer writes the managed hook registration in
 supported `~/...` form rather than as an absolute path.
 
-For GitHub Copilot CLI, the installer inspects
-`vscode-copilot-telegram-hook.json` under the configured CLI hooks directory and
-removes this application's legacy `SessionStart`, `UserPromptSubmit`, `Stop`,
-and `notification` entries. It does not create the file when no migration is
-needed and preserves unrelated user hooks.
+For GitHub Copilot CLI, the installer writes
+`extensions/vscode-copilot-telegram-hook/extension.mjs` under `$COPILOT_HOME`
+when set, otherwise under `~/.copilot` on Linux and macOS or
+`%USERPROFILE%\.copilot` on Windows. The extension joins the current session,
+ignores events with an `agentId`, and notifies only for:
 
-The installer also writes
-`extensions/vscode-copilot-telegram-hook/extension.mjs` below the same Copilot
-home. The extension attaches to the foreground session and listens for root
-`permission.requested`, `elicitation.requested`, `user_input.requested`, and
-`session.idle` events. It ignores attention and output events carrying
-`agentId`, suppresses completion while human input is pending, and never uses
-`agentStop`, `subagentStop`, or `assistant.idle` as completion signals.
-`assistant.idle` is used only to correlate an untagged queued message with its
-later turn start. This distinction prevents notifications for intermediate
-main-agent pauses and subagent activity. See
-[`docs/copilot-cli-lifecycle-notifications-research.md`](./docs/copilot-cli-lifecycle-notifications-research.md)
-for the lifecycle rationale.
+- a root `session.idle` that is not an intermediate autopilot or queued-turn
+  boundary;
+- an unresolved root permission, elicitation, user-input, plan-approval,
+  model-switch, session-limit, or MCP authorization request.
 
-Attention jobs retain their request identity while queued. If the corresponding
-permission, elicitation, or user-input request completes before delivery, the
-extension drops the queued job and suppresses any later retry.
+The extension reuses the final root `session.task_complete` summary or
+`assistant.message`; it does not make an additional model request. It writes the
+event synchronously to `<install-root>/copilot-cli-events/` and starts the
+installed native binary as a detached delivery worker. Completion delivery has a
+short cancellation window for autopilot continuation, and quickly resolved
+attention requests are cancelled before delivery.
 
-The completion summary reuses the latest root `session.task_complete` summary or
-complete `assistant.message`, so no extra model request is made. If root work
-occurred but neither text source was captured, the notifier still sends a
-completion message with a fallback body. After installation, run `/clear` or
-restart Copilot CLI so the new extension is loaded.
+Permission-request observation asks once for elevated extension access. If that
+access is denied, the extension falls back to normal session access: completion
+and other observable lifecycle notifications continue, but permission-request
+notifications remain unavailable.
 
-The extension serializes notifier processes and retries transient failures with
-bounded backoff. The native notifier cancels an attempt after 25 seconds and
-releases its owned claim; the extension begins child-process termination after
-30 seconds as a hard fallback and waits for process exit before retrying. Claims
-also record the owner process so a retry can reclaim one left by a terminated
-notifier. The native notifier uses the same event ID on every attempt, so its
-claim and sent-marker protocol prevents a successful retry from becoming a
-duplicate Telegram notification. Claim creation, ownership-checked release, and
-stale reclamation share a short-lived cross-process coordination lock so a
-reclaimer cannot delete a newly replaced live claim.
-If cancellation occurs after at least one Telegram chunk succeeds, the native
-notifier writes the durable marker before propagating the failure, preventing a
-retry from duplicating already delivered chunks.
-
-Install, upgrade, and uninstall operations preserve snapshots of managed
-artifacts, VS Code settings, Unix file/directory modes, and stored secrets. If a
-later step fails, the operation restores the previous working state rather than
-leaving a partial installation. Artifact rollback restores only paths that still
-match the state written by the transaction, preserves concurrent user changes,
-and continues restoring later artifacts if one path is blocked. Secret reads
-and removals distinguish gopass `show` exit code 11 and `rm` exit code 10 as
-their respective "not found" results; other failures abort the operation and
-trigger rollback. Settings are included in every install rollback path, and
-secrets are restored only while their current values still
-match the values written by the transaction, preserving concurrent updates. A
-per-user cross-process lock serializes install, upgrade, uninstall, and secret
-commands from planning through success or rollback. Direct external edits to
-gopass or managed files cannot participate in that lock and remain protected by
-the transaction's optimistic state checks.
+Delivery is best-effort at-least-once. A failed event remains in the spool and is
+retried when a later Copilot CLI session loads the extension. A process crash
+after Telegram accepts a message but before local cleanup can produce a
+duplicate; the implementation intentionally does not add a distributed
+idempotency protocol.
 
 If you need to override the default VS Code settings targets, repeat
 `--vscode-settings-path` once per target file you want the installer to manage.
 If you need to override the default Copilot CLI hook file location, pass
 `--copilot-cli-hook-file-path` to `user install`, `user uninstall`,
-`user health`, or `user diagnose`.
-An override whose parent directory is literally `hooks` also derives the sibling
-Copilot home `extensions/` path. Arbitrary hook-file overrides do not relocate
-the extension; use `--copilot-cli-extension-file-path` when that path must also
-change.
+`user health`, or `user diagnose`. A path whose parent directory is named
+`hooks` also selects that directory's parent as the Copilot home used for the
+extension path. Other arbitrary paths affect only legacy-hook migration; the
+extension remains under the default Copilot home.
 
 If you need to inspect or update stored Telegram secrets after installation,
 use the dedicated secret-management command:
@@ -205,21 +164,16 @@ The CLI also provides:
 
 - `user uninstall`: remove the managed installation.
 - `user health`: validate the installed binary, VS Code managed hook file,
-  absence of legacy managed Copilot CLI hook entries, extension, VS Code
-  settings registration, Copilot CLI user-extension runtime version, and
-  credential resolution.
+  Copilot CLI extension, absence of legacy managed CLI hooks, VS Code settings
+  registration, and credential resolution.
 - `user diagnose`: print the resolved installation paths, VS Code settings
-  targets, Copilot CLI hook and extension paths, credential availability, and
-  log locations.
+  targets, Copilot CLI hook migration path, extension path, credential
+  availability, and log locations.
 - `user secret`: read or update the stored Telegram secrets.
 - `user test-notification`: send a test Telegram message without waiting for a
   Copilot stop event.
 - `hook session-start`, `hook user-prompt-submit`, and `hook stop`: internal
   lifecycle entry points used by VS Code Copilot hooks.
-- `hook notification`: legacy-compatible Copilot CLI notification-hook entry
-  point; new installations do not register it.
-- `copilot-cli session-event`: internal GitHub Copilot CLI extension entry
-  point.
 
 ## Logging and troubleshooting
 
@@ -248,6 +202,15 @@ session log path pattern, workspace fallback hook log path, managed hook file
 path, and every targeted VS Code settings path for the directory where you run
 the command.
 
+Copilot CLI event files are stored under
+`<install-root>/copilot-cli-events/`. Ready files end in `.json`, a worker-owned
+claim ends in `.json.working`, and a cancelled delivery has a
+`.json.cancelled` marker. Successful, cancelled, partially delivered, and
+invalid events are removed. A delivery failure restores the ready `.json` file
+for startup recovery. Startup recovery and uninstall cleanup only touch
+protocol-owned hash-named event files and extension temporary files; they do not
+recursively delete the spool.
+
 During runtime, the hook maintains session-scoped notification protocol state
 under `.copilot/notifications/sessions/<safe-session-id>/`, including:
 
@@ -266,20 +229,13 @@ under `.copilot/notifications/sessions/<safe-session-id>/`, including:
   degraded fallbacks and cross-path duplicate suppression.
 - `claims/<notification-key>.claim`: atomic Stop delivery claim keyed by the raw
   Stop timestamp hash.
-- `copilot-cli-events/<event-key>.claim`: in-flight ownership for a Copilot CLI
-  attention or true-idle notification.
-- `copilot-cli-events/<event-key>.reclaim.claim`: serialization for reclaiming a
-  stale in-flight claim.
-- `copilot-cli-events/<event-key>.sent`: durable duplicate suppression written
-  only after Telegram delivery succeeds.
 - `hook.log`: always-on diagnostic log for the current Copilot session.
 
 These `.copilot/notifications/sessions/` files are runtime state and should
 remain ignored in git.
 
 The gopass prefix is fixed at `copilot/vscode-copilot-telegram-hook` so the
-managed VS Code hook and Copilot CLI notification paths resolve the same
-secrets.
+managed VS Code hooks and Copilot CLI extension resolve the same secrets.
 As of the current official VS Code docs, the documented default user-level hook
 file location is still `~/.claude/settings.json`, even when the feature is used
 from VS Code GitHub Copilot. However, manual verification recorded in
@@ -310,12 +266,6 @@ handoffs, including missing or unreadable `summary.json`, invalid JSON, JSON
 without fallback indefinitely while unresolved. Non-pending invalid, stale, or
 ambiguous handoffs produce a degraded fallback notification with durable
 duplicate suppression when no pending handoff can satisfy that Stop.
-
-GitHub Copilot CLI does not use that per-turn handoff. Its extension captures
-the final root response or task-completion summary already emitted by the
-session, and sends it only at root `session.idle`. When root work was observed
-without either summary source, it sends the same completion event with a
-fallback body instead of silently dropping the notification.
 
 ## Build and validation
 
@@ -374,14 +324,12 @@ Use these documents as the authoritative sources:
   current non-functional requirements and external constraints research.
 - [`docs/vscode-hook-inputs-research.md`](./docs/vscode-hook-inputs-research.md):
   project-focused analysis of the VS Code hook input contract.
-- [`docs/copilot-cli-lifecycle-notifications-research.md`](./docs/copilot-cli-lifecycle-notifications-research.md):
-  CLI-specific lifecycle research and the true-idle notification design.
 - [`docs/implementation-language-evaluation.md`](./docs/implementation-language-evaluation.md):
   implementation-language comparison for PowerShell, Python, and C# based on
   the documented product scope and official platform behavior.
 
-In short, VS Code continues to notify at its completed-turn `Stop` boundary.
-GitHub Copilot CLI notifies only for human-attention requests and root
-`session.idle`, with subagent activity and intermediate main-agent pauses
-excluded. Both surfaces reuse the same Telegram delivery and credential
-infrastructure.
+In short, the current product target is a user-level VS Code GitHub Copilot
+hook that attempts Telegram delivery for each completed-turn `Stop` event and
+includes a concise task summary when available, preferring Chinese on a
+best-effort basis, continuing across multiple Telegram messages when needed to
+stay within Telegram limits.

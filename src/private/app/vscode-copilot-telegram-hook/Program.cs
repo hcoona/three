@@ -30,7 +30,6 @@ internal static class Program
         builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
         builder.Services.AddSingleton<IInteractiveConsole, SystemInteractiveConsole>();
         builder.Services.AddSingleton<TelegramCredentialProvider>();
-        builder.Services.AddSingleton<CopilotCliRuntimeProbe>();
         builder.Services.AddSingleton<GitRepositoryProbe>();
         builder.Services.AddSingleton<WorkspaceStateStore>();
         builder.Services.AddTransient<HookCommandService>();

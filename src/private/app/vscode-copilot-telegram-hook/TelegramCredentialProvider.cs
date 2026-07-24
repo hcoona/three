@@ -8,8 +8,6 @@ internal sealed class TelegramCredentialProvider(
     IInteractiveConsole interactiveConsole,
     ILogger<TelegramCredentialProvider> logger)
 {
-    private const int GopassRemoveNotFoundExitCode = 10;
-    private const int GopassShowNotFoundExitCode = 11;
     private static readonly ProcessLogOptions SensitiveProcessLogOptions = new(
         IncludeArgumentsInLogs: false,
         IncludeWorkingDirectoryInLogs: false,
@@ -84,12 +82,12 @@ internal sealed class TelegramCredentialProvider(
         string? botTokenOption,
         string? chatIdOption,
         bool skipPrompt,
-        StoredTelegramSecretsTransaction transaction,
         CancellationToken cancellationToken)
     {
         await EnsureSecretStoreAvailableAsync(cancellationToken);
 
-        StoredTelegramSecrets existingSecrets = transaction.Original;
+        StoredTelegramSecrets existingSecrets = await ReadStoredSecretsCoreAsync(
+            cancellationToken);
         bool canPrompt = !skipPrompt && interactiveConsole.CanPrompt;
 
         SecretInstallDecision botTokenDecision = DetermineInstallDecision(
@@ -127,22 +125,18 @@ internal sealed class TelegramCredentialProvider(
 
         if (botTokenDecision.ShouldStore)
         {
-            await StoreTrackedSecretAsync(
+            await StoreSecretAsync(
                 AppPaths.GetTelegramBotTokenSecretPath(),
-                transaction.ExpectedBotToken,
                 botTokenDecision.Value,
-                transaction.RecordBotToken,
                 cancellationToken);
             storedAny = true;
         }
 
         if (chatIdDecision.ShouldStore)
         {
-            await StoreTrackedSecretAsync(
+            await StoreSecretAsync(
                 AppPaths.GetTelegramChatIdSecretPath(),
-                transaction.ExpectedChatId,
                 chatIdDecision.Value,
-                transaction.RecordChatId,
                 cancellationToken);
             storedAny = true;
         }
@@ -157,40 +151,6 @@ internal sealed class TelegramCredentialProvider(
         }
 
         return [botTokenDecision.Message, chatIdDecision.Message];
-    }
-
-    public async Task RestoreStoredSecretsAsync(
-        StoredTelegramSecretsTransaction transaction,
-        CancellationToken cancellationToken)
-    {
-        await EnsureSecretStoreAvailableAsync(cancellationToken);
-        List<Exception> failures = [];
-        if (transaction.BotTokenMutated)
-        {
-            await TryRestoreSecretIfUnchangedAsync(
-                AppPaths.GetTelegramBotTokenSecretPath(),
-                transaction.Original.BotToken,
-                transaction.ExpectedBotToken,
-                failures,
-                cancellationToken);
-        }
-
-        if (transaction.ChatIdMutated)
-        {
-            await TryRestoreSecretIfUnchangedAsync(
-                AppPaths.GetTelegramChatIdSecretPath(),
-                transaction.Original.ChatId,
-                transaction.ExpectedChatId,
-                failures,
-                cancellationToken);
-        }
-
-        if (failures.Count > 0)
-        {
-            throw new InvalidOperationException(
-                "One or more Telegram secrets could not be restored.",
-                new AggregateException(failures));
-        }
     }
 
     public async Task<IReadOnlyList<string>> SetStoredSecretsAsync(
@@ -269,22 +229,26 @@ internal sealed class TelegramCredentialProvider(
         }
     }
 
-    public async Task RemoveStoredSecretsAsync(
-        StoredTelegramSecretsTransaction transaction,
-        CancellationToken cancellationToken)
+    public async Task<bool> RemoveStoredSecretsAsync(CancellationToken cancellationToken)
     {
-        await EnsureSecretStoreAvailableAsync(cancellationToken);
-        await RemoveTrackedSecretAsync(
+        if (!await IsSecretStoreAvailableAsync(cancellationToken))
+        {
+            AppLog.SkippingSecretRemoval(logger);
+            return false;
+        }
+
+        bool botTokenRemoved = await TryRemoveSecretAsync(
             AppPaths.GetTelegramBotTokenSecretPath(),
-            transaction.ExpectedBotToken,
-            transaction.RecordBotToken,
             cancellationToken);
-        await RemoveTrackedSecretAsync(
+        bool chatIdRemoved = await TryRemoveSecretAsync(
             AppPaths.GetTelegramChatIdSecretPath(),
-            transaction.ExpectedChatId,
-            transaction.RecordChatId,
             cancellationToken);
-        AppLog.RemovedTelegramCredentials(logger);
+        if (botTokenRemoved && chatIdRemoved)
+        {
+            AppLog.RemovedTelegramCredentials(logger);
+        }
+
+        return botTokenRemoved && chatIdRemoved;
     }
 
     private async Task EnsureSecretStoreAvailableAsync(CancellationToken cancellationToken)
@@ -296,122 +260,25 @@ internal sealed class TelegramCredentialProvider(
         }
     }
 
-    private async Task RestoreSecretAsync(
-        string secretPath,
-        string? value,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            await RemoveSecretIfPresentAsync(secretPath, cancellationToken);
-            return;
-        }
-
-        await StoreSecretAsync(secretPath, value, cancellationToken);
-    }
-
-    private async Task TryRestoreSecretIfUnchangedAsync(
-        string secretPath,
-        string? originalValue,
-        string? expectedValue,
-        List<Exception> failures,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            await EnsureSecretMatchesAsync(secretPath, expectedValue, cancellationToken);
-            await RestoreSecretAsync(secretPath, originalValue, cancellationToken);
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or IOException)
-        {
-            failures.Add(ex);
-        }
-    }
-
-    private async Task RemoveTrackedSecretAsync(
-        string secretPath,
-        string? expectedValue,
-        Action<string?> recordMutation,
-        CancellationToken cancellationToken)
-    {
-        await EnsureSecretMatchesAsync(secretPath, expectedValue, cancellationToken);
-        if (expectedValue is null)
-        {
-            return;
-        }
-
-        try
-        {
-            bool removed = await RemoveSecretIfPresentAsync(secretPath, cancellationToken);
-            if (removed)
-            {
-                recordMutation(null);
-            }
-        }
-        catch
-        {
-            await RecordSecretMutationIfChangedAsync(
-                secretPath,
-                expectedValue,
-                recordMutation,
-                CancellationToken.None);
-            throw;
-        }
-    }
-
-    private async Task StoreTrackedSecretAsync(
-        string secretPath,
-        string? expectedValue,
-        string value,
-        Action<string?> recordMutation,
-        CancellationToken cancellationToken)
-    {
-        await EnsureSecretMatchesAsync(secretPath, expectedValue, cancellationToken);
-        try
-        {
-            await StoreSecretAsync(secretPath, value, cancellationToken);
-            recordMutation(value);
-        }
-        catch
-        {
-            await RecordSecretMutationIfChangedAsync(
-                secretPath,
-                expectedValue,
-                recordMutation,
-                CancellationToken.None);
-            throw;
-        }
-    }
-
-    private async Task RecordSecretMutationIfChangedAsync(
-        string secretPath,
-        string? previousValue,
-        Action<string?> recordMutation,
-        CancellationToken cancellationToken)
-    {
-        string? currentValue = await TryReadSecretAsync(secretPath, cancellationToken);
-        if (!string.Equals(currentValue, previousValue, StringComparison.Ordinal))
-        {
-            recordMutation(currentValue);
-        }
-    }
-
     private async Task<StoredTelegramSecrets> ReadStoredSecretsCoreAsync(
         CancellationToken cancellationToken)
     {
         string? botToken = await TryReadSecretAsync(
             AppPaths.GetTelegramBotTokenSecretPath(),
-            cancellationToken);
+            cancellationToken,
+            failOnReadError: true);
         string? chatId = await TryReadSecretAsync(
             AppPaths.GetTelegramChatIdSecretPath(),
-            cancellationToken);
+            cancellationToken,
+            failOnReadError: true);
 
         return new StoredTelegramSecrets(botToken, chatId);
     }
 
     private async Task<string?> TryReadSecretAsync(
         string secretPath,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool failOnReadError = false)
     {
         try
         {
@@ -423,38 +290,35 @@ internal sealed class TelegramCredentialProvider(
                 SensitiveProcessLogOptions,
                 cancellationToken);
 
-            if (result.Succeeded)
+            if (!result.Succeeded)
             {
-                return NullIfWhitespace(result.StandardOutput.Trim());
-            }
+                if (IsMissingSecretError(result.StandardError))
+                {
+                    AppLog.MissingSecretValue(logger, secretPath);
+                    return null;
+                }
 
-            if (result.ExitCode == GopassShowNotFoundExitCode)
-            {
+                if (failOnReadError)
+                {
+                    throw new InvalidOperationException(
+                        $"Failed to read secret '{secretPath}': "
+                        + $"{result.StandardError.Trim()}");
+                }
+
                 AppLog.MissingSecretValue(logger, secretPath);
-                return null;
             }
 
-            throw new InvalidOperationException(
-                $"Failed to read secret '{secretPath}' from gopass "
-                + $"(exit code {result.ExitCode}).");
+            return result.Succeeded ? NullIfWhitespace(result.StandardOutput.Trim()) : null;
         }
         catch (InvalidOperationException ex)
         {
-            AppLog.ReadSecretFailed(logger, ex, secretPath);
-            throw;
-        }
-    }
+            if (failOnReadError)
+            {
+                throw;
+            }
 
-    private async Task EnsureSecretMatchesAsync(
-        string secretPath,
-        string? expectedValue,
-        CancellationToken cancellationToken)
-    {
-        string? currentValue = await TryReadSecretAsync(secretPath, cancellationToken);
-        if (!string.Equals(currentValue, expectedValue, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                $"Stored secret '{secretPath}' changed during the managed operation.");
+            AppLog.ReadSecretFailed(logger, ex, secretPath);
+            return null;
         }
     }
 
@@ -479,7 +343,7 @@ internal sealed class TelegramCredentialProvider(
         }
     }
 
-    private async Task<bool> RemoveSecretIfPresentAsync(
+    private async Task<bool> TryRemoveSecretAsync(
         string secretPath,
         CancellationToken cancellationToken)
     {
@@ -493,21 +357,30 @@ internal sealed class TelegramCredentialProvider(
                 SensitiveProcessLogOptions,
                 cancellationToken);
             AppLog.SecretRemovalCompleted(logger, secretPath, result.ExitCode);
-            if (!result.Succeeded && result.ExitCode != GopassRemoveNotFoundExitCode)
+            if (result.Succeeded || IsMissingSecretError(result.StandardError))
             {
-                throw new InvalidOperationException(
-                    $"Failed to remove secret '{secretPath}' from gopass "
-                    + $"(exit code {result.ExitCode}).");
+                return true;
             }
 
-            return result.Succeeded;
+            AppLog.RemoveSecretFailed(
+                logger,
+                new InvalidOperationException(result.StandardError.Trim()),
+                secretPath);
+            return false;
         }
         catch (InvalidOperationException ex)
         {
             AppLog.RemoveSecretFailed(logger, ex, secretPath);
-            throw;
+            return false;
         }
     }
+
+    private static bool IsMissingSecretError(string standardError)
+        => standardError.Contains("not found", StringComparison.OrdinalIgnoreCase)
+            || standardError.Contains(
+                "not in the password store",
+                StringComparison.OrdinalIgnoreCase)
+            || standardError.Contains("does not exist", StringComparison.OrdinalIgnoreCase);
 
     private SecretInstallDecision DetermineInstallDecision(
         string displayName,

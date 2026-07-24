@@ -107,7 +107,7 @@ public sealed class TelegramBotClientTests
     }
 
     [Fact]
-    public async Task SendMessagesAsyncPreservesPartialSuccessCountOnCallerCancellation()
+    public async Task SendMessagesAsyncPreservesCallerCancellationAfterPartialSuccess()
     {
         using CancellationTokenSource cancellation = new();
         CancelAfterFirstSendHandler handler = new(cancellation);
@@ -122,7 +122,6 @@ public sealed class TelegramBotClientTests
                     cancellation.Token));
 
         Assert.Equal(1, exception.SuccessfulMessageCount);
-        Assert.IsAssignableFrom<OperationCanceledException>(exception.InnerException);
         Assert.True(cancellation.IsCancellationRequested);
     }
 

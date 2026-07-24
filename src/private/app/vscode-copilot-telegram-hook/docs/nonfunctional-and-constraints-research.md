@@ -12,7 +12,6 @@
     - [`h-006-human-confirmation-2026-03-14-user-hook-location.md`](./h-006-human-confirmation-2026-03-14-user-hook-location.md)
     - [`h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md`](./h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md)
     - [`h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md`](./h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md)
-    - [`h-009-human-requirement-2026-07-22-copilot-cli-idle-notifications.md`](./h-009-human-requirement-2026-07-22-copilot-cli-idle-notifications.md)
 - Purpose: ground non-functional conclusions and external constraints in the
   user-provided references from H-001 while recording later confirmed product
   decisions from H-002, H-003, H-004, H-006, and H-007.
@@ -39,14 +38,10 @@ they are explicitly standardized elsewhere.
 - [`h-006-human-confirmation-2026-03-14-user-hook-location.md`](./h-006-human-confirmation-2026-03-14-user-hook-location.md)
 - [`h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md`](./h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md)
 - [`h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md`](./h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md)
-- [`h-009-human-requirement-2026-07-22-copilot-cli-idle-notifications.md`](./h-009-human-requirement-2026-07-22-copilot-cli-idle-notifications.md)
 
 ### External platform and API sources inherited from H-001
 
 - [VS Code — Agent hooks in Visual Studio Code (Preview)](https://code.visualstudio.com/docs/copilot/customization/hooks)
-- [GitHub Copilot hooks reference](https://docs.github.com/en/copilot/reference/hooks-reference)
-- [Copilot SDK streaming session events](https://docs.github.com/en/copilot/how-tos/copilot-sdk/features/streaming-events)
-- [Copilot CLI extensions](https://github.com/github/copilot-sdk/blob/main/nodejs/docs/extensions.md)
 - [Telegram Bot API](https://core.telegram.org/bots/api)
 
 These are the user-provided references preserved in
@@ -84,8 +79,7 @@ These decisions were explicitly confirmed after the initial research pass and sh
 - Formal product support is limited to user-level installation.
 - Repository-local workspace hook configuration is superseded and intentionally
   absent; supported hook entry points are the managed VS Code hook file and the
-  Copilot CLI extension, with the CLI hook path retained only for legacy managed
-  entry migration.
+  Copilot CLI hook file.
 - Official support matrix: Windows and WSL Linux.
 - The earlier concern that hook locality had to be settled before design is not
   treated as an open product-level requirement gap; broader upstream execution
@@ -94,9 +88,9 @@ These decisions were explicitly confirmed after the initial research pass and sh
 - Git worktrees are in scope, but user-level installation is not expected to diverge specifically for worktrees.
 - No explicit VS Code or Copilot version baseline is currently part of the product contract.
 
-### VS Code delivery semantics and summary contract
+### Delivery semantics and summary contract
 
-- For VS Code, every `Stop` event is a delivery opportunity and should trigger a notification attempt.
+- Every `Stop` event is a delivery opportunity and should trigger a notification attempt.
 - Notification delivery is required regardless of whether the completed turn was successful, informational, unsuccessful, interrupted, or otherwise unusual.
 - The summary is treated as user-facing message content, not as a stable external summary schema.
 - If the summary is unavailable, the notification should explicitly say that the summary is missing.
@@ -113,22 +107,6 @@ These decisions were explicitly confirmed after the initial research pass and sh
   heading and identifying context should be preserved and the summary may
   continue across additional Telegram messages.
 - Summary-generation guidance should account for Telegram message-size limits.
-
-### GitHub Copilot CLI lifecycle semantics
-
-- Human-attention notifications should be limited to permission prompts,
-  elicitation dialogs, and direct user-input requests.
-- Background shell and subagent completion or idle notifications are progress
-  signals and should not be forwarded.
-- `agentStop`, `subagentStop`, and `assistant.idle` are not completion signals
-  for this requirement.
-- Root/session-level `session.idle` is the completion boundary because the
-  generated SDK contract states that no background agents or attached shell
-  commands remain in flight.
-- Events with `agentId` are subagent-originated and should be excluded from
-  root-response and completion handling.
-- Completion context should reuse an existing root task summary or final
-  assistant message rather than requiring a new model call.
 
 ### Privacy, security, and operations
 
@@ -162,7 +140,7 @@ These decisions were explicitly confirmed after the initial research pass and sh
 - For this personal-use tool, no additional privacy-policy scope is currently
   introduced beyond the accepted credential-handling prerequisite.
 - Workspace overrides or disabled hook loading are accepted platform limitations.
-- User-level lifecycle support is required for interactive install, unattended install, repeated install, upgrade, uninstall, health diagnostics, test notifications, and configuration diagnostics across the managed hook and extension artifacts.
+- User-level lifecycle support is required for interactive install, unattended install, repeated install, upgrade, uninstall, health diagnostics, test notifications, and configuration diagnostics.
 - The default summary path should avoid a separately installed
   custom-instruction artifact and should use hook-emitted notification
   assignments. Pending assigned summaries may defer without degraded fallback;
@@ -194,11 +172,6 @@ imposed by the current platform, external APIs, or ecosystem behavior.
 | IC-007 | In the current observed VS Code environment for this project, `~/.claude/settings.json` becomes an effective user-level hook source only when `"chat.useClaudeHooks": true` is enabled; `chat.hookFilesLocations` leaving that path enabled or explicitly setting it to `true` is not sufficient by itself. | This is a measured platform condition that limits which user-level hook locations can be treated as reliable installation targets without extra compatibility settings.                                  | [`h-006-human-confirmation-2026-03-14-user-hook-location.md`](./h-006-human-confirmation-2026-03-14-user-hook-location.md). |
 | IC-008 | `chat.hookFilesLocations` only supports relative paths or paths that start with `~/`; absolute paths and `\` separators are not supported.                                                                                                                                                                  | Managed installation cannot rely on raw absolute filesystem paths when it registers a dedicated hook JSON file in VS Code settings.                                                                      | [VS Code hooks documentation](https://code.visualstudio.com/docs/copilot/customization/hooks).                              |
 | IC-009 | The `Stop` hook can return `hookSpecificOutput` with `decision: "block"` and `reason` to prevent stopping, and the input field `stop_hook_active` indicates when the agent is already continuing because of a previous stop hook.                                                                           | This is a platform capability only. The current default notification flow must not use it for missing or invalid summaries; any blocking recovery belongs to future strict/debug scope.                  | [VS Code hooks documentation](https://code.visualstudio.com/docs/copilot/customization/hooks).                              |
-| IC-010 | Copilot CLI `agentStop` fires when the main agent finishes a turn, while `subagentStop` is a separate subagent boundary. | A main-agent turn boundary does not prove that background work is globally quiescent. | [GitHub Copilot hooks reference](https://docs.github.com/en/copilot/reference/hooks-reference). |
-| IC-011 | The asynchronous `notification` hook supports a matcher on `notification_type`, including `permission_prompt` and `elicitation_dialog`, but its payload does not provide the SDK envelope `agentId`. | A matcher can exclude background progress types but cannot reliably exclude subagent-originated permission or elicitation prompts, so the managed CLI path uses extension events instead. | [GitHub Copilot hooks reference](https://docs.github.com/en/copilot/reference/hooks-reference). |
-| IC-012 | SDK events use envelope-level `agentId` for subagent-originated events and omit it for root/main-agent and session-level events. | Root-only notification content can be selected without reconstructing the agent hierarchy. | [Copilot SDK streaming session events](https://docs.github.com/en/copilot/how-tos/copilot-sdk/features/streaming-events). |
-| IC-013 | The generated SDK contract distinguishes `assistant.idle`, which may occur while related background work remains, from `session.idle`, which has no background agents or attached shell commands in flight. | Only `session.idle` satisfies the requested global-quiescence boundary. | [Generated Node.js session event types](https://github.com/github/copilot-sdk/blob/main/nodejs/src/generated/session-events.ts). |
-| IC-014 | Copilot CLI extensions attach to the current foreground session with `joinSession()` and reload on `/clear`, foreground-session replacement, or CLI restart. | A newly installed extension is not active in an already-running session until an extension reload boundary occurs. | [Copilot CLI extensions](https://github.com/github/copilot-sdk/blob/main/nodejs/docs/extensions.md). |
 
 ### Telegram Bot API constraints
 

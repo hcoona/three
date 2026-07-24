@@ -81,14 +81,6 @@ public sealed class AppPathsTests
         Assert.Equal(
             Path.GetFullPath(copilotCliHookFilePath),
             resolvedPaths.CopilotCliHookFilePath);
-        Assert.Equal(
-            Path.Combine(
-                Path.GetTempPath(),
-                "copilot",
-                "extensions",
-                AppConstants.CopilotCliExtensionDirectoryName,
-                AppConstants.CopilotCliExtensionFileName),
-            resolvedPaths.CopilotCliExtensionFilePath);
         Assert.Collection(
             resolvedPaths.VsCodeSettingsTargets,
             target =>
@@ -101,25 +93,6 @@ public sealed class AppPathsTests
                 Assert.Equal(Path.GetFullPath(serverVsCodeSettingsPath), target.SettingsPath);
                 Assert.True(target.IsApplicable);
             });
-    }
-
-    [Fact]
-    public void ResolveUserPathsDoesNotRelocateExtensionForArbitraryHookOverride()
-    {
-        string arbitraryHookPath = Path.Combine(
-            Path.GetTempPath(),
-            "custom-hooks",
-            AppConstants.CopilotCliHookFileName);
-
-        UserInstallationPaths resolvedPaths = AppPaths.ResolveUserPaths(
-            new UserPathOverrides
-            {
-                CopilotCliHookFilePath = new FileInfo(arbitraryHookPath),
-            });
-
-        Assert.Equal(
-            Path.GetFullPath(AppPaths.GetDefaultCopilotCliExtensionFilePath()),
-            resolvedPaths.CopilotCliExtensionFilePath);
     }
 
     [Fact]
@@ -151,6 +124,147 @@ public sealed class AppPathsTests
     }
 
     [Fact]
+    public void GetCopilotCliExtensionFilePathUsesSiblingExtensionsDirectoryForHooksPath()
+    {
+        string copilotHome = Path.Combine(Path.GetTempPath(), "copilot-home");
+        string hookFilePath = Path.Combine(
+            copilotHome,
+            "hooks",
+            AppConstants.CopilotCliHookFileName);
+
+        string extensionFilePath = AppPaths.GetCopilotCliExtensionFilePath(hookFilePath);
+
+        Assert.Equal(
+            Path.Combine(
+                Path.GetFullPath(copilotHome),
+                "extensions",
+                AppConstants.CopilotCliExtensionDirectoryName,
+                AppConstants.CopilotCliExtensionFileName),
+            extensionFilePath);
+    }
+
+    [Fact]
+    public void GetCopilotCliExtensionFilePathDoesNotTreatArbitraryParentAsCopilotHome()
+    {
+        string hookFilePath = Path.Combine(Path.GetTempPath(), "custom-hook.json");
+
+        string extensionFilePath = AppPaths.GetCopilotCliExtensionFilePath(hookFilePath);
+
+        Assert.Equal(
+            AppPaths.GetDefaultCopilotCliExtensionFilePath(),
+            extensionFilePath);
+    }
+
+    [Fact]
+    public void GetCopilotCliExtensionFilePathDoesNotUseFileSystemRootAsCopilotHome()
+    {
+        string fileSystemRoot = Path.GetPathRoot(Path.GetTempPath())
+            ?? throw new InvalidOperationException("The temporary path has no filesystem root.");
+        string hookFilePath = Path.Combine(
+            fileSystemRoot,
+            "hooks",
+            AppConstants.CopilotCliHookFileName);
+
+        string extensionFilePath = AppPaths.GetCopilotCliExtensionFilePath(hookFilePath);
+
+        Assert.Equal(
+            AppPaths.GetDefaultCopilotCliExtensionFilePath(),
+            extensionFilePath);
+    }
+
+    [Fact]
+    public void GetCopilotCliExtensionFilePathUsesPlatformCaseSensitivity()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        string hookFilePath = Path.Combine(
+            Path.GetTempPath(),
+            "copilot-home",
+            "Hooks",
+            AppConstants.CopilotCliHookFileName);
+
+        string extensionFilePath = AppPaths.GetCopilotCliExtensionFilePath(hookFilePath);
+
+        Assert.Equal(
+            AppPaths.GetDefaultCopilotCliExtensionFilePath(),
+            extensionFilePath);
+    }
+
+    [Fact]
+    public void ValidateUserArtifactPathCollisionsIncludesDerivedExtensionPath()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "copilot-path-collision");
+        string copilotCliHookFilePath = Path.Combine(
+            root,
+            "copilot",
+            "hooks",
+            AppConstants.CopilotCliHookFileName);
+        string extensionFilePath = AppPaths.GetCopilotCliExtensionFilePath(
+            copilotCliHookFilePath);
+        UserInstallationPaths paths = new(
+            root,
+            Path.Combine(root, AppPaths.GetManagedExecutableName()),
+            extensionFilePath,
+            copilotCliHookFilePath,
+            [],
+            AppPaths.GetUserLogPath(root));
+
+        string? validationError = AppPaths.ValidateUserArtifactPathCollisions(paths);
+
+        Assert.NotNull(validationError);
+    }
+
+    [Fact]
+    public void ValidateUserArtifactPathCollisionsRejectsFilesInsideEventSpool()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "copilot-spool-collision");
+        string installedBinaryPath = Path.Combine(root, AppPaths.GetManagedExecutableName());
+        string eventSpoolDirectory = AppPaths.GetCopilotCliEventSpoolDirectory(
+            installedBinaryPath);
+        UserInstallationPaths paths = new(
+            root,
+            installedBinaryPath,
+            Path.Combine(root, AppConstants.ManagedHookFileName),
+            Path.Combine(root, "copilot", "hooks", AppConstants.CopilotCliHookFileName),
+            [
+                new VsCodeSettingsTarget(
+                    Path.Combine(eventSpoolDirectory, "settings.json"),
+                    IsApplicable: true,
+                    DisplayName: "VS Code settings"),
+            ],
+            AppPaths.GetUserLogPath(root));
+
+        string? validationError = AppPaths.ValidateUserArtifactPathCollisions(paths);
+
+        Assert.NotNull(validationError);
+    }
+
+    [Fact]
+    public void ValidateUserArtifactPathCollisionsRejectsSourceInsideEventSpool()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "copilot-source-spool-collision");
+        string installedBinaryPath = Path.Combine(root, AppPaths.GetManagedExecutableName());
+        string eventSpoolDirectory = AppPaths.GetCopilotCliEventSpoolDirectory(
+            installedBinaryPath);
+        UserInstallationPaths paths = new(
+            root,
+            installedBinaryPath,
+            Path.Combine(root, AppConstants.ManagedHookFileName),
+            Path.Combine(root, "copilot", "hooks", AppConstants.CopilotCliHookFileName),
+            [],
+            AppPaths.GetUserLogPath(root));
+
+        string? validationError = AppPaths.ValidateUserArtifactPathCollisions(
+            paths,
+            Path.Combine(eventSpoolDirectory, "candidate-binary"));
+
+        Assert.NotNull(validationError);
+    }
+
+    [Fact]
     public void ValidateUserArtifactPathCollisionsRejectsSymlinkAliases()
     {
         if (!OperatingSystem.IsLinux())
@@ -175,9 +289,6 @@ public sealed class AppPathsTests
                 installedBinaryPath,
                 managedHookFileAliasPath,
                 Path.Combine(installRoot.FullName, AppConstants.CopilotCliHookFileName),
-                Path.Combine(
-                    installRoot.FullName,
-                    AppConstants.CopilotCliExtensionFileName),
                 [],
                 AppPaths.GetUserLogPath(installRoot.FullName));
 
@@ -206,9 +317,6 @@ public sealed class AppPathsTests
                 Path.Combine(installRoot.FullName, AppPaths.GetManagedExecutableName()),
                 managedHookFilePath,
                 Path.Combine(installRoot.FullName, AppConstants.CopilotCliHookFileName),
-                Path.Combine(
-                    installRoot.FullName,
-                    AppConstants.CopilotCliExtensionFileName),
                 [
                     new VsCodeSettingsTarget(
                         managedHookFilePath,

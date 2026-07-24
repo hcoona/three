@@ -5,49 +5,39 @@ namespace Hcoona.VsCodeCopilotTelegramHook.Logging;
 internal static partial class AppLog
 {
     [LoggerMessage(
-        EventId = 1800,
-        EventName = nameof(SendingCopilotCliNotification),
+        EventId = 1700,
         Level = LogLevel.Information,
         Message =
-            "Sending {MessageCount} Copilot CLI Telegram message(s) for session "
-            + "{SessionId}, event {EventId}, type {EventType}.")]
+            "Sending {MessageCount} Telegram message(s) for Copilot CLI event "
+            + "{EventType} ({EventId}).")]
     public static partial void SendingCopilotCliNotification(
         ILogger logger,
         int messageCount,
-        string sessionId,
-        string eventId,
-        string eventType);
-
-    [LoggerMessage(
-        EventId = 1801,
-        EventName = nameof(SkippingDuplicateCopilotCliNotification),
-        Level = LogLevel.Information,
-        Message =
-            "Skipping duplicate Copilot CLI notification for session {SessionId} "
-            + "and event {EventId}.")]
-    public static partial void SkippingDuplicateCopilotCliNotification(
-        ILogger logger,
-        string sessionId,
+        string eventType,
         string eventId);
 
     [LoggerMessage(
-        EventId = 1802,
-        EventName = nameof(CopilotCliNotificationFailed),
+        EventId = 1701,
+        Level = LogLevel.Warning,
+        Message =
+            "A Copilot CLI notification was partially delivered and will not be retried.")]
+    public static partial void PartialCopilotCliNotification(
+        ILogger logger,
+        Exception exception);
+
+    [LoggerMessage(
+        EventId = 1702,
+        Level = LogLevel.Error,
+        Message = "Discarding an invalid Copilot CLI event file.")]
+    public static partial void InvalidCopilotCliEventFile(
+        ILogger logger,
+        Exception exception);
+
+    [LoggerMessage(
+        EventId = 1703,
         Level = LogLevel.Error,
         Message = "Copilot CLI notification delivery failed.")]
     public static partial void CopilotCliNotificationFailed(
         ILogger logger,
         Exception exception);
-
-    [LoggerMessage(
-        EventId = 1803,
-        EventName = nameof(CopilotCliNotificationClaimBusy),
-        Level = LogLevel.Information,
-        Message =
-            "Copilot CLI notification delivery is already in flight for session {SessionId} "
-            + "and event {EventId}; returning a retryable result.")]
-    public static partial void CopilotCliNotificationClaimBusy(
-        ILogger logger,
-        string sessionId,
-        string eventId);
 }

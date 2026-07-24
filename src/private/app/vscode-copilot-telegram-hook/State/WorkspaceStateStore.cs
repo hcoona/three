@@ -469,17 +469,6 @@ internal sealed class WorkspaceStateStore(
         CancellationToken cancellationToken
     )
     {
-        await using UserOperationLock coordinationLock =
-            await AcquireClaimCoordinationLockAsync(path, cancellationToken);
-        return await TryClaimStopNotificationCoreAsync(path, claimedAt, cancellationToken);
-    }
-
-    private static async Task<bool> TryClaimStopNotificationCoreAsync(
-        string path,
-        string claimedAt,
-        CancellationToken cancellationToken
-    )
-    {
         cancellationToken.ThrowIfCancellationRequested();
         EnsureOwnerOnlyParentDirectory(path);
 
@@ -508,21 +497,12 @@ internal sealed class WorkspaceStateStore(
         }
         catch
         {
-            ReleaseStopNotificationClaimCore(path);
+            ReleaseStopNotificationClaim(path);
             throw;
         }
     }
 
-    public static async Task ReleaseStopNotificationClaimAsync(
-        string path,
-        CancellationToken cancellationToken)
-    {
-        await using UserOperationLock coordinationLock =
-            await AcquireClaimCoordinationLockAsync(path, cancellationToken);
-        ReleaseStopNotificationClaimCore(path);
-    }
-
-    private static void ReleaseStopNotificationClaimCore(string path)
+    public static void ReleaseStopNotificationClaim(string path)
     {
         try
         {
@@ -539,19 +519,11 @@ internal sealed class WorkspaceStateStore(
         string claimedAt,
         TimeSpan staleAfter,
         Func<Task<bool>> hasDurableDeliveryRecordAsync,
-        CancellationToken cancellationToken,
-        Func<string, bool>? isAbandonedClaim = null
+        CancellationToken cancellationToken
     )
     {
-        await using UserOperationLock coordinationLock =
-            await AcquireClaimCoordinationLockAsync(path, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        if (!await IsClaimReclaimableAsync(
-                path,
-                claimedAt,
-                staleAfter,
-                isAbandonedClaim,
-                cancellationToken))
+        if (!await IsClaimStaleAsync(path, claimedAt, staleAfter, cancellationToken))
         {
             return false;
         }
@@ -573,8 +545,7 @@ internal sealed class WorkspaceStateStore(
                 reclaimPath,
                 claimedAt,
                 staleAfter,
-                cancellationToken,
-                isAbandonedClaim
+                cancellationToken
             );
             claimedReclaim = staleReclaimLock is not null;
         }
@@ -586,31 +557,23 @@ internal sealed class WorkspaceStateStore(
 
         try
         {
+            if (!await IsClaimStaleAsync(path, claimedAt, staleAfter, cancellationToken))
+            {
+                return false;
+            }
+
             if (await hasDurableDeliveryRecordAsync())
             {
                 return false;
             }
 
-            bool removedStaleClaim = await TryDeleteClaimIfAsync(
-                path,
-                existingClaimedAt => IsClaimStale(
-                    path,
-                    existingClaimedAt,
-                    claimedAt,
-                    staleAfter)
-                    || (isAbandonedClaim?.Invoke(existingClaimedAt) ?? false),
-                cancellationToken);
-            if (!removedStaleClaim)
-            {
-                return false;
-            }
-
-            return await TryClaimStopNotificationCoreAsync(path, claimedAt, cancellationToken);
+            ReleaseStopNotificationClaim(path);
+            return await TryClaimStopNotificationAsync(path, claimedAt, cancellationToken);
         }
         finally
         {
             staleReclaimLock?.Dispose();
-            ReleaseStopNotificationClaimCore(reclaimPath);
+            ReleaseStopNotificationClaim(reclaimPath);
         }
     }
 
@@ -1595,8 +1558,7 @@ internal sealed class WorkspaceStateStore(
         string path,
         string claimedAt,
         TimeSpan staleAfter,
-        CancellationToken cancellationToken,
-        Func<string, bool>? isAbandonedClaim = null
+        CancellationToken cancellationToken
     )
     {
         if (!TryParseClaimedAt(claimedAt, out DateTimeOffset current))
@@ -1642,10 +1604,7 @@ internal sealed class WorkspaceStateStore(
             )
                 ? parsedExisting
                 : GetClaimFileTimestamp(path);
-            if (
-                current - existing < staleAfter
-                && !(isAbandonedClaim?.Invoke(existingClaimedAt) ?? false)
-            )
+            if (current - existing < staleAfter)
             {
                 stream.Dispose();
                 return null;
@@ -1671,8 +1630,6 @@ internal sealed class WorkspaceStateStore(
         CancellationToken cancellationToken
     )
     {
-        await using UserOperationLock coordinationLock =
-            await AcquireClaimCoordinationLockAsync(path, cancellationToken);
         EnsureOwnerOnlyParentDirectory(path);
 
         try
@@ -1690,7 +1647,7 @@ internal sealed class WorkspaceStateStore(
             catch
             {
                 await createdClaim.DisposeAsync();
-                ReleaseStopNotificationClaimCore(path);
+                await ReleaseOwnedStopNotificationClaimAsync(path, claimedAt, cancellationToken);
                 throw;
             }
         }
@@ -1705,37 +1662,38 @@ internal sealed class WorkspaceStateStore(
         }
     }
 
-    public static async Task ReleaseOwnedStopNotificationClaimAsync(
+    private static async Task ReleaseOwnedStopNotificationClaimAsync(
         string path,
         string claimedAt,
         CancellationToken cancellationToken
     )
     {
-        await using UserOperationLock coordinationLock =
-            await AcquireClaimCoordinationLockAsync(path, cancellationToken);
-        await TryDeleteClaimIfAsync(
-            path,
-            existingClaimedAt => string.Equals(
-                existingClaimedAt,
-                claimedAt,
-                StringComparison.Ordinal),
-            cancellationToken);
+        string existingClaimedAt;
+        try
+        {
+            existingClaimedAt = await File.ReadAllTextAsync(path, cancellationToken);
+        }
+        catch (Exception ex)
+            when (ex
+                    is FileNotFoundException
+                        or DirectoryNotFoundException
+                        or IOException
+                        or UnauthorizedAccessException
+            )
+        {
+            return;
+        }
+
+        if (string.Equals(existingClaimedAt, claimedAt, StringComparison.Ordinal))
+        {
+            ReleaseStopNotificationClaim(path);
+        }
     }
 
-    private static Task<UserOperationLock> AcquireClaimCoordinationLockAsync(
-        string claimPath,
-        CancellationToken cancellationToken)
-    {
-        string coordinationLockPath = claimPath + ".coordination.lock";
-        EnsureOwnerOnlyParentDirectory(coordinationLockPath);
-        return UserOperationLock.AcquireAsync(coordinationLockPath, cancellationToken);
-    }
-
-    private static async Task<bool> IsClaimReclaimableAsync(
+    private static async Task<bool> IsClaimStaleAsync(
         string path,
         string currentClaimedAt,
         TimeSpan staleAfter,
-        Func<string, bool>? isAbandonedClaim,
         CancellationToken cancellationToken
     )
     {
@@ -1761,28 +1719,6 @@ internal sealed class WorkspaceStateStore(
             return false;
         }
 
-        return IsClaimStale(path, existingClaimedAt, currentClaimedAt, staleAfter)
-            || (isAbandonedClaim?.Invoke(existingClaimedAt) ?? false);
-    }
-
-    private static Task<bool> IsClaimStaleAsync(
-        string path,
-        string currentClaimedAt,
-        TimeSpan staleAfter,
-        CancellationToken cancellationToken
-    ) => IsClaimReclaimableAsync(
-        path,
-        currentClaimedAt,
-        staleAfter,
-        isAbandonedClaim: null,
-        cancellationToken);
-
-    private static bool IsClaimStale(
-        string path,
-        string existingClaimedAt,
-        string currentClaimedAt,
-        TimeSpan staleAfter)
-    {
         if (!TryParseClaimedAt(currentClaimedAt, out DateTimeOffset current))
         {
             return false;
@@ -1790,60 +1726,11 @@ internal sealed class WorkspaceStateStore(
 
         DateTimeOffset existing = TryParseClaimedAt(
             existingClaimedAt,
-            out DateTimeOffset parsedExisting)
+            out DateTimeOffset parsedExisting
+        )
             ? parsedExisting
             : GetClaimFileTimestamp(path);
         return current - existing >= staleAfter;
-    }
-
-    private static async Task<bool> TryDeleteClaimIfAsync(
-        string path,
-        Func<string, bool> shouldDelete,
-        CancellationToken cancellationToken)
-    {
-        FileStream stream;
-        try
-        {
-            stream = new FileStream(
-                path,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Delete,
-                bufferSize: 4096,
-                FileOptions.Asynchronous);
-        }
-        catch (Exception ex) when (
-            ex is FileNotFoundException
-                or DirectoryNotFoundException
-                or IOException
-                or UnauthorizedAccessException)
-        {
-            return false;
-        }
-
-        await using (stream)
-        using (StreamReader reader = new(stream, leaveOpen: true))
-        {
-            string existingClaimedAt = await reader.ReadToEndAsync(cancellationToken);
-            if (!shouldDelete(existingClaimedAt))
-            {
-                return false;
-            }
-
-            try
-            {
-                File.Delete(path);
-                return true;
-            }
-            catch (Exception ex) when (
-                ex is FileNotFoundException
-                    or DirectoryNotFoundException
-                    or IOException
-                    or UnauthorizedAccessException)
-            {
-                return false;
-            }
-        }
     }
 
     private static DateTimeOffset GetClaimFileTimestamp(string path)
@@ -1858,23 +1745,14 @@ internal sealed class WorkspaceStateStore(
         return new DateTimeOffset(creationTime, TimeSpan.Zero);
     }
 
-    private static bool TryParseClaimedAt(string claimedAt, out DateTimeOffset timestamp)
-    {
-        ReadOnlySpan<char> timestampText = claimedAt.AsSpan().Trim();
-        int lineEnd = timestampText.IndexOfAny('\r', '\n');
-        if (lineEnd >= 0)
-        {
-            timestampText = timestampText[..lineEnd];
-        }
-
-        return DateTimeOffset.TryParseExact(
-            timestampText,
+    private static bool TryParseClaimedAt(string claimedAt, out DateTimeOffset timestamp) =>
+        DateTimeOffset.TryParseExact(
+            claimedAt.Trim(),
             "yyyy-MM-ddTHH:mm:ss.fff'Z'",
             CultureInfo.InvariantCulture,
             DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
             out timestamp
         );
-    }
 
     private static bool IsValidUtcTimestamp(string value) =>
         DateTimeOffset.TryParseExact(

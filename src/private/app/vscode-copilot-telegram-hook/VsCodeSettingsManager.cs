@@ -55,14 +55,11 @@ internal static class VsCodeSettingsManager
 
         bool originalFileExisted = File.Exists(settingsPath);
         string? originalContent = null;
-        FileSystemMetadataSnapshot originalMetadata;
         VsCodeUserSettingsDocument rootDocument;
-        try
+
+        if (originalFileExisted)
         {
-            originalMetadata = FileSystemMetadataSnapshot.Capture(
-                settingsPath,
-                originalFileExisted);
-            if (originalFileExisted)
+            try
             {
                 originalContent = File.ReadAllText(settingsPath);
                 rootDocument = JsonSerializer.Deserialize(
@@ -71,25 +68,25 @@ internal static class VsCodeSettingsManager
                     ?? throw new InvalidOperationException(
                         "The VS Code settings file must contain a JSON object.");
             }
-            else
+            catch (Exception ex) when (
+                ex is IOException or JsonException or InvalidOperationException
+                    or UnauthorizedAccessException or NotSupportedException)
             {
-                rootDocument = new VsCodeUserSettingsDocument();
+                string? candidatePath = TryWriteCandidateFile(
+                    settingsPath,
+                    SerializeSettings(CreateDesiredDocument(supportedHookFileLocation)),
+                    timestamp);
+                return new ConfigurationPlanResult(
+                    Applied: false,
+                    Message:
+                        $"The existing VS Code settings file could not be updated automatically: "
+                        + ex.Message,
+                    CandidatePath: candidatePath);
             }
         }
-        catch (Exception ex) when (
-            ex is IOException or JsonException or InvalidOperationException
-                or UnauthorizedAccessException or NotSupportedException)
+        else
         {
-            string? candidatePath = TryWriteCandidateFile(
-                settingsPath,
-                SerializeSettings(CreateDesiredDocument(supportedHookFileLocation)),
-                timestamp);
-            return new ConfigurationPlanResult(
-                Applied: false,
-                Message:
-                    $"The existing VS Code settings file could not be updated automatically: "
-                    + ex.Message,
-                CandidatePath: candidatePath);
+            rootDocument = new VsCodeUserSettingsDocument();
         }
 
         rootDocument.ChatHookFilesLocations ??=
@@ -108,7 +105,6 @@ internal static class VsCodeSettingsManager
                 SerializeSettings(rootDocument),
                 originalFileExisted,
                 originalContent,
-                originalMetadata,
                 SuccessMessage: $"Updated VS Code hook registration settings: {settingsPath}",
                 FailureMessage: "The VS Code settings file could not be updated automatically: "));
     }
@@ -143,13 +139,9 @@ internal static class VsCodeSettingsManager
         }
 
         string originalContent;
-        FileSystemMetadataSnapshot originalMetadata;
         VsCodeUserSettingsDocument rootDocument;
         try
         {
-            originalMetadata = FileSystemMetadataSnapshot.Capture(
-                settingsPath,
-                fileExisted: true);
             originalContent = File.ReadAllText(settingsPath);
             rootDocument = JsonSerializer.Deserialize(
                     originalContent,
@@ -205,7 +197,6 @@ internal static class VsCodeSettingsManager
                 SerializeSettings(rootDocument),
                 OriginalFileExisted: true,
                 OriginalContent: originalContent,
-                OriginalMetadata: originalMetadata,
                 SuccessMessage: $"Removed VS Code hook registration from: {settingsPath}",
                 FailureMessage:
                     "The VS Code settings file could not be updated automatically while "
@@ -264,8 +255,6 @@ internal static class VsCodeSettingsManager
             {
                 File.Delete(writePlan.SettingsPath);
             }
-
-            writePlan.OriginalMetadata.Restore(writePlan.SettingsPath);
         }
         catch (Exception ex) when (
             ex is IOException or UnauthorizedAccessException or NotSupportedException)
@@ -506,14 +495,6 @@ internal static class VsCodeSettingsManager
             }
 
             string existingContent = File.ReadAllText(writePlan.SettingsPath);
-            if (string.Equals(
-                    existingContent,
-                    writePlan.OriginalContent ?? string.Empty,
-                    StringComparison.Ordinal))
-            {
-                return null;
-            }
-
             if (!string.Equals(
                     existingContent,
                     writePlan.SerializedSettings,

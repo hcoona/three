@@ -641,9 +641,7 @@ internal sealed class HookCommandService(
 
             if (!claimedTurnDelivery)
             {
-                await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
-                    claimPath,
-                    CancellationToken.None);
+                WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
                 AppLog.SkippingDuplicateStop(logger, hookInput.SessionId, turn.NotificationTurnId);
                 return 0;
             }
@@ -700,14 +698,10 @@ internal sealed class HookCommandService(
                 || hasDurableDeliveryRecord
             )
             {
-                await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
-                    claimPath,
-                    CancellationToken.None);
+                WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
                 if (ownsTurnDeliveryClaim)
                 {
-                    await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
-                        turnClaimPath,
-                        CancellationToken.None);
+                    WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
                 }
 
                 AppLog.SkippingDuplicateStop(logger, hookInput.SessionId, turn.NotificationTurnId);
@@ -729,14 +723,10 @@ internal sealed class HookCommandService(
                     && !HasStopAttributionForTurn(summaryValidation, turn, hookInput.Timestamp)
                 )
                 {
-                    await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
-                        claimPath,
-                        CancellationToken.None);
+                    WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
                     if (ownsTurnDeliveryClaim)
                     {
-                        await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
-                            turnClaimPath,
-                            CancellationToken.None);
+                        WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
                     }
 
                     AppLog.SkippingDuplicateStop(
@@ -789,14 +779,10 @@ internal sealed class HookCommandService(
                         sentAt,
                         cancellationToken
                     );
-                    await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
-                        claimPath,
-                        CancellationToken.None);
+                    WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
                     if (ownsTurnDeliveryClaim)
                     {
-                        await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
-                            turnClaimPath,
-                            CancellationToken.None);
+                        WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
                     }
 
                     return 0;
@@ -859,14 +845,10 @@ internal sealed class HookCommandService(
             {
                 if (!notificationSent)
                 {
-                    await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
-                        claimPath,
-                        CancellationToken.None);
+                    WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
                     if (ownsTurnDeliveryClaim)
                     {
-                        await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
-                            turnClaimPath,
-                            CancellationToken.None);
+                        WorkspaceStateStore.ReleaseStopNotificationClaim(turnClaimPath);
                     }
                 }
 
@@ -1033,9 +1015,7 @@ internal sealed class HookCommandService(
         {
             if (!notificationSent)
             {
-                await WorkspaceStateStore.ReleaseStopNotificationClaimAsync(
-                    claimPath,
-                    CancellationToken.None);
+                WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
             }
 
             throw;

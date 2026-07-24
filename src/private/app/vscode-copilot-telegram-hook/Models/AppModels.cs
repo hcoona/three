@@ -67,30 +67,6 @@ internal sealed class StopHookInput
     public bool StopHookActive { get; set; }
 }
 
-internal sealed class CopilotCliNotificationHookInput
-{
-    [JsonPropertyName("sessionId")]
-    public string SessionId { get; set; } = string.Empty;
-
-    [JsonPropertyName("timestamp")]
-    public long Timestamp { get; set; }
-
-    [JsonPropertyName("cwd")]
-    public string Cwd { get; set; } = string.Empty;
-
-    [JsonPropertyName("hook_event_name")]
-    public string HookEventName { get; set; } = string.Empty;
-
-    [JsonPropertyName("message")]
-    public string Message { get; set; } = string.Empty;
-
-    [JsonPropertyName("title")]
-    public string? Title { get; set; }
-
-    [JsonPropertyName("notification_type")]
-    public string NotificationType { get; set; } = string.Empty;
-}
-
 internal sealed class CopilotCliSessionEventInput
 {
     [JsonPropertyName("session_id")]
@@ -108,14 +84,14 @@ internal sealed class CopilotCliSessionEventInput
     [JsonPropertyName("event_type")]
     public string EventType { get; set; } = string.Empty;
 
+    [JsonPropertyName("deliver_after")]
+    public string? DeliverAfter { get; set; }
+
     [JsonPropertyName("summary")]
     public string? Summary { get; set; }
 
     [JsonPropertyName("summary_source")]
     public string? SummarySource { get; set; }
-
-    [JsonPropertyName("message_id")]
-    public string? MessageId { get; set; }
 
     [JsonPropertyName("message")]
     public string? Message { get; set; }
@@ -436,9 +412,6 @@ internal sealed class UserHookEntry
     [JsonPropertyName("command")]
     public string? Command { get; set; }
 
-    [JsonPropertyName("matcher")]
-    public string? Matcher { get; set; }
-
     [JsonPropertyName("timeout")]
     public int? Timeout { get; set; }
 
@@ -496,9 +469,6 @@ internal sealed class UserHookEntryJsonConverter : JsonConverter<UserHookEntry>
                 case "command":
                     entry.Command = ReadNullableString(ref reader);
                     break;
-                case "matcher":
-                    entry.Matcher = ReadNullableString(ref reader);
-                    break;
                 case "timeout":
                     entry.TimeoutPropertyPresent = true;
                     entry.Timeout = ReadNullableInt32(ref reader);
@@ -528,7 +498,6 @@ internal sealed class UserHookEntryJsonConverter : JsonConverter<UserHookEntry>
         writer.WriteStartObject();
         WriteStringPropertyIfNotNull(writer, "type", value.Type);
         WriteStringPropertyIfNotNull(writer, "command", value.Command);
-        WriteStringPropertyIfNotNull(writer, "matcher", value.Matcher);
         if (value.Timeout is not null)
         {
             writer.WriteNumber("timeout", value.Timeout.Value);
@@ -659,7 +628,7 @@ internal sealed class UserHookEntryJsonConverter : JsonConverter<UserHookEntry>
     }
 
     private static bool IsKnownProperty(string propertyName)
-        => propertyName is "type" or "command" or "matcher" or "timeout" or "timeoutSec" or "env";
+        => propertyName is "type" or "command" or "timeout" or "timeoutSec" or "env";
 }
 
 internal sealed record VsCodeSettingsTarget(
@@ -677,7 +646,6 @@ internal sealed record VsCodeSettingsWritePlan(
     string SerializedSettings,
     bool OriginalFileExisted,
     string? OriginalContent,
-    FileSystemMetadataSnapshot OriginalMetadata,
     string SuccessMessage,
     string FailureMessage);
 
@@ -694,8 +662,6 @@ internal class UserPathOverrides
     public FileInfo? ManagedHookFilePath { get; init; }
 
     public FileInfo? CopilotCliHookFilePath { get; init; }
-
-    public FileInfo? CopilotCliExtensionFilePath { get; init; }
 
     public IReadOnlyList<FileInfo>? VsCodeSettingsPaths { get; init; }
 
@@ -737,38 +703,12 @@ internal sealed record UserInstallationPaths(
     string InstalledBinaryPath,
     string ManagedHookFilePath,
     string CopilotCliHookFilePath,
-    string CopilotCliExtensionFilePath,
     IReadOnlyList<VsCodeSettingsTarget> VsCodeSettingsTargets,
     string UserLogFilePath);
 
 internal sealed record TelegramCredentials(string BotToken, string ChatId, string Source);
 
 internal sealed record StoredTelegramSecrets(string? BotToken, string? ChatId);
-
-internal sealed class StoredTelegramSecretsTransaction(StoredTelegramSecrets original)
-{
-    public StoredTelegramSecrets Original { get; } = original;
-
-    public string? ExpectedBotToken { get; private set; } = original.BotToken;
-
-    public string? ExpectedChatId { get; private set; } = original.ChatId;
-
-    public bool BotTokenMutated { get; private set; }
-
-    public bool ChatIdMutated { get; private set; }
-
-    public void RecordBotToken(string? value)
-    {
-        ExpectedBotToken = value;
-        BotTokenMutated = true;
-    }
-
-    public void RecordChatId(string? value)
-    {
-        ExpectedChatId = value;
-        ChatIdMutated = true;
-    }
-}
 
 internal sealed record GitRepositoryMetadata(
     string TopLevelPath,
@@ -809,8 +749,6 @@ internal sealed class NotificationContext
     public string BodyLabel { get; init; } = "摘要";
 
     public string MissingBodyText { get; init; } = "当前轮未生成摘要。";
-
-    public string? EventType { get; init; }
 }
 
 internal sealed record ProcessExecutionResult(

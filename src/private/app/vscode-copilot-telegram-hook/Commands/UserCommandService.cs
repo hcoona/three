@@ -8,7 +8,6 @@ namespace Hcoona.VsCodeCopilotTelegramHook.Commands;
 internal sealed class UserCommandService(
     TelegramBotClient telegramBotClient,
     TelegramCredentialProvider telegramCredentialProvider,
-    CopilotCliRuntimeProbe copilotCliRuntimeProbe,
     SessionLogFileContext sessionLogFileContext,
     TimeProvider timeProvider,
     ILogger<UserCommandService> logger)
@@ -22,9 +21,15 @@ internal sealed class UserCommandService(
             UserInstallationPaths userPaths = AppPaths.ResolveUserPaths(options);
             string sourceBinaryPath = ResolveInstallableBinaryPath(options.BinaryPath);
             ValidateUserArtifactPaths(userPaths, sourceBinaryPath);
-
-            await using UserOperationLock operationLock =
-                await UserOperationLock.AcquireAsync(cancellationToken);
+            string copilotCliExtensionFilePath = AppPaths.GetCopilotCliExtensionFilePath(
+                userPaths.CopilotCliHookFilePath);
+            ConfigurationApplyResult? extensionPreflightResult =
+                CopilotCliExtensionManager.PreflightInstall(copilotCliExtensionFilePath);
+            if (extensionPreflightResult is not null)
+            {
+                await Console.Out.WriteLineAsync(extensionPreflightResult.Message);
+                return 1;
+            }
 
             string currentTimestamp = GetCurrentUtcTimestamp();
             string sessionStartCommand = UserHookConfigurationManager.CreateCopilotCliHookCommand(
@@ -37,45 +42,10 @@ internal sealed class UserCommandService(
             string stopCommand = UserHookConfigurationManager.CreateCopilotCliHookCommand(
                 userPaths.InstalledBinaryPath,
                 "stop");
-            string notificationCommand = UserHookConfigurationManager.CreateCopilotCliHookCommand(
-                userPaths.InstalledBinaryPath,
-                "notification");
-            ConfigurationApplyResult? copilotCliHookFilePreflightResult =
-                UserHookConfigurationManager.PreflightManagedCopilotCliHookFile(
-                    userPaths.CopilotCliHookFilePath,
-                    notificationCommand,
-                    currentTimestamp);
-            if (copilotCliHookFilePreflightResult is not null)
-            {
-                await Console.Out.WriteLineAsync(copilotCliHookFilePreflightResult.Message);
-                if (copilotCliHookFilePreflightResult.CandidatePath is not null)
-                {
-                    await Console.Error.WriteLineAsync(
-                        "Copilot CLI hook file candidate: "
-                        + copilotCliHookFilePreflightResult.CandidatePath);
-                }
-
-                await Console.Out.WriteLineAsync(
-                    "Skipped user installation because the Copilot CLI hook file "
-                    + "could not be updated.");
-                return 1;
-            }
-
-            ConfigurationApplyResult? copilotCliExtensionPreflightResult =
-                CopilotCliExtensionManager.PreflightInstall(
-                    userPaths.CopilotCliExtensionFilePath);
-            if (copilotCliExtensionPreflightResult is not null)
-            {
-                await Console.Out.WriteLineAsync(copilotCliExtensionPreflightResult.Message);
-                await Console.Out.WriteLineAsync(
-                    "Skipped user installation because the Copilot CLI extension "
-                    + "could not be updated.");
-                return 1;
-            }
-
             using IDisposable logScope = sessionLogFileContext.UseLogFile(
                 userPaths.UserLogFilePath);
             AppLog.StartingUserInstall(logger);
+            bool hadInstalledBinary = File.Exists(userPaths.InstalledBinaryPath);
             if (!VsCodeSettingsManager.TryGetSupportedHookFileLocation(
                     userPaths.ManagedHookFilePath,
                     out _,
@@ -119,166 +89,102 @@ internal sealed class UserCommandService(
                 return 1;
             }
 
-            StoredTelegramSecrets storedSecretsSnapshot =
-                await telegramCredentialProvider.ReadStoredSecretsAsync(cancellationToken);
-            StoredTelegramSecretsTransaction secretTransaction = new(storedSecretsSnapshot);
-            InstallArtifactSnapshot? artifactSnapshot = null;
+            IReadOnlyList<string> secretMessages =
+                await telegramCredentialProvider.StoreForInstallAsync(
+                    options.TelegramBotToken,
+                    options.TelegramChatId,
+                    options.SkipSecretPrompt,
+                    cancellationToken);
+
+            CopyBinary(sourceBinaryPath, userPaths.InstalledBinaryPath);
+
+            ConfigurationApplyResult hookFileResult;
+            ConfigurationApplyResult extensionResult;
+            ConfigurationApplyResult legacyCopilotCliHookCleanupResult;
             try
             {
-                IReadOnlyList<string> secretMessages =
-                    await telegramCredentialProvider.StoreForInstallAsync(
-                        options.TelegramBotToken,
-                        options.TelegramChatId,
-                        options.SkipSecretPrompt,
-                        secretTransaction,
-                        cancellationToken);
-
-                ConfigurationApplyResult? currentCopilotCliHookFilePreflightResult =
-                    UserHookConfigurationManager.PreflightManagedCopilotCliHookFile(
-                        userPaths.CopilotCliHookFilePath,
-                        notificationCommand,
-                        currentTimestamp);
-                ConfigurationApplyResult? currentCopilotCliExtensionPreflightResult =
-                    CopilotCliExtensionManager.PreflightInstall(
-                        userPaths.CopilotCliExtensionFilePath);
-                if (currentCopilotCliHookFilePreflightResult is not null
-                    || currentCopilotCliExtensionPreflightResult is not null)
-                {
-                    if (currentCopilotCliHookFilePreflightResult is not null)
-                    {
-                        await Console.Out.WriteLineAsync(
-                            currentCopilotCliHookFilePreflightResult.Message);
-                    }
-
-                    if (currentCopilotCliExtensionPreflightResult is not null)
-                    {
-                        await Console.Out.WriteLineAsync(
-                            currentCopilotCliExtensionPreflightResult.Message);
-                    }
-
-                    await RestoreFailedInstallStateAsync(
-                        registrationPlans,
-                        artifactSnapshot,
-                        secretTransaction,
-                        preserveNewVsCodeArtifacts: false);
-                    AppLog.CompletedUserInstall(logger, userPaths.InstallRoot, succeeded: false);
-                    return 1;
-                }
-
-                artifactSnapshot = InstallArtifactSnapshot.Capture(userPaths);
-                CopyBinary(
-                    sourceBinaryPath,
-                    userPaths.InstalledBinaryPath,
-                    artifactSnapshot.BeginMutation,
-                    artifactSnapshot.RecordMutation);
-
-                ConfigurationApplyResult hookFileResult = ApplyTrackedArtifactChange(
-                    artifactSnapshot,
+                hookFileResult = UserHookConfigurationManager.InstallManagedHookFile(
                     userPaths.ManagedHookFilePath,
-                    () => UserHookConfigurationManager.InstallManagedHookFile(
-                            userPaths.ManagedHookFilePath,
-                            sessionStartCommand,
-                            userPromptSubmitCommand,
-                            stopCommand,
-                            currentTimestamp));
-                ConfigurationApplyResult copilotCliHookFileResult = ApplyTrackedArtifactChange(
-                    artifactSnapshot,
-                    userPaths.CopilotCliHookFilePath,
-                    () => UserHookConfigurationManager.InstallManagedCopilotCliHookFile(
-                            userPaths.CopilotCliHookFilePath,
-                            notificationCommand,
-                            currentTimestamp));
-                ConfigurationApplyResult copilotCliExtensionResult = ApplyTrackedArtifactChange(
-                    artifactSnapshot,
-                    userPaths.CopilotCliExtensionFilePath,
-                    () => CopilotCliExtensionManager.Install(
-                        userPaths.CopilotCliExtensionFilePath,
-                        userPaths.InstalledBinaryPath));
-
-                await Console.Out.WriteLineAsync(
-                    $"Installed binary: {userPaths.InstalledBinaryPath}");
-                await Console.Out.WriteLineAsync(hookFileResult.Message);
-                await Console.Out.WriteLineAsync(copilotCliHookFileResult.Message);
-                await Console.Out.WriteLineAsync(copilotCliExtensionResult.Message);
-
-                foreach (string secretMessage in secretMessages)
-                {
-                    await Console.Out.WriteLineAsync(secretMessage);
-                }
-
-                await Console.Out.WriteLineAsync(
-                    $"Telegram credentials are ready in gopass under "
-                    + $"'{AppConstants.SecretPrefix}'.");
-
-                if (hookFileResult.CandidatePath is not null)
-                {
-                    await Console.Error.WriteLineAsync(
-                        $"Managed hook file candidate: {hookFileResult.CandidatePath}");
-                }
-
-                if (copilotCliHookFileResult.CandidatePath is not null)
-                {
-                    await Console.Error.WriteLineAsync(
-                        $"Copilot CLI hook file candidate: "
-                        + copilotCliHookFileResult.CandidatePath);
-                }
-
-                if (!hookFileResult.Applied
-                    || !copilotCliHookFileResult.Applied
-                    || !copilotCliExtensionResult.Applied)
-                {
-                    await Console.Out.WriteLineAsync(
-                        "Skipped VS Code settings registration because one or more managed "
-                        + "Copilot artifacts were not updated.");
-                    await RestoreFailedInstallStateAsync(
-                        registrationPlans,
-                        artifactSnapshot,
-                        secretTransaction,
-                        preserveNewVsCodeArtifacts: false);
-                    AppLog.CompletedUserInstall(logger, userPaths.InstallRoot, succeeded: false);
-                    return 1;
-                }
-
-                (
-                    bool registrationsApplied,
-                    List<(VsCodeSettingsTarget Target, ConfigurationApplyResult Result)>
-                        registrationResults,
-                    List<ConfigurationApplyResult> rollbackResults
-                ) = ApplyVsCodeSettingsPlansAtomically(registrationPlans, currentTimestamp);
-                await WriteVsCodeSettingsApplyMessagesAsync(registrationResults);
-                await WriteConfigurationResultsAsync(rollbackResults);
-                bool hasRollbackFailures = rollbackResults.Any(static result => !result.Applied);
-                await WriteRollbackFailureSummaryAsync(hasRollbackFailures);
-
-                if (!registrationsApplied)
-                {
-                    await Console.Out.WriteLineAsync(
-                        "Skipped user installation because one or more VS Code "
-                        + "settings registrations were not updated.");
-                    await RestoreFailedInstallStateAsync(
-                        registrationPlans,
-                        artifactSnapshot,
-                        secretTransaction,
-                        preserveNewVsCodeArtifacts: hasRollbackFailures);
-                    AppLog.CompletedUserInstall(logger, userPaths.InstallRoot, succeeded: false);
-                    return 1;
-                }
-
-                AppLog.CompletedUserInstall(
-                    logger,
-                    userPaths.InstallRoot,
-                    succeeded: true);
-                return 0;
+                    sessionStartCommand,
+                    userPromptSubmitCommand,
+                    stopCommand,
+                    currentTimestamp);
+                extensionResult = CopilotCliExtensionManager.Install(
+                    copilotCliExtensionFilePath,
+                    userPaths.InstalledBinaryPath);
+                legacyCopilotCliHookCleanupResult =
+                    UserHookConfigurationManager.UninstallManagedCopilotCliHookFile(
+                        userPaths.CopilotCliHookFilePath);
             }
             catch
             {
-                await RestoreFailedInstallStateAsync(
-                    registrationPlans,
-                    artifactSnapshot,
-                    secretTransaction,
-                    preserveNewVsCodeArtifacts: false);
+                await CleanupFailedInstallArtifactsAsync(
+                    userPaths,
+                    preserveManagedArtifacts: hadInstalledBinary);
                 throw;
             }
+
+            await Console.Out.WriteLineAsync($"Installed binary: {userPaths.InstalledBinaryPath}");
+            await Console.Out.WriteLineAsync(hookFileResult.Message);
+            await Console.Out.WriteLineAsync(extensionResult.Message);
+            await Console.Out.WriteLineAsync(legacyCopilotCliHookCleanupResult.Message);
+
+            foreach (string secretMessage in secretMessages)
+            {
+                await Console.Out.WriteLineAsync(secretMessage);
+            }
+
+            await Console.Out.WriteLineAsync(
+                $"Telegram credentials are ready in gopass under '{AppConstants.SecretPrefix}'.");
+
+            if (hookFileResult.CandidatePath is not null)
+            {
+                await Console.Error.WriteLineAsync(
+                    $"Managed hook file candidate: {hookFileResult.CandidatePath}");
+            }
+
+            if (!hookFileResult.Applied
+                || !extensionResult.Applied
+                || !legacyCopilotCliHookCleanupResult.Applied)
+            {
+                await Console.Out.WriteLineAsync(
+                    "Skipped VS Code settings registration because the managed hook, "
+                    + "Copilot CLI extension, or legacy hook cleanup was not updated.");
+                await CleanupFailedInstallArtifactsAsync(
+                    userPaths,
+                    preserveManagedArtifacts: hadInstalledBinary);
+                AppLog.CompletedUserInstall(logger, userPaths.InstallRoot, succeeded: false);
+                return 1;
+            }
+
+            (
+                bool registrationsApplied,
+                List<(VsCodeSettingsTarget Target, ConfigurationApplyResult Result)>
+                    registrationResults,
+                List<ConfigurationApplyResult> rollbackResults
+            ) = ApplyVsCodeSettingsPlansAtomically(registrationPlans, currentTimestamp);
+            await WriteVsCodeSettingsApplyMessagesAsync(registrationResults);
+            await WriteConfigurationResultsAsync(rollbackResults);
+            bool hasRollbackFailures = rollbackResults.Any(static result => !result.Applied);
+            await WriteRollbackFailureSummaryAsync(hasRollbackFailures);
+
+            if (!registrationsApplied)
+            {
+                await Console.Out.WriteLineAsync(
+                    "Skipped user installation because one or more VS Code "
+                    + "settings registrations were not updated.");
+                await CleanupFailedInstallArtifactsAsync(
+                    userPaths,
+                    preserveManagedArtifacts: hadInstalledBinary || hasRollbackFailures);
+                AppLog.CompletedUserInstall(logger, userPaths.InstallRoot, succeeded: false);
+                return 1;
+            }
+
+            AppLog.CompletedUserInstall(
+                logger,
+                userPaths.InstallRoot,
+                succeeded: true);
+            return 0;
         }
         catch (Exception ex)
         {
@@ -299,33 +205,17 @@ internal sealed class UserCommandService(
                 userPaths,
                 includeVsCodeSettingsTarget: ShouldIncludeVsCodeSettingsTargetForUninstall);
 
-            await using UserOperationLock operationLock =
-                await UserOperationLock.AcquireAsync(cancellationToken);
-
             using IDisposable logScope = sessionLogFileContext.UseLogFile(
                 userPaths.UserLogFilePath);
             AppLog.StartingUserUninstall(logger);
 
             string currentTimestamp = GetCurrentUtcTimestamp();
-            ConfigurationApplyResult? copilotCliExtensionPreflightResult =
-                CopilotCliExtensionManager.PreflightUninstall(
-                    userPaths.CopilotCliExtensionFilePath);
-            if (copilotCliExtensionPreflightResult is not null)
-            {
-                await Console.Out.WriteLineAsync(copilotCliExtensionPreflightResult.Message);
-                await Console.Out.WriteLineAsync(
-                    "Skipped uninstall cleanup because the Copilot CLI extension file "
-                    + "could not be removed. Remove it manually, then run uninstall again.");
-                AppLog.CompletedUserUninstall(logger, userPaths.InstallRoot, succeeded: false);
-                return 1;
-            }
-
-            ConfigurationApplyResult? copilotCliHookPreflightResult =
-                UserHookConfigurationManager.PreflightUninstallManagedCopilotCliHookFile(
+            ConfigurationApplyResult copilotCliHookFileResult =
+                UserHookConfigurationManager.UninstallManagedCopilotCliHookFile(
                     userPaths.CopilotCliHookFilePath);
-            if (copilotCliHookPreflightResult is not null)
+            await Console.Out.WriteLineAsync(copilotCliHookFileResult.Message);
+            if (!copilotCliHookFileResult.Applied)
             {
-                await Console.Out.WriteLineAsync(copilotCliHookPreflightResult.Message);
                 await Console.Out.WriteLineAsync(
                     "Skipped uninstall cleanup because the Copilot CLI hook file "
                     + "could not be updated. Remove its managed entries manually, "
@@ -333,17 +223,13 @@ internal sealed class UserCommandService(
                 AppLog.CompletedUserUninstall(logger, userPaths.InstallRoot, succeeded: false);
                 return 1;
             }
-
-            ConfigurationApplyResult? managedHookPreflightResult =
-                UserHookConfigurationManager.PreflightUninstallManagedHookFile(
-                    userPaths.ManagedHookFilePath);
-            if (managedHookPreflightResult is not null)
+            string copilotCliExtensionFilePath = AppPaths.GetCopilotCliExtensionFilePath(
+                userPaths.CopilotCliHookFilePath);
+            ConfigurationApplyResult extensionResult =
+                CopilotCliExtensionManager.Uninstall(copilotCliExtensionFilePath);
+            await Console.Out.WriteLineAsync(extensionResult.Message);
+            if (!extensionResult.Applied)
             {
-                await Console.Out.WriteLineAsync(managedHookPreflightResult.Message);
-                await Console.Out.WriteLineAsync(
-                    "Skipped uninstall cleanup because the VS Code managed hook file "
-                    + "could not be updated. Remove its managed entries manually, "
-                    + "then run uninstall again.");
                 AppLog.CompletedUserUninstall(logger, userPaths.InstallRoot, succeeded: false);
                 return 1;
             }
@@ -367,107 +253,66 @@ internal sealed class UserCommandService(
                 return 1;
             }
 
-            InstallArtifactSnapshot artifactSnapshot = InstallArtifactSnapshot.Capture(userPaths);
-            StoredTelegramSecrets? storedSecretsSnapshot = options.RemoveSecrets
-                ? await telegramCredentialProvider.ReadStoredSecretsAsync(cancellationToken)
-                : null;
-            StoredTelegramSecretsTransaction? secretTransaction = storedSecretsSnapshot is null
-                ? null
-                : new StoredTelegramSecretsTransaction(storedSecretsSnapshot);
-            try
+            (
+                bool registrationsApplied,
+                List<(VsCodeSettingsTarget Target, ConfigurationApplyResult Result)>
+                    registrationResults,
+                List<ConfigurationApplyResult> rollbackResults
+            ) = ApplyVsCodeSettingsPlansAtomically(registrationPlans, currentTimestamp);
+
+            await WriteVsCodeSettingsApplyMessagesAsync(registrationResults);
+            await WriteConfigurationResultsAsync(rollbackResults);
+            await WriteRollbackFailureSummaryAsync(
+                rollbackResults.Any(static result => !result.Applied));
+
+            if (!registrationsApplied)
             {
-                (
-                    bool registrationsApplied,
-                    List<(VsCodeSettingsTarget Target, ConfigurationApplyResult Result)>
-                        registrationResults,
-                    List<ConfigurationApplyResult> rollbackResults
-                ) = ApplyVsCodeSettingsPlansAtomically(registrationPlans, currentTimestamp);
-
-                await WriteVsCodeSettingsApplyMessagesAsync(registrationResults);
-                await WriteConfigurationResultsAsync(rollbackResults);
-                await WriteRollbackFailureSummaryAsync(
-                    rollbackResults.Any(static result => !result.Applied));
-
-                if (!registrationsApplied)
-                {
-                    await Console.Out.WriteLineAsync(
-                        "Skipped uninstall cleanup because one or more VS Code settings "
-                        + "registrations were not removed.");
-                    AppLog.CompletedUserUninstall(
-                        logger,
-                        userPaths.InstallRoot,
-                        succeeded: false);
-                    return 1;
-                }
-
-                ConfigurationApplyResult copilotCliHookFileResult = ApplyTrackedArtifactChange(
-                    artifactSnapshot,
-                    userPaths.CopilotCliHookFilePath,
-                    () => UserHookConfigurationManager.UninstallManagedCopilotCliHookFile(
-                        userPaths.CopilotCliHookFilePath));
-                await Console.Out.WriteLineAsync(copilotCliHookFileResult.Message);
-                ConfigurationApplyResult copilotCliExtensionResult = ApplyTrackedArtifactChange(
-                    artifactSnapshot,
-                    userPaths.CopilotCliExtensionFilePath,
-                    () => CopilotCliExtensionManager.Uninstall(
-                        userPaths.CopilotCliExtensionFilePath));
-                await Console.Out.WriteLineAsync(copilotCliExtensionResult.Message);
-                ConfigurationApplyResult hookFileResult = ApplyTrackedArtifactChange(
-                    artifactSnapshot,
-                    userPaths.ManagedHookFilePath,
-                    () => UserHookConfigurationManager.UninstallManagedHookFile(
-                        userPaths.ManagedHookFilePath));
-                await Console.Out.WriteLineAsync(hookFileResult.Message);
-
-                if (!copilotCliHookFileResult.Applied
-                    || !copilotCliExtensionResult.Applied
-                    || !hookFileResult.Applied)
-                {
-                    await RestoreFailedUninstallStateAsync(
-                        registrationPlans,
-                        artifactSnapshot,
-                        secretTransaction);
-                    AppLog.CompletedUserUninstall(
-                        logger,
-                        userPaths.InstallRoot,
-                        succeeded: false);
-                    return 1;
-                }
-
-                DeleteManagedBinary(
-                    userPaths.InstalledBinaryPath,
-                    artifactSnapshot.BeginMutation,
-                    artifactSnapshot.RecordMutation);
-
-                if (options.RemoveSecrets)
-                {
-                    await telegramCredentialProvider.RemoveStoredSecretsAsync(
-                        secretTransaction
-                            ?? throw new InvalidOperationException(
-                                "The secret transaction was not initialized."),
-                        cancellationToken);
-                }
-
                 await Console.Out.WriteLineAsync(
-                    $"Removed installed binary if it existed: {userPaths.InstalledBinaryPath}");
-
-                if (options.RemoveSecrets)
-                {
-                    await Console.Out.WriteLineAsync(
-                        "Removed stored Telegram secrets from gopass when present.");
-                }
-
-                AppLog.CompletedUserUninstall(logger, userPaths.InstallRoot, succeeded: true);
-                return 0;
+                    "Skipped uninstall cleanup because one or more VS Code settings "
+                    + "registrations were not removed.");
+                AppLog.CompletedUserUninstall(logger, userPaths.InstallRoot, succeeded: false);
+                return 1;
             }
-            catch
+
+            ConfigurationApplyResult hookFileResult =
+                UserHookConfigurationManager.UninstallManagedHookFile(
+                    userPaths.ManagedHookFilePath);
+
+            await Console.Out.WriteLineAsync(hookFileResult.Message);
+            if (!hookFileResult.Applied)
             {
-                await RestoreFailedUninstallStateAsync(
-                    registrationPlans,
-                    artifactSnapshot,
-                    secretTransaction);
-                throw;
+                await Console.Out.WriteLineAsync(
+                    "Skipped uninstall cleanup because the VS Code managed hook file "
+                    + "could not be updated. Remove its managed entries manually, "
+                    + "then run uninstall again.");
+                AppLog.CompletedUserUninstall(logger, userPaths.InstallRoot, succeeded: false);
+                return 1;
             }
+
+            DeleteManagedBinary(userPaths.InstalledBinaryPath);
+            DeleteCopilotCliEventSpool(userPaths.InstalledBinaryPath);
+
+            bool secretsRemoved = !options.RemoveSecrets
+                || await telegramCredentialProvider.RemoveStoredSecretsAsync(cancellationToken);
+
+            await Console.Out.WriteLineAsync(
+                $"Removed installed binary if it existed: {userPaths.InstalledBinaryPath}");
+
+            if (options.RemoveSecrets)
+            {
+                await Console.Out.WriteLineAsync(
+                    secretsRemoved
+                        ? "Removed stored Telegram secrets from gopass when present."
+                        : "Could not remove stored Telegram secrets from gopass.");
+            }
+
+            bool succeeded = registrationsApplied
+                && hookFileResult.Applied
+                && copilotCliHookFileResult.Applied
+                && extensionResult.Applied
+                && secretsRemoved;
+            AppLog.CompletedUserUninstall(logger, userPaths.InstallRoot, succeeded);
+            return succeeded ? 0 : 1;
         }
         catch (Exception ex)
         {
@@ -497,14 +342,15 @@ internal sealed class UserCommandService(
             bool managedHookFileInstalled =
                 UserHookConfigurationManager.IsManagedHookFileInstalled(
                     userPaths.ManagedHookFilePath);
-            CopilotCliHookFileStatus copilotCliHookFileStatus =
-                UserHookConfigurationManager.GetManagedCopilotCliHookFileStatus(
-                    userPaths.CopilotCliHookFilePath);
+            bool copilotCliHookFileInstalled =
+                UserHookConfigurationManager.IsManagedCopilotCliHookFileInstalled(
+                    userPaths.CopilotCliHookFilePath,
+                    userPaths.InstalledBinaryPath);
+            string copilotCliExtensionFilePath = AppPaths.GetCopilotCliExtensionFilePath(
+                userPaths.CopilotCliHookFilePath);
             bool copilotCliExtensionInstalled = CopilotCliExtensionManager.IsInstalled(
-                userPaths.CopilotCliExtensionFilePath,
+                copilotCliExtensionFilePath,
                 userPaths.InstalledBinaryPath);
-            CopilotCliRuntimeStatus copilotCliRuntimeStatus =
-                await copilotCliRuntimeProbe.GetStatusAsync(cancellationToken);
             List<VsCodeSettingsStatus> hookRegistrationStatuses = GetVsCodeSettingsStatuses(
                 userPaths.VsCodeSettingsTargets,
                 userPaths.ManagedHookFilePath);
@@ -518,19 +364,14 @@ internal sealed class UserCommandService(
                     userPaths.ManagedHookFilePath));
             await Console.Out.WriteLineAsync(
                 FormatCheck(
-                    "Legacy managed Copilot CLI hooks removed",
-                    copilotCliHookFileStatus.IsClean,
-                    copilotCliHookFileStatus.Detail));
+                    "Legacy Copilot CLI hooks absent",
+                    !copilotCliHookFileInstalled,
+                    userPaths.CopilotCliHookFilePath));
             await Console.Out.WriteLineAsync(
                 FormatCheck(
                     "Copilot CLI extension",
                     copilotCliExtensionInstalled,
-                    userPaths.CopilotCliExtensionFilePath));
-            await Console.Out.WriteLineAsync(
-                FormatCheck(
-                    "Copilot CLI user-extension runtime",
-                    copilotCliRuntimeStatus.UserExtensionsSupported,
-                    copilotCliRuntimeStatus.Detail));
+                    copilotCliExtensionFilePath));
             foreach (VsCodeSettingsStatus status in hookRegistrationStatuses)
             {
                 await Console.Out.WriteLineAsync(FormatVsCodeSettingsCheck(status));
@@ -545,9 +386,8 @@ internal sealed class UserCommandService(
 
             bool isHealthy = binaryInstalled
                 && managedHookFileInstalled
-                && copilotCliHookFileStatus.IsClean
+                && !copilotCliHookFileInstalled
                 && copilotCliExtensionInstalled
-                && copilotCliRuntimeStatus.UserExtensionsSupported
                 && hookRegistrationStatuses
                     .Where(static item => item.Target.IsApplicable)
                     .All(static item => item.IsRegistered)
@@ -587,14 +427,15 @@ internal sealed class UserCommandService(
             bool managedHookFileInstalled =
                 UserHookConfigurationManager.IsManagedHookFileInstalled(
                     userPaths.ManagedHookFilePath);
-            CopilotCliHookFileStatus copilotCliHookFileStatus =
-                UserHookConfigurationManager.GetManagedCopilotCliHookFileStatus(
-                    userPaths.CopilotCliHookFilePath);
+            bool copilotCliHookFileInstalled =
+                UserHookConfigurationManager.IsManagedCopilotCliHookFileInstalled(
+                    userPaths.CopilotCliHookFilePath,
+                    userPaths.InstalledBinaryPath);
+            string copilotCliExtensionFilePath = AppPaths.GetCopilotCliExtensionFilePath(
+                userPaths.CopilotCliHookFilePath);
             bool copilotCliExtensionInstalled = CopilotCliExtensionManager.IsInstalled(
-                userPaths.CopilotCliExtensionFilePath,
+                copilotCliExtensionFilePath,
                 userPaths.InstalledBinaryPath);
-            CopilotCliRuntimeStatus copilotCliRuntimeStatus =
-                await copilotCliRuntimeProbe.GetStatusAsync(cancellationToken);
             List<VsCodeSettingsStatus> hookRegistrationStatuses = GetVsCodeSettingsStatuses(
                 userPaths.VsCodeSettingsTargets,
                 userPaths.ManagedHookFilePath);
@@ -616,7 +457,7 @@ internal sealed class UserCommandService(
             await Console.Out.WriteLineAsync(
                 $"Copilot CLI hook file path : {userPaths.CopilotCliHookFilePath}");
             await Console.Out.WriteLineAsync(
-                $"Copilot CLI extension file path : {userPaths.CopilotCliExtensionFilePath}");
+                $"Copilot CLI extension path : {copilotCliExtensionFilePath}");
             await Console.Out.WriteLineAsync("VS Code settings targets :");
             foreach (VsCodeSettingsStatus status in hookRegistrationStatuses)
             {
@@ -626,14 +467,9 @@ internal sealed class UserCommandService(
                 $"Managed hook file installed : "
                 + $"{managedHookFileInstalled}");
             await Console.Out.WriteLineAsync(
-                $"Legacy managed Copilot CLI hooks removed : "
-                + $"{copilotCliHookFileStatus.IsClean} ({copilotCliHookFileStatus.Detail})");
+                $"Legacy Copilot CLI hooks absent : {!copilotCliHookFileInstalled}");
             await Console.Out.WriteLineAsync(
-                $"Copilot CLI extension installed : "
-                + $"{copilotCliExtensionInstalled}");
-            await Console.Out.WriteLineAsync(
-                $"Copilot CLI user-extension runtime : "
-                + $"{copilotCliRuntimeStatus.Detail}");
+                $"Copilot CLI extension installed : {copilotCliExtensionInstalled}");
             await Console.Out.WriteLineAsync($"gopass available : {secretStoreAvailable}");
             await Console.Out.WriteLineAsync(
                 $"Telegram credentials resolvable : {credentialsAvailable}");
@@ -664,9 +500,6 @@ internal sealed class UserCommandService(
         try
         {
             UserInstallationPaths userPaths = AppPaths.ResolveUserPaths(options);
-            await using UserOperationLock operationLock =
-                await UserOperationLock.AcquireAsync(cancellationToken);
-
             using IDisposable logScope = sessionLogFileContext.UseLogFile(
                 userPaths.UserLogFilePath);
             AppLog.StartingUserSecret(logger);
@@ -792,96 +625,94 @@ internal sealed class UserCommandService(
         return Path.GetFullPath(binaryPath);
     }
 
-    private static ConfigurationApplyResult ApplyTrackedArtifactChange(
-        InstallArtifactSnapshot artifactSnapshot,
-        string filePath,
-        Func<ConfigurationApplyResult> apply)
+    private static void CopyBinary(string sourceBinaryPath, string targetBinaryPath)
     {
-        artifactSnapshot.BeginMutation(filePath);
-        try
-        {
-            ConfigurationApplyResult result = apply();
-            if (result.Applied)
-            {
-                artifactSnapshot.RecordMutation(filePath);
-            }
+        Directory.CreateDirectory(Path.GetDirectoryName(targetBinaryPath)
+            ?? throw new InvalidOperationException(
+                "The target binary path does not have a parent directory."));
 
-            return result;
-        }
-        catch
-        {
-            artifactSnapshot.RecordMutation(filePath);
-            throw;
-        }
-    }
-
-    private static void CopyBinary(
-        string sourceBinaryPath,
-        string targetBinaryPath,
-        Action<string> beginMutation,
-        Action<string> recordMutation)
-    {
         if (!string.Equals(sourceBinaryPath, targetBinaryPath, StringComparison.Ordinal))
         {
-            CopyFileAtomically(
-                sourceBinaryPath,
-                targetBinaryPath,
-                beginMutation,
-                recordMutation);
+            File.Copy(sourceBinaryPath, targetBinaryPath, overwrite: true);
+            CopyUnixFileMode(sourceBinaryPath, targetBinaryPath);
         }
 
-        CopyCompanionFile(
-            sourceBinaryPath,
-            targetBinaryPath,
-            ".pdb",
-            beginMutation,
-            recordMutation);
-        CopyCompanionFile(
-            sourceBinaryPath,
-            targetBinaryPath,
-            ".dbg",
-            beginMutation,
-            recordMutation);
+        CopyCompanionFile(sourceBinaryPath, targetBinaryPath, ".pdb");
+        CopyCompanionFile(sourceBinaryPath, targetBinaryPath, ".dbg");
     }
 
-    private static void DeleteManagedBinary(
-        string installedBinaryPath,
-        Action<string> beginMutation,
-        Action<string> recordMutation)
+    private static void DeleteManagedBinary(string installedBinaryPath)
     {
-        DeleteTrackedFile(installedBinaryPath, beginMutation, recordMutation);
-        DeleteTrackedFile(
-            Path.ChangeExtension(installedBinaryPath, ".pdb"),
-            beginMutation,
-            recordMutation);
-        DeleteTrackedFile(
-            Path.ChangeExtension(installedBinaryPath, ".dbg"),
-            beginMutation,
-            recordMutation);
+        TryDeleteFile(installedBinaryPath);
+        TryDeleteFile(Path.ChangeExtension(installedBinaryPath, ".pdb"));
+        TryDeleteFile(Path.ChangeExtension(installedBinaryPath, ".dbg"));
     }
 
-    private static void DeleteTrackedFile(
-        string path,
-        Action<string> beginMutation,
-        Action<string> recordMutation)
+    private static void DeleteCopilotCliEventSpool(string installedBinaryPath)
     {
-        beginMutation(path);
-        try
+        string spoolDirectory = AppPaths.GetCopilotCliEventSpoolDirectory(installedBinaryPath);
+        if (!Directory.Exists(spoolDirectory))
         {
-            TryDeleteFile(path);
+            return;
         }
-        finally
+
+        foreach (string filePath in Directory.EnumerateFiles(
+            spoolDirectory,
+            "*",
+            SearchOption.TopDirectoryOnly))
         {
-            recordMutation(path);
+            if (IsManagedCopilotCliSpoolFileName(Path.GetFileName(filePath)))
+            {
+                File.Delete(filePath);
+            }
         }
+
+        if (!Directory.EnumerateFileSystemEntries(spoolDirectory).Any())
+        {
+            Directory.Delete(spoolDirectory);
+        }
+    }
+
+    private static bool IsManagedCopilotCliSpoolFileName(string fileName)
+    {
+        if (fileName.Length == 41
+            && fileName[0] == '.'
+            && fileName.EndsWith(".tmp", StringComparison.Ordinal)
+            && Guid.TryParseExact(fileName[1..^4], "D", out _))
+        {
+            return true;
+        }
+
+        const int HashLength = 64;
+        if (fileName.Length < HashLength
+            || !IsHexHash(fileName.AsSpan(0, HashLength)))
+        {
+            return false;
+        }
+
+        ReadOnlySpan<char> suffix = fileName.AsSpan(HashLength);
+        return suffix.SequenceEqual(".json")
+            || suffix.SequenceEqual(".json.working")
+            || suffix.SequenceEqual(".json.cancelled");
+    }
+
+    private static bool IsHexHash(ReadOnlySpan<char> value)
+    {
+        foreach (char character in value)
+        {
+            if (!char.IsAsciiHexDigit(character))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static void CopyCompanionFile(
         string sourceBinaryPath,
         string targetBinaryPath,
-        string extension,
-        Action<string> beginMutation,
-        Action<string> recordMutation)
+        string extension)
     {
         string sourceCompanionPath = Path.ChangeExtension(sourceBinaryPath, extension);
         if (!File.Exists(sourceCompanionPath))
@@ -890,39 +721,7 @@ internal sealed class UserCommandService(
         }
 
         string targetCompanionPath = Path.ChangeExtension(targetBinaryPath, extension);
-        CopyFileAtomically(
-            sourceCompanionPath,
-            targetCompanionPath,
-            beginMutation,
-            recordMutation);
-    }
-
-    private static void CopyFileAtomically(
-        string sourcePath,
-        string targetPath,
-        Action<string> beginMutation,
-        Action<string> recordMutation)
-    {
-        beginMutation(targetPath);
-        string directoryPath = Path.GetDirectoryName(targetPath)
-            ?? throw new InvalidOperationException(
-                "The target artifact path does not have a parent directory.");
-        string temporaryPath = Path.Combine(
-            directoryPath,
-            $".{Path.GetFileName(targetPath)}.{Guid.NewGuid():N}.tmp");
-        try
-        {
-            Directory.CreateDirectory(directoryPath);
-            File.Copy(sourcePath, temporaryPath, overwrite: false);
-            CopyUnixFileMode(sourcePath, temporaryPath);
-            File.Move(temporaryPath, targetPath, overwrite: true);
-            temporaryPath = string.Empty;
-        }
-        finally
-        {
-            TryDeleteFile(temporaryPath);
-            recordMutation(targetPath);
-        }
+        File.Copy(sourceCompanionPath, targetCompanionPath, overwrite: true);
     }
 
     private static void CopyUnixFileMode(string sourceBinaryPath, string targetBinaryPath)
@@ -1152,320 +951,71 @@ internal sealed class UserCommandService(
         }
     }
 
-    private async Task RestoreFailedInstallStateAsync(
-        IEnumerable<(VsCodeSettingsTarget Target, ConfigurationPlanResult Plan)> registrationPlans,
-        InstallArtifactSnapshot? artifactSnapshot,
-        StoredTelegramSecretsTransaction secretTransaction,
-        bool preserveNewVsCodeArtifacts)
+    private static async Task CleanupFailedInstallArtifactsAsync(
+        UserInstallationPaths userPaths,
+        bool preserveManagedArtifacts)
     {
-        List<ConfigurationApplyResult> settingsRollbackResults =
-            RollbackVsCodeSettingsPlans(registrationPlans);
-        bool hasSettingsRollbackFailures =
-            settingsRollbackResults.Any(static result => !result.Applied);
+        if (preserveManagedArtifacts)
+        {
+            await Console.Out.WriteLineAsync(
+                "Preserved the existing managed installation after the failed upgrade.");
+            return;
+        }
+
+        bool copilotCliHookCleanupApplied = false;
+        bool copilotCliExtensionCleanupApplied = false;
+        bool vsCodeManagedHookCleanupApplied = false;
         await TryRunCleanupStepAsync(
-            "VS Code settings rollback reporting",
+            "Copilot CLI hook cleanup",
             async () =>
             {
-                await WriteConfigurationResultsAsync(settingsRollbackResults);
-                await WriteRollbackFailureSummaryAsync(hasSettingsRollbackFailures);
+                ConfigurationApplyResult copilotCliHookCleanupResult =
+                    UserHookConfigurationManager.UninstallManagedCopilotCliHookFile(
+                        userPaths.CopilotCliHookFilePath);
+                await Console.Out.WriteLineAsync(copilotCliHookCleanupResult.Message);
+                copilotCliHookCleanupApplied = copilotCliHookCleanupResult.Applied;
+            });
+        await TryRunCleanupStepAsync(
+            "Copilot CLI extension cleanup",
+            async () =>
+            {
+                ConfigurationApplyResult extensionCleanupResult =
+                    CopilotCliExtensionManager.Uninstall(
+                        AppPaths.GetCopilotCliExtensionFilePath(
+                            userPaths.CopilotCliHookFilePath));
+                await Console.Out.WriteLineAsync(extensionCleanupResult.Message);
+                copilotCliExtensionCleanupApplied = extensionCleanupResult.Applied;
             });
 
-        if (artifactSnapshot is not null)
+        await TryRunCleanupStepAsync(
+            "VS Code managed hook cleanup",
+            async () =>
+            {
+                ConfigurationApplyResult hookFileCleanupResult =
+                    UserHookConfigurationManager.UninstallManagedHookFile(
+                        userPaths.ManagedHookFilePath);
+                await Console.Out.WriteLineAsync(hookFileCleanupResult.Message);
+                vsCodeManagedHookCleanupApplied = hookFileCleanupResult.Applied;
+            });
+        if (copilotCliHookCleanupApplied
+            && copilotCliExtensionCleanupApplied
+            && vsCodeManagedHookCleanupApplied)
         {
             await TryRunCleanupStepAsync(
-                "managed artifact rollback",
+                "installed binary cleanup",
                 async () =>
                 {
-                    artifactSnapshot.Restore(
-                        preserveNewVsCodeArtifacts || hasSettingsRollbackFailures);
+                    DeleteManagedBinary(userPaths.InstalledBinaryPath);
                     await Console.Out.WriteLineAsync(
-                        preserveNewVsCodeArtifacts || hasSettingsRollbackFailures
-                            ? "Restored the previous installation while preserving newly created "
-                                + "VS Code artifacts that may still be referenced."
-                            : "Restored the installation artifacts to their pre-install state.");
+                        $"Removed installed binary if it existed: {userPaths.InstalledBinaryPath}");
                 });
         }
-        await TryRunCleanupStepAsync(
-            "Telegram secret rollback",
-            async () =>
-            {
-                await telegramCredentialProvider.RestoreStoredSecretsAsync(
-                    secretTransaction,
-                    CancellationToken.None);
-                await Console.Out.WriteLineAsync(
-                    "Restored Telegram secrets to their pre-install state.");
-            });
-    }
-
-    private async Task RestoreFailedUninstallStateAsync(
-        IEnumerable<(VsCodeSettingsTarget Target, ConfigurationPlanResult Plan)> registrationPlans,
-        InstallArtifactSnapshot artifactSnapshot,
-        StoredTelegramSecretsTransaction? secretTransaction)
-    {
-        List<ConfigurationApplyResult> settingsRollbackResults =
-            RollbackVsCodeSettingsPlans(registrationPlans);
-        await TryRunCleanupStepAsync(
-            "VS Code settings rollback reporting",
-            async () =>
-            {
-                await WriteConfigurationResultsAsync(settingsRollbackResults);
-                await WriteRollbackFailureSummaryAsync(
-                    settingsRollbackResults.Any(static result => !result.Applied));
-            });
-
-        await TryRunCleanupStepAsync(
-            "managed artifact rollback",
-            async () =>
-            {
-                artifactSnapshot.Restore(preserveNewVsCodeArtifacts: false);
-                await Console.Out.WriteLineAsync(
-                    "Restored managed artifacts to their pre-uninstall state.");
-            });
-
-        if (secretTransaction is not null)
+        else
         {
-            await TryRunCleanupStepAsync(
-                "Telegram secret rollback",
-                async () =>
-                {
-                    await telegramCredentialProvider.RestoreStoredSecretsAsync(
-                        secretTransaction,
-                        CancellationToken.None);
-                    await Console.Out.WriteLineAsync(
-                        "Restored Telegram secrets to their pre-uninstall state.");
-                });
+            await Console.Out.WriteLineAsync(
+                "Skipped installed binary cleanup because one or more hook cleanup steps did "
+                + $"not complete successfully: {userPaths.InstalledBinaryPath}");
         }
-    }
-
-    private sealed class InstallArtifactSnapshot
-    {
-        private readonly IReadOnlyList<InstallFileSnapshot> files;
-        private readonly Dictionary<string, InstallFileSnapshot> filesByPath;
-
-        private InstallArtifactSnapshot(IReadOnlyList<InstallFileSnapshot> files)
-        {
-            this.files = files;
-            StringComparer pathComparer = OperatingSystem.IsWindows()
-                ? StringComparer.OrdinalIgnoreCase
-                : StringComparer.Ordinal;
-            filesByPath = files.ToDictionary(
-                static file => Path.GetFullPath(file.FilePath),
-                pathComparer);
-        }
-
-        public static InstallArtifactSnapshot Capture(UserInstallationPaths paths)
-        {
-            return new InstallArtifactSnapshot(
-            [
-                InstallFileSnapshot.Capture(
-                    paths.InstalledBinaryPath,
-                    preserveIfCreatedAndSettingsRollbackFails: true),
-                InstallFileSnapshot.Capture(
-                    Path.ChangeExtension(paths.InstalledBinaryPath, ".pdb"),
-                    preserveIfCreatedAndSettingsRollbackFails: true),
-                InstallFileSnapshot.Capture(
-                    Path.ChangeExtension(paths.InstalledBinaryPath, ".dbg"),
-                    preserveIfCreatedAndSettingsRollbackFails: true),
-                InstallFileSnapshot.Capture(
-                    paths.ManagedHookFilePath,
-                    preserveIfCreatedAndSettingsRollbackFails: true),
-                InstallFileSnapshot.Capture(
-                    paths.CopilotCliHookFilePath,
-                    preserveIfCreatedAndSettingsRollbackFails: false),
-                InstallFileSnapshot.Capture(
-                    paths.CopilotCliExtensionFilePath,
-                    preserveIfCreatedAndSettingsRollbackFails: false),
-            ]);
-        }
-
-        public void RecordMutation(string filePath)
-        {
-            if (!filesByPath.TryGetValue(Path.GetFullPath(filePath), out InstallFileSnapshot? file))
-            {
-                throw new InvalidOperationException(
-                    $"The managed artifact snapshot does not contain '{filePath}'.");
-            }
-
-            file.RecordMutation();
-        }
-
-        public void BeginMutation(string filePath)
-        {
-            if (!filesByPath.TryGetValue(Path.GetFullPath(filePath), out InstallFileSnapshot? file))
-            {
-                throw new InvalidOperationException(
-                    $"The managed artifact snapshot does not contain '{filePath}'.");
-            }
-
-            file.RefreshBaseline();
-        }
-
-        public void Restore(bool preserveNewVsCodeArtifacts)
-        {
-            List<string> failures = [];
-            foreach (InstallFileSnapshot file in files)
-            {
-                if (preserveNewVsCodeArtifacts
-                    && !file.Existed
-                    && file.PreserveIfCreatedAndSettingsRollbackFails)
-                {
-                    continue;
-                }
-
-                try
-                {
-                    file.Restore();
-                }
-                catch (Exception ex) when (
-                    ex is IOException or UnauthorizedAccessException or NotSupportedException
-                        or InvalidOperationException)
-                {
-                    failures.Add($"{file.FilePath}: {ex.Message}");
-                }
-            }
-
-            if (failures.Count > 0)
-            {
-                throw new InvalidOperationException(
-                    "One or more managed artifacts could not be restored: "
-                    + string.Join(" | ", failures));
-            }
-        }
-    }
-
-    private sealed class InstallFileSnapshot
-    {
-        private byte[]? expectedContent;
-        private FileSystemMetadataSnapshot? expectedMetadata;
-
-        private InstallFileSnapshot(
-            string filePath,
-            byte[]? content,
-            FileSystemMetadataSnapshot metadata,
-            bool preserveIfCreatedAndSettingsRollbackFails)
-        {
-            FilePath = filePath;
-            Content = content;
-            Metadata = metadata;
-            PreserveIfCreatedAndSettingsRollbackFails =
-                preserveIfCreatedAndSettingsRollbackFails;
-        }
-
-        public string FilePath { get; }
-
-        public byte[]? Content { get; private set; }
-
-        public FileSystemMetadataSnapshot Metadata { get; private set; }
-
-        public bool PreserveIfCreatedAndSettingsRollbackFails { get; }
-
-        public bool Existed => Content is not null;
-
-        private bool WasMutated { get; set; }
-
-        public static InstallFileSnapshot Capture(
-            string filePath,
-            bool preserveIfCreatedAndSettingsRollbackFails)
-        {
-            if (!File.Exists(filePath))
-            {
-                return new InstallFileSnapshot(
-                    filePath,
-                    content: null,
-                    FileSystemMetadataSnapshot.Capture(filePath, fileExisted: false),
-                    preserveIfCreatedAndSettingsRollbackFails);
-            }
-
-            return new InstallFileSnapshot(
-                filePath,
-                File.ReadAllBytes(filePath),
-                FileSystemMetadataSnapshot.Capture(filePath, fileExisted: true),
-                preserveIfCreatedAndSettingsRollbackFails);
-        }
-
-        public void RecordMutation()
-        {
-            byte[]? currentContent = ReadContent(FilePath);
-            FileSystemMetadataSnapshot currentMetadata = FileSystemMetadataSnapshot.Capture(
-                FilePath,
-                currentContent is not null);
-            if (!WasMutated
-                && ContentEquals(currentContent, Content)
-                && Metadata.MatchesCurrent(FilePath, Content is not null))
-            {
-                return;
-            }
-
-            WasMutated = true;
-            expectedContent = currentContent;
-            expectedMetadata = currentMetadata;
-        }
-
-        public void RefreshBaseline()
-        {
-            if (WasMutated)
-            {
-                return;
-            }
-
-            Content = ReadContent(FilePath);
-            Metadata = FileSystemMetadataSnapshot.Capture(
-                FilePath,
-                Content is not null);
-        }
-
-        public void Restore()
-        {
-            if (!WasMutated)
-            {
-                return;
-            }
-
-            byte[]? currentContent = ReadContent(FilePath);
-            if (!ContentEquals(currentContent, expectedContent)
-                || expectedMetadata is null
-                || !expectedMetadata.MatchesCurrent(
-                    FilePath,
-                    expectedContent is not null))
-            {
-                throw new InvalidOperationException(
-                    "The file changed after the managed operation wrote it; "
-                    + "automatic rollback was skipped.");
-            }
-
-            if (Content is null)
-            {
-                TryDeleteFile(FilePath);
-                Metadata.Restore(FilePath);
-                return;
-            }
-
-            string? parentDirectory = Path.GetDirectoryName(FilePath);
-            if (!string.IsNullOrWhiteSpace(parentDirectory))
-            {
-                Directory.CreateDirectory(parentDirectory);
-            }
-
-            string temporaryPath = $"{FilePath}.restore.{Guid.NewGuid():N}.tmp";
-            try
-            {
-                File.WriteAllBytes(temporaryPath, Content);
-                File.Move(temporaryPath, FilePath, overwrite: true);
-                Metadata.Restore(FilePath);
-            }
-            finally
-            {
-                TryDeleteFile(temporaryPath);
-            }
-        }
-
-        private static byte[]? ReadContent(string filePath)
-            => File.Exists(filePath) ? File.ReadAllBytes(filePath) : null;
-
-        private static bool ContentEquals(byte[]? left, byte[]? right)
-            => left is null
-                ? right is null
-                : right is not null && left.AsSpan().SequenceEqual(right);
     }
 
     private static async Task TryRunCleanupStepAsync(string stepName, Func<Task> cleanupStep)
