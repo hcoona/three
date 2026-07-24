@@ -25,8 +25,11 @@ semantic scanning, write authority, WinUI, network access, and private data from
   privacy, redaction, Agent-egress, artifact-lifecycle, and handoff contract for increment A0.
   Human scope approval alone does not establish increment completion.
 - `plans/atlas-v0-a0-current-corpus-refresh.md` is the planning-only A0R1 route for a metadata-only
-  current-tree census, stable alias continuity, and exact project-leader approval of a refreshed
-  private baseline manifest.
+  current-tree census. Its first authorized census safely refused, and its post-refusal closure is
+  partially superseded by A0R1C1.
+- `plans/atlas-v0-a0-current-corpus-refresh-governance-remediation.md` is the planning-only A0R1C1
+  route that excludes a later unauthorized execution from evidence, closes A0R1 from its first
+  authorized refusal, and requires prospective A0R2 authority before any diagnosis or census.
 - `plans/atlas-v0-a1-foundation-plan.md` defines the exact three-project C# scaffold,
   deterministic empty-survey contract, command behavior, tests, validation, and release gate for
   increment A1.

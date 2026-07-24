@@ -72,6 +72,10 @@
 > `atlas-v0-a0-current-corpus-refresh.md` governs A0R1. It may perform one metadata-only current-tree
 > census and obtain exact project-leader approval of a refreshed private baseline. It grants no A2
 > retry or production authority rebind.
+> **Current corpus refresh governance remediation**
+> `atlas-v0-a0-current-corpus-refresh-governance-remediation.md` governs A0R1C1. It records that
+> A0R1's first safe refusal consumed authority, excludes a later execution from acceptance evidence,
+> and permits only repository-safe closure before a separately planned A0R2.
 
 ## 1. Outcome
 
