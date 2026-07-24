@@ -1,6 +1,6 @@
 # Atlas V0 A0 Current Corpus Refresh
 
-**Lifecycle:** Partially superseded; only the A0R2-imported policy sections remain operative
+**Lifecycle:** Partially superseded; only the A0R3-imported policy sections remain operative
 
 **Status:** Completed on first authorized safe refusal at `G0R1`
 
@@ -47,12 +47,13 @@ final exact approved bytes.
 > `atlas-v0-a0-current-corpus-refresh-governance-remediation.md` governed A0R1C1. The first authorized
 > census consumed A0R1 authority on its safe-refusal branch. A later execution had no prospective
 > authority and contributes no acceptance evidence. A0R1 is closed and all execution, publication,
-> decision, finalization, approval, retry, and Git authority below is historical. A0R2 imports only
+> decision, finalization, approval, retry, and Git authority below is historical. A0R3 imports only
 > section 2 corpus/privacy/threat-model constraints, section 4 metadata classification/selection/alias
 > rules, and section 5 revision-3 pending schema/codec invariants.
 >
-> `atlas-v0-a0-current-corpus-recovery.md` governs A0R2 prospectively. It does not reopen A0R1 or
-> authorize use of the later A0R1 execution result.
+> A0R2 completed at verified shared `G0R2` without a census or candidate.
+> `atlas-v0-a0-approved-manifest-corpus-refresh.md` governs A0R3 prospectively. It does not reopen
+> A0R1, diagnose A0R2, or authorize use of any prior execution result.
 
 ## 1. Authority correction and claim
 
@@ -68,7 +69,7 @@ The old approved manifest remains authoritative only for:
 - definition-group identifiers, selection rules, first-match order, and decisions;
 - stable source aliases for locator identities still present;
 - supported schema values, privacy policy, lifecycle policy, and terminal-status vocabulary; and
-- the fixed survey alias, public game labels, and A0 approval provenance.
+- the fixed survey alias and A0 approval provenance.
 
 It is not authoritative for current membership or counts. The current observed tree supplies those
 facts through one metadata-only census.
@@ -224,8 +225,8 @@ the separately planned A2R14 rebinds production authority and its revision polic
 
 The session utility serializes the census with that codec as a private revision-3 manifest with:
 
-- the exact prior schema, survey alias, public game labels, save roots, definition-group IDs, rules,
-  order, purposes, and decisions;
+- the exact prior schema, survey alias, save roots, definition-group IDs, rules, order, purposes, and
+  decisions;
 - current entries, group counts, root counts, and top-level counts;
 - validation method `manual-a0` and every reconciliation flag true; and
 - pending confirmation with no approver or decision reference.

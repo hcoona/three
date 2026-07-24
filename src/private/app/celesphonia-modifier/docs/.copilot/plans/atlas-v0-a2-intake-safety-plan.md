@@ -77,10 +77,12 @@
 > A0R1's first safe refusal consumed authority, excludes a later execution from acceptance evidence,
 > and established repository-safe closure before separately planned A0R2.
 > **Diagnostic-gated current corpus recovery**
-> `atlas-v0-a0-current-corpus-recovery.md` governs A0R2. It permits one fixed-class metadata-only
-> diagnosis only after verified source-qualification gate `S0R2` and at most one consuming private
-> census attempt only after verified `authorize-census` decision gate `D0R2`. It grants no A2 retry or
-> production authority rebind.
+> `atlas-v0-a0-current-corpus-recovery.md` governed completed A0R2. A0R2 stopped after one fixed-class
+> diagnostic and published no census or candidate. Its authority is consumed.
+> **Approved-manifest current corpus refresh**
+> `atlas-v0-a0-approved-manifest-corpus-refresh.md` governs planning-only A0R3. It makes the approved
+> manifest the sole corpus-specific authority, uses fresh runtime locators, and may publish at most one
+> pending candidate after exact source qualification. It grants no candidate decision or A2 authority.
 
 ## 1. Outcome
 
@@ -155,10 +157,10 @@ A2 implementation may begin only when:
 
 Current A2 progression is blocked. A2R8 attempt authority is consumed, A2R9 stopped before private
 reads, and A2R10 through A2R13 completed their bounded work. A2R13's clean-lineage discovery safely
-stopped before pending-manifest publication. A0R1 is closed without a refreshed baseline. A0R2 may
-diagnose only after verified `S0R2` and, after verified `authorize-census` `D0R2`, perform at most one
-consuming private census attempt. No A2 operation may resume until future approved corpus authority
-exists and a later A2R14 explicitly binds it.
+stopped before pending-manifest publication. A0R1 and A0R2 are closed without a refreshed baseline.
+A0R3 may prepare a new utility only after verified `R0R3` and may run one metadata-only census only
+after exact source qualification `S0R3`. No A2 operation may resume until future approved corpus
+authority exists and a later A2R14 explicitly binds it.
 
 ## 4. Scope
 
@@ -509,8 +511,8 @@ A2R8 `G` does not authorize approval or `intake-confirm`. Preserve all existing 
 locally and stop. Supply none of their paths, hashes, counts, differences, names, contents,
 disposition, or outcome to a subagent, process output, or Git.
 
-A2 approval cannot resume unless A0R2 and a separate reviewed decision increment first produce an
-approved refreshed manifest. A separately persisted and independently reviewed A2R14 must then bind
+A2 approval cannot resume unless A0R3 and a later separately reviewed decision increment first produce
+an approved refreshed manifest. A separately persisted and independently reviewed A2R14 must then bind
 A2R8 `G`, verified shared A2R10 `G10`, A2R11 `G11`, A2R12 `G12`, A2R13 `G13`, and that approved
 manifest; create another fresh lineage; define the exact local review procedure, repository-safe
 decision record, ancestry, and fixed diagnostics; and receive project-leader confirmation.
@@ -903,14 +905,14 @@ workspace without reading or importing historical inventory state. Released disc
 safe-refusal branch before pending-manifest publication. A2R13 grants no retry, confirmation, copy,
 preflight, or continuation authority.
 
-### A2.5 Current A0 recovery boundary
+### A2.5 Current A0 refresh boundary
 
-A0R1 is closed at `G0R1` on its first authorized safe refusal and grants no retry. A0R2 may perform one
-fixed-class metadata-only diagnosis only after verified `S0R2` and, only after verified
-`authorize-census` `D0R2`, at most one consuming private census attempt. It may publish only a pending
-candidate and grants no baseline approval or A2 authority. Any future approved refreshed manifest
-requires separate decision authority and a separately persisted, reviewed A2R14 authority rebind with
-another fresh lineage.
+A0R1 is closed at `G0R1` and A0R2 at `G0R2`; both grant no retry. A0R3 may derive one new utility only
+after verified `R0R3` and run one metadata-only census only after exact `S0R3`. It treats the approved
+manifest as corpus authority and explicit runtime locators only as current operational input. It may
+publish one pending candidate and grants no baseline approval or A2 authority. Any future approved
+refreshed manifest requires separate decision authority and a separately persisted, reviewed A2R14
+authority rebind with another fresh lineage.
 
 ### A2.6 Historical A2R8 release
 
@@ -1019,8 +1021,8 @@ authority.
 
 Every A2R8 plan-review and release record followed the correction plan and sections 16 and 17 of
 `project-operating-model.md`. A2R9 remains blocked review evidence; A2R10 through A2R13 are completed
-evidence. A0R1 is closed, and current corpus recovery is governed by
-`atlas-v0-a0-current-corpus-recovery.md`; it grants no A2 authority.
+evidence. A0R1 and A0R2 are closed, and current corpus refresh is governed by
+`atlas-v0-a0-approved-manifest-corpus-refresh.md`; it grants no A2 authority.
 
 ## 21. Private outputs and handoff
 
@@ -1044,9 +1046,9 @@ Expected private outputs are:
   rebased requests, protected manifest decision, released intake states, qualified snapshot,
   receipts, inventory transitions, and non-deleting lifecycle-preflight evidence under its
   subordinate plan. Its safe-refusal branch created no pending manifest or downstream state; and
-- A0R1 is closed without a candidate. A0R2 may create one fixed-class diagnostic receipt, protected
-  decision evidence, one census marker, and at most one protected pending candidate under its own
-  subordinate plan. It cannot approve or finalize that candidate.
+- A0R1 and A0R2 are closed without a candidate. A0R3 may create one census marker and at most one
+  protected pending candidate under its own subordinate plan. It cannot approve or finalize that
+  candidate.
 
 Operational Atlas outputs remain under protected Git-ignored Atlas workspaces and follow A0
 lifecycle milestones. The A2R10, A2R11, and A2R12 reports remain outside operational workspaces and
@@ -1057,7 +1059,7 @@ To resume A2:
 1. read all applicable `AGENTS.md` files and the governing plans;
 2. verify A2R8 `G`, blocked A2R9 `R`, completed A2R10 `G10`, A2R11 `G11`, A2R12 `G12`, A2R13 `G13`,
    upstream, and clean worktree;
-3. complete A0R2 and any later refreshed-manifest approval only under their exact reviewed plans;
+3. complete A0R3 and any later refreshed-manifest approval only under their exact reviewed plans;
 4. persist and independently review A2R14 only after an approved refreshed manifest exists;
 5. perform no discovery, confirmation, copy, or preflight before verified A2R14 authority; and
 6. infer neither private state nor authority from conversation history, artifact presence, or

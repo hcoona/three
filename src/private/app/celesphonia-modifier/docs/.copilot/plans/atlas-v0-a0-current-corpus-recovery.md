@@ -1,8 +1,8 @@
 # Atlas V0 A0 Current Corpus Recovery
 
-**Lifecycle:** Active subordinate; plan-only before verified shared `R0R2`
+**Lifecycle:** Historical supporting after verified shared `G0R2`
 
-**Status:** Diagnostic and census blocked
+**Status:** Completed on project-leader stop without census or candidate
 
 **Increment:** A0R2 - Diagnostic-Gated Census Recovery
 
@@ -37,6 +37,14 @@ project-leader decision and reviewed Git gate.
 
 **Planned completion record:**
 `../reviews/atlas-v0-a0-current-corpus-recovery-completion.md`
+
+> **A0R3 authority correction**
+> A0R2 completed at verified shared `G0R2`
+> `1f9fbcd369d893e8de88cfe195512936e4815f01`. Its diagnostic and decision attempts are consumed, and
+> it grants no retry, census, or A2 authority.
+> `atlas-v0-a0-approved-manifest-corpus-refresh.md` prospectively replaces its historical-input model:
+> the approved manifest is corpus authority, the old request is only a minimum baseline-byte anchor
+> carrier, and current locators come only from fresh runtime input.
 
 ## 1. Outcome and authority
 

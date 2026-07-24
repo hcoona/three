@@ -26,10 +26,12 @@ semantic scanning, write authority, WinUI, network access, and private data from
   Human scope approval alone does not establish increment completion.
 - `plans/atlas-v0-a0-current-corpus-refresh.md` is partially superseded after completed A0R1. Only the
   corpus/privacy/threat-model, metadata, and pending schema/codec sections explicitly imported by
-  A0R2 remain operative; it grants no execution or approval authority.
-- `plans/atlas-v0-a0-current-corpus-recovery.md` is the planning-only A0R2 route for one privacy-safe
-  fixed-class diagnostic after `S0R2` and at most one consuming private metadata-census attempt after
-  an exact `authorize-census` `D0R2`.
+  A0R3 remain operative; it grants no execution or approval authority.
+- `plans/atlas-v0-a0-current-corpus-recovery.md` is the completed historical A0R2 route. It stopped
+  after one fixed-class diagnostic and produced no census, candidate, or A2 authority.
+- `plans/atlas-v0-a0-approved-manifest-corpus-refresh.md` is the planning-only A0R3 route that makes
+  the approved manifest corpus authority, takes current locators only as runtime input, and permits at
+  most one metadata-only census after exact source qualification.
 - `plans/atlas-v0-a1-foundation-plan.md` defines the exact three-project C# scaffold,
   deterministic empty-survey contract, command behavior, tests, validation, and release gate for
   increment A1.
@@ -79,6 +81,14 @@ semantic scanning, write authority, WinUI, network access, and private data from
   accepted A0R1C1 authority correction at verified shared `R0R1C1`.
 - `reviews/atlas-v0-a0-current-corpus-refresh-completion.md` closes A0R1 at verified shared `G0R1` on
   its first authorized safe-refusal branch and excludes the later execution result from evidence.
+- `reviews/atlas-v0-a0-current-corpus-recovery-plan-review.md` binds the accepted A0R2 plan at verified
+  shared `R0R2`.
+- `reviews/atlas-v0-a0-current-corpus-recovery-source-qualification.md` binds exact A0R2 source at
+  verified shared `S0R2`.
+- `reviews/atlas-v0-a0-current-corpus-recovery-diagnostic-decision.md` records the project-leader
+  `stop` decision at verified shared `D0R2`.
+- `reviews/atlas-v0-a0-current-corpus-recovery-completion.md` closes A0R2 at verified shared `G0R2`
+  without census, candidate, refreshed baseline, or A2 authority.
 - `reviews/atlas-v0-a0-scope-review.md` is the repository-safe record of the approved Atlas V0 A0
   project-leader decision. Its forward-looking identity and immutable-copy wording is partially
   superseded only when the verified A2 plan-review record activates the trusted-local profile.
