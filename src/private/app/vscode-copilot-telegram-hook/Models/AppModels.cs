@@ -67,6 +67,33 @@ internal sealed class StopHookInput
     public bool StopHookActive { get; set; }
 }
 
+internal sealed class PreToolUseHookInput
+{
+    [JsonPropertyName("timestamp")]
+    public string Timestamp { get; set; } = string.Empty;
+
+    [JsonPropertyName("cwd")]
+    public string Cwd { get; set; } = string.Empty;
+
+    [JsonPropertyName("session_id")]
+    public string SessionId { get; set; } = string.Empty;
+
+    [JsonPropertyName("hook_event_name")]
+    public string HookEventName { get; set; } = string.Empty;
+
+    [JsonPropertyName("transcript_path")]
+    public string? TranscriptPath { get; set; }
+
+    [JsonPropertyName("tool_name")]
+    public string ToolName { get; set; } = string.Empty;
+
+    [JsonPropertyName("tool_input")]
+    public JsonElement ToolInput { get; set; }
+
+    [JsonPropertyName("tool_use_id")]
+    public string ToolUseId { get; set; } = string.Empty;
+}
+
 internal sealed class CopilotCliSessionEventInput
 {
     [JsonPropertyName("session_id")]

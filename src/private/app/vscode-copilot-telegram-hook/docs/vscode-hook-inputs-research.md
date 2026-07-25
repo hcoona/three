@@ -9,6 +9,8 @@
     - [`h-003-human-confirmation-2026-03-13-addendum.md`](./h-003-human-confirmation-2026-03-13-addendum.md)
     - [`h-005-human-verification-2026-03-14-hook-input-field-names.md`](./h-005-human-verification-2026-03-14-hook-input-field-names.md)
     - [`h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md`](./h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md)
+    - [`h-009-human-confirmation-2026-07-25-root-lifecycle-notifications.md`](./h-009-human-confirmation-2026-07-25-root-lifecycle-notifications.md)
+    - the current official VS Code hook overview and hook reference
     - non-normative repository context reviewed for comparison
 - Scope note: H-002 and H-003 may refine project interpretation, but the
   external research basis for this note is the user-provided VS Code reference
@@ -32,6 +34,8 @@ This research focuses on the hook events and input fields that are directly rele
 - common hook input fields,
 - `SessionStart` input,
 - `UserPromptSubmit` input,
+- `PreToolUse` input,
+- `SubagentStart` and `SubagentStop` lifecycle inputs,
 - `Stop` input,
 - what hook input already gives us for correlation,
 - what the custom instructions documentation does and does not document,
@@ -45,13 +49,15 @@ This research focuses on the hook events and input fields that are directly rele
 
 ### Official VS Code documentation inherited from H-001
 
-- [Agent hooks in Visual Studio Code (Preview)](https://code.visualstudio.com/docs/copilot/customization/hooks)
+- [Agent hooks in Visual Studio Code (Preview)](https://code.visualstudio.com/docs/agent-customization/hooks)
+- [Hooks reference](https://code.visualstudio.com/docs/agents/reference/hooks-reference)
 
 ### Later human clarification and verification
 
 - [`h-003-human-confirmation-2026-03-13-addendum.md`](./h-003-human-confirmation-2026-03-13-addendum.md)
 - [`h-005-human-verification-2026-03-14-hook-input-field-names.md`](./h-005-human-verification-2026-03-14-hook-input-field-names.md)
 - [`h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md`](./h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md)
+- [`h-009-human-confirmation-2026-07-25-root-lifecycle-notifications.md`](./h-009-human-confirmation-2026-07-25-root-lifecycle-notifications.md)
 
 These VS Code references are part of the user-provided reference set preserved
 in [`h-001-original-requirement-brief.md`](./h-001-original-requirement-brief.md).
@@ -69,28 +75,21 @@ The VS Code hooks documentation states that **every hook receives a JSON object 
 | ----------------- | ----------------------------------- | --------------------------------------------------------------- |
 | `timestamp`       | Time when the hook event occurred   | Can be used for logging, ordering, and run correlation          |
 | `cwd`             | Current workspace path              | Distinguishes workspaces and gives a stable state root          |
-| `sessionId`       | Agent session identifier            | The main documented session-level correlation key               |
-| `hookEventName`   | Current hook event name             | Distinguishes `SessionStart`, `Stop`, and others                |
+| `session_id`      | Agent session identifier            | The main documented session-level correlation key               |
+| `hook_event_name` | Current hook event name             | Distinguishes `SessionStart`, `PreToolUse`, `Stop`, and others  |
 | `transcript_path` | Path to the session transcript JSON | Potentially useful for traceability and turn/session inspection |
 
 ### Current project implementation note
 
-The external documentation currently describes these field names in camelCase,
-such as `sessionId` and `hookEventName`.
-
-However, the current project implementation follows the later human
-verification recorded in
+The current official documentation and the observed runtime recorded in
 [`h-005-human-verification-2026-03-14-hook-input-field-names.md`](./h-005-human-verification-2026-03-14-hook-input-field-names.md):
-the current observed runtime for this project uses `session_id` and
-`hook_event_name`.
-
-For this project, the external documentation is still the authoritative source
-for the documented platform contract, but current implementation follows the
-measured runtime contract recorded in H-005 when the two conflict.
+both use `session_id` and `hook_event_name`. The earlier camelCase discrepancy
+is no longer present in the current official common-input table.
 
 ### Key observation
 
-For hook-to-hook correlation alone, the documented common input already includes **session-level identity** (`sessionId`) and **workspace identity** (`cwd`).
+For hook-to-hook correlation alone, the documented common input already includes
+**session-level identity** (`session_id`) and **workspace identity** (`cwd`).
 
 That means a design that only needs to correlate one hook invocation with another hook invocation may already have enough documented information without inventing an extra identifier first.
 
@@ -106,7 +105,9 @@ The VS Code hooks documentation states that `SessionStart` receives the common f
 
 #### Project relevance
 
-For this project, `SessionStart` does **not** provide much extra correlation data beyond the common fields. The main useful values are still `sessionId`, `cwd`, `timestamp`, and `transcript_path`.
+For this project, `SessionStart` does **not** provide much extra correlation
+data beyond the common fields. The main useful values are still `session_id`,
+`cwd`, `timestamp`, and `transcript_path`.
 
 The official hooks documentation also states that `SessionStart` output can inject `additionalContext` into the agent conversation.
 
@@ -129,6 +130,40 @@ for each user prompt and therefore marks the start of a new chat turn.
 That makes it the most natural documented place to advance any internal
 turn-scoped state such as a repository-defined `turn_id`.
 
+### `PreToolUse`
+
+The current hook reference states that `PreToolUse` receives:
+
+| Field         | Meaning                                  |
+| ------------- | ---------------------------------------- |
+| `tool_name`   | Name of the tool about to be invoked     |
+| `tool_input`  | Structured input that will be sent to it |
+| `tool_use_id` | Identifier for that individual tool call |
+
+#### Project relevance
+
+Observed Copilot events identify the user-input tool as `ask_user` and place the
+user-facing question in `tool_input.message`. Therefore, a root `PreToolUse`
+hook can notify at the moment Copilot requires an answer without parsing the
+unstable transcript format. The durable duplicate-suppression key can be
+derived from `tool_use_id`.
+
+### `SubagentStart` and `SubagentStop`
+
+The current hook reference documents dedicated subagent lifecycle events with
+`agent_id` and `agent_type`; `SubagentStop` also receives
+`stop_hook_active`. The general hook overview also states that hooks operate
+across local, background, and cloud agent types.
+
+#### Project relevance
+
+Subagent completion is now a distinct documented lifecycle concept and is not a
+root user-notification opportunity. Runtime evidence supplied with H-009 also
+shows nested sessions whose `session_id` is a tool-call identifier. The
+implementation therefore suppresses those observed tool-call session
+identifiers on every managed notification hook, including `Stop` and
+`PreToolUse`.
+
 ### `Stop`
 
 The VS Code hooks documentation states that `Stop` receives the common fields plus:
@@ -141,12 +176,14 @@ The VS Code hooks documentation states that `Stop` receives the common fields pl
 
 For this project, `Stop` also gets the same common correlation fields, especially:
 
-- `sessionId`
+- `session_id`
 - `cwd`
 - `timestamp`
 - `transcript_path`
 
-That means the `Stop` hook already knows which session it belongs to according to the official documentation.
+That means the `Stop` hook already knows which session it belongs to according
+to the official documentation. The project must still decide whether that
+session is the root user-facing session before notifying.
 
 The official hooks documentation also states that `Stop` can return
 `hookSpecificOutput` with:
@@ -170,11 +207,13 @@ custom-instruction artifact.
 Based on the official hook input contract, the hook runtime already has documented access to enough information to do all of the following:
 
 1. identify the current workspace (`cwd`),
-2. identify the current Copilot session (`sessionId`),
+2. identify the current Copilot session (`session_id`),
 3. observe when a new user prompt starts a turn (`UserPromptSubmit`),
-4. tell which lifecycle event is running (`hookEventName`),
+4. tell which lifecycle event is running (`hook_event_name`),
 5. record when the event happened (`timestamp`), and
-6. reference the transcript (`transcript_path`).
+6. reference the transcript (`transcript_path`),
+7. identify a pending tool invocation (`tool_name` and `tool_use_id`), and
+8. distinguish explicit subagent lifecycle events (`agent_id` and `agent_type`).
 
 ## Locality and execution-model clarification
 
@@ -196,7 +235,9 @@ Therefore, the safer project interpretation is:
   for the user's Windows and WSL Linux setups; but
 - broader remote or non-local execution semantics should be treated as upstream
   platform constraints, not as proof that the product must widen its formal
-  support scope before design begins.
+  support scope before design begins; and
+- user-level notification hooks must explicitly suppress nested or tool-call
+  sessions because hook execution is not limited to the root agent.
 
 This reframes the earlier concern from an unresolved pre-design requirement gap
 into a platform constraint that later design work should tolerate where
@@ -233,7 +274,7 @@ If the problem were only:
 - "identify the current session in the hook runtime", or
 - "correlate `SessionStart` and `Stop` hook invocations"
 
-then the documented fields `sessionId` and `cwd` may already be enough.
+then the documented fields `session_id` and `cwd` may already be enough.
 
 In that narrower design, a separate session initialization step is **not obviously required** by the official docs.
 
@@ -255,9 +296,23 @@ not the current default behavior; it is only a possible future strict/debug mode
 
 ### Conclusion 3: repository-defined correlation identifiers are optional
 
-The official hook input contract documents `sessionId`, not any repository-defined `turn_id` field.
+The official hook input contract documents `session_id`, not any
+repository-defined `turn_id` field.
 
 So a repository-defined turn identifier can still be useful, but it should be described as an implementation choice or an internal protocol unless the project explicitly decides to make it part of the product contract.
+
+### Conclusion 4: user attention can be observed without transcript parsing
+
+The documented `PreToolUse` fields, together with the observed `ask_user` tool
+shape, provide a direct attention trigger. This is preferable to inferring a
+waiting state from a later `Stop` event.
+
+### Conclusion 5: root filtering is a product requirement
+
+Dedicated subagent lifecycle events clarify the platform model, but user hooks
+can execute for nested agent activity. The notification implementation must
+therefore reject identified nested tool-call sessions before creating state or
+sending Telegram messages.
 
 ## What This Means for the Functional Requirements
 
@@ -339,12 +394,20 @@ Based on the official docs surveyed here:
 
 1. **Yes**, VS Code hook input already includes enough documented information to identify the current session inside hook scripts.
 2. **Yes**, the official `Stop` output contract provides a documented way to block stopping, but default notification behavior in this project must not use it for missing or invalid summaries.
-3. The remaining design problem is therefore how to define a concrete summary handoff validator, degraded fallback behavior, and durable duplicate suppression.
-4. Therefore, the current preferred project direction is:
+3. **Yes**, `PreToolUse` supplies the tool name, structured input, and a stable
+   tool-call identifier needed for an `ask_user` attention notification.
+4. **Yes**, current VS Code documents explicit subagent lifecycle events, and
+   project runtime evidence demonstrates why root-session filtering is still
+   required.
+5. Therefore, the current preferred project direction is:
 
+- suppress identified subagent and tool-call sessions before any notification
+  state is created;
 - maintain per-turn summary state in workspace runtime files;
 - validate that file at `Stop` time;
-- send a normal notification when the summary is valid;
+- send a normal notification only for a root `Stop` when the summary is valid;
+- send a durable, duplicate-suppressed attention notification for root
+  `ask_user` tool calls;
 - defer when a pending handoff may still satisfy the `Stop`, otherwise send a
   non-blocking degraded fallback notification when the summary is missing or
   invalid;

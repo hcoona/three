@@ -6,6 +6,7 @@ internal static class UserHookConfigurationManager
 {
     private const int SessionStartTimeoutSeconds = 10;
     private const int UserPromptSubmitTimeoutSeconds = 10;
+    private const int PreToolUseTimeoutSeconds = 20;
     private const int StopTimeoutSeconds = 20;
 
     private static readonly JsonSerializerOptions WriteIndentedOptions = new(
@@ -21,12 +22,14 @@ internal static class UserHookConfigurationManager
         string hookFilePath,
         string sessionStartCommand,
         string userPromptSubmitCommand,
+        string preToolUseCommand,
         string stopCommand,
         string timestamp)
         => InstallManagedHookFileCore(
             hookFilePath,
             sessionStartCommand,
             userPromptSubmitCommand,
+            preToolUseCommand,
             stopCommand,
             timestamp,
             HookFileFormat.VsCode);
@@ -41,6 +44,7 @@ internal static class UserHookConfigurationManager
             hookFilePath,
             sessionStartCommand,
             userPromptSubmitCommand,
+            preToolUseCommand: null,
             stopCommand,
             timestamp,
             HookFileFormat.CopilotCli);
@@ -55,6 +59,7 @@ internal static class UserHookConfigurationManager
         UserHookSettingsDocument desiredDocument = CreateManagedHooksDocument(
             sessionStartCommand,
             userPromptSubmitCommand,
+            preToolUseCommand: null,
             stopCommand,
             HookFileFormat.CopilotCli);
         return TryLoadExistingHookFileForInstall(
@@ -70,6 +75,7 @@ internal static class UserHookConfigurationManager
         string hookFilePath,
         string sessionStartCommand,
         string userPromptSubmitCommand,
+        string? preToolUseCommand,
         string stopCommand,
         string timestamp,
         HookFileFormat format)
@@ -77,6 +83,7 @@ internal static class UserHookConfigurationManager
         UserHookSettingsDocument desiredDocument = CreateManagedHooksDocument(
             sessionStartCommand,
             userPromptSubmitCommand,
+            preToolUseCommand,
             stopCommand,
             format);
         UserHookSettingsDocument rootDocument;
@@ -133,6 +140,24 @@ internal static class UserHookConfigurationManager
         if (conflict is not null)
         {
             return conflict;
+        }
+
+        if (!string.IsNullOrWhiteSpace(preToolUseCommand))
+        {
+            conflict = UpsertHookEntry(
+                rootDocument.Hooks,
+                eventName: "PreToolUse",
+                entry: CreateManagedHookEntry(
+                    preToolUseCommand,
+                    "PreToolUse",
+                    timeoutSeconds: PreToolUseTimeoutSeconds,
+                    format),
+                isManagedEntryToReplace);
+
+            if (conflict is not null)
+            {
+                return conflict;
+            }
         }
 
         conflict = UpsertHookEntry(
@@ -212,6 +237,7 @@ internal static class UserHookConfigurationManager
         {
             removedEntryCount += removeManagedEntries(rootDocument.Hooks, "SessionStart");
             removedEntryCount += removeManagedEntries(rootDocument.Hooks, "UserPromptSubmit");
+            removedEntryCount += removeManagedEntries(rootDocument.Hooks, "PreToolUse");
             removedEntryCount += removeManagedEntries(rootDocument.Hooks, "Stop");
         }
 
@@ -245,6 +271,7 @@ internal static class UserHookConfigurationManager
         return rootDocument.Hooks is not null
             && HasManagedEntry(rootDocument.Hooks, "SessionStart")
             && HasManagedEntry(rootDocument.Hooks, "UserPromptSubmit")
+            && HasManagedEntry(rootDocument.Hooks, "PreToolUse")
             && HasManagedEntry(rootDocument.Hooks, "Stop");
     }
 
@@ -392,36 +419,50 @@ internal static class UserHookConfigurationManager
     private static UserHookSettingsDocument CreateManagedHooksDocument(
         string sessionStartCommand,
         string userPromptSubmitCommand,
+        string? preToolUseCommand,
         string stopCommand,
         HookFileFormat format)
     {
+        Dictionary<string, List<UserHookEntry>> hooks = new(StringComparer.Ordinal)
+        {
+            ["SessionStart"] = [
+                CreateManagedHookEntry(
+                    sessionStartCommand,
+                    "SessionStart",
+                    SessionStartTimeoutSeconds,
+                    format)
+            ],
+            ["UserPromptSubmit"] = [
+                CreateManagedHookEntry(
+                    userPromptSubmitCommand,
+                    "UserPromptSubmit",
+                    UserPromptSubmitTimeoutSeconds,
+                    format)
+            ],
+            ["Stop"] = [
+                CreateManagedHookEntry(
+                    stopCommand,
+                    "Stop",
+                    StopTimeoutSeconds,
+                    format)
+            ],
+        };
+
+        if (!string.IsNullOrWhiteSpace(preToolUseCommand))
+        {
+            hooks["PreToolUse"] = [
+                CreateManagedHookEntry(
+                    preToolUseCommand,
+                    "PreToolUse",
+                    PreToolUseTimeoutSeconds,
+                    format)
+            ];
+        }
+
         return new UserHookSettingsDocument
         {
             Version = format == HookFileFormat.CopilotCli ? 1 : null,
-            Hooks = new Dictionary<string, List<UserHookEntry>>(StringComparer.Ordinal)
-            {
-                ["SessionStart"] = [
-                    CreateManagedHookEntry(
-                        sessionStartCommand,
-                        "SessionStart",
-                        SessionStartTimeoutSeconds,
-                        format)
-                ],
-                ["UserPromptSubmit"] = [
-                    CreateManagedHookEntry(
-                        userPromptSubmitCommand,
-                        "UserPromptSubmit",
-                        UserPromptSubmitTimeoutSeconds,
-                        format)
-                ],
-                ["Stop"] = [
-                    CreateManagedHookEntry(
-                        stopCommand,
-                        "Stop",
-                        StopTimeoutSeconds,
-                        format)
-                ],
-            },
+            Hooks = hooks,
         };
     }
 
