@@ -15,6 +15,363 @@ namespace Hcoona.VsCodeCopilotTelegramHook.Tests;
 [Collection(TelegramEnvironmentTestGroup.Name)]
 public sealed class HookCommandServiceTests
 {
+    [Theory]
+    [InlineData("call_u6H1Ag5WYly1gs7g0qme3ONV")]
+    [InlineData("toolu_bdrk_01FczJMZrr3qamkfGuSy4bXy")]
+    [InlineData("toulu_vrtx_01Hd944CQpqacBsXKAfVQs81")]
+    public async Task ToolCallSubagentLifecycleDoesNotCreateStateOrSendNotifications(
+        string sessionId
+    )
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+
+        try
+        {
+            RecordingHttpMessageHandler handler = new();
+            HookCommandService service = CreateHookCommandService(handler);
+            await using MemoryStream sessionStartOutput = new();
+            await using MemoryStream promptOutput = new();
+            await using MemoryStream preToolUseOutput = new();
+            await using MemoryStream stopOutput = new();
+
+            _ = await service.HandleSessionStartAsync(
+                CreateJsonStream(
+                    new SessionStartHookInput
+                    {
+                        Cwd = tempDirectory.FullName,
+                        SessionId = sessionId,
+                        Timestamp = "2026-07-25T02:09:04.951Z",
+                        HookEventName = "SessionStart",
+                    },
+                    AppJsonSerializerContext.Default.SessionStartHookInput
+                ),
+                sessionStartOutput,
+                CancellationToken.None
+            );
+            _ = await service.HandleUserPromptSubmitAsync(
+                CreateJsonStream(
+                    new UserPromptSubmitHookInput
+                    {
+                        Cwd = tempDirectory.FullName,
+                        SessionId = sessionId,
+                        Timestamp = "2026-07-25T02:09:04.528Z",
+                        HookEventName = "UserPromptSubmit",
+                        Prompt = "Independent adversarial final review.",
+                    },
+                    AppJsonSerializerContext.Default.UserPromptSubmitHookInput
+                ),
+                promptOutput,
+                CancellationToken.None
+            );
+            _ = await service.HandlePreToolUseAsync(
+                CreateJsonStream(
+                    CreateAskUserInput(tempDirectory.FullName, sessionId, "tool-use-123"),
+                    AppJsonSerializerContext.Default.PreToolUseHookInput
+                ),
+                preToolUseOutput,
+                CancellationToken.None
+            );
+            _ = await service.HandleStopAsync(
+                CreateJsonStream(
+                    new StopHookInput
+                    {
+                        Cwd = tempDirectory.FullName,
+                        SessionId = sessionId,
+                        Timestamp = "2026-07-25T02:17:13.617Z",
+                        HookEventName = "Stop",
+                    },
+                    AppJsonSerializerContext.Default.StopHookInput
+                ),
+                stopOutput,
+                CancellationToken.None
+            );
+
+            Assert.Empty(handler.Requests);
+            Assert.Equal(0, sessionStartOutput.Length);
+            Assert.Equal(0, promptOutput.Length);
+            Assert.Equal(0, preToolUseOutput.Length);
+            Assert.Equal(0, stopOutput.Length);
+            Assert.False(
+                Directory.Exists(
+                    AppPaths.GetSessionDirectoryPath(tempDirectory.FullName, sessionId)
+                )
+            );
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task HandlePreToolUseAsyncSendsAskUserNotificationAndSuppressesDuplicate()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+        using EnvironmentScope environment = SetTelegramEnvironment();
+
+        try
+        {
+            RecordingHttpMessageHandler handler = new();
+            HookCommandService service = CreateHookCommandService(handler);
+            PreToolUseHookInput input = CreateAskUserInput(
+                tempDirectory.FullName,
+                "session-123",
+                "tool-use-123"
+            );
+
+            _ = await service.HandlePreToolUseAsync(
+                CreateJsonStream(input, AppJsonSerializerContext.Default.PreToolUseHookInput),
+                new MemoryStream(),
+                CancellationToken.None
+            );
+            _ = await service.HandlePreToolUseAsync(
+                CreateJsonStream(input, AppJsonSerializerContext.Default.PreToolUseHookInput),
+                new MemoryStream(),
+                CancellationToken.None
+            );
+
+            CapturedHttpRequest request = Assert.Single(handler.Requests);
+            TelegramSendMessageRequest payload = DeserializeTelegramPayload(request);
+            Assert.Contains("Copilot 需要用户输入", payload.Text, StringComparison.Ordinal);
+            Assert.Contains(
+                "Which deployment target should I use?",
+                payload.Text,
+                StringComparison.Ordinal
+            );
+            Assert.Contains("waiting-for-user", payload.Text, StringComparison.Ordinal);
+
+            NotificationRecord record = await ReadNotificationRecordAsync(
+                AppPaths.GetSessionNotificationRecordPath(
+                    tempDirectory.FullName,
+                    "session-123",
+                    CreateToolNotificationKeyForTest("tool-use-123")
+                )
+            );
+            Assert.Equal("sent", record.DeliveryStatus);
+            Assert.Equal("ask_user tool requires user input", record.Reason);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task HandlePreToolUseAsyncIgnoresOtherTools()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+
+        try
+        {
+            RecordingHttpMessageHandler handler = new();
+            HookCommandService service = CreateHookCommandService(handler);
+            PreToolUseHookInput input = CreateAskUserInput(
+                tempDirectory.FullName,
+                "session-123",
+                "tool-use-123"
+            );
+            input.ToolName = "bash";
+
+            _ = await service.HandlePreToolUseAsync(
+                CreateJsonStream(input, AppJsonSerializerContext.Default.PreToolUseHookInput),
+                new MemoryStream(),
+                CancellationToken.None
+            );
+
+            Assert.Empty(handler.Requests);
+            Assert.False(
+                Directory.Exists(
+                    AppPaths.GetSessionDirectoryPath(tempDirectory.FullName, "session-123")
+                )
+            );
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task HandlePreToolUseAsyncReleasesClaimAfterZeroSuccessFailure()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+        using EnvironmentScope environment = SetTelegramEnvironment();
+
+        try
+        {
+            RecordingHttpMessageHandler handler = new([
+                RecordingHttpMessageHandler.CreateJsonResponse(
+                    HttpStatusCode.BadRequest,
+                    """{"ok":false,"description":"bad request"}"""
+                ),
+                RecordingHttpMessageHandler.CreateJsonResponse(
+                    HttpStatusCode.OK,
+                    """{"ok":true}"""
+                ),
+            ]);
+            HookCommandService service = CreateHookCommandService(handler);
+            PreToolUseHookInput input = CreateAskUserInput(
+                tempDirectory.FullName,
+                "session-123",
+                "tool-use-123"
+            );
+            string notificationKey = CreateToolNotificationKeyForTest(input.ToolUseId);
+            string claimPath = AppPaths.GetSessionStopClaimPath(
+                tempDirectory.FullName,
+                input.SessionId,
+                notificationKey
+            );
+
+            _ = await service.HandlePreToolUseAsync(
+                CreateJsonStream(input, AppJsonSerializerContext.Default.PreToolUseHookInput),
+                new MemoryStream(),
+                CancellationToken.None
+            );
+
+            Assert.False(File.Exists(claimPath));
+
+            _ = await service.HandlePreToolUseAsync(
+                CreateJsonStream(input, AppJsonSerializerContext.Default.PreToolUseHookInput),
+                new MemoryStream(),
+                CancellationToken.None
+            );
+
+            Assert.Equal(2, handler.Requests.Count);
+            Assert.True(File.Exists(claimPath));
+            Assert.True(
+                File.Exists(
+                    AppPaths.GetSessionNotificationRecordPath(
+                        tempDirectory.FullName,
+                        input.SessionId,
+                        notificationKey
+                    )
+                )
+            );
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task HandlePreToolUseAsyncKeepsClaimAfterPartialDelivery()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+        using EnvironmentScope environment = SetTelegramEnvironment();
+
+        try
+        {
+            RecordingHttpMessageHandler handler = new([
+                RecordingHttpMessageHandler.CreateJsonResponse(
+                    HttpStatusCode.OK,
+                    """{"ok":true}"""
+                ),
+                RecordingHttpMessageHandler.CreateJsonResponse(
+                    HttpStatusCode.BadGateway,
+                    """{"ok":false,"description":"temporary failure"}"""
+                ),
+                RecordingHttpMessageHandler.CreateJsonResponse(
+                    HttpStatusCode.OK,
+                    """{"ok":true}"""
+                ),
+            ]);
+            HookCommandService service = CreateHookCommandService(handler);
+            PreToolUseHookInput input = CreateAskUserInput(
+                tempDirectory.FullName,
+                "session-123",
+                "tool-use-123",
+                new string('<', 2000)
+            );
+            string notificationKey = CreateToolNotificationKeyForTest(input.ToolUseId);
+
+            _ = await service.HandlePreToolUseAsync(
+                CreateJsonStream(input, AppJsonSerializerContext.Default.PreToolUseHookInput),
+                new MemoryStream(),
+                CancellationToken.None
+            );
+            _ = await service.HandlePreToolUseAsync(
+                CreateJsonStream(input, AppJsonSerializerContext.Default.PreToolUseHookInput),
+                new MemoryStream(),
+                CancellationToken.None
+            );
+
+            Assert.Equal(2, handler.Requests.Count);
+            NotificationRecord record = await ReadNotificationRecordAsync(
+                AppPaths.GetSessionNotificationRecordPath(
+                    tempDirectory.FullName,
+                    input.SessionId,
+                    notificationKey
+                )
+            );
+            Assert.Equal("partial", record.DeliveryStatus);
+            Assert.Equal(1, record.SuccessfulMessageCount);
+            Assert.True(
+                File.Exists(
+                    AppPaths.GetSessionStopClaimPath(
+                        tempDirectory.FullName,
+                        input.SessionId,
+                        notificationKey
+                    )
+                )
+            );
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AskUserNotificationDoesNotSuppressLaterRootStop()
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory();
+        using EnvironmentScope environment = SetTelegramEnvironment();
+
+        try
+        {
+            RecordingHttpMessageHandler handler = new();
+            HookCommandService service = CreateHookCommandService(handler);
+
+            _ = await service.HandlePreToolUseAsync(
+                CreateJsonStream(
+                    CreateAskUserInput(
+                        tempDirectory.FullName,
+                        "session-123",
+                        "tool-use-123"
+                    ),
+                    AppJsonSerializerContext.Default.PreToolUseHookInput
+                ),
+                new MemoryStream(),
+                CancellationToken.None
+            );
+            _ = await service.HandleStopAsync(
+                CreateJsonStream(
+                    new StopHookInput
+                    {
+                        Cwd = tempDirectory.FullName,
+                        SessionId = "session-123",
+                        Timestamp = "2026-07-25T02:09:06.000Z",
+                        HookEventName = "Stop",
+                    },
+                    AppJsonSerializerContext.Default.StopHookInput
+                ),
+                new MemoryStream(),
+                CancellationToken.None
+            );
+
+            Assert.Equal(2, handler.Requests.Count);
+            TelegramSendMessageRequest stopPayload = DeserializeTelegramPayload(
+                handler.Requests[1]
+            );
+            Assert.Contains("Copilot 当前轮已完成", stopPayload.Text, StringComparison.Ordinal);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
     [Fact]
     public async Task HandleSessionStartAsyncWritesProtocolOverviewWithoutLegacySingletonPaths()
     {
@@ -22017,6 +22374,30 @@ public sealed class HookCommandServiceTests
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(timestamp));
         return $"stop-{Convert.ToHexString(hash)[..32].ToLowerInvariant()}";
     }
+
+    private static string CreateToolNotificationKeyForTest(string toolUseId)
+    {
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(toolUseId));
+        return $"ask-user-{Convert.ToHexString(hash)[..32].ToLowerInvariant()}";
+    }
+
+    private static PreToolUseHookInput CreateAskUserInput(
+        string workspacePath,
+        string sessionId,
+        string toolUseId,
+        string message = "Which deployment target should I use?"
+    ) =>
+        new()
+        {
+            Cwd = workspacePath,
+            SessionId = sessionId,
+            Timestamp = "2026-07-25T02:09:04.951Z",
+            HookEventName = "PreToolUse",
+            TranscriptPath = "/workspace/transcript.json",
+            ToolName = "ask_user",
+            ToolUseId = toolUseId,
+            ToolInput = JsonSerializer.SerializeToElement(new { message }),
+        };
 
     private static HookCommandService CreateHookCommandService(
         HttpMessageHandler handler,

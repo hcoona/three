@@ -15,7 +15,7 @@ workspace hook entry.
 The implementation follows the official VS Code Copilot hooks preview behavior:
 
 - The official VS Code hooks docs currently list `~/.claude/settings.json` as
-  a default user hook location.
+  a default user hook location and `~/.copilot/hooks` as a user hook directory.
 - Workspace hooks can be loaded from `.github/hooks/*.json`, but this repository
   does not use a repo-local workspace hook for the Telegram notifier.
 - Workspace hooks take precedence over user hooks for the same event when they
@@ -25,6 +25,10 @@ The implementation follows the official VS Code Copilot hooks preview behavior:
   that has actually stopped.
 - Root lifecycle events are filtered by `agentId`, so subagent completion and
   permission activity do not produce user notifications.
+- Managed VS Code hooks suppress observed tool-call session identifiers before
+  creating state or sending Telegram messages.
+- A root `PreToolUse` event for `ask_user` sends an attention notification with
+  the question; other tools and subagent tool calls are ignored.
 
 ## Files
 
@@ -87,6 +91,8 @@ The installer command:
 - asks before overwriting existing stored secrets and defaults to keeping them,
 - installs the published Native AOT binary into a user-owned data directory,
 - writes a dedicated managed hook JSON file under the install root,
+- registers root lifecycle handlers for `SessionStart`, `UserPromptSubmit`,
+  `PreToolUse`, and `Stop`,
 - installs a GitHub Copilot CLI user extension under the CLI extensions
   directory,
 - removes this application's legacy Copilot CLI hook entries to prevent duplicate
@@ -172,8 +178,8 @@ The CLI also provides:
 - `user secret`: read or update the stored Telegram secrets.
 - `user test-notification`: send a test Telegram message without waiting for a
   Copilot stop event.
-- `hook session-start`, `hook user-prompt-submit`, and `hook stop`: internal
-  lifecycle entry points used by VS Code Copilot hooks.
+- `hook session-start`, `hook user-prompt-submit`, `hook pre-tool-use`, and
+  `hook stop`: internal lifecycle entry points used by VS Code Copilot hooks.
 
 ## Logging and troubleshooting
 
@@ -226,9 +232,9 @@ under `.copilot/notifications/sessions/<safe-session-id>/`, including:
 - `turns/<notification-turn-id>/notifications/<notification-key>.json`: durable
   duplicate-suppression records.
 - `notifications/<notification-key>.json`: session-level durable records used for
-  degraded fallbacks and cross-path duplicate suppression.
-- `claims/<notification-key>.claim`: atomic Stop delivery claim keyed by the raw
-  Stop timestamp hash.
+  degraded fallbacks, `ask_user` delivery, and cross-path duplicate suppression.
+- `claims/<notification-key>.claim`: atomic delivery claim keyed by the root
+  `Stop` timestamp or `ask_user` tool-call identifier hash.
 - `hook.log`: always-on diagnostic log for the current Copilot session.
 
 These `.copilot/notifications/sessions/` files are runtime state and should

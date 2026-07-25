@@ -39,6 +39,9 @@ internal sealed class UserCommandService(
                 UserHookConfigurationManager.CreateCopilotCliHookCommand(
                     userPaths.InstalledBinaryPath,
                     "user-prompt-submit");
+            string preToolUseCommand = UserHookConfigurationManager.CreateCopilotCliHookCommand(
+                userPaths.InstalledBinaryPath,
+                "pre-tool-use");
             string stopCommand = UserHookConfigurationManager.CreateCopilotCliHookCommand(
                 userPaths.InstalledBinaryPath,
                 "stop");
@@ -107,6 +110,7 @@ internal sealed class UserCommandService(
                     userPaths.ManagedHookFilePath,
                     sessionStartCommand,
                     userPromptSubmitCommand,
+                    preToolUseCommand,
                     stopCommand,
                     currentTimestamp);
                 extensionResult = CopilotCliExtensionManager.Install(

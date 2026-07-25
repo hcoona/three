@@ -10,6 +10,7 @@
     - [`h-004-human-confirmation-2026-03-14.md`](./h-004-human-confirmation-2026-03-14.md)
     - [`h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md`](./h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md)
     - [`h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md`](./h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md)
+    - [`h-009-human-confirmation-2026-07-25-root-lifecycle-notifications.md`](./h-009-human-confirmation-2026-07-25-root-lifecycle-notifications.md)
         - [`nonfunctional-and-constraints-research.md`](./nonfunctional-and-constraints-research.md)
         - [`vscode-hook-inputs-research.md`](./vscode-hook-inputs-research.md)
 - Purpose: translate the human-authored source inputs and supporting research
@@ -28,6 +29,10 @@ supported notification contract.
 
 - **Chat turn**: one user request and Copilot response cycle that ends when Copilot attempts to stop for the current turn.
 - **Session**: a VS Code GitHub Copilot chat session, which may contain multiple chat turns.
+- **Root session**: the user-facing agent session that coordinates the current
+  task and waits for the user's next instruction.
+- **Subagent session**: a nested, background, reviewer, or other tool-call agent
+  session whose completion is consumed by the root session.
 - **Workspace**: the current working folder used by VS Code when running hooks.
 - **Correlation context**: the data used to associate summary generation and Telegram delivery with the correct Copilot session and workspace.
 - **Tracked result**: the completed turn result that the solution correlates across summary generation and Telegram delivery.
@@ -37,7 +42,11 @@ supported notification contract.
 
 ## Functional Scope
 
-The solution shall provide a formally supported user-level capability for VS Code GitHub Copilot that sends Telegram notifications to one configured Telegram destination per user installation for each `Stop` event that ends the current chat turn and includes a concise task summary when available, preferably in Chinese on a best-effort basis, or an explicit indication that the summary is missing, plus relevant execution context when available.
+The solution shall provide a formally supported user-level capability for VS
+Code GitHub Copilot that sends Telegram notifications to one configured
+Telegram destination when the root agent finishes its current work and waits
+for further user instructions, or when the root agent requests user input
+through `ask_user`. Subagent lifecycle events shall not notify the user.
 
 ## Functional Requirements
 
@@ -125,17 +134,20 @@ degraded handling shall follow the Stop fallback rules in FR-009 and FR-015.
 
 The solution shall treat Chinese as the preferred notification-summary language on a best-effort basis. Notification delivery shall not depend on the available summary being Chinese text, and any additional structure beyond the human-readable summary text is implementation-defined.
 
-### FR-013 Turn completion detection
+### FR-013 Root completion detection
 
-When Copilot reaches a `Stop` event for the current chat turn, the solution shall attempt Telegram notification delivery for that `Stop` event.
+When the root Copilot session reaches a `Stop` event after completing its current
+work, the solution shall attempt Telegram completion notification delivery.
 
 ### FR-014 Stop-event interpretation
 
-For this solution, the end-of-turn notification trigger shall correspond to the point where Copilot attempts to stop for the current chat turn, even if the overall session may continue with later turns.
+For this solution, the completion trigger shall correspond to the point where
+the root agent attempts to stop and wait for the user's next instruction. A
+subagent attempting to stop is not a user notification trigger.
 
 ### FR-015 Missing-summary fallback
 
-If the current `Stop` event does not have usable summary content and no pending
+If the current root `Stop` event does not have usable summary content and no pending
 handoff can still satisfy that `Stop`, the solution shall still send a
 notification and shall explicitly indicate that the summary is missing. Pending
 handoffs may defer notification without fallback while unresolved.
@@ -158,8 +170,9 @@ The solution shall format the outgoing notification using a Telegram HTML-compat
 
 Each notification shall include, at minimum:
 
-- a human-readable completion heading,
-- either the concise summary or an explicit missing-summary notice,
+- a human-readable completion or attention heading,
+- either the concise completion summary, the `ask_user` question, or an explicit
+  missing-content notice,
 - a delivery timestamp, and
 - enough identifying context to distinguish the delivered result from other notifications for the same workspace or session.
 
@@ -187,11 +200,14 @@ When the implementation makes additional structured summary content available, t
 
 ### FR-022 Best-effort duplicate suppression
 
-The solution shall prioritize notification delivery and limited retry over perfect duplicate suppression. Any duplicate suppression applied for the same chat turn shall be best-effort only and shall exist to improve user experience rather than to provide a strict correctness guarantee.
+The solution shall prioritize notification delivery and limited retry over
+perfect duplicate suppression. Duplicate suppression for the same root
+completion or `ask_user` tool call shall be durable and best-effort.
 
 ### FR-023 Delivery opportunity for later turns
 
-Each new `Stop` event shall create a new delivery opportunity, including later turns in the same session.
+Each new root `Stop` event shall create a new delivery opportunity, including
+later root turns in the same session. Subagent `Stop` events shall not.
 
 ### FR-024 Workspace isolation
 
@@ -207,7 +223,9 @@ The solution shall still be able to produce a notification when repository metad
 
 ### FR-027 Multi-turn session behavior
 
-A single Copilot chat session may produce multiple turn-completion notifications over time, provided that each notification corresponds to a distinct completed turn result.
+A single root Copilot session may produce multiple completion notifications over
+time, provided that each notification corresponds to a distinct completed root
+turn result.
 
 ### FR-028 Latest-result clarity
 
@@ -222,6 +240,20 @@ The solution shall preserve sufficient persistent correlation and coordination s
 3. Telegram delivery
 
 can coordinate without requiring in-memory state to survive across hook invocations.
+
+### FR-030 Subagent notification suppression
+
+The solution shall suppress session-start, prompt, tool-attention, and
+completion notification processing for identified subagent or tool-call
+sessions. Suppressed sessions shall not create notification protocol state or
+send Telegram messages.
+
+### FR-031 Root user-input attention
+
+When a root session invokes the `ask_user` tool, the solution shall send an
+attention notification containing the user-facing question. Repeated hook
+delivery for the same tool invocation shall not send another notification after
+any Telegram message for that invocation has already been accepted.
 
 ## Required Summary Semantics
 

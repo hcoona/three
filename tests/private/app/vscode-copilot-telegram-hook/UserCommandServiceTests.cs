@@ -1360,6 +1360,7 @@ public sealed class UserCommandServiceTests
                     sharedHookFilePath,
                     $"\"{installedBinaryPath}\" hook session-start",
                     $"\"{installedBinaryPath}\" hook user-prompt-submit",
+                    $"\"{installedBinaryPath}\" hook pre-tool-use",
                     $"\"{installedBinaryPath}\" hook stop",
                     "2026-03-14T00:00:00.0000000Z");
             Assert.True(hookFileResult.Applied);
@@ -1454,6 +1455,7 @@ public sealed class UserCommandServiceTests
                     managedHookFilePath,
                     $"\"{installedBinaryPath}\" hook session-start",
                     $"\"{installedBinaryPath}\" hook user-prompt-submit",
+                    $"\"{installedBinaryPath}\" hook pre-tool-use",
                     $"\"{installedBinaryPath}\" hook stop",
                     "2026-03-14T00:00:00.0000000Z");
             Assert.True(hookFileResult.Applied);

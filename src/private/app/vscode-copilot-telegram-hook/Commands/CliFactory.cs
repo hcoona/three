@@ -41,6 +41,15 @@ internal static class CliFactory
                 Console.OpenStandardOutput(),
                 cancellationToken));
 
+        Command preToolUseCommand = new(
+            "pre-tool-use",
+            "Handle the VS Code PreToolUse hook event.");
+        preToolUseCommand.SetAction((ParseResult _, CancellationToken cancellationToken) =>
+            hookCommandService.HandlePreToolUseAsync(
+                Console.OpenStandardInput(),
+                Console.OpenStandardOutput(),
+                cancellationToken));
+
         Command stopCommand = new(
             "stop",
             "Handle the VS Code Stop hook event.");
@@ -52,6 +61,7 @@ internal static class CliFactory
 
         hookCommand.Subcommands.Add(sessionStartCommand);
         hookCommand.Subcommands.Add(userPromptSubmitCommand);
+        hookCommand.Subcommands.Add(preToolUseCommand);
         hookCommand.Subcommands.Add(stopCommand);
         return hookCommand;
     }

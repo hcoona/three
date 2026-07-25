@@ -29,7 +29,7 @@ authority.
 The current authoritative external references for this documentation set are:
 
 - [VS Code custom instructions documentation](https://code.visualstudio.com/docs/copilot/customization/custom-instructions)
-- [VS Code hooks documentation](https://code.visualstudio.com/docs/copilot/customization/hooks)
+- [VS Code hooks documentation](https://code.visualstudio.com/docs/agent-customization/hooks)
 - [Telegram Bot API](https://core.telegram.org/bots/api)
 
 Cache refresh behavior follows two rules:
@@ -56,6 +56,7 @@ as standalone H-series source documents.
 | H-006 | [`h-006-human-confirmation-2026-03-14-user-hook-location.md`](./h-006-human-confirmation-2026-03-14-user-hook-location.md)                               | Preserves the manual confirmation of current VS Code user-hook loading conditions. | This records that `~/.claude/settings.json` only took effect in the observed VS Code environment when `chat.useClaudeHooks` was enabled, and that future installation should still prefer an explicitly specified separate hook JSON path.              |
 | H-007 | [`h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md`](./h-007-human-confirmation-2026-03-14-same-host-vscode-settings-targets.md) | Preserves the later clarification about same-host VS Code settings targets.        | This records that the relevant desktop and VS Code Server settings targets belong to the same host for managed installation purposes, and that default installation may target both rather than treating the problem as cross-machine.                  |
 | H-008 | [`h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md`](./h-008-human-confirmation-2026-03-16-stop-blocking-summary-flow.md)               | Preserves a superseded correction to the summary handoff design.                   | This remains provenance for removing the managed custom-instruction dependency. Its default `Stop`-blocking recovery direction is superseded by the current non-blocking degraded fallback design; blocking recovery is future strict/debug scope only. |
+| H-009 | [`h-009-human-confirmation-2026-07-25-root-lifecycle-notifications.md`](./h-009-human-confirmation-2026-07-25-root-lifecycle-notifications.md)           | Preserves the root-only completion and `ask_user` attention boundary.              | This supersedes derived statements that treated subagent `Stop` events as notification opportunities and records the supplied tool-call-session spam evidence.                                                                                          |
 
 ## Reference derivation rule
 
@@ -67,7 +68,7 @@ references listed above. They should be refreshed through the documented
 read-through workflow and explicit verification refresh workflow rather than by
 mixing repository-local runtime notes into the external-doc cache.
 
-Human confirmation in H-002, H-003, H-004, H-005, and H-006 may refine the
+Human confirmation in H-002 through H-009 may refine the
 interpretation, scope, and design inputs for those research documents, but the
 external research claims should be traced back to the reference set listed in
 H-001 rather than reconstructed from derived repository documents.
@@ -77,13 +78,13 @@ H-001 rather than reconstructed from derived repository documents.
 The items in this section are derived from the human-authored inputs above,
 from official external documentation, or from both.
 
-| ID    | Document                                                                                   | Kind                                          | Derived from                                                                                                | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ----- | ------------------------------------------------------------------------------------------ | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D-001 | [`functional-requirements.md`](./functional-requirements.md)                               | Derived functional specification              | H-001, H-002, H-003, H-004, H-007, H-008, D-002, and D-003                                                  | Defines product-facing functional requirements after interpretation and normalization.                                                                                                                                                                                                                                                                                                                                                                                     |
-| D-002 | [`nonfunctional-and-constraints-research.md`](./nonfunctional-and-constraints-research.md) | Derived research and supporting specification | H-001 reference set, H-002, H-003, H-004, H-006, H-007, and H-008                                           | Grounds research claims in the user-provided references from H-001 while recording later confirmed product decisions from H-002, H-003, H-004, H-006, H-007, and H-008.                                                                                                                                                                                                                                                                                                    |
-| D-003 | [`vscode-hook-inputs-research.md`](./vscode-hook-inputs-research.md)                       | Derived technical research note               | H-001 reference set, H-003, H-005, H-008, and non-normative repository context                              | Explains hook input capabilities and the summary-correlation boundary using the VS Code references provided in H-001, including the later clarification on hook-locality interpretation, the later human verification of the current runtime field names, and the accepted contract for notification assignment with per-turn `summary.json`, non-blocking `Stop` validation with pending deferral, and degraded fallback only when no pending handoff can satisfy `Stop`. |
-| D-004 | [`../README.md`](../README.md)                                                             | Derived project overview                      | H-001, H-002, H-003, H-004, H-005, H-006, H-007, H-008, D-001, D-002, and D-005                             | Convenient project entry point, but not the primary provenance ledger.                                                                                                                                                                                                                                                                                                                                                                                                     |
-| D-005 | [`implementation-language-evaluation.md`](./implementation-language-evaluation.md)         | Derived implementation design research note   | H-001, H-002, H-003, D-002, D-003, and official docs reviewed during the implementation-language evaluation | Compares PowerShell, Python, and C# (including native AOT) for the supported product scope without turning language choice into a product requirement.                                                                                                                                                                                                                                                                                                                     |
+| ID    | Document                                                                                   | Kind                                          | Derived from                                                                                                 | Notes                                                                                                                                                  |
+| ----- | ------------------------------------------------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| D-001 | [`functional-requirements.md`](./functional-requirements.md)                               | Derived functional specification              | H-001, H-002, H-003, H-004, H-007, H-008, H-009, D-002, and D-003                                            | Defines product-facing functional requirements after interpretation and normalization.                                                                 |
+| D-002 | [`nonfunctional-and-constraints-research.md`](./nonfunctional-and-constraints-research.md) | Derived research and supporting specification | H-001 reference set, H-002, H-003, H-004, H-006, H-007, H-008, and H-009                                     | Grounds research claims in the user-provided references from H-001 while recording later confirmed product decisions.                                  |
+| D-003 | [`vscode-hook-inputs-research.md`](./vscode-hook-inputs-research.md)                       | Derived technical research note               | H-001 reference set, H-003, H-005, H-008, H-009, current official hook docs, and repository runtime evidence | Explains hook inputs, root/subagent lifecycle boundaries, `ask_user` observation through `PreToolUse`, and the summary-correlation boundary.           |
+| D-004 | [`../README.md`](../README.md)                                                             | Derived project overview                      | H-001 through H-009, D-001, D-002, and D-005                                                                 | Convenient project entry point, but not the primary provenance ledger.                                                                                 |
+| D-005 | [`implementation-language-evaluation.md`](./implementation-language-evaluation.md)         | Derived implementation design research note   | H-001, H-002, H-003, D-002, D-003, and official docs reviewed during the implementation-language evaluation  | Compares PowerShell, Python, and C# (including native AOT) for the supported product scope without turning language choice into a product requirement. |
 
 ## Current derivation chain
 
@@ -118,19 +119,21 @@ The current documentation flow is:
    a pending handoff may satisfy `Stop`; non-blocking degraded fallback
    notifications apply only when no pending handoff can satisfy it. Any
    blocking recovery is future strict/debug scope only.
-9. D-002 and D-003 research the H-001 reference set, with D-002 also
-   incorporating the later confirmed decisions from H-002, H-003, H-004,
-   H-006, H-007, and H-008 where needed, and D-003 incorporating the later
-   verification from H-005 and the later design correction from H-008 where
-   needed.
-10. D-001 derives the functional specification from H-001, H-002, H-003,
-    H-004, H-007, H-008, and the research outputs.
-11. D-005 records the later implementation-language evaluation using the
+9. H-009 records that completion notifications belong only to root sessions and
+   that root `ask_user` calls are attention-notification opportunities.
+10. D-002 and D-003 research the H-001 reference set, with D-002 also
+    incorporating the later confirmed decisions from H-002, H-003, H-004,
+    H-006, H-007, and H-008 where needed, and D-003 incorporating the later
+    verification from H-005 and the later design correction from H-008 where
+    needed.
+11. D-001 derives the functional specification from the H-series decisions and
+    the research outputs.
+12. D-005 records the later implementation-language evaluation using the
     H-series inputs, the research outputs, and the official documentation
     reviewed during that evaluation.
-12. D-004 synchronizes the repository overview with the current derived
+13. D-004 synchronizes the repository overview with the current derived
     specification set.
-13. Future design and architecture documents should cite this file together with
+14. Future design and architecture documents should cite this file together with
     the specific H-series and D-series documents they derive from.
 
 ## Maintenance rules
