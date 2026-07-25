@@ -1,8 +1,8 @@
 # Atlas V0 A0 No-Candidate Stage Diagnosis
 
-**Lifecycle:** Proposed active subordinate; plan-only before verified shared `R0R4`
+**Lifecycle:** Historical supporting after verified shared `G0R4`
 
-**Status:** Diagnostic implementation and private reads blocked
+**Status:** Completed on the `historical-authority-refused` branch; all diagnostic authority consumed
 
 **Increment:** A0R4 - No-Candidate Stage Diagnosis
 

@@ -31,8 +31,11 @@ semantic scanning, write authority, WinUI, network access, and private data from
   after one fixed-class diagnostic and produced no census, candidate, or A2 authority.
 - `plans/atlas-v0-a0-approved-manifest-corpus-refresh.md` is the completed historical A0R3 route. It
   closed at verified shared `G0R3` on its no-candidate branch and grants no retry or A2 authority.
-- `plans/atlas-v0-a0-no-candidate-stage-diagnosis.md` is the planning-only A0R4 route for one
-  fixed-class, read-only replay of the current in-memory pipeline without candidate publication.
+- `plans/atlas-v0-a0-no-candidate-stage-diagnosis.md` is the completed historical A0R4 route. It
+  closed at verified shared `G0R4` with `historical-authority-refused` and grants no retry or A2
+  authority.
+- `plans/atlas-v0-a0-historical-authority-diagnosis.md` is the planning-only A0R5 route for one
+  fixed-predicate, read-only replay of only the historical-authority gate.
 - `plans/atlas-v0-a1-foundation-plan.md` defines the exact three-project C# scaffold,
   deterministic empty-survey contract, command behavior, tests, validation, and release gate for
   increment A1.
@@ -96,6 +99,12 @@ semantic scanning, write authority, WinUI, network access, and private data from
   source at verified shared `S0R3`.
 - `reviews/atlas-v0-a0-approved-manifest-corpus-refresh-completion.md` closes A0R3 at verified shared
   `G0R3` on its no-candidate branch without retry or A2 authority.
+- `reviews/atlas-v0-a0-no-candidate-stage-diagnosis-plan-review.md` binds the accepted A0R4 plan at
+  verified shared `R0R4`.
+- `reviews/atlas-v0-a0-no-candidate-stage-diagnosis-source-qualification.md` binds exact A0R4 source at
+  verified shared `S0R4`.
+- `reviews/atlas-v0-a0-no-candidate-stage-diagnosis-completion.md` closes A0R4 at verified shared
+  `G0R4` with `historical-authority-refused`, without retry or A2 authority.
 - `reviews/atlas-v0-a0-scope-review.md` is the repository-safe record of the approved Atlas V0 A0
   project-leader decision. Its forward-looking identity and immutable-copy wording is partially
   superseded only when the verified A2 plan-review record activates the trusted-local profile.
