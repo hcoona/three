@@ -52,8 +52,9 @@ final exact approved bytes.
 > rules, and section 5 revision-3 pending schema/codec invariants.
 >
 > A0R2 completed at verified shared `G0R2` without a census or candidate.
-> `atlas-v0-a0-approved-manifest-corpus-refresh.md` governs A0R3 prospectively. It does not reopen
-> A0R1, diagnose A0R2, or authorize use of any prior execution result.
+> `atlas-v0-a0-approved-manifest-corpus-refresh.md` governed completed A0R3. It closed at verified
+> shared `G0R3` on the no-candidate branch without reopening A0R1, diagnosing A0R2, or authorizing use
+> of any prior execution result.
 
 ## 1. Authority correction and claim
 

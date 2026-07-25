@@ -42,9 +42,10 @@ project-leader decision and reviewed Git gate.
 > A0R2 completed at verified shared `G0R2`
 > `1f9fbcd369d893e8de88cfe195512936e4815f01`. Its diagnostic and decision attempts are consumed, and
 > it grants no retry, census, or A2 authority.
-> `atlas-v0-a0-approved-manifest-corpus-refresh.md` prospectively replaces its historical-input model:
-> the approved manifest is corpus authority, the old request is only a minimum baseline-byte anchor
-> carrier, and current locators come only from fresh runtime input.
+> `atlas-v0-a0-approved-manifest-corpus-refresh.md` replaced its historical-input model and completed
+> at verified shared `G0R3` on the no-candidate branch. The approved manifest remained corpus
+> authority, the old request only a minimum baseline-byte anchor carrier, and current locators only
+> fresh runtime input. A0R3 grants no retry or A2 authority.
 
 ## 1. Outcome and authority
 

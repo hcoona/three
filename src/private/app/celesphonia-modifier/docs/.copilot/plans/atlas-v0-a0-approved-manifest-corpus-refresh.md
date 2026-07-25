@@ -1,8 +1,8 @@
 # Atlas V0 A0 Approved-Manifest Corpus Refresh
 
-**Lifecycle:** Proposed active subordinate; plan-only before verified shared `R0R3`
+**Lifecycle:** Historical supporting after verified shared `G0R3`
 
-**Status:** Utility preparation, private reads, and census blocked
+**Status:** Completed on the no-candidate branch; all census authority consumed
 
 **Increment:** A0R3 - Approved-Manifest Corpus Refresh
 

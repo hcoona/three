@@ -29,9 +29,10 @@ semantic scanning, write authority, WinUI, network access, and private data from
   A0R3 remain operative; it grants no execution or approval authority.
 - `plans/atlas-v0-a0-current-corpus-recovery.md` is the completed historical A0R2 route. It stopped
   after one fixed-class diagnostic and produced no census, candidate, or A2 authority.
-- `plans/atlas-v0-a0-approved-manifest-corpus-refresh.md` is the planning-only A0R3 route that makes
-  the approved manifest corpus authority, takes current locators only as runtime input, and permits at
-  most one metadata-only census after exact source qualification.
+- `plans/atlas-v0-a0-approved-manifest-corpus-refresh.md` is the completed historical A0R3 route. It
+  closed at verified shared `G0R3` on its no-candidate branch and grants no retry or A2 authority.
+- `plans/atlas-v0-a0-no-candidate-stage-diagnosis.md` is the planning-only A0R4 route for one
+  fixed-class, read-only replay of the current in-memory pipeline without candidate publication.
 - `plans/atlas-v0-a1-foundation-plan.md` defines the exact three-project C# scaffold,
   deterministic empty-survey contract, command behavior, tests, validation, and release gate for
   increment A1.
@@ -89,6 +90,12 @@ semantic scanning, write authority, WinUI, network access, and private data from
   `stop` decision at verified shared `D0R2`.
 - `reviews/atlas-v0-a0-current-corpus-recovery-completion.md` closes A0R2 at verified shared `G0R2`
   without census, candidate, refreshed baseline, or A2 authority.
+- `reviews/atlas-v0-a0-approved-manifest-corpus-refresh-plan-review.md` binds the accepted A0R3 plan at
+  verified shared `R0R3`.
+- `reviews/atlas-v0-a0-approved-manifest-corpus-refresh-source-qualification.md` binds exact A0R3
+  source at verified shared `S0R3`.
+- `reviews/atlas-v0-a0-approved-manifest-corpus-refresh-completion.md` closes A0R3 at verified shared
+  `G0R3` on its no-candidate branch without retry or A2 authority.
 - `reviews/atlas-v0-a0-scope-review.md` is the repository-safe record of the approved Atlas V0 A0
   project-leader decision. Its forward-looking identity and immutable-copy wording is partially
   superseded only when the verified A2 plan-review record activates the trusted-local profile.
