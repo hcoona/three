@@ -87,9 +87,13 @@
 > `atlas-v0-a0-no-candidate-stage-diagnosis.md` governed completed A0R4. It closed at verified shared
 > `G0R4` with `historical-authority-refused`, consumed its marker, and grants no retry or A2 authority.
 > **Historical authority diagnosis**
-> `atlas-v0-a0-historical-authority-diagnosis.md` governs planning-only A0R5. It may run one
-> fixed-predicate replay of only the historical-authority gate after exact source qualification. It
-> cannot read a runtime locator or current tree and grants no A2 authority.
+> `atlas-v0-a0-historical-authority-diagnosis.md` governed completed A0R5. It closed at verified shared
+> `G0R5` with `historical-manifest-canonical-refused`, consumed its marker, and grants no retry,
+> correction, or A2 authority.
+> **Approved-byte authority correction**
+> `atlas-v0-a0-approved-byte-authority-correction.md` governs planning-only A0R6. It may remove only
+> historical current-serializer canonical equality and run one corrected no-locator policy replay
+> after exact review and source qualification. It grants no A2 authority.
 
 ## 1. Outcome
 
@@ -164,10 +168,10 @@ A2 implementation may begin only when:
 
 Current A2 progression is blocked. A2R8 attempt authority is consumed, A2R9 stopped before private
 reads, and A2R10 through A2R13 completed their bounded work. A2R13's clean-lineage discovery safely
-stopped before pending-manifest publication. A0R1 through A0R4 are closed without a refreshed
-baseline. A0R5 may only produce one fixed-class receipt or the incomplete branch; only its
-controlled-refusal classes identify a historical-authority predicate group. No A2 operation may resume
-until future approved corpus authority exists and a later A2R14 explicitly binds it.
+stopped before pending-manifest publication. A0R1 through A0R5 are closed without a refreshed
+baseline. A0R6 is planning-only and may at most produce one corrected historical-policy fixed class or
+incomplete branch; it grants no A2 authority. No A2 operation may resume until future approved corpus
+authority exists and a later A2R14 explicitly binds it.
 
 ## 4. Scope
 
@@ -519,7 +523,7 @@ locally and stop. Supply none of their paths, hashes, counts, differences, names
 disposition, or outcome to a subagent, process output, or Git.
 
 A2 approval cannot resume unless a later separately reviewed correction and decision increment first
-produces an approved refreshed manifest. A0R4 and A0R5 diagnosis alone are insufficient. A separately
+produces an approved refreshed manifest. A0R4 through A0R6 alone are insufficient. A separately
 persisted and independently reviewed A2R14 must then bind A2R8 `G`, verified shared A2R10 `G10`, A2R11
 `G11`, A2R12 `G12`, A2R13 `G13`, and that approved manifest; create another fresh lineage; define the
 exact local review procedure, repository-safe decision record, ancestry, and fixed diagnostics; and
@@ -915,12 +919,12 @@ preflight, or continuation authority.
 
 ### A2.5 Current A0 refresh boundary
 
-A0R1 is closed at `G0R1`, A0R2 at `G0R2`, A0R3 at `G0R3`, and A0R4 at `G0R4`; all grant no retry.
-A0R4 selected only `historical-authority-refused`. A0R5 may only produce one fixed-class receipt or
-the incomplete branch; only a controlled-refusal class identifies a predicate group inside that gate.
-It cannot access a runtime locator or current tree. Any future approved refreshed manifest requires a
-separately planned correction, decision authority, and a separately persisted, reviewed A2R14
-authority rebind with another fresh lineage.
+A0R1 is closed at `G0R1`, A0R2 at `G0R2`, A0R3 at `G0R3`, A0R4 at `G0R4`, and A0R5 at `G0R5`; all
+grant no retry. A0R5 selected only `historical-manifest-canonical-refused`. Planning-only A0R6 may
+remove that historical current-serializer predicate and produce one corrected fixed-class receipt or
+the incomplete branch after exact gates. It cannot access a runtime locator or current tree and grants
+no A2 authority. Any future approved refreshed manifest requires separately planned decision authority
+and a separately persisted, reviewed A2R14 authority rebind with another fresh lineage.
 
 ### A2.6 Historical A2R8 release
 
@@ -1029,7 +1033,7 @@ authority.
 
 Every A2R8 plan-review and release record followed the correction plan and sections 16 and 17 of
 `project-operating-model.md`. A2R9 remains blocked review evidence; A2R10 through A2R13 are completed
-evidence. A0R1 through A0R4 are closed. A0R5 is planning-only before verified `R0R5` and grants no A2
+evidence. A0R1 through A0R5 are closed. A0R6 is planning-only before verified `R0R6` and grants no A2
 authority.
 
 ## 21. Private outputs and handoff
@@ -1054,9 +1058,10 @@ Expected private outputs are:
   rebased requests, protected manifest decision, released intake states, qualified snapshot,
   receipts, inventory transitions, and non-deleting lifecycle-preflight evidence under its
   subordinate plan. Its safe-refusal branch created no pending manifest or downstream state; and
-- A0R1 through A0R4 are closed without a candidate. A0R5 may create one historical diagnostic marker
-  and one fixed-class receipt under its own subordinate plan. It cannot read a runtime locator or
-  current tree and cannot create, approve, or finalize a candidate.
+- A0R1 through A0R5 are closed without a candidate. A0R5 created one consumed historical marker and
+  fixed-class receipt. Planning-only A0R6 may create only its own corrected historical marker and one
+  fixed-class receipt after exact gates. It cannot read a runtime locator or current tree and cannot
+  create, approve, or finalize a candidate.
 
 Operational Atlas outputs remain under protected Git-ignored Atlas workspaces and follow A0
 lifecycle milestones. The A2R10, A2R11, and A2R12 reports remain outside operational workspaces and
@@ -1066,8 +1071,8 @@ To resume A2:
 
 1. read all applicable `AGENTS.md` files and the governing plans;
 2. verify A2R8 `G`, blocked A2R9 `R`, completed A2R10 `G10`, A2R11 `G11`, A2R12 `G12`, A2R13 `G13`,
-   completed A0R3 `G0R3`, completed A0R4 `G0R4`, upstream, and clean worktree;
-3. complete A0R5 and any later correction or refreshed-manifest approval only under their exact
+   completed A0R3 `G0R3`, A0R4 `G0R4`, A0R5 `G0R5`, upstream, and clean worktree;
+3. complete A0R6 and any later correction or refreshed-manifest approval only under their exact
    reviewed plans;
 4. persist and independently review A2R14 only after an approved refreshed manifest exists;
 5. perform no discovery, confirmation, copy, or preflight before verified A2R14 authority; and

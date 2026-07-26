@@ -1,8 +1,8 @@
 # Atlas V0 A0 Historical Authority Diagnosis
 
-**Lifecycle:** Proposed active subordinate; plan-only before verified shared `R0R5`
+**Lifecycle:** Historical supporting after verified shared `G0R5`
 
-**Status:** Diagnostic implementation and private reads blocked
+**Status:** Completed on the `historical-manifest-canonical-refused` branch; all A0R5 authority consumed
 
 **Increment:** A0R5 - Historical Authority Diagnosis
 
@@ -32,6 +32,9 @@ runtime locator or current game tree.
 
 This plan establishes every A0R5 authority and retained technical contract. A0R4 supplies exact source
 provenance and one fixed outer-gate result but grants no current execution authority.
+
+Planning-only `atlas-v0-a0-approved-byte-authority-correction.md` governs any A0R6 continuation. It
+does not authorize retry or correction under A0R5.
 
 **Planned plan-review record:**
 `../reviews/atlas-v0-a0-historical-authority-diagnosis-plan-review.md`

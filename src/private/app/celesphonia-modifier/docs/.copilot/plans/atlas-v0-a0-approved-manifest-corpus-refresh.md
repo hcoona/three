@@ -1,8 +1,14 @@
 # Atlas V0 A0 Approved-Manifest Corpus Refresh
 
-**Lifecycle:** Historical supporting after verified shared `G0R3`
+**Lifecycle:** Historical supporting after verified shared `G0R3`; section 2.1 is partially superseded
+by planning-only A0R6
 
 **Status:** Completed on the no-candidate branch; all census authority consumed
+
+**Proposed A0R6 partial supersession:** `atlas-v0-a0-approved-byte-authority-correction.md` removes only
+current-serializer canonical reserialization equality from acceptance of the exact digest-bound,
+strictly parsed, approved historical manifest. It does not rewrite this historical plan or manifest,
+change semantic policy, or grant execution before exact reviewed A0R6 gates.
 
 **Increment:** A0R3 - Approved-Manifest Corpus Refresh
 
@@ -80,15 +86,19 @@ authority.
 ### 2.1 Approved manifest
 
 The existing private `atlas-intake/v2` revision-3 manifest is the sole corpus-specific authority. The
-released reader must validate its complete strict canonical bytes and require:
+released reader must strictly validate its exact digest-bound bytes and require:
 
 - survey alias `survey-000001`;
 - validation method `manual-a0`;
 - approved confirmation by role `project-leader`;
 - decision reference `commit:3610d5e2a69073672bda665eed25a545a141c06b`;
 - complete internally consistent save roots, save entries, definition groups, definition entries,
-  counts, classifications, aliases, rule order, and decisions; and
-- exact canonical serialization equality.
+  counts, classifications, aliases, rule order, and decisions.
+
+The former exact canonical reserialization-equality bullet is proposed to be superseded only for
+historical-input acceptance by A0R6. Canonical serialization remains required for newly generated
+artifacts. Until verified shared `R0R6`, this paragraph grants no implementation or private-read
+authority.
 
 The utility also proves that the original A0 human-decision and release-gate commits are reachable
 from current `HEAD`.
@@ -125,7 +135,8 @@ expectedBuildId
 
 Each must occur exactly once with the expected JSON type. They must identify the released
 discovery-request schema, one lowercase SHA-256 digest, Steam application 1786790, and build 13624401.
-The computed SHA-256 of the exact canonical manifest bytes must equal `expectedBaselineSha256`. The
+The computed SHA-256 of the exact original approved manifest bytes must equal
+`expectedBaselineSha256`. The
 manifest itself independently supplies and validates survey alias `survey-000001` and revision 3.
 
 These request fields are explicitly non-authoritative and must not be compared, copied into new
