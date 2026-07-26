@@ -1,8 +1,17 @@
 # Atlas V0 A0 Approved-Byte Authority Correction
 
-**Lifecycle:** Proposed active subordinate; plan-only before verified shared `R0R6`
+**Lifecycle:** Historical supporting after verified shared `G0R6`; definition-policy acceptance is
+partially superseded by planning-only A0R7
 
-**Status:** Correction implementation and private reads blocked
+**Status:** Completed at verified shared `G0R6`
+
+**Verified completion:** `d145e20c9644edcb03e1f7f09d2305585d144fea`
+
+**Proposed A0R7 partial supersession:**
+`atlas-v0-a0-approved-definition-authority-correction.md` removes only
+`ManifestDefinitionPolicy` current-matcher replay from historical acceptance. It does not alter A0R6
+execution history, revive A0R6 authority, or weaken strict definition structure or future live
+reconciliation.
 
 **Increment:** A0R6 - Approved-Byte Authority Correction
 

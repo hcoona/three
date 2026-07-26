@@ -37,9 +37,12 @@ semantic scanning, write authority, WinUI, network access, and private data from
 - `plans/atlas-v0-a0-historical-authority-diagnosis.md` is the completed historical A0R5 route. It
   closed at verified shared `G0R5` with `historical-manifest-canonical-refused` and grants no retry or
   correction authority.
-- `plans/atlas-v0-a0-approved-byte-authority-correction.md` is the planning-only A0R6 route. It removes
-  current-serializer canonical equality only from historical approved-manifest consumption while
-  retaining exact-byte identity, strict parsing, approval, and semantic policy.
+- `plans/atlas-v0-a0-approved-byte-authority-correction.md` is the completed historical A0R6 route. It
+  closed at verified shared `G0R6` with `historical-definition-policy-refused`; its private-read
+  authority is consumed.
+- `plans/atlas-v0-a0-approved-definition-authority-correction.md` is the planning-only A0R7 route. It
+  makes the approved stored definition mapping authoritative for historical consumption, leaves current
+  matcher enforcement to future live reconciliation, and authorizes no private replay.
 - `plans/atlas-v0-a1-foundation-plan.md` defines the exact three-project C# scaffold,
   deterministic empty-survey contract, command behavior, tests, validation, and release gate for
   increment A1.
@@ -115,6 +118,13 @@ semantic scanning, write authority, WinUI, network access, and private data from
   at verified shared `S0R5`.
 - `reviews/atlas-v0-a0-historical-authority-diagnosis-completion.md` closes A0R5 at verified shared
   `G0R5` with `historical-manifest-canonical-refused`, without retry, correction, or A2 authority.
+- `reviews/atlas-v0-a0-approved-byte-authority-correction-plan-review.md` binds the accepted A0R6 plan
+  at verified shared `R0R6`.
+- `reviews/atlas-v0-a0-approved-byte-authority-correction-source-qualification.md` binds exact A0R6
+  source at verified shared `S0R6`.
+- `reviews/atlas-v0-a0-approved-byte-authority-correction-completion.md` closes A0R6 at verified shared
+  `G0R6` with `historical-definition-policy-refused`, without retry, current-tree, candidate, or A2
+  authority.
 - `reviews/atlas-v0-a0-scope-review.md` is the repository-safe record of the approved Atlas V0 A0
   project-leader decision. Its forward-looking identity and immutable-copy wording is partially
   superseded only when the verified A2 plan-review record activates the trusted-local profile.

@@ -1,14 +1,19 @@
 # Atlas V0 A0 Approved-Manifest Corpus Refresh
 
 **Lifecycle:** Historical supporting after verified shared `G0R3`; section 2.1 is partially superseded
-by planning-only A0R6
+by completed A0R6 and planning-only A0R7
 
 **Status:** Completed on the no-candidate branch; all census authority consumed
 
-**Proposed A0R6 partial supersession:** `atlas-v0-a0-approved-byte-authority-correction.md` removes only
+**Verified A0R6 partial supersession:** `atlas-v0-a0-approved-byte-authority-correction.md` removed only
 current-serializer canonical reserialization equality from acceptance of the exact digest-bound,
-strictly parsed, approved historical manifest. It does not rewrite this historical plan or manifest,
-change semantic policy, or grant execution before exact reviewed A0R6 gates.
+strictly parsed, approved historical manifest. A0R6 closed at verified shared `G0R6`
+`d145e20c9644edcb03e1f7f09d2305585d144fea`.
+
+**Proposed A0R7 partial supersession:**
+`atlas-v0-a0-approved-definition-authority-correction.md` removes current-matcher replay only from
+historical acceptance of the approved definition mapping. It retains strict rule and mapping structure
+and requires ordered matching during future live definition reconciliation.
 
 **Increment:** A0R3 - Approved-Manifest Corpus Refresh
 
@@ -95,10 +100,10 @@ released reader must strictly validate its exact digest-bound bytes and require:
 - complete internally consistent save roots, save entries, definition groups, definition entries,
   counts, classifications, aliases, rule order, and decisions.
 
-The former exact canonical reserialization-equality bullet is proposed to be superseded only for
-historical-input acceptance by A0R6. Canonical serialization remains required for newly generated
-artifacts. Until verified shared `R0R6`, this paragraph grants no implementation or private-read
-authority.
+The former exact canonical reserialization-equality requirement is superseded only for historical-input
+acceptance by verified A0R6. Canonical serialization remains required for newly generated artifacts.
+Planning-only A0R7 proposes to supersede current-matcher replay only for the stored approved definition
+mapping; it does not weaken strict rule grammar or future live reconciliation.
 
 The utility also proves that the original A0 human-decision and release-gate commits are reachable
 from current `HEAD`.
