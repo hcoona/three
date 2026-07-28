@@ -9,7 +9,7 @@ Add native [AsciiDoc](https://asciidoc.org/) rendering to Hexo using `@asciidoct
 
 ## Requirements
 
-- Node.js 20.19.0 or newer (matches Hexo 8’s baseline)
+- Node.js 22.18.0 or newer
 - Hexo 8.0.0 or newer
 
 ## Installation

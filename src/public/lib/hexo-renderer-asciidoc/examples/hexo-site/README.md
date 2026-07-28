@@ -17,7 +17,7 @@ and `.asciidoc`.
 ## Prerequisites
 
 - [mise](https://mise.jdx.dev/) installed
-- Node.js 20.19.0 or newer (matching the main project requirements)
+- Node.js 22.18.0 or newer (matching the main project requirements)
 - pnpm 10.x (already pinned in the repo)
 
 ## Clean-checkout setup and generation
