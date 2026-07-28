@@ -3,7 +3,8 @@
 > **Warning**
 > `research-tools/save-research-decoder.js` is a historical research-only tool. A2R14 grants it no
 > execution authority. Its inputs and outputs can contain private save data and must never be committed.
-> Any later use requires a separate approved editor-safety plan.
+> A3R1 does not authorize or require running it; compatibility work must use independently implemented
+> code with reviewed public and synthetic vectors.
 
 This folder contains Copilot-assisted planning, remediation, and research artifacts for the
 future Celesphonia Modifier project root.
@@ -13,7 +14,8 @@ boundary. `plans/atlas-v0-a2-local-definition-intake-simplification.md` conditio
 runtime protocol after verified `R15`, applying the actual single-user local threat model: retain
 original-data protection, containment, copy fidelity, and practical recovery; remove protected
 authorization ceremony, runtime Git/binary attestation, document binding graphs, and r1/r2 state.
-Neither plan approves a replacement A3 plan.
+`plans/atlas-v0-a3-proportional-save-reader-foundation.md` is the conditional A3R1 replacement plan.
+Before verified shared `R3R1`, the old A3 remains blocked and the new plan grants no authority.
 
 ## Normative baseline
 
@@ -23,7 +25,11 @@ Neither plan approves a replacement A3 plan.
   verified `R14`, it is partially superseded for A0-A3 execution and retains only historical design and
   later editor questions. Presence of either document grants no authority.
 - `plans/atlas-v0-execution-plan.md` defines the C# implementation policy and measurable
-  acceptance criteria for each Atlas v0 increment.
+  acceptance criteria for each Atlas v0 increment. Its old A3 section remains blocked before verified
+  shared `R3R1` and becomes historical supporting material only after that event.
+- `plans/atlas-v0-a3-proportional-save-reader-foundation.md` is the conditional A3R1 governing plan.
+  After verified shared `R3R1`, it supersedes only the old A3 execution section and authorizes the
+  synthetic C3R1 snapshot/reader foundation. It never authorizes a real snapshot by presence.
 - `plans/atlas-v0-a0-research-contract.md` records the approved finite corpus, definition,
   privacy, redaction, Agent-egress, artifact-lifecycle, and handoff contract for increment A0.
   Human scope approval alone does not establish increment completion.
@@ -208,6 +214,12 @@ Neither plan approves a replacement A3 plan.
 - `reviews/atlas-v0-a2-local-definition-intake-simplification-plan-review.md`, when present and
   verified as exact `R15`, activates the proportional local threat model and simplified implementation
   authority. It grants no runtime authorization role.
+- `reviews/atlas-v0-a3-proportional-save-reader-foundation-plan-review.md`, when present and verified
+  as exact `R3R1`, activates only the A3R1 synthetic implementation authority. Before that event the
+  old A3 remains blocked; path or index presence grants nothing.
+- `reviews/atlas-v0-a3-proportional-save-reader-foundation-release-gate.md`, when present and verified
+  as exact `G3R1`, establishes the reviewed synthetic A3R1 release. It grants no real snapshot,
+  private-corpus, decoded-data-persistence, or original-save-write authority.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` is obsolete and blocked. A2R8 publishes no private
   discovery token, disposition, outcome, count, difference, hash, path, name, or document content.
 

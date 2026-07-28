@@ -8,6 +8,15 @@
 > qualification, and codecs require a later independent editor-safety workflow. Presence of either
 > document or notice grants nothing.
 
+<!-- Separate independent authority notices. -->
+
+> **Conditional A3R1 relationship**
+> Before exact verified shared `R3R1`, A2R14 continues to block save-oriented A3 execution. After that
+> event, `atlas-v0-a3-proportional-save-reader-foundation.md` governs only the proportional snapshot
+> and lossless reader foundation, while this document retains historical research, format context,
+> and deferred editor questions. This notice imports no execution authority before `R3R1`, and this
+> document grants no real-data or original-write authority afterward.
+
 **Lifecycle:** Active normative research baseline before verified shared `R14`; partially superseded and
 historical supporting for A0-A3 execution after verified shared `R14`
 
@@ -30,6 +39,8 @@ verified `R14`
 > Before any verified `R14`, `atlas-v0-execution-plan.md` defines the C# implementation boundary,
 > increments, acceptance criteria, and stop conditions for Atlas v0. After verified `R14`, the
 > A2R14 conditional supersession controls A0-A3 execution and this document retains no such authority.
+> After verified shared `R3R1`, the independent A3R1 plan imports only compatible historical context
+> from this document and supplies the new A3 execution authority.
 
 ## 1. Research decision
 

@@ -7,6 +7,14 @@
 > no replacement A3. Presence of this notice or the A2R14 plan creates no implementation or private-run
 > authority.
 
+<!-- Separate independent authority notices. -->
+
+> **Conditional A3R1 replacement**
+> Before exact verified shared `R3R1`, the old A3 section remains blocked. After that event,
+> `atlas-v0-a3-proportional-save-reader-foundation.md` supersedes only that section and governs the
+> proportional save snapshot and lossless reader foundation. Presence of the plan, notice, or future
+> record grants no implementation or real-snapshot authority.
+
 **Status:** Confirmed execution baseline
 
 > **Conditional A2 amendment**
@@ -36,8 +44,10 @@ Reusable research and production implementation starts in C#:
 - Keep decoding, traversal, canonicalization, redaction, schema validation, and view generation
   in reusable C# components.
 - Keep PowerShell limited to orchestration and environment setup.
-- Keep `research-tools/save-research-decoder.js` as a reference oracle for compatibility
-  vectors. Do not extend it into the production scanner.
+- Keep `research-tools/save-research-decoder.js` as non-executable historical context only. Do not
+  run, extend, or use it as a compatibility oracle. After verified shared `R3R1`, compatibility
+  evidence uses reviewed public and repository-safe synthetic vectors plus independently derived
+  format facts.
 - Permit another language only for a disposable experiment whose output is not canonical and
   whose code will not be migrated or shipped.
 
@@ -202,6 +212,12 @@ exist.
 - A dynamic locator segment can bypass deny-by-default aliasing.
 
 ## 9. Increment A3: Lossless Decode and Graph Reader
+
+> **Conditional lifecycle**
+> This historical A3 section is blocked before verified shared `R3R1`. After verified shared `R3R1`,
+> it is superseded for A3 execution by
+> `atlas-v0-a3-proportional-save-reader-foundation.md` and remains only as historical supporting
+> context. The section below is intentionally not rewritten.
 
 ### Outputs
 
