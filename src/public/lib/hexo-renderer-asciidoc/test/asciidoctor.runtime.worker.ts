@@ -192,13 +192,7 @@ type OverlapRenderCase = {
   optionSentinel: string;
 };
 
-type LoggerLike = {
-  warn(message: string): void;
-};
-
-type ReaderWithLogger = Reader & {
-  getLogger(): LoggerLike;
-};
+type ReaderLogger = ReturnType<Reader['getLogger']>;
 
 type DocumentWithAttributes = {
   getAttribute(name: string): unknown;
@@ -211,7 +205,7 @@ type ParentWithDocument = AbstractBlock & {
 type OverlapBarrierRegistration = {
   dispose: () => void;
   getActiveCount: () => number;
-  getLoggers: () => ReadonlyMap<string, LoggerLike>;
+  getLoggers: () => ReadonlyMap<string, ReaderLogger>;
   getMaxActiveCount: () => number;
 };
 
@@ -278,7 +272,7 @@ const registerOverlapBarrier = (expectedCount: number): OverlapBarrierRegistrati
   const extensionName = `unit2-overlap-barrier-${overlapExtensionSequence}`;
   let activeCount = 0;
   let maxActiveCount = 0;
-  const loggers = new Map<string, LoggerLike>();
+  const loggers = new Map<string, ReaderLogger>();
   let settleBarrier: ((error?: Error) => void) | undefined;
   const barrier = new Promise<void>((resolve, reject) => {
     settleBarrier = (error?: Error) => {
@@ -300,17 +294,14 @@ const registerOverlapBarrier = (expectedCount: number): OverlapBarrierRegistrati
       const optionSentinel = String(document.getAttribute('unit2-option-sentinel') ?? '');
       const loggerSentinel = String(document.getAttribute('unit2-logger-sentinel') ?? '');
       const errorSentinel = document.getAttribute('unit2-error-sentinel');
-      const logger =
-        typeof (reader as Partial<ReaderWithLogger>).getLogger === 'function'
-          ? (reader as ReaderWithLogger).getLogger()
-          : undefined;
+      const logger = reader.getLogger();
       if (!logger) {
         throw new TypeError(`conversion ${callId} did not expose its core logger`);
       }
       loggers.set(callId, logger);
       const barrierText = (await reader.readLines()).join('\n');
 
-      logger.warn(`UNIT2_LOG_SENTINEL:${loggerSentinel}`);
+      logger.warn(`UNIT2_LOG_SENTINEL:${loggerSentinel}`, undefined);
       activeCount += 1;
       maxActiveCount = Math.max(maxActiveCount, activeCount);
       if (activeCount === expectedCount) {

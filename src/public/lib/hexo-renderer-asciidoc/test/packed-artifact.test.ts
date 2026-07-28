@@ -156,7 +156,7 @@ describe('packed Asciidoctor v4 package import shapes', () => {
     expect(expectedHtml).toContain('<code class="highlight javascript">');
 
     expect(packedManifest.name).toBe('hexo-renderer-asciidoc');
-    expect(packedManifest.dependencies?.['@asciidoctor/core']).toBe('4.0.4');
+    expect(packedManifest.dependencies?.['@asciidoctor/core']).toBe('4.0.5');
     expect(packedManifest.main).toBe('./dist/index.cjs');
     expect(packedManifest.types).toBe('./dist/index.d.ts');
     expect(packedManifest.exports?.['.']?.import?.default).toBe('./dist/index.js');

@@ -546,8 +546,8 @@ const main = () => {
     assert(packedManifest.types === './dist/index.d.ts', 'Packed types must point at the ESM declarations.');
     assert(packedManifest.engines?.node === '>=20.19.0', 'Packed engines.node must remain >=20.19.0.');
     assert(
-      packedManifest.dependencies?.['@asciidoctor/core'] === '4.0.4',
-      'Packed dependency @asciidoctor/core must be 4.0.4.',
+      packedManifest.dependencies?.['@asciidoctor/core'] === '4.0.5',
+      'Packed dependency @asciidoctor/core must be 4.0.5.',
     );
     assert(!('asciidoctor' in (packedManifest.dependencies ?? {})), 'Packed manifest must not depend on asciidoctor.');
     assert(

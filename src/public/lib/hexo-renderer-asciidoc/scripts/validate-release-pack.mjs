@@ -58,8 +58,8 @@ const verifyTarballCommon = (tarballPath, expectedName, expectedVersion, expecte
   );
   assert(manifest.main === './dist/index.cjs', 'Packed main must stay on dist/index.cjs.');
   assert(
-    manifest.dependencies?.['@asciidoctor/core'] === '4.0.4',
-    'Packed dependency @asciidoctor/core must remain 4.0.4.',
+    manifest.dependencies?.['@asciidoctor/core'] === '4.0.5',
+    'Packed dependency @asciidoctor/core must remain 4.0.5.',
   );
   assert(!('asciidoctor' in (manifest.dependencies ?? {})), 'Packed manifest must not depend on asciidoctor.');
   assert(!entries.includes('package/README.npm.md'), 'README.npm.md must not be published.');

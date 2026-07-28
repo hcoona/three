@@ -5,7 +5,7 @@
 
 # hexo-renderer-asciidoc
 
-Add native [AsciiDoc](https://asciidoc.org/) rendering to Hexo using `@asciidoctor/core` / Asciidoctor.js 4.0.4. The plugin auto-registers asynchronous renderers for `.ad`, `.adoc`, and `.asciidoc`, re-highlights recognized AsciiDoc listing blocks with Hexo-compatible markup, and encodes literal `{` / `}` before returning HTML to Hexo.
+Add native [AsciiDoc](https://asciidoc.org/) rendering to Hexo using `@asciidoctor/core` / Asciidoctor.js 4.0.5. The plugin auto-registers asynchronous renderers for `.ad`, `.adoc`, and `.asciidoc`, re-highlights recognized listing blocks with Hexo-compatible markup, and encodes literal `{` / `}` before returning HTML to Hexo.
 
 ## Requirements
 
@@ -86,7 +86,7 @@ explicit `@beta` package as described in [Installation](#installation).
 
 ## Behavior summary
 
-- Uses exact runtime dependency `@asciidoctor/core` 4.0.4 and awaits Asciidoctor.js 4 conversion before any post-processing.
+- Uses exact runtime dependency `@asciidoctor/core` 4.0.5 and awaits Asciidoctor.js 4 conversion before any post-processing.
 - Registers `.ad`, `.adoc`, and `.asciidoc` with Hexo as asynchronous renderers.
 - Runs Asciidoctor with `doctype: article`, `safe: server`, and `to_file: false`. It does **not** set `base_dir`, so includes resolve from the conversion-time `process.cwd()`. `data.path` and the Hexo site root are not used as `base_dir`.
 - Is **not safe for untrusted AsciiDoc**. `safe: server` still permits local includes under these current-working-directory semantics, and symlink targets can escape an assumed directory boundary. The current working directory is not a jail. Render only trusted input, from an isolated or sandboxed working directory that contains no secrets.

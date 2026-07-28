@@ -26,7 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Migrate the project repository to the `hcoona/three` monorepo and update
   documentation links accordingly.
 - Begin the `4.0.0-beta` major line by moving the runtime dependency from
-  `asciidoctor` 3.0.4 to exact `@asciidoctor/core` 4.0.4 / Asciidoctor.js 4.0.4.
+  `asciidoctor` 3.0.4 to exact `@asciidoctor/core` 4.0.5 / Asciidoctor.js 4.0.5.
+- Derive extension logger types from the official `Reader.getLogger()` contract.
 - Change the public renderer contract from `string` to `Promise<string>`.
   Programmatic consumers must `await renderer(...)`.
 - Register Hexo renderers for `.ad`, `.adoc`, and `.asciidoc` asynchronously.
