@@ -180,6 +180,7 @@ jobs:
 
     env:
       NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+      PACKAGE_DIR: src/public/lib/hexo-renderer-asciidoc
 
     steps:
       - name: Checkout
@@ -210,11 +211,24 @@ jobs:
           pnpm install --frozen-lockfile
           dotnet tool restore
 
-      - name: Run tests
+      - name: Record actual tool versions
+        run: |
+          set -Eeuo pipefail
+          echo "node=$(node --version)"
+          echo "pnpm=$(pnpm --version)"
+          echo "npm=$(npm --version)"
+
+      - name: Type check package
+        run: pnpm --dir "${PACKAGE_DIR}" run typecheck
+
+      - name: Run monorepo tests
         run: pnpm run test
 
-      - name: Build
+      - name: Build monorepo
         run: pnpm run build
+
+      - name: Pack and probe published artifact
+        run: pnpm --dir "${PACKAGE_DIR}" run validate:packed-artifact
 
   python-tests:
     name: Test (Python 3.14)

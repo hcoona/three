@@ -4,8 +4,8 @@
 title: Hexo + AsciiDoc demo
 subtitle: Example Hexo site for hexo-renderer-asciidoc
 description: >-
-  A tiny Hexo blog that renders every page from AsciiDoc sources using the
-  local hexo-renderer-asciidoc package.
+  A tiny Hexo blog whose authored AsciiDoc source pages and posts use the local
+  hexo-renderer-asciidoc package.
 author: Hexo Renderer Maintainers
 language: en
 timezone: UTC
@@ -27,8 +27,9 @@ category_dir: categories
 
 highlight:
   enable: true
-  # Hexo's built-in highlighter powers non-AsciiDoc assets; the renderer applies
-  # its own static highlighting to AsciiDoc posts after conversion.
+  # Hexo's built-in highlighter powers non-AsciiDoc assets. This renderer applies
+  # its own fixed static-highlighting pass only to recognized AsciiDoc listing
+  # blocks, using autoDetect: false, gutter: false, and wrap: false.
 
 server:
   host: 0.0.0.0

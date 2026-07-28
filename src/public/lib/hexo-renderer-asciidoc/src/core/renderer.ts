@@ -15,8 +15,8 @@ import { escapeCurlyBraces } from './sanitize';
  * @param data - Hexo renderer payload containing the AsciiDoc body.
  * @returns Final HTML string ready to be returned to Hexo.
  */
-const asciidoctorRenderer: Renderer = (data) => {
-  const html = convertAsciiDoc(data.text);
+const asciidoctorRenderer: Renderer = async (data) => {
+  const html = await convertAsciiDoc(data.text);
 
   const highlighted = applyStaticHighlighting(html);
 

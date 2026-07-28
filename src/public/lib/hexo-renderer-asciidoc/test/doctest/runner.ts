@@ -89,8 +89,8 @@ export const registerDocTestGroup = (group: string): void => {
 
   describe(`DocTest:${group}`, () => {
     for (const example of examples) {
-      it(example.name, () => {
-        const actual = renderAsciiDoc(example.content);
+      it(example.name, async () => {
+        const actual = await renderAsciiDoc(example.content);
         expect(normalizeHtml(actual)).toMatchSnapshot();
       });
     }

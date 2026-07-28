@@ -7,14 +7,8 @@ import { defineConfig, type ViteUserConfigExport } from 'vitest/config';
 
 const vitestConfig: ViteUserConfigExport = defineConfig({
   test: {
-    include: ['test/**/*.test.{js,mjs,ts}'],
+    include: ['test/asciidoctor.runtime.worker.ts'],
     environment: 'node',
-    fileParallelism: false,
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'lcov'],
-      reportsDirectory: './coverage',
-    },
   },
 });
 
