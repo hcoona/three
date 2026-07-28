@@ -59,7 +59,7 @@ dotenv-linter = "latest"
 fd = "latest"
 ripgrep = "latest"
 github-cli = "latest"
-"github:microsoft/apm" = "latest"
+"github:microsoft/apm" = "0.26.0"
 
 #
 # Environment Variables
