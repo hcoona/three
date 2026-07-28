@@ -56,6 +56,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Configure Git LFS for pointer-only clones
+        run: |
+          set -Eeuo pipefail
+
+          # Renovate performs its own clone, so configure the runner globally.
+          git lfs install --skip-smudge --skip-repo --force
+
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
