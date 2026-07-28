@@ -1,8 +1,8 @@
 # Atlas V0 A2 Clean Workspace Rebuild
 
-**Lifecycle:** Active subordinate; plan-only before verified shared `R13`
+**Lifecycle:** Completed historical supporting at verified shared `G13`
 
-**Status:** Bootstrap and private execution blocked
+**Status:** Completed on the repository-safe safe-refusal branch; no retry or continuation authority
 
 **Increment:** A2R13 - Clean Workspace Rebuild
 

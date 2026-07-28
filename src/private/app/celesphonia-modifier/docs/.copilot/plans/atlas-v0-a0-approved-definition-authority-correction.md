@@ -1,8 +1,16 @@
 # Atlas V0 A0 Approved-Definition Authority Correction
 
-**Lifecycle:** Proposed active subordinate; plan-only before verified shared `R0R7`
+> **Conditional A2R14 operational note**
+> Before exact verified shared `R14`, this plan's completed status and direction remain in force. After
+> that event,
+> `atlas-v0-a2-definition-only-intake-correction.md` supersedes only this plan's future operational
+> direction for save handling. It does not supersede, rewrite, or weaken exact `G0R7` historical
+> authority, the frozen revision-3 bytes, or the stored definition mapping. Presence of the notice or
+> A2R14 plan grants no implementation or private-run authority.
 
-**Status:** Repository-safe authority correction blocked
+**Lifecycle:** Completed active subordinate at verified shared `G0R7`
+
+**Status:** Repository-safe authority correction completed at verified shared `G0R7`
 
 **Increment:** A0R7 - Approved-Definition Authority Correction
 

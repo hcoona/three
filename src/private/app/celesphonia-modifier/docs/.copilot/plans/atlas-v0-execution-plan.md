@@ -1,5 +1,12 @@
 # Atlas v0 Execution Plan
 
+> **Conditional partial supersession by A2R14**
+> Before exact verified shared `R14`, this plan's prior status remains in force. After that event,
+> `atlas-v0-a2-definition-only-intake-correction.md` replaces the old A2 save requirements with
+> definition-only intake and blocks the A3 save-codec increment named below. A2R14 approves or designs
+> no replacement A3. Presence of this notice or the A2R14 plan creates no implementation or private-run
+> authority.
+
 **Status:** Confirmed execution baseline
 
 > **Conditional A2 amendment**

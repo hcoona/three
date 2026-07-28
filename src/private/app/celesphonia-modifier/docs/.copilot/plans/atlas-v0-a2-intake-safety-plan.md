@@ -1,5 +1,15 @@
 # Atlas V0 A2 Intake and Safety Plan
 
+> **Conditional partial supersession by A2R14**
+> Before exact verified shared `R14`, this blocked plan's prior status remains in force. After that
+> event,
+> `atlas-v0-a2-definition-only-intake-correction.md` governs active A2 intake. It removes saves,
+> executable hashing, mixed corpus manifests, manifest revisions 4 and 5, save qualification, and this
+> plan's post-discovery human gates and later state sequence. It imports only named trusted-local
+> definition mechanics and instead uses one pre-operation bootstrap authorization with states r1
+> `discovered` and r2 `qualified`. Presence of this notice or the A2R14 plan grants no implementation or
+> private-run authority.
+
 **Status:** Blocked pending refreshed A0 authority and a separately reviewed A2 rebind
 
 **Increment:** A2 - Intake and Safety Harness
@@ -91,9 +101,12 @@
 > `G0R5` with `historical-manifest-canonical-refused`, consumed its marker, and grants no retry,
 > correction, or A2 authority.
 > **Approved-byte authority correction**
-> `atlas-v0-a0-approved-byte-authority-correction.md` governs planning-only A0R6. It may remove only
-> historical current-serializer canonical equality and run one corrected no-locator policy replay
-> after exact review and source qualification. It grants no A2 authority.
+> `atlas-v0-a0-approved-byte-authority-correction.md` governed completed A0R6. It removed only
+> historical current-serializer canonical equality, closed at verified shared `G0R6` with
+> `historical-definition-policy-refused`, consumed its marker, and grants no retry or A2 authority.
+> `atlas-v0-a0-approved-definition-authority-correction.md` then governed completed A0R7 and made the
+> exact stored definition mapping authoritative at verified shared `G0R7`, without private replay,
+> current-tree, or A2 authority.
 
 ## 1. Outcome
 
@@ -169,9 +182,10 @@ A2 implementation may begin only when:
 Current A2 progression is blocked. A2R8 attempt authority is consumed, A2R9 stopped before private
 reads, and A2R10 through A2R13 completed their bounded work. A2R13's clean-lineage discovery safely
 stopped before pending-manifest publication. A0R1 through A0R5 are closed without a refreshed
-baseline. A0R6 is planning-only and may at most produce one corrected historical-policy fixed class or
-incomplete branch; it grants no A2 authority. No A2 operation may resume until future approved corpus
-authority exists and a later A2R14 explicitly binds it.
+baseline. A0R6 completed at verified shared `G0R6` with consumed
+`historical-definition-policy-refused`; A0R7 completed at verified shared `G0R7` and made the exact
+stored definition mapping authoritative without granting A2 authority. No A2 operation may resume
+unless verified shared `R14` activates the definition-only A2R14 rebind.
 
 ## 4. Scope
 
@@ -522,12 +536,12 @@ A2R8 `G` does not authorize approval or `intake-confirm`. Preserve all existing 
 locally and stop. Supply none of their paths, hashes, counts, differences, names, contents,
 disposition, or outcome to a subagent, process output, or Git.
 
-A2 approval cannot resume unless a later separately reviewed correction and decision increment first
-produces an approved refreshed manifest. A0R4 through A0R6 alone are insufficient. A separately
-persisted and independently reviewed A2R14 must then bind A2R8 `G`, verified shared A2R10 `G10`, A2R11
-`G11`, A2R12 `G12`, A2R13 `G13`, and that approved manifest; create another fresh lineage; define the
-exact local review procedure, repository-safe decision record, ancestry, and fixed diagnostics; and
-receive project-leader confirmation.
+A2 approval cannot resume under this predecessor mixed-corpus plan. Exact `G0R7` supplies historical
+definition authority but no refreshed mixed manifest, save authority, or A2 authority. Only the
+separately persisted and independently reviewed definition-only A2R14 may rebind exact `G0R7` to a
+fresh lineage while preserving A2R8 `G`, verified shared A2R10 `G10`, A2R11 `G11`, A2R12 `G12`, and
+A2R13 `G13` as historical evidence. It must define its own exact local review procedure,
+repository-safe decision record, ancestry, fixed diagnostics, and project-leader confirmation.
 
 Any future confirmation must still verify state revision 1 and every bound document digest, publish
 approved manifest revision 5 and state revision 2 with create-new semantics, and preserve all
@@ -917,14 +931,16 @@ workspace without reading or importing historical inventory state. Released disc
 safe-refusal branch before pending-manifest publication. A2R13 grants no retry, confirmation, copy,
 preflight, or continuation authority.
 
-### A2.5 Current A0 refresh boundary
+### A2.5 Completed A0 authority boundary
 
 A0R1 is closed at `G0R1`, A0R2 at `G0R2`, A0R3 at `G0R3`, A0R4 at `G0R4`, and A0R5 at `G0R5`; all
-grant no retry. A0R5 selected only `historical-manifest-canonical-refused`. Planning-only A0R6 may
-remove that historical current-serializer predicate and produce one corrected fixed-class receipt or
-the incomplete branch after exact gates. It cannot access a runtime locator or current tree and grants
-no A2 authority. Any future approved refreshed manifest requires separately planned decision authority
-and a separately persisted, reviewed A2R14 authority rebind with another fresh lineage.
+grant no retry. A0R5 selected only `historical-manifest-canonical-refused`. A0R6 completed at verified
+shared `G0R6` after removing only that historical current-serializer predicate; its sole fixed class
+was `historical-definition-policy-refused`, its marker was consumed, and it grants no retry or A2
+authority. A0R7 completed at verified shared `G0R7`, removed the later matcher replay from historical
+acceptance, and made the exact stored definition mapping authoritative. It grants no current-tree or A2
+authority. Only the separately persisted and reviewed A2R14 plan may rebind that authority to a fresh
+definition-only lineage.
 
 ### A2.6 Historical A2R8 release
 
@@ -1033,8 +1049,8 @@ authority.
 
 Every A2R8 plan-review and release record followed the correction plan and sections 16 and 17 of
 `project-operating-model.md`. A2R9 remains blocked review evidence; A2R10 through A2R13 are completed
-evidence. A0R1 through A0R5 are closed. A0R6 is planning-only before verified `R0R6` and grants no A2
-authority.
+evidence. A0R1 through A0R5 are closed. A0R6 and A0R7 are completed at verified shared `G0R6` and
+`G0R7`; both grant no A2 authority.
 
 ## 21. Private outputs and handoff
 
@@ -1059,9 +1075,9 @@ Expected private outputs are:
   receipts, inventory transitions, and non-deleting lifecycle-preflight evidence under its
   subordinate plan. Its safe-refusal branch created no pending manifest or downstream state; and
 - A0R1 through A0R5 are closed without a candidate. A0R5 created one consumed historical marker and
-  fixed-class receipt. Planning-only A0R6 may create only its own corrected historical marker and one
-  fixed-class receipt after exact gates. It cannot read a runtime locator or current tree and cannot
-  create, approve, or finalize a candidate.
+  fixed-class receipt. A0R6 created one consumed corrected historical marker and one fixed-class
+  receipt and completed at `G0R6`; A0R7 created no private runtime artifact and completed at `G0R7`.
+  Neither read a runtime locator or current tree, created a candidate, or granted A2 authority.
 
 Operational Atlas outputs remain under protected Git-ignored Atlas workspaces and follow A0
 lifecycle milestones. The A2R10, A2R11, and A2R12 reports remain outside operational workspaces and
@@ -1071,10 +1087,12 @@ To resume A2:
 
 1. read all applicable `AGENTS.md` files and the governing plans;
 2. verify A2R8 `G`, blocked A2R9 `R`, completed A2R10 `G10`, A2R11 `G11`, A2R12 `G12`, A2R13 `G13`,
-   completed A0R3 `G0R3`, A0R4 `G0R4`, A0R5 `G0R5`, upstream, and clean worktree;
-3. complete A0R6 and any later correction or refreshed-manifest approval only under their exact
-   reviewed plans;
-4. persist and independently review A2R14 only after an approved refreshed manifest exists;
+   completed A0R3 `G0R3`, A0R4 `G0R4`, A0R5 `G0R5`, A0R6 `G0R6`, A0R7 `G0R7`, upstream, and clean
+   worktree;
+3. treat exact `G0R7` as historical definition authority only, with no private replay or current-tree
+   authority;
+4. persist and independently review the definition-only A2R14 candidate as the direct child of exact
+   `G0R7`;
 5. perform no discovery, confirmation, copy, or preflight before verified A2R14 authority; and
 6. infer neither private state nor authority from conversation history, artifact presence, or
    historical instructions.

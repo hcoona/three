@@ -1,24 +1,28 @@
 # Celesphonia Modifier `.copilot` index
 
 > **Warning**
-> `research-tools/save-research-decoder.js` is a research-only tool.
-> Run it only on qualified private snapshots after provenance revalidation.
-> Its inputs and outputs can contain private save data and must never be committed.
+> `research-tools/save-research-decoder.js` is a historical research-only tool. A2R14 grants it no
+> execution authority. Its inputs and outputs can contain private save data and must never be committed.
+> Any later use requires a separate approved editor-safety plan.
 
 This folder contains Copilot-assisted planning, remediation, and research artifacts for the
 future Celesphonia Modifier project root.
 
-The A2 C# intake and safety harness extends the existing reusable library, thin CLI, and test
-project. It adds strict private request contracts, metadata-only intake discovery, trusted-local
-copy qualification, lifecycle preflight, and synthetic validation while still excluding decoding,
-semantic scanning, write authority, WinUI, network access, and private data from Git.
+`plans/atlas-v0-a2-definition-only-intake-correction.md` defines a conditional definition-only A2R14
+boundary. Before verified `R14`, the prior document statuses remain in force. After verified `R14`, its
+conditional supersession applies, excludes saves, and preserves the exact historical revision-3
+authority in place. Presence in this index or tree grants nothing. Verified `G14` authorizes only the
+protected authorization-control operations defined by A2R14; historical-authority reads, live-tree
+access, fresh-workspace creation, and definition copying additionally require one exact promoted
+protected bootstrap authorization. A2R14 approves no replacement A3 plan.
 
 ## Normative baseline
 
 - `plans/project-operating-model.md` governs investment, sequencing, accountability, gates,
   staffing, scope cuts, supported life, and deferred decisions.
-- `plans/save-semantic-atlas-plan.md` governs the comprehensive preliminary save survey,
-  evidence model, privacy boundary, human value selection, and focused semantic research.
+- `plans/save-semantic-atlas-plan.md` is the confirmed research baseline before verified `R14`. After
+  verified `R14`, it is partially superseded for A0-A3 execution and retains only historical design and
+  later editor questions. Presence of either document grants no authority.
 - `plans/atlas-v0-execution-plan.md` defines the C# implementation policy and measurable
   acceptance criteria for each Atlas v0 increment.
 - `plans/atlas-v0-a0-research-contract.md` records the approved finite corpus, definition,
@@ -40,15 +44,15 @@ semantic scanning, write authority, WinUI, network access, and private data from
 - `plans/atlas-v0-a0-approved-byte-authority-correction.md` is the completed historical A0R6 route. It
   closed at verified shared `G0R6` with `historical-definition-policy-refused`; its private-read
   authority is consumed.
-- `plans/atlas-v0-a0-approved-definition-authority-correction.md` is the planning-only A0R7 route. It
-  makes the approved stored definition mapping authoritative for historical consumption, leaves current
-  matcher enforcement to future live reconciliation, and authorizes no private replay.
+- `plans/atlas-v0-a0-approved-definition-authority-correction.md` is the completed A0R7 route at
+  verified shared `G0R7` `d31e8e7d0782cff72c1f4f08c35146622893da89`. It makes the approved stored
+  definition mapping authoritative for historical consumption and authorizes no private replay.
 - `plans/atlas-v0-a1-foundation-plan.md` defines the exact three-project C# scaffold,
   deterministic empty-survey contract, command behavior, tests, validation, and release gate for
   increment A1.
-- `plans/atlas-v0-a2-intake-safety-plan.md` defines A2's trusted-local-filesystem intake,
-  human-approval boundary, copy qualification, locator redaction, lifecycle behavior, and staged
-  safety and release gates once its plan-review record authorizes implementation.
+- `plans/atlas-v0-a2-intake-safety-plan.md` remains at its prior status before verified `R14`. After
+  verified `R14`, it is partially superseded: A2R14 removes its active save, executable, mixed-manifest,
+  and save-qualification direction while importing only named definition-safe mechanics.
 - `plans/atlas-v0-a2-post-patch-baseline-correction.md` governs the A2 correction that treats the
   observed post-patch installed file tree as the research baseline. It retains the original A2
   harness and removes package-provenance machinery that is not needed for read-only intake.
@@ -75,9 +79,15 @@ semantic scanning, write authority, WinUI, network access, and private data from
   qualification at verified shared `G12` `661d6f62c56efcf0bb7a1d8fb220b44dad71ef56`.
 - `plans/atlas-v0-a2-remediation-backup-directory-readiness.md` is the completed A2R12C correction
   for an absent, not-yet-created remediation backup directory.
-- `plans/atlas-v0-a2-clean-workspace-rebuild.md` is the planning-only A2R13 clean-lineage route that
-  completed at verified shared `G13` after preserving the historical workspace, creating one isolated
-  A2 workspace, and safely stopping before pending-manifest publication.
+- `plans/atlas-v0-a2-clean-workspace-rebuild.md` is the completed historical A2R13 clean-lineage route
+  at verified shared `G13`. It preserved the historical workspace, created one isolated A2 workspace,
+  and safely stopped before pending-manifest publication, with no retry or continuation authority.
+- `plans/atlas-v0-a2-definition-only-intake-correction.md` carries the conditional A2R14 governing
+  plan. Before verified `R14`, prior status remains; after verified `R14`, its definition-only boundary
+  applies. Presence grants nothing. Verified `G14` authorizes only its protected authorization-control
+  operations. One exact promoted protected bootstrap authorization is additionally required before any
+  historical-authority read, live-tree access, fresh-workspace creation, or definition copy; that grant
+  is its only discretionary human decision.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -125,6 +135,11 @@ semantic scanning, write authority, WinUI, network access, and private data from
 - `reviews/atlas-v0-a0-approved-byte-authority-correction-completion.md` closes A0R6 at verified shared
   `G0R6` with `historical-definition-policy-refused`, without retry, current-tree, candidate, or A2
   authority.
+- `reviews/atlas-v0-a0-approved-definition-authority-correction-plan-review.md` binds the accepted
+  A0R7 plan at verified shared `R0R7`.
+- `reviews/atlas-v0-a0-approved-definition-authority-correction-completion.md` closes A0R7 at verified
+  shared `G0R7`, making the exact stored definition mapping authoritative without private replay,
+  current-tree, candidate, or A2 authority.
 - `reviews/atlas-v0-a0-scope-review.md` is the repository-safe record of the approved Atlas V0 A0
   project-leader decision. Its forward-looking identity and immutable-copy wording is partially
   superseded only when the verified A2 plan-review record activates the trusted-local profile.
@@ -188,6 +203,9 @@ semantic scanning, write authority, WinUI, network access, and private data from
   verified shared `R13`.
 - `reviews/atlas-v0-a2-clean-workspace-rebuild-completion.md` closes A2R13 at verified shared `G13`
   on its repository-safe refusal branch.
+- `reviews/atlas-v0-a2-definition-only-intake-correction-plan-review.md`, when present and verified as
+  exact `R14`, activates only the plan's conditional scope and implementation authority. Path or index
+  presence alone grants nothing and never grants private-run authority.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` is obsolete and blocked. A2R8 publishes no private
   discovery token, disposition, outcome, count, difference, hash, path, name, or document content.
 
@@ -220,9 +238,9 @@ normative perspective taxonomy.
 
 - `research/game-and-save-format-summary.md` is a non-sensitive supporting summary derived from
   the main plan.
-- `research-tools/save-research-decoder.js` is a research-only source copy for private analysis.
-  Use only qualified private snapshots after provenance revalidation, never a live save or the
-  pre-A2 preservation snapshot, and do not commit generated outputs.
+- `research-tools/save-research-decoder.js` is a historical research-only source copy. It has no
+  current Atlas execution authority. A later independent editor-safety plan must explicitly authorize
+  any use; never commit its private inputs or generated outputs.
 
 ## Document lifecycle
 
@@ -251,8 +269,8 @@ and real save values.
 
 Commit only schema-validated, redacted Atlas records and safe generated views. Keep source
 research inputs, temporary decoded outputs, and retained E2/E3 evidence in protected working
-storage excluded from repository history. See `plans/save-semantic-atlas-plan.md` for the
-authoritative research and evidence boundary.
+storage excluded from repository history. See `plans/save-semantic-atlas-plan.md` for its event-relative
+research/evidence lifecycle and conditional A2R14 notice.
 
 The local `src/private/app/celesphonia-modifier/.private/` workspace is inside the checkout for
 handoff convenience but is fully Git-ignored and remains private working storage. Its contents

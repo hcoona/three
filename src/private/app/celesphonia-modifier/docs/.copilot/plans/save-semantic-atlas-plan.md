@@ -1,6 +1,18 @@
 # Save Semantic Atlas v0 Plan
 
-**Status:** Confirmed research baseline
+> **Conditional partial supersession by A2R14**
+> Before exact verified shared `R14`, this document's prior status remains in force. After that event,
+> `atlas-v0-a2-definition-only-intake-correction.md` blocks save-oriented A0 through A3 execution and
+> limits Atlas intake to definitions. This document then retains only historical design and later editor
+> questions, with no A0-A3 execution authority under A2R14; save metadata, content, aliases, copying,
+> qualification, and codecs require a later independent editor-safety workflow. Presence of either
+> document or notice grants nothing.
+
+**Lifecycle:** Active normative research baseline before verified shared `R14`; partially superseded and
+historical supporting for A0-A3 execution after verified shared `R14`
+
+**Status:** Confirmed research baseline before verified `R14`; historical supporting under A2R14 after
+verified `R14`
 
 **Purpose:** Produce a comprehensive, privacy-safe structural map before selecting deep research
 
@@ -9,13 +21,15 @@
 > **Conditional A2 amendment**
 > The qualified read-only snapshot wording below takes effect only when the exact
 > `atlas-v0-a2-intake-safety-plan.md` plan-review record is verified. Until then, it conveys no A2
-> implementation authority.
+> implementation authority. After verified `R14`, the A2R14 notice above makes this amendment historical
+> for A0-A3 execution.
 
 <!-- Separate independent authority notices. -->
 
-> **Execution authority**
-> `atlas-v0-execution-plan.md` defines the C# implementation boundary, increments, acceptance
-> criteria, and stop conditions for Atlas v0.
+> **Event-relative execution relationship**
+> Before any verified `R14`, `atlas-v0-execution-plan.md` defines the C# implementation boundary,
+> increments, acceptance criteria, and stop conditions for Atlas v0. After verified `R14`, the
+> A2R14 conditional supersession controls A0-A3 execution and this document retains no such authority.
 
 ## 1. Research decision
 
