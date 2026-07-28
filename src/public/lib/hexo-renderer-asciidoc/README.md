@@ -29,7 +29,7 @@ Add first-class [AsciiDoc](https://asciidoc.org/) support to Hexo. This reposito
 
 | Dependency | Minimum version |
 | ---------- | --------------- |
-| Node.js    | 22.18.0         |
+| Node.js    | 22              |
 | Hexo       | 8.0.0           |
 
 Published-prerelease users should first confirm the published dist-tags:
@@ -195,7 +195,7 @@ mise exec -- pnpm --dir src/public/lib/hexo-renderer-asciidoc exec vitest run te
 
 ## Continuous integration
 
-- The monorepo CI runs HK validation in its validation job. Separate Node matrix jobs run type checks, Vitest, the production build, and packed-artifact validation on Node 22.18 / 22.x / 24.x: https://github.com/hcoona/three/actions/workflows/ci.yml
+- The monorepo CI runs HK validation in its validation job. Separate Node matrix jobs run type checks, Vitest, the production build, and packed-artifact validation on Node 22.x / 24.x: https://github.com/hcoona/three/actions/workflows/ci.yml
 - CodeQL scanning lives in the monorepo as well: https://github.com/hcoona/three/actions/workflows/codeql.yml
 
 ## License

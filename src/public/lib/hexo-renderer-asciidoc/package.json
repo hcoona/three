@@ -57,7 +57,7 @@
   },
   "homepage": "https://github.com/hcoona/three",
   "engines": {
-    "node": ">=22.18.0"
+    "node": ">=22"
   },
   "peerDependencies": {
     "hexo": ">=8.0.0"

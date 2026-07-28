@@ -4,7 +4,7 @@
   "description": "Workspace root for pnpm-managed packages in the Three monorepo.",
   "license": "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception",
   "engines": {
-    "node": ">=22.18.0"
+    "node": ">=22"
   },
   "scripts": {
     "bootstrap": "pnpm install",

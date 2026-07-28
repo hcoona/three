@@ -176,7 +176,7 @@ jobs:
     needs: validation
     strategy:
       matrix:
-        node-version: [22.18.0, 22.x, 24.x]
+        node-version: [22.x, 24.x]
 
     env:
       NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages

@@ -544,7 +544,7 @@ const main = () => {
       'Packed version must be the non-placeholder version stamped by prepack/NBGV.',
     );
     assert(packedManifest.types === './dist/index.d.ts', 'Packed types must point at the ESM declarations.');
-    assert(packedManifest.engines?.node === '>=22.18.0', 'Packed engines.node must remain >=22.18.0.');
+    assert(packedManifest.engines?.node === '>=22', 'Packed engines.node must remain >=22.');
     assert(
       packedManifest.dependencies?.['@asciidoctor/core'] === '4.0.4',
       'Packed dependency @asciidoctor/core must be 4.0.4.',

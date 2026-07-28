@@ -4,7 +4,7 @@
   "private": true,
   "description": "Example Hexo site wired to the local hexo-renderer-asciidoc package",
   "engines": {
-    "node": ">=22.18.0"
+    "node": ">=22"
   },
   "scripts": {
     "clean": "hexo clean",

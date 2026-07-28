@@ -8,7 +8,7 @@
   "author": "Shuai Zhang <zhangshuai.ustc@gmail.com>",
   "license": "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception",
   "engines": {
-    "node": ">=22.18.0"
+    "node": ">=22"
   },
   "scripts": {
     "postinstall": "wxt prepare",
