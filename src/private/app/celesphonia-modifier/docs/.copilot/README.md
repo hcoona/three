@@ -8,13 +8,12 @@
 This folder contains Copilot-assisted planning, remediation, and research artifacts for the
 future Celesphonia Modifier project root.
 
-`plans/atlas-v0-a2-definition-only-intake-correction.md` defines a conditional definition-only A2R14
-boundary. Before verified `R14`, the prior document statuses remain in force. After verified `R14`, its
-conditional supersession applies, excludes saves, and preserves the exact historical revision-3
-authority in place. Presence in this index or tree grants nothing. Verified `G14` authorizes only the
-protected authorization-control operations defined by A2R14; historical-authority reads, live-tree
-access, fresh-workspace creation, and definition copying additionally require one exact promoted
-protected bootstrap authorization. A2R14 approves no replacement A3 plan.
+`plans/atlas-v0-a2-definition-only-intake-correction.md` defines the released definition-only A2R14
+boundary. `plans/atlas-v0-a2-local-definition-intake-simplification.md` conditionally supersedes its
+runtime protocol after verified `R15`, applying the actual single-user local threat model: retain
+original-data protection, containment, copy fidelity, and practical recovery; remove protected
+authorization ceremony, runtime Git/binary attestation, document binding graphs, and r1/r2 state.
+Neither plan approves a replacement A3 plan.
 
 ## Normative baseline
 
@@ -82,12 +81,12 @@ protected bootstrap authorization. A2R14 approves no replacement A3 plan.
 - `plans/atlas-v0-a2-clean-workspace-rebuild.md` is the completed historical A2R13 clean-lineage route
   at verified shared `G13`. It preserved the historical workspace, created one isolated A2 workspace,
   and safely stopped before pending-manifest publication, with no retry or continuation authority.
-- `plans/atlas-v0-a2-definition-only-intake-correction.md` carries the conditional A2R14 governing
-  plan. Before verified `R14`, prior status remains; after verified `R14`, its definition-only boundary
-  applies. Presence grants nothing. Verified `G14` authorizes only its protected authorization-control
-  operations. One exact promoted protected bootstrap authorization is additionally required before any
-  historical-authority read, live-tree access, fresh-workspace creation, or definition copy; that grant
-  is its only discretionary human decision.
+- `plans/atlas-v0-a2-definition-only-intake-correction.md` carries the released A2R14 definition-only
+  boundary. After verified `R15`, its runtime authorization, harness, binding-graph, and state-machine
+  requirements are partially superseded by the A2R15 simplification plan.
+- `plans/atlas-v0-a2-local-definition-intake-simplification.md` is the conditional A2R15 governing
+  plan. After verified `R15`, it defines the proportional single-user local threat model and the
+  minimal request/receipt definition-intake workflow.
 - `plans/celesphonia-modifier-plan.md` is the detailed product, UX, transaction, recovery,
   test, and packaging hypothesis set. The operating and Atlas plans govern where they conflict
   with its older progression assumptions.
@@ -206,6 +205,9 @@ protected bootstrap authorization. A2R14 approves no replacement A3 plan.
 - `reviews/atlas-v0-a2-definition-only-intake-correction-plan-review.md`, when present and verified as
   exact `R14`, activates only the plan's conditional scope and implementation authority. Path or index
   presence alone grants nothing and never grants private-run authority.
+- `reviews/atlas-v0-a2-local-definition-intake-simplification-plan-review.md`, when present and
+  verified as exact `R15`, activates the proportional local threat model and simplified implementation
+  authority. It grants no runtime authorization role.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` is obsolete and blocked. A2R8 publishes no private
   discovery token, disposition, outcome, count, difference, hash, path, name, or document content.
 

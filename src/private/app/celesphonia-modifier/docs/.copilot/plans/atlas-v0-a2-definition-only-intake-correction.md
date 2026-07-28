@@ -1,7 +1,7 @@
 # Atlas V0 A2 Definition-Only Intake Correction
 
-**Lifecycle:** Conditional: non-operative governing-plan material before verified shared `R14`; active
-normative after verified shared `R14`
+**Lifecycle:** Active normative after verified shared `R14`; partially superseded by
+`atlas-v0-a2-local-definition-intake-simplification.md` after verified shared `R15`
 
 **Status:** Presence grants nothing; authority follows only the event-relative gates defined here
 
@@ -19,6 +19,15 @@ handling to a later independent editor-safety workflow.
 **Purpose:** Produce one definition-only, trusted-local A2 snapshot from the exact approved historical
 authority and a complete current definition reconciliation, without save discovery, save copying,
 executable hashing, or a new corpus document.
+
+> **A2R15 simplification notice**
+> After verified shared `R15`, the local single-user threat model, minimal runtime surface, recovery
+> model, review policy, and Git gates in
+> `atlas-v0-a2-local-definition-intake-simplification.md` supersede the corresponding A2R14
+> authorization, harness, binding-graph, state-machine, and runtime-release controls. Definition-only
+> scope and original-data protection remain active.
+
+<!-- Separate lifecycle notices. -->
 
 > **No authority by presence**
 > Before exact `R14` is independently reviewed, committed, pushed, and verified, prior document status
