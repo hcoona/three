@@ -7,10 +7,13 @@ public sealed class ProjectBoundaryTests
 {
     private static readonly string[] ExpectedLibraryFiles =
     [
+        "AtlasDefinitionIntake.cs",
+        "AtlasDefinitionIntakeContracts.cs",
         "AtlasDiscovery.cs",
         "AtlasIntakeContracts.cs",
         "EmptyAtlasSurvey.cs",
         "Hcoona.CelesphoniaModifier.Atlas.csproj",
+        "HistoricalAtlasDefinitionIngress.cs",
         "LocatorSegmentRedactor.cs",
         "PrivateArtifactLifecycle.cs",
         "packages.lock.json",
@@ -29,6 +32,7 @@ public sealed class ProjectBoundaryTests
     private static readonly string[] ExpectedTestFiles =
     [
         "AtlasCliApplicationTests.cs",
+        "AtlasDefinitionIntakeTests.cs",
         "AtlasDiscoveryTests.cs",
         "AtlasIntakeContractTests.cs",
         "AtlasProcessSmokeTests.cs",
@@ -44,6 +48,8 @@ public sealed class ProjectBoundaryTests
     private static readonly string[] ExpectedSchemaFiles =
     [
         "agent-egress-envelope.schema.json",
+        "atlas-definition-copy-receipt.schema.json",
+        "atlas-definition-intake-request.schema.json",
         "cleanup-preflight-report.schema.json",
         "copy-plan.schema.json",
         "copy-receipt.schema.json",
@@ -197,21 +203,20 @@ public sealed class ProjectBoundaryTests
     }
 
     [Fact]
-    public void ReadmeDescribesTheScaffoldedFoundation()
+    public void ReadmeDescribesTheCurrentCopilotBoundary()
     {
         string readme = File.ReadAllText(ProjectPaths.Create().Readme);
 
-        Assert.DoesNotContain(
-            "No application project has been scaffolded here yet.",
+        Assert.Contains(
+            "# Celesphonia Modifier `.copilot` index",
             readme,
             StringComparison.Ordinal);
         Assert.Contains(
-            "The A2 C# intake and safety harness extends the existing reusable library, thin CLI, "
-            + "and test",
+            "plans/atlas-v0-a2-local-definition-intake-simplification.md",
             readme,
             StringComparison.Ordinal);
         Assert.Contains(
-            "copy qualification, lifecycle preflight, and synthetic validation",
+            "verified as exact `R15`, activates",
             readme,
             StringComparison.Ordinal);
     }

@@ -17,6 +17,7 @@ public sealed class AtlasProcessSmokeTests
         .. "  celesphonia-atlas intake-discover <request-file>\n"u8,
         .. "  celesphonia-atlas intake-confirm <request-file>\n"u8,
         .. "  celesphonia-atlas intake-copy <request-file>\n"u8,
+        .. "  celesphonia-atlas definition-intake <request-file>\n"u8,
         .. "  celesphonia-atlas cleanup-preflight <request-file>\n"u8,
         .. "\n"u8,
         .. "Commands:\n"u8,
@@ -24,6 +25,7 @@ public sealed class AtlasProcessSmokeTests
         .. "  intake-discover    Discover the approved Atlas intake scope.\n"u8,
         .. "  intake-confirm     Confirm an approved Atlas intake manifest.\n"u8,
         .. "  intake-copy        Create qualified Atlas research snapshots.\n"u8,
+        .. "  definition-intake  Copy the approved local definition set.\n"u8,
         .. "  cleanup-preflight  Report private-artifact cleanup eligibility.\n"u8,
         .. "\n"u8,
         .. "Options:\n"u8,
@@ -63,6 +65,20 @@ public sealed class AtlasProcessSmokeTests
         Assert.Equal(0, result.ExitCode);
         Assert.Equal("Intake discovery completed.\n"u8.ToArray(), result.StandardOutput);
         Assert.Empty(result.StandardError);
+    }
+
+    [Fact]
+    public async Task DefinitionIntakeProcessWritesSuccessBytes()
+    {
+        await using DefinitionIntakeWorkspace workspace =
+            await DefinitionIntakeWorkspace.CreateAsync();
+
+        ProcessResult result = await RunAsync("definition-intake", workspace.RequestPath);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal("Definition intake completed.\n"u8.ToArray(), result.StandardOutput);
+        Assert.Empty(result.StandardError);
+        Assert.True(File.Exists(workspace.FinalReceiptPath));
     }
 
     [Fact]

@@ -37,6 +37,7 @@ public sealed class AtlasCliApplicationTests
         .. "  celesphonia-atlas intake-discover <request-file>\n"u8,
         .. "  celesphonia-atlas intake-confirm <request-file>\n"u8,
         .. "  celesphonia-atlas intake-copy <request-file>\n"u8,
+        .. "  celesphonia-atlas definition-intake <request-file>\n"u8,
         .. "  celesphonia-atlas cleanup-preflight <request-file>\n"u8,
         .. "\n"u8,
         .. "Commands:\n"u8,
@@ -44,6 +45,7 @@ public sealed class AtlasCliApplicationTests
         .. "  intake-discover    Discover the approved Atlas intake scope.\n"u8,
         .. "  intake-confirm     Confirm an approved Atlas intake manifest.\n"u8,
         .. "  intake-copy        Create qualified Atlas research snapshots.\n"u8,
+        .. "  definition-intake  Copy the approved local definition set.\n"u8,
         .. "  cleanup-preflight  Report private-artifact cleanup eligibility.\n"u8,
         .. "\n"u8,
         .. "Options:\n"u8,
@@ -65,6 +67,7 @@ public sealed class AtlasCliApplicationTests
             { ["intake-discover", "-h"], ExpectedCommandHelp },
             { ["intake-confirm", "--help"], ExpectedCommandHelp },
             { ["intake-copy", "-h"], ExpectedCommandHelp },
+            { ["definition-intake", "--help"], ExpectedCommandHelp },
             { ["cleanup-preflight", "--help"], ExpectedCommandHelp },
         };
 
@@ -80,6 +83,7 @@ public sealed class AtlasCliApplicationTests
             { ["--"] },
             { ["/h"] },
             { ["intake-discover"] },
+            { ["definition-intake"] },
             { ["intake-discover", "--help", "extra"] },
             { ["intake-discover", "one", "two"] },
         };
@@ -221,6 +225,22 @@ public sealed class AtlasCliApplicationTests
 
         Assert.Equal(AtlasCliApplication.SuccessExitCode, exitCode);
         Assert.Equal("Intake copy completed.\n"u8.ToArray(), standardOutput);
+        Assert.Empty(standardError);
+    }
+
+    [Fact]
+    public async Task DefinitionIntakeWritesFixedSuccessBytes()
+    {
+        (int exitCode, byte[] standardOutput, byte[] standardError) = await RunAsync(
+            ["definition-intake", @"Q:\private\definition.json"],
+            new DelegatingOperations
+            {
+                DefinitionIntake = (_, _) => ValueTask.CompletedTask,
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.SuccessExitCode, exitCode);
+        Assert.Equal("Definition intake completed.\n"u8.ToArray(), standardOutput);
         Assert.Empty(standardError);
     }
 
@@ -404,6 +424,7 @@ public sealed class AtlasCliApplicationTests
     [InlineData("empty-survey")]
     [InlineData("intake-confirm")]
     [InlineData("intake-copy")]
+    [InlineData("definition-intake")]
     [InlineData("cleanup-preflight")]
     public async Task NonDiscoverySafetyFailureIgnoresDiscoveryStage(string command)
     {
@@ -416,6 +437,7 @@ public sealed class AtlasCliApplicationTests
             EmptySurvey = (_, _) => ValueTask.FromException(exception),
             Confirm = (_, _) => ValueTask.FromException(exception),
             Copy = (_, _) => ValueTask.FromException(exception),
+            DefinitionIntake = (_, _) => ValueTask.FromException(exception),
             CleanupPreflight = (_, _) => ValueTask.FromException(exception),
         };
         string[] args = StringComparer.Ordinal.Equals(command, "empty-survey")
@@ -447,6 +469,25 @@ public sealed class AtlasCliApplicationTests
             new DelegatingOperations
             {
                 Copy = (_, token) => ValueTask.FromException(new OperationCanceledException(token)),
+            },
+            source.Token);
+
+        Assert.Equal(AtlasCliApplication.CanceledExitCode, exitCode);
+        Assert.Equal("Operation canceled.\n"u8.ToArray(), standardError);
+    }
+
+    [Fact]
+    public async Task DefinitionIntakeCancellationUsesCallerToken()
+    {
+        using CancellationTokenSource source = new();
+        await source.CancelAsync();
+
+        (int exitCode, _, byte[] standardError) = await RunAsync(
+            ["definition-intake", @"Q:\private\definition.json"],
+            new DelegatingOperations
+            {
+                DefinitionIntake = (_, token) =>
+                    ValueTask.FromException(new OperationCanceledException(token)),
             },
             source.Token);
 
@@ -888,6 +929,8 @@ public sealed class AtlasCliApplicationTests
 
         public Func<string, CancellationToken, ValueTask>? Copy { get; init; }
 
+        public Func<string, CancellationToken, ValueTask>? DefinitionIntake { get; init; }
+
         public Func<string, CancellationToken, ValueTask>? Discover { get; init; }
 
         public Func<Stream, CancellationToken, ValueTask>? EmptySurvey { get; init; }
@@ -920,6 +963,12 @@ public sealed class AtlasCliApplicationTests
             string requestFilePath,
             CancellationToken cancellationToken) =>
             Discover?.Invoke(requestFilePath, cancellationToken)
+            ?? ValueTask.CompletedTask;
+
+        public override ValueTask RunDefinitionIntakeAsync(
+            string requestFilePath,
+            CancellationToken cancellationToken) =>
+            DefinitionIntake?.Invoke(requestFilePath, cancellationToken)
             ?? ValueTask.CompletedTask;
     }
 

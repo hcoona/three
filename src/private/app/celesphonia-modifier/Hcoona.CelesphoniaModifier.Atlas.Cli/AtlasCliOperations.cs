@@ -26,6 +26,11 @@ internal class AtlasCliOperations
         CancellationToken cancellationToken) =>
         TrustedLocalCopy.CopyAsync(requestFilePath, cancellationToken);
 
+    public virtual ValueTask RunDefinitionIntakeAsync(
+        string requestFilePath,
+        CancellationToken cancellationToken) =>
+        AtlasDefinitionIntake.RunAsync(requestFilePath, cancellationToken);
+
     public virtual ValueTask RunCleanupPreflightAsync(
         string requestFilePath,
         CancellationToken cancellationToken) =>

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hcoona:three:celesphonia-modifier:atlas-v0:definition-intake-request:v1",
+  "title": "Atlas Definition Intake Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "repositoryRoot",
+    "runId",
+    "definitionRoot",
+    "expectedHistoricalAuthoritySha256",
+    "expectedHistoricalAuthorityRevision",
+    "applicationId",
+    "buildId"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "atlas-definition-intake-request/v1"
+    },
+    "repositoryRoot": {
+      "$ref": "#/$defs/absolutePath"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "definitionRoot": {
+      "$ref": "#/$defs/absolutePath"
+    },
+    "expectedHistoricalAuthoritySha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "expectedHistoricalAuthorityRevision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "applicationId": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "buildId": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "$defs": {
+    "absolutePath": {
+      "type": "string",
+      "minLength": 3
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

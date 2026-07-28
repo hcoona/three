@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hcoona:three:celesphonia-modifier:atlas-v0:definition-copy-receipt:v1",
+  "title": "Atlas Definition Copy Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "historicalAuthoritySha256",
+    "historicalAuthorityRevision",
+    "applicationId",
+    "buildId",
+    "runId",
+    "definitionRoot",
+    "finalCopyRoot",
+    "entries"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "atlas-definition-copy-receipt/v1"
+    },
+    "historicalAuthoritySha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "historicalAuthorityRevision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "applicationId": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "buildId": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "definitionRoot": {
+      "$ref": "#/$defs/absolutePath"
+    },
+    "finalCopyRoot": {
+      "$ref": "#/$defs/absolutePath"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "$defs": {
+    "absolutePath": {
+      "type": "string",
+      "minLength": 3
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sourceAlias": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "destinationRelativePath": {
+      "type": "string",
+      "pattern": "^definitions/[a-z0-9-]+\\.(?:js|json)$"
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceAlias", "destinationRelativePath", "length", "sha256"],
+      "properties": {
+        "sourceAlias": {
+          "$ref": "#/$defs/sourceAlias"
+        },
+        "destinationRelativePath": {
+          "$ref": "#/$defs/destinationRelativePath"
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}
