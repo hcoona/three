@@ -17,7 +17,7 @@ Want to see what happens between your `.adoc` file and the HTML that lands in
 
 == Step 1 – Asciidoctor conversion
 
-Each render awaits the named `convert()` API from `@asciidoctor/core` 4.0.4.
+Each render awaits the named `convert()` API from `@asciidoctor/core` 4.0.5.
 Every call uses:
 
 * `doctype=article`

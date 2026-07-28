@@ -21,7 +21,7 @@ generates index, archive, category, tag, and theme pages separately.
 == Why this renderer
 
 * Converts `.ad`, `.adoc`, and `.asciidoc` sources with `@asciidoctor/core`
-  4.0.4 using `doctype=article`, `safe=server`, and `to_file=false`.
+  4.0.5 using `doctype=article`, `safe=server`, and `to_file=false`.
 * Registers asynchronously with Hexo, so normal Hexo rendering awaits the
   renderer and programmatic callers must `await renderer(...)`.
 * Re-runs Hexo's static syntax highlighter only for recognized AsciiDoc listing

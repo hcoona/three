@@ -92,7 +92,7 @@ inputs.
 
 ## Behavior notes
 
-- The package uses `@asciidoctor/core` 4.0.4 and awaits conversion before
+- The package uses `@asciidoctor/core` 4.0.5 and awaits conversion before
   post-processing.
 - Includes resolve from the conversion-time current working directory because
   the renderer does not pass `base_dir`; neither `data.path` nor the Hexo site
