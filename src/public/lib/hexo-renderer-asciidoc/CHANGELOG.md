@@ -53,8 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Migration notes
 
-- Continue to require Node.js `>=20.19.0`; this major change does not raise the
-  existing minimum.
+- Require Node.js `>=22`; Node.js 20 is no longer supported after reaching
+  end of life.
 - Update any direct renderer usage to `await renderer(...)`.
 - Use Hexo’s async render paths; do not rely on `renderSync` for AsciiDoc
   inputs.

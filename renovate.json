@@ -48,12 +48,6 @@
       "rangeStrategy": "replace"
     },
     {
-      "description": "Keep pnpm on v10 while Node 20 remains in the support matrix.",
-      "matchManagers": ["github-actions", "mise"],
-      "matchDepNames": ["pnpm"],
-      "allowedVersions": "<11"
-    },
-    {
       "description": "JavaScript development dependencies may update lower bounds normally.",
       "matchManagers": ["npm"],
       "matchDepTypes": ["devDependencies"],
