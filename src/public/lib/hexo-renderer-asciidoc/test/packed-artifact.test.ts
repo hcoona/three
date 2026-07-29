@@ -15,6 +15,15 @@ const distDirectory = path.join(packageRoot, 'dist');
 const expectedDistFiles = ['index.cjs', 'index.d.cts', 'index.d.cts.map', 'index.d.ts', 'index.d.ts.map', 'index.js'];
 const expectedHexoVersion = '8.1.2';
 const expectedPnpmVersion = '10.34.5';
+const sourceManifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8')) as {
+  dependencies?: { '@asciidoctor/core'?: string };
+};
+const expectedAsciidoctorCoreVersion = sourceManifest.dependencies?.['@asciidoctor/core'];
+
+if (typeof expectedAsciidoctorCoreVersion !== 'string') {
+  throw new Error('Source package must declare an exact @asciidoctor/core dependency.');
+}
+
 const probeText = `
 == Packed Artifact ==
 
@@ -156,7 +165,7 @@ describe('packed Asciidoctor v4 package import shapes', () => {
     expect(expectedHtml).toContain('<code class="highlight javascript">');
 
     expect(packedManifest.name).toBe('hexo-renderer-asciidoc');
-    expect(packedManifest.dependencies?.['@asciidoctor/core']).toBe('4.0.5');
+    expect(packedManifest.dependencies?.['@asciidoctor/core']).toBe(expectedAsciidoctorCoreVersion);
     expect(packedManifest.main).toBe('./dist/index.cjs');
     expect(packedManifest.types).toBe('./dist/index.d.ts');
     expect(packedManifest.exports?.['.']?.import?.default).toBe('./dist/index.js');

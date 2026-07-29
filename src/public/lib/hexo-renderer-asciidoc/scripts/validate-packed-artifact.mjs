@@ -50,6 +50,13 @@ import {
 const DIST_DIRECTORY = path.join(PACKAGE_ROOT, 'dist');
 const README_NPM_PATH = path.join(PACKAGE_ROOT, 'README.npm.md');
 const PACKAGE_JSON_PATH = path.join(PACKAGE_ROOT, 'package.json');
+
+const readExpectedAsciidoctorCoreVersion = () => {
+  const version = readJsonFile(PACKAGE_JSON_PATH).dependencies?.['@asciidoctor/core'];
+  assert(typeof version === 'string', 'Source package must declare an exact @asciidoctor/core dependency.');
+  return version;
+};
+
 const PROBE_DOCUMENT = `== Packed Artifact ==
 
 This document proves the packed ESM and CommonJS entry points stay aligned.
@@ -460,6 +467,7 @@ const main = () => {
 
     const tarEntries = readTarEntries(tarballPath);
     const packedManifest = JSON.parse(readTarEntryText(tarballPath, 'package/package.json'));
+    const expectedAsciidoctorCoreVersion = readExpectedAsciidoctorCoreVersion();
     const packedReadme = readTarEntryBuffer(tarballPath, 'package/README.md');
     const packedChangelog = readTarEntryBuffer(tarballPath, 'package/CHANGELOG.md');
     const repositoryReadme = readFileSync(
@@ -546,8 +554,8 @@ const main = () => {
     assert(packedManifest.types === './dist/index.d.ts', 'Packed types must point at the ESM declarations.');
     assert(packedManifest.engines?.node === '>=22', 'Packed engines.node must remain >=22.');
     assert(
-      packedManifest.dependencies?.['@asciidoctor/core'] === '4.0.5',
-      'Packed dependency @asciidoctor/core must be 4.0.5.',
+      packedManifest.dependencies?.['@asciidoctor/core'] === expectedAsciidoctorCoreVersion,
+      `Packed dependency @asciidoctor/core must be ${expectedAsciidoctorCoreVersion}.`,
     );
     assert(!('asciidoctor' in (packedManifest.dependencies ?? {})), 'Packed manifest must not depend on asciidoctor.');
     assert(

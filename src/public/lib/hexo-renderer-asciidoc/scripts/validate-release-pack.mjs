@@ -48,9 +48,16 @@ const DIST_DIRECTORY = path.join(PACKAGE_ROOT, 'dist');
 const PREPARE_NPM_PUBLISH_SCRIPT = path.join(MONOREPO_ROOT, 'eng', 'scripts', 'prepare_npm_publish.py');
 const EXPECTED_SCOPE = '@hcoona';
 
+const readExpectedAsciidoctorCoreVersion = () => {
+  const version = readJsonFile(PACKAGE_JSON_PATH).dependencies?.['@asciidoctor/core'];
+  assert(typeof version === 'string', 'Source package must declare an exact @asciidoctor/core dependency.');
+  return version;
+};
+
 const verifyTarballCommon = (tarballPath, expectedName, expectedVersion, expectedReadmeBytes) => {
   const entries = readTarEntries(tarballPath);
   const manifest = JSON.parse(readTarEntryText(tarballPath, 'package/package.json'));
+  const expectedAsciidoctorCoreVersion = readExpectedAsciidoctorCoreVersion();
   assert(manifest.name === expectedName, `Unexpected packed name for ${path.basename(tarballPath)}: ${manifest.name}`);
   assert(
     manifest.version === expectedVersion,
@@ -58,8 +65,8 @@ const verifyTarballCommon = (tarballPath, expectedName, expectedVersion, expecte
   );
   assert(manifest.main === './dist/index.cjs', 'Packed main must stay on dist/index.cjs.');
   assert(
-    manifest.dependencies?.['@asciidoctor/core'] === '4.0.5',
-    'Packed dependency @asciidoctor/core must remain 4.0.5.',
+    manifest.dependencies?.['@asciidoctor/core'] === expectedAsciidoctorCoreVersion,
+    `Packed dependency @asciidoctor/core must remain ${expectedAsciidoctorCoreVersion}.`,
   );
   assert(!('asciidoctor' in (manifest.dependencies ?? {})), 'Packed manifest must not depend on asciidoctor.');
   assert(!entries.includes('package/README.npm.md'), 'README.npm.md must not be published.');
