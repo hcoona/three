@@ -1,0 +1,324 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hcoona:three:celesphonia-modifier:atlas-v0:structural-scan:v1",
+  "title": "Atlas structural scan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "documentRole", "census", "observations"],
+  "properties": {
+    "schemaVersion": {
+      "const": "atlas-structural-scan/v1"
+    },
+    "documentRole": {
+      "enum": ["global-save", "config-save", "slot-save"]
+    },
+    "census": {
+      "$ref": "#/$defs/census"
+    },
+    "observations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2147483647,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/scalarObservation"
+          },
+          {
+            "$ref": "#/$defs/plainObjectObservation"
+          },
+          {
+            "$ref": "#/$defs/identityObjectObservation"
+          },
+          {
+            "$ref": "#/$defs/plainArrayObservation"
+          },
+          {
+            "$ref": "#/$defs/identityArrayObservation"
+          },
+          {
+            "$ref": "#/$defs/referenceObservation"
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "nonnegativeInt64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
+    "census": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeOccurrences",
+        "objectOccurrences",
+        "arrayOccurrences",
+        "scalarOccurrences",
+        "referenceOccurrences",
+        "ordinaryMemberEdges",
+        "arrayElementEdges",
+        "identityDefinitions",
+        "classMarkers",
+        "identityArrayWrappers",
+        "distinctReferencedDefinitions"
+      ],
+      "properties": {
+        "nodeOccurrences": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "objectOccurrences": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "arrayOccurrences": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "scalarOccurrences": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "referenceOccurrences": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "ordinaryMemberEdges": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "arrayElementEdges": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "identityDefinitions": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "classMarkers": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "identityArrayWrappers": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "distinctReferencedDefinitions": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        }
+      }
+    },
+    "nodeLocator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject", "segments"],
+      "properties": {
+        "subject": {
+          "const": "node-occurrence"
+        },
+        "segments": {
+          "$ref": "#/$defs/locatorSegments"
+        }
+      }
+    },
+    "referenceLocator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject", "segments"],
+      "properties": {
+        "subject": {
+          "const": "reference-occurrence"
+        },
+        "segments": {
+          "$ref": "#/$defs/locatorSegments"
+        }
+      }
+    },
+    "identityLocator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject", "segments"],
+      "properties": {
+        "subject": {
+          "const": "identity-definition"
+        },
+        "segments": {
+          "$ref": "#/$defs/locatorSegments"
+        }
+      }
+    },
+    "locatorSegments": {
+      "type": "array",
+      "maxItems": 2147483647,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/ordinaryMemberSegment"
+          },
+          {
+            "$ref": "#/$defs/arrayElementSegment"
+          }
+        ]
+      }
+    },
+    "ordinaryMemberSegment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ordinal"],
+      "properties": {
+        "kind": {
+          "const": "ordinary-member"
+        },
+        "ordinal": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        }
+      }
+    },
+    "arrayElementSegment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "index"],
+      "properties": {
+        "kind": {
+          "const": "array-element"
+        },
+        "index": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        }
+      }
+    },
+    "scalarObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locator", "kind", "scalarKind"],
+      "properties": {
+        "locator": {
+          "$ref": "#/$defs/nodeLocator"
+        },
+        "kind": {
+          "const": "scalar"
+        },
+        "scalarKind": {
+          "enum": ["text", "number", "true", "false", "null"]
+        }
+      }
+    },
+    "plainObjectObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locator", "kind", "shape", "childCount", "classMarkerPresent", "identityDefinitionPresent"],
+      "properties": {
+        "locator": {
+          "$ref": "#/$defs/nodeLocator"
+        },
+        "kind": {
+          "const": "object"
+        },
+        "shape": {
+          "const": "plain-object"
+        },
+        "childCount": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "classMarkerPresent": {
+          "type": "boolean"
+        },
+        "identityDefinitionPresent": {
+          "const": false
+        }
+      }
+    },
+    "identityObjectObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "locator",
+        "kind",
+        "shape",
+        "childCount",
+        "classMarkerPresent",
+        "identityDefinitionPresent",
+        "identityDefinitionLocator"
+      ],
+      "properties": {
+        "locator": {
+          "$ref": "#/$defs/nodeLocator"
+        },
+        "kind": {
+          "const": "object"
+        },
+        "shape": {
+          "const": "identity-object"
+        },
+        "childCount": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "classMarkerPresent": {
+          "type": "boolean"
+        },
+        "identityDefinitionPresent": {
+          "const": true
+        },
+        "identityDefinitionLocator": {
+          "$ref": "#/$defs/identityLocator"
+        }
+      }
+    },
+    "plainArrayObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locator", "kind", "shape", "childCount", "identityDefinitionPresent"],
+      "properties": {
+        "locator": {
+          "$ref": "#/$defs/nodeLocator"
+        },
+        "kind": {
+          "const": "array"
+        },
+        "shape": {
+          "const": "plain-array"
+        },
+        "childCount": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "identityDefinitionPresent": {
+          "const": false
+        }
+      }
+    },
+    "identityArrayObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locator", "kind", "shape", "childCount", "identityDefinitionPresent", "identityDefinitionLocator"],
+      "properties": {
+        "locator": {
+          "$ref": "#/$defs/nodeLocator"
+        },
+        "kind": {
+          "const": "array"
+        },
+        "shape": {
+          "const": "identity-array-wrapper"
+        },
+        "childCount": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "identityDefinitionPresent": {
+          "const": true
+        },
+        "identityDefinitionLocator": {
+          "$ref": "#/$defs/identityLocator"
+        }
+      }
+    },
+    "referenceObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locator", "kind", "targetIdentityDefinitionLocator"],
+      "properties": {
+        "locator": {
+          "$ref": "#/$defs/referenceLocator"
+        },
+        "kind": {
+          "const": "reference"
+        },
+        "targetIdentityDefinitionLocator": {
+          "$ref": "#/$defs/identityLocator"
+        }
+      }
+    }
+  }
+}
