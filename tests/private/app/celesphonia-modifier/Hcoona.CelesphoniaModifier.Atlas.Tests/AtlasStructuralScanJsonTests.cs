@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Hcoona.CelesphoniaModifier.Atlas;
 using Xunit;
 
@@ -419,7 +420,7 @@ public sealed class AtlasStructuralScanJsonTests
     }
 
     [Fact]
-    public void SchemaIsClosedDraft202012AndCoversCanonicalVariants()
+    public void SchemaIsClosedDraft202012AndValidatesCanonicalOutputAndMutations()
     {
         string schemaPath = Path.Combine(
             FindRepositoryRoot(),
@@ -466,6 +467,93 @@ public sealed class AtlasStructuralScanJsonTests
         {
             Assert.False(definition.Value.GetProperty("additionalProperties").GetBoolean());
         }
+
+        const string syntheticSource =
+            "{\"scalar\":\"synthetic\",\"plainObject\":{\"value\":false},"
+            + "\"identityObject\":{\"@c\":101,\"@\":\"Synthetic.Type\",\"plainArray\":[0]},"
+            + "\"identityArray\":{\"@c\":102,\"@a\":[null,{\"@r\":101}]},"
+            + "\"reference\":{\"@r\":102}}";
+        byte[] canonical = AtlasStructuralScanner
+            .Scan(
+                ReadJson(syntheticSource),
+                AtlasDocumentRole.GlobalSave,
+                cancellationToken: TestContext.Current.CancellationToken
+            )
+            .GetCanonicalUtf8Bytes();
+        using JsonDocument canonicalDocument = JsonDocument.Parse(canonical);
+        JsonObject canonicalObject = Assert.IsType<JsonObject>(
+            JsonNode.Parse(Encoding.UTF8.GetString(canonical))
+        );
+
+        Assert.True(IsValid(root, canonicalDocument.RootElement, root));
+        JsonArray observations = GetArray(canonicalObject, "observations");
+        Assert.Equal(
+            "identity-array-wrapper|identity-object|plain-array|plain-object|reference|scalar",
+            observations
+                .Select(Assert.IsType<JsonObject>)
+                .Select(observation =>
+                    observation["shape"]?.GetValue<string>()
+                    ?? observation["kind"]!.GetValue<string>()
+                )
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .Aggregate((left, right) => $"{left}|{right}")
+        );
+        Assert.Equal(
+            ["array-element", "ordinary-member"],
+            observations
+                .Select(Assert.IsType<JsonObject>)
+                .SelectMany(observation => GetArray(GetObject(observation, "locator"), "segments"))
+                .Select(Assert.IsType<JsonObject>)
+                .Select(segment => segment["kind"]!.GetValue<string>())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray()
+        );
+
+        (string Name, Action<JsonObject> Mutate)[] mutations =
+        [
+            ("missing required property", document => document.Remove("schemaVersion")),
+            ("unknown property", document => document["unknown"] = 0),
+            ("null value", document => GetObject(document, "census")["nodeOccurrences"] = null),
+            ("wrong type", document => document["observations"] = "not-an-array"),
+            ("invalid enum", document => document["documentRole"] = "unknown-role"),
+            ("invalid const", document => document["schemaVersion"] = "unknown-version"),
+            (
+                "negative integer",
+                document => GetObject(document, "census")["objectOccurrences"] = -1
+            ),
+            (
+                "out-of-range integer",
+                document =>
+                    GetObject(document, "census")["objectOccurrences"] =
+                        JsonNode.Parse("9223372036854775808")
+            ),
+            (
+                "plain-object class marker",
+                document =>
+                    FindObservation(document, "shape", "plain-object")["classMarkerPresent"] = true
+            ),
+            (
+                "missing locator field",
+                document =>
+                    GetObject(FindObservation(document, "kind", "scalar"), "locator")
+                        .Remove("subject")
+            ),
+            (
+                "wrong segment shape",
+                document =>
+                    FindSegment(document, "ordinary-member").Remove("ordinal")
+            ),
+        ];
+
+        foreach ((string name, Action<JsonObject> mutate) in mutations)
+        {
+            JsonObject mutated = Assert.IsType<JsonObject>(canonicalObject.DeepClone());
+            mutate(mutated);
+            using JsonDocument mutatedDocument = JsonDocument.Parse(mutated.ToJsonString());
+            Assert.False(IsValid(root, mutatedDocument.RootElement, root), name);
+        }
     }
 
     private static void AssertSourceFailure(
@@ -507,6 +595,168 @@ public sealed class AtlasStructuralScanJsonTests
             ),
             cancellationToken: TestContext.Current.CancellationToken
         );
+
+    private static JsonObject GetObject(JsonObject parent, string propertyName) =>
+        Assert.IsType<JsonObject>(parent[propertyName]);
+
+    private static JsonArray GetArray(JsonObject parent, string propertyName) =>
+        Assert.IsType<JsonArray>(parent[propertyName]);
+
+    private static JsonObject FindObservation(
+        JsonObject document,
+        string propertyName,
+        string propertyValue
+    ) =>
+        GetArray(document, "observations")
+            .Select(Assert.IsType<JsonObject>)
+            .First(observation =>
+                observation[propertyName]?.GetValue<string>() == propertyValue
+            );
+
+    private static JsonObject FindSegment(JsonObject document, string kind) =>
+        GetArray(document, "observations")
+            .Select(Assert.IsType<JsonObject>)
+            .SelectMany(observation => GetArray(GetObject(observation, "locator"), "segments"))
+            .Select(Assert.IsType<JsonObject>)
+            .First(segment => segment["kind"]?.GetValue<string>() == kind);
+
+    private static bool IsValid(
+        JsonElement schema,
+        JsonElement instance,
+        JsonElement rootSchema
+    ) =>
+        (!schema.TryGetProperty("$ref", out JsonElement reference)
+            || IsValid(ResolveRef(rootSchema, reference.GetString()!), instance, rootSchema)
+        )
+        && (!schema.TryGetProperty("oneOf", out JsonElement oneOf)
+            || oneOf.EnumerateArray().Count(option => IsValid(option, instance, rootSchema)) == 1
+        )
+        && (!schema.TryGetProperty("type", out JsonElement type)
+            || MatchesType(instance, type.GetString()!)
+        )
+        && (!schema.TryGetProperty("const", out JsonElement constant)
+            || JsonElement.DeepEquals(instance, constant)
+        )
+        && (!schema.TryGetProperty("enum", out JsonElement enumValues)
+            || enumValues.EnumerateArray().Any(value => JsonElement.DeepEquals(instance, value))
+        )
+        && (instance.ValueKind != JsonValueKind.Object
+            || IsValidObject(schema, instance, rootSchema)
+        )
+        && (instance.ValueKind != JsonValueKind.Array
+            || IsValidArray(schema, instance, rootSchema)
+        )
+        && (instance.ValueKind != JsonValueKind.Number
+            || IsValidNumber(schema, instance)
+        );
+
+    private static bool IsValidObject(
+        JsonElement schema,
+        JsonElement instance,
+        JsonElement rootSchema
+    )
+    {
+        bool hasProperties = schema.TryGetProperty("properties", out JsonElement properties);
+        return (!schema.TryGetProperty("required", out JsonElement required)
+                || required
+                    .EnumerateArray()
+                    .All(name => instance.TryGetProperty(name.GetString()!, out _))
+            )
+            && (!hasProperties
+                || properties
+                    .EnumerateObject()
+                    .All(property =>
+                        !instance.TryGetProperty(property.Name, out JsonElement value)
+                        || IsValid(property.Value, value, rootSchema)
+                    )
+            )
+            && (!schema.TryGetProperty("additionalProperties", out JsonElement additionalProperties)
+                || additionalProperties.ValueKind != JsonValueKind.False
+                || instance
+                    .EnumerateObject()
+                    .All(property =>
+                        hasProperties && properties.TryGetProperty(property.Name, out _)
+                    )
+            );
+    }
+
+    private static bool IsValidArray(
+        JsonElement schema,
+        JsonElement instance,
+        JsonElement rootSchema
+    )
+    {
+        int length = instance.GetArrayLength();
+        return (!schema.TryGetProperty("minItems", out JsonElement minimum)
+                || length >= minimum.GetInt32()
+            )
+            && (!schema.TryGetProperty("maxItems", out JsonElement maximum)
+                || length <= maximum.GetInt32()
+            )
+            && (!schema.TryGetProperty("items", out JsonElement items)
+                || instance.EnumerateArray().All(item => IsValid(items, item, rootSchema))
+            );
+    }
+
+    private static bool IsValidNumber(JsonElement schema, JsonElement instance)
+    {
+        bool hasMinimum = schema.TryGetProperty("minimum", out JsonElement minimum);
+        bool hasMaximum = schema.TryGetProperty("maximum", out JsonElement maximum);
+        if (!hasMinimum && !hasMaximum)
+        {
+            return true;
+        }
+
+        return instance.TryGetDecimal(out decimal number)
+            && (!hasMinimum || number >= minimum.GetDecimal())
+            && (!hasMaximum || number <= maximum.GetDecimal());
+    }
+
+    private static bool MatchesType(JsonElement instance, string type) =>
+        type switch
+        {
+            "object" => instance.ValueKind == JsonValueKind.Object,
+            "array" => instance.ValueKind == JsonValueKind.Array,
+            "string" => instance.ValueKind == JsonValueKind.String,
+            "boolean" => instance.ValueKind is JsonValueKind.True or JsonValueKind.False,
+            "integer" =>
+                instance.ValueKind == JsonValueKind.Number
+                && instance.TryGetDecimal(out decimal number)
+                && decimal.Truncate(number) == number,
+            _ => false,
+        };
+
+    private static JsonElement ResolveRef(JsonElement rootSchema, string reference)
+    {
+        if (reference == "#")
+        {
+            return rootSchema;
+        }
+
+        if (!reference.StartsWith("#/", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Unsupported schema reference '{reference}'.");
+        }
+
+        JsonElement current = rootSchema;
+        foreach (string encodedToken in reference[2..].Split('/'))
+        {
+            string token = encodedToken.Replace("~1", "/", StringComparison.Ordinal)
+                .Replace("~0", "~", StringComparison.Ordinal);
+            if (!current.TryGetProperty(token, out current))
+            {
+                throw new InvalidOperationException(
+                    $"Unresolved schema reference '{reference}'."
+                );
+            }
+        }
+
+        return current.ValueKind == JsonValueKind.Object
+            ? current
+            : throw new InvalidOperationException(
+                $"Schema reference '{reference}' does not identify an object."
+            );
+    }
 
     private static string FindRepositoryRoot()
     {
