@@ -15717,6 +15717,9 @@ def test_node_pack_dist_tag_uses_planner_version_without_target_nbgv() -> None:
     job = cast("dict[str, object]", workflow["jobs"]["pack"])
     steps = cast("list[dict[str, object]]", job["steps"])
     step_names = [cast("str", step["name"]) for step in steps]
+    setup_dotnet_step = next(
+        step for step in steps if step.get("name") == "Setup .NET SDK"
+    )
     dist_tag_step = next(
         step
         for step in steps
@@ -15724,7 +15727,11 @@ def test_node_pack_dist_tag_uses_planner_version_without_target_nbgv() -> None:
     )
     dist_tag_run = cast("str", dist_tag_step["run"])
 
-    assert "Setup .NET SDK" not in step_names
+    assert "Setup .NET SDK" in step_names
+    assert setup_dotnet_step["uses"] == "actions/setup-dotnet@v6"
+    assert setup_dotnet_step["with"]["global-json-file"] == (
+        ".three-workflow-release/target/global.json"
+    )
     assert "Verify Node version matches tag" not in step_names
     assert "dotnet tool restore" not in workflow_text
     assert "dotnet tool run nbgv" not in workflow_text
@@ -15806,7 +15813,7 @@ def test_prepare_release_plan_provisions_metadata_toolchains_before_planning() -
         cast("dict[str, object]", ruby_build["jobs"])["build"]["steps"],
     )
 
-    assert setup_python["uses"] == "actions/setup-python@v6"
+    assert setup_python["uses"] == "actions/setup-python@v7"
     assert setup_python["with"]["python-version"] == "${{ env.PYTHON_VERSION }}"
     assert setup_pnpm["uses"] == next(
         step["uses"]
@@ -21314,6 +21321,7 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
         "execution-batch-ubuntu-orchestrator",
         "execution-batch-windows-orchestrator",
         "execution-batch-macos-orchestrator",
+        "node-compatibility-tests",
         "aggregate-evidence",
     }
     assert not any(job.startswith("execution-batch-layer-") for job in jobs)
@@ -21326,6 +21334,7 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
         "execution-batch-ubuntu-orchestrator",
         "execution-batch-windows-orchestrator",
         "execution-batch-macos-orchestrator",
+        "node-compatibility-tests",
     }
     assert set(jobs["execution-batch-ubuntu-orchestrator"]["needs"]) == {
         "normalize-input",
@@ -21369,7 +21378,7 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
     assert diagnostics_upload["with"]["name"] == (
         "${{ needs.normalize-input.outputs.planner-diagnostics-artifact-name }}"
     )
-    assert workflow["env"]["NBGV_VERSION"] == "3.10.85"
+    assert workflow["env"]["NBGV_VERSION"] == "3.10.91"
     nbgv_backed_jobs = (
         "plan",
         "execution-batch-ubuntu-orchestrator",
@@ -21544,6 +21553,7 @@ def test_ci_validation_workflow_wires_final_aggregate_boundaries() -> None:
         "execution-batch-ubuntu-orchestrator",
         "execution-batch-windows-orchestrator",
         "execution-batch-macos-orchestrator",
+        "node-compatibility-tests",
     ]
 
     step_by_name = {step.get("name"): step for step in steps}
@@ -21560,6 +21570,7 @@ def test_ci_validation_workflow_wires_final_aggregate_boundaries() -> None:
     final_verify = step_by_name[
         "Verify final artifact bytes and producer boundaries"
     ]
+    node_compatibility_gate = step_by_name["Require Node compatibility tests"]
 
     assert manifest_upload["id"] == "upload-aggregate-evidence-manifest"
     assert summary_upload["id"] == "upload-aggregate-summary"
@@ -21626,6 +21637,11 @@ def test_ci_validation_workflow_wires_final_aggregate_boundaries() -> None:
     assert "AGGREGATE_SUMMARY_ARTIFACT_ID" in final_run
     assert "else ''" in final_run
     assert "aggregate_manifest.get('content-digest')" not in final_run
+    assert node_compatibility_gate["if"] == "always()"
+    assert node_compatibility_gate["env"]["NODE_COMPATIBILITY_RESULT"] == (
+        "${{ needs.node-compatibility-tests.result }}"
+    )
+    assert '"success"' in node_compatibility_gate["run"]
     assert '\\"producer-boundary\\":\\"aggregate-evidence\\"' in final_run
     assert (
         ".three-ci-validation/final-uploaded/aggregate-evidence-manifest/"

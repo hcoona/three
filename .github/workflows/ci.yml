@@ -14,7 +14,7 @@ permissions:
   actions: read
 
 env:
-  NBGV_VERSION: '3.10.85'
+  NBGV_VERSION: '3.10.91'
 
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('ci/pr/{0}', github.event.pull_request.number) || github.event_name == 'push' && format('ci/push/{0}', github.ref) || format('ci/{0}/{1}', github.event_name, github.run_id) }}
@@ -2899,6 +2899,8 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v6
@@ -2951,6 +2953,7 @@ jobs:
       - execution-batch-ubuntu-orchestrator
       - execution-batch-windows-orchestrator
       - execution-batch-macos-orchestrator
+      - node-compatibility-tests
     if: always()
     runs-on: ubuntu-latest
     permissions:
@@ -3237,3 +3240,12 @@ jobs:
            --expected-prefixed-validation-artifacts "$expected_prefixed_validation_artifacts" \
            --verify-final-uploaded-bytes \
            "${expected_artifacts[@]}"
+      - name: Require Node compatibility tests
+        if: always()
+        env:
+          NODE_COMPATIBILITY_RESULT: ${{ needs.node-compatibility-tests.result }}
+        run: |
+          if [ "$NODE_COMPATIBILITY_RESULT" != "success" ]; then
+            echo "Node compatibility tests did not succeed: $NODE_COMPATIBILITY_RESULT" >&2
+            exit 1
+          fi

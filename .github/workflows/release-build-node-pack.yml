@@ -138,7 +138,7 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v6
         with:
-          global-json-file: global.json
+          global-json-file: .three-workflow-release/target/global.json
 
       - name: Setup Python
         uses: actions/setup-python@v7

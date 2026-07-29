@@ -1,7 +1,7 @@
 name: Build Python Package (Reusable)
 
 env:
-  NBGV_VERSION: '3.10.85'
+  NBGV_VERSION: '3.10.91'
 
 on:
   workflow_call:

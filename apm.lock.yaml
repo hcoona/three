@@ -60,10 +60,6 @@ dependencies:
   - .agents/skills/mcp-csharp-create/SKILL.md
   - .agents/skills/mcp-csharp-create/references/api-patterns.md
   - .agents/skills/mcp-csharp-create/references/transport-config.md
-  - .agents/skills/mcp-csharp-debug
-  - .agents/skills/mcp-csharp-debug/SKILL.md
-  - .agents/skills/mcp-csharp-debug/references/ide-config.md
-  - .agents/skills/mcp-csharp-debug/references/mcp-inspector.md
   - .agents/skills/mcp-csharp-publish
   - .agents/skills/mcp-csharp-publish/SKILL.md
   - .agents/skills/mcp-csharp-publish/references/docker-azure.md
@@ -79,9 +75,6 @@ dependencies:
     .agents/skills/mcp-csharp-create/SKILL.md: sha256:e43ca99a840fd96ad0a707e79cb79fb5eb16deca7b638eb27f9832e36b9ec7a3
     .agents/skills/mcp-csharp-create/references/api-patterns.md: sha256:d788cdecec36327e5d2193237e4b6283530ea2c8775d818cd630a9f7ac9fd26f
     .agents/skills/mcp-csharp-create/references/transport-config.md: sha256:018ee47caa2e2c63c0ef31465d9db42bfb505741f5e8e584ab011dea3504f563
-    .agents/skills/mcp-csharp-debug/SKILL.md: sha256:5f858f035145a59a7d467ac29fbde2827902b3d55c726c2adac23380dadd73ef
-    .agents/skills/mcp-csharp-debug/references/ide-config.md: sha256:26bf378bb72b007cbd654301af214df19c139d6c019b4d9f8c5a6a0e5176bc7a
-    .agents/skills/mcp-csharp-debug/references/mcp-inspector.md: sha256:20ca0bedebdac6e8d3c9361b658809d418cdce8943262c1885909c85cb071c61
     .agents/skills/mcp-csharp-publish/SKILL.md: sha256:d6a9ec39abf8fa9268512fce3837c5ddb5bfc89f2ac7c58bae603b637bef2e43
     .agents/skills/mcp-csharp-publish/references/docker-azure.md: sha256:4f767b78108a81740a369ecbd05f530e34fbfe816e7e968ce7dc80081e8e5671
     .agents/skills/mcp-csharp-publish/references/mcp-registry.md: sha256:6f236903fb3707c04acecf18cbc111054defe19686798249a48acb37104be4d9
@@ -322,7 +315,6 @@ dependencies:
   - .agents/skills/assertion-quality/SKILL.md
   - .agents/skills/code-testing-agent
   - .agents/skills/code-testing-agent/SKILL.md
-  - .agents/skills/code-testing-agent/extensions/dotnet.md
   - .agents/skills/code-testing-agent/unit-test-generation.prompt.md
   - .agents/skills/code-testing-extensions
   - .agents/skills/code-testing-extensions/SKILL.md
@@ -357,8 +349,6 @@ dependencies:
   - .agents/skills/crap-score/SKILL.md
   - .agents/skills/detect-static-dependencies
   - .agents/skills/detect-static-dependencies/SKILL.md
-  - .agents/skills/dotnet-test-frameworks
-  - .agents/skills/dotnet-test-frameworks/SKILL.md
   - .agents/skills/filter-syntax
   - .agents/skills/filter-syntax/SKILL.md
   - .agents/skills/find-untested-sources
@@ -414,7 +404,6 @@ dependencies:
   deployed_file_hashes:
     .agents/skills/assertion-quality/SKILL.md: sha256:efc92d1cbea09cf01e5e3b723bffa72ff4f6f8be352a2cd89fb502d6d27194e8
     .agents/skills/code-testing-agent/SKILL.md: sha256:5b7ae07075fb1485ccbc7a88bbd254bf465e1e9d4d58cc34f1eae455974e6057
-    .agents/skills/code-testing-agent/extensions/dotnet.md: sha256:4ec6daf1b4cff64a9b85519f128f55b0c7622a219b388d9ff68086bf9da10eec
     .agents/skills/code-testing-agent/unit-test-generation.prompt.md: sha256:3b15527fa3525c1217f9c17afc4c67a709e8583caf90f710116d5742c8cce20d
     .agents/skills/code-testing-extensions/SKILL.md: sha256:211d1cdfc77a36bee0f2d2ee9095689899bceebe6adc5bfedcb8b5de5fa7fb47
     .agents/skills/code-testing-extensions/extensions/cpp-examples.md: sha256:68a46d9304efc0120c35eea73d5155dd21ccc84eb5dc8461118fe37289d6c1fc
@@ -445,7 +434,6 @@ dependencies:
     .agents/skills/coverage-analysis/scripts/Extract-MethodCoverage.ps1: sha256:37b3c6377dd5f654f2a0b88ceaeb4c77d8798134cbb0c9584532e7b2835f6f5b
     .agents/skills/crap-score/SKILL.md: sha256:0be501bff5042394d5b8388ce3cff8582d429ba83009d81bba5d6799df12ad45
     .agents/skills/detect-static-dependencies/SKILL.md: sha256:eefe4323542ea7c73d9d0ae6a650d095d546881eb3b0a8c56c99a8477f536ed8
-    .agents/skills/dotnet-test-frameworks/SKILL.md: sha256:24ea84fd509d4570a8bdc5a188ee695d73b00cb2e9936c73ed004c0456721670
     .agents/skills/filter-syntax/SKILL.md: sha256:ab2c30569d6c859e0f340880c7182ab87c4fe108fa65f618815d3ac85aedee52
     .agents/skills/find-untested-sources/SKILL.md: sha256:b9e8d509604469418d998e18eecdadda3ee7e9afec612f6e11770053a9eef445
     .agents/skills/find-untested-sources/scripts/Find-UntestedSources.cs: sha256:b6f01c528bcfbeae5f4a88c5953ece8274850c902b90f9a591b4e62ed6161e70
@@ -712,69 +700,6 @@ dependencies:
     .agents/skills/microsoft-docs/SKILL.md: sha256:23d6c309124c4dd7f96ef7166a1998814b4eaeca7e3d654bdac2feacde7e16d1
   content_hash: sha256:0acd8d2629937e021d605fd1426e641295909e13bab47cad1153793f5564e85e
 deployments:
-- kind: project-relative
-  target: agents
-  value: .agents/skills/code-testing-agent/extensions/dotnet.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:4ec6daf1b4cff64a9b85519f128f55b0c7622a219b388d9ff68086bf9da10eec
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dotnet-test-frameworks
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/dotnet-test-frameworks/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-test
-  active_owner: dotnet/skills/plugins/dotnet-test
-  content_hash: sha256:24ea84fd509d4570a8bdc5a188ee695d73b00cb2e9936c73ed004c0456721670
-- kind: project-relative
-  target: agents
-  value: .agents/skills/mcp-csharp-debug
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-ai
-  active_owner: dotnet/skills/plugins/dotnet-ai
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/mcp-csharp-debug/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-ai
-  active_owner: dotnet/skills/plugins/dotnet-ai
-  content_hash: sha256:5f858f035145a59a7d467ac29fbde2827902b3d55c726c2adac23380dadd73ef
-- kind: project-relative
-  target: agents
-  value: .agents/skills/mcp-csharp-debug/references/ide-config.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-ai
-  active_owner: dotnet/skills/plugins/dotnet-ai
-  content_hash: sha256:26bf378bb72b007cbd654301af214df19c139d6c019b4d9f8c5a6a0e5176bc7a
-- kind: project-relative
-  target: agents
-  value: .agents/skills/mcp-csharp-debug/references/mcp-inspector.md
-  runtime: null
-  scope: project
-  owners:
-  - dotnet/skills/plugins/dotnet-ai
-  active_owner: dotnet/skills/plugins/dotnet-ai
-  content_hash: sha256:20ca0bedebdac6e8d3c9361b658809d418cdce8943262c1885909c85cb071c61
 - kind: project-relative
   target: copilot
   value: .agents/skills/analyzing-dotnet-performance
