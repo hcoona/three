@@ -71,6 +71,11 @@ public static class AtlasSaveSnapshot
                     io,
                     cancellationToken).ConfigureAwait(false))
             {
+                ValidatePhysicalSeparation(
+                    request.SaveRoot,
+                    layout,
+                    io,
+                    cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 io.MoveDirectory(layout.IncompleteRoot, layout.FinalRoot);
                 return;
@@ -85,6 +90,11 @@ public static class AtlasSaveSnapshot
         ValidateSnapshotCopyPlatform(OperatingSystem.IsWindows());
         SaveSelection before = EnumerateSelection(
             request.SaveRoot,
+            io,
+            cancellationToken);
+        ValidatePhysicalSeparation(
+            request.SaveRoot,
+            layout,
             io,
             cancellationToken);
         if (cleanableIncompleteChildren is not null)
@@ -382,6 +392,100 @@ public static class AtlasSaveSnapshot
                 throw new AtlasSafetyException("The supported save set changed during copying.");
             }
         }
+    }
+
+    private static void ValidatePhysicalSeparation(
+        string saveRoot,
+        AtlasSaveSnapshotLayout layout,
+        AtlasIoSeams io,
+        CancellationToken cancellationToken)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        string normalizedSaveRoot =
+            AtlasSaveSnapshotContracts.NormalizeAbsolutePath(saveRoot);
+        string? resolvedSaveRoot = io.TryGetDirectoryFinalPath(normalizedSaveRoot);
+        if (resolvedSaveRoot is null)
+        {
+            return;
+        }
+
+        string physicalSaveRoot = NormalizePhysicalPath(resolvedSaveRoot);
+        string[] outputRoots =
+        {
+            layout.PrivateParent,
+            layout.WorkspaceRoot,
+            layout.IncompleteRoot,
+            layout.FinalRoot,
+        };
+        foreach (string outputRoot in outputRoots)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string physicalOutputRoot = ResolvePhysicalDirectoryPath(
+                outputRoot,
+                io,
+                cancellationToken);
+            if (PhysicalContains(physicalSaveRoot, physicalOutputRoot)
+                || PhysicalContains(physicalOutputRoot, physicalSaveRoot))
+            {
+                throw new AtlasSafetyException(
+                    "The save root and output workspace physically overlap.");
+            }
+        }
+    }
+
+    private static string ResolvePhysicalDirectoryPath(
+            string path,
+            AtlasIoSeams io,
+            CancellationToken cancellationToken)
+    {
+        Stack<string> missingSegments = [];
+        string current = AtlasSaveSnapshotContracts.NormalizeAbsolutePath(path);
+        string? resolved;
+        while ((resolved = io.TryGetDirectoryFinalPath(current)) is null)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string leaf = Path.GetFileName(current);
+            DirectoryInfo? parent = Directory.GetParent(current);
+            if (leaf.Length == 0 || parent is null)
+            {
+                throw new AtlasSafetyException(
+                    "An output path has no existing directory ancestor.");
+            }
+
+            missingSegments.Push(leaf);
+            current = parent.FullName;
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        cancellationToken.ThrowIfCancellationRequested();
+        while (missingSegments.TryPop(out string? segment))
+        {
+            resolved = Path.Combine(resolved, segment);
+        }
+
+        return NormalizePhysicalPath(resolved);
+    }
+
+    private static bool PhysicalContains(string root, string candidate)
+    {
+        string rootPrefix = root.EndsWith('\\')
+            ? root
+            : root + '\\';
+        return StringComparer.OrdinalIgnoreCase.Equals(root, candidate)
+            || candidate.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizePhysicalPath(string path)
+    {
+        string normalized = path.Replace('/', '\\');
+        string? root = Path.GetPathRoot(normalized);
+        return root is not null && normalized.Length > root.Length
+            ? normalized.TrimEnd('\\')
+            : normalized;
     }
 
     private static async ValueTask<AtlasSaveSnapshotReceiptEntry> CopyOneAsync(

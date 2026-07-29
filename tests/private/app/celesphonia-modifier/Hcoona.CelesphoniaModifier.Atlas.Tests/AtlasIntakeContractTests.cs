@@ -1687,6 +1687,7 @@ internal static class AtlasTestSupport
         Func<string, bool>? fileExists = null,
         Func<string, bool>? directoryExists = null,
         Func<string, FileAttributes>? getAttributes = null,
+        Func<string, string?>? tryGetDirectoryFinalPath = null,
         Func<string, AtlasDriveInfo>? getDriveInfo = null,
         Func<string, SearchOption, IEnumerable<string>>? enumerateFileSystemEntries = null,
         Func<string, FileMode, FileAccess, FileShare, FileOptions, Stream>? openFile = null,
@@ -1705,6 +1706,8 @@ internal static class AtlasTestSupport
             FileExists = fileExists ?? AtlasIoSeams.Default.FileExists,
             DirectoryExists = directoryExists ?? AtlasIoSeams.Default.DirectoryExists,
             GetAttributes = getAttributes ?? AtlasIoSeams.Default.GetAttributes,
+            TryGetDirectoryFinalPath =
+                tryGetDirectoryFinalPath ?? AtlasIoSeams.Default.TryGetDirectoryFinalPath,
             GetDriveInfo = getDriveInfo ?? AtlasIoSeams.Default.GetDriveInfo,
             EnumerateFileSystemEntries =
                 enumerateFileSystemEntries ?? AtlasIoSeams.Default.EnumerateFileSystemEntries,

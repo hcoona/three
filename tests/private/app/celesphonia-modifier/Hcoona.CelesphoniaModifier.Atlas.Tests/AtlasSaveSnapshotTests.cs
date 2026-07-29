@@ -818,6 +818,104 @@ public sealed class AtlasSaveSnapshotTests
         Assert.False(Directory.Exists(workspace.FinalRoot));
     }
 
+    [Fact]
+    public async Task PhysicalAliasCannotDeleteCleanableIncompleteSource()
+    {
+        await using SaveSnapshotWorkspace workspace = await SaveSnapshotWorkspace.CreateAsync(
+            ("global.rpgsave", "source"));
+        Directory.CreateDirectory(workspace.IncompleteRoot);
+        string incompleteFile = Path.Combine(workspace.IncompleteRoot, "global.rpgsave");
+        await File.WriteAllTextAsync(
+            incompleteFile,
+            "incomplete",
+            TestContext.Current.CancellationToken);
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            tryGetDirectoryFinalPath: CreateAliasedFinalPathProvider(
+                workspace.SaveRoot,
+                workspace.IncompleteRoot));
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => workspace.RunAsync(
+                io,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(
+            "source",
+            await File.ReadAllTextAsync(
+                Path.Combine(workspace.SaveRoot, "global.rpgsave"),
+                TestContext.Current.CancellationToken));
+        Assert.True(File.Exists(incompleteFile));
+    }
+
+    [Fact]
+    public async Task PhysicalAliasCannotPromoteValidIncompleteSource()
+    {
+        await using SaveSnapshotWorkspace workspace = await SaveSnapshotWorkspace.CreateAsync(
+            ("global.rpgsave", "source"));
+        await workspace.RunAsync();
+        Directory.Move(workspace.FinalRoot, workspace.IncompleteRoot);
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            tryGetDirectoryFinalPath: CreateAliasedFinalPathProvider(
+                workspace.SaveRoot,
+                workspace.IncompleteRoot));
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => workspace.RunAsync(
+                io,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.True(Directory.Exists(workspace.IncompleteRoot));
+        Assert.False(Directory.Exists(workspace.FinalRoot));
+    }
+
+    [Fact]
+    public async Task IndeterminateSaveRootPreventsIncompletePromotion()
+    {
+        await using SaveSnapshotWorkspace workspace = await SaveSnapshotWorkspace.CreateAsync(
+            ("global.rpgsave", "source"));
+        await workspace.RunAsync();
+        Directory.Move(workspace.FinalRoot, workspace.IncompleteRoot);
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            tryGetDirectoryFinalPath: path =>
+                AtlasSaveSnapshotContracts.PathEquals(path, workspace.SaveRoot)
+                    ? throw new IOException("synthetic access failure")
+                    : AtlasIoSeams.Default.TryGetDirectoryFinalPath(path));
+
+        await Assert.ThrowsAsync<IOException>(
+            () => workspace.RunAsync(
+                io,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.True(Directory.Exists(workspace.IncompleteRoot));
+        Assert.False(Directory.Exists(workspace.FinalRoot));
+    }
+
+    private static Func<string, string?> CreateAliasedFinalPathProvider(
+        string first,
+        string second)
+    {
+        Dictionary<string, string> finalPaths =
+            new(StringComparer.OrdinalIgnoreCase);
+        int nextPath = 1;
+        return path =>
+        {
+            if (AtlasSaveSnapshotContracts.PathEquals(path, first)
+                || AtlasSaveSnapshotContracts.PathEquals(path, second))
+            {
+                return @"\\?\Volume{00000000-0000-0000-0000-000000000001}\shared";
+            }
+
+            if (!finalPaths.TryGetValue(path, out string? finalPath))
+            {
+                finalPath =
+                    $@"\\?\Volume{{00000000-0000-0000-0000-000000000001}}\node{nextPath++}";
+                finalPaths.Add(path, finalPath);
+            }
+
+            return finalPath;
+        };
+    }
+
     private static AtlasIoSeams CreateLiveSourceThrowingIo(string saveRoot) =>
         AtlasTestSupport.CreateIo(
             fileExists: path =>
@@ -825,9 +923,17 @@ public sealed class AtlasSaveSnapshotTests
                     ? throw new InvalidOperationException("Live source access is forbidden.")
                     : AtlasIoSeams.Default.FileExists(path),
             directoryExists: path =>
-                AtlasSaveSnapshotContracts.ContainsPath(saveRoot, path)
+                AtlasSaveSnapshotContracts.PathEquals(saveRoot, path)
+                    ? AtlasIoSeams.Default.DirectoryExists(path)
+                    : AtlasSaveSnapshotContracts.ContainsPath(saveRoot, path)
                     ? throw new InvalidOperationException("Live source access is forbidden.")
                     : AtlasIoSeams.Default.DirectoryExists(path),
+            tryGetDirectoryFinalPath: path =>
+                AtlasSaveSnapshotContracts.PathEquals(saveRoot, path)
+                    ? null
+                    : AtlasSaveSnapshotContracts.ContainsPath(saveRoot, path)
+                    ? throw new InvalidOperationException("Live source access is forbidden.")
+                    : AtlasIoSeams.Default.TryGetDirectoryFinalPath(path),
             getAttributes: path =>
                 AtlasSaveSnapshotContracts.ContainsPath(saveRoot, path)
                     ? throw new InvalidOperationException("Live source access is forbidden.")

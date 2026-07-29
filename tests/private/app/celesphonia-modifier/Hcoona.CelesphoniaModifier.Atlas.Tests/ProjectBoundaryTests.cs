@@ -9,6 +9,7 @@ public sealed class ProjectBoundaryTests
     [
         "AtlasDefinitionIntake.cs",
         "AtlasDefinitionIntakeContracts.cs",
+        "AtlasDirectoryPath.cs",
         "AtlasDiscovery.cs",
         "AtlasIntakeContracts.cs",
         "AtlasLzStringCodec.cs",

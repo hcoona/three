@@ -3773,6 +3773,9 @@ internal sealed class AtlasIoSeams
 
     public Func<string, FileAttributes> GetAttributes { get; init; } = File.GetAttributes;
 
+    public Func<string, string?> TryGetDirectoryFinalPath { get; init; } =
+        AtlasDirectoryPathResolver.TryGetFinalPath;
+
     public Func<string, AtlasDriveInfo> GetDriveInfo { get; init; } =
         static path =>
         {
