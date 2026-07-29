@@ -217,18 +217,40 @@ public sealed class AtlasStructuralScanResult
 
     internal AtlasStructuralScanResult(
         AtlasStructuralScanDocument document,
-        ReadOnlySpan<byte> canonicalUtf8
+        byte[] ownedCanonicalUtf8
     )
     {
         Document = document ?? throw new ArgumentNullException(nameof(document));
-        this.canonicalUtf8 = canonicalUtf8.ToArray();
+        canonicalUtf8 =
+            ownedCanonicalUtf8 ?? throw new ArgumentNullException(nameof(ownedCanonicalUtf8));
     }
 
     public AtlasStructuralScanDocument Document { get; }
 
-    public ReadOnlyMemory<byte> CanonicalUtf8 => canonicalUtf8.ToArray();
+    public byte[] GetCanonicalUtf8Bytes(CancellationToken cancellationToken = default) =>
+        AtlasCanonicalUtf8Bytes.Copy(canonicalUtf8, cancellationToken);
+}
 
-    public byte[] GetCanonicalUtf8Bytes() => canonicalUtf8.ToArray();
+internal static class AtlasCanonicalUtf8Bytes
+{
+    private const int CopyChunkSize = 64 * 1024;
+
+    public static byte[] Copy(ReadOnlySpan<byte> source, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        byte[] copy = new byte[source.Length];
+        int offset = 0;
+        while (offset < source.Length)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            int count = Math.Min(CopyChunkSize, source.Length - offset);
+            source.Slice(offset, count).CopyTo(copy.AsSpan(offset, count));
+            offset += count;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        return copy;
+    }
 }
 
 public sealed record AtlasStructuralScannerLimits

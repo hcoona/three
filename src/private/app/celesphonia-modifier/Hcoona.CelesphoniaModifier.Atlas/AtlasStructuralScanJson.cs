@@ -116,7 +116,8 @@ public static class AtlasStructuralScanJson
             throw new AtlasStructuralScanException(AtlasStructuralScanFailure.SourceMismatch);
         }
 
-        return new AtlasStructuralScanResult(document, input);
+        cancellationToken.ThrowIfCancellationRequested();
+        return new AtlasStructuralScanResult(document, reserialized);
     }
 
     internal static byte[] SerializeValidated(
@@ -154,7 +155,7 @@ public static class AtlasStructuralScanJson
 
         cancellationToken.ThrowIfCancellationRequested();
         stream.WriteByte((byte)'\n');
-        return stream.ToArray();
+        return stream.ToArray(cancellationToken);
     }
 
     private static void WriteCensus(Utf8JsonWriter writer, AtlasStructuralScanCensus census)
@@ -475,6 +476,21 @@ public static class AtlasStructuralScanJson
         {
             EnsureCapacityFor(1);
             base.WriteByte(value);
+        }
+
+        public byte[] ToArray(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!TryGetBuffer(out ArraySegment<byte> buffer) || buffer.Array is null)
+            {
+                throw new InvalidOperationException("The canonical UTF-8 buffer is unavailable.");
+            }
+
+            int length = checked((int)Length);
+            return AtlasCanonicalUtf8Bytes.Copy(
+                buffer.Array.AsSpan(buffer.Offset, length),
+                cancellationToken
+            );
         }
 
         private void EnsureCapacityFor(int count)

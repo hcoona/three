@@ -29,14 +29,24 @@ public sealed class AtlasStructuralScanJsonTests
             + "\"locator\":{\"subject\":\"node-occurrence\",\"segments\":[]},"
             + "\"kind\":\"scalar\",\"scalarKind\":\"number\"}]}\n";
 
-        Assert.Equal(Encoding.UTF8.GetBytes(expected), scan.GetCanonicalUtf8Bytes());
+        byte[] scanBytes = scan.GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken);
+        Assert.Equal(Encoding.UTF8.GetBytes(expected), scanBytes);
         AtlasStructuralScanResult parsed = AtlasStructuralScanJson.Parse(
-            scan.CanonicalUtf8,
+            scanBytes,
             source,
             AtlasDocumentRole.ConfigSave,
             cancellationToken: TestContext.Current.CancellationToken
         );
-        Assert.Equal(scan.GetCanonicalUtf8Bytes(), parsed.GetCanonicalUtf8Bytes());
+        Assert.Equal(
+            scanBytes,
+            parsed.GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken)
+        );
+        byte[] mutableCopy = parsed.GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken);
+        mutableCopy[0] ^= 0xFF;
+        Assert.Equal(
+            scanBytes,
+            parsed.GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken)
+        );
         Assert.NotSame(scan.Document, parsed.Document);
     }
 
@@ -50,7 +60,7 @@ public sealed class AtlasStructuralScanJsonTests
                 AtlasDocumentRole.GlobalSave,
                 cancellationToken: TestContext.Current.CancellationToken
             )
-            .GetCanonicalUtf8Bytes();
+            .GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken);
         string text = Encoding.UTF8.GetString(canonical);
         List<byte[]> invalid =
         [
@@ -114,15 +124,14 @@ public sealed class AtlasStructuralScanJsonTests
     public void ParserRejectsRoleScalarTargetAndSourceMutations()
     {
         AtlasSaveReadResult scalarSource = ReadJson("0");
-        string scalarText = Encoding.UTF8.GetString(
-            AtlasStructuralScanner
-                .Scan(
-                    scalarSource,
-                    AtlasDocumentRole.GlobalSave,
-                    cancellationToken: TestContext.Current.CancellationToken
-                )
-                .CanonicalUtf8.Span
-        );
+        byte[] scalarBytes = AtlasStructuralScanner
+            .Scan(
+                scalarSource,
+                AtlasDocumentRole.GlobalSave,
+                cancellationToken: TestContext.Current.CancellationToken
+            )
+            .GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken);
+        string scalarText = Encoding.UTF8.GetString(scalarBytes);
 
         AssertSourceFailure(
             Encoding.UTF8.GetBytes(
@@ -150,7 +159,7 @@ public sealed class AtlasStructuralScanJsonTests
                 AtlasDocumentRole.GlobalSave,
                 cancellationToken: TestContext.Current.CancellationToken
             )
-            .GetCanonicalUtf8Bytes();
+            .GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken);
         AssertSourceFailure(omitted, largerSource, AtlasStructuralScanFailure.CensusMismatch);
 
         const string referencesJson =
@@ -315,16 +324,17 @@ public sealed class AtlasStructuralScanJsonTests
             AtlasDocumentRole.GlobalSave,
             cancellationToken: TestContext.Current.CancellationToken
         );
+        byte[] scanBytes = scan.GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken);
         AtlasStructuralScannerLimits exact = new()
         {
             MaximumObservations = 2,
             MaximumLocatorDepth = 1,
             MaximumRetainedLocatorSegments = 1,
-            MaximumCanonicalUtf8Bytes = scan.CanonicalUtf8.Length,
+            MaximumCanonicalUtf8Bytes = scanBytes.Length,
         };
 
         Assert.Equal(
-            scan.GetCanonicalUtf8Bytes(),
+            scanBytes,
             AtlasStructuralScanJson.Serialize(
                 scan.Document,
                 exact,
@@ -332,7 +342,7 @@ public sealed class AtlasStructuralScanJsonTests
             )
         );
         _ = AtlasStructuralScanJson.Parse(
-            scan.CanonicalUtf8,
+            scanBytes,
             source,
             AtlasDocumentRole.GlobalSave,
             exact,
@@ -341,12 +351,12 @@ public sealed class AtlasStructuralScanJsonTests
 
         AtlasStructuralScanException bytes = Assert.Throws<AtlasStructuralScanException>(() =>
             AtlasStructuralScanJson.Parse(
-                scan.CanonicalUtf8,
+                scanBytes,
                 source,
                 AtlasDocumentRole.GlobalSave,
                 exact with
                 {
-                    MaximumCanonicalUtf8Bytes = scan.CanonicalUtf8.Length - 1,
+                    MaximumCanonicalUtf8Bytes = scanBytes.Length - 1,
                 },
                 TestContext.Current.CancellationToken
             )
@@ -355,7 +365,7 @@ public sealed class AtlasStructuralScanJsonTests
 
         AtlasStructuralScanException retained = Assert.Throws<AtlasStructuralScanException>(() =>
             AtlasStructuralScanJson.Parse(
-                scan.CanonicalUtf8,
+                scanBytes,
                 source,
                 AtlasDocumentRole.GlobalSave,
                 exact with
@@ -405,18 +415,53 @@ public sealed class AtlasStructuralScanJsonTests
             AtlasDocumentRole.GlobalSave,
             cancellationToken: TestContext.Current.CancellationToken
         );
+        byte[] largeBytes = largeScan.GetCanonicalUtf8Bytes(
+            TestContext.Current.CancellationToken
+        );
         using CancellationTokenSource during = new();
         Task<AtlasStructuralScanResult> parsing = Task.Run(() =>
         {
             during.CancelAfter(TimeSpan.FromMilliseconds(1));
             return AtlasStructuralScanJson.Parse(
-                largeScan.CanonicalUtf8,
+                largeBytes,
                 largeSource,
                 AtlasDocumentRole.GlobalSave,
                 cancellationToken: during.Token
             );
         });
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await parsing);
+
+        Assert.ThrowsAny<OperationCanceledException>(() =>
+            largeScan.GetCanonicalUtf8Bytes(canceled.Token)
+        );
+        AssertCopyObservesScheduledCancellation(cancellationToken =>
+            AtlasCanonicalUtf8Bytes.Copy(largeBytes, cancellationToken)
+        );
+        AssertCopyObservesScheduledCancellation(cancellationToken =>
+            largeScan.GetCanonicalUtf8Bytes(cancellationToken)
+        );
+
+        static void AssertCopyObservesScheduledCancellation(Action<CancellationToken> copy)
+        {
+            using CancellationTokenSource duringCopy = new();
+            using ManualResetEventSlim startCopy = new();
+            Thread cancelCopy = new(() =>
+            {
+                startCopy.Wait();
+                Thread.SpinWait(10_000);
+                duringCopy.Cancel();
+            });
+            cancelCopy.Start();
+            startCopy.Set();
+            try
+            {
+                Assert.ThrowsAny<OperationCanceledException>(() => copy(duringCopy.Token));
+            }
+            finally
+            {
+                cancelCopy.Join();
+            }
+        }
     }
 
     [Fact]
@@ -479,7 +524,7 @@ public sealed class AtlasStructuralScanJsonTests
                 AtlasDocumentRole.GlobalSave,
                 cancellationToken: TestContext.Current.CancellationToken
             )
-            .GetCanonicalUtf8Bytes();
+            .GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken);
         using JsonDocument canonicalDocument = JsonDocument.Parse(canonical);
         JsonObject canonicalObject = Assert.IsType<JsonObject>(
             JsonNode.Parse(Encoding.UTF8.GetString(canonical))

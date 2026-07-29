@@ -114,8 +114,10 @@ public sealed class AtlasStructuralScannerTests
     [Fact]
     public void ScanIsDeterministicAndRedactsNamesValuesClassesAndIdentities()
     {
-        byte[] first = Scan(ComprehensiveJson).GetCanonicalUtf8Bytes();
-        byte[] second = Scan(ComprehensiveJson).GetCanonicalUtf8Bytes();
+        byte[] first = Scan(ComprehensiveJson)
+            .GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken);
+        byte[] second = Scan(ComprehensiveJson)
+            .GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken);
         string json = System.Text.Encoding.UTF8.GetString(first);
 
         Assert.Equal(first, second);
@@ -255,6 +257,9 @@ public sealed class AtlasStructuralScannerTests
             AtlasDocumentRole.SlotSave,
             cancellationToken: TestContext.Current.CancellationToken
         );
+        int canonicalUtf8Length = baseline
+            .GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken)
+            .Length;
 
         _ = AtlasStructuralScanner.Scan(
             source,
@@ -264,7 +269,7 @@ public sealed class AtlasStructuralScannerTests
                 MaximumObservations = 2,
                 MaximumLocatorDepth = 1,
                 MaximumRetainedLocatorSegments = 1,
-                MaximumCanonicalUtf8Bytes = baseline.CanonicalUtf8.Length,
+                MaximumCanonicalUtf8Bytes = canonicalUtf8Length,
             },
             TestContext.Current.CancellationToken
         );
@@ -276,7 +281,7 @@ public sealed class AtlasStructuralScannerTests
                 MaximumObservations = 3,
                 MaximumLocatorDepth = 2,
                 MaximumRetainedLocatorSegments = 2,
-                MaximumCanonicalUtf8Bytes = baseline.CanonicalUtf8.Length + 1,
+                MaximumCanonicalUtf8Bytes = canonicalUtf8Length + 1,
             },
             TestContext.Current.CancellationToken
         );
@@ -297,7 +302,7 @@ public sealed class AtlasStructuralScannerTests
             AtlasStructuralScanFailure.CanonicalSerializationLimit,
             new AtlasStructuralScannerLimits
             {
-                MaximumCanonicalUtf8Bytes = baseline.CanonicalUtf8.Length - 1,
+                MaximumCanonicalUtf8Bytes = canonicalUtf8Length - 1,
             }
         );
 

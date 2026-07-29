@@ -34,6 +34,7 @@ public static class AtlasStructuralScanner
             effectiveLimits,
             cancellationToken
         );
+        cancellationToken.ThrowIfCancellationRequested();
         return new AtlasStructuralScanResult(document, canonicalUtf8);
     }
 
