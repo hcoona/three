@@ -100,18 +100,18 @@ SHA_B = "b" * 64
 SHA_C = "c" * 64
 SIGNER_WORKFLOW = "hcoona/three/.github/workflows/release-orchestrate.yml"
 CHECKOUT_ACTION = "actions/checkout@v7"
-SETUP_UV_ACTION = "astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3"
-SETUP_UV_ACTION_WITH_VERSION_COMMENT = f"{SETUP_UV_ACTION} # v8.3.0"
+SETUP_UV_ACTION = "astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9"
+SETUP_UV_ACTION_WITH_VERSION_COMMENT = f"{SETUP_UV_ACTION} # v9.0.0"
 RUBY_SETUP_ACTION_WITH_VERSION_COMMENT = (
-    "ruby/setup-ruby@d45b1a4e94b71acab930e56e79c6aa188764e7f9 # v1.316.0"
+    "ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0"
 )
 UPLOAD_ARTIFACT_ACTION = "actions/upload-artifact@v7"
 RUBYGEMS_CREDENTIALS_ACTION_WITH_VERSION_COMMENT = (
     "rubygems/configure-rubygems-credentials@"
     "dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0"
 )
-CODEQL_ACTION_DIGEST = "99df26d4f13ea111d4ec1a7dddef6063f76b97e9"
-PREVIOUS_CODEQL_ACTION_DIGEST = "54f647b7e1bb85c95cddabcd46b0c578ec92bc1a"
+CODEQL_ACTION_DIGEST = "e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81"
+PREVIOUS_CODEQL_ACTION_DIGEST = "99df26d4f13ea111d4ec1a7dddef6063f76b97e9"
 CODEQL_ACTION_VERSION = "v4"
 FORBIDDEN_FAIL_CLOSED_OUTPUTS = {
     "release-plan.json",
@@ -15489,7 +15489,7 @@ def test_reusable_ruby_build_restores_dotnet_and_uses_ruby_api_identity() -> (
     assert step_names.index("Restore .NET tools") < step_names.index(
         "Build gem"
     )
-    assert setup_dotnet_step["uses"] == "actions/setup-dotnet@v5"
+    assert setup_dotnet_step["uses"] == "actions/setup-dotnet@v6"
     assert setup_dotnet_step["with"]["global-json-file"] == "global.json"
     assert "dotnet tool restore" in cast("str", restore_step["run"])
     assert inputs["package_name"]["required"] is False
@@ -15527,7 +15527,7 @@ def test_prepare_release_plan_uses_trusted_nbgv_outside_target_tree() -> None:
         if step.get("name") == "Collect .NET planner metadata"
     )
 
-    assert setup_dotnet_step["uses"] == "actions/setup-dotnet@v5"
+    assert setup_dotnet_step["uses"] == "actions/setup-dotnet@v6"
     assert setup_dotnet_step["with"]["global-json-file"] == (
         ".three-workflow-release/target/global.json"
     )
@@ -19634,7 +19634,7 @@ def test_reusable_node_builds_set_up_node_24_from_orchestrator() -> None:
     )
 
     assert setup_index < install_index
-    assert setup_step["uses"] == "actions/setup-node@v6"
+    assert setup_step["uses"] == "actions/setup-node@v7"
     assert setup_step["with"]["node-version"] == "${{ inputs.node_version }}"
 
     wxt_workflow = _workflow_yaml("release-build-wxt.yml")
@@ -19654,7 +19654,7 @@ def test_reusable_node_builds_set_up_node_24_from_orchestrator() -> None:
     )
 
     assert wxt_setup_index < wxt_install_index
-    assert wxt_setup_step["uses"] == "actions/setup-node@v6"
+    assert wxt_setup_step["uses"] == "actions/setup-node@v7"
     assert (
         wxt_setup_step["with"]["node-version"] == "${{ inputs.node_version }}"
     )
@@ -20203,7 +20203,7 @@ def test_orchestrator_npmjs_publish_uses_trusted_publisher_runtime() -> None:
         "id-token": "write",
     }
     assert setup_index < note_index < publish_index
-    assert setup_step["uses"] == "actions/setup-node@v6"
+    assert setup_step["uses"] == "actions/setup-node@v7"
     assert setup_step["with"]["node-version"] == "${{ env.NODE_VERSION }}"
     assert setup_step["with"]["registry-url"] == "https://registry.npmjs.org"
     note_run = note_step["run"]
@@ -21381,7 +21381,7 @@ def test_ci_validation_workflow_exposes_control_plane_boundaries() -> None:
         setup_index = next(
             index
             for index, step in enumerate(steps)
-            if step.get("uses") == "actions/setup-dotnet@v5"
+            if step.get("uses") == "actions/setup-dotnet@v6"
         )
         install_index, install_step = next(
             (index, step)
@@ -21437,7 +21437,7 @@ def test_ci_validation_dotnet_setup_caches_trusted_execution_restores() -> None:
                 (
                     step
                     for step in reversed(steps[:install_index])
-                    if step.get("uses") == "actions/setup-dotnet@v5"
+                    if step.get("uses") == "actions/setup-dotnet@v6"
                 ),
                 None,
             )

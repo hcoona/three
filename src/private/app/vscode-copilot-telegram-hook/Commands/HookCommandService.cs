@@ -22,6 +22,7 @@ internal sealed class HookCommandService(
 )
 {
     private const string UtcTimestampFormat = "yyyy-MM-ddTHH:mm:ss.fff'Z'";
+    private const int MaxAttentionMessageLength = 1600;
     private static readonly HookOutputAdapter VsCodeAdapter = new HookSpecificOutputAdapter();
     private static readonly HookOutputAdapter CopilotCliAdapter = new CopilotCliOutputAdapter();
 
@@ -41,7 +42,6 @@ internal sealed class HookCommandService(
             );
 
             string? workspacePath = GetWorkspacePathOrNull(hookInput?.Cwd);
-            logScope = TryOpenHookLogScope(workspacePath, hookInput?.SessionId);
 
             if (
                 hookInput is null
@@ -60,6 +60,13 @@ internal sealed class HookCommandService(
                 return 0;
             }
 
+            if (HookSessionIdentity.IsToolCallSession(hookInput.SessionId))
+            {
+                AppLog.IgnoringToolCallHookSession(logger, "SessionStart", hookInput.SessionId);
+                return 0;
+            }
+
+            logScope = TryOpenHookLogScope(workspacePath, hookInput.SessionId);
             AppLog.HandlingSessionStart(logger, hookInput.SessionId, workspacePath);
 
             NotificationSession session = await workspaceStateStore.InitializeSessionAsync(
@@ -104,7 +111,6 @@ internal sealed class HookCommandService(
             );
 
             string? workspacePath = GetWorkspacePathOrNull(hookInput?.Cwd);
-            logScope = TryOpenHookLogScope(workspacePath, hookInput?.SessionId);
 
             if (
                 hookInput is null
@@ -123,6 +129,17 @@ internal sealed class HookCommandService(
                 return 0;
             }
 
+            if (HookSessionIdentity.IsToolCallSession(hookInput.SessionId))
+            {
+                AppLog.IgnoringToolCallHookSession(
+                    logger,
+                    "UserPromptSubmit",
+                    hookInput.SessionId
+                );
+                return 0;
+            }
+
+            logScope = TryOpenHookLogScope(workspacePath, hookInput.SessionId);
             AppLog.HandlingUserPromptSubmit(
                 logger,
                 hookInput.SessionId,
@@ -166,6 +183,270 @@ internal sealed class HookCommandService(
         return 0;
     }
 
+    public async Task<int> HandlePreToolUseAsync(
+        Stream standardInput,
+        Stream standardOutput,
+        CancellationToken cancellationToken
+    )
+    {
+        IDisposable? logScope = null;
+        try
+        {
+            byte[] payload = await ReadPayloadAsync(standardInput, cancellationToken);
+            PreToolUseHookInput? hookInput = DeserializePayload(
+                payload,
+                AppJsonSerializerContext.Default.PreToolUseHookInput
+            );
+
+            if (
+                hookInput is null
+                || !string.Equals(hookInput.ToolName, "ask_user", StringComparison.Ordinal)
+            )
+            {
+                return 0;
+            }
+
+            string? workspacePath = GetWorkspacePathOrNull(hookInput.Cwd);
+            if (
+                workspacePath is null
+                || string.IsNullOrWhiteSpace(hookInput.SessionId)
+                || string.IsNullOrWhiteSpace(hookInput.Timestamp)
+                || string.IsNullOrWhiteSpace(hookInput.ToolUseId)
+            )
+            {
+                string reason = BuildInvalidInputReason(
+                    hookInput,
+                    payload,
+                    ("cwd", workspacePath is null),
+                    ("session_id", string.IsNullOrWhiteSpace(hookInput.SessionId)),
+                    ("timestamp", string.IsNullOrWhiteSpace(hookInput.Timestamp)),
+                    ("tool_use_id", string.IsNullOrWhiteSpace(hookInput.ToolUseId))
+                );
+                AppLog.IgnoringInvalidHookInput(logger, "PreToolUse", reason);
+                await Console.Error.WriteLineAsync($"PreToolUse hook warning: {reason}");
+                return 0;
+            }
+
+            if (HookSessionIdentity.IsToolCallSession(hookInput.SessionId))
+            {
+                AppLog.IgnoringToolCallHookSession(logger, "PreToolUse", hookInput.SessionId);
+                return 0;
+            }
+
+            logScope = TryOpenHookLogScope(workspacePath, hookInput.SessionId);
+            AppLog.HandlingAskUserTool(
+                logger,
+                hookInput.SessionId,
+                hookInput.ToolUseId,
+                workspacePath
+            );
+            await SendAskUserNotificationAsync(hookInput, workspacePath, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            AppLog.PreToolUseHookFailed(logger, ex);
+            await Console.Error.WriteLineAsync($"PreToolUse hook warning: {ex.Message}");
+        }
+        finally
+        {
+            logScope?.Dispose();
+        }
+
+        return 0;
+    }
+
+    private async Task SendAskUserNotificationAsync(
+        PreToolUseHookInput hookInput,
+        string workspacePath,
+        CancellationToken cancellationToken
+    )
+    {
+        string notificationKey = CreateToolNotificationKey(hookInput.ToolUseId);
+        string notificationPath = AppPaths.GetSessionNotificationRecordPath(
+            workspacePath,
+            hookInput.SessionId,
+            notificationKey
+        );
+        string claimPath = AppPaths.GetSessionStopClaimPath(
+            workspacePath,
+            hookInput.SessionId,
+            notificationKey
+        );
+        string reclaimPath = AppPaths.GetSessionStopReclaimClaimPath(
+            workspacePath,
+            hookInput.SessionId,
+            notificationKey
+        );
+        if (
+            await WorkspaceStateStore.WasNotificationAlreadySentAsync(
+                notificationPath,
+                cancellationToken
+            )
+        )
+        {
+            AppLog.SkippingDuplicateAttentionRequest(
+                logger,
+                hookInput.SessionId,
+                hookInput.ToolUseId
+            );
+            return;
+        }
+
+        string claimedAt = workspaceStateStore.GetCurrentUtcTimestamp();
+        bool claimed = await WorkspaceStateStore.TryClaimStopNotificationAsync(
+            claimPath,
+            claimedAt,
+            cancellationToken
+        );
+        if (!claimed)
+        {
+            claimed = await WorkspaceStateStore.TryReclaimStaleClaimAsync(
+                claimPath,
+                reclaimPath,
+                claimedAt,
+                TimeSpan.FromMinutes(AppConstants.TurnDeliveryClaimStaleAfterMinutes),
+                () =>
+                    WorkspaceStateStore.WasNotificationAlreadySentAsync(
+                        notificationPath,
+                        cancellationToken
+                    ),
+                cancellationToken
+            );
+        }
+
+        if (!claimed)
+        {
+            AppLog.SkippingDuplicateAttentionRequest(
+                logger,
+                hookInput.SessionId,
+                hookInput.ToolUseId
+            );
+            return;
+        }
+
+        bool notificationSent = false;
+        try
+        {
+            string sentAt = workspaceStateStore.GetCurrentUtcTimestamp();
+            GitRepositoryMetadata? repositoryMetadata = await gitRepositoryProbe.TryProbeAsync(
+                workspacePath,
+                cancellationToken
+            );
+            TelegramCredentials credentials = await telegramCredentialProvider.ResolveAsync(
+                cancellationToken
+            );
+            NotificationContext context = new()
+            {
+                SessionId = hookInput.SessionId,
+                TurnId = hookInput.ToolUseId,
+                StopTimestamp = hookInput.Timestamp,
+                SentAt = sentAt,
+                WorkspacePath = workspacePath,
+                HostName = Environment.MachineName,
+                ExecutionEnvironment = AppPaths.GetExecutionEnvironmentDisplay(),
+                RepositoryName = repositoryMetadata?.RepositoryName,
+                BranchName = repositoryMetadata?.BranchName,
+                CommitId = ShortCommit(repositoryMetadata?.CommitId),
+                TranscriptPath = hookInput.TranscriptPath,
+                Heading = "❓ Copilot 需要用户输入",
+                IdentifierLabel = "工具调用 ID",
+                EventTimestampLabel = "请求时间",
+                BodyLabel = "问题",
+                MissingBodyText = "Copilot 正在等待用户输入。",
+            };
+            NotificationSummary summary = new()
+            {
+                Summary = GetAskUserMessage(hookInput.ToolInput),
+                Status = "waiting-for-user",
+            };
+            IReadOnlyList<string> messages = NotificationComposer.Compose(context, summary);
+            AppLog.SendingAttentionNotification(
+                logger,
+                messages.Count,
+                hookInput.SessionId,
+                hookInput.ToolUseId
+            );
+            int sentMessageCount = await telegramBotClient.SendMessagesAsync(
+                credentials,
+                messages,
+                cancellationToken
+            );
+            notificationSent = sentMessageCount > 0;
+
+            await WorkspaceStateStore.RecordNotificationAsync(
+                notificationPath,
+                new NotificationRecord
+                {
+                    SessionId = hookInput.SessionId,
+                    NotificationKey = notificationKey,
+                    WorkspacePath = Path.GetFullPath(workspacePath),
+                    StopTimestamp = hookInput.Timestamp,
+                    SentAt = sentAt,
+                    Degraded = false,
+                    DeliveryStatus = "sent",
+                    Reason = "ask_user tool requires user input",
+                },
+                cancellationToken
+            );
+        }
+        catch (TelegramSendMessagesException ex) when (ex.SuccessfulMessageCount > 0)
+        {
+            notificationSent = true;
+            await WorkspaceStateStore.RecordNotificationAsync(
+                notificationPath,
+                new NotificationRecord
+                {
+                    SessionId = hookInput.SessionId,
+                    NotificationKey = notificationKey,
+                    WorkspacePath = Path.GetFullPath(workspacePath),
+                    StopTimestamp = hookInput.Timestamp,
+                    SentAt = workspaceStateStore.GetCurrentUtcTimestamp(),
+                    Degraded = false,
+                    DeliveryStatus = "partial",
+                    SuccessfulMessageCount = ex.SuccessfulMessageCount,
+                    Reason = $"partial Telegram delivery: {ex.Message}",
+                },
+                cancellationToken
+            );
+            throw;
+        }
+        catch
+        {
+            if (!notificationSent)
+            {
+                WorkspaceStateStore.ReleaseStopNotificationClaim(claimPath);
+            }
+
+            throw;
+        }
+    }
+
+    private static string GetAskUserMessage(JsonElement toolInput)
+    {
+        if (
+            toolInput.ValueKind == JsonValueKind.Object
+            && toolInput.TryGetProperty("message", out JsonElement message)
+            && message.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(message.GetString())
+        )
+        {
+            string normalized = string.Join(
+                " ",
+                message
+                    .GetString()!
+                    .Split(
+                        (char[]?)null,
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                    )
+            );
+            return normalized.Length <= MaxAttentionMessageLength
+                ? normalized
+                : $"{normalized[..(MaxAttentionMessageLength - 3)]}...";
+        }
+
+        return "Copilot 正在等待用户输入。";
+    }
+
     public async Task<int> HandleStopAsync(
         Stream standardInput,
         Stream standardOutput,
@@ -182,7 +463,6 @@ internal sealed class HookCommandService(
             );
 
             string? workspacePath = GetWorkspacePathOrNull(hookInput?.Cwd);
-            logScope = TryOpenHookLogScope(workspacePath, hookInput?.SessionId);
 
             if (
                 hookInput is null
@@ -203,6 +483,13 @@ internal sealed class HookCommandService(
                 return 0;
             }
 
+            if (HookSessionIdentity.IsToolCallSession(hookInput.SessionId))
+            {
+                AppLog.IgnoringToolCallHookSession(logger, "Stop", hookInput.SessionId);
+                return 0;
+            }
+
+            logScope = TryOpenHookLogScope(workspacePath, hookInput.SessionId);
             AppLog.HandlingStopHook(logger, hookInput.SessionId, workspacePath);
 
             string notificationKey = CreateStopNotificationKey(hookInput.Timestamp);
@@ -252,11 +539,17 @@ internal sealed class HookCommandService(
                     cancellationToken
                 );
             IReadOnlyList<NotificationRecord> sessionNotificationRecords =
-                await workspaceStateStore.ListSessionNotificationRecordsAsync(
-                    workspacePath,
-                    hookInput.SessionId,
-                    cancellationToken
-                );
+                (
+                    await workspaceStateStore.ListSessionNotificationRecordsAsync(
+                        workspacePath,
+                        hookInput.SessionId,
+                        cancellationToken
+                    )
+                )
+                    .Where(static record =>
+                        record.NotificationKey.StartsWith("stop-", StringComparison.Ordinal)
+                    )
+                    .ToArray();
             IReadOnlyList<NotificationRecord> perTurnNotificationRecords =
                 await ListPerTurnNotificationRecordsAsync(
                     workspacePath,
@@ -3876,6 +4169,12 @@ internal sealed class HookCommandService(
     {
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(timestamp));
         return $"stop-{Convert.ToHexString(hash)[..32].ToLowerInvariant()}";
+    }
+
+    private static string CreateToolNotificationKey(string toolUseId)
+    {
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(toolUseId));
+        return $"ask-user-{Convert.ToHexString(hash)[..32].ToLowerInvariant()}";
     }
 
     private static string NormalizeKey(string value)

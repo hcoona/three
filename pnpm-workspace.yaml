@@ -15,9 +15,6 @@ allowBuilds:
 
 linkWorkspacePackages: true
 
-onlyBuiltDependencies:
-  - hexo-util
-
 saveWorkspaceProtocol: true
 
 sharedWorkspaceLockfile: true

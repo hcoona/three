@@ -1,12 +1,18 @@
 {
   "$schema": "https://raw.githubusercontent.com/dotnet/Nerdbank.GitVersioning/main/src/NerdBank.GitVersioning/version.schema.json",
-  "version": "3.1.0-beta.{height}",
-  "pathFilters": ["."],
-  "gitCommitIdShortFixedLength": 7,
-  "gitCommitIdShortAutoMinimum": 7,
-  "nugetPackageVersion": {
-    "semVer": 2
-  },
-  "publicReleaseRefSpec": ["^refs/heads/main$", "^refs/tags/release/hexo-renderer-asciidoc/v.+$"],
-  "inherit": false
+  "version": "4.0.0-beta.{height}",
+  "pathFilters": [
+    ".",
+    ":/pnpm-lock.yaml",
+    ":/pnpm-workspace.yaml",
+    ":/version.json",
+    ":/LICENSE",
+    ":/COPYING",
+    ":/COPYING.LESSER",
+    ":/LICENSES/LGPL-3.0-linking-exception.txt",
+    ":/.github/workflows/release-build-node-pack.yml",
+    ":/.github/workflows/release-orchestrate.yml",
+    ":/eng/scripts/prepare_npm_publish.py"
+  ],
+  "inherit": true
 }

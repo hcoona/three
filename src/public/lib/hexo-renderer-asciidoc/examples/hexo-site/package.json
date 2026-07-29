@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "description": "Example Hexo site wired to the local hexo-renderer-asciidoc package",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "clean": "hexo clean",
     "dev": "hexo server",
@@ -23,6 +26,6 @@
     "hexo-theme-minimalism": "^1.4.4"
   },
   "hexo": {
-    "version": "8.1.1"
+    "version": "8.1.2"
   }
 }

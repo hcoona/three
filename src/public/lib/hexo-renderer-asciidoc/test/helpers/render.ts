@@ -15,7 +15,7 @@ const render = renderer as Renderer;
  * @param locals - Additional Hexo locals passed to the renderer.
  * @returns Rendered HTML string.
  */
-export const renderAsciiDoc = (text: string, locals: RendererLocals = {}): string => {
+export const renderAsciiDoc = async (text: string, locals: RendererLocals = {}): Promise<string> => {
   const data: RendererData = { text };
-  return render(data, locals);
+  return await render(data, locals);
 };

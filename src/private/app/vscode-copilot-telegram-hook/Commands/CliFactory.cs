@@ -8,10 +8,13 @@ internal static class CliFactory
     public static RootCommand CreateRootCommand(IServiceProvider services)
     {
         HookCommandService hookCommandService = services.GetRequiredService<HookCommandService>();
+        CopilotCliNotificationService copilotCliNotificationService =
+            services.GetRequiredService<CopilotCliNotificationService>();
         UserCommandService userCommandService = services.GetRequiredService<UserCommandService>();
 
         RootCommand rootCommand = new("VS Code Copilot Telegram hook tool.");
         rootCommand.Subcommands.Add(CreateHookCommand(hookCommandService));
+        rootCommand.Subcommands.Add(CreateCopilotCliCommand(copilotCliNotificationService));
         rootCommand.Subcommands.Add(CreateUserCommand(userCommandService));
         return rootCommand;
     }
@@ -38,6 +41,15 @@ internal static class CliFactory
                 Console.OpenStandardOutput(),
                 cancellationToken));
 
+        Command preToolUseCommand = new(
+            "pre-tool-use",
+            "Handle the VS Code PreToolUse hook event.");
+        preToolUseCommand.SetAction((ParseResult _, CancellationToken cancellationToken) =>
+            hookCommandService.HandlePreToolUseAsync(
+                Console.OpenStandardInput(),
+                Console.OpenStandardOutput(),
+                cancellationToken));
+
         Command stopCommand = new(
             "stop",
             "Handle the VS Code Stop hook event.");
@@ -49,8 +61,44 @@ internal static class CliFactory
 
         hookCommand.Subcommands.Add(sessionStartCommand);
         hookCommand.Subcommands.Add(userPromptSubmitCommand);
+        hookCommand.Subcommands.Add(preToolUseCommand);
         hookCommand.Subcommands.Add(stopCommand);
         return hookCommand;
+    }
+
+    private static Command CreateCopilotCliCommand(
+        CopilotCliNotificationService copilotCliNotificationService)
+    {
+        Option<FileInfo?> eventFileOption = new("--event-file")
+        {
+            Description = "Path to the durable Copilot CLI event file.",
+        };
+        eventFileOption.Validators.Add(result =>
+        {
+            FileInfo? eventFile = result.GetValue(eventFileOption);
+            if (eventFile is null || !eventFile.Exists)
+            {
+                result.AddError("--event-file must point to an existing file.");
+            }
+        });
+
+        Command sessionEventCommand = new(
+            "session-event",
+            "Deliver a durable GitHub Copilot CLI lifecycle event.")
+        {
+            eventFileOption,
+        };
+        sessionEventCommand.SetAction(
+            (ParseResult parseResult, CancellationToken cancellationToken) =>
+                copilotCliNotificationService.HandleSessionEventFileAsync(
+                    parseResult.GetValue(eventFileOption)!,
+                    cancellationToken));
+
+        Command copilotCliCommand = new(
+            "copilot-cli",
+            "Handle GitHub Copilot CLI extension events.");
+        copilotCliCommand.Subcommands.Add(sessionEventCommand);
+        return copilotCliCommand;
     }
 
     private static Command CreateUserCommand(UserCommandService userCommandService)

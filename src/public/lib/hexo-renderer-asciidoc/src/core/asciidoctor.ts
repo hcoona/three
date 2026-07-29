@@ -3,41 +3,42 @@
  * SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
  */
 
-import type { Asciidoctor, ProcessorOptions } from 'asciidoctor';
-import asciidoctorFactory from 'asciidoctor';
+import { convert, Logger } from '@asciidoctor/core';
 
-const asciidoctor = asciidoctorFactory();
+type ControlledAsciiDocOptions = Readonly<{
+  doctype: 'article';
+  safe: 'server';
+  to_file: false;
+}>;
 
-export type AsciiDocOptions = ProcessorOptions;
-
-const DEFAULT_OPTIONS = Object.freeze({
+const CONTROLLED_OPTIONS: ControlledAsciiDocOptions = Object.freeze({
   doctype: 'article',
   safe: 'server',
-  attributes: ['source-highlighter=html-pipeline'],
-} satisfies AsciiDocOptions);
+  to_file: false,
+});
 
-/**
- * Canonical Asciidoctor options used when callers do not supply overrides.
- * Exposed mainly for testing and advanced customization.
- */
-export const ASCIIDOCTOR_DEFAULT_OPTIONS: AsciiDocOptions = DEFAULT_OPTIONS;
+const toAsciiDocText = (value: string): string => {
+  if (typeof value !== 'string') {
+    throw new TypeError(`Asciidoctor conversion requires string input: ${typeof value}`);
+  }
 
-/**
- * Convert a chunk of AsciiDoc text into HTML using the shared Asciidoctor instance.
- * The provided options override the default configuration on a per-call basis.
- *
- * @param text - Raw AsciiDoc document body.
- * @param options - Optional overrides merged with {@link ASCIIDOCTOR_DEFAULT_OPTIONS}.
- * @returns The rendered HTML string produced by Asciidoctor.
- */
-export const convertAsciiDoc = (text: string, options?: AsciiDocOptions): string => {
-  const mergedOptions = options ? { ...DEFAULT_OPTIONS, ...options } : DEFAULT_OPTIONS;
-  return asciidoctor.convert(text, mergedOptions) as string;
+  return value;
 };
 
 /**
- * Access the lazily created Asciidoctor runtime instance for low-level integrations.
+ * Convert a chunk of AsciiDoc text into HTML using the stateless `@asciidoctor/core` v4 API.
+ * Each call is independent; there is no shared singleton runtime.
  *
- * @returns The singleton Asciidoctor JS runtime used throughout the plugin.
+ * @param text - Raw AsciiDoc document body.
+ * @returns A promise resolving to the rendered HTML string produced by Asciidoctor.
  */
-export const getAsciidoctor = (): Asciidoctor => asciidoctor;
+export const convertAsciiDoc = async (text: string): Promise<string> => {
+  const result = await convert(toAsciiDocText(text), {
+    ...CONTROLLED_OPTIONS,
+    logger: new Logger(),
+  });
+  if (typeof result !== 'string') {
+    throw new TypeError(`Asciidoctor conversion did not return a string: ${typeof result}`);
+  }
+  return result;
+};

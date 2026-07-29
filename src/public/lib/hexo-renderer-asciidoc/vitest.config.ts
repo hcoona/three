@@ -9,6 +9,7 @@ const vitestConfig: ViteUserConfigExport = defineConfig({
   test: {
     include: ['test/**/*.test.{js,mjs,ts}'],
     environment: 'node',
+    fileParallelism: false,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

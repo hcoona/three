@@ -13,7 +13,7 @@ internal static class NotificationComposer
         NotificationContext context,
         NotificationSummary? summary)
     {
-        string bodyText = BuildBodyText(summary);
+        string bodyText = BuildBodyText(context, summary);
         int desiredBodyLength = Math.Min(
             PreferredBodyLength,
             WebUtility.HtmlEncode(bodyText).Length);
@@ -34,15 +34,16 @@ internal static class NotificationComposer
 
         if (bodyChunks.Count == 0)
         {
-            bodyChunks = ["摘要：当前轮未生成摘要。"];
+            bodyChunks = [$"{context.BodyLabel}：{context.MissingBodyText}"];
         }
 
         List<string> messages = new(messageCount);
         for (int index = 0; index < bodyChunks.Count; index++)
         {
             string heading = bodyChunks.Count == 1
-                ? "<b>✅ Copilot 当前轮已完成</b>"
-                : $"<b>✅ Copilot 当前轮已完成（{index + 1}/{bodyChunks.Count}）</b>";
+                ? $"<b>{WebUtility.HtmlEncode(context.Heading)}</b>"
+                : $"<b>{WebUtility.HtmlEncode(context.Heading)}"
+                    + $"（{index + 1}/{bodyChunks.Count}）</b>";
 
             string bodyHtml = WebUtility.HtmlEncode(bodyChunks[index]);
             messages.Add($"{heading}\n{headerHtml}\n{bodyHtml}");
@@ -62,8 +63,8 @@ internal static class NotificationComposer
         [
             new("发送时间", context.SentAt, Optional: false),
             new("会话 ID", context.SessionId, Optional: false),
-            new("轮次 ID", context.TurnId, Optional: false),
-            new("Stop 时间", context.StopTimestamp, Optional: false),
+            new(context.IdentifierLabel, context.TurnId, Optional: false),
+            new(context.EventTimestampLabel, context.StopTimestamp, Optional: false),
             new("工作区", context.WorkspacePath, Optional: false),
             new("主机", context.HostName, Optional: false),
             new("环境", context.ExecutionEnvironment, Optional: false),
@@ -110,15 +111,18 @@ internal static class NotificationComposer
         return string.Join("\n", lines);
     }
 
-    private static string BuildBodyText(NotificationSummary? summary)
+    private static string BuildBodyText(
+        NotificationContext context,
+        NotificationSummary? summary)
     {
         StringBuilder builder = new();
 
         string summaryText = string.IsNullOrWhiteSpace(summary?.Summary)
-            ? "当前轮未生成摘要。"
+            ? context.MissingBodyText
             : summary.Summary.Trim();
 
-        builder.Append("摘要：");
+        builder.Append(context.BodyLabel);
+        builder.Append('：');
         builder.AppendLine(summaryText);
 
         if (!string.IsNullOrWhiteSpace(summary?.Status))

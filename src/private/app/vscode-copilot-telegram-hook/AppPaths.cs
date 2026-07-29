@@ -24,6 +24,9 @@ internal static class AppConstants
     public const string UserCommandLogFileName = "user-command.log";
     public const string ManagedHookFileName = "vscode-copilot-telegram-hook.hooks.json";
     public const string CopilotCliHookFileName = "vscode-copilot-telegram-hook.json";
+    public const string CopilotCliExtensionDirectoryName = "vscode-copilot-telegram-hook";
+    public const string CopilotCliExtensionFileName = "extension.mjs";
+    public const string CopilotCliEventSpoolDirectoryName = "copilot-cli-events";
     public const string ChatHookFilesLocationsSettingName = "chat.hookFilesLocations";
 
     public const string ManagedHookEnvironmentVariable = "HCOONA_VSCODE_COPILOT_TELEGRAM_HOOK";
@@ -79,17 +82,54 @@ internal static class AppPaths
 
     public static string GetDefaultCopilotCliHooksDirectory()
     {
+        return Path.Combine(GetCopilotCliHomeDirectory(), "hooks");
+    }
+
+    public static string GetDefaultCopilotCliExtensionFilePath()
+        => GetCopilotCliExtensionFilePath(GetDefaultCopilotCliHookFilePath());
+
+    public static string GetCopilotCliExtensionFilePath(string copilotCliHookFilePath)
+    {
+        string hooksDirectory = Path.GetDirectoryName(Path.GetFullPath(copilotCliHookFilePath))
+            ?? throw new InvalidOperationException(
+                "The Copilot CLI hook file path does not have a parent directory.");
+        string? candidateCopilotHome = Path.GetDirectoryName(hooksDirectory);
+        string copilotHome =
+            GetPlatformPathComparer().Equals(
+                Path.GetFileName(hooksDirectory),
+                "hooks")
+            && candidateCopilotHome is not null
+            && !GetPlatformPathComparer().Equals(
+                Path.GetFullPath(candidateCopilotHome),
+                Path.GetPathRoot(Path.GetFullPath(candidateCopilotHome)))
+                ? candidateCopilotHome
+                : GetCopilotCliHomeDirectory();
+        return Path.Combine(
+            copilotHome,
+            "extensions",
+            AppConstants.CopilotCliExtensionDirectoryName,
+            AppConstants.CopilotCliExtensionFileName);
+    }
+
+    public static string GetCopilotCliEventSpoolDirectory(string installedBinaryPath)
+        => Path.Combine(
+            Path.GetDirectoryName(Path.GetFullPath(installedBinaryPath))
+                ?? throw new InvalidOperationException(
+                    "The installed binary path does not have a parent directory."),
+            AppConstants.CopilotCliEventSpoolDirectoryName);
+
+    private static string GetCopilotCliHomeDirectory()
+    {
         string? copilotHome = Environment.GetEnvironmentVariable(
             AppConstants.CopilotHomeEnvironmentVariable);
         if (!string.IsNullOrWhiteSpace(copilotHome))
         {
-            return Path.Combine(Path.GetFullPath(copilotHome.Trim()), "hooks");
+            return Path.GetFullPath(copilotHome.Trim());
         }
 
         return Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            AppConstants.CopilotDirectoryName,
-            "hooks");
+            AppConstants.CopilotDirectoryName);
     }
 
     public static string GetDefaultVsCodeSettingsPath()
@@ -179,6 +219,8 @@ internal static class AppPaths
         Func<VsCodeSettingsTarget, bool>? includeVsCodeSettingsTarget = null)
     {
         includeVsCodeSettingsTarget ??= static target => target.IsApplicable;
+        string eventSpoolDirectory = GetCopilotCliEventSpoolDirectory(
+            paths.InstalledBinaryPath);
         List<(string Label, string Path)> managedArtifactPaths =
         [
             ("installed binary", paths.InstalledBinaryPath),
@@ -192,6 +234,11 @@ internal static class AppPaths
             ),
             ("VS Code managed hook file", paths.ManagedHookFilePath),
             ("Copilot CLI hook file", paths.CopilotCliHookFilePath),
+            (
+                "Copilot CLI extension file",
+                GetCopilotCliExtensionFilePath(paths.CopilotCliHookFilePath)
+            ),
+            ("Copilot CLI event spool directory", eventSpoolDirectory),
             .. paths.VsCodeSettingsTargets
                 .Where(includeVsCodeSettingsTarget)
                 .Select(static target =>
@@ -199,6 +246,27 @@ internal static class AppPaths
         ];
 
         StringComparer comparer = GetPlatformPathComparer();
+        string normalizedEventSpoolDirectory = Path.GetFullPath(eventSpoolDirectory);
+        foreach ((string label, string path) in managedArtifactPaths)
+        {
+            if (comparer.Equals(
+                    Path.GetFullPath(path),
+                    normalizedEventSpoolDirectory))
+            {
+                continue;
+            }
+
+            if (PathsOverlapFileAndDirectory(path, eventSpoolDirectory, comparer))
+            {
+                return FormatPathCollisionMessage(
+                    label,
+                    path,
+                    "Copilot CLI event spool directory",
+                    eventSpoolDirectory,
+                    normalizedEventSpoolDirectory);
+            }
+        }
+
         Dictionary<string, (string Label, string Path)> seenPaths = new(comparer);
         Dictionary<FileSystemIdentity, (string Label, string Path)> seenIdentities = [];
         Dictionary<FuturePathIdentity, (string Label, string Path)> seenFuturePaths =
@@ -251,6 +319,19 @@ internal static class AppPaths
             foreach ((string sourceLabel, string sourcePath) in
                 EnumerateSourceArtifactPaths(sourceBinaryPath))
             {
+                if (PathsOverlapFileAndDirectory(
+                        sourcePath,
+                        eventSpoolDirectory,
+                        comparer))
+                {
+                    return FormatPathCollisionMessage(
+                        sourceLabel,
+                        sourcePath,
+                        "Copilot CLI event spool directory",
+                        eventSpoolDirectory,
+                        Path.GetFullPath(eventSpoolDirectory));
+                }
+
                 foreach ((string label, string path) in managedArtifactPaths)
                 {
                     if (PathsReferToSameCurrentOrFutureFile(
@@ -271,6 +352,37 @@ internal static class AppPaths
         }
 
         return null;
+    }
+
+    private static bool PathsOverlapFileAndDirectory(
+        string filePath,
+        string directoryPath,
+        StringComparer comparer)
+    {
+        string normalizedFilePath = Path.GetFullPath(filePath);
+        string normalizedDirectoryPath = Path.GetFullPath(directoryPath);
+        return IsSameOrDescendant(normalizedFilePath, normalizedDirectoryPath, comparer)
+            || IsSameOrDescendant(normalizedDirectoryPath, normalizedFilePath, comparer);
+    }
+
+    private static bool IsSameOrDescendant(
+        string candidatePath,
+        string directoryPath,
+        StringComparer comparer)
+    {
+        if (comparer.Equals(candidatePath, directoryPath))
+        {
+            return true;
+        }
+
+        string directoryPrefix = Path.EndsInDirectorySeparator(directoryPath)
+            ? directoryPath
+            : directoryPath + Path.DirectorySeparatorChar;
+        return candidatePath.StartsWith(
+            directoryPrefix,
+            OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal);
     }
 
     public static string GetManagedExecutableName()

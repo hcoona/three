@@ -15,12 +15,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> [!WARNING]
+> The current `4.0.0-beta` line is a major change from 3.x. Programmatic users
+> must update to the new async contract before adopting it.
+
 ### Added
 
 ### Changed
 
 - Migrate the project repository to the `hcoona/three` monorepo and update
   documentation links accordingly.
+- Begin the `4.0.0-beta` major line by moving the runtime dependency from
+  `asciidoctor` 3.0.4 to exact `@asciidoctor/core` 4.0.5 / Asciidoctor.js 4.0.5.
+- Derive extension logger types from the official `Reader.getLogger()` contract.
+- Change the public renderer contract from `string` to `Promise<string>`.
+  Programmatic consumers must `await renderer(...)`.
+- Register Hexo renderers for `.ad`, `.adoc`, and `.asciidoc` asynchronously.
+  `renderSync` is unsupported for AsciiDoc input and may leave content
+  unrendered instead of throwing.
+- Stop setting `source-highlighter=html-pipeline`. Under the public renderer's
+  controlled `safe: server` options, source-defined selection is ignored and
+  Asciidoctor's default output is used. The internal highlighter recognizes the
+  supported marker shapes for compatibility, but the API does not expose
+  arbitrary highlighter configuration.
+- Restrict static highlighting to the direct Asciidoctor
+  `div.listingblock > div.content > pre > code` structure. Version 3 could also
+  rewrite passthrough or otherwise noncanonical `pre.highlight` blocks; version
+  4 leaves those blocks unchanged.
+- Publish native ESM and CommonJS entrypoints, with matching declarations, while
+  preserving the package-root default and named exports.
+- Clarify the filesystem and trust boundary: conversion omits `base_dir`, so
+  includes resolve from conversion-time `process.cwd()`; `data.path` and the
+  Hexo site root are not used as `base_dir`; `safe: server` still permits local
+  includes; symlinks can cross assumed directory boundaries; and raw HTML
+  remains unsanitized. The renderer requires trusted input and an isolated or
+  sandboxed working directory with no secrets.
+
+### Migration notes
+
+- Require Node.js `>=22`; Node.js 20 is no longer supported after reaching
+  end of life.
+- Update any direct renderer usage to `await renderer(...)`.
+- Use Hexo’s async render paths; do not rely on `renderSync` for AsciiDoc
+  inputs.
+- Do not rely on a document-level `:source-highlighter: html-pipeline` setting:
+  the public renderer ignores it under the controlled `safe: server` options
+  and exposes no highlighter configuration. Public rendering uses
+  Asciidoctor 4's default output.
+- If you relied on version 3 to highlight passthrough or noncanonical
+  `pre.highlight` HTML, migrate it to an AsciiDoc listing/source block that
+  produces the direct `div.listingblock > div.content > pre > code` structure,
+  or highlight and maintain that passthrough HTML yourself. Verify the generated
+  site before upgrading because version 4 will not rewrite those blocks.
+- Review any include-heavy workflow that previously assumed `data.path` or the
+  Hexo site root acted as `base_dir`; relative includes continue to follow the
+  conversion-time current working directory instead. That directory is not a
+  jail, and an HTML sanitizer cannot prevent file-content disclosure.
 
 ### Deprecated
 
@@ -30,13 +80,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Do not render untrusted AsciiDoc. Use only trusted input in an isolated or
+  sandboxed working directory containing no secrets. `safe: server` and output
+  sanitization are not substitutes for that isolation.
+
+## [3.1.0-beta.11.g3f78566] - 2025-12-22
+
+### Maintenance
+
+- Adjust the repository descriptions in `package.json`.
+
+## [3.1.0-beta.10.g19c6f08] - 2025-12-22
+
+### Maintenance
+
+- Rename `ChangeLog.md` to `CHANGELOG.md`.
+
 ## [3.0.0] - 2025-11-17
 
 > [!WARNING]
-> This is a development pre-release built from the `main` branch.
-> Behaviour may still change before a stable 3.0.0 release.
->
-> This build also **drops support for Node.js versions lower than 20.19.0**
+> Version 3.0.0 **drops support for Node.js versions lower than 20.19.0**
 > and changes the project license. Treat it as a breaking change if you rely
 > on older Node.js versions or on the previous ISC license.
 

@@ -40,7 +40,7 @@ namespace PhiFailureDetector.UnitTest
             var queueArray = arrivalWindow.ToArray();
             Array.Sort(queueArray);
 
-            CollectionAssert.AreEqual(
+            Assert.AreSequenceEqual(
                 new long[] { 3, 4, 5, 6, 7 },
                 queueArray);
 

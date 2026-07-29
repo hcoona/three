@@ -1,4 +1,4 @@
-experimental_monorepo_root = true
+monorepo_root = true
 
 [settings]
 experimental = true
@@ -12,13 +12,13 @@ config_roots = ["src/private/app/factorio-cycle-calculator"]
 go = "latest"
 java = "lts"
 node = "24"
-pkl = "0.31.1"
+pkl = "0.32.1"
 powershell = "7"
 python = "3.14"
-ruby = "3.3"
+ruby = "4.0.6"
 
 # Package Managers
-pnpm = "10.34.4"
+pnpm = "11.17.0"
 uv = "latest"
 
 # Git Commit Hook Manager
@@ -39,7 +39,12 @@ typos = "latest"
 "go:github.com/rhysd/actionlint/cmd/actionlint" = "latest"
 
 # Bash
-"github:koalaman/shellcheck" = { version = "latest", platforms = { "windows-x64" = { asset_pattern = "shellcheck-*.zip" } } }
+"github:koalaman/shellcheck".version = "latest"
+"github:koalaman/shellcheck".platforms.linux-arm64 = { asset_pattern = "shellcheck-*.linux.aarch64.tar.xz" }
+"github:koalaman/shellcheck".platforms.linux-x64 = { asset_pattern = "shellcheck-*.linux.x86_64.tar.xz" }
+"github:koalaman/shellcheck".platforms.macos-arm64 = { asset_pattern = "shellcheck-*.darwin.aarch64.tar.xz" }
+"github:koalaman/shellcheck".platforms.macos-x64 = { asset_pattern = "shellcheck-*.darwin.x86_64.tar.xz" }
+"github:koalaman/shellcheck".platforms.windows-x64 = { asset_pattern = "shellcheck-*.zip" }
 "go:mvdan.cc/sh/v3/cmd/shfmt" = "latest"
 
 # Dockerfile
@@ -54,7 +59,7 @@ dotenv-linter = "latest"
 fd = "latest"
 ripgrep = "latest"
 github-cli = "latest"
-"github:microsoft/apm" = "latest"
+"github:microsoft/apm" = "0.26.0"
 
 #
 # Environment Variables
