@@ -1695,6 +1695,7 @@ internal static class AtlasTestSupport
         Action<string, string>? moveDirectory = null,
         Action<string, string, string?>? replaceFile = null,
         Action<string, bool>? deleteDirectory = null,
+        Action<string>? deleteFile = null,
         Action<string, FileAttributes>? setAttributes = null,
         Func<string, long>? getLength = null,
         Func<string, DateTimeOffset>? getLastWriteTimeUtc = null) =>
@@ -1713,6 +1714,7 @@ internal static class AtlasTestSupport
             MoveDirectory = moveDirectory ?? AtlasIoSeams.Default.MoveDirectory,
             ReplaceFile = replaceFile ?? AtlasIoSeams.Default.ReplaceFile,
             DeleteDirectory = deleteDirectory ?? AtlasIoSeams.Default.DeleteDirectory,
+            DeleteFile = deleteFile ?? AtlasIoSeams.Default.DeleteFile,
             SetAttributes = setAttributes ?? AtlasIoSeams.Default.SetAttributes,
             GetLength = getLength ?? AtlasIoSeams.Default.GetLength,
             GetLastWriteTimeUtc = getLastWriteTimeUtc ?? AtlasIoSeams.Default.GetLastWriteTimeUtc,

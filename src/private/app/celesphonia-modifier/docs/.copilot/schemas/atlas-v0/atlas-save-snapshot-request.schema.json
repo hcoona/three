@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hcoona:three:celesphonia-modifier:atlas-v0:save-snapshot-request:v1",
+  "title": "Atlas Save Snapshot Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "repositoryRoot", "runId", "saveRoot"],
+  "properties": {
+    "schemaVersion": {
+      "const": "atlas-save-snapshot-request/v1"
+    },
+    "repositoryRoot": {
+      "$ref": "#/$defs/absolutePath"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "saveRoot": {
+      "$ref": "#/$defs/absolutePath"
+    }
+  },
+  "$defs": {
+    "absolutePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32768
+    }
+  }
+}

@@ -38,6 +38,7 @@ public sealed class AtlasCliApplicationTests
         .. "  celesphonia-atlas intake-confirm <request-file>\n"u8,
         .. "  celesphonia-atlas intake-copy <request-file>\n"u8,
         .. "  celesphonia-atlas definition-intake <request-file>\n"u8,
+        .. "  celesphonia-atlas save-snapshot <request-file>\n"u8,
         .. "  celesphonia-atlas cleanup-preflight <request-file>\n"u8,
         .. "\n"u8,
         .. "Commands:\n"u8,
@@ -46,6 +47,7 @@ public sealed class AtlasCliApplicationTests
         .. "  intake-confirm     Confirm an approved Atlas intake manifest.\n"u8,
         .. "  intake-copy        Create qualified Atlas research snapshots.\n"u8,
         .. "  definition-intake  Copy the approved local definition set.\n"u8,
+        .. "  save-snapshot      Create a verified read-only save snapshot.\n"u8,
         .. "  cleanup-preflight  Report private-artifact cleanup eligibility.\n"u8,
         .. "\n"u8,
         .. "Options:\n"u8,
@@ -68,6 +70,7 @@ public sealed class AtlasCliApplicationTests
             { ["intake-confirm", "--help"], ExpectedCommandHelp },
             { ["intake-copy", "-h"], ExpectedCommandHelp },
             { ["definition-intake", "--help"], ExpectedCommandHelp },
+            { ["save-snapshot", "--help"], ExpectedCommandHelp },
             { ["cleanup-preflight", "--help"], ExpectedCommandHelp },
         };
 
@@ -84,6 +87,7 @@ public sealed class AtlasCliApplicationTests
             { ["/h"] },
             { ["intake-discover"] },
             { ["definition-intake"] },
+            { ["save-snapshot"] },
             { ["intake-discover", "--help", "extra"] },
             { ["intake-discover", "one", "two"] },
         };
@@ -242,6 +246,28 @@ public sealed class AtlasCliApplicationTests
         Assert.Equal(AtlasCliApplication.SuccessExitCode, exitCode);
         Assert.Equal("Definition intake completed.\n"u8.ToArray(), standardOutput);
         Assert.Empty(standardError);
+    }
+
+    [Fact]
+    public async Task SaveSnapshotWritesFixedSuccessBytes()
+    {
+        string? observedPath = null;
+        (int exitCode, byte[] standardOutput, byte[] standardError) = await RunAsync(
+            ["save-snapshot", @"Q:\private\snapshot.json"],
+            new DelegatingOperations
+            {
+                SaveSnapshot = (path, _) =>
+                {
+                    observedPath = path;
+                    return ValueTask.CompletedTask;
+                },
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.SuccessExitCode, exitCode);
+        Assert.Equal("Save snapshot completed.\n"u8.ToArray(), standardOutput);
+        Assert.Empty(standardError);
+        Assert.Equal(@"Q:\private\snapshot.json", observedPath);
     }
 
     [Fact]
@@ -935,6 +961,8 @@ public sealed class AtlasCliApplicationTests
 
         public Func<Stream, CancellationToken, ValueTask>? EmptySurvey { get; init; }
 
+        public Func<string, CancellationToken, ValueTask>? SaveSnapshot { get; init; }
+
         public override ValueTask WriteEmptySurveyAsync(
             Stream standardOutput,
             CancellationToken cancellationToken) =>
@@ -969,6 +997,12 @@ public sealed class AtlasCliApplicationTests
             string requestFilePath,
             CancellationToken cancellationToken) =>
             DefinitionIntake?.Invoke(requestFilePath, cancellationToken)
+            ?? ValueTask.CompletedTask;
+
+        public override ValueTask RunSaveSnapshotAsync(
+            string requestFilePath,
+            CancellationToken cancellationToken) =>
+            SaveSnapshot?.Invoke(requestFilePath, cancellationToken)
             ?? ValueTask.CompletedTask;
     }
 

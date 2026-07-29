@@ -11,6 +11,10 @@ public sealed class ProjectBoundaryTests
         "AtlasDefinitionIntakeContracts.cs",
         "AtlasDiscovery.cs",
         "AtlasIntakeContracts.cs",
+        "AtlasLzStringCodec.cs",
+        "AtlasSaveReader.cs",
+        "AtlasSaveSnapshot.cs",
+        "AtlasSaveSnapshotContracts.cs",
         "EmptyAtlasSurvey.cs",
         "Hcoona.CelesphoniaModifier.Atlas.csproj",
         "HistoricalAtlasDefinitionIngress.cs",
@@ -36,6 +40,8 @@ public sealed class ProjectBoundaryTests
         "AtlasDiscoveryTests.cs",
         "AtlasIntakeContractTests.cs",
         "AtlasProcessSmokeTests.cs",
+        "AtlasSaveReaderTests.cs",
+        "AtlasSaveSnapshotTests.cs",
         "EmptyAtlasSurveyTests.cs",
         "Hcoona.CelesphoniaModifier.Atlas.Tests.csproj",
         "LocatorSegmentRedactorTests.cs",
@@ -50,6 +56,8 @@ public sealed class ProjectBoundaryTests
         "agent-egress-envelope.schema.json",
         "atlas-definition-copy-receipt.schema.json",
         "atlas-definition-intake-request.schema.json",
+        "atlas-save-snapshot-receipt.schema.json",
+        "atlas-save-snapshot-request.schema.json",
         "cleanup-preflight-report.schema.json",
         "copy-plan.schema.json",
         "copy-receipt.schema.json",
@@ -219,6 +227,34 @@ public sealed class ProjectBoundaryTests
             "verified as exact `R15`, activates",
             readme,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A3SnapshotBoundaryHasExactlyTwoContractsAndNoHistoricalToolDependency()
+    {
+        ProjectPaths paths = ProjectPaths.Create();
+        string[] snapshotSchemas = Directory
+            .EnumerateFiles(paths.SchemaDirectory, "atlas-save-snapshot-*.schema.json")
+            .Select(Path.GetFileName)
+            .Order(StringComparer.Ordinal)
+            .ToArray()!;
+        Assert.Equal(
+            [
+                "atlas-save-snapshot-receipt.schema.json",
+                "atlas-save-snapshot-request.schema.json",
+            ],
+            snapshotSchemas);
+
+        string productionText = string.Join(
+            "\n",
+            Directory
+                .EnumerateFiles(paths.LibraryDirectory, "*.cs")
+                .Concat(Directory.EnumerateFiles(paths.CliDirectory, "*.cs"))
+                .Select(File.ReadAllText));
+        Assert.DoesNotContain("save-research-decoder.js", productionText, StringComparison.Ordinal);
+        Assert.DoesNotContain("Process.Start", productionText, StringComparison.Ordinal);
+        Assert.DoesNotContain("atlas-save-snapshot-r1", productionText, StringComparison.Ordinal);
+        Assert.DoesNotContain("atlas-save-snapshot-r2", productionText, StringComparison.Ordinal);
     }
 
     private static void AssertPackageAssets(XDocument project, string packageName)

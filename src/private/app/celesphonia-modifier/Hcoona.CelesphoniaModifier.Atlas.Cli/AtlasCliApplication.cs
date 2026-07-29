@@ -40,6 +40,7 @@ internal static class AtlasCliApplication
         .. "  celesphonia-atlas intake-confirm <request-file>\n"u8,
         .. "  celesphonia-atlas intake-copy <request-file>\n"u8,
         .. "  celesphonia-atlas definition-intake <request-file>\n"u8,
+        .. "  celesphonia-atlas save-snapshot <request-file>\n"u8,
         .. "  celesphonia-atlas cleanup-preflight <request-file>\n"u8,
         .. "\n"u8,
         .. "Commands:\n"u8,
@@ -48,6 +49,7 @@ internal static class AtlasCliApplication
         .. "  intake-confirm     Confirm an approved Atlas intake manifest.\n"u8,
         .. "  intake-copy        Create qualified Atlas research snapshots.\n"u8,
         .. "  definition-intake  Copy the approved local definition set.\n"u8,
+        .. "  save-snapshot      Create a verified read-only save snapshot.\n"u8,
         .. "  cleanup-preflight  Report private-artifact cleanup eligibility.\n"u8,
         .. "\n"u8,
         .. "Options:\n"u8,
@@ -88,6 +90,8 @@ internal static class AtlasCliApplication
         "Intake copy completed.\n"u8.ToArray();
     private static readonly byte[] DefinitionIntakeSuccessBytes =
         "Definition intake completed.\n"u8.ToArray();
+    private static readonly byte[] SaveSnapshotSuccessBytes =
+        "Save snapshot completed.\n"u8.ToArray();
     private static readonly byte[] CleanupPreflightSuccessBytes =
         "Cleanup preflight completed.\n"u8.ToArray();
 
@@ -191,6 +195,16 @@ internal static class AtlasCliApplication
                         includeDiscoveryFailureStage: false,
                         cancellationToken)
                     .ConfigureAwait(false),
+                RequestCommandKind.SaveSnapshot => await RunOperationAsync(
+                        standardOutput,
+                        standardError,
+                        cancellation => operations.RunSaveSnapshotAsync(
+                            command.RequestFilePath,
+                            cancellation),
+                        SaveSnapshotSuccessBytes,
+                        includeDiscoveryFailureStage: false,
+                        cancellationToken)
+                    .ConfigureAwait(false),
                 RequestCommandKind.CleanupPreflight => await RunOperationAsync(
                         standardOutput,
                         standardError,
@@ -277,6 +291,12 @@ internal static class AtlasCliApplication
         if (StringComparer.Ordinal.Equals(command, "cleanup-preflight"))
         {
             kind = RequestCommandKind.CleanupPreflight;
+            return true;
+        }
+
+        if (StringComparer.Ordinal.Equals(command, "save-snapshot"))
+        {
+            kind = RequestCommandKind.SaveSnapshot;
             return true;
         }
 
@@ -452,6 +472,7 @@ internal static class AtlasCliApplication
         IntakeConfirm,
         IntakeCopy,
         DefinitionIntake,
+        SaveSnapshot,
         CleanupPreflight,
     }
 

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hcoona:three:celesphonia-modifier:atlas-v0:save-snapshot-receipt:v1",
+  "title": "Atlas Save Snapshot Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runId", "saveRoot", "finalSnapshotRoot", "entries"],
+  "properties": {
+    "schemaVersion": {
+      "const": "atlas-save-snapshot-receipt/v1"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "saveRoot": {
+      "$ref": "#/$defs/absolutePath"
+    },
+    "finalSnapshotRoot": {
+      "$ref": "#/$defs/absolutePath"
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 22,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sourceFileName", "destinationRelativePath", "length", "sha256"],
+        "properties": {
+          "sourceFileName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32768
+          },
+          "destinationRelativePath": {
+            "type": "string",
+            "enum": [
+              "global.rpgsave",
+              "config.rpgsave",
+              "file1.rpgsave",
+              "file2.rpgsave",
+              "file3.rpgsave",
+              "file4.rpgsave",
+              "file5.rpgsave",
+              "file6.rpgsave",
+              "file7.rpgsave",
+              "file8.rpgsave",
+              "file9.rpgsave",
+              "file10.rpgsave",
+              "file11.rpgsave",
+              "file12.rpgsave",
+              "file13.rpgsave",
+              "file14.rpgsave",
+              "file15.rpgsave",
+              "file16.rpgsave",
+              "file17.rpgsave",
+              "file18.rpgsave",
+              "file19.rpgsave",
+              "file20.rpgsave"
+            ]
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9223372036854775807
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "absolutePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32768
+    }
+  }
+}

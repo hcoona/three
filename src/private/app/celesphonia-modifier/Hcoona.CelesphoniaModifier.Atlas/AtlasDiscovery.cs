@@ -3819,6 +3819,8 @@ internal sealed class AtlasIoSeams
     public Action<string, bool> DeleteDirectory { get; init; } =
         static (path, recursive) => Directory.Delete(path, recursive);
 
+    public Action<string> DeleteFile { get; init; } = File.Delete;
+
     public Action<string, FileAttributes> SetAttributes { get; init; } = File.SetAttributes;
 
     public Func<string, long> GetLength { get; init; } =
