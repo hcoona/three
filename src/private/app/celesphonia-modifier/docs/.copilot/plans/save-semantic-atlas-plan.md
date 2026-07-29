@@ -17,11 +17,19 @@
 > and deferred editor questions. This notice imports no execution authority before `R3R1`, and this
 > document grants no real-data or original-write authority afterward.
 
+<!-- Separate independent authority notices. -->
+
+> **Conditional A4R1 relationship**
+> Before exact verified shared `R4R1`, no A4 authority comes from this document or the A4R1 candidate.
+> After that event, `atlas-v0-a4-synthetic-structural-scanner.md` partially supersedes only
+> historical A4 scanner mechanics here and governs the synthetic single-document scanner.
+> This document retains historical research and A5+ context without granting A5/private/real authority.
+
 **Lifecycle:** Active normative research baseline before verified shared `R14`; partially superseded and
-historical supporting for A0-A3 execution after verified shared `R14`
+historical supporting for A0-A4 execution after the applicable activation records
 
 **Status:** Confirmed research baseline before verified `R14`; historical supporting under A2R14 after
-verified `R14`
+verified `R14`, including A4 scanner context after verified shared `R4R1`
 
 **Purpose:** Produce a comprehensive, privacy-safe structural map before selecting deep research
 

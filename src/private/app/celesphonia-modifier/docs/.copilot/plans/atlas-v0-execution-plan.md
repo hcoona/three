@@ -15,6 +15,14 @@
 > proportional save snapshot and lossless reader foundation. Presence of the plan, notice, or future
 > record grants no implementation or real-snapshot authority.
 
+<!-- Separate independent authority notices. -->
+
+> **Conditional A4R1 replacement**
+> Before exact verified shared `R4R1`, the historical A4 section remains blocked. After that event,
+> `atlas-v0-a4-synthetic-structural-scanner.md` supersedes only its scanner mechanics and governs the
+> synthetic single-document library increment. A5 and later sections remain historical context with
+> no authority from A4R1.
+
 **Status:** Confirmed execution baseline
 
 > **Conditional A2 amendment**
@@ -89,6 +97,10 @@ Every increment must satisfy:
 10. an independent subagent reviews the complete increment and reports no findings after any
     required repair and re-review iterations.
 
+After verified shared `R4R1`, rule 7 applies to A4R1 only if a later increment adds a command. The
+library-only A4R1 surface instead throws a classified exception or `OperationCanceledException` and
+has no process exit-code contract.
+
 Any privacy leak, mutation of an original save, unexplained nondeterminism, silent structural
 omission, or unapproved scope narrowing is a stop condition.
 
@@ -106,6 +118,12 @@ Canonical records use:
 - JSON Canonicalization Scheme-compatible encoding where a digest is required; and
 - explicit digests for source commit, built scanner binary, .NET SDK, schema, redaction policy,
   configuration, and safe reference corpus.
+
+After verified shared `R4R1`, the A4R1 canonical contract is the narrower contract in
+`atlas-v0-a4-synthetic-structural-scanner.md`. Where this section conflicts, A4R1 uses its fixed
+property order and traversal preorder rather than record sorting, contains no digest fields, and
+requires no JCS compatibility beyond its explicitly defined canonical UTF-8 representation. The
+sorting, digest, and JCS requirements above do not apply to A4R1.
 
 Private-corpus **repeatability** means the same frozen private inputs and exact toolchain produce
 the same canonical bytes. Independent **reproducibility** means a separate implementation run
@@ -253,6 +271,12 @@ exist.
 - Any in-scope baseline input remains unreadable without approved narrowing.
 
 ## 10. Increment A4: Deterministic Structural Scanner
+
+> **Conditional lifecycle**
+> Before verified shared `R4R1`, this historical A4 section remains blocked. After verified shared
+> `R4R1`, its scanner mechanics are superseded by
+> `atlas-v0-a4-synthetic-structural-scanner.md`; the text below remains historical supporting context
+> and is intentionally not rewritten. A4R1 does not activate A5 or later work.
 
 ### Outputs
 
