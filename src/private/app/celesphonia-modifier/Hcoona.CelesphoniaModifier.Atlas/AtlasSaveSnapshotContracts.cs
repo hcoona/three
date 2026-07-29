@@ -137,8 +137,17 @@ public static class AtlasSaveSnapshotContracts
             Path.Combine(finalRoot, ReceiptFileName));
     }
 
-    internal static string NormalizeAbsolutePath(string path) =>
-        AtlasDefinitionIntakeContracts.NormalizeAbsolutePath(path);
+    internal static string NormalizeAbsolutePath(string path)
+    {
+        if (OperatingSystem.IsWindows() && IsWindowsDevicePath(path))
+        {
+            throw new ArgumentException(
+                "Windows device paths are not valid save snapshot paths.",
+                nameof(path));
+        }
+
+        return AtlasDefinitionIntakeContracts.NormalizeAbsolutePath(path);
+    }
 
     internal static bool PathEquals(string first, string second) =>
         string.Equals(
@@ -163,6 +172,23 @@ public static class AtlasSaveSnapshotContracts
         OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
+
+    private static bool IsWindowsDevicePath(string path)
+    {
+        if (path.Length < 4)
+        {
+            return false;
+        }
+
+        bool IsSeparator(char value) => value is '\\' or '/';
+        return IsSeparator(path[0])
+            && ((IsSeparator(path[1])
+                    && path[2] is '?' or '.'
+                    && IsSeparator(path[3]))
+                || (path[1] == '?'
+                    && path[2] == '?'
+                    && IsSeparator(path[3])));
+    }
 
     internal static string NormalizeRelativePath(string path)
     {

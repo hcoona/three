@@ -41,6 +41,36 @@ public sealed class AtlasSaveSnapshotTests
     }
 
     [Fact]
+    public async Task WindowsDevicePathAliasesAreRejectedBeforeLayoutValidation()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        await using SaveSnapshotWorkspace workspace = await SaveSnapshotWorkspace.CreateAsync(
+            ("global.rpgsave", "global"));
+        string[] aliases =
+        [
+            @"\\?\" + workspace.SaveRoot,
+            @"\\.\" + workspace.SaveRoot,
+            @"\??\" + workspace.SaveRoot,
+        ];
+        foreach (string alias in aliases)
+        {
+            await workspace.WriteRequestAsync(alias);
+            await Assert.ThrowsAsync<AtlasRequestException>(
+                () => workspace.RunAsync().AsTask());
+        }
+
+        await workspace.WriteRequestAsync(workspace.SaveRoot);
+        await workspace.MutateRequestAsync(
+            request => request["repositoryRoot"] = @"\\?\" + workspace.RepositoryRoot);
+        await Assert.ThrowsAsync<AtlasRequestException>(
+            () => workspace.RunAsync().AsTask());
+    }
+
+    [Fact]
     public async Task SnapshotCopiesSupportedImmediateChildrenInCanonicalOrder()
     {
         await using SaveSnapshotWorkspace workspace = await SaveSnapshotWorkspace.CreateAsync(
