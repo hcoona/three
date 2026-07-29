@@ -25,7 +25,6 @@ export const PACKAGE_ROOT = path.resolve(
   process.env.HEXO_RENDERER_ASCIIDOC_PACKAGE_ROOT ?? path.resolve(import.meta.dirname, '..'),
 );
 export const EXPECTED_HEXO_VERSION = '8.1.2';
-export const EXPECTED_PNPM_VERSION = '10.34.5';
 export const PLACEHOLDER_VERSION = '0.0.0-placeholder';
 export const EXPECTED_ROOT_DIST_FILES = ['index.js', 'index.cjs', 'index.d.ts', 'index.d.cts'];
 export const OPTIONAL_ROOT_DIST_FILES = ['index.d.ts.map', 'index.d.cts.map'];
@@ -146,6 +145,16 @@ export const findMonorepoRoot = (startDirectory) => {
 export const MONOREPO_ROOT = path.resolve(
   process.env.HEXO_RENDERER_ASCIIDOC_REPOSITORY_ROOT ?? findMonorepoRoot(PACKAGE_ROOT),
 );
+
+export const getExpectedPnpmVersion = () => {
+  const miseConfigPath = path.join(PACKAGE_ROOT, '.mise.toml');
+  if (!existsSync(miseConfigPath)) {
+    return runPlain('pnpm', ['--version']).trim();
+  }
+  const version = /^pnpm\s*=\s*"([^"]+)"\s*$/m.exec(readFileSync(miseConfigPath, 'utf8'))?.[1];
+  assert(typeof version === 'string', `${miseConfigPath} must declare an exact pnpm version.`);
+  return version;
+};
 
 export const createEvidenceNormalizer = ({
   repositoryRoot = MONOREPO_ROOT,
@@ -504,10 +513,11 @@ export const removePath = (targetPath) => {
 };
 
 export const requireExactPnpmVersion = () => {
+  const expectedVersion = getExpectedPnpmVersion();
   const version = runPlain('pnpm', ['--version']).trim();
   assert(
-    version === EXPECTED_PNPM_VERSION,
-    `Expected pnpm ${EXPECTED_PNPM_VERSION}, received ${version}. Run this validation through mise.`,
+    version === expectedVersion,
+    `Expected pnpm ${expectedVersion}, received ${version}. Run this validation through mise.`,
   );
   return version;
 };
@@ -647,7 +657,7 @@ export const verifyPackCleanup = ({
 export const createFixturePackageJson = (tarballRelativePath, typescriptVersion) => ({
   name: 'hexo-renderer-asciidoc-packed-consumer',
   private: true,
-  packageManager: `pnpm@${EXPECTED_PNPM_VERSION}`,
+  packageManager: `pnpm@${getExpectedPnpmVersion()}`,
   type: 'module',
   dependencies: {
     hexo: EXPECTED_HEXO_VERSION,

@@ -14,7 +14,7 @@ const packageRoot = path.resolve(import.meta.dirname, '..');
 const distDirectory = path.join(packageRoot, 'dist');
 const expectedDistFiles = ['index.cjs', 'index.d.cts', 'index.d.cts.map', 'index.d.ts', 'index.d.ts.map', 'index.js'];
 const expectedHexoVersion = '8.1.2';
-const expectedPnpmVersion = '10.34.5';
+const expectedPnpmVersion = execFileSync('pnpm', ['--version'], { encoding: 'utf8' }).trim();
 const sourceManifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8')) as {
   dependencies?: { '@asciidoctor/core'?: string };
 };
