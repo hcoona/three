@@ -1,12 +1,13 @@
 using System.Collections.ObjectModel;
-using System.Text;
 using System.Text.Json;
 
 namespace Hcoona.CelesphoniaModifier.Atlas;
 
 public static class AtlasStructuralScanJson
 {
-    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+    private const int CancellationCheckInterval = 4096;
+    private const int MaximumCanonicalStringTokenBytes = 64;
+    private const int MaximumCanonicalNumberTokenBytes = 19;
 
     public static byte[] Serialize(
         AtlasStructuralScanDocument document,
@@ -59,14 +60,7 @@ public static class AtlasStructuralScanJson
             throw Malformed();
         }
 
-        try
-        {
-            _ = StrictUtf8.GetCharCount(input);
-        }
-        catch (DecoderFallbackException)
-        {
-            throw Malformed();
-        }
+        ValidateCanonicalLexicalBounds(input[..^1], cancellationToken);
 
         AtlasStructuralScanDocument document;
         try
@@ -363,6 +357,100 @@ public static class AtlasStructuralScanJson
         }
 
         return true;
+    }
+
+    private static void ValidateCanonicalLexicalBounds(
+        ReadOnlySpan<byte> input,
+        CancellationToken cancellationToken
+    )
+    {
+        bool inString = false;
+        int stringLength = 0;
+        int numberLength = 0;
+        for (int index = 0; index < input.Length; index++)
+        {
+            if (index % CancellationCheckInterval == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            byte value = input[index];
+            if (value > 0x7F)
+            {
+                throw Malformed();
+            }
+
+            if (inString)
+            {
+                if (value == (byte)'"')
+                {
+                    inString = false;
+                    stringLength = 0;
+                    continue;
+                }
+
+                if (
+                    value == (byte)'\\'
+                    || value < 0x20
+                    || ++stringLength > MaximumCanonicalStringTokenBytes
+                )
+                {
+                    throw Malformed();
+                }
+
+                continue;
+            }
+
+            if (value == (byte)'"')
+            {
+                inString = true;
+                numberLength = 0;
+                continue;
+            }
+
+            if (value is (byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n' || value < 0x20)
+            {
+                throw Malformed();
+            }
+
+            if (value is >= (byte)'0' and <= (byte)'9')
+            {
+                if (++numberLength > MaximumCanonicalNumberTokenBytes)
+                {
+                    throw Malformed();
+                }
+
+                continue;
+            }
+
+            numberLength = 0;
+            if (
+                value
+                is not (byte)'{'
+                    and not (byte)'}'
+                    and not (byte)'['
+                    and not (byte)']'
+                    and not (byte)':'
+                    and not (byte)','
+                    and not (byte)'t'
+                    and not (byte)'r'
+                    and not (byte)'u'
+                    and not (byte)'e'
+                    and not (byte)'f'
+                    and not (byte)'a'
+                    and not (byte)'l'
+                    and not (byte)'s'
+            )
+            {
+                throw Malformed();
+            }
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (inString)
+        {
+            throw Malformed();
+        }
     }
 
     private static AtlasStructuralScanException Malformed() =>

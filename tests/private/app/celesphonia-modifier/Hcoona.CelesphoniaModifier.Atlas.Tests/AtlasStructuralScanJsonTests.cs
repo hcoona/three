@@ -282,6 +282,27 @@ public sealed class AtlasStructuralScanJsonTests
             new AtlasStructuralScanDocument(document.DocumentRole, document.Census, wrongIndex),
             AtlasStructuralScanFailure.InvalidLocator
         );
+
+        AtlasStructuralScanDocument invalidClassMarker = new(
+            AtlasDocumentRole.GlobalSave,
+            new AtlasStructuralScanCensus(1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0),
+            [
+                new AtlasStructuralObjectObservation(
+                    new AtlasStructuralLocator(
+                        AtlasStructuralLocatorSubject.NodeOccurrence,
+                        []
+                    ),
+                    AtlasStructuralObjectShape.PlainObject,
+                    0,
+                    classMarkerPresent: true,
+                    identityDefinitionLocator: null
+                ),
+            ]
+        );
+        AssertSerializationFailure(
+            invalidClassMarker,
+            AtlasStructuralScanFailure.InvalidLocator
+        );
     }
 
     [Fact]
@@ -375,6 +396,26 @@ public sealed class AtlasStructuralScanJsonTests
                 cancellationToken: canceled.Token
             )
         );
+
+        string largeJson = "[" + string.Join(",", Enumerable.Repeat("0", 100_000)) + "]";
+        AtlasSaveReadResult largeSource = ReadJson(largeJson);
+        AtlasStructuralScanResult largeScan = AtlasStructuralScanner.Scan(
+            largeSource,
+            AtlasDocumentRole.GlobalSave,
+            cancellationToken: TestContext.Current.CancellationToken
+        );
+        using CancellationTokenSource during = new();
+        Task<AtlasStructuralScanResult> parsing = Task.Run(() =>
+        {
+            during.CancelAfter(TimeSpan.FromMilliseconds(1));
+            return AtlasStructuralScanJson.Parse(
+                largeScan.CanonicalUtf8,
+                largeSource,
+                AtlasDocumentRole.GlobalSave,
+                cancellationToken: during.Token
+            );
+        });
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await parsing);
     }
 
     [Fact]

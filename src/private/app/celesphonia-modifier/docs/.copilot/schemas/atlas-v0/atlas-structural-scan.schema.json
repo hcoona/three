@@ -214,7 +214,7 @@
           "$ref": "#/$defs/nonnegativeInt64"
         },
         "classMarkerPresent": {
-          "type": "boolean"
+          "const": false
         },
         "identityDefinitionPresent": {
           "const": false

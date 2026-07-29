@@ -213,6 +213,7 @@ internal static class AtlasStructuralScanValidator
                 is not AtlasStructuralObjectShape.PlainObject
                     and not AtlasStructuralObjectShape.IdentityObject
             || identityShape != observation.IdentityDefinitionPresent
+            || observation.ClassMarkerPresent && !identityShape
         )
         {
             throw InvalidLocator();
