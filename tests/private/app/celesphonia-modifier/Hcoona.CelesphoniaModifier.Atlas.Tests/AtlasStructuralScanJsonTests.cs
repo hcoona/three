@@ -200,6 +200,104 @@ public sealed class AtlasStructuralScanJsonTests
     }
 
     [Fact]
+    public void ParserRejectsSourceBoundOmittedObjectMember()
+    {
+        AtlasSaveReadResult source = ReadJson("{\"only\":0}");
+        JsonObject document = ScanCanonicalDocument(source);
+        JsonObject census = GetObject(document, "census");
+        JsonArray observations = GetArray(document, "observations");
+
+        observations.RemoveAt(1);
+        FindObservation(document, "kind", "object")["childCount"] = 0;
+        census["nodeOccurrences"] = 1;
+        census["scalarOccurrences"] = 0;
+        census["ordinaryMemberEdges"] = 0;
+
+        byte[] mutated = GetCanonicalBytes(document);
+        _ = AtlasStructuralScanJson.Parse(
+            mutated,
+            ReadJson("{}"),
+            AtlasDocumentRole.GlobalSave,
+            cancellationToken: TestContext.Current.CancellationToken
+        );
+        AssertSourceFailure(mutated, source, AtlasStructuralScanFailure.CensusMismatch);
+    }
+
+    [Fact]
+    public void ParserRejectsSourceBoundOmittedIdentityDefinition()
+    {
+        AtlasSaveReadResult source = ReadJson("{\"@c\":1,\"value\":0}");
+        JsonObject document = ScanCanonicalDocument(source);
+        JsonObject census = GetObject(document, "census");
+        JsonObject identity = FindObservation(document, "kind", "object");
+
+        identity["shape"] = "plain-object";
+        identity["identityDefinitionPresent"] = false;
+        Assert.True(identity.Remove("identityDefinitionLocator"));
+        census["identityDefinitions"] = 0;
+
+        byte[] mutated = GetCanonicalBytes(document);
+        _ = AtlasStructuralScanJson.Parse(
+            mutated,
+            ReadJson("{\"value\":0}"),
+            AtlasDocumentRole.GlobalSave,
+            cancellationToken: TestContext.Current.CancellationToken
+        );
+        AssertSourceFailure(mutated, source, AtlasStructuralScanFailure.CensusMismatch);
+    }
+
+    [Fact]
+    public void ParserRejectsSourceBoundOmittedReferenceOccurrence()
+    {
+        AtlasSaveReadResult source = ReadJson(
+            "{\"target\":{\"@c\":1,\"value\":0},\"reference\":{\"@r\":1}}"
+        );
+        JsonObject document = ScanCanonicalDocument(source);
+        JsonObject census = GetObject(document, "census");
+        JsonArray observations = GetArray(document, "observations");
+
+        observations.RemoveAt(observations.Count - 1);
+        FindObservation(document, "kind", "object")["childCount"] = 1;
+        census["nodeOccurrences"] = 3;
+        census["referenceOccurrences"] = 0;
+        census["ordinaryMemberEdges"] = 2;
+        census["distinctReferencedDefinitions"] = 0;
+
+        byte[] mutated = GetCanonicalBytes(document);
+        _ = AtlasStructuralScanJson.Parse(
+            mutated,
+            ReadJson("{\"target\":{\"@c\":1,\"value\":0}}"),
+            AtlasDocumentRole.GlobalSave,
+            cancellationToken: TestContext.Current.CancellationToken
+        );
+        AssertSourceFailure(mutated, source, AtlasStructuralScanFailure.CensusMismatch);
+    }
+
+    [Fact]
+    public void ParserRejectsSourceBoundChangedOrdinaryMemberOrdinal()
+    {
+        AtlasSaveReadResult source = ReadJson("{\"first\":0,\"second\":\"x\"}");
+        JsonObject document = ScanCanonicalDocument(source);
+        JsonArray observations = GetArray(document, "observations");
+        JsonObject first = Assert.IsType<JsonObject>(observations[1]?.DeepClone());
+        JsonObject second = Assert.IsType<JsonObject>(observations[2]?.DeepClone());
+
+        GetArray(GetObject(first, "locator"), "segments")[0]!["ordinal"] = 1;
+        GetArray(GetObject(second, "locator"), "segments")[0]!["ordinal"] = 0;
+        observations[1] = second;
+        observations[2] = first;
+
+        byte[] mutated = GetCanonicalBytes(document);
+        _ = AtlasStructuralScanJson.Parse(
+            mutated,
+            ReadJson("{\"second\":\"x\",\"first\":0}"),
+            AtlasDocumentRole.GlobalSave,
+            cancellationToken: TestContext.Current.CancellationToken
+        );
+        AssertSourceFailure(mutated, source, AtlasStructuralScanFailure.SourceMismatch);
+    }
+
+    [Fact]
     public void StructuralValidationRejectsAllCensusMutationsAndLocatorFaults()
     {
         AtlasStructuralScanDocument document = AtlasStructuralScanner
@@ -465,6 +563,61 @@ public sealed class AtlasStructuralScanJsonTests
     }
 
     [Fact]
+    public void ValidationAgainstSourceObservesScheduledCancellation()
+    {
+        AtlasSaveReadResult source = ReadJson(
+            "[" + string.Join(",", Enumerable.Repeat("0", 150_000)) + "]"
+        );
+        AtlasStructuralScanDocument document = AtlasStructuralScanner
+            .Scan(
+                source,
+                AtlasDocumentRole.GlobalSave,
+                cancellationToken: TestContext.Current.CancellationToken
+            )
+            .Document;
+
+        AssertScheduledCancellation(cancellationToken =>
+            AtlasStructuralScanValidator.ValidateAgainstSource(
+                document,
+                source,
+                AtlasDocumentRole.GlobalSave,
+                AtlasStructuralScannerLimits.Default,
+                cancellationToken
+            )
+        );
+    }
+
+    [Fact]
+    public void SerializeValidatedObservesScheduledCancellation()
+    {
+        AtlasSaveReadResult source = ReadJson(
+            "[" + string.Join(",", Enumerable.Repeat("0", 150_000)) + "]"
+        );
+        AtlasStructuralScanDocument document = AtlasStructuralScanner
+            .Scan(
+                source,
+                AtlasDocumentRole.GlobalSave,
+                cancellationToken: TestContext.Current.CancellationToken
+            )
+            .Document;
+        AtlasStructuralScanValidator.ValidateAgainstSource(
+            document,
+            source,
+            AtlasDocumentRole.GlobalSave,
+            AtlasStructuralScannerLimits.Default,
+            TestContext.Current.CancellationToken
+        );
+
+        AssertScheduledCancellation(cancellationToken =>
+            AtlasStructuralScanJson.SerializeValidated(
+                document,
+                AtlasStructuralScannerLimits.Default,
+                cancellationToken
+            )
+        );
+    }
+
+    [Fact]
     public void SchemaIsClosedDraft202012AndValidatesCanonicalOutputAndMutations()
     {
         string schemaPath = Path.Combine(
@@ -630,6 +783,44 @@ public sealed class AtlasStructuralScanJsonTests
             )
         );
         Assert.Equal(expected, exception.Failure);
+    }
+
+    private static JsonObject ScanCanonicalDocument(AtlasSaveReadResult source) =>
+        Assert.IsType<JsonObject>(
+            JsonNode.Parse(
+                AtlasStructuralScanner
+                    .Scan(
+                        source,
+                        AtlasDocumentRole.GlobalSave,
+                        cancellationToken: TestContext.Current.CancellationToken
+                    )
+                    .GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken)
+            )
+        );
+
+    private static byte[] GetCanonicalBytes(JsonObject document) =>
+        Encoding.UTF8.GetBytes(document.ToJsonString() + "\n");
+
+    private static void AssertScheduledCancellation(Action<CancellationToken> operation)
+    {
+        using CancellationTokenSource during = new();
+        using ManualResetEventSlim start = new();
+        Thread cancellationThread = new(() =>
+        {
+            start.Wait();
+            Thread.SpinWait(100_000);
+            during.Cancel();
+        });
+        cancellationThread.Start();
+        start.Set();
+        try
+        {
+            Assert.ThrowsAny<OperationCanceledException>(() => operation(during.Token));
+        }
+        finally
+        {
+            cancellationThread.Join();
+        }
     }
 
     private static AtlasSaveReadResult ReadJson(string json) =>

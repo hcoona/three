@@ -349,6 +349,59 @@ public sealed class AtlasStructuralScannerTests
     }
 
     [Fact]
+    public async Task ReferenceResolutionPassObservesCancellation()
+    {
+        const int referenceCount = 160_000;
+        const int pacingReferenceCount = 120_000;
+        AtlasSaveReadResult source = ReadJson(CreateReferenceDominatedJson(referenceCount));
+        AtlasSaveReadResult pacingSource = ReadJson(
+            CreateReferenceDominatedJson(pacingReferenceCount)
+        );
+        AtlasStructuralScannerLimits limits = AtlasStructuralScannerLimits.Default;
+        _ = AtlasStructuralScanner.BuildDocument(
+            ReadJson(CreateReferenceDominatedJson(10)),
+            AtlasDocumentRole.ConfigSave,
+            limits,
+            TestContext.Current.CancellationToken
+        );
+
+        using CancellationTokenSource during = new();
+        using ManualResetEventSlim started = new();
+        Task<AtlasStructuralScanDocument> scanning = Task.Factory.StartNew(
+            () =>
+            {
+                started.Set();
+                return AtlasStructuralScanner.BuildDocument(
+                    source,
+                    AtlasDocumentRole.ConfigSave,
+                    limits,
+                    during.Token
+                );
+            },
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default
+        );
+
+        Assert.True(
+            started.Wait(
+                TimeSpan.FromSeconds(10),
+                TestContext.Current.CancellationToken
+            )
+        );
+        // Pace cancellation with same-shape work so it lands late without a production phase hook.
+        _ = AtlasStructuralScanner.BuildDocument(
+            pacingSource,
+            AtlasDocumentRole.ConfigSave,
+            limits,
+            TestContext.Current.CancellationToken
+        );
+        Assert.False(scanning.IsCompleted);
+        await during.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await scanning);
+    }
+
+    [Fact]
     public void PublicA4SurfaceIsInMemoryAndHasNoFilesystemOrCliTypes()
     {
         Type[] types =
@@ -835,6 +888,11 @@ public sealed class AtlasStructuralScannerTests
     private static AtlasOrdinaryMemberLocatorSegment Member(long ordinal) => new(ordinal);
 
     private static AtlasArrayElementLocatorSegment Element(long index) => new(index);
+
+    private static string CreateReferenceDominatedJson(int referenceCount) =>
+        "{\"@c\":1,\"references\":["
+        + string.Join(",", Enumerable.Repeat("{\"@r\":1}", referenceCount))
+        + "]}";
 
     private static AtlasStructuralScanResult Scan(string json) =>
         AtlasStructuralScanner.Scan(
