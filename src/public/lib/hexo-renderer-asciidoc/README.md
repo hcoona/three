@@ -10,7 +10,7 @@
 [![Node support](https://img.shields.io/node/v/hexo-renderer-asciidoc.svg?logo=node.js)](package.json)
 [![License: LGPL-3.0-or-later](https://img.shields.io/badge/license-LGPL--3.0--or--later-0a76d5.svg)](LICENSE)
 
-Add first-class [AsciiDoc](https://asciidoc.org/) support to Hexo. This repository branch documents the 4.x migration, which uses `@asciidoctor/core` / Asciidoctor.js 4.0.5, returns `Promise<string>`, registers the Hexo renderer asynchronously, re-highlights recognized listing blocks with fixed `hexo-util.highlight` options, and encodes literal braces before returning the resulting HTML to Hexo.
+Add first-class [AsciiDoc](https://asciidoc.org/) support to Hexo. This repository branch documents the 4.x migration, which uses `@asciidoctor/core` / Asciidoctor.js 4.x, returns `Promise<string>`, registers the Hexo renderer asynchronously, re-highlights recognized listing blocks with fixed `hexo-util.highlight` options, and encodes literal braces before returning the resulting HTML to Hexo.
 
 ## Rendering contract
 
