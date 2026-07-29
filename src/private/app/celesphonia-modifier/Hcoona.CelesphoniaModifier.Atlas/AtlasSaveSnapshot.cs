@@ -71,6 +71,7 @@ public static class AtlasSaveSnapshot
                     io,
                     cancellationToken).ConfigureAwait(false))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 io.MoveDirectory(layout.IncompleteRoot, layout.FinalRoot);
                 return;
             }
@@ -142,6 +143,7 @@ public static class AtlasSaveSnapshot
             throw new AtlasSafetyException("The completed save snapshot is invalid.");
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         io.MoveDirectory(layout.IncompleteRoot, layout.FinalRoot);
     }
 

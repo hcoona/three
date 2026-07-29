@@ -728,6 +728,66 @@ public sealed class AtlasSaveSnapshotTests
         }
     }
 
+    [Fact]
+    public async Task CancellationAfterNewCandidateValidationPreventsPromotion()
+    {
+        await using SaveSnapshotWorkspace workspace = await SaveSnapshotWorkspace.CreateAsync(
+            ("global.rpgsave", "global"));
+        using CancellationTokenSource source = new();
+        int incompleteLengthReads = 0;
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            getLength: path =>
+            {
+                long length = AtlasIoSeams.Default.GetLength(path);
+                if (AtlasSaveSnapshotContracts.ContainsPath(workspace.IncompleteRoot, path)
+                    && StringComparer.Ordinal.Equals(
+                        Path.GetFileName(path),
+                        "global.rpgsave")
+                    && ++incompleteLengthReads == 2)
+                {
+                    source.Cancel();
+                }
+
+                return length;
+            });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => workspace.RunAsync(io, source.Token).AsTask());
+
+        Assert.True(Directory.Exists(workspace.IncompleteRoot));
+        Assert.False(Directory.Exists(workspace.FinalRoot));
+    }
+
+    [Fact]
+    public async Task CancellationAfterIncompleteValidationPreventsPromotion()
+    {
+        await using SaveSnapshotWorkspace workspace = await SaveSnapshotWorkspace.CreateAsync(
+            ("global.rpgsave", "global"));
+        await workspace.RunAsync();
+        Directory.Move(workspace.FinalRoot, workspace.IncompleteRoot);
+        using CancellationTokenSource source = new();
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            getLength: path =>
+            {
+                long length = AtlasIoSeams.Default.GetLength(path);
+                if (AtlasSaveSnapshotContracts.ContainsPath(workspace.IncompleteRoot, path)
+                    && StringComparer.Ordinal.Equals(
+                        Path.GetFileName(path),
+                        "global.rpgsave"))
+                {
+                    source.Cancel();
+                }
+
+                return length;
+            });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => workspace.RunAsync(io, source.Token).AsTask());
+
+        Assert.True(Directory.Exists(workspace.IncompleteRoot));
+        Assert.False(Directory.Exists(workspace.FinalRoot));
+    }
+
     private static AtlasIoSeams CreateLiveSourceThrowingIo(string saveRoot) =>
         AtlasTestSupport.CreateIo(
             fileExists: path =>
