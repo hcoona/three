@@ -862,3 +862,241 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   batch evidence bundles as `v1alpha2`.
 - Recorded selector, command, and runner-family orchestrator dependency-selection
   timing evidence requirements for hosted analysis.
+
+## [2026-07-10] query | Establish delivery architecture glossary
+
+- Added a working ideal-architecture glossary for the peer CI Qualification and
+  Release Delivery systems.
+- Recorded the Shared Foundation and Delivery Governance boundaries.
+- Confirmed Component, Release Unit, and Qualification Target as the core object
+  model.
+- Recorded that Release rebuilds its artifacts and independently reruns required
+  quality checks instead of reusing pull request artifacts or CI results.
+
+## [2026-07-10] query | Confirm authority promotion model
+
+- Added the Trusted Decision Kernel, Authority Epoch, Candidate Authority, and
+  Atomic Authority Promotion terms.
+- Set complete pull-request testing and atomic activation on merge as the
+  default authority-upgrade path.
+- Limited mandatory post-merge shadowing to governance or platform behavior
+  that cannot be adequately exercised before merge.
+
+## [2026-07-10] query | Confirm runtime trust zones
+
+- Defined separate Decision, Build and Qualification, and Side-Effect runtime
+  zones.
+- Prohibited publication capability in environments that execute target code.
+- Prohibited target-code execution in environments that receive publication
+  capability.
+
+## [2026-07-10] query | Decouple CI and Release runtime state
+
+- Confirmed that CI Qualification and Release Delivery do not consume each
+  other's plans, evidence, artifacts, status checks, or decisions.
+- Kept domain identities, quality definitions, build specifications, ecosystem
+  capabilities, and provenance primitives as shared alignment mechanisms.
+- Assigned release target eligibility to Delivery Governance rather than CI
+  runtime state.
+
+## [2026-07-10] query | Align CI and Release build definitions
+
+- Defined a shared Build Definition with system-owned immutable Build Requests.
+- Required CI to build every publishable variant of an affected Release Unit.
+- Kept CI and Release artifacts, revisions, version identities, evidence, and
+  decisions separate.
+
+## [2026-07-10] query | Define Buddy as preview delivery
+
+- Defined Buddy as a distributable, non-authoritative preview release channel.
+- Required isolated preview destinations, identities, and capabilities.
+- Kept Buddy on the shared Release planning and execution path while forbidding
+  promotion of Buddy artifacts or evidence to Official.
+
+## [2026-07-10] query | Define Official authoritative delivery
+
+- Limited live Official publication to revisions reachable from a
+  Governance-configured authoritative branch.
+- Bound Official authorization to a frozen Release Plan and artifact digests.
+- Allowed non-authoritative branches to exercise Official dry-run behavior
+  without production publication capability.
+
+## [2026-07-10] query | Define immutable release history and remediation
+
+- Defined immutable Official and Buddy release identities and idempotent replay
+  expectations.
+- Added Break-Glass Remediation as a separately authorized operational process
+  rather than a normal Release Intent force flag.
+- Required expected-state checks, destination capability enforcement, scoped
+  remediation capability, and append-only before-and-after audit records.
+
+## [2026-07-30] query | Confirm CI and Release identity binding
+
+- Bound pull-request qualification to the current base, head, and tested merge
+  commit SHAs, with corresponding merge-queue and push identities.
+- Bound Release execution to the target commit, trusted authority commit,
+  Release Unit, frozen plan digest, artifact digests, and plan-specific
+  authorization.
+- Kept branches, tags, and workflow run identifiers as indexes rather than
+  authoritative source identities.
+
+## [2026-07-30] query | Require closed qualification targets
+
+- Required CI to close changed paths over Components, Release Units, variants,
+  global configuration, and control-plane obligations before execution.
+- Required Release to close build dependencies, variants, quality obligations,
+  compatibility obligations, and destinations before execution.
+- Made unresolved scope explicitly blocking rather than implicitly excluded or
+  delegated to executors.
+
+## [2026-07-30] query | Freeze plan semantics at execution
+
+- Allowed executors to resolve locked dependencies, enumerate selected tests,
+  locate declared outputs, inspect remote state, and adapt runner paths.
+- Prohibited executors from changing Components, Release Units, variants,
+  obligations, versions, artifacts, destinations, or authorization.
+- Required runtime conflicts with the Plan or Build Definition to fail rather
+  than trigger replanning.
+
+## [2026-07-30] query | Define lightweight evidence admission
+
+- Required exact correlation of execution results to candidate or target
+  commits, authority, plans, obligations, producers, attempts, runners, and
+  artifact digests.
+- Kept Evidence Admission lightweight by prohibiting command re-execution or
+  duplicate quality-result interpretation in the Decision Zone.
+- Reserved additional digest and provenance verification for high-risk
+  side-effect boundaries.
+
+## [2026-07-30] query | Define structural success conditions
+
+- Added explicit Plan readiness, obligation disposition, and obligation outcome
+  states.
+- Required every mandatory obligation to have admitted successful Evidence.
+- Made skipped, cancelled, timed-out, missing, unknown, and conflicting states
+  non-successful by construction.
+- Limited diagnostics to explanation rather than verdict derivation.
+
+## [2026-07-30] query | Make final decisions append-only
+
+- Defined immutable Final Decision records bound to identity, authority, plans,
+  Evidence Sets, obligation outcomes, and verdicts.
+- Required reruns and late Evidence to create new Decisions.
+- Treated GitHub required checks as projections of the latest authoritative
+  Decision rather than the durable audit record.
+
+## [2026-07-30] query | Bind publication to scoped capabilities
+
+- Required Delivery Governance to grant publication authority externally from
+  qualification and planning.
+- Bound short-lived Capabilities to channels, commits, plans, artifacts,
+  destinations, actions, validity windows, and attempts.
+- Isolated CI, Buddy, Official, dry-run, and Break-Glass Remediation authority.
+
+## [2026-07-30] query | Define whole-release replay and reconciliation
+
+- Selected whole-release replay instead of GitHub failed-job resumption.
+- Required each replay to rerun planning, build, qualification, authorization
+  checks, and reporting while skipping only remotely satisfied side effects.
+- Defined partial publication as an append-only per-destination Saga requiring
+  reconciliation rather than automatic rollback.
+- Recorded bit-for-bit reproducible Release builds as a Release Unit business
+  contract without adding duplicate-build certification to the delivery system.
+
+## [2026-07-30] query | Normalize remote-state observation
+
+- Made destination observation a normal planning step for every Release Attempt,
+  including the first attempt and whole-release replay.
+- Limited reconciliation to partial, unknown, conflicting, or unprovable remote
+  state.
+- Removed any requirement for a dedicated post-cancellation reconciliation
+  workflow.
+
+## [2026-07-30] query | Define CI and Release concurrency
+
+- Allowed CI to cancel superseded candidate runs.
+- Serialized Release by Official canonical identity or Buddy preview identity
+  without cancelling in-progress execution.
+- Required Remediation to share the affected Release and destination locks.
+- Rejected or coalesced duplicate pending requests instead of relying on an
+  unbounded native GitHub concurrency queue.
+
+## [2026-07-30] query | Classify caches as non-authoritative
+
+- Classified package, tool, and build caches as performance mechanisms rather
+  than correctness dependencies.
+- Allowed tools to use cache whenever available without requiring an explicit
+  cache-disabled execution mode.
+- Required continuous cache unavailability to leave scope, Evidence, and verdict
+  semantics unchanged.
+
+## [2026-07-30] query | Require just-in-time publication capability
+
+- Allowed build and qualification to complete without publication credentials.
+- Requested OIDC or equivalent publication capability only when a Side-Effect
+  action needs it, without a separate availability probe.
+- Prohibited fallback to long-lived tokens, alternate environments, or alternate
+  workflow identities when capability acquisition fails.
+
+## [2026-07-30] query | Separate audit records from telemetry
+
+- Classified Plans, Evidence, artifact identities, Decisions, and Receipts as
+  authoritative delivery records.
+- Required a Release Attempt to stop before further side effects when a
+  publication Receipt cannot be persisted.
+- Allowed optional metrics, diagnostics, dashboards, and notifications to fail
+  without changing correctness.
+
+## [2026-07-30] query | Adopt platform-native record retention
+
+- Recorded the public-repository GitHub Actions retention ceiling and the
+  workflows' current 30-day operational retention.
+- Assigned longer-lived identity and provenance to Git tags, registries, GitHub
+  Releases when selected, and GitHub Artifact Attestations.
+- Deferred any external Durable Release Ledger or universal GitHub Release audit
+  anchor until a concrete compliance requirement exists.
+
+## [2026-07-30] query | Confirm ordinary CI latency SLO
+
+- Retained a P95 12-minute Final Decision objective for ordinary pull requests.
+- Measured broad authority, policy, toolchain, and multi-Release-Unit changes
+  separately.
+- Prohibited latency optimization from reducing required obligations, variant
+  coverage, or Evidence Admission.
+
+## [2026-07-30] query | Define shared delivery extension points
+
+- Defined Repository Model Provider, Build Adapter, Quality Adapter, and
+  Destination Adapter boundaries.
+- Kept CI Qualification and Release Delivery as independent aggregate roots.
+- Limited Trusted Decision Kernel changes to new cross-system authority
+  semantics rather than ordinary ecosystem or destination additions.
+
+## [2026-07-30] query | Make decision explanation contractual
+
+- Required CI Decisions to explain path, Component, Release Unit, obligation,
+  variant, Evidence, and verdict relationships.
+- Required Release reports to explain identity, artifact, destination,
+  observation, action, Receipt, authority, and recovery relationships.
+- Kept human GitHub summaries and machine-readable reports as projections of one
+  model.
+
+## [2026-07-30] query | Synthesize workflow delivery target architecture
+
+- Added the confirmed ideal top-level architecture for peer CI Qualification and
+  Release Delivery systems.
+- Integrated Delivery Governance, Trusted Decision Kernel, runtime trust zones,
+  shared adapters, independent aggregate roots, Buddy and Official semantics,
+  whole-release replay, and platform-aware retention.
+- Defined one logical Release Plan lineage with immutable Qualification and
+  Publication snapshots.
+
+## [2026-07-30] query | Version workflow delivery documentation
+
+- Established explicit v1, v2, and v3 architecture entry points.
+- Moved active target architecture and glossary under the normative `v3/`
+  directory.
+- Archived v2 by immutable commit instead of copying superseded normative design
+  into the clean v3 line.
+- Added rules for porting platform observations and mechanism assets while
+  rewriting requirements, design, runbooks, and implementation plans.
