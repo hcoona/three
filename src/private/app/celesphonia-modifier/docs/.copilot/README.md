@@ -31,6 +31,9 @@ authority.
 Before verified shared `R6R2`, it grants no implementation or private-read authority; afterward it
 governs only synthetic implementation of a read-only, all-slot validator over one explicitly named
 finalized A3 snapshot. Private execution remains separately gated after `G6R2`.
+`plans/atlas-v0-a6-gold-mutation-kernel.md` is the conditional A6R3 governing plan. Before verified
+shared `R6R3`, it grants no implementation authority; afterward it governs only pure in-memory,
+fixed two-path candidate generation and grants no filesystem-write or operation authority.
 
 ## Normative baseline
 
@@ -61,6 +64,10 @@ finalized A3 snapshot. Private execution remains separately gated after `G6R2`.
   across every slot copy in one finalized A3 snapshot. `G6R2` releases only the runner; private
   execution requires explicit exact-receipt authorization and closes separately at `X6R2`. It grants
   no Gold semantics, range, coupling, write-set, edit, encoder, filesystem-write, or writer authority.
+- `plans/atlas-v0-a6-gold-mutation-kernel.md` is the conditional A6R3 governing plan. After verified
+  shared `R6R3`, it authorizes only synthetic implementation of a pure in-memory fixed two-path Gold
+  candidate transform. Verified `X6R2` is sequencing evidence only, and `G6R3` grants no filesystem
+  write, operation, private-execution, semantic, range, coupling, transaction, or recovery authority.
 - `plans/atlas-v0-a0-research-contract.md` records the approved finite corpus, definition,
   privacy, redaction, Agent-egress, artifact-lifecycle, and handoff contract for increment A0.
   Human scope approval alone does not establish increment completion.
@@ -275,6 +282,11 @@ finalized A3 snapshot. Private execution remains separately gated after `G6R2`.
 - `reviews/atlas-v0-a6-explicit-gold-snapshot-validation-private-execution-completion.md`, when
   present and verified as exact `X6R2`, records only the plan's repository-safe completion
   classification and grants no semantic, range, coupling, write-set, edit, or write authority.
+- `reviews/atlas-v0-a6-gold-mutation-kernel-plan-review.md`, when present and verified as exact
+  `R6R3`, activates only synthetic A6R3 implementation authority.
+- `reviews/atlas-v0-a6-gold-mutation-kernel-release-gate.md`, when present and verified as exact
+  `G6R3`, releases only pure in-memory candidate generation and grants no filesystem-write or
+  operation authority.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` is obsolete and blocked. A2R8 publishes no private
   discovery token, disposition, outcome, count, difference, hash, path, name, or document content.
 
