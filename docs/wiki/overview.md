@@ -26,7 +26,8 @@ for new v3 implementation work.
   quality, and destination mechanisms without owning business policy.
 - Decision, Build and Qualification, and Side-Effect Zones are separate runtime
   trust boundaries.
-- Component, Release Unit, and Qualification Target are the core domain objects.
+- Release Unit and Qualification Target are the core domain objects. Project
+  Nodes and dependency relationships are discovered technical facts.
 - CI and Release share Build Definitions and adapters but do not share runtime
   Plans, Evidence, artifacts, or verdicts.
 - Release uses one logical Plan lineage with immutable Qualification and
@@ -68,7 +69,7 @@ have changed.
 ## Next Architecture Work
 
 1. Review and confirm the v3 requirements baseline.
-2. Define the Repository and Product Model MLD.
+2. Define the Repository Model and Release Unit MLD.
 3. Define the Trusted Decision Kernel and Governance Integration MLD.
 4. Define the CI Qualification MLD.
 5. Define the Release Delivery MLD.

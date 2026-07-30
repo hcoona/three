@@ -174,56 +174,60 @@ Official is not a separate release implementation.
 
 ## Core Domain Terms
 
-### Component
+### Project Node
 
-A logical code or infrastructure unit in the repository with an identity,
-ownership boundary, dependency relationships, and applicable quality capabilities.
+A normalized technical fact discovered from an ecosystem manifest or workspace
+at an immutable repository revision.
 
-Components are primarily used for repository modeling and change-impact analysis.
-A Component is not necessarily independently versioned or published.
+Examples include a .NET project, Python project, or JavaScript package. A
+Project Node records ecosystem identity, source location, dependency
+relationships, build capabilities, and relevant manifest facts.
 
-Examples may include a .NET project, Python package source tree, shared build tool,
-or cross-project test infrastructure.
+A Project Node is not an authored ownership, qualification, versioning, or
+publication boundary. The ecosystem build system remains authoritative for its
+internal dependency and output semantics.
 
 ### Release Unit
 
 A logical product unit that is versioned, qualified, authorized, and delivered as
 one release concern.
 
-A Release Unit may contain one or more Components and may produce multiple
-artifacts or platform variants. Repository project boundaries do not automatically
-define Release Unit boundaries.
+A Release Unit may produce multiple artifacts or platform variants. It selects
+Build Definitions and entry points without reproducing the internal dependency
+closure already owned by the ecosystem build system. Repository project
+boundaries do not automatically define Release Unit boundaries.
 
 ### Qualification Target
 
-The exact object covered by one quality decision. A Qualification Target must bind
-to an immutable repository revision and identify the relevant Component or Release
-Unit scope.
+The exact object covered by one quality decision. A Qualification Target must
+bind to an immutable repository revision and identify the relevant Project
+Nodes, Release Units, variants, inputs, and obligations.
 
-In CI Qualification, the target is derived from a change and its affected Component
-closure.
+In CI Qualification, the target is derived from changed paths, affected Project
+Nodes and dependency relationships, affected Release Units, global inputs, and
+repository obligations.
 
 In Release Delivery, the target is derived from the selected Release Unit and the
 complete quality scope required by release policy.
 
 A Release Qualification Target contains:
 
-- every Component inside the Release Unit;
-- the complete build-dependency closure required to produce the Release Unit;
+- the complete Project Node and declared-input closure required by the selected
+  Build Definitions;
 - every artifact variant selected for publication;
 - every quality check declared by the Release Unit, without changed-path
   pruning; and
 - explicit compatibility obligations or contract tests for designated
   consumers.
 
-It does not include every reverse-dependent Component or every repository check
-by default. Release Policy may require a broader consumer closure or a
+It does not include every reverse-dependent Project Node or every repository
+check by default. Release Policy may require a broader consumer closure or a
 repository-wide qualification profile for a specific class of Release Unit.
 
 A Qualification Target must be closed before execution. Planning may explicitly
 fail to close the target, but it must not emit a partial target that leaves
-unknown Components, Release Units, variants, obligations, or destinations for an
-executor to interpret.
+unknown Project Nodes, Release Units, variants, obligations, or destinations
+for an executor to interpret.
 
 For CI, unclassified changed paths, unresolved workspace relationships, and
 changes to control-plane policy or global build configuration produce explicit
@@ -329,7 +333,7 @@ An executor may restore locked dependencies, enumerate tests within a selected
 test target, locate declared outputs, inspect remote state for idempotency, and
 adapt paths to the assigned runner.
 
-It may not add, remove, substitute, or downgrade Components, Release Units,
+It may not add, remove, substitute, or downgrade Project Nodes, Release Units,
 variants, obligations, versions, artifacts, destinations, or authorization
 requirements. A runtime discovery that conflicts with the Plan or Build
 Definition causes failure rather than replanning.
@@ -455,9 +459,9 @@ Plans.
 ### Qualification Snapshot
 
 The first sealed snapshot in a Release Plan Lineage. It freezes the Release
-Unit, target commit, channel, version, Components, build dependencies, artifact
-variants, Build Definitions, quality obligations, destinations, and
-Publication Capability requirements.
+Unit, target commit, channel, version, Project Node and declared-input closure,
+build dependencies, artifact variants, Build Definitions, quality obligations,
+destinations, and Publication Capability requirements.
 
 It authorizes only unprivileged build and qualification work.
 
@@ -623,10 +627,10 @@ separately and do not share the CI 12-minute objective.
 ### Repository Model Provider
 
 An adapter that converts ecosystem manifests, workspace configuration, global
-configuration, and project relationships into normalized Component, dependency,
-and Release Unit facts.
+configuration, project relationships, and build capabilities into normalized
+Project Node, dependency, path-impact, and global-input facts.
 
-It does not own CI or Release policy.
+It does not infer Release Unit identity or own CI or Release policy.
 
 ### Build Adapter
 
@@ -667,8 +671,9 @@ change only when a new cross-system semantic is required.
 
 The structured reason chain emitted as part of a CI or Release Final Decision.
 
-CI explanations connect changed paths to Components, Release Units, selected
-obligations, variants, Evidence, outcomes, verdict, and corrective actions.
+CI explanations connect changed paths to Project Nodes, dependency
+relationships, Release Units, selected obligations, variants, Evidence,
+outcomes, verdict, and corrective actions.
 
 Release explanations connect the Release Unit, target commit, version, channel,
 artifacts, destination observations, planned actions, Receipts, outcomes,
@@ -733,7 +738,8 @@ Capability.
 5. Release Delivery independently reruns all quality checks required by its policy.
 6. CI and Release may share quality definitions, build specifications, ecosystem
    adapters, and execution capabilities.
-7. Release Qualification covers the complete Release Unit closure plus explicit
+7. Release Qualification covers the complete Project Node and declared-input
+   closure required by the Release Unit Build Definitions, plus explicit
    compatibility obligations.
 8. Authority changes are tested before merge and are approved by the current
    Authority Epoch.
@@ -759,7 +765,8 @@ Capability.
 19. Release actions bind the target commit, authority commit, Release Unit,
     frozen plan, artifact digests, and plan-specific authorization.
 20. CI and Release Qualification Targets are fully closed before execution;
-    unresolved scope is blocking rather than implicitly excluded.
+    unresolved Project Nodes, Release Units, inputs, or obligations are blocking
+    rather than implicitly excluded.
 21. Executors may perform mechanical discovery but cannot change the semantic
     content of an accepted Plan.
 22. Decision aggregation verifies Evidence ownership and integrity without
@@ -793,14 +800,17 @@ Capability.
     operational rather than permanent release records.
 36. Ordinary pull-request CI has a P95 12-minute Final Decision SLO without
     weakening qualification semantics.
-37. Repository modeling, build, quality, and destination behavior extend through
-    stable adapters while CI and Release keep separate aggregate roots.
+37. Repository project and build facts, quality execution, and destination
+    behavior extend through stable adapters while CI and Release keep separate
+    aggregate roots.
 38. CI and Release Decisions include a structured, machine-readable explanation
     that also drives the human GitHub summary.
 39. Each Release Attempt has one logical Plan lineage containing immutable
     Qualification and Publication snapshots; in-place Plan backfill is forbidden.
 40. Architecture review begins from the ideal system direction and boundaries
     before considering the current implementation.
+41. A domain abstraction is introduced only when concrete scenarios demonstrate
+    independent behavior, identity, lifecycle, or policy responsibility.
 
 ## Open Decisions
 

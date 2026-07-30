@@ -77,8 +77,9 @@ against implementation and maintenance cost.
 - **WD-CI-001:** CI must identify the exact candidate tree under evaluation,
   including the applicable base, head, tested merge, merge-group, or push
   revision identity.
-- **WD-CI-002:** CI must map changed paths to Components and the affected
-  Release Unit closure before execution.
+- **WD-CI-002:** CI must map changed paths through discovered Project Nodes,
+  dependency relationships, and global inputs to the affected Release Unit
+  closure before execution.
 - **WD-CI-003:** CI must close the complete Qualification Target before
   execution. Executors must not add, remove, substitute, or downgrade planned
   obligations.
@@ -171,8 +172,9 @@ against implementation and maintenance cost.
   quality command.
 - **WD-EVD-002:** Final Decisions must be append-only. GitHub checks and human
   summaries are projections, not the authoritative audit record.
-- **WD-EVD-003:** CI explanation must connect changed paths, Components,
-  Release Units, variants, obligations, Evidence, outcomes, and the verdict.
+- **WD-EVD-003:** CI explanation must connect changed paths, Project Nodes,
+  dependency relationships, Release Units, variants, obligations, Evidence,
+  outcomes, and the verdict.
 - **WD-EVD-004:** Release explanation must connect target, version, channel,
   artifacts, destinations, observations, actions, Receipts, authority,
   authorization, outcome, and allowed operator actions.

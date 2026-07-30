@@ -50,7 +50,8 @@ state machines.
 CI Qualification:
 
 - evaluates the GitHub candidate tree;
-- maps changed paths to Components and affected Release Units;
+- maps changed paths through Project Nodes, dependency relationships, and
+  global inputs to affected Release Units;
 - closes the complete Qualification Target;
 - builds every publishable variant of each affected Release Unit;
 - executes required and advisory quality obligations;
@@ -101,25 +102,43 @@ Delivery Governance controls:
 
 A business workflow may request authority but cannot grant authority to itself.
 
-## Core Domain Model
+## Repository Facts and Core Domain Model
 
-### Component
+### Project Node
 
-A Component is a repository code or infrastructure unit with ownership,
-dependency relationships, and quality capabilities.
+A Project Node is a normalized technical fact discovered from an ecosystem
+manifest or workspace. Examples include a .NET project, Python project, or
+JavaScript package.
+
+Project Nodes and their dependency relationships describe how the ecosystem
+builds software. They are not independently authored business objects and do
+not define ownership, qualification policy, versioning, or publication
+identity.
+
+Repository Model Providers also identify global inputs and path relationships
+that affect Project Nodes, such as `Directory.Build.props`, workspace
+configuration, or an explicitly declared cross-ecosystem generated-source
+dependency.
 
 ### Release Unit
 
 A Release Unit is an independently versioned and delivered product unit
-containing one or more Components and one or more artifact variants.
+containing one or more artifact variants and the Build Definitions needed to
+produce them.
+
+Release Units are explicit business objects. Their Build Definitions select
+entry points, while ecosystem build systems retain responsibility for internal
+project dependency closure and output composition.
 
 ### Qualification Target
 
 A Qualification Target is the immutable object covered by a quality decision.
 
-- CI derives it from a candidate change and affected Component closure.
-- Release derives it from the complete Release Unit closure, all selected
-  variants, and explicit compatibility obligations.
+- CI derives it from a candidate change, affected Project Node closure, affected
+  Release Units, and applicable repository obligations.
+- Release derives it from the complete Project Node and declared-input closure
+  needed by the Release Unit Build Definitions, all selected variants, and
+  explicit compatibility obligations.
 
 The target closes before execution. Unknown or unclassified scope is blocking.
 
@@ -135,12 +154,23 @@ Receipts, and Release outcome.
 Shared Foundation values may appear in either aggregate, but no aggregate
 imports the other system's runtime state.
 
+### Abstraction Discipline
+
+A named domain abstraction must have concrete independent behavior, identity,
+lifecycle, or policy responsibility. The architecture does not add a layer
+solely to group existing objects or make the model appear more symmetrical.
+
+Project Nodes remain technical repository facts because the current CI and
+Release scenarios require no independent domain object between them and Release
+Units.
+
 ## Shared Foundation
 
 The Shared Foundation exposes four stable extension families:
 
 1. Repository Model Providers normalize ecosystem manifests, workspaces,
-   global configuration, Components, dependencies, and Release Units.
+   global configuration, Project Nodes, dependency relationships, path impact,
+   and build capabilities.
 2. Build Adapters execute shared Build Definitions and map declared artifacts
    to produced outputs.
 3. Quality Adapters execute quality definitions and emit standard Evidence.
@@ -215,7 +245,7 @@ GitHub event
 ### Responsibility Split
 
 The Planner owns semantic scope. It resolves the candidate identity, affected
-Component and Release Unit closure, artifact variants, and required and
+Project Node and Release Unit closure, artifact variants, and required and
 advisory obligations.
 
 Executors resolve only mechanical details required to perform an immutable
@@ -331,8 +361,8 @@ quality command.
 Final Decisions are append-only. GitHub checks and summaries are projections of
 the latest authoritative Decision, not the audit record itself.
 
-CI explanations connect paths, Components, Release Units, obligations,
-variants, Evidence, outcomes, and verdicts.
+CI explanations connect paths, Project Nodes, dependency relationships, Release
+Units, obligations, variants, Evidence, outcomes, and verdicts.
 
 Release explanations connect target, version, channel, artifacts,
 destinations, observations, actions, Receipts, authority, authorization, and
@@ -377,8 +407,9 @@ proved after operational records expire fails closed.
 
 The next design stage should produce separate MLDs for:
 
-1. **Repository and Product Model:** Component, Release Unit, dependency,
-   variant, Build Definition, and authoring contracts.
+1. **Repository Model and Release Units:** Project Node discovery, dependency
+   and path-impact facts, Release Unit authoring, variants, and Build
+   Definitions.
 2. **Trusted Decision Kernel and Governance Integration:** Authority Epoch,
    admission, decision, authorization, and promotion contracts.
 3. **CI Qualification:** candidate identity, affected-scope planning,

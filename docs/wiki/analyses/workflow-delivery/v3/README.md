@@ -19,7 +19,7 @@ the v3 kernel.
 ## Next Design Work
 
 1. review and confirm the v3 requirements baseline;
-2. define the Repository and Product Model MLD;
+2. define the Repository Model and Release Unit MLD;
 3. define the Trusted Decision Kernel and Governance Integration MLD;
 4. define the CI Qualification MLD;
 5. define the Release Delivery MLD;

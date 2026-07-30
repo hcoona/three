@@ -1122,3 +1122,14 @@ Updated the CI affected-validation LLD to describe published runner-family artif
 - Promoted the requirements page from draft to the confirmed normative
   baseline.
 - Closed the requirements gate for entry into middle-layer design.
+
+## [2026-07-30] query | Remove the unnecessary Component domain layer
+
+- Tested the Component abstraction against concrete .NET, global build input,
+  and cross-ecosystem dependency scenarios.
+- Found that Project Nodes, dependency and path-impact facts, Build Definitions,
+  and Release Units already express the required CI and Release behavior.
+- Removed Component as a core domain object and retained Project Nodes as
+  discovered technical facts rather than authored governance objects.
+- Added the architecture rule that a domain abstraction requires independent
+  behavior, identity, lifecycle, or policy responsibility.

@@ -14,7 +14,8 @@ architecture.
 v2 and v3 differ at their architectural roots:
 
 - candidate-owned versus current-authority CI decisions;
-- project-centric versus Component and Release Unit domain models;
+- project/profile-centric control types versus an explicit Release Unit domain
+  over normalized project and build facts;
 - one pre-build Release Plan versus a two-snapshot Plan lineage;
 - shared Buddy/Official identity versus isolated preview and canonical identity;
 - mixed control and execution boundaries versus three runtime trust zones; and
@@ -41,7 +42,8 @@ incompatible authority, identity, Evidence, and replay contracts.
 ### Port
 
 - v3 requirements, HLD, glossary, and migration decisions;
-- current repository facts required to model Components and Release Units;
+- current repository facts required to discover Project Nodes, dependencies,
+  build capabilities, and Release Units;
 - revalidated GitHub Actions and Registry platform observations;
 - mechanism behavior needed to specify adapter contracts; and
 - new v3 acceptance evidence.
@@ -49,7 +51,7 @@ incompatible authority, identity, Evidence, and replay contracts.
 ### Rewrite
 
 - product and system requirements when the accepted baseline changes;
-- Component and Release Unit authoring;
+- Project Node discovery and Release Unit authoring;
 - CI Qualification MLD and brief LLD;
 - Release Delivery MLD and brief LLD;
 - authority and governance MLD and brief LLD;
