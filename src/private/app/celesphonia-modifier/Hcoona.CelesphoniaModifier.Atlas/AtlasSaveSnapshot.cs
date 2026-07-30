@@ -581,7 +581,7 @@ public static class AtlasSaveSnapshot
         };
     }
 
-    private static async ValueTask<(long Length, string Sha256)> HashOrdinaryFileAsync(
+    internal static async ValueTask<(long Length, string Sha256)> HashOrdinaryFileAsync(
         string path,
         AtlasIoSeams io,
         CancellationToken cancellationToken)
@@ -644,117 +644,31 @@ public static class AtlasSaveSnapshot
         AtlasIoSeams io,
         CancellationToken cancellationToken)
     {
+        AtlasValidatedSaveSnapshot? snapshot =
+            await AtlasFinalizedSaveSnapshot.TryOpenCandidateAsync(
+                    candidateRoot,
+                    receiptPath,
+                    request.RunId,
+                    layout.FinalRoot,
+                    io,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        if (snapshot is null)
+        {
+            return false;
+        }
+
         try
         {
-            ValidateOutputRoot(candidateRoot, io);
-            Dictionary<string, string> actualChildren =
-                new(StringComparer.OrdinalIgnoreCase);
-            foreach (string child in io.EnumerateFileSystemEntries(
-                         candidateRoot,
-                         SearchOption.TopDirectoryOnly))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                string leaf = Path.GetFileName(child);
-                bool isReceipt = StringComparer.OrdinalIgnoreCase.Equals(
-                    leaf,
-                    AtlasSaveSnapshotContracts.ReceiptFileName);
-                if (isReceipt)
-                {
-                    if (!StringComparer.Ordinal.Equals(
-                            leaf,
-                            AtlasSaveSnapshotContracts.ReceiptFileName))
-                    {
-                        return false;
-                    }
-                }
-                else if (!TryGetCanonicalName(
-                             leaf,
-                             out string canonicalLeaf,
-                             out _)
-                         || !StringComparer.Ordinal.Equals(leaf, canonicalLeaf))
-                {
-                    return false;
-                }
-
-                string absolute = Path.GetFullPath(child);
-                if (!AtlasSaveSnapshotContracts.ContainsPath(candidateRoot, absolute)
-                    || AtlasSaveSnapshotContracts.PathEquals(candidateRoot, absolute)
-                    || actualChildren.ContainsKey(leaf))
-                {
-                    return false;
-                }
-
-                FileAttributes attributes = io.GetAttributes(absolute);
-                if ((attributes
-                        & (FileAttributes.Directory
-                           | FileAttributes.ReparsePoint
-                           | FileAttributes.Device)) != 0
-                    || !io.FileExists(absolute))
-                {
-                    return false;
-                }
-
-                actualChildren.Add(leaf, absolute);
-            }
-
-            if (!actualChildren.TryGetValue(
-                    AtlasSaveSnapshotContracts.ReceiptFileName,
-                    out string? actualReceiptPath)
-                || !AtlasSaveSnapshotContracts.PathEquals(receiptPath, actualReceiptPath))
-            {
-                return false;
-            }
-
             AtlasSaveSnapshotReceipt receipt =
                 await AtlasSaveSnapshotContracts.ReadReceiptAsync(
-                        actualReceiptPath,
+                        receiptPath,
                         io,
                         cancellationToken)
                     .ConfigureAwait(false);
-            if (!StringComparer.Ordinal.Equals(receipt.RunId, request.RunId)
-                || !AtlasSaveSnapshotContracts.PathEquals(receipt.SaveRoot, request.SaveRoot)
-                || !AtlasSaveSnapshotContracts.PathEquals(
-                    receipt.FinalSnapshotRoot,
-                    layout.FinalRoot)
-                || actualChildren.Count != receipt.Entries.Length + 1)
-            {
-                return false;
-            }
-
-            int priorOrder = -1;
-            HashSet<string> sources = new(StringComparer.OrdinalIgnoreCase);
-            foreach (AtlasSaveSnapshotReceiptEntry entry in receipt.Entries)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (!TryGetCanonicalName(
-                        entry.SourceFileName,
-                        out string canonical,
-                        out int order)
-                    || order <= priorOrder
-                    || !StringComparer.Ordinal.Equals(
-                        entry.DestinationRelativePath,
-                        canonical)
-                    || !sources.Add(entry.SourceFileName)
-                    || !actualChildren.TryGetValue(canonical, out string? destination))
-                {
-                    return false;
-                }
-
-                (long length, string sha256) = await HashOrdinaryFileAsync(
-                        destination,
-                        io,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (length != entry.Length
-                    || !StringComparer.Ordinal.Equals(sha256, entry.Sha256))
-                {
-                    return false;
-                }
-
-                priorOrder = order;
-            }
-
-            return true;
+            return AtlasSaveSnapshotContracts.PathEquals(
+                receipt.SaveRoot,
+                request.SaveRoot);
         }
         catch (OperationCanceledException)
         {

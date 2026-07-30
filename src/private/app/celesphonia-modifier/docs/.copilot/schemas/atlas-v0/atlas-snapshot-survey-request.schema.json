@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hcoona:three:celesphonia-modifier:atlas-v0:snapshot-survey-request:v1",
+  "title": "Atlas Snapshot Survey Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "repositoryRoot", "runId", "snapshotReceiptPath"],
+  "properties": {
+    "schemaVersion": {
+      "const": "atlas-snapshot-survey-request/v1"
+    },
+    "repositoryRoot": {
+      "$ref": "#/$defs/absolutePath"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "snapshotReceiptPath": {
+      "$ref": "#/$defs/absolutePath"
+    }
+  },
+  "$defs": {
+    "absolutePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32768
+    }
+  }
+}

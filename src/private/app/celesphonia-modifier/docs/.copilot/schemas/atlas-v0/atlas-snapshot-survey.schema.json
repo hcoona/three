@@ -1,0 +1,283 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hcoona:three:celesphonia-modifier:atlas-v0:snapshot-survey:v1",
+  "title": "Atlas Snapshot Survey",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "documents", "totals"],
+  "properties": {
+    "schemaVersion": {
+      "const": "atlas-snapshot-survey/v1"
+    },
+    "documents": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 22,
+      "items": {
+        "$ref": "#/$defs/document"
+      }
+    },
+    "totals": {
+      "$ref": "#/$defs/totals"
+    }
+  },
+  "$defs": {
+    "nonnegativeInt64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "copiedSaveRelativePath": {
+      "type": "string",
+      "enum": [
+        "global.rpgsave",
+        "config.rpgsave",
+        "file1.rpgsave",
+        "file2.rpgsave",
+        "file3.rpgsave",
+        "file4.rpgsave",
+        "file5.rpgsave",
+        "file6.rpgsave",
+        "file7.rpgsave",
+        "file8.rpgsave",
+        "file9.rpgsave",
+        "file10.rpgsave",
+        "file11.rpgsave",
+        "file12.rpgsave",
+        "file13.rpgsave",
+        "file14.rpgsave",
+        "file15.rpgsave",
+        "file16.rpgsave",
+        "file17.rpgsave",
+        "file18.rpgsave",
+        "file19.rpgsave",
+        "file20.rpgsave"
+      ]
+    },
+    "scanRelativePath": {
+      "type": "string",
+      "pattern": "^(global|config|file(?:[1-9]|1[0-9]|20))\\.rpgsave\\.structural-scan\\.json$"
+    },
+    "census": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeOccurrences",
+        "objectOccurrences",
+        "arrayOccurrences",
+        "scalarOccurrences",
+        "referenceOccurrences",
+        "ordinaryMemberEdges",
+        "arrayElementEdges",
+        "identityDefinitions",
+        "classMarkers",
+        "identityArrayWrappers",
+        "distinctReferencedDefinitions"
+      ],
+      "properties": {
+        "nodeOccurrences": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "objectOccurrences": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "arrayOccurrences": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "scalarOccurrences": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "referenceOccurrences": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "ordinaryMemberEdges": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "arrayElementEdges": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "identityDefinitions": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "classMarkers": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "identityArrayWrappers": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "distinctReferencedDefinitions": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        }
+      }
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "copiedSaveRelativePath",
+        "documentRole",
+        "scanRelativePath",
+        "copiedSourceByteLength",
+        "copiedSourceSha256",
+        "persistedScanByteLength",
+        "persistedScanSha256",
+        "census"
+      ],
+      "properties": {
+        "copiedSaveRelativePath": {
+          "$ref": "#/$defs/copiedSaveRelativePath"
+        },
+        "documentRole": {
+          "enum": ["global-save", "config-save", "slot-save"]
+        },
+        "scanRelativePath": {
+          "$ref": "#/$defs/scanRelativePath"
+        },
+        "copiedSourceByteLength": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "copiedSourceSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "persistedScanByteLength": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "persistedScanSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "census": {
+          "$ref": "#/$defs/census"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "global.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "documentRole": {
+                "const": "global-save"
+              },
+              "scanRelativePath": {
+                "const": "global.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "config.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "documentRole": {
+                "const": "config-save"
+              },
+              "scanRelativePath": {
+                "const": "config.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "pattern": "^file(?:[1-9]|1[0-9]|20)\\.rpgsave$"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "documentRole": {
+                "const": "slot-save"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "documentCount",
+        "copiedSourceBytes",
+        "canonicalScanBytes",
+        "nodeOccurrences",
+        "objectOccurrences",
+        "arrayOccurrences",
+        "scalarOccurrences",
+        "referenceOccurrences",
+        "ordinaryMemberEdges",
+        "arrayElementEdges",
+        "identityDefinitions",
+        "classMarkers",
+        "identityArrayWrappers",
+        "distinctReferencedDefinitions"
+      ],
+      "properties": {
+        "documentCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 22
+        },
+        "copiedSourceBytes": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "canonicalScanBytes": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "nodeOccurrences": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "objectOccurrences": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "arrayOccurrences": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "scalarOccurrences": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "referenceOccurrences": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "ordinaryMemberEdges": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "arrayElementEdges": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "identityDefinitions": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "classMarkers": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "identityArrayWrappers": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        },
+        "distinctReferencedDefinitions": {
+          "$ref": "#/$defs/nonnegativeInt64"
+        }
+      }
+    }
+  }
+}

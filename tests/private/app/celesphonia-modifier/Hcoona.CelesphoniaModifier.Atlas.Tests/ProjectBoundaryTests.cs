@@ -11,11 +11,15 @@ public sealed class ProjectBoundaryTests
         "AtlasDefinitionIntakeContracts.cs",
         "AtlasDirectoryPath.cs",
         "AtlasDiscovery.cs",
+        "AtlasFinalizedSaveSnapshot.cs",
         "AtlasIntakeContracts.cs",
         "AtlasLzStringCodec.cs",
         "AtlasSaveReader.cs",
         "AtlasSaveSnapshot.cs",
         "AtlasSaveSnapshotContracts.cs",
+        "AtlasSnapshotSurvey.cs",
+        "AtlasSnapshotSurveyContracts.cs",
+        "AtlasSnapshotSurveyManifestJson.cs",
         "AtlasStructuralScanContracts.cs",
         "AtlasStructuralScanJson.cs",
         "AtlasStructuralScanner.cs",
@@ -47,6 +51,7 @@ public sealed class ProjectBoundaryTests
         "AtlasProcessSmokeTests.cs",
         "AtlasSaveReaderTests.cs",
         "AtlasSaveSnapshotTests.cs",
+        "AtlasSnapshotSurveyTests.cs",
         "AtlasStructuralScanJsonTests.cs",
         "AtlasStructuralScannerTests.cs",
         "EmptyAtlasSurveyTests.cs",
@@ -65,6 +70,8 @@ public sealed class ProjectBoundaryTests
         "atlas-definition-intake-request.schema.json",
         "atlas-save-snapshot-receipt.schema.json",
         "atlas-save-snapshot-request.schema.json",
+        "atlas-snapshot-survey-request.schema.json",
+        "atlas-snapshot-survey.schema.json",
         "atlas-structural-scan.schema.json",
         "cleanup-preflight-report.schema.json",
         "copy-plan.schema.json",
@@ -263,6 +270,24 @@ public sealed class ProjectBoundaryTests
         Assert.DoesNotContain("Process.Start", productionText, StringComparison.Ordinal);
         Assert.DoesNotContain("atlas-save-snapshot-r1", productionText, StringComparison.Ordinal);
         Assert.DoesNotContain("atlas-save-snapshot-r2", productionText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A5SnapshotSurveyBoundaryHasExactlyTwoContracts()
+    {
+        ProjectPaths paths = ProjectPaths.Create();
+        string[] surveySchemas = Directory
+            .EnumerateFiles(paths.SchemaDirectory, "atlas-snapshot-survey*.schema.json")
+            .Select(Path.GetFileName)
+            .Order(StringComparer.Ordinal)
+            .ToArray()!;
+
+        Assert.Equal(
+            [
+                "atlas-snapshot-survey-request.schema.json",
+                "atlas-snapshot-survey.schema.json",
+            ],
+            surveySchemas);
     }
 
     private static void AssertPackageAssets(XDocument project, string packageName)

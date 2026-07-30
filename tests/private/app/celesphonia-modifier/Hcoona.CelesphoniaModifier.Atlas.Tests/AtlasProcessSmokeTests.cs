@@ -19,6 +19,7 @@ public sealed class AtlasProcessSmokeTests
         .. "  celesphonia-atlas intake-copy <request-file>\n"u8,
         .. "  celesphonia-atlas definition-intake <request-file>\n"u8,
         .. "  celesphonia-atlas save-snapshot <request-file>\n"u8,
+        .. "  celesphonia-atlas snapshot-survey <request-file>\n"u8,
         .. "  celesphonia-atlas cleanup-preflight <request-file>\n"u8,
         .. "\n"u8,
         .. "Commands:\n"u8,
@@ -28,6 +29,7 @@ public sealed class AtlasProcessSmokeTests
         .. "  intake-copy        Create qualified Atlas research snapshots.\n"u8,
         .. "  definition-intake  Copy the approved local definition set.\n"u8,
         .. "  save-snapshot      Create a verified read-only save snapshot.\n"u8,
+        .. "  snapshot-survey    Survey one finalized save snapshot.\n"u8,
         .. "  cleanup-preflight  Report private-artifact cleanup eligibility.\n"u8,
         .. "\n"u8,
         .. "Options:\n"u8,
@@ -81,6 +83,21 @@ public sealed class AtlasProcessSmokeTests
         Assert.Equal("Definition intake completed.\n"u8.ToArray(), result.StandardOutput);
         Assert.Empty(result.StandardError);
         Assert.True(File.Exists(workspace.FinalReceiptPath));
+    }
+
+    [Fact]
+    public async Task SnapshotSurveyProcessWritesSuccessBytes()
+    {
+        await using SnapshotSurveyWorkspace workspace =
+            await SnapshotSurveyWorkspace.CreateAsync(
+                ("global.rpgsave", "{\"value\":1}"));
+
+        ProcessResult result = await RunAsync("snapshot-survey", workspace.RequestPath);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal("Snapshot survey completed.\n"u8.ToArray(), result.StandardOutput);
+        Assert.Empty(result.StandardError);
+        Assert.True(File.Exists(workspace.FinalManifestPath));
     }
 
     [Fact]

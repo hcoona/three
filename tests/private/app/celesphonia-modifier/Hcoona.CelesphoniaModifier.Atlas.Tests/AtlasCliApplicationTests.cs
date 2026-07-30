@@ -39,6 +39,7 @@ public sealed class AtlasCliApplicationTests
         .. "  celesphonia-atlas intake-copy <request-file>\n"u8,
         .. "  celesphonia-atlas definition-intake <request-file>\n"u8,
         .. "  celesphonia-atlas save-snapshot <request-file>\n"u8,
+        .. "  celesphonia-atlas snapshot-survey <request-file>\n"u8,
         .. "  celesphonia-atlas cleanup-preflight <request-file>\n"u8,
         .. "\n"u8,
         .. "Commands:\n"u8,
@@ -48,6 +49,7 @@ public sealed class AtlasCliApplicationTests
         .. "  intake-copy        Create qualified Atlas research snapshots.\n"u8,
         .. "  definition-intake  Copy the approved local definition set.\n"u8,
         .. "  save-snapshot      Create a verified read-only save snapshot.\n"u8,
+        .. "  snapshot-survey    Survey one finalized save snapshot.\n"u8,
         .. "  cleanup-preflight  Report private-artifact cleanup eligibility.\n"u8,
         .. "\n"u8,
         .. "Options:\n"u8,
@@ -71,6 +73,7 @@ public sealed class AtlasCliApplicationTests
             { ["intake-copy", "-h"], ExpectedCommandHelp },
             { ["definition-intake", "--help"], ExpectedCommandHelp },
             { ["save-snapshot", "--help"], ExpectedCommandHelp },
+            { ["snapshot-survey", "--help"], ExpectedCommandHelp },
             { ["cleanup-preflight", "--help"], ExpectedCommandHelp },
         };
 
@@ -88,6 +91,7 @@ public sealed class AtlasCliApplicationTests
             { ["intake-discover"] },
             { ["definition-intake"] },
             { ["save-snapshot"] },
+            { ["snapshot-survey"] },
             { ["intake-discover", "--help", "extra"] },
             { ["intake-discover", "one", "two"] },
         };
@@ -271,6 +275,28 @@ public sealed class AtlasCliApplicationTests
     }
 
     [Fact]
+    public async Task SnapshotSurveyWritesFixedSuccessBytes()
+    {
+        string? observedPath = null;
+        (int exitCode, byte[] standardOutput, byte[] standardError) = await RunAsync(
+            ["snapshot-survey", @"Q:\private\survey.json"],
+            new DelegatingOperations
+            {
+                SnapshotSurvey = (path, _) =>
+                {
+                    observedPath = path;
+                    return ValueTask.CompletedTask;
+                },
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.SuccessExitCode, exitCode);
+        Assert.Equal("Snapshot survey completed.\n"u8.ToArray(), standardOutput);
+        Assert.Empty(standardError);
+        Assert.Equal(@"Q:\private\survey.json", observedPath);
+    }
+
+    [Fact]
     public async Task CleanupPreflightWritesFixedSuccessBytes()
     {
         (int exitCode, byte[] standardOutput, byte[] standardError) = await RunAsync(
@@ -347,6 +373,92 @@ public sealed class AtlasCliApplicationTests
             requestPath,
             Encoding.UTF8.GetString(unexpectedError),
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SnapshotSurveyReaderAndScannerRefusalsUseSafetyDiagnostic()
+    {
+        (int readerCode, _, byte[] readerError) = await RunAsync(
+            ["snapshot-survey", @"Q:\private\survey.json"],
+            new DelegatingOperations
+            {
+                SnapshotSurvey = (_, _) => ValueTask.FromException(
+                    new AtlasSaveReadException(AtlasSaveReadFailure.MalformedJson)),
+            },
+            TestContext.Current.CancellationToken);
+        (int scannerCode, _, byte[] scannerError) = await RunAsync(
+            ["snapshot-survey", @"Q:\private\survey.json"],
+            new DelegatingOperations
+            {
+                SnapshotSurvey = (_, _) => ValueTask.FromException(
+                    new AtlasStructuralScanException(
+                        AtlasStructuralScanFailure.SourceMismatch)),
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.SafetyErrorExitCode, readerCode);
+        Assert.Equal("Safety check failed.\n"u8.ToArray(), readerError);
+        Assert.Equal(AtlasCliApplication.SafetyErrorExitCode, scannerCode);
+        Assert.Equal("Safety check failed.\n"u8.ToArray(), scannerError);
+    }
+
+    [Fact]
+    public async Task SnapshotSurveyUsesExistingFixedFailureSemantics()
+    {
+        string path = @"Q:\private\survey.json";
+        using CancellationTokenSource cancellation = new();
+        await cancellation.CancelAsync();
+        (int requestCode, _, byte[] requestError) = await RunAsync(
+            ["snapshot-survey", path],
+            new DelegatingOperations
+            {
+                SnapshotSurvey = (_, _) => ValueTask.FromException(
+                    new AtlasRequestException("private")),
+            },
+            TestContext.Current.CancellationToken);
+        (int cancellationCode, _, byte[] cancellationError) = await RunAsync(
+            ["snapshot-survey", path],
+            new DelegatingOperations
+            {
+                SnapshotSurvey = (_, token) => ValueTask.FromException(
+                    new OperationCanceledException(token)),
+            },
+            cancellation.Token);
+        (int ioCode, _, byte[] ioError) = await RunAsync(
+            ["snapshot-survey", path],
+            new DelegatingOperations
+            {
+                SnapshotSurvey = (_, _) => ValueTask.FromException(
+                    new IOException("private")),
+            },
+            TestContext.Current.CancellationToken);
+        (int safetyCode, _, byte[] safetyError) = await RunAsync(
+            ["snapshot-survey", path],
+            new DelegatingOperations
+            {
+                SnapshotSurvey = (_, _) => ValueTask.FromException(
+                    new AtlasSafetyException("private")),
+            },
+            TestContext.Current.CancellationToken);
+        (int unexpectedCode, _, byte[] unexpectedError) = await RunAsync(
+            ["snapshot-survey", path],
+            new DelegatingOperations
+            {
+                SnapshotSurvey = (_, _) => ValueTask.FromException(
+                    new InvalidOperationException("private")),
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.UsageErrorExitCode, requestCode);
+        Assert.Equal("Invalid arguments.\n"u8.ToArray(), requestError);
+        Assert.Equal(AtlasCliApplication.CanceledExitCode, cancellationCode);
+        Assert.Equal("Operation canceled.\n"u8.ToArray(), cancellationError);
+        Assert.Equal(AtlasCliApplication.IoErrorExitCode, ioCode);
+        Assert.Equal("I/O failure.\n"u8.ToArray(), ioError);
+        Assert.Equal(AtlasCliApplication.SafetyErrorExitCode, safetyCode);
+        Assert.Equal("Safety check failed.\n"u8.ToArray(), safetyError);
+        Assert.Equal(AtlasCliApplication.UnexpectedErrorExitCode, unexpectedCode);
+        Assert.Equal("Unexpected failure.\n"u8.ToArray(), unexpectedError);
     }
 
     [Theory]
@@ -451,6 +563,7 @@ public sealed class AtlasCliApplicationTests
     [InlineData("intake-confirm")]
     [InlineData("intake-copy")]
     [InlineData("definition-intake")]
+    [InlineData("snapshot-survey")]
     [InlineData("cleanup-preflight")]
     public async Task NonDiscoverySafetyFailureIgnoresDiscoveryStage(string command)
     {
@@ -464,6 +577,7 @@ public sealed class AtlasCliApplicationTests
             Confirm = (_, _) => ValueTask.FromException(exception),
             Copy = (_, _) => ValueTask.FromException(exception),
             DefinitionIntake = (_, _) => ValueTask.FromException(exception),
+            SnapshotSurvey = (_, _) => ValueTask.FromException(exception),
             CleanupPreflight = (_, _) => ValueTask.FromException(exception),
         };
         string[] args = StringComparer.Ordinal.Equals(command, "empty-survey")
@@ -963,6 +1077,8 @@ public sealed class AtlasCliApplicationTests
 
         public Func<string, CancellationToken, ValueTask>? SaveSnapshot { get; init; }
 
+        public Func<string, CancellationToken, ValueTask>? SnapshotSurvey { get; init; }
+
         public override ValueTask WriteEmptySurveyAsync(
             Stream standardOutput,
             CancellationToken cancellationToken) =>
@@ -1003,6 +1119,12 @@ public sealed class AtlasCliApplicationTests
             string requestFilePath,
             CancellationToken cancellationToken) =>
             SaveSnapshot?.Invoke(requestFilePath, cancellationToken)
+            ?? ValueTask.CompletedTask;
+
+        public override ValueTask RunSnapshotSurveyAsync(
+            string requestFilePath,
+            CancellationToken cancellationToken) =>
+            SnapshotSurvey?.Invoke(requestFilePath, cancellationToken)
             ?? ValueTask.CompletedTask;
     }
 

@@ -229,6 +229,8 @@ public sealed class AtlasStructuralScanResult
 
     public byte[] GetCanonicalUtf8Bytes(CancellationToken cancellationToken = default) =>
         AtlasCanonicalUtf8Bytes.Copy(canonicalUtf8, cancellationToken);
+
+    internal ReadOnlyMemory<byte> GetOwnedCanonicalUtf8Bytes() => canonicalUtf8;
 }
 
 internal static class AtlasCanonicalUtf8Bytes
