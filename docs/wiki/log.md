@@ -1133,3 +1133,15 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   discovered technical facts rather than authored governance objects.
 - Added the architecture rule that a domain abstraction requires independent
   behavior, identity, lifecycle, or policy responsibility.
+
+## [2026-07-30] query | Define the Repository Model and Release Unit MLD
+
+- Defined colocated Release Unit discovery from the target Git tree without
+  porting v2 Project/Profile semantics.
+- Made ecosystem-native Project Nodes and dependency graphs technical facts
+  rather than user-authored business objects.
+- Derived Release Unit build closure from Build Definition entry points instead
+  of manually maintained project membership.
+- Established NBGV as the sole canonical version authority.
+- Kept intermediate-output reuse and cross-artifact binary consistency as
+  acceptance-tested Build Adapter invariants rather than authoring policy.

@@ -16,14 +16,17 @@ the v3 kernel.
 - [Architecture Glossary](./architecture-glossary.md)
 - [Migration and Document Policy](./migration-strategy.md)
 
+## Middle-Level Design
+
+- [Repository Model and Release Unit MLD](./repository-model-release-unit-mld.md)
+
 ## Next Design Work
 
-1. review and confirm the v3 requirements baseline;
-2. define the Repository Model and Release Unit MLD;
-3. define the Trusted Decision Kernel and Governance Integration MLD;
-4. define the CI Qualification MLD;
-5. define the Release Delivery MLD;
-6. define the Shared Foundation MLD;
-7. create a brief LLD for the first end-to-end vertical slice;
-8. implement and validate that vertical slice; and
-9. expand by ecosystem and destination.
+1. review and confirm the Repository Model and Release Unit MLD;
+2. define the Trusted Decision Kernel and Governance Integration MLD;
+3. define the CI Qualification MLD;
+4. define the Release Delivery MLD;
+5. define the Shared Foundation MLD;
+6. create a brief LLD for the first end-to-end vertical slice;
+7. implement and validate that vertical slice; and
+8. expand by ecosystem and destination.

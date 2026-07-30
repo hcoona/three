@@ -9,6 +9,7 @@ Workflow delivery architecture **v3** is active and normative.
 - [Architecture version entry point](./analyses/workflow-delivery/README.md)
 - [v3 requirements](./analyses/workflow-delivery/v3/requirements.md)
 - [v3 high-level design](./analyses/workflow-delivery/v3/high-level-design.md)
+- [v3 Repository Model and Release Unit MLD](./analyses/workflow-delivery/v3/repository-model-release-unit-mld.md)
 - [v3 architecture glossary](./analyses/workflow-delivery/v3/architecture-glossary.md)
 - [v3 migration and document policy](./analyses/workflow-delivery/v3/migration-strategy.md)
 
@@ -68,13 +69,12 @@ have changed.
 
 ## Next Architecture Work
 
-1. Review and confirm the v3 requirements baseline.
-2. Define the Repository Model and Release Unit MLD.
-3. Define the Trusted Decision Kernel and Governance Integration MLD.
-4. Define the CI Qualification MLD.
-5. Define the Release Delivery MLD.
-6. Define the Shared Foundation MLD.
-7. Select the first vertical slice and create its brief LLD.
+1. Review and confirm the Repository Model and Release Unit MLD.
+2. Define the Trusted Decision Kernel and Governance Integration MLD.
+3. Define the CI Qualification MLD.
+4. Define the Release Delivery MLD.
+5. Define the Shared Foundation MLD.
+6. Select the first vertical slice and create its brief LLD.
 
 ## Related Pages
 
