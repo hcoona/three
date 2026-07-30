@@ -40,6 +40,7 @@ public sealed class AtlasCliApplicationTests
         .. "  celesphonia-atlas definition-intake <request-file>\n"u8,
         .. "  celesphonia-atlas save-snapshot <request-file>\n"u8,
         .. "  celesphonia-atlas snapshot-survey <request-file>\n"u8,
+        .. "  celesphonia-atlas snapshot-gold-validate <request-file>\n"u8,
         .. "  celesphonia-atlas cleanup-preflight <request-file>\n"u8,
         .. "\n"u8,
         .. "Commands:\n"u8,
@@ -50,6 +51,7 @@ public sealed class AtlasCliApplicationTests
         .. "  definition-intake  Copy the approved local definition set.\n"u8,
         .. "  save-snapshot      Create a verified read-only save snapshot.\n"u8,
         .. "  snapshot-survey    Survey one finalized save snapshot.\n"u8,
+        .. "  snapshot-gold-validate  Validate Gold candidates in a finalized snapshot.\n"u8,
         .. "  cleanup-preflight  Report private-artifact cleanup eligibility.\n"u8,
         .. "\n"u8,
         .. "Options:\n"u8,
@@ -74,6 +76,7 @@ public sealed class AtlasCliApplicationTests
             { ["definition-intake", "--help"], ExpectedCommandHelp },
             { ["save-snapshot", "--help"], ExpectedCommandHelp },
             { ["snapshot-survey", "--help"], ExpectedCommandHelp },
+            { ["snapshot-gold-validate", "--help"], ExpectedCommandHelp },
             { ["cleanup-preflight", "--help"], ExpectedCommandHelp },
         };
 
@@ -92,6 +95,7 @@ public sealed class AtlasCliApplicationTests
             { ["definition-intake"] },
             { ["save-snapshot"] },
             { ["snapshot-survey"] },
+            { ["snapshot-gold-validate"] },
             { ["intake-discover", "--help", "extra"] },
             { ["intake-discover", "one", "two"] },
         };
@@ -297,6 +301,36 @@ public sealed class AtlasCliApplicationTests
     }
 
     [Fact]
+    public async Task GoldSnapshotValidationWritesExactAggregateOnlyBytes()
+    {
+        string requestPath = @"Q:\private\gold-validation.json";
+        (int exitCode, byte[] standardOutput, byte[] standardError) = await RunAsync(
+            ["snapshot-gold-validate", requestPath],
+            new DelegatingOperations
+            {
+                GoldSnapshotValidation = (path, _) =>
+                {
+                    Assert.Equal(requestPath, path);
+                    return ValueTask.FromResult(
+                        AtlasGoldSnapshotValidationSummary.Create(3, 1, 1, 1));
+                },
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.SuccessExitCode, exitCode);
+        Assert.Equal(
+            Encoding.UTF8.GetBytes(
+                "Gold snapshot validation: DisagreementAndIncompleteObserved; "
+                    + "total=3; Consistent=1; Disagree=1; Incomplete=1.\n"),
+            standardOutput);
+        Assert.Empty(standardError);
+        string output = Encoding.UTF8.GetString(standardOutput);
+        Assert.DoesNotContain(requestPath, output, StringComparison.Ordinal);
+        Assert.DoesNotContain("PartyGold", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("VariableGold", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task CleanupPreflightWritesFixedSuccessBytes()
     {
         (int exitCode, byte[] standardOutput, byte[] standardError) = await RunAsync(
@@ -461,6 +495,97 @@ public sealed class AtlasCliApplicationTests
         Assert.Equal("Unexpected failure.\n"u8.ToArray(), unexpectedError);
     }
 
+    [Fact]
+    public async Task GoldSnapshotValidationUsesExistingFixedFailureSemantics()
+    {
+        string path = @"Q:\private\gold-validation.json";
+        using CancellationTokenSource cancellation = new();
+        await cancellation.CancelAsync();
+        (int requestCode, byte[] requestOutput, byte[] requestError) = await RunAsync(
+            ["snapshot-gold-validate", path],
+            new DelegatingOperations
+            {
+                GoldSnapshotValidation = (_, _) =>
+                    ValueTask.FromException<AtlasGoldSnapshotValidationSummary>(
+                        new AtlasRequestException("private request detail")),
+            },
+            TestContext.Current.CancellationToken);
+        (int cancellationCode, _, byte[] cancellationError) = await RunAsync(
+            ["snapshot-gold-validate", path],
+            new DelegatingOperations
+            {
+                GoldSnapshotValidation = (_, token) =>
+                    ValueTask.FromException<AtlasGoldSnapshotValidationSummary>(
+                        new OperationCanceledException(token)),
+            },
+            cancellation.Token);
+        (int ioCode, _, byte[] ioError) = await RunAsync(
+            ["snapshot-gold-validate", path],
+            new DelegatingOperations
+            {
+                GoldSnapshotValidation = (_, _) =>
+                    ValueTask.FromException<AtlasGoldSnapshotValidationSummary>(
+                        new IOException("private I/O detail")),
+            },
+            TestContext.Current.CancellationToken);
+        (int safetyCode, _, byte[] safetyError) = await RunAsync(
+            ["snapshot-gold-validate", path],
+            new DelegatingOperations
+            {
+                GoldSnapshotValidation = (_, _) =>
+                    ValueTask.FromException<AtlasGoldSnapshotValidationSummary>(
+                        new AtlasSafetyException("private safety detail")),
+            },
+            TestContext.Current.CancellationToken);
+        (int parseCode, _, byte[] parseError) = await RunAsync(
+            ["snapshot-gold-validate", path],
+            new DelegatingOperations
+            {
+                GoldSnapshotValidation = (_, _) =>
+                    ValueTask.FromException<AtlasGoldSnapshotValidationSummary>(
+                        new AtlasSaveReadException(
+                            AtlasSaveReadFailure.MalformedJson)),
+            },
+            TestContext.Current.CancellationToken);
+        (int unexpectedCode, _, byte[] unexpectedError) = await RunAsync(
+            ["snapshot-gold-validate", path],
+            new DelegatingOperations
+            {
+                GoldSnapshotValidation = (_, _) =>
+                    ValueTask.FromException<AtlasGoldSnapshotValidationSummary>(
+                        new InvalidOperationException("private unexpected detail")),
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(AtlasCliApplication.UsageErrorExitCode, requestCode);
+        Assert.Empty(requestOutput);
+        Assert.Equal("Invalid arguments.\n"u8.ToArray(), requestError);
+        Assert.Equal(AtlasCliApplication.CanceledExitCode, cancellationCode);
+        Assert.Equal("Operation canceled.\n"u8.ToArray(), cancellationError);
+        Assert.Equal(AtlasCliApplication.IoErrorExitCode, ioCode);
+        Assert.Equal("I/O failure.\n"u8.ToArray(), ioError);
+        Assert.Equal(AtlasCliApplication.SafetyErrorExitCode, safetyCode);
+        Assert.Equal("Safety check failed.\n"u8.ToArray(), safetyError);
+        Assert.Equal(AtlasCliApplication.SafetyErrorExitCode, parseCode);
+        Assert.Equal("Safety check failed.\n"u8.ToArray(), parseError);
+        Assert.Equal(AtlasCliApplication.UnexpectedErrorExitCode, unexpectedCode);
+        Assert.Equal("Unexpected failure.\n"u8.ToArray(), unexpectedError);
+        Assert.All(
+            new[]
+            {
+                requestError,
+                cancellationError,
+                ioError,
+                safetyError,
+                parseError,
+                unexpectedError,
+            },
+            error => Assert.DoesNotContain(
+                path,
+                Encoding.UTF8.GetString(error),
+                StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData(
         AtlasDiscoveryFailureStage.RequestPreflight,
@@ -564,6 +689,7 @@ public sealed class AtlasCliApplicationTests
     [InlineData("intake-copy")]
     [InlineData("definition-intake")]
     [InlineData("snapshot-survey")]
+    [InlineData("snapshot-gold-validate")]
     [InlineData("cleanup-preflight")]
     public async Task NonDiscoverySafetyFailureIgnoresDiscoveryStage(string command)
     {
@@ -578,6 +704,8 @@ public sealed class AtlasCliApplicationTests
             Copy = (_, _) => ValueTask.FromException(exception),
             DefinitionIntake = (_, _) => ValueTask.FromException(exception),
             SnapshotSurvey = (_, _) => ValueTask.FromException(exception),
+            GoldSnapshotValidation = (_, _) =>
+                ValueTask.FromException<AtlasGoldSnapshotValidationSummary>(exception),
             CleanupPreflight = (_, _) => ValueTask.FromException(exception),
         };
         string[] args = StringComparer.Ordinal.Equals(command, "empty-survey")
@@ -1075,6 +1203,15 @@ public sealed class AtlasCliApplicationTests
 
         public Func<Stream, CancellationToken, ValueTask>? EmptySurvey { get; init; }
 
+        public Func<
+            string,
+            CancellationToken,
+            ValueTask<AtlasGoldSnapshotValidationSummary>>? GoldSnapshotValidation
+        {
+            get;
+            init;
+        }
+
         public Func<string, CancellationToken, ValueTask>? SaveSnapshot { get; init; }
 
         public Func<string, CancellationToken, ValueTask>? SnapshotSurvey { get; init; }
@@ -1120,6 +1257,14 @@ public sealed class AtlasCliApplicationTests
             CancellationToken cancellationToken) =>
             SaveSnapshot?.Invoke(requestFilePath, cancellationToken)
             ?? ValueTask.CompletedTask;
+
+        public override ValueTask<AtlasGoldSnapshotValidationSummary>
+            RunGoldSnapshotValidationAsync(
+                string requestFilePath,
+                CancellationToken cancellationToken) =>
+            GoldSnapshotValidation?.Invoke(requestFilePath, cancellationToken)
+            ?? ValueTask.FromResult(
+                AtlasGoldSnapshotValidationSummary.Create(1, 1, 0, 0));
 
         public override ValueTask RunSnapshotSurveyAsync(
             string requestFilePath,

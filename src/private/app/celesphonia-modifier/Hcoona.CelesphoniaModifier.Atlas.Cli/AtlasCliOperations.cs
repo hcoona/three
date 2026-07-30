@@ -41,6 +41,11 @@ internal class AtlasCliOperations
         CancellationToken cancellationToken) =>
         AtlasSnapshotSurvey.RunAsync(requestFilePath, cancellationToken);
 
+    public virtual ValueTask<AtlasGoldSnapshotValidationSummary> RunGoldSnapshotValidationAsync(
+        string requestFilePath,
+        CancellationToken cancellationToken) =>
+        AtlasGoldSnapshotValidation.RunAsync(requestFilePath, cancellationToken);
+
     public virtual ValueTask RunCleanupPreflightAsync(
         string requestFilePath,
         CancellationToken cancellationToken) =>

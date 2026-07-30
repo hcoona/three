@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hcoona:three:celesphonia-modifier:atlas-v0:gold-snapshot-validation-request:v1",
+  "title": "Atlas Gold Snapshot Validation Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "repositoryRoot", "snapshotReceiptPath"],
+  "properties": {
+    "schemaVersion": {
+      "const": "atlas-gold-snapshot-validation-request/v1"
+    },
+    "repositoryRoot": {
+      "$ref": "#/$defs/absolutePath"
+    },
+    "snapshotReceiptPath": {
+      "$ref": "#/$defs/absolutePath"
+    }
+  },
+  "$defs": {
+    "absolutePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32768
+    }
+  }
+}

@@ -13,6 +13,8 @@ public sealed class ProjectBoundaryTests
         "AtlasDiscovery.cs",
         "AtlasFinalizedSaveSnapshot.cs",
         "AtlasGoldReadModel.cs",
+        "AtlasGoldSnapshotValidation.cs",
+        "AtlasGoldSnapshotValidationContracts.cs",
         "AtlasIntakeContracts.cs",
         "AtlasLzStringCodec.cs",
         "AtlasSaveReader.cs",
@@ -49,6 +51,7 @@ public sealed class ProjectBoundaryTests
         "AtlasDefinitionIntakeTests.cs",
         "AtlasDiscoveryTests.cs",
         "AtlasGoldReadModelTests.cs",
+        "AtlasGoldSnapshotValidationTests.cs",
         "AtlasIntakeContractTests.cs",
         "AtlasProcessSmokeTests.cs",
         "AtlasSaveReaderTests.cs",
@@ -70,6 +73,7 @@ public sealed class ProjectBoundaryTests
         "agent-egress-envelope.schema.json",
         "atlas-definition-copy-receipt.schema.json",
         "atlas-definition-intake-request.schema.json",
+        "atlas-gold-snapshot-validation-request.schema.json",
         "atlas-save-snapshot-receipt.schema.json",
         "atlas-save-snapshot-request.schema.json",
         "atlas-snapshot-survey-request.schema.json",
@@ -290,6 +294,23 @@ public sealed class ProjectBoundaryTests
                 "atlas-snapshot-survey.schema.json",
             ],
             surveySchemas);
+    }
+
+    [Fact]
+    public void A6GoldSnapshotValidationBoundaryHasExactlyOneRequestContract()
+    {
+        ProjectPaths paths = ProjectPaths.Create();
+        string[] schemas = Directory
+            .EnumerateFiles(
+                paths.SchemaDirectory,
+                "atlas-gold-snapshot-validation*.schema.json")
+            .Select(Path.GetFileName)
+            .Order(StringComparer.Ordinal)
+            .ToArray()!;
+
+        Assert.Equal(
+            ["atlas-gold-snapshot-validation-request.schema.json"],
+            schemas);
     }
 
     private static void AssertPackageAssets(XDocument project, string packageName)

@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using Hcoona.CelesphoniaModifier.Atlas;
 
 namespace Hcoona.CelesphoniaModifier.Atlas.Cli;
@@ -42,6 +44,7 @@ internal static class AtlasCliApplication
         .. "  celesphonia-atlas definition-intake <request-file>\n"u8,
         .. "  celesphonia-atlas save-snapshot <request-file>\n"u8,
         .. "  celesphonia-atlas snapshot-survey <request-file>\n"u8,
+        .. "  celesphonia-atlas snapshot-gold-validate <request-file>\n"u8,
         .. "  celesphonia-atlas cleanup-preflight <request-file>\n"u8,
         .. "\n"u8,
         .. "Commands:\n"u8,
@@ -52,6 +55,7 @@ internal static class AtlasCliApplication
         .. "  definition-intake  Copy the approved local definition set.\n"u8,
         .. "  save-snapshot      Create a verified read-only save snapshot.\n"u8,
         .. "  snapshot-survey    Survey one finalized save snapshot.\n"u8,
+        .. "  snapshot-gold-validate  Validate Gold candidates in a finalized snapshot.\n"u8,
         .. "  cleanup-preflight  Report private-artifact cleanup eligibility.\n"u8,
         .. "\n"u8,
         .. "Options:\n"u8,
@@ -98,6 +102,10 @@ internal static class AtlasCliApplication
         "Snapshot survey completed.\n"u8.ToArray();
     private static readonly byte[] CleanupPreflightSuccessBytes =
         "Cleanup preflight completed.\n"u8.ToArray();
+    private static readonly CompositeFormat GoldSnapshotValidationSuccessFormat =
+        CompositeFormat.Parse(
+            "Gold snapshot validation: {0}; total={1}; Consistent={2}; "
+                + "Disagree={3}; Incomplete={4}.\n");
 
     internal static ValueTask<int> RunAsync(
         string[] args,
@@ -219,6 +227,29 @@ internal static class AtlasCliApplication
                         includeDiscoveryFailureStage: false,
                         cancellationToken)
                     .ConfigureAwait(false),
+                RequestCommandKind.SnapshotGoldValidate => await RunOperationAsync(
+                        standardOutput,
+                        standardError,
+                        async cancellation =>
+                        {
+                            AtlasGoldSnapshotValidationSummary summary =
+                                await operations.RunGoldSnapshotValidationAsync(
+                                        command.RequestFilePath,
+                                        cancellation)
+                                    .ConfigureAwait(false);
+                            return Encoding.UTF8.GetBytes(
+                                string.Format(
+                                    CultureInfo.InvariantCulture,
+                                    GoldSnapshotValidationSuccessFormat,
+                                    summary.State,
+                                    summary.TotalSlots,
+                                    summary.Consistent,
+                                    summary.Disagree,
+                                    summary.Incomplete));
+                        },
+                        includeDiscoveryFailureStage: false,
+                        cancellationToken)
+                    .ConfigureAwait(false),
                 RequestCommandKind.CleanupPreflight => await RunOperationAsync(
                         standardOutput,
                         standardError,
@@ -320,6 +351,12 @@ internal static class AtlasCliApplication
             return true;
         }
 
+        if (StringComparer.Ordinal.Equals(command, "snapshot-gold-validate"))
+        {
+            kind = RequestCommandKind.SnapshotGoldValidate;
+            return true;
+        }
+
         kind = default;
         return false;
     }
@@ -347,11 +384,29 @@ internal static class AtlasCliApplication
         Func<CancellationToken, ValueTask> operation,
         byte[]? successBytes,
         bool includeDiscoveryFailureStage,
+        CancellationToken cancellationToken) =>
+        await RunOperationAsync(
+                standardOutput,
+                standardError,
+                async cancellation =>
+                {
+                    await operation(cancellation).ConfigureAwait(false);
+                    return successBytes;
+                },
+                includeDiscoveryFailureStage,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+    private static async ValueTask<int> RunOperationAsync(
+        Stream standardOutput,
+        Stream standardError,
+        Func<CancellationToken, ValueTask<byte[]?>> operation,
+        bool includeDiscoveryFailureStage,
         CancellationToken cancellationToken)
     {
         try
         {
-            await operation(cancellationToken).ConfigureAwait(false);
+            byte[]? successBytes = await operation(cancellationToken).ConfigureAwait(false);
             if (successBytes is not null)
             {
                 await WriteBytesAsync(standardOutput, successBytes, cancellationToken)
@@ -504,6 +559,7 @@ internal static class AtlasCliApplication
         DefinitionIntake,
         SaveSnapshot,
         SnapshotSurvey,
+        SnapshotGoldValidate,
         CleanupPreflight,
     }
 

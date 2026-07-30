@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Text;
+using System.Text.Json.Nodes;
 using Hcoona.CelesphoniaModifier.Atlas;
 using Xunit;
 
@@ -20,6 +22,7 @@ public sealed class AtlasProcessSmokeTests
         .. "  celesphonia-atlas definition-intake <request-file>\n"u8,
         .. "  celesphonia-atlas save-snapshot <request-file>\n"u8,
         .. "  celesphonia-atlas snapshot-survey <request-file>\n"u8,
+        .. "  celesphonia-atlas snapshot-gold-validate <request-file>\n"u8,
         .. "  celesphonia-atlas cleanup-preflight <request-file>\n"u8,
         .. "\n"u8,
         .. "Commands:\n"u8,
@@ -30,6 +33,7 @@ public sealed class AtlasProcessSmokeTests
         .. "  definition-intake  Copy the approved local definition set.\n"u8,
         .. "  save-snapshot      Create a verified read-only save snapshot.\n"u8,
         .. "  snapshot-survey    Survey one finalized save snapshot.\n"u8,
+        .. "  snapshot-gold-validate  Validate Gold candidates in a finalized snapshot.\n"u8,
         .. "  cleanup-preflight  Report private-artifact cleanup eligibility.\n"u8,
         .. "\n"u8,
         .. "Options:\n"u8,
@@ -98,6 +102,42 @@ public sealed class AtlasProcessSmokeTests
         Assert.Equal("Snapshot survey completed.\n"u8.ToArray(), result.StandardOutput);
         Assert.Empty(result.StandardError);
         Assert.True(File.Exists(workspace.FinalManifestPath));
+    }
+
+    [Fact]
+    public async Task GoldSnapshotValidationProcessWritesExactAggregateBytes()
+    {
+        string[] values = Enumerable.Repeat("0", 216).ToArray();
+        values[215] = "131";
+        string json = "{\"party\":{\"_gold\":131},\"variables\":{\"_data\":["
+            + string.Join(",", values)
+            + "]}}";
+        await using SnapshotSurveyWorkspace workspace =
+            await SnapshotSurveyWorkspace.CreateAsync(("file1.rpgsave", json));
+        JsonObject request = new()
+        {
+            ["schemaVersion"] =
+                AtlasGoldSnapshotValidationContracts.RequestSchemaVersion,
+            ["repositoryRoot"] = workspace.RepositoryRoot,
+            ["snapshotReceiptPath"] = workspace.SnapshotReceiptPath,
+        };
+        await File.WriteAllTextAsync(
+            workspace.RequestPath,
+            request.ToJsonString(),
+            new UTF8Encoding(false),
+            TestContext.Current.CancellationToken);
+
+        ProcessResult result = await RunAsync(
+            "snapshot-gold-validate",
+            workspace.RequestPath);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(
+            Encoding.UTF8.GetBytes(
+                "Gold snapshot validation: AllConsistent; total=1; "
+                    + "Consistent=1; Disagree=0; Incomplete=0.\n"),
+            result.StandardOutput);
+        Assert.Empty(result.StandardError);
     }
 
     [Fact]
