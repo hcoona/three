@@ -31,6 +31,14 @@
 > governs the synthetic explicit finalized-snapshot survey implementation. A real private survey,
 > A6, and later work remain unauthorized by plan or artifact presence.
 
+<!-- Separate independent authority notices. -->
+
+> **Conditional A6R1 replacement**
+> Before exact verified shared `R6R1`, the historical A6 section remains blocked. After that event,
+> `atlas-v0-a6-gold-candidate-read-model.md` supersedes the historical claim-ledger and semantic
+> correlation mechanics and governs only the synthetic read-only two-candidate Gold model. It grants
+> no private validation, semantic authority, editing, or writes.
+
 **Status:** Confirmed execution baseline
 
 > **Conditional A2 amendment**
@@ -353,6 +361,12 @@ exist.
 - Progress would require deleting evidence before its last review.
 
 ## 12. Increment A6: Preliminary Source Correlation and Claim Ledger
+
+> **Conditional lifecycle**
+> Before verified shared `R6R1`, this historical A6 section remains blocked. After verified shared
+> `R6R1`, it is superseded for A6 execution by
+> `atlas-v0-a6-gold-candidate-read-model.md` and remains historical supporting context only. The text
+> below is intentionally not rewritten.
 
 This increment is bounded preliminary annotation for value comparison. It does not perform
 manual game actions, deep semantic proof, or operation qualification.

@@ -34,11 +34,21 @@
 > survey implementation. This document retains historical research and A6+ context without granting a
 > real private survey, semantics, editing, or writes.
 
+<!-- Separate independent authority notices. -->
+
+> **Conditional A6R1 relationship**
+> Before exact verified shared `R6R1`, no A6 authority comes from this document or the A6R1 candidate.
+> After that event, `atlas-v0-a6-gold-candidate-read-model.md` supersedes historical A6 claim-ledger
+> and semantic-correlation direction only for A6 execution and governs a synthetic read-only model of
+> two fixed Gold candidates. This document retains historical research and later editor questions
+> without granting private validation, semantic authority, editing, or writes.
+
 **Lifecycle:** Active normative research baseline before verified shared `R14`; partially superseded and
-historical supporting for A0-A5 execution after the applicable activation records
+historical supporting for A0-A6 execution after the applicable activation records
 
 **Status:** Confirmed research baseline before verified `R14`; historical supporting under A2R14 after
-verified `R14`, including A4 scanner and A5 survey-runner context after their verified shared records
+verified `R14`, including A4 scanner, A5 survey-runner, and A6 semantic context after their verified
+shared records
 
 **Purpose:** Produce a comprehensive, privacy-safe structural map before selecting deep research
 
@@ -392,6 +402,11 @@ User-domain labels are presentation facets, not concept parents or identifiers. 
 IA must follow selected user tasks rather than reproduce either Atlas lens.
 
 ## 10. Gold example
+
+> **Conditional A6R1 scope**
+> After verified shared `R6R1`, A6 execution is limited to the fixed read-only candidate model in
+> `atlas-v0-a6-gold-candidate-read-model.md`. The broader source-link, cross-save, experiment, and
+> writable-operation discussion below remains historical or deferred and grants no authority.
 
 Atlas v0 first records two independent observations:
 

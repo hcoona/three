@@ -23,6 +23,10 @@ synthetic single-document scanner and leaves A5/private/real work blocked.
 Before verified shared `R5R1`, it grants no implementation or survey authority; afterward it governs
 only the synthetic implementation of an explicit finalized-snapshot survey runner and leaves every
 real private survey blocked pending an explicit user-supplied receipt path.
+`plans/atlas-v0-a6-gold-candidate-read-model.md` is the conditional A6R1 replacement plan. Before
+verified shared `R6R1`, it grants no implementation authority; afterward it governs only a synthetic,
+read-only, two-candidate Gold model over one already-read slot and grants no semantic or write
+authority.
 
 ## Normative baseline
 
@@ -44,6 +48,10 @@ real private survey blocked pending an explicit user-supplied receipt path.
   verified shared `R5R1`, it supersedes only historical A5 survey-runner mechanics and authorizes the
   synthetic C5R1 library/CLI/schema/test implementation. It does not claim or authorize a real survey
   by presence.
+- `plans/atlas-v0-a6-gold-candidate-read-model.md` is the conditional A6R1 governing plan. After
+  verified shared `R6R1`, it supersedes historical A6 claim-ledger and semantic-correlation mechanics
+  with a fixed synthetic read-only model for `party._gold` and `variables._data[215]`. It does not
+  establish authority, gameplay validity, editing, private validation, or writes.
 - `plans/atlas-v0-a0-research-contract.md` records the approved finite corpus, definition,
   privacy, redaction, Agent-egress, artifact-lifecycle, and handoff contract for increment A0.
   Human scope approval alone does not establish increment completion.
@@ -243,6 +251,14 @@ real private survey blocked pending an explicit user-supplied receipt path.
 - `reviews/atlas-v0-a5-explicit-snapshot-corpus-survey-release-gate.md`, when present and verified as
   exact `G5R1`, establishes the reviewed A5R1 survey runner and does not claim that a real private
   survey occurred.
+- `reviews/atlas-v0-a5-private-survey-completion.md`, when present and verified as exact `G5R2`,
+  establishes only that one explicit finalized snapshot survey completed. It grants no further
+  private access, semantic authority, editing, or writes.
+- `reviews/atlas-v0-a6-gold-candidate-read-model-plan-review.md`, when present and verified as exact
+  `R6R1`, activates only the synthetic A6R1 implementation authority.
+- `reviews/atlas-v0-a6-gold-candidate-read-model-release-gate.md`, when present and verified as exact
+  `G6R1`, establishes only the reviewed read-only Gold candidate model and grants no private
+  validation, semantic, edit, or write authority.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` is obsolete and blocked. A2R8 publishes no private
   discovery token, disposition, outcome, count, difference, hash, path, name, or document content.
 
