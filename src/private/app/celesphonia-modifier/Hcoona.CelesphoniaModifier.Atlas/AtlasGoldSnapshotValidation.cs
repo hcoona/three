@@ -50,11 +50,10 @@ public static class AtlasGoldSnapshotValidation
                 .ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         AtlasValidatedSaveSnapshot snapshot =
-            await AtlasFinalizedSaveSnapshot.OpenBoundedAsync(
+            await AtlasFinalizedSaveSnapshot.OpenAsync(
                     request.RepositoryRoot,
                     request.SnapshotReceiptPath,
                     io,
-                    readerLimits.MaximumEncodedBytes,
                     cancellationToken)
                 .ConfigureAwait(false);
 

@@ -251,6 +251,38 @@ public sealed class AtlasGoldSnapshotValidationTests
     }
 
     [Fact]
+    public async Task ExcludedDocumentsDoNotUseTheSlotEncodedInputLimit()
+    {
+        byte[] slotBytes = AtlasLzStringCodec.CompressToBase64(
+            GoldJson("19", "19"),
+            cancellationToken: TestContext.Current.CancellationToken);
+        await using SnapshotSurveyWorkspace workspace =
+            await CreateRawValidationWorkspaceAsync(
+                ("global.rpgsave", new byte[slotBytes.Length + 1]),
+                ("config.rpgsave", new byte[slotBytes.Length + 2]),
+                ("file1.rpgsave", slotBytes));
+        AtlasSaveReaderLimits limits = AtlasSaveReaderLimits.Default with
+        {
+            MaximumEncodedBytes = slotBytes.Length,
+        };
+
+        AtlasGoldSnapshotValidationSummary result =
+            await AtlasGoldSnapshotValidation.RunAsync(
+                workspace.RequestPath,
+                AtlasIoSeams.Default,
+                limits,
+                TestContext.Current.CancellationToken);
+
+        AssertSummary(
+            result,
+            AtlasGoldSnapshotValidationState.AllConsistent,
+            total: 1,
+            consistent: 1,
+            disagree: 0,
+            incomplete: 0);
+    }
+
+    [Fact]
     public async Task SnapshotWithoutSlotsIsRefused()
     {
         await using SnapshotSurveyWorkspace workspace =
