@@ -6,6 +6,13 @@
 
 **Scope:** Investment, sequencing, authority, design, assurance, delivery, and retirement
 
+> **Conditional A6R5 sequencing adjustment**
+> Before verified shared `R6R5`, this document's existing sequencing remains unchanged. After that
+> event, `atlas-v0-a6-private-gold-editor.md` supersedes only the requirement that comprehensive Atlas
+> v0 and broader value selection precede the first private Gold UI. Released A6R1-A6R4 already bound
+> the selected Gold read, validation, mutation, and single-slot application path. Broader domain
+> selection, external exposure, and distribution remain deferred.
+
 ## 1. Role of this document
 
 This document governs whether, when, and to what depth the project implements the candidate
@@ -27,10 +34,11 @@ The first deliverable is for one owner's personal and private use:
 - Treat external testing or public distribution as a future investment decision, not an
   implicit next step.
 
-The first proven Gold experiment established that structured editing is feasible. It did not
-prove the semantics or write authority of every save domain. The next product question is
-therefore not another UI feature. It is a comprehensive preliminary map of the observed save
-structure, followed by human selection of valuable domains for deeper research.
+The first proven Gold experiment established that structured editing is feasible. It did not prove
+the semantics or write authority of every save domain. Comprehensive Atlas mapping and human value
+selection therefore remain prerequisites for broader domain investment. After verified shared
+`R6R5`, they no longer block the bounded private Gold editor selected by
+`atlas-v0-a6-private-gold-editor.md`.
 
 ## 3. Operating principles
 

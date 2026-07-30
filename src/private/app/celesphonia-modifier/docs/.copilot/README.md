@@ -38,6 +38,9 @@ fixed two-path candidate generation and grants no filesystem-write or operation 
 shared `R6R4`, it grants no implementation authority; afterward it governs only a Windows,
 library-only, single-slot Gold file application over released G6R3 and grants no private execution,
 CLI, schema, request, transaction, recovery-service, or multi-file authority.
+`plans/atlas-v0-a6-private-gold-editor.md` is the conditional A6R5 governing plan. Before verified
+shared `R6R5`, it grants no implementation or private-run authority; afterward it governs only a
+single-window private WinUI Gold editor over released G6R4 using synthetic implementation evidence.
 
 ## Normative baseline
 
@@ -76,6 +79,11 @@ CLI, schema, request, transaction, recovery-service, or multi-file authority.
   shared `R6R4`, it authorizes only synthetic implementation of the fixed-artifact, archive-first,
   Windows single-slot library application. `G6R4` grants no private execution, CLI, schema, request,
   multi-file transaction, rollback, cleanup-service, journal, ledger, or recovery authority.
+- `plans/atlas-v0-a6-private-gold-editor.md` is the conditional A6R5 governing plan. After verified
+  shared `R6R5`, it supersedes only stale sequencing and heavyweight prerequisites for the first
+  private Gold UI and authorizes the exact synthetic WinUI implementation. Only verified `G6R5`
+  releases deliberate owner-operated use; Agents and automated validation remain excluded from
+  private saves.
 - `plans/atlas-v0-a0-research-contract.md` records the approved finite corpus, definition,
   privacy, redaction, Agent-egress, artifact-lifecycle, and handoff contract for increment A0.
   Human scope approval alone does not establish increment completion.
@@ -300,6 +308,12 @@ CLI, schema, request, transaction, recovery-service, or multi-file authority.
 - `reviews/atlas-v0-a6-gold-file-application-release-gate.md`, when present and verified as exact
   `G6R4`, releases only the reviewed Windows single-slot library application and grants no private
   execution, CLI, schema, request, transaction, rollback, or recovery authority.
+- `reviews/atlas-v0-a6-private-gold-editor-plan-review.md`, when present and verified as exact
+  `R6R5`, activates only the bounded synthetic A6R5 WinUI implementation authority.
+- `reviews/atlas-v0-a6-private-gold-editor-release-gate.md`, when present and verified as exact
+  `G6R5`, releases only the reviewed personal-use WinUI Gold editor and grants no Agent private-data
+  access, automated private execution, discovery, catalog, restore, cleanup, or distribution
+  authority.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` is obsolete and blocked. A2R8 publishes no private
   discovery token, disposition, outcome, count, difference, hash, path, name, or document content.
 

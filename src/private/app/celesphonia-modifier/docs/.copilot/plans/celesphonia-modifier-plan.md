@@ -9,6 +9,17 @@ Steam build 13624401, database `versionId` 2444532
 
 **Plan date:** July 15, 2026
 
+> **Conditional A6R5 private Gold slice**
+> Before verified shared `R6R5`, this document's existing product requirements remain unchanged.
+> After that event, `atlas-v0-a6-private-gold-editor.md` governs the first personal-use Gold editor
+> and supersedes, only for that slice, installation/catalog/global-pair prerequisites, the rich
+> transaction/recovery design, full shell and workspace IA, four-layer decomposition, localization,
+> packaging, and distribution requirements. Released G6R4 supplies the proportional one-slot
+> archive-first write protocol. The requirements below remain active hypotheses for broader future
+> product work unless separately superseded.
+
+<!-- Separate independent authority notices. -->
+
 > **Progression authority**
 > `project-operating-model.md` governs investment, sequencing, staffing, gates, and scope cuts.
 > `save-semantic-atlas-plan.md` governs the comprehensive preliminary semantic survey.

@@ -39,6 +39,15 @@
 > correlation mechanics and governs only the synthetic read-only two-candidate Gold model. It grants
 > no private validation, semantic authority, editing, or writes.
 
+<!-- Separate independent authority notices. -->
+
+> **Conditional A6R5 product-slice replacement**
+> Before exact verified shared `R6R5`, this plan grants no WinUI implementation or private-run
+> authority. After that event, `atlas-v0-a6-private-gold-editor.md` supersedes historical A7/A8
+> sequencing only as a prerequisite for the first bounded Gold editor. Historical generated Atlas
+> views and broader value selection remain supporting future-domain work, not blockers for the
+> released A6R1-A6R4 Gold path.
+
 **Status:** Confirmed execution baseline
 
 > **Conditional A2 amendment**
@@ -48,7 +57,8 @@
 
 **Implementation language:** C# on the repository-pinned .NET SDK
 
-**Product scope:** Personal and private research; no WinUI or external distribution
+**Product scope:** Personal and private research; WinUI only under verified A6R5; no external
+distribution
 
 ## 1. Purpose
 
