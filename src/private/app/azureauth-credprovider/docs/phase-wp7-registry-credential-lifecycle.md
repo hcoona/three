@@ -97,6 +97,34 @@ Cleanup removes a known product-owned temporary container after its owned files 
 manifestless container is removed only when empty; nonempty unknown content is preserved and
 reported as incomplete.
 
+## Live package-manager invocation evidence
+
+On 2026-07-30, the production apphost from commit `31e60f70` was exercised in WSL with an
+isolated product configuration root, home, package-manager configuration, Corepack cache, and
+working directory. It configured the public Azure Artifacts `PublicTools` npm registry and ran:
+
+```text
+azureauth-credprovider configure npm --registry-url <public-feed>
+npm view @microsoft/artifacts-npm-credprovider version --registry <public-feed>
+
+azureauth-credprovider configure pnpm --registry-url <public-feed>
+pnpm view @microsoft/artifacts-npm-credprovider version --registry <public-feed>
+
+azureauth-credprovider configure yarn --registry-url <public-feed>
+corepack yarn@4.9.2 npm info @microsoft/artifacts-npm-credprovider --fields version --json
+```
+
+npm `11.9.0`, pnpm `11.17.0`, and Yarn `4.9.2` each resolved package version `1.1.3`. The
+temporary Yarn project declared its non-secret scoped registry route; the product-owned user
+configuration supplied the exact-registry auth selectors. The public feed is readable without
+authentication, so this evidence validates real configured invocation paths but does not claim
+private-feed authorization.
+
+Product `unconfigure npm` removed the shared npm/pnpm selector, `unconfigure yarn` removed both
+Yarn selectors, and identity unconfiguration removed the isolated binding and provider records.
+Checks confirmed that no auth selector or ownership sidecar remained before the temporary root was
+deleted. No token, account, or tenant identifier is recorded in this evidence.
+
 ## Maintenance tradeoff
 
 This model favors understandable selector ownership and predictable cleanup over speculative

@@ -37,13 +37,12 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
     }
 
     [Fact]
-    public void EvaluateMarksFullReleaseEvidenceGapsAsDeferredReleaseEvidence()
+    public void EvaluateMarksRemainingFullReleaseEvidenceGapsAsDeferredReleaseEvidence()
     {
         ReleaseHardeningPhase15MatrixResult result =
             ReleaseHardeningPhase15VerticalSliceService.Evaluate();
 
         AssertDeferredReleaseEvidence(result, "remote-windows-first-platform-acceptance");
-        AssertDeferredReleaseEvidence(result, "real-package-manager-invocation-paths");
         AssertDeferredReleaseEvidence(result, "final-installer-uninstaller-validation");
 
         ReleaseHardeningPhase15Check installer = Assert.Single(
@@ -53,6 +52,26 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
         Assert.Equal(ReleaseHardeningPhase15CheckStatus.DeferredReleaseEvidence, installer.Status);
         Assert.Equal("project-breakdown phase 15", installer.Evidence);
         Assert.Contains("Final installer package", installer.Notes, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EvaluateRecordsRealPackageManagerInvocationReleaseEvidence()
+    {
+        ReleaseHardeningPhase15MatrixResult result =
+            ReleaseHardeningPhase15VerticalSliceService.Evaluate();
+
+        ReleaseHardeningPhase15Check check = Assert.Single(
+            result.Checks,
+            static candidate => candidate.Id == "real-package-manager-invocation-paths"
+        );
+        Assert.False(check.RequiredForMvp);
+        Assert.True(check.RequiredForFullRelease);
+        Assert.Equal(ReleaseHardeningPhase15CheckStatus.Pass, check.Status);
+        Assert.Contains("31e60f70", check.Evidence, StringComparison.Ordinal);
+        Assert.Contains("npm 11.9.0", check.Notes, StringComparison.Ordinal);
+        Assert.Contains("pnpm 11.17.0", check.Notes, StringComparison.Ordinal);
+        Assert.Contains("Yarn 4.9.2", check.Notes, StringComparison.Ordinal);
+        Assert.Contains("feed is public", check.Notes, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -72,7 +91,7 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
     }
 
     [Fact]
-    public void EvaluateRequiresLiveAzureAuthWslReleaseEvidence()
+    public void EvaluateRecordsLiveAzureAuthWslReleaseEvidence()
     {
         ReleaseHardeningPhase15MatrixResult result =
             ReleaseHardeningPhase15VerticalSliceService.Evaluate();
@@ -83,9 +102,11 @@ public sealed class ReleaseHardeningPhase15VerticalSliceServiceTests
         );
         Assert.False(check.RequiredForMvp);
         Assert.True(check.RequiredForFullRelease);
-        Assert.Equal(ReleaseHardeningPhase15CheckStatus.DeferredReleaseEvidence, check.Status);
-        Assert.Contains("implemented", check.Notes, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("live", check.Notes, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(ReleaseHardeningPhase15CheckStatus.Pass, check.Status);
+        Assert.Contains("31e60f70", check.Evidence, StringComparison.Ordinal);
+        Assert.Contains("broker", check.Notes, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("without browser", check.Notes, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("does not establish", check.Notes, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

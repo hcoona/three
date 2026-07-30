@@ -349,7 +349,12 @@ public sealed class CliApplicationTests
             StringComparison.Ordinal
         );
         Assert.Contains(
-            "azureauth-wsl-live-acceptance: deferred-release-evidence\n",
+            "azureauth-wsl-live-acceptance: pass\n",
+            result.StdOut,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "real-package-manager-invocation-paths: pass\n",
             result.StdOut,
             StringComparison.Ordinal
         );

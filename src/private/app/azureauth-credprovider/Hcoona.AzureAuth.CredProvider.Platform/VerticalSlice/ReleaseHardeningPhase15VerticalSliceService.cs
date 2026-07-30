@@ -155,12 +155,16 @@ public static class ReleaseHardeningPhase15VerticalSliceService
                     "Remote Windows 11 and Windows Server acceptance evidence is still required "
                         + "before full release readiness closes."
                 ),
-                DeferredReleaseEvidence(
+                ReleaseEvidencePass(
                     "real-package-manager-invocation-paths",
                     "npm",
-                    "phase-1.4-npm-yarn-config-evidence",
-                    "Selected real npm, pnpm, and Yarn invocation-path evidence remains a "
-                        + "release evidence item beyond deterministic local fake coverage."
+                    "phase-wp7-registry-credential-lifecycle; commit 31e60f70",
+                    "On 2026-07-30, npm 11.9.0, pnpm 11.17.0, and Yarn 4.9.2 "
+                        + "resolved a known package from the public Azure Artifacts feed through "
+                        + "isolated production configuration paths. Product unconfiguration "
+                        + "removed the auth selectors and ownership sidecars before the temporary "
+                        + "root was deleted. Because the feed is public, this evidence does not "
+                        + "claim private-feed authorization."
                 ),
                 DeferredReleaseEvidence(
                     "final-installer-uninstaller-validation",
@@ -177,14 +181,15 @@ public static class ReleaseHardeningPhase15VerticalSliceService
                         + "PAT acquisition and materialization are explicitly deferred with no "
                         + "fallback, cache, or invented identity."
                 ),
-                DeferredReleaseEvidence(
+                ReleaseEvidencePass(
                     "azureauth-wsl-live-acceptance",
                     "identity",
-                    "phase-wp3-azureauth-process-provider",
-                    "AzureAuth 0.9.5 discovery and interactive process acquisition are "
-                        + "implemented for Windows and WSL. Live WSL-to-Windows acceptance "
-                        + "remains required before release and does not establish Windows-native "
-                        + "Git, Visual Studio, or NuGet.exe acceptance."
+                    "phase-wp3-azureauth-process-provider; commit 31e60f70",
+                    "On 2026-07-30, the production WSL apphost discovered the pinned Windows "
+                        + "AzureAuth 0.9.5 installation and completed token acquisition through "
+                        + "the Windows default broker path without browser interaction or secret "
+                        + "output. This does not establish Windows-native Git, Visual Studio, or "
+                        + "NuGet.exe acceptance."
                 ),
             ],
         };
@@ -247,6 +252,23 @@ public static class ReleaseHardeningPhase15VerticalSliceService
             Notes = notes,
         };
     }
+
+    private static ReleaseHardeningPhase15Check ReleaseEvidencePass(
+        string id,
+        string area,
+        string evidence,
+        string notes
+    ) =>
+        new()
+        {
+            Id = id,
+            Area = area,
+            Status = ReleaseHardeningPhase15CheckStatus.Pass,
+            RequiredForMvp = false,
+            RequiredForFullRelease = true,
+            Evidence = evidence,
+            Notes = notes,
+        };
 
     private static ReleaseHardeningPhase15Check DeferredOptionalFeature(
         string id,

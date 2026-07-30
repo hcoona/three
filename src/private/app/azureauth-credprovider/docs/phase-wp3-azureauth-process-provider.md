@@ -1,13 +1,13 @@
 # WP3 — AzureAuth Async Process Identity Provider
 
-Status: **implemented as an explicit optional async provider path only**
+Status: **implemented in production; WSL-to-Windows live acceptance recorded**
 
-Date: **2026-07-20**
+Date: **2026-07-30**
 
-WP3 adds a narrowly scoped, test-instantiated AzureAuth execution path behind a
-new async access-token seam. The existing frozen v1 synchronous
-`CredentialCoreService` path remains unchanged and is still the current runtime
-default.
+WP3 introduced the async AzureAuth access-token seam. Subsequent work packages
+connected it to production composition, credential materialization, product
+identity configuration, and host adapters. The frozen v1 contracts remain
+unchanged.
 
 ## Scope
 
@@ -22,11 +22,32 @@ Implemented in WP3:
 
 Still out of scope:
 
-- credential exchange or host-tool materialization (WP4)
-- opaque CI token work (WP5)
-- production composition across persisted adapters and stores
-- registry lifecycle
-- live AzureAuth acceptance
+- Direct MSAL
+- AzureAuth device-code invocation
+- product-owned persistent derived credential caching
+- Windows-native Git, Visual Studio, and NuGet.exe acceptance
+
+## Live WSL acceptance
+
+On 2026-07-30, commit `31e60f70` was exercised from WSL against the installed
+Windows AzureAuth `0.9.5.0` executable. An isolated product configuration root
+recorded an operator-supplied tenant with no account preference. The production
+apphost:
+
+1. discovered the supported Windows installation through the WSL path;
+2. invoked AzureAuth with the exact argv documented below and no explicit
+   `--mode`;
+3. completed through AzureAuth's Windows default broker path without opening a
+   browser;
+4. materialized the supported Git token-as-password form;
+5. returned safe login status while printing and persisting no token; and
+6. removed the isolated identity configuration afterward.
+
+The installed executable reported version `0.9.5.0` and SHA-256
+`6764403f10e806d39dad7cc8d804f2b9fdb0d1634474a4f4296b3bd9284ba985`.
+No account identifier, tenant identifier, or token material is recorded here.
+This acceptance closes the WSL-to-Windows AzureAuth row only; it does not claim
+Windows-native host-tool acceptance.
 
 ## Exact AzureAuth Invocation
 
