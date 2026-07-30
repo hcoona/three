@@ -34,6 +34,10 @@ finalized A3 snapshot. Private execution remains separately gated after `G6R2`.
 `plans/atlas-v0-a6-gold-mutation-kernel.md` is the conditional A6R3 governing plan. Before verified
 shared `R6R3`, it grants no implementation authority; afterward it governs only pure in-memory,
 fixed two-path candidate generation and grants no filesystem-write or operation authority.
+`plans/atlas-v0-a6-gold-file-application.md` is the conditional A6R4 governing plan. Before verified
+shared `R6R4`, it grants no implementation authority; afterward it governs only a Windows,
+library-only, single-slot Gold file application over released G6R3 and grants no private execution,
+CLI, schema, request, transaction, recovery-service, or multi-file authority.
 
 ## Normative baseline
 
@@ -68,6 +72,10 @@ fixed two-path candidate generation and grants no filesystem-write or operation 
   shared `R6R3`, it authorizes only synthetic implementation of a pure in-memory fixed two-path Gold
   candidate transform. Verified `X6R2` is sequencing evidence only, and `G6R3` grants no filesystem
   write, operation, private-execution, semantic, range, coupling, transaction, or recovery authority.
+- `plans/atlas-v0-a6-gold-file-application.md` is the conditional A6R4 governing plan. After verified
+  shared `R6R4`, it authorizes only synthetic implementation of the fixed-artifact, archive-first,
+  Windows single-slot library application. `G6R4` grants no private execution, CLI, schema, request,
+  multi-file transaction, rollback, cleanup-service, journal, ledger, or recovery authority.
 - `plans/atlas-v0-a0-research-contract.md` records the approved finite corpus, definition,
   privacy, redaction, Agent-egress, artifact-lifecycle, and handoff contract for increment A0.
   Human scope approval alone does not establish increment completion.
@@ -287,6 +295,11 @@ fixed two-path candidate generation and grants no filesystem-write or operation 
 - `reviews/atlas-v0-a6-gold-mutation-kernel-release-gate.md`, when present and verified as exact
   `G6R3`, releases only pure in-memory candidate generation and grants no filesystem-write or
   operation authority.
+- `reviews/atlas-v0-a6-gold-file-application-plan-review.md`, when present and verified as exact
+  `R6R4`, activates only the bounded synthetic A6R4 implementation authority.
+- `reviews/atlas-v0-a6-gold-file-application-release-gate.md`, when present and verified as exact
+  `G6R4`, releases only the reviewed Windows single-slot library application and grants no private
+  execution, CLI, schema, request, transaction, rollback, or recovery authority.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` is obsolete and blocked. A2R8 publishes no private
   discovery token, disposition, outcome, count, difference, hash, path, name, or document content.
 
