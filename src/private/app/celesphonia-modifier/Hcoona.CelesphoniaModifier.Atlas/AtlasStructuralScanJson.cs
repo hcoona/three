@@ -43,47 +43,11 @@ public static class AtlasStructuralScanJson
         AtlasStructuralScanner.ValidateDocumentRole(expectedRole);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (canonicalUtf8.Length > effectiveLimits.MaximumCanonicalUtf8Bytes)
-        {
-            throw new AtlasStructuralScanException(
-                AtlasStructuralScanFailure.CanonicalSerializationLimit
-            );
-        }
-
-        ReadOnlySpan<byte> input = canonicalUtf8.Span;
-        if (
-            input.Length == 0
-            || input[^1] != (byte)'\n'
-            || input.Length >= 3 && input[0] == 0xEF && input[1] == 0xBB && input[2] == 0xBF
-        )
-        {
-            throw Malformed();
-        }
-
-        ValidateCanonicalLexicalBounds(input[..^1], cancellationToken);
-
-        AtlasStructuralScanDocument document;
-        try
-        {
-            Parser parser = new(input[..^1], effectiveLimits, cancellationToken);
-            document = parser.Parse();
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (AtlasStructuralScanException)
-        {
-            throw;
-        }
-        catch (JsonException)
-        {
-            throw Malformed();
-        }
-        catch (InvalidOperationException)
-        {
-            throw Malformed();
-        }
+        AtlasStructuralScanDocument document = ParseDocument(
+            canonicalUtf8,
+            effectiveLimits,
+            cancellationToken
+        );
 
         AtlasStructuralScanValidator.ValidateAgainstSource(
             document,
@@ -93,7 +57,7 @@ public static class AtlasStructuralScanJson
             cancellationToken
         );
         byte[] reserialized = SerializeValidated(document, effectiveLimits, cancellationToken);
-        if (!BytesEqual(reserialized, input, cancellationToken))
+        if (!BytesEqual(reserialized, canonicalUtf8.Span, cancellationToken))
         {
             throw Malformed();
         }
@@ -120,6 +84,64 @@ public static class AtlasStructuralScanJson
         return new AtlasStructuralScanResult(document, reserialized);
     }
 
+    internal static AtlasStructuralScanCensus ParsePersisted(
+        ReadOnlyMemory<byte> canonicalUtf8,
+        AtlasSaveReadResult expectedSource,
+        AtlasDocumentRole expectedRole,
+        AtlasStructuralScannerLimits limits,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(expectedSource);
+        limits.Validate();
+        AtlasStructuralScanner.ValidateDocumentRole(expectedRole);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        AtlasStructuralScanDocument document = ParseDocument(
+            canonicalUtf8,
+            limits,
+            cancellationToken
+        );
+        AtlasStructuralScanValidator.ValidateAgainstSource(
+            document,
+            expectedSource,
+            expectedRole,
+            limits,
+            cancellationToken
+        );
+        ValidateCanonicalEncoding(document, canonicalUtf8, cancellationToken);
+        return document.Census;
+    }
+
+    internal static void ValidateExpectedCanonical(
+        ReadOnlyMemory<byte> canonicalUtf8,
+        AtlasSaveReadResult expectedSource,
+        AtlasDocumentRole expectedRole,
+        AtlasStructuralScannerLimits limits,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(expectedSource);
+        limits.Validate();
+        AtlasStructuralScanner.ValidateDocumentRole(expectedRole);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        AtlasStructuralScanDocument expected = AtlasStructuralScanner.BuildDocument(
+            expectedSource,
+            expectedRole,
+            limits,
+            cancellationToken
+        );
+        AtlasStructuralScanValidator.ValidateAgainstSource(
+            expected,
+            expectedSource,
+            expectedRole,
+            limits,
+            cancellationToken
+        );
+        ValidateCanonicalEncoding(expected, canonicalUtf8, cancellationToken);
+    }
+
     internal static byte[] SerializeValidated(
         AtlasStructuralScanDocument document,
         AtlasStructuralScannerLimits limits,
@@ -128,6 +150,75 @@ public static class AtlasStructuralScanJson
     {
         cancellationToken.ThrowIfCancellationRequested();
         using BoundedMemoryStream stream = new(limits.MaximumCanonicalUtf8Bytes);
+        WriteValidated(document, stream, cancellationToken);
+        return stream.ToArray(cancellationToken);
+    }
+
+    private static AtlasStructuralScanDocument ParseDocument(
+        ReadOnlyMemory<byte> canonicalUtf8,
+        AtlasStructuralScannerLimits limits,
+        CancellationToken cancellationToken
+    )
+    {
+        if (canonicalUtf8.Length > limits.MaximumCanonicalUtf8Bytes)
+        {
+            throw new AtlasStructuralScanException(
+                AtlasStructuralScanFailure.CanonicalSerializationLimit
+            );
+        }
+
+        ReadOnlySpan<byte> input = canonicalUtf8.Span;
+        if (
+            input.Length == 0
+            || input[^1] != (byte)'\n'
+            || input.Length >= 3 && input[0] == 0xEF && input[1] == 0xBB && input[2] == 0xBF
+        )
+        {
+            throw Malformed();
+        }
+
+        ValidateCanonicalLexicalBounds(input[..^1], cancellationToken);
+
+        try
+        {
+            Parser parser = new(input[..^1], limits, cancellationToken);
+            return parser.Parse();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (AtlasStructuralScanException)
+        {
+            throw;
+        }
+        catch (JsonException)
+        {
+            throw Malformed();
+        }
+        catch (InvalidOperationException)
+        {
+            throw Malformed();
+        }
+    }
+
+    private static void ValidateCanonicalEncoding(
+        AtlasStructuralScanDocument document,
+        ReadOnlyMemory<byte> canonicalUtf8,
+        CancellationToken cancellationToken
+    )
+    {
+        using CanonicalComparingStream stream = new(canonicalUtf8, cancellationToken);
+        WriteValidated(document, stream, cancellationToken);
+        stream.Complete();
+    }
+
+    private static void WriteValidated(
+        AtlasStructuralScanDocument document,
+        Stream stream,
+        CancellationToken cancellationToken
+    )
+    {
         using (
             Utf8JsonWriter writer = new(
                 stream,
@@ -152,10 +243,78 @@ public static class AtlasStructuralScanJson
             writer.WriteEndObject();
             writer.Flush();
         }
-
         cancellationToken.ThrowIfCancellationRequested();
         stream.WriteByte((byte)'\n');
-        return stream.ToArray(cancellationToken);
+    }
+
+    private sealed class CanonicalComparingStream(
+        ReadOnlyMemory<byte> expected,
+        CancellationToken cancellationToken
+    ) : Stream
+    {
+        private int offset;
+
+        public override bool CanRead => false;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => true;
+
+        public override long Length => offset;
+
+        public override long Position
+        {
+            get => offset;
+            set => throw new NotSupportedException();
+        }
+
+        public void Complete()
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (offset != expected.Length)
+            {
+                throw Malformed();
+            }
+        }
+
+        public override void Flush()
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int bufferOffset, int count) =>
+            Write(buffer.AsSpan(bufferOffset, count));
+
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (buffer.Length > expected.Length - offset
+                || !buffer.SequenceEqual(expected.Span.Slice(offset, buffer.Length)))
+            {
+                throw Malformed();
+            }
+
+            offset += buffer.Length;
+        }
+
+        public override void WriteByte(byte value)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (offset >= expected.Length || expected.Span[offset] != value)
+            {
+                throw Malformed();
+            }
+
+            offset++;
+        }
     }
 
     private static void WriteCensus(Utf8JsonWriter writer, AtlasStructuralScanCensus census)

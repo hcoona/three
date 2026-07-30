@@ -165,6 +165,19 @@ public sealed class AtlasSnapshotSurveyTests
         Assert.False(
             IsSchemaValid(schema.RootElement, invalidInstance.RootElement, schema.RootElement));
 
+        JsonObject mismatchedSlot = JsonNode.Parse(bytes)!.AsObject();
+        JsonNode slotDocument = mismatchedSlot["documents"]!.AsArray()[0]!;
+        slotDocument["copiedSaveRelativePath"] = "file1.rpgsave";
+        slotDocument["documentRole"] = "slot-save";
+        slotDocument["scanRelativePath"] = "file20.rpgsave.structural-scan.json";
+        using JsonDocument mismatchedSlotInstance = JsonDocument.Parse(
+            mismatchedSlot.ToJsonString());
+        Assert.False(
+            IsSchemaValid(
+                schema.RootElement,
+                mismatchedSlotInstance.RootElement,
+                schema.RootElement));
+
         using JsonDocument requestSchema = JsonDocument.Parse(
             await File.ReadAllBytesAsync(
                 SnapshotSurveyWorkspace.GetSchemaPath(
@@ -179,6 +192,30 @@ public sealed class AtlasSnapshotSurveyTests
                 requestSchema.RootElement,
                 requestInstance.RootElement,
                 requestSchema.RootElement));
+    }
+
+    [Fact]
+    public void StructuralScanPersistenceOwnershipIsExplicitlyReleasable()
+    {
+        AtlasSaveReadResult source = AtlasSaveReader.Read(
+            AtlasLzStringCodec.CompressToBase64(
+                "{\"value\":1}",
+                cancellationToken: TestContext.Current.CancellationToken),
+            cancellationToken: TestContext.Current.CancellationToken);
+        AtlasStructuralScanResult scan = AtlasStructuralScanner.Scan(
+            source,
+            AtlasDocumentRole.GlobalSave,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        using AtlasStructuralScanPersistence persistence = scan.DetachForPersistence();
+
+        Assert.NotEmpty(persistence.CanonicalUtf8.ToArray());
+        Assert.Throws<InvalidOperationException>(
+            () => scan.GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken));
+        Assert.Throws<InvalidOperationException>(() => _ = scan.Document);
+
+        persistence.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => _ = persistence.CanonicalUtf8);
     }
 
     [Theory]
@@ -413,6 +450,158 @@ public sealed class AtlasSnapshotSurveyTests
                 TestContext.Current.CancellationToken).AsTask());
         Assert.Equal(scannerBefore, await scannerLimit.ReadSnapshotFilesAsync());
         Assert.False(Directory.Exists(scannerLimit.FinalRoot));
+    }
+
+    [Fact]
+    public async Task OversizedSnapshotEntryIsRefusedBeforeFullHashing()
+    {
+        const int maximumEncodedBytes = 32;
+        await using SnapshotSurveyWorkspace workspace =
+            await SnapshotSurveyWorkspace.CreateRawAsync(
+                ("global.rpgsave", new byte[4096]));
+        string sourcePath = Path.Combine(workspace.SnapshotRoot, "global.rpgsave");
+        IReadOnlyDictionary<string, byte[]> receiptBoundBefore =
+            await workspace.ReadSnapshotFilesAsync();
+        int receiptBoundSourceOpens = 0;
+        AtlasIoSeams receiptBoundIo = AtlasTestSupport.CreateIo(
+            openFile: (path, mode, access, share, options) =>
+            {
+                if (AtlasSaveSnapshotContracts.PathEquals(path, sourcePath)
+                    && mode == FileMode.Open
+                    && access == FileAccess.Read)
+                {
+                    receiptBoundSourceOpens++;
+                }
+
+                return AtlasIoSeams.Default.OpenFile(path, mode, access, share, options);
+            });
+        AtlasSaveReaderLimits readerLimits =
+            AtlasSaveReaderLimits.Default with { MaximumEncodedBytes = maximumEncodedBytes };
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => workspace.RunAsync(
+                receiptBoundIo,
+                AtlasSnapshotSurveyLimits.Default,
+                readerLimits,
+                AtlasStructuralScannerLimits.Default,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(0, receiptBoundSourceOpens);
+        Assert.Equal(receiptBoundBefore, await workspace.ReadSnapshotFilesAsync());
+        Assert.False(Directory.Exists(workspace.FinalRoot));
+
+        AtlasSaveSnapshotReceipt receipt =
+            await AtlasSaveSnapshotContracts.ReadReceiptAsync(
+                workspace.SnapshotReceiptPath,
+                AtlasIoSeams.Default,
+                TestContext.Current.CancellationToken);
+        AtlasSaveSnapshotReceipt forgedReceipt = receipt with
+        {
+            Entries =
+            [
+                receipt.Entries[0] with { Length = maximumEncodedBytes },
+            ],
+        };
+        await File.WriteAllBytesAsync(
+            workspace.SnapshotReceiptPath,
+            AtlasSaveSnapshotContracts.SerializeReceipt(forgedReceipt),
+            TestContext.Current.CancellationToken);
+        IReadOnlyDictionary<string, byte[]> fileBoundBefore =
+            await workspace.ReadSnapshotFilesAsync();
+        int hashedBytes = 0;
+        AtlasIoSeams fileBoundIo = AtlasTestSupport.CreateIo(
+            openFile: (path, mode, access, share, options) =>
+            {
+                Stream stream = AtlasIoSeams.Default.OpenFile(
+                    path,
+                    mode,
+                    access,
+                    share,
+                    options);
+                return AtlasSaveSnapshotContracts.PathEquals(path, sourcePath)
+                    && mode == FileMode.Open
+                    && access == FileAccess.Read
+                    ? new CountingReadStream(stream, count => hashedBytes += count)
+                    : stream;
+            });
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => workspace.RunAsync(
+                fileBoundIo,
+                AtlasSnapshotSurveyLimits.Default,
+                readerLimits,
+                AtlasStructuralScannerLimits.Default,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(maximumEncodedBytes + 1, hashedBytes);
+        Assert.Equal(fileBoundBefore, await workspace.ReadSnapshotFilesAsync());
+        Assert.False(Directory.Exists(workspace.FinalRoot));
+    }
+
+    [Fact]
+    public async Task PersistedScanSubstitutionOnReopenRefusesBeforeManifestAndPromotion()
+    {
+        await using SnapshotSurveyWorkspace workspace =
+            await SnapshotSurveyWorkspace.CreateAsync(
+                ("global.rpgsave", "true"));
+        IReadOnlyDictionary<string, byte[]> snapshotBefore =
+            await workspace.ReadSnapshotFilesAsync();
+        AtlasSaveReadResult substituteSource = AtlasSaveReader.Read(
+            AtlasLzStringCodec.CompressToBase64(
+                "null",
+                cancellationToken: TestContext.Current.CancellationToken),
+            cancellationToken: TestContext.Current.CancellationToken);
+        byte[] substituteScan = AtlasStructuralScanner.Scan(
+                substituteSource,
+                AtlasDocumentRole.GlobalSave,
+                cancellationToken: TestContext.Current.CancellationToken)
+            .GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken);
+        AtlasSaveReadResult expectedSource = AtlasSaveReader.Read(
+            AtlasLzStringCodec.CompressToBase64(
+                "true",
+                cancellationToken: TestContext.Current.CancellationToken),
+            cancellationToken: TestContext.Current.CancellationToken);
+        byte[] expectedScan = AtlasStructuralScanner.Scan(
+                expectedSource,
+                AtlasDocumentRole.GlobalSave,
+                cancellationToken: TestContext.Current.CancellationToken)
+            .GetCanonicalUtf8Bytes(TestContext.Current.CancellationToken);
+        Assert.Equal(expectedScan.Length, substituteScan.Length);
+        Assert.NotEqual(expectedScan, substituteScan);
+        string scanPath = Path.Combine(
+            workspace.IncompleteRoot,
+            "global.rpgsave.structural-scan.json");
+        int reopenCount = 0;
+        AtlasIoSeams io = AtlasTestSupport.CreateIo(
+            openFile: (path, mode, access, share, options) =>
+            {
+                if (AtlasSaveSnapshotContracts.PathEquals(path, scanPath)
+                    && mode == FileMode.Open
+                    && access == FileAccess.Read)
+                {
+                    reopenCount++;
+                    return new MemoryStream(substituteScan, writable: false);
+                }
+
+                return AtlasIoSeams.Default.OpenFile(path, mode, access, share, options);
+            });
+
+        await Assert.ThrowsAsync<AtlasSafetyException>(
+            () => workspace.RunAsync(
+                io,
+                AtlasSnapshotSurveyLimits.Default,
+                AtlasSaveReaderLimits.Default,
+                AtlasStructuralScannerLimits.Default,
+                TestContext.Current.CancellationToken).AsTask());
+
+        Assert.Equal(1, reopenCount);
+        Assert.False(
+            File.Exists(
+                Path.Combine(
+                    workspace.IncompleteRoot,
+                    AtlasSnapshotSurveyContracts.ManifestFileName)));
+        Assert.False(Directory.Exists(workspace.FinalRoot));
+        Assert.Equal(snapshotBefore, await workspace.ReadSnapshotFilesAsync());
     }
 
     [Theory]
@@ -912,6 +1101,67 @@ public sealed class AtlasSnapshotSurveyTests
             source.Cancel();
             return ValueTask.FromException(new OperationCanceledException(cancellationToken));
         }
+    }
+
+    private sealed class CountingReadStream(Stream inner, Action<int> countRead) : Stream
+    {
+        public override bool CanRead => inner.CanRead;
+
+        public override bool CanSeek => inner.CanSeek;
+
+        public override bool CanWrite => false;
+
+        public override long Length => inner.Length;
+
+        public override long Position
+        {
+            get => inner.Position;
+            set => inner.Position = value;
+        }
+
+        public override void Flush() => inner.Flush();
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            int read = inner.Read(buffer, offset, count);
+            countRead(read);
+            return read;
+        }
+
+        public override int Read(Span<byte> buffer)
+        {
+            int read = inner.Read(buffer);
+            countRead(read);
+            return read;
+        }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            int read = await inner.ReadAsync(buffer, cancellationToken);
+            countRead(read);
+            return read;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            inner.Seek(offset, origin);
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                inner.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+
     }
 }
 

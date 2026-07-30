@@ -210,6 +210,346 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file1.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file1.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file2.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file2.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file3.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file3.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file4.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file4.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file5.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file5.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file6.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file6.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file7.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file7.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file8.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file8.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file9.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file9.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file10.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file10.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file11.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file11.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file12.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file12.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file13.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file13.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file14.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file14.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file15.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file15.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file16.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file16.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file17.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file17.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file18.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file18.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file19.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file19.rpgsave.structural-scan.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "copiedSaveRelativePath": {
+                "const": "file20.rpgsave"
+              }
+            },
+            "required": ["copiedSaveRelativePath"]
+          },
+          "then": {
+            "properties": {
+              "scanRelativePath": {
+                "const": "file20.rpgsave.structural-scan.json"
+              }
+            }
+          }
         }
       ]
     },

@@ -44,10 +44,11 @@ public static class AtlasSnapshotSurvey
             AtlasSnapshotSurveyContracts.CreateLayout(request);
         ValidateLayout(layout, io);
         AtlasValidatedSaveSnapshot snapshot =
-            await AtlasFinalizedSaveSnapshot.OpenAsync(
+            await AtlasFinalizedSaveSnapshot.OpenBoundedAsync(
                     request.RepositoryRoot,
                     request.SnapshotReceiptPath,
                     io,
+                    readerLimits.MaximumEncodedBytes,
                     cancellationToken)
                 .ConfigureAwait(false);
         if (snapshot.Entries.Count > surveyLimits.MaximumDocuments)
@@ -193,32 +194,15 @@ public static class AtlasSnapshotSurvey
             .ConfigureAwait(false);
         AtlasDocumentRole role =
             AtlasSnapshotSurveyManifestJson.GetDocumentRole(entry.RelativePath);
-        AtlasStructuralScanResult scan;
-        try
-        {
-            scan = AtlasStructuralScanner.Scan(
-                source.ReadResult,
-                role,
-                scannerLimits,
-                cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (AtlasStructuralScanException exception)
-        {
-            throw new AtlasSafetyException(
-                "The snapshot structural scan was refused.",
-                AtlasDiscoveryFailureStage.Unspecified,
-                exception);
-        }
-
         string scanRelativePath = entry.RelativePath + ".structural-scan.json";
         string scanPath = GetContainedChildPath(candidateRoot, scanRelativePath);
-        ReadOnlyMemory<byte> canonicalBytes = scan.GetOwnedCanonicalUtf8Bytes();
-        string expectedHash = HashMemory(canonicalBytes.Span, cancellationToken);
-        await WriteNewFileAsync(scanPath, canonicalBytes, io, cancellationToken)
+        GeneratedScan generated = await GenerateAndWriteScanAsync(
+                scanPath,
+                source.ReadResult,
+                role,
+                io,
+                scannerLimits,
+                cancellationToken)
             .ConfigureAwait(false);
 
         PersistedScan persisted = await ReadAndValidateScanAsync(
@@ -229,8 +213,8 @@ public static class AtlasSnapshotSurvey
                 scannerLimits,
                 cancellationToken)
             .ConfigureAwait(false);
-        if (persisted.Bytes.LongLength != canonicalBytes.Length
-            || !StringComparer.Ordinal.Equals(persisted.Sha256, expectedHash))
+        if (persisted.Length != generated.Length
+            || !StringComparer.Ordinal.Equals(persisted.Sha256, generated.Sha256))
         {
             throw new AtlasSafetyException("The persisted structural scan is invalid.");
         }
@@ -241,9 +225,9 @@ public static class AtlasSnapshotSurvey
             scanRelativePath,
             entry.Length,
             entry.Sha256,
-            persisted.Bytes.LongLength,
+            persisted.Length,
             persisted.Sha256,
-            persisted.Result.Document.Census);
+            persisted.Census);
     }
 
     private static async ValueTask<bool> IsValidCandidateAsync(
@@ -259,10 +243,11 @@ public static class AtlasSnapshotSurvey
         try
         {
             AtlasValidatedSaveSnapshot snapshot =
-                await AtlasFinalizedSaveSnapshot.OpenAsync(
+                await AtlasFinalizedSaveSnapshot.OpenBoundedAsync(
                         request.RepositoryRoot,
                         request.SnapshotReceiptPath,
                         io,
+                        readerLimits.MaximumEncodedBytes,
                         cancellationToken)
                     .ConfigureAwait(false);
             Dictionary<string, string> children =
@@ -308,9 +293,9 @@ public static class AtlasSnapshotSurvey
                         scanRelativePath,
                         entry.Length,
                         entry.Sha256,
-                        persisted.Bytes.LongLength,
+                        persisted.Length,
                         persisted.Sha256,
-                        persisted.Result.Document.Census));
+                        persisted.Census));
                 _ = AtlasSnapshotSurveyManifestJson.CreateTotals(
                     documents,
                     surveyLimits,
@@ -502,7 +487,7 @@ public static class AtlasSnapshotSurvey
         AtlasStructuralScannerLimits scannerLimits,
         CancellationToken cancellationToken)
     {
-        byte[] bytes = await AtlasSnapshotSurveyContracts.ReadBoundedAsync(
+        byte[] bytes = await ReadScanBytesAsync(
                 scanPath,
                 scannerLimits.MaximumCanonicalUtf8Bytes,
                 io,
@@ -511,13 +496,19 @@ public static class AtlasSnapshotSurvey
         string sha256 = HashMemory(bytes, cancellationToken);
         try
         {
-            AtlasStructuralScanResult result = AtlasStructuralScanJson.Parse(
+            AtlasStructuralScanCensus census = AtlasStructuralScanJson.ParsePersisted(
                 bytes,
                 source,
                 role,
                 scannerLimits,
                 cancellationToken);
-            return new PersistedScan(bytes, sha256, result);
+            AtlasStructuralScanJson.ValidateExpectedCanonical(
+                bytes,
+                source,
+                role,
+                scannerLimits,
+                cancellationToken);
+            return new PersistedScan(bytes.LongLength, sha256, census);
         }
         catch (OperationCanceledException)
         {
@@ -530,6 +521,100 @@ public static class AtlasSnapshotSurvey
                 AtlasDiscoveryFailureStage.Unspecified,
                 exception);
         }
+    }
+
+    private static async ValueTask<byte[]> ReadScanBytesAsync(
+        string scanPath,
+        int maximumBytes,
+        AtlasIoSeams io,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!IsOrdinaryFile(scanPath, io))
+        {
+            throw new AtlasSafetyException("A persisted structural scan is invalid.");
+        }
+
+        long observedLength = io.GetLength(scanPath);
+        if (observedLength < 0 || observedLength > maximumBytes || observedLength > int.MaxValue)
+        {
+            throw new AtlasSafetyException(
+                "A persisted structural scan exceeds its byte limit.");
+        }
+
+        byte[] bytes = new byte[checked((int)observedLength)];
+        await using Stream stream = io.OpenFile(
+            scanPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        int offset = 0;
+        while (offset < bytes.Length)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            int read = await stream.ReadAsync(
+                    bytes.AsMemory(offset),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (read == 0)
+            {
+                throw new AtlasSafetyException(
+                    "A persisted structural scan changed during reading.");
+            }
+
+            offset = checked(offset + read);
+        }
+
+        byte[] extra = new byte[1];
+        if (await stream.ReadAsync(extra, cancellationToken).ConfigureAwait(false) != 0
+            || io.GetLength(scanPath) != observedLength
+            || stream.CanSeek && stream.Length != observedLength)
+        {
+            throw new AtlasSafetyException(
+                "A persisted structural scan changed during reading.");
+        }
+
+        return bytes;
+    }
+
+    private static async ValueTask<GeneratedScan> GenerateAndWriteScanAsync(
+        string scanPath,
+        AtlasSaveReadResult source,
+        AtlasDocumentRole role,
+        AtlasIoSeams io,
+        AtlasStructuralScannerLimits scannerLimits,
+        CancellationToken cancellationToken)
+    {
+        AtlasStructuralScanResult scan;
+        try
+        {
+            scan = AtlasStructuralScanner.Scan(
+                source,
+                role,
+                scannerLimits,
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (AtlasStructuralScanException exception)
+        {
+            throw new AtlasSafetyException(
+                "The snapshot structural scan was refused.",
+                AtlasDiscoveryFailureStage.Unspecified,
+                exception);
+        }
+
+        using AtlasStructuralScanPersistence persistence = scan.DetachForPersistence();
+        ReadOnlyMemory<byte> canonicalUtf8 = persistence.CanonicalUtf8;
+        GeneratedScan generated = new(
+            canonicalUtf8.Length,
+            HashMemory(canonicalUtf8.Span, cancellationToken));
+        await WriteNewFileAsync(scanPath, canonicalUtf8, io, cancellationToken)
+            .ConfigureAwait(false);
+        return generated;
     }
 
     private static List<string> GetCleanableIncompleteChildren(
@@ -793,8 +878,10 @@ public static class AtlasSnapshotSurvey
 
     private sealed record SourceDocument(AtlasSaveReadResult ReadResult);
 
+    private sealed record GeneratedScan(long Length, string Sha256);
+
     private sealed record PersistedScan(
-        byte[] Bytes,
+        long Length,
         string Sha256,
-        AtlasStructuralScanResult Result);
+        AtlasStructuralScanCensus Census);
 }

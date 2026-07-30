@@ -19,6 +19,38 @@ internal static class AtlasFinalizedSaveSnapshot
         string repositoryRoot,
         string receiptPath,
         AtlasIoSeams io,
+        CancellationToken cancellationToken) =>
+        await OpenAsync(
+                repositoryRoot,
+                receiptPath,
+                io,
+                maximumEntryBytes: null,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+    internal static async ValueTask<AtlasValidatedSaveSnapshot> OpenBoundedAsync(
+        string repositoryRoot,
+        string receiptPath,
+        AtlasIoSeams io,
+        long maximumEntryBytes,
+        CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maximumEntryBytes);
+
+        return await OpenAsync(
+                repositoryRoot,
+                receiptPath,
+                io,
+                maximumEntryBytes,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async ValueTask<AtlasValidatedSaveSnapshot> OpenAsync(
+        string repositoryRoot,
+        string receiptPath,
+        AtlasIoSeams io,
+        long? maximumEntryBytes,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(repositoryRoot);
@@ -95,6 +127,7 @@ internal static class AtlasFinalizedSaveSnapshot
                     runId,
                     expectedFinalRoot,
                     io,
+                    maximumEntryBytes,
                     cancellationToken)
                 .ConfigureAwait(false);
             return result
@@ -128,6 +161,24 @@ internal static class AtlasFinalizedSaveSnapshot
         string expectedRunId,
         string expectedFinalRoot,
         AtlasIoSeams io,
+        CancellationToken cancellationToken) =>
+        await TryOpenCandidateAsync(
+                candidateRoot,
+                receiptPath,
+                expectedRunId,
+                expectedFinalRoot,
+                io,
+                maximumEntryBytes: null,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+    private static async ValueTask<AtlasValidatedSaveSnapshot?> TryOpenCandidateAsync(
+        string candidateRoot,
+        string receiptPath,
+        string expectedRunId,
+        string expectedFinalRoot,
+        AtlasIoSeams io,
+        long? maximumEntryBytes,
         CancellationToken cancellationToken)
     {
         try
@@ -217,11 +268,24 @@ internal static class AtlasFinalizedSaveSnapshot
                     return null;
                 }
 
-                (long length, string sha256) = await AtlasSaveSnapshot.HashOrdinaryFileAsync(
-                        destination,
-                        io,
-                        cancellationToken)
-                    .ConfigureAwait(false);
+                if (maximumEntryBytes is long maximum
+                    && entry.Length > maximum)
+                {
+                    return null;
+                }
+
+                (long length, string sha256) = maximumEntryBytes is long limit
+                    ? await AtlasSaveSnapshot.HashOrdinaryFileBoundedAsync(
+                            destination,
+                            io,
+                            limit,
+                            cancellationToken)
+                        .ConfigureAwait(false)
+                    : await AtlasSaveSnapshot.HashOrdinaryFileAsync(
+                            destination,
+                            io,
+                            cancellationToken)
+                        .ConfigureAwait(false);
                 if (length != entry.Length
                     || !StringComparer.Ordinal.Equals(sha256, entry.Sha256))
                 {

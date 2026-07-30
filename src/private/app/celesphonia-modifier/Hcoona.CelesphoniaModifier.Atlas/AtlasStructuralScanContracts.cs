@@ -213,24 +213,77 @@ public sealed class AtlasStructuralScanDocument
 
 public sealed class AtlasStructuralScanResult
 {
-    private readonly byte[] canonicalUtf8;
+    private readonly object gate = new();
+    private AtlasStructuralScanDocument? document;
+    private byte[]? canonicalUtf8;
 
     internal AtlasStructuralScanResult(
         AtlasStructuralScanDocument document,
         byte[] ownedCanonicalUtf8
     )
     {
-        Document = document ?? throw new ArgumentNullException(nameof(document));
+        this.document = document ?? throw new ArgumentNullException(nameof(document));
         canonicalUtf8 =
             ownedCanonicalUtf8 ?? throw new ArgumentNullException(nameof(ownedCanonicalUtf8));
     }
 
-    public AtlasStructuralScanDocument Document { get; }
+    public AtlasStructuralScanDocument Document
+    {
+        get
+        {
+            lock (gate)
+            {
+                return document
+                    ?? throw new InvalidOperationException(
+                        "The structural scan result no longer owns its document."
+                    );
+            }
+        }
+    }
 
-    public byte[] GetCanonicalUtf8Bytes(CancellationToken cancellationToken = default) =>
-        AtlasCanonicalUtf8Bytes.Copy(canonicalUtf8, cancellationToken);
+    public byte[] GetCanonicalUtf8Bytes(CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            return AtlasCanonicalUtf8Bytes.Copy(
+                canonicalUtf8
+                    ?? throw new InvalidOperationException(
+                        "The structural scan result no longer owns canonical UTF-8 bytes."
+                    ),
+                cancellationToken
+            );
+        }
+    }
 
-    internal ReadOnlyMemory<byte> GetOwnedCanonicalUtf8Bytes() => canonicalUtf8;
+    internal AtlasStructuralScanPersistence DetachForPersistence()
+    {
+        lock (gate)
+        {
+            byte[] ownedCanonicalUtf8 =
+                canonicalUtf8
+                ?? throw new InvalidOperationException(
+                    "The structural scan result no longer owns canonical UTF-8 bytes."
+                );
+            document = null;
+            canonicalUtf8 = null;
+            return new AtlasStructuralScanPersistence(ownedCanonicalUtf8);
+        }
+    }
+}
+
+internal sealed class AtlasStructuralScanPersistence(byte[] ownedCanonicalUtf8) : IDisposable
+{
+    private byte[]? canonicalUtf8 =
+        ownedCanonicalUtf8 ?? throw new ArgumentNullException(nameof(ownedCanonicalUtf8));
+
+    public ReadOnlyMemory<byte> CanonicalUtf8 =>
+        canonicalUtf8
+        ?? throw new ObjectDisposedException(nameof(AtlasStructuralScanPersistence));
+
+    public void Dispose()
+    {
+        canonicalUtf8 = null;
+    }
 }
 
 internal static class AtlasCanonicalUtf8Bytes

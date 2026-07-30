@@ -584,6 +584,26 @@ public static class AtlasSaveSnapshot
     internal static async ValueTask<(long Length, string Sha256)> HashOrdinaryFileAsync(
         string path,
         AtlasIoSeams io,
+        CancellationToken cancellationToken) =>
+        await HashOrdinaryFileAsync(path, io, maximumBytes: null, cancellationToken)
+            .ConfigureAwait(false);
+
+    internal static async ValueTask<(long Length, string Sha256)> HashOrdinaryFileBoundedAsync(
+        string path,
+        AtlasIoSeams io,
+        long maximumBytes,
+        CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maximumBytes);
+
+        return await HashOrdinaryFileAsync(path, io, maximumBytes, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async ValueTask<(long Length, string Sha256)> HashOrdinaryFileAsync(
+        string path,
+        AtlasIoSeams io,
+        long? maximumBytes,
         CancellationToken cancellationToken)
     {
         FileAttributes attributes = io.GetAttributes(path);
@@ -610,8 +630,17 @@ public static class AtlasSaveSnapshot
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                int requestedBytes = buffer.Length;
+                if (maximumBytes is long maximum)
+                {
+                    long remaining = maximum - length;
+                    requestedBytes = remaining >= buffer.Length
+                        ? buffer.Length
+                        : checked((int)remaining + 1);
+                }
+
                 int read = await stream.ReadAsync(
-                        buffer.AsMemory(0, buffer.Length),
+                        buffer.AsMemory(0, requestedBytes),
                         cancellationToken)
                     .ConfigureAwait(false);
                 if (read == 0)
@@ -621,6 +650,11 @@ public static class AtlasSaveSnapshot
 
                 hash.AppendData(buffer, 0, read);
                 length = checked(length + read);
+                if (maximumBytes is long limit && length > limit)
+                {
+                    throw new AtlasSafetyException(
+                        "A snapshot entry exceeds its byte limit.");
+                }
             }
         }
         finally
