@@ -11,17 +11,19 @@ the v3 kernel.
 
 ## Normative Pages
 
-- [Target Architecture](./target-architecture.md)
+- [Requirements](./requirements.md)
+- [High-Level Design](./high-level-design.md)
 - [Architecture Glossary](./architecture-glossary.md)
 - [Migration and Document Policy](./migration-strategy.md)
 
 ## Next Design Work
 
-1. define v3 requirements against the confirmed target architecture;
-2. define Component and Release Unit authoring;
-3. define Trusted Decision Kernel contracts and Authority Epoch promotion;
-4. define CI Qualification contracts;
-5. define Release Plan lineage contracts;
-6. define Shared Foundation adapter interfaces;
-7. implement one end-to-end vertical slice; and
-8. expand by ecosystem and destination.
+1. review and confirm the v3 requirements baseline;
+2. define the Repository and Product Model MLD;
+3. define the Trusted Decision Kernel and Governance Integration MLD;
+4. define the CI Qualification MLD;
+5. define the Release Delivery MLD;
+6. define the Shared Foundation MLD;
+7. create a brief LLD for the first end-to-end vertical slice;
+8. implement and validate that vertical slice; and
+9. expand by ecosystem and destination.

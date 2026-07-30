@@ -4,8 +4,8 @@ This directory is the version boundary for workflow-delivery architecture.
 
 ## Normative Priority
 
-1. [v3](./v3/README.md) is the active target architecture and the only
-   normative source for new implementation work.
+1. [v3](./v3/README.md) contains the active requirements and architecture and
+   is the only normative source for new implementation work.
 2. [v2](./v2/README.md) is an archived prototype and mechanism source.
 3. [v1](./v1/README.md) is the historical `origin/main` baseline.
 

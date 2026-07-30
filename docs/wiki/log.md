@@ -1100,3 +1100,25 @@ Updated the CI affected-validation LLD to describe published runner-family artif
   into the clean v3 line.
 - Added rules for porting platform observations and mechanism assets while
   rewriting requirements, design, runbooks, and implementation plans.
+
+## [2026-07-30] query | Separate v3 requirements from high-level design
+
+- Replaced the mixed target architecture page with a requirements baseline and
+  a separate high-level design.
+- Added stable requirement identifiers and explicit requirements-stage exit
+  criteria.
+- Preserved the confirmed peer-system architecture, shared foundation,
+  governance boundary, trust zones, Release Plan lineage, and recovery model in
+  the HLD.
+- Reorganized the next design stage into bounded-context MLDs followed by a
+  brief LLD for the first vertical slice.
+
+## [2026-07-30] query | Confirm workflow delivery v3 requirements
+
+- Interactively reviewed and accepted all 67 requirements across mission,
+  system boundaries, CI, Release, channels, authority, trust isolation,
+  Evidence, recovery, concurrency, retention, quality attributes, and
+  non-goals.
+- Promoted the requirements page from draft to the confirmed normative
+  baseline.
+- Closed the requirements gate for entry into middle-layer design.

@@ -1,35 +1,18 @@
-# Workflow Delivery v3 Target Architecture
+# Workflow Delivery v3 High-Level Design
 
 ## Status
 
 Architecture version: **v3**.
 
-This page records the confirmed top-level architecture for the clean v3
-implementation line. It intentionally does not inherit v1 or v2 control-plane
-architecture.
+Review state: **Confirmed architecture reorganized as HLD**.
 
-The normative terminology is maintained in the
-[Workflow Delivery v3 Architecture Glossary](./architecture-glossary.md).
+This page is the normative high-level design for the clean v3 implementation
+line. It realizes the confirmed
+[Workflow Delivery v3 Requirements](./requirements.md) and intentionally does
+not inherit the v1 or v2 control-plane architecture.
 
-## Mission
-
-Provide an evidence-driven software delivery governance platform for a
-polyglot monorepo.
-
-- CI Qualification determines whether an immutable change candidate satisfies
-  all applicable quality obligations.
-- Release Delivery rebuilds and independently qualifies an immutable Release
-  Unit, obtains explicit authorization, and performs traceable external
-  publication.
-- The two systems share mechanisms and definitions but not runtime Plans,
-  Evidence, artifacts, or verdicts.
-
-The priority order is:
-
-1. security and correctness;
-2. traceability and explainability;
-3. evolvability and recoverability; and
-4. latency and operating cost.
+Normative terminology is maintained in the
+[Architecture Glossary](./architecture-glossary.md).
 
 ## Architectural Shape
 
@@ -52,9 +35,13 @@ The priority order is:
 ```
 
 CI Qualification and Release Delivery are peer bounded contexts. Delivery
-Governance is an external authority boundary, not a third business system.
-The Shared Foundation provides mechanisms and normalized facts, not business
+Governance is an external authority boundary, not a third business system. The
+Shared Foundation provides mechanisms and normalized facts, not business
 policy.
+
+The Trusted Decision Kernel is the small cross-system authority core. CI and
+Release retain independent aggregate roots, Plans, Evidence, Decisions, and
+state machines.
 
 ## System Boundaries
 
@@ -68,7 +55,8 @@ CI Qualification:
 - builds every publishable variant of each affected Release Unit;
 - executes required and advisory quality obligations;
 - admits Evidence and emits an explainable Final Decision; and
-- publishes the latest authoritative Decision through the required GitHub check.
+- publishes the latest authoritative Decision through the required GitHub
+  check.
 
 It has no publication side effects and does not authorize Release.
 
@@ -117,24 +105,35 @@ A business workflow may request authority but cannot grant authority to itself.
 
 ### Component
 
-A repository code or infrastructure unit with ownership, dependency
-relationships, and quality capabilities.
+A Component is a repository code or infrastructure unit with ownership,
+dependency relationships, and quality capabilities.
 
 ### Release Unit
 
-An independently versioned and delivered product unit containing one or more
-Components and one or more artifact variants.
+A Release Unit is an independently versioned and delivered product unit
+containing one or more Components and one or more artifact variants.
 
 ### Qualification Target
 
-The immutable object covered by a quality decision.
+A Qualification Target is the immutable object covered by a quality decision.
 
 - CI derives it from a candidate change and affected Component closure.
 - Release derives it from the complete Release Unit closure, all selected
   variants, and explicit compatibility obligations.
 
-The target must close before execution. Unknown or unclassified scope is
-blocking.
+The target closes before execution. Unknown or unclassified scope is blocking.
+
+### Aggregate Ownership
+
+CI Qualification owns the CI Qualification Plan, CI Evidence admission state,
+and CI Final Decision.
+
+Release Delivery owns Release Intent, Release Attempt, Release Plan lineage,
+Qualification Decision, destination observations, publication actions,
+Receipts, and Release outcome.
+
+Shared Foundation values may appear in either aggregate, but no aggregate
+imports the other system's runtime state.
 
 ## Shared Foundation
 
@@ -148,11 +147,27 @@ The Shared Foundation exposes four stable extension families:
 4. Destination Adapters implement observation, publication, Receipt,
    mutability, digest, Capability, and remediation semantics.
 
-CI and Release retain separate aggregate roots and state machines. Adding an
-ecosystem or destination normally adds an adapter and policy mapping rather
-than modifying the Trusted Decision Kernel.
+Adding an ecosystem or destination normally adds an adapter and policy mapping
+rather than modifying the Trusted Decision Kernel.
+
+Adapters provide facts and mechanical execution. They do not decide business
+scope, downgrade obligations, authorize publication, or reinterpret verdicts.
 
 ## Authority and Trust
+
+### Trusted Decision Kernel
+
+The kernel owns only cross-system authority semantics:
+
+- Authority Epoch selection;
+- minimum obligation enforcement;
+- Evidence Admission;
+- final decision rules;
+- authorization prerequisite validation; and
+- authority-owned contract compatibility.
+
+Repository discovery, ecosystem execution, batching, destination API
+integration, and presentation remain outside the kernel.
 
 ### Authority Evolution
 
@@ -169,19 +184,21 @@ merge.
 
 The architecture has three runtime trust zones:
 
-1. Decision Zone: runs authoritative planning, Evidence Admission, and final
-   decision logic; it executes no target code and holds no publication
+1. **Decision Zone:** Runs authoritative planning, Evidence Admission, and final
+   decision logic. It executes no target code and holds no publication
    credentials.
-2. Build and Qualification Zone: executes candidate or release-target code;
-   it holds no publication credentials and cannot approve itself.
-3. Side-Effect Zone: receives a short-lived destination Capability and consumes
-   only verified immutable artifacts plus a fully materialized Publication
-   Snapshot; it does not execute target code.
+2. **Build and Qualification Zone:** Executes candidate or release-target code.
+   It holds no publication credentials and cannot approve itself.
+3. **Side-Effect Zone:** Receives a short-lived destination Capability and
+   consumes only verified immutable artifacts plus a fully materialized
+   Publication Snapshot. It does not execute target code.
 
-Target-code execution and publication authority must never coexist in one
-runtime boundary.
+Target-code execution and publication authority never coexist in one runtime
+boundary.
 
-## CI Flow
+## CI Qualification Design
+
+### Flow
 
 ```text
 GitHub event
@@ -195,14 +212,25 @@ GitHub event
   -> required-check and human-summary projections
 ```
 
-The Planner owns semantic scope. Executors may resolve mechanical details but
-cannot add, remove, substitute, or downgrade obligations.
+### Responsibility Split
+
+The Planner owns semantic scope. It resolves the candidate identity, affected
+Component and Release Unit closure, artifact variants, and required and
+advisory obligations.
+
+Executors resolve only mechanical details required to perform an immutable
+Plan. They may not add, remove, substitute, or downgrade planned scope.
+
+Evidence producers execute in the Build and Qualification Zone. Evidence
+Admission and Final Decision execute in the Decision Zone.
 
 Success requires a ready Plan and `satisfied` Evidence for every required
-obligation. Missing, skipped, cancelled, timed-out, unknown, and conflicting
+obligation. Missing, skipped, canceled, timed-out, unknown, and conflicting
 states cannot become success.
 
-## Release Flow
+## Release Delivery Design
+
+### Flow
 
 ```text
 Release Intent
@@ -229,6 +257,9 @@ Each Release Attempt has one logical Plan lineage with two immutable snapshots.
 The Publication Snapshot cannot alter fields frozen by the Qualification
 Snapshot. Governance approves only the Publication Snapshot digest.
 
+This structure preserves one Release Attempt identity while preventing
+post-qualification mutation from changing what was qualified.
+
 ### Build Alignment
 
 CI and Release use the same Build Definitions and Build Adapters.
@@ -250,11 +281,11 @@ builds.
 Every Release Attempt observes all destinations before requesting publication
 Capability.
 
-- absent state may publish;
-- exact satisfied state skips the side effect; and
-- partial, unknown, conflicting, or unprovable state fails closed.
+- Absent state may publish.
+- Exact satisfied state skips the side effect.
+- Partial, unknown, conflicting, or unprovable state fails closed.
 
-Reconciliation is exceptional handling for a state that cannot safely proceed.
+Reconciliation is exceptional handling for state that cannot safely proceed.
 
 ### Retry
 
@@ -262,8 +293,8 @@ Retry uses whole-release replay.
 
 - GitHub `Re-run all jobs` is the standard transient retry.
 - GitHub `Re-run failed jobs` is not a supported Release recovery protocol.
-- Every replay reruns planning, build, qualification, authorization checks, and
-  reporting.
+- Every replay reruns planning, build, qualification, authorization checks,
+  observation, and reporting.
 - Already satisfied remote destinations do not repeat side effects.
 - A control-code fix requires a fresh dispatch for the same target commit under
   the new Authority Epoch.
@@ -278,18 +309,21 @@ Break-Glass Remediation is a separately approved operation with expected-state
 checks, scoped Capability, and append-only before-and-after records. It never
 rewrites the original Release history.
 
-## Concurrency
+## Concurrency Design
 
 - CI cancels superseded candidate runs.
 - Release serializes by Official canonical identity or Buddy preview identity.
-- In-progress Release executions are never auto-cancelled.
+- In-progress Release executions are never auto-canceled.
 - Different versions may run concurrently unless a Destination Adapter declares
   a wider mutable-resource lock.
 - Remediation shares the original Release and destination locks.
 - Duplicate pending requests are rejected or coalesced rather than treated as
   an unbounded GitHub concurrency queue.
 
-## Evidence, Decisions, and Explainability
+Concurrency keys are projections of domain identity. GitHub workflow
+concurrency is an execution mechanism, not the source of Release identity.
+
+## Evidence, Decisions, and Explanation
 
 Evidence Admission verifies exact ownership and integrity without rerunning the
 quality command.
@@ -304,13 +338,16 @@ Release explanations connect target, version, channel, artifacts,
 destinations, observations, actions, Receipts, authority, authorization, and
 allowed operator actions.
 
+The same structured model drives machine-readable records and human
+projections. Diagnostics explain a verdict but never determine it.
+
 ## Platform-Aware Record Retention
 
 Caches are non-authoritative performance mechanisms.
 
 GitHub Actions artifacts and logs are operational records subject to the
-platform retention window. This public repository supports at most 90 days and
-the current Release workflows use 30 days.
+platform retention window. This public repository supports at most 90 days,
+and the current Release workflows use 30 days.
 
 Longer-lived release identity and provenance rely on Git tags, registry
 records, GitHub Releases when selected, and GitHub Artifact Attestations with
@@ -320,36 +357,45 @@ The first architecture does not add a Durable Release Ledger or require every
 Release Unit to create a GitHub Release audit anchor. State that cannot be
 proved after operational records expire fails closed.
 
-## Quality Attributes
+## Requirement Coverage
 
-- Security and correctness dominate availability and latency.
-- Publication Capability is requested just in time; OIDC failure blocks the
-  affected side effect and has no credential fallback.
-- Optional telemetry may fail, but authoritative Plans, Evidence, Decisions,
-  artifact identities, and Receipts must persist before later stages rely on
-  them.
-- Ordinary pull-request CI has a P95 12-minute Final Decision objective.
-  Broad authority, policy, toolchain, and multi-Release-Unit changes are
-  measured separately.
-- Performance work must not weaken obligation coverage, variant coverage,
-  Evidence Admission, or authorization.
+| Requirement Group | Owning Design Elements                                                               |
+| ----------------- | ------------------------------------------------------------------------------------ |
+| `WD-SYS-*`        | Peer bounded contexts, aggregate ownership, Shared Foundation, Delivery Governance   |
+| `WD-CI-*`         | CI Qualification flow, Planner, executors, Evidence Admission, Final Decision        |
+| `WD-REL-*`        | Release Attempt, Plan lineage, independent build and qualification, Side-Effect Zone |
+| `WD-CHN-*`        | Buddy and Official channel policy over Release Delivery                              |
+| `WD-AUTH-*`       | Trusted Decision Kernel, Authority Epoch, Candidate Authority, Delivery Governance   |
+| `WD-SEC-*`        | Decision, Build and Qualification, and Side-Effect runtime zones                     |
+| `WD-EVD-*`        | Evidence Admission, append-only Decisions, structured explanation projections        |
+| `WD-OPS-*`        | Remote-State Observation, whole-release replay, Saga, reconciliation, remediation    |
+| `WD-CON-*`        | Domain-derived concurrency and destination locks                                     |
+| `WD-RET-*`        | Platform-aware records, durable destination identities, fail-closed expiration       |
+| `WD-NFR-*`        | Kernel minimization, adapter extension model, explanation contract, CI objective     |
 
-## Non-Goals
+## Middle-Layer Design Decomposition
 
-The architecture does not:
+The next design stage should produce separate MLDs for:
 
-- replace ecosystem build and package-management tools;
-- become a general workflow engine;
-- provide distributed transactions across registries;
-- promote pull-request artifacts into Release;
-- consume CI results as Release Evidence;
-- certify reproducible builds by duplicate building;
-- provide a permanent external Release ledger in the first scope; or
-- use normal Release force flags to rewrite published history.
+1. **Repository and Product Model:** Component, Release Unit, dependency,
+   variant, Build Definition, and authoring contracts.
+2. **Trusted Decision Kernel and Governance Integration:** Authority Epoch,
+   admission, decision, authorization, and promotion contracts.
+3. **CI Qualification:** candidate identity, affected-scope planning,
+   execution, Evidence, Decision, and GitHub projection contracts.
+4. **Release Delivery:** Release Intent, Plan lineage, build and qualification,
+   observation, capability, publication, Receipt, replay, and remediation
+   contracts.
+5. **Shared Foundation:** provider and adapter interfaces, normalized facts,
+   artifact identity, provenance, and execution envelopes.
 
-## Lower-Layer Questions
+CI and Release remain together in this HLD because their separation, shared
+foundation, and governance relationship are top-level architectural decisions.
+They separate into bounded-context documents at the MLD stage.
 
-The target shape leaves these implementation questions to later design:
+## Deferred Lower-Layer Questions
+
+The HLD intentionally leaves these questions to later design:
 
 - exact JSON schemas and contract versioning;
 - adapter package decomposition;
@@ -358,4 +404,4 @@ The target shape leaves these implementation questions to later design:
 - batching and matrix partitioning;
 - destination-specific observation and digest APIs;
 - user-interface rendering and operator commands; and
-- migration from the current design and implementation.
+- migration from the current implementation into the selected vertical slice.

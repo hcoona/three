@@ -48,7 +48,8 @@ No entity pages yet.
 
 - [Repository Release Landscape](./analyses/repository-release-landscape.md) | Repo-wide release inventory, current implementation signals, and gaps to the desired buddy/official model. |
 - [Workflow Delivery Architecture Versions](./analyses/workflow-delivery/README.md) | Entry point and normative priority for v1, v2, and v3 delivery architecture.
-- [Workflow Delivery v3 Target Architecture](./analyses/workflow-delivery/v3/target-architecture.md) | Active top-level architecture for the clean v3 implementation line.
+- [Workflow Delivery v3 Requirements](./analyses/workflow-delivery/v3/requirements.md) | Confirmed normative product and system requirements baseline.
+- [Workflow Delivery v3 High-Level Design](./analyses/workflow-delivery/v3/high-level-design.md) | Active top-level architecture for the clean v3 implementation line.
 - [Workflow Delivery v3 Architecture Glossary](./analyses/workflow-delivery/v3/architecture-glossary.md) | Normative v3 terminology and confirmed architecture principles.
 - [Workflow Delivery v3 Migration and Document Policy](./analyses/workflow-delivery/v3/migration-strategy.md) | Clean-line implementation strategy and explicit rules for porting, rewriting, or archiving v2 assets.
 - [Workflow Delivery v2 Archive](./analyses/workflow-delivery/v2/README.md) | Permanent v2 commit and catalog of mechanism and research sources; not normative for v3.

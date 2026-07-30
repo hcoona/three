@@ -40,7 +40,7 @@ incompatible authority, identity, Evidence, and replay contracts.
 
 ### Port
 
-- v3 target architecture, glossary, and migration decisions;
+- v3 requirements, HLD, glossary, and migration decisions;
 - current repository facts required to model Components and Release Units;
 - revalidated GitHub Actions and Registry platform observations;
 - mechanism behavior needed to specify adapter contracts; and
@@ -48,11 +48,11 @@ incompatible authority, identity, Evidence, and replay contracts.
 
 ### Rewrite
 
-- product and system requirements;
+- product and system requirements when the accepted baseline changes;
 - Component and Release Unit authoring;
-- CI Qualification HLD/MLD/LLD;
-- Release Delivery HLD/MLD/LLD;
-- authority and governance design;
+- CI Qualification MLD and brief LLD;
+- Release Delivery MLD and brief LLD;
+- authority and governance MLD and brief LLD;
 - operator runbooks; and
 - implementation and rollout plans.
 
