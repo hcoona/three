@@ -79,7 +79,8 @@ The released application provides one single-purpose window:
    displayed preview, then invokes released G6R4.
 8. The application presents `Unchanged`, `AppliedWithBackupCreated`, or
    `AppliedWithBackupPreserved` without translating them into stronger claims.
-9. After an applied result, it reloads the live slot and displays the new consistent Gold.
+9. After every successful disposition, including `Unchanged`, it reloads the live slot and displays
+   the current consistent Gold.
 10. Classified failures preserve their distinction and never appear as success.
 
 The application labels the capability **Experimental** and does not claim that the selected file
@@ -230,7 +231,8 @@ It must not expose its owned baseline array for mutation.
 - G6R4 `AppliedWithBackupCreated`;
 - G6R4 `AppliedWithBackupPreserved`;
 - preview changed before G6R4 invocation;
-- applied but post-apply UI reload failed; and
+- successful disposition but post-result UI reload failed, retaining the exact disposition and
+  whether G6R4 reported a write; and
 - the exact G6R4 classified exception.
 
 It may retain an exception for local diagnostic presentation but must not reduce an unknown outcome
@@ -277,7 +279,7 @@ Immediately after confirmation, `ApplyAsync`:
    `AtlasGoldFileApplication.ApplyAsync` with the exact path, requested `Int64`,
    `AtlasSaveReaderLimits.Default`, and the supplied cancellation token;
 5. disposes the convergence handle after G6R4 returns or throws; and
-6. reloads the live path after an applied result.
+6. reloads the live path after every successful disposition.
 
 Retaining the converged handle denies new write-sharing opens while still allowing G6R4's
 same-path replacement through `FileShare.Delete`. It narrows ordinary write races but does not bind
@@ -360,7 +362,7 @@ The `ContentDialog`:
 - `Ready`;
 - `Busy`;
 - `BlockedUntilReload`; and
-- `AppliedReloadFailed`.
+- `ResultReloadFailed`.
 
 The view model owns data, validation, cancellation, and result state. `MainWindow` owns only picker,
 dialog, focus, window-close coordination, and view-model event wiring.
@@ -395,11 +397,20 @@ announcements.
 - `AppliedWithBackupPreserved`: **Gold was applied. The existing archive at `<backup>` was
   preserved.**
 
-After an applied result, successful reload replaces the document baseline and current Gold. Further
-editing requires a new target and confirmation.
+After every successful disposition, successful reload replaces the document baseline and current
+Gold. This is required even for `Unchanged` because the accepted replace-by-path race may have caused
+G6R4 to inspect a document other than the preview. Further editing requires a new target and
+confirmation.
 
-If application succeeded but reload fails, the UI says **Gold was applied, but the slot could not be
-reloaded. Reopen the file before editing again.** It must not reclassify the write as failed.
+If reload after `AppliedWithBackupCreated` or `AppliedWithBackupPreserved` fails, the UI says **Gold
+was applied, but the slot could not be reloaded. Reopen the file before editing again.**
+
+If reload after `Unchanged` fails, the UI says **No write was needed, but the current slot could not
+be reloaded. Reopen the file before editing again.** It must not claim that Gold was applied.
+
+Both cases retain the exact successful disposition, enter `ResultReloadFailed`, and disable further
+editing until reopen. A reload failure must not reclassify an applied write as failed or an
+`Unchanged` result as a write.
 
 ### 13.2 Classified failures
 
@@ -446,7 +457,10 @@ Cover:
 - later apply and archive preservation;
 - deleted archive followed by new archive creation;
 - every G6R4 disposition and failure;
-- post-apply reload success and applied-but-reload-failed distinction; and
+- post-result reload success, applied-but-reload-failed, and
+  unchanged-but-reload-failed distinctions;
+- the forced replace-by-path race where G6R4 returns `Unchanged`, followed by mandatory reload of the
+  replacement document; and
 - no private path or payload in test output.
 
 The real replacement cases run only in synthetic temporary directories on Windows.
@@ -455,14 +469,15 @@ The real replacement cases run only in synthetic temporary directories on Window
 
 Use a fake `IGoldEditorOperations` and cover:
 
-- initial, loading, ready, busy, canceled, blocked, and reload-failed states;
+- initial, loading, ready, busy, canceled, blocked, and result-reload-failed states;
 - invariant `Int64` parsing and normalized confirmation value;
 - apply enablement;
 - picker cancellation preserving the active document;
 - cancellation request behavior;
 - result and failure mapping;
 - stale-preview reconfirmation;
-- success baseline replacement;
+- baseline replacement after every successful disposition;
+- distinct applied and unchanged reload-failure text without false write claims;
 - retry requiring a new confirmation; and
 - no success-shaped fallback for exceptions.
 
