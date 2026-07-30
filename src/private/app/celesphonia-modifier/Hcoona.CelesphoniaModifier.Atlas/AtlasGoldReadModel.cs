@@ -106,13 +106,53 @@ public sealed class AtlasGoldReadModelResult
     }
 }
 
+internal readonly struct AtlasGoldCandidateInspection
+{
+    internal AtlasGoldCandidateInspection(
+        AtlasGoldCandidateResult result,
+        AtlasJsonSourceSpan? sourceSpan)
+    {
+        Result = result;
+        SourceSpan = sourceSpan;
+    }
+
+    internal AtlasGoldCandidateResult Result { get; }
+
+    internal AtlasJsonSourceSpan? SourceSpan { get; }
+}
+
+internal sealed class AtlasGoldInspectionResult
+{
+    internal AtlasGoldInspectionResult(
+        AtlasGoldCandidateInspection partyGold,
+        AtlasGoldCandidateInspection variableGold)
+    {
+        ReadModel = AtlasGoldReadModelResult.Create(
+            partyGold.Result,
+            variableGold.Result);
+        PartyGoldSpan = partyGold.SourceSpan;
+        VariableGoldSpan = variableGold.SourceSpan;
+    }
+
+    internal AtlasGoldReadModelResult ReadModel { get; }
+
+    internal AtlasJsonSourceSpan? PartyGoldSpan { get; }
+
+    internal AtlasJsonSourceSpan? VariableGoldSpan { get; }
+}
+
 public static class AtlasGoldReadModel
 {
     private const int VariableGoldIndex = 215;
 
     public static AtlasGoldReadModelResult Read(
         AtlasSaveReadResult source,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        Inspect(source, cancellationToken).ReadModel;
+
+    internal static AtlasGoldInspectionResult Inspect(
+        AtlasSaveReadResult source,
+        CancellationToken cancellationToken)
     {
         if (source is null)
         {
@@ -122,24 +162,24 @@ public static class AtlasGoldReadModel
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        AtlasGoldCandidateResult partyGold = ReadPartyGold(
+        AtlasGoldCandidateInspection partyGold = ReadPartyGold(
             source.Graph,
             cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        AtlasGoldCandidateResult variableGold = ReadVariableGold(
+        AtlasGoldCandidateInspection variableGold = ReadVariableGold(
             source.Graph,
             cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        return AtlasGoldReadModelResult.Create(partyGold, variableGold);
+        return new AtlasGoldInspectionResult(partyGold, variableGold);
     }
 
-    private static AtlasGoldCandidateResult ReadPartyGold(
+    private static AtlasGoldCandidateInspection ReadPartyGold(
         AtlasJsonExNode root,
         CancellationToken cancellationToken)
     {
         if (!TryGetObject(root, cancellationToken, out AtlasJsonExObject? rootObject))
         {
-            return State(AtlasGoldCandidateState.WrongShape);
+            return Inspection(AtlasGoldCandidateState.WrongShape);
         }
 
         AtlasGoldCandidateResult? partyLookup = FindMember(
@@ -149,13 +189,13 @@ public static class AtlasGoldReadModel
             out AtlasJsonExNode? party);
         if (partyLookup is not null)
         {
-            return partyLookup;
+            return Inspection(partyLookup);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         if (!TryGetObject(party!, cancellationToken, out AtlasJsonExObject? partyObject))
         {
-            return State(AtlasGoldCandidateState.WrongShape);
+            return Inspection(AtlasGoldCandidateState.WrongShape);
         }
 
         AtlasGoldCandidateResult? goldLookup = FindMember(
@@ -165,20 +205,20 @@ public static class AtlasGoldReadModel
             out AtlasJsonExNode? gold);
         if (goldLookup is not null)
         {
-            return goldLookup;
+            return Inspection(goldLookup);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         return ReadNumber(gold!, cancellationToken);
     }
 
-    private static AtlasGoldCandidateResult ReadVariableGold(
+    private static AtlasGoldCandidateInspection ReadVariableGold(
         AtlasJsonExNode root,
         CancellationToken cancellationToken)
     {
         if (!TryGetObject(root, cancellationToken, out AtlasJsonExObject? rootObject))
         {
-            return State(AtlasGoldCandidateState.WrongShape);
+            return Inspection(AtlasGoldCandidateState.WrongShape);
         }
 
         AtlasGoldCandidateResult? variablesLookup = FindMember(
@@ -188,13 +228,13 @@ public static class AtlasGoldReadModel
             out AtlasJsonExNode? variables);
         if (variablesLookup is not null)
         {
-            return variablesLookup;
+            return Inspection(variablesLookup);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         if (!TryGetObject(variables!, cancellationToken, out AtlasJsonExObject? variablesObject))
         {
-            return State(AtlasGoldCandidateState.WrongShape);
+            return Inspection(AtlasGoldCandidateState.WrongShape);
         }
 
         AtlasGoldCandidateResult? dataLookup = FindMember(
@@ -204,19 +244,19 @@ public static class AtlasGoldReadModel
             out AtlasJsonExNode? data);
         if (dataLookup is not null)
         {
-            return dataLookup;
+            return Inspection(dataLookup);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         if (!TryGetArray(data!, cancellationToken, out AtlasJsonExArray? dataArray))
         {
-            return State(AtlasGoldCandidateState.WrongShape);
+            return Inspection(AtlasGoldCandidateState.WrongShape);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         if (dataArray.Elements.Count <= VariableGoldIndex)
         {
-            return State(AtlasGoldCandidateState.Missing);
+            return Inspection(AtlasGoldCandidateState.Missing);
         }
 
         AtlasJsonExNode gold = dataArray.Elements[VariableGoldIndex];
@@ -257,7 +297,7 @@ public static class AtlasGoldReadModel
             : null;
     }
 
-    private static AtlasGoldCandidateResult ReadNumber(
+    private static AtlasGoldCandidateInspection ReadNumber(
         AtlasJsonExNode source,
         CancellationToken cancellationToken)
     {
@@ -265,14 +305,14 @@ public static class AtlasGoldReadModel
         if (resolved is not AtlasJsonExScalar scalar
             || scalar.Scalar.Kind != AtlasJsonScalarKind.Number)
         {
-            return State(AtlasGoldCandidateState.WrongShape);
+            return Inspection(AtlasGoldCandidateState.WrongShape);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         string lexeme = scalar.Scalar.RawLexeme;
         if (!IsSignedDecimalInteger(lexeme, cancellationToken))
         {
-            return State(AtlasGoldCandidateState.NonInteger);
+            return Inspection(AtlasGoldCandidateState.NonInteger);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -281,8 +321,10 @@ public static class AtlasGoldReadModel
             NumberStyles.AllowLeadingSign,
             CultureInfo.InvariantCulture,
             out long value)
-            ? AtlasGoldCandidateResult.Present(value)
-            : State(AtlasGoldCandidateState.OutsideInt64);
+            ? new AtlasGoldCandidateInspection(
+                AtlasGoldCandidateResult.Present(value),
+                scalar.Scalar.Span)
+            : Inspection(AtlasGoldCandidateState.OutsideInt64);
     }
 
     private static bool IsSignedDecimalInteger(
@@ -351,4 +393,12 @@ public static class AtlasGoldReadModel
 
     private static AtlasGoldCandidateResult State(AtlasGoldCandidateState state) =>
         AtlasGoldCandidateResult.FromState(state);
+
+    private static AtlasGoldCandidateInspection Inspection(
+        AtlasGoldCandidateState state) =>
+        Inspection(State(state));
+
+    private static AtlasGoldCandidateInspection Inspection(
+        AtlasGoldCandidateResult result) =>
+        new(result, null);
 }

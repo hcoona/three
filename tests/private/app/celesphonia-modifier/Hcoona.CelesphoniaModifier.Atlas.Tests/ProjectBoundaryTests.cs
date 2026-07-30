@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Xml.Linq;
 using Xunit;
 
@@ -13,6 +14,7 @@ public sealed class ProjectBoundaryTests
         "AtlasDiscovery.cs",
         "AtlasFinalizedSaveSnapshot.cs",
         "AtlasGoldReadModel.cs",
+        "AtlasGoldMutationKernel.cs",
         "AtlasGoldSnapshotValidation.cs",
         "AtlasGoldSnapshotValidationContracts.cs",
         "AtlasIntakeContracts.cs",
@@ -51,6 +53,7 @@ public sealed class ProjectBoundaryTests
         "AtlasDefinitionIntakeTests.cs",
         "AtlasDiscoveryTests.cs",
         "AtlasGoldReadModelTests.cs",
+        "AtlasGoldMutationKernelTests.cs",
         "AtlasGoldSnapshotValidationTests.cs",
         "AtlasIntakeContractTests.cs",
         "AtlasProcessSmokeTests.cs",
@@ -311,6 +314,45 @@ public sealed class ProjectBoundaryTests
         Assert.Equal(
             ["atlas-gold-snapshot-validation-request.schema.json"],
             schemas);
+    }
+
+    [Fact]
+    public void A6GoldMutationKernelBoundaryIsClosedAndInMemory()
+    {
+        MethodInfo create = Assert.Single(
+            typeof(AtlasGoldMutationKernel).GetMethods(
+                BindingFlags.Public
+                    | BindingFlags.Static
+                    | BindingFlags.DeclaredOnly));
+        ParameterInfo[] parameters = create.GetParameters();
+
+        Assert.Equal(nameof(AtlasGoldMutationKernel.CreateCandidate), create.Name);
+        Assert.Equal(typeof(AtlasGoldMutationResult), create.ReturnType);
+        Assert.Equal(
+            [
+                typeof(AtlasSaveReadResult),
+                typeof(long),
+                typeof(AtlasSaveReaderLimits),
+                typeof(CancellationToken),
+            ],
+            parameters.Select(static parameter => parameter.ParameterType));
+
+        Type[] publicBoundaryTypes =
+        [
+            create.ReturnType,
+            .. parameters.Select(static parameter => parameter.ParameterType),
+            typeof(AtlasGoldMutationDisposition),
+            typeof(AtlasGoldMutationFailure),
+            typeof(AtlasGoldMutationException),
+        ];
+        Assert.DoesNotContain(
+            publicBoundaryTypes,
+            static type =>
+                type.Namespace == "System.IO"
+                || type.Name.Contains("Path", StringComparison.Ordinal)
+                || type.Name.Contains("Stream", StringComparison.Ordinal)
+                || type.Name.Contains("File", StringComparison.Ordinal)
+                || type.Name.Contains("Directory", StringComparison.Ordinal));
     }
 
     private static void AssertPackageAssets(XDocument project, string packageName)
