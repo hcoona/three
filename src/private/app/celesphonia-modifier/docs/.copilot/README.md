@@ -27,6 +27,10 @@ real private survey blocked pending an explicit user-supplied receipt path.
 verified shared `R6R1`, it grants no implementation authority; afterward it governs only a synthetic,
 read-only, two-candidate Gold model over one already-read slot and grants no semantic or write
 authority.
+`plans/atlas-v0-a6-explicit-gold-snapshot-validation.md` is the conditional A6R2 governing plan.
+Before verified shared `R6R2`, it grants no implementation or private-read authority; afterward it
+governs only synthetic implementation of a read-only, all-slot validator over one explicitly named
+finalized A3 snapshot. Private execution remains separately gated after `G6R2`.
 
 ## Normative baseline
 
@@ -52,6 +56,11 @@ authority.
   verified shared `R6R1`, it supersedes historical A6 claim-ledger and semantic-correlation mechanics
   with a fixed synthetic read-only model for `party._gold` and `variables._data[215]`. It does not
   establish authority, gameplay validity, editing, private validation, or writes.
+- `plans/atlas-v0-a6-explicit-gold-snapshot-validation.md` is the conditional A6R2 governing plan.
+  After verified shared `R6R2`, it authorizes only synthetic implementation of aggregate validation
+  across every slot copy in one finalized A3 snapshot. `G6R2` releases only the runner; private
+  execution requires explicit exact-receipt authorization and closes separately at `X6R2`. It grants
+  no Gold semantics, range, coupling, write-set, edit, encoder, filesystem-write, or writer authority.
 - `plans/atlas-v0-a0-research-contract.md` records the approved finite corpus, definition,
   privacy, redaction, Agent-egress, artifact-lifecycle, and handoff contract for increment A0.
   Human scope approval alone does not establish increment completion.
@@ -259,6 +268,13 @@ authority.
 - `reviews/atlas-v0-a6-gold-candidate-read-model-release-gate.md`, when present and verified as exact
   `G6R1`, establishes only the reviewed read-only Gold candidate model and grants no private
   validation, semantic, edit, or write authority.
+- `reviews/atlas-v0-a6-explicit-gold-snapshot-validation-plan-review.md`, when present and verified as
+  exact `R6R2`, activates only synthetic A6R2 implementation authority.
+- `reviews/atlas-v0-a6-explicit-gold-snapshot-validation-release-gate.md`, when present and verified
+  as exact `G6R2`, releases only the read-only validator and grants no private execution by presence.
+- `reviews/atlas-v0-a6-explicit-gold-snapshot-validation-private-execution-completion.md`, when
+  present and verified as exact `X6R2`, records only the plan's repository-safe completion
+  classification and grants no semantic, range, coupling, write-set, edit, or write authority.
 - `reviews/atlas-v0-a2-private-run-acceptance.md` is obsolete and blocked. A2R8 publishes no private
   discovery token, disposition, outcome, count, difference, hash, path, name, or document content.
 
