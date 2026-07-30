@@ -14,7 +14,8 @@ internal static class Program
             NuGetPluginAdapter.TryResolveProtocolInvocation(
                 invocationPath ?? "azureauth-credprovider",
                 args,
-                out _)
+                out _
+            )
         )
         {
             return RunProtocolWithProductionRoot(RunNuGetPlugin);
@@ -24,24 +25,42 @@ internal static class Program
             KeyringHelperAdapter.TryResolveProtocolInvocation(
                 invocationPath ?? "azureauth-credprovider",
                 args,
-                out _)
+                out _
+            )
         )
         {
-            return RunProtocolWithProductionRoot(
-                root => RunKeyringHelper(root, invocationPath, args));
+            return RunProtocolWithProductionRoot(root =>
+                RunKeyringHelper(root, invocationPath, args)
+            );
         }
 
-        return CliApplication.Run(
-            args,
-            StandardConsoleTextWriters.StandardOutput(),
-            StandardConsoleTextWriters.StandardError(),
-            runtimeOptions: null,
-            Console.In,
-            invocationPath);
+        using var cancellation = new CancellationTokenSource();
+        ConsoleCancelEventHandler cancelHandler = (_, eventArgs) =>
+        {
+            eventArgs.Cancel = true;
+            cancellation.Cancel();
+        };
+        Console.CancelKeyPress += cancelHandler;
+        try
+        {
+            return CliApplication.Run(
+                args,
+                StandardConsoleTextWriters.StandardOutput(),
+                StandardConsoleTextWriters.StandardError(),
+                new CliRuntimeOptions { CancellationToken = cancellation.Token },
+                Console.In,
+                invocationPath
+            );
+        }
+        finally
+        {
+            Console.CancelKeyPress -= cancelHandler;
+        }
     }
 
     private static int RunProtocolWithProductionRoot(
-        Func<CredentialProviderCompositionRoot, int> dispatch)
+        Func<CredentialProviderCompositionRoot, int> dispatch
+    )
     {
         try
         {
@@ -49,7 +68,8 @@ internal static class Program
         }
         catch (Exception)
         {
-            StandardConsoleTextWriters.StandardError()
+            StandardConsoleTextWriters
+                .StandardError()
                 .WriteLine("error: credential provider configuration is unavailable.");
             return 70;
         }
@@ -59,14 +79,16 @@ internal static class Program
     {
         try
         {
-            return compositionRoot.CreateNuGetPluginAdapter()
+            return compositionRoot
+                .CreateNuGetPluginAdapter()
                 .RunPluginAsync()
                 .GetAwaiter()
                 .GetResult();
         }
         catch (Exception)
         {
-            StandardConsoleTextWriters.StandardError()
+            StandardConsoleTextWriters
+                .StandardError()
                 .WriteLine("error: unexpected fatal failure.");
             return 70;
         }
@@ -75,7 +97,8 @@ internal static class Program
     private static int RunKeyringHelper(
         CredentialProviderCompositionRoot compositionRoot,
         string? invocationPath,
-        string[] args)
+        string[] args
+    )
     {
         try
         {
@@ -83,18 +106,23 @@ internal static class Program
             TextWriter stderr = StandardConsoleTextWriters.StandardError();
             var diagnosticRouter = new DiagnosticRouter(
                 [new TextWriterDiagnosticSink(stderr)],
-                SecretRedactor.Empty);
-            AdapterHostExecutionOutcome outcome = compositionRoot.CreateKeyringHelperAdapter().Execute(
-                invocationPath ?? KeyringHelperAdapter.ProductExecutableName,
-                args,
-                protocolStdout,
-                humanStdout: protocolStdout,
-                diagnosticRouter);
+                SecretRedactor.Empty
+            );
+            AdapterHostExecutionOutcome outcome = compositionRoot
+                .CreateKeyringHelperAdapter()
+                .Execute(
+                    invocationPath ?? KeyringHelperAdapter.ProductExecutableName,
+                    args,
+                    protocolStdout,
+                    humanStdout: protocolStdout,
+                    diagnosticRouter
+                );
             return (int)outcome.Result.ExitCode;
         }
         catch (Exception)
         {
-            StandardConsoleTextWriters.StandardError()
+            StandardConsoleTextWriters
+                .StandardError()
                 .WriteLine("error: unexpected fatal failure.");
             return 70;
         }
@@ -120,9 +148,7 @@ internal static class Program
             return Path.GetFileNameWithoutExtension(invocationPath);
         }
 
-        return IsManagedHostInvocation(invocationPath)
-            ? Environment.ProcessPath
-            : invocationPath;
+        return IsManagedHostInvocation(invocationPath) ? Environment.ProcessPath : invocationPath;
     }
 
     private static bool IsManagedHostInvocation(string? path)
@@ -139,10 +165,7 @@ internal static class Program
     }
 
     private static bool IsManagedAssemblyInvocation(string path) =>
-        string.Equals(
-            Path.GetExtension(path),
-            ".dll",
-            StringComparison.OrdinalIgnoreCase);
+        string.Equals(Path.GetExtension(path), ".dll", StringComparison.OrdinalIgnoreCase);
 
     private static string? TryReadLinuxArgv0()
     {
@@ -156,14 +179,14 @@ internal static class Program
             byte[] commandLine = File.ReadAllBytes("/proc/self/cmdline");
             int terminatorIndex = Array.IndexOf(commandLine, (byte)0);
             int length = terminatorIndex < 0 ? commandLine.Length : terminatorIndex;
-            return length == 0
-                ? null
-                : System.Text.Encoding.UTF8.GetString(commandLine, 0, length);
+            return length == 0 ? null : System.Text.Encoding.UTF8.GetString(commandLine, 0, length);
         }
         catch (Exception exception)
-            when (exception is IOException
-                or UnauthorizedAccessException
-                or System.Security.SecurityException)
+            when (exception
+                    is IOException
+                        or UnauthorizedAccessException
+                        or System.Security.SecurityException
+            )
         {
             return null;
         }

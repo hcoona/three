@@ -9,7 +9,9 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.AzureAuthProvider;
 
 public interface IWindowsArtifactProbe
 {
-    WindowsArtifactProbeResult Probe(AzureAuthDeploymentConfig config);
+    WindowsArtifactProbeResult Probe(
+        AzureAuthDeploymentConfig config,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record WindowsArtifactProbeResult
@@ -51,12 +53,15 @@ public sealed class WslWindowsArtifactTrustInspector : IAzureAuthArtifactTrustIn
         this.probe = probe ?? throw new ArgumentNullException(nameof(probe));
     }
 
-    public AzureAuthArtifactInspection Inspect(AzureAuthDeploymentConfig config)
+    public AzureAuthArtifactInspection Inspect(
+        AzureAuthDeploymentConfig config,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(config);
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            WindowsArtifactProbeResult result = probe.Probe(config);
+            WindowsArtifactProbeResult result = probe.Probe(config, cancellationToken);
             return result.Status switch
             {
                 AzureAuthArtifactTrustStatus.Trusted when result.Evidence is not null =>
@@ -249,9 +254,12 @@ public sealed class SystemWindowsArtifactProbe : IWindowsArtifactProbe
         wslInterop = WslInteropPathPolicy.IsValid(candidate) ? candidate : null;
     }
 
-    public WindowsArtifactProbeResult Probe(AzureAuthDeploymentConfig config)
+    public WindowsArtifactProbeResult Probe(
+        AzureAuthDeploymentConfig config,
+        CancellationToken cancellationToken = default)
     {
         AzureAuthDeploymentConfigPolicy.EnsureValid(config);
+        cancellationToken.ThrowIfCancellationRequested();
         if (!OperatingSystem.IsLinux()
             || powerShellPath is null
             || windowsSystemDirectoryPath is null
@@ -322,7 +330,7 @@ public sealed class SystemWindowsArtifactProbe : IWindowsArtifactProbe
         ProcessResult result;
         try
         {
-            result = processRunner.RunAsync(startSpec).GetAwaiter().GetResult();
+            result = processRunner.RunAsync(startSpec, cancellationToken).GetAwaiter().GetResult();
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

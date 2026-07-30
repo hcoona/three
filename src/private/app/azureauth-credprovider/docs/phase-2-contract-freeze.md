@@ -285,11 +285,14 @@ writes. Version 1 explicitly carries:
   product-owned container are rejected;
 - Yarn Berry CI-temporary activation environment. On Windows, activation must
   set/override `USERPROFILE` and `HOME` to the product-owned temporary home and
-  clear `HOMEDRIVE` and `HOMEPATH` so Yarn/Node resolve one temporary home. On
+  clear `HOMEDRIVE`, `HOMEPATH`, and `YARN_RC_FILENAME` so Yarn/Node resolve one
+  temporary home and cannot select an ambient Yarn configuration file. On
   Linux and macOS, activation keeps POSIX semantics by setting only `HOME` to the
-  product-owned temporary home and clearing no Windows home variables. The
-  `clearVariables` field is required on the JSON wire; POSIX plans preserve
-  valid empty-list semantics only by carrying `clearVariables: []` explicitly;
+  product-owned temporary home and clearing `YARN_RC_FILENAME`. Generic
+  `CiTemporaryFile` plans that use `TemporaryHome` retain the original activation
+  shape: Windows clears only `HOMEDRIVE` and `HOMEPATH`, while POSIX clears no
+  variables. The `clearVariables` field remains required on the JSON wire, and
+  generic POSIX plans carry `clearVariables: []` explicitly;
 - Yarn Berry CI-temporary plans must detect same-registry project-local
   `.yarnrc.yml` auth entries that would shadow the temporary `HOME`
   `npmRegistries[registry].npmAuthToken`. This includes project-local

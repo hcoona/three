@@ -5058,8 +5058,10 @@ public sealed class ContractFreezeTests
         Assert.True(ConfigurationChangePlanPolicy.IsValid(plan));
         Assert.Equal(yarnHomePath, activationEnvironment.SetVariables["USERPROFILE"]);
         Assert.Equal(yarnHomePath, activationEnvironment.SetVariables["HOME"]);
-        Assert.Contains("HOMEDRIVE", activationEnvironment.ClearVariables);
-        Assert.Contains("HOMEPATH", activationEnvironment.ClearVariables);
+        Assert.Equal(
+            ["HOMEDRIVE", "HOMEPATH", "YARN_RC_FILENAME"],
+            activationEnvironment.ClearVariables
+        );
         Assert.DoesNotContain("USERPROFILE", activationEnvironment.ClearVariables);
     }
 
@@ -5157,7 +5159,7 @@ public sealed class ContractFreezeTests
         Assert.DoesNotContain("USERPROFILE", activationEnvironment.SetVariables.Keys);
         Assert.DoesNotContain("HOMEDRIVE", activationEnvironment.SetVariables.Keys);
         Assert.DoesNotContain("HOMEPATH", activationEnvironment.SetVariables.Keys);
-        Assert.Empty(activationEnvironment.ClearVariables);
+        Assert.Equal(["YARN_RC_FILENAME"], activationEnvironment.ClearVariables);
     }
 
     [Fact]
@@ -6056,7 +6058,7 @@ public sealed class ContractFreezeTests
             },
             validCiPlan with
             {
-                TemporaryContainer = CreateTemporaryHomeContainer(yarnHomePath),
+                TemporaryContainer = CreateGenericTemporaryHomeContainer(yarnHomePath),
                 Changes =
                 [
                     CreateConfigurationChange(ConfigurationChangeOperation.Create) with
@@ -6068,7 +6070,7 @@ public sealed class ContractFreezeTests
             },
             validCiPlan with
             {
-                TemporaryContainer = CreateTemporaryHomeContainer(yarnHomePath),
+                TemporaryContainer = CreateGenericTemporaryHomeContainer(yarnHomePath),
                 Changes =
                 [
                     CreateConfigurationChange(ConfigurationChangeOperation.Create) with
@@ -9409,7 +9411,7 @@ public sealed class ContractFreezeTests
             StringComparison.Ordinal
         );
         Assert.Contains(
-            "\"clearVariables\":[\"HOMEDRIVE\",\"HOMEPATH\"]",
+            "\"clearVariables\":[\"HOMEDRIVE\",\"HOMEPATH\",\"YARN_RC_FILENAME\"]",
             planJson,
             StringComparison.Ordinal
         );
@@ -9486,6 +9488,7 @@ public sealed class ContractFreezeTests
     public void ContractJsonRequiresActivationEnvironmentClearVariablesOnWire()
     {
         var options = ContractJson.CreateSerializerOptions();
+        const string temporaryHomePath = "/agent/_temp/azureauth-credprovider/generic-home";
         var plan = new ConfigurationChangePlan
         {
             PlanId = "plan-json-posix-activation-clear-required",
@@ -9495,16 +9498,14 @@ public sealed class ContractFreezeTests
             DeclarationPreservation =
                 ConfigurationDeclarationPreservation.CompleteMergedTemporaryConfig,
             Manifest = CreateManifest("json-posix-activation-clear-required"),
-            TemporaryContainer = CreateTemporaryHomeContainer(
-                "/agent/_temp/azureauth-credprovider/yarn-home"
-            ),
+            TemporaryContainer = CreateGenericTemporaryHomeContainer(temporaryHomePath),
             Changes =
             [
-                CreateYarnAlwaysAuthChange(
-                    "https://pkgs.dev.azure.com/org/_packaging/feed/npm"
-                ) with
+                CreateConfigurationChange(ConfigurationChangeOperation.Create) with
                 {
-                    TargetPathOrName = "/agent/_temp/azureauth-credprovider/yarn-home/.yarnrc.yml",
+                    TargetKind = ConfigurationTargetKind.CiTemporaryFile,
+                    TargetPathOrName = temporaryHomePath + "/owned.txt",
+                    IsSecretValue = false,
                 },
             ],
         };
@@ -10543,6 +10544,30 @@ public sealed class ContractFreezeTests
             ActivationEnvironment = CreateTemporaryHomeActivationEnvironment(productOwnedPath),
         };
 
+    private static ConfigurationTemporaryContainer CreateGenericTemporaryHomeContainer(
+        string productOwnedPath
+    ) =>
+        new()
+        {
+            Kind = ConfigurationTemporaryContainerKind.TemporaryHome,
+            ProductOwnedPath = productOwnedPath,
+            ActivationEnvironment = IsPosixPath(productOwnedPath)
+                ? new ConfigurationActivationEnvironment
+                {
+                    SetVariables = new Dictionary<string, string> { ["HOME"] = productOwnedPath },
+                    ClearVariables = [],
+                }
+                : new ConfigurationActivationEnvironment
+                {
+                    SetVariables = new Dictionary<string, string>
+                    {
+                        ["USERPROFILE"] = productOwnedPath,
+                        ["HOME"] = productOwnedPath,
+                    },
+                    ClearVariables = ["HOMEDRIVE", "HOMEPATH"],
+                },
+        };
+
     private static ConfigurationTemporaryContainer CreateNpmrcFileContainer(
         string productOwnedPath
     ) =>
@@ -10577,7 +10602,7 @@ public sealed class ContractFreezeTests
             ? new ConfigurationActivationEnvironment
             {
                 SetVariables = new Dictionary<string, string> { ["HOME"] = productOwnedPath },
-                ClearVariables = [],
+                ClearVariables = ["YARN_RC_FILENAME"],
             }
             : new ConfigurationActivationEnvironment
             {
@@ -10586,7 +10611,7 @@ public sealed class ContractFreezeTests
                     ["USERPROFILE"] = productOwnedPath,
                     ["HOME"] = productOwnedPath,
                 },
-                ClearVariables = ["HOMEDRIVE", "HOMEPATH"],
+                ClearVariables = ["HOMEDRIVE", "HOMEPATH", "YARN_RC_FILENAME"],
             };
     }
 

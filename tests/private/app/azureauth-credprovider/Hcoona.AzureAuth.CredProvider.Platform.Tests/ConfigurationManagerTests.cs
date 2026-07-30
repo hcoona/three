@@ -3390,6 +3390,9 @@ public sealed class ConfigurationManagerTests
             "file-value"
         ) with
         {
+            TemporaryContainer = CreateYarnTemporaryHomeContainer(
+                GetParentConfigurationPath(targetPath)
+            ),
             Changes =
             [
                 CreateGenericFileChange(
@@ -3419,6 +3422,9 @@ public sealed class ConfigurationManagerTests
             "file-value"
         ) with
         {
+            TemporaryContainer = CreateYarnTemporaryHomeContainer(
+                GetParentConfigurationPath(targetPath)
+            ),
             Changes =
             [
                 CreateGenericFileChange(
@@ -3456,6 +3462,9 @@ public sealed class ConfigurationManagerTests
             "file-value"
         ) with
         {
+            TemporaryContainer = CreateYarnTemporaryHomeContainer(
+                GetParentConfigurationPath(ciTemporaryFilePath)
+            ),
             Changes =
             [
                 CreateGenericFileChange(
@@ -14094,7 +14103,7 @@ public sealed class ConfigurationManagerTests
                     PreserveDeclarationsAndComments = true,
                 },
             ],
-            temporaryContainer: CreateTemporaryHomeContainer(
+            temporaryContainer: CreateYarnTemporaryHomeContainer(
                 "/config/non-ci-temporary-file-target"
             ),
             declarationPreservation:
@@ -14157,7 +14166,7 @@ public sealed class ConfigurationManagerTests
                 ProductVersion = "0.0.0-test",
             },
             [CreateYarnrcFileChange(targetPath)],
-            temporaryContainer: CreateTemporaryHomeContainer(containerPath),
+            temporaryContainer: CreateYarnTemporaryHomeContainer(containerPath),
             declarationPreservation:
                 ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible
         );
@@ -14200,7 +14209,7 @@ public sealed class ConfigurationManagerTests
                 ProductVersion = "0.0.0-test",
             },
             [CreateYarnrcFileChange(targetPath)],
-            temporaryContainer: CreateTemporaryHomeContainer(containerPath),
+            temporaryContainer: CreateYarnTemporaryHomeContainer(containerPath),
             declarationPreservation:
                 ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible
         );
@@ -14249,7 +14258,7 @@ public sealed class ConfigurationManagerTests
                 ProductVersion = "0.0.0-test",
             },
             [CreateYarnrcFileChange(targetPath)],
-            temporaryContainer: CreateTemporaryHomeContainer(containerPath),
+            temporaryContainer: CreateYarnTemporaryHomeContainer(containerPath),
             declarationPreservation:
                 ConfigurationDeclarationPreservation.AuthOnlyWhenDeclarationsRemainVisible
         );
@@ -14294,7 +14303,7 @@ public sealed class ConfigurationManagerTests
                     PreserveDeclarationsAndComments = true,
                 },
             ],
-            temporaryContainer: CreateTemporaryHomeContainer(
+            temporaryContainer: CreateYarnTemporaryHomeContainer(
                 "/config/non-ci-temporary-file-target"
             ),
             declarationPreservation:
@@ -18039,8 +18048,35 @@ public sealed class ConfigurationManagerTests
                 {
                     ["HOME"] = productOwnedPath,
                 },
-                ClearVariables = Array.Empty<string>(),
+                ClearVariables = [],
             };
+
+    private static ConfigurationTemporaryContainer CreateYarnTemporaryHomeContainer(
+        string productOwnedPath
+    ) =>
+        CreateTemporaryHomeContainer(productOwnedPath) with
+        {
+            ActivationEnvironment = IsWindowsConfigurationPath(productOwnedPath)
+                ? new ConfigurationActivationEnvironment
+                {
+                    Platform = "windows",
+                    SetVariables = new Dictionary<string, string>
+                    {
+                        ["USERPROFILE"] = productOwnedPath,
+                        ["HOME"] = productOwnedPath,
+                    },
+                    ClearVariables = ["HOMEDRIVE", "HOMEPATH", "YARN_RC_FILENAME"],
+                }
+                : new ConfigurationActivationEnvironment
+                {
+                    Platform = "posix",
+                    SetVariables = new Dictionary<string, string>
+                    {
+                        ["HOME"] = productOwnedPath,
+                    },
+                    ClearVariables = ["YARN_RC_FILENAME"],
+                },
+        };
 
     private static bool IsWindowsConfigurationPath(string path) =>
         IsWindowsDriveConfigurationPath(path)

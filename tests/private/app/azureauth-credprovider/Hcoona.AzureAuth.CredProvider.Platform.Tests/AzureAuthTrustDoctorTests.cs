@@ -127,7 +127,11 @@ public sealed class AzureAuthTrustDoctorTests
             AzureAuthArtifactInspection.Trusted(CreateMatchingEvidence(CreateDeploymentConfig()))
         );
 
-        Assert.Throws<ArgumentException>(() => AzureAuthTrustPolicy.Evaluate(invalidConfig, inspector));
+        Assert.Throws<ArgumentException>(() =>
+            AzureAuthTrustPolicy.Evaluate(
+                invalidConfig,
+                inspector,
+                TestContext.Current.CancellationToken));
         Assert.Equal(0, inspector.CallCount);
     }
 
@@ -212,7 +216,8 @@ public sealed class AzureAuthTrustDoctorTests
         );
         AzureAuthTrustResult deferred = AzureAuthTrustPolicy.Evaluate(
             config.DeploymentConfig!,
-            new DeferredAzureAuthArtifactTrustInspector()
+            new DeferredAzureAuthArtifactTrustInspector(),
+            TestContext.Current.CancellationToken
         );
 
         Assert.Equal(AzureAuthArtifactTrustStatus.Untrusted, untrusted.Status);
@@ -461,7 +466,9 @@ public sealed class AzureAuthTrustDoctorTests
 
         public int CallCount { get; private set; }
 
-        public AzureAuthArtifactInspection Inspect(AzureAuthDeploymentConfig config)
+        public AzureAuthArtifactInspection Inspect(
+            AzureAuthDeploymentConfig config,
+            CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(config);
             CallCount++;

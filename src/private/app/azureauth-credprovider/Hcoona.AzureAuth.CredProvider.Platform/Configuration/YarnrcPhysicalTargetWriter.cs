@@ -12,6 +12,7 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
     private const string NpmAuthTokenKey = "npmAuthToken";
     private const string NpmAlwaysAuthKey = "npmAlwaysAuth";
     private const string NpmAuthIdentKey = "npmAuthIdent";
+    private const string NpmRegistryServerKey = "npmRegistryServer";
 
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(
         encoderShouldEmitUTF8Identifier: false,
@@ -158,11 +159,19 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
             return "The Yarnrc physical writer supports only value-writing and remove changes.";
         }
 
+        bool isTopLevelRegistryServer = string.Equals(
+            change.Key,
+            NpmRegistryServerKey,
+            StringComparison.Ordinal
+        );
+        string registryKey = string.Empty;
+        string leafKey = NpmRegistryServerKey;
         if (
-            !TryParseNpmRegistriesAuthKey(
+            !isTopLevelRegistryServer
+            && !TryParseNpmRegistriesAuthKey(
                 change.Key,
-                out string registryKey,
-                out string leafKey
+                out registryKey,
+                out leafKey
             )
         )
         {
@@ -199,6 +208,18 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
             if (change.IsSecretValue)
             {
                 return "The Yarnrc physical writer supports secret values only for npmAuthToken.";
+            }
+
+            if (isTopLevelRegistryServer)
+            {
+                return resourceIdentity is not null
+                    && string.Equals(
+                        change.Value,
+                        resourceIdentity.ServiceEndpoint.AbsoluteUri,
+                        StringComparison.Ordinal
+                    )
+                    ? null
+                    : "The Yarnrc npmRegistryServer value must match the canonical registry identity.";
             }
 
             if (!string.Equals(change.Value, "true", StringComparison.Ordinal))
@@ -314,6 +335,18 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
         foreach (ConfigurationChange change in OrderChanges(request.Changes))
         {
             if (
+                string.Equals(
+                    change.Key,
+                    NpmRegistryServerKey,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                ApplyTopLevelRegistryServerChange(document, request, targetPath, change);
+                continue;
+            }
+
+            if (
                 !TryParseNpmRegistriesAuthKey(
                     change.Key,
                     out string registryKey,
@@ -368,6 +401,50 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
         }
     }
 
+    private void ApplyTopLevelRegistryServerChange(
+        YarnrcDocument document,
+        ConfigurationPhysicalTargetWriterRequest request,
+        string targetPath,
+        ConfigurationChange change
+    )
+    {
+        ConfigurationPhysicalTargetOwnershipProof? proof = FindOwnershipProof(
+            request.OwnershipProofs,
+            targetPath,
+            change.Key
+        );
+        YarnrcEntry[] existingEntries = FindTopLevelEntries(
+                document,
+                NpmRegistryServerKey
+            )
+            .ToArray();
+        ValidateCurrentState(change, existingEntries, proof);
+
+        if (change.Operation == ConfigurationChangeOperation.Remove)
+        {
+            document.Lines.RemoveAt(existingEntries[0].LineIndex);
+            return;
+        }
+
+        string renderedLine =
+            NpmRegistryServerKey
+            + ": '"
+            + EscapeSingleQuotedYamlScalar(change.Value!)
+            + "'";
+        if (existingEntries.Length == 1)
+        {
+            if (!string.Equals(existingEntries[0].Value, change.Value, StringComparison.Ordinal))
+            {
+                document.Lines[existingEntries[0].LineIndex] = renderedLine;
+            }
+
+            return;
+        }
+
+        document.Lines.Insert(0, renderedLine);
+        document.TrailingNewLine = true;
+    }
+
     private static void EnsureNoNpmAuthIdentConflict(
         YarnrcDocument document,
         string registryKey
@@ -390,10 +467,12 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
         IReadOnlyList<ConfigurationChange> changes
     ) =>
         changes.OrderBy(change =>
-            TryParseNpmRegistriesAuthKey(change.Key, out _, out string leafKey)
-                && string.Equals(leafKey, NpmAlwaysAuthKey, StringComparison.Ordinal)
+            string.Equals(change.Key, NpmRegistryServerKey, StringComparison.Ordinal)
                 ? 0
-                : 1
+                : TryParseNpmRegistriesAuthKey(change.Key, out _, out string leafKey)
+                    && string.Equals(leafKey, NpmAlwaysAuthKey, StringComparison.Ordinal)
+                    ? 1
+                    : 2
         ).ToArray();
 
     private static void ValidateCurrentState(
@@ -450,7 +529,10 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
             );
         }
 
-        ValidateProofAgainstEntry(existingEntries[0], proof);
+        if (change.Operation != ConfigurationChangeOperation.Remove)
+        {
+            ValidateProofAgainstEntry(existingEntries[0], proof);
+        }
     }
 
     private static void ValidateProofAgainstCurrentState(
@@ -458,20 +540,28 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
         ConfigurationPhysicalTargetOwnershipProof proof
     )
     {
-        if (
-            !TryParseNpmRegistriesAuthKey(
+        YarnrcEntry[] existingEntries;
+        if (string.Equals(proof.Key, NpmRegistryServerKey, StringComparison.Ordinal))
+        {
+            existingEntries = FindTopLevelEntries(document, NpmRegistryServerKey).ToArray();
+        }
+        else if (
+            TryParseNpmRegistriesAuthKey(
                 proof.Key,
                 out string registryKey,
                 out string leafKey
             )
         )
         {
+            existingEntries = FindEntries(document, registryKey, leafKey).ToArray();
+        }
+        else
+        {
             throw new InvalidOperationException(
                 "Configuration conflict: Yarnrc retained ownership proofs require canonical keys."
             );
         }
 
-        YarnrcEntry[] existingEntries = FindEntries(document, registryKey, leafKey).ToArray();
         if (existingEntries.Length == 0)
         {
             throw new InvalidOperationException(
@@ -849,6 +939,30 @@ internal sealed class YarnrcPhysicalTargetWriter(IFileSystem fileSystem)
             )
             {
                 yield return new YarnrcEntry(index, registryKey, leafKey, parsedValue);
+            }
+        }
+    }
+
+    private static IEnumerable<YarnrcEntry> FindTopLevelEntries(
+        YarnrcDocument document,
+        string requestedKey
+    )
+    {
+        for (int index = 0; index < document.Lines.Count; index++)
+        {
+            string line = StripYamlComment(document.Lines[index]);
+            if (string.IsNullOrWhiteSpace(line) || CountLeadingSpaces(line) != 0)
+            {
+                continue;
+            }
+
+            if (
+                TryParseYamlKeyValue(line.Trim(), out string? key, out string? value)
+                && string.Equals(key, requestedKey, StringComparison.Ordinal)
+                && UnquoteYamlScalar(value) is { } parsedValue
+            )
+            {
+                yield return new YarnrcEntry(index, "<global>", requestedKey, parsedValue);
             }
         }
     }

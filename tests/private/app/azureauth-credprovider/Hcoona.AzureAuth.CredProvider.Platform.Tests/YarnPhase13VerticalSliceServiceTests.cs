@@ -313,7 +313,10 @@ public sealed class YarnPhase13VerticalSliceServiceTests
             "USERPROFILE",
             plan.TemporaryContainer.ActivationEnvironment.SetVariables.Keys
         );
-        Assert.Empty(plan.TemporaryContainer.ActivationEnvironment.ClearVariables);
+        Assert.Equal(
+            ["YARN_RC_FILENAME"],
+            plan.TemporaryContainer.ActivationEnvironment.ClearVariables
+        );
         Assert.All(
             plan.Changes,
             static change =>
@@ -514,7 +517,7 @@ public sealed class YarnPhase13VerticalSliceServiceTests
     }
 
     [Fact]
-    public void CreateCiTemporaryCredentialPlanRejectsYarnRcFilenameOverride()
+    public void CreateCiTemporaryCredentialPlanClearsYarnRcFilenameOverrideDuringActivation()
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         CreateDirectory(fileSystem, "/workspace");
@@ -541,18 +544,19 @@ public sealed class YarnPhase13VerticalSliceServiceTests
             service.DiscoverRegistryDeclarations()
         );
 
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
-            service.CreateCiTemporaryCredentialPlan(
-                new YarnPhase13CredentialPlanRequest
-                {
-                    Declaration = declaration,
-                    AuthToken = "short-lived-token",
-                    TemporaryHomePath = "/tmp/azureauth-yarn-home",
-                }
-            )
+        ConfigurationChangePlan plan = service.CreateCiTemporaryCredentialPlan(
+            new YarnPhase13CredentialPlanRequest
+            {
+                Declaration = declaration,
+                AuthToken = "short-lived-token",
+                TemporaryHomePath = "/tmp/azureauth-yarn-home",
+            }
         );
 
-        Assert.Contains("YARN_RC_FILENAME", exception.Message, StringComparison.Ordinal);
+        ConfigurationActivationEnvironment activation =
+            plan.TemporaryContainer!.ActivationEnvironment!;
+        Assert.Equal("/tmp/azureauth-yarn-home", activation.SetVariables["HOME"]);
+        Assert.Equal(["YARN_RC_FILENAME"], activation.ClearVariables);
     }
 
     [Fact]

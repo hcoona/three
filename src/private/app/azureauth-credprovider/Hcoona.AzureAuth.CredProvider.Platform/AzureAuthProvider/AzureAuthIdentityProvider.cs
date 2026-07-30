@@ -7,12 +7,9 @@ using Hcoona.AzureAuth.CredProvider.Platform.TokenMaterialization;
 namespace Hcoona.AzureAuth.CredProvider.Platform.AzureAuthProvider;
 
 /// <summary>
-/// Optional async AzureAuth-backed token acquisition path for a future composed runtime.
-/// WP3 narrows the inspector/runner handoff window by re-running the trusted inspection in
-/// <see cref="ProcessStartSpec.PreStartValidation" />, but the current inspector contract still
-/// attests only path-based same-artifact inspection and does not provide a retained launch lease.
-/// The residual TOCTOU window between that final validation and OS process creation is therefore
-/// documented and not claimed away.
+/// AzureAuth-backed token acquisition for the composed runtime.
+/// The trust result is validated once per acquisition and reused for process launch. The inspector
+/// contract attests path-based same-artifact inspection and does not provide a retained launch lease.
 /// </summary>
 public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
 {
@@ -26,6 +23,7 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
     private readonly IProcessRunner _processRunner;
     private readonly TimeProvider _timeProvider;
     private readonly IAzureAuthArtifactTrustInspector _trustInspector;
+    private readonly AzureAuthTrustResult? _trustedResult;
 
     public AzureAuthIdentityProvider(
         AzureAuthProviderConfig providerConfig,
@@ -33,7 +31,8 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
         AzureAuthProcessLaunchOptions launchOptions,
         IAzureAuthArtifactTrustInspector? trustInspector = null,
         IProcessRunner? processRunner = null,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        AzureAuthTrustResult? trustedResult = null
     )
     {
         ArgumentNullException.ThrowIfNull(providerConfig);
@@ -50,6 +49,7 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
         _trustInspector = trustInspector ?? new DeferredAzureAuthArtifactTrustInspector();
         _processRunner = processRunner ?? new SystemProcessRunner();
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _trustedResult = trustedResult;
     }
 
     public async ValueTask<AcquiredAccessTokenResult> AcquireAccessTokenAsync(
@@ -70,7 +70,7 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
 
         try
         {
-            PreflightOutcome preflight = GetPreflightOutcome(request);
+            PreflightOutcome preflight = GetPreflightOutcome(request, cancellationToken);
             if (preflight.Result is not null)
             {
                 return preflight.Result;
@@ -103,7 +103,9 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
         }
     }
 
-    private PreflightOutcome GetPreflightOutcome(CredentialRequestV2 request)
+    private PreflightOutcome GetPreflightOutcome(
+        CredentialRequestV2 request,
+        CancellationToken cancellationToken)
     {
         AzureAuthRequestPreflightFailure? requestFailure =
             AzureAuthRequestPreflightPolicy.Evaluate(request);
@@ -128,7 +130,10 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
         }
 
         AzureAuthDeploymentConfig deploymentConfig = _providerConfig.DeploymentConfig!;
-        AzureAuthTrustResult trustResult = AzureAuthTrustPolicy.Evaluate(deploymentConfig, _trustInspector);
+        AzureAuthTrustResult? knownTrust = _trustedResult;
+        AzureAuthTrustResult trustResult = knownTrust is null
+            ? AzureAuthTrustPolicy.Evaluate(deploymentConfig, _trustInspector, cancellationToken)
+            : AzureAuthTrustPolicy.Revalidate(deploymentConfig, knownTrust);
         if (!trustResult.IsReady || string.IsNullOrWhiteSpace(trustResult.DeploymentKey))
         {
             return new PreflightOutcome(GetTrustFailure(trustResult));
@@ -291,20 +296,6 @@ public sealed class AzureAuthIdentityProvider : IAccessTokenIdentityProvider
             ),
             standardInput: null,
             environmentMode: ProcessEnvironmentMode.ExplicitOnly,
-            preStartValidation: cancellationToken =>
-            {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    return ValueTask.FromCanceled(cancellationToken);
-                }
-
-                PreflightOutcome revalidated = GetPreflightOutcome(request);
-                return revalidated.Result is null
-                    ? ValueTask.CompletedTask
-                    : ValueTask.FromException(
-                        new AzureAuthLaunchAuthorizationException(revalidated.Result)
-                    );
-            },
             timeout: _launchOptions.Timeout,
             outputCaptureOptions: _launchOptions.ToOutputCaptureOptions(),
             useWindowsEnvironmentVariableSemantics: true

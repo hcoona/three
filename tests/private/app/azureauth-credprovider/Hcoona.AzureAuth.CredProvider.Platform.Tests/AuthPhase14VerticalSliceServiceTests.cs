@@ -1,4 +1,5 @@
 using Hcoona.AzureAuth.CredProvider.Contracts;
+using Hcoona.AzureAuth.CredProvider.Platform.Composition;
 using Hcoona.AzureAuth.CredProvider.Platform.CredentialCore;
 using Hcoona.AzureAuth.CredProvider.Platform.VerticalSlice;
 using Xunit;
@@ -23,7 +24,8 @@ public sealed class AuthPhase14VerticalSliceServiceTests
                 IdentityFlow = IdentityFlow.InteractiveBrowser,
                 AccountHint = "Alice@Example",
                 TenantHint = "TenantA",
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.Equal(CredentialResultStatus.Success, result.CredentialResult.Status);
@@ -43,12 +45,47 @@ public sealed class AuthPhase14VerticalSliceServiceTests
             {
                 IdentityFlow = IdentityFlow.PatCompatibility,
                 ExplicitPatMaterialProvided = true,
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.Equal(CredentialResultStatus.FlowDeferred, result.CredentialResult.Status);
         Assert.Equal("PatCompatibilityDeferred", result.CredentialResult.Error?.Code);
         Assert.False(result.CredentialResult.ContainsCredentialMaterial);
+    }
+
+    [Fact]
+    public async Task LoginCancellationStopsBoundedCredentialAcquisitionPromptly()
+    {
+        var acquisition = new BlockingCredentialAcquisitionService();
+        var service = new AuthPhase14VerticalSliceService(
+            new AuthPhase14VerticalSliceOptions
+            {
+                CredentialAcquisition = new BoundedCredentialAcquisitionAdapter(acquisition),
+            }
+        );
+        using var cancellation = new CancellationTokenSource();
+        Task<AuthPhase14LoginResult> login = Task.Run(() =>
+            service.Login(
+                new AuthPhase14LoginRequest
+                {
+                    IdentityFlow = IdentityFlow.InteractiveBrowser,
+                },
+                cancellation.Token
+            )
+        );
+        await acquisition.Started.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken
+        );
+
+        cancellation.Cancel();
+        AuthPhase14LoginResult result = await login.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal("CredentialAcquisitionCanceled", result.CredentialResult.Error?.Code);
     }
 
     [Theory]
@@ -108,7 +145,8 @@ public sealed class AuthPhase14VerticalSliceServiceTests
             {
                 IdentityFlow = IdentityFlow.AzurePipelinesSystemAccessToken,
                 ExplicitAzurePipelinesCiMode = true,
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.Equal(
@@ -133,7 +171,8 @@ public sealed class AuthPhase14VerticalSliceServiceTests
             {
                 IdentityFlow = IdentityFlow.AzurePipelinesSystemAccessToken,
                 ExplicitAzurePipelinesCiMode = true,
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.Equal(CredentialResultStatus.Success, result.CredentialResult.Status);
@@ -156,7 +195,8 @@ public sealed class AuthPhase14VerticalSliceServiceTests
                     new AuthPhase14LoginRequest
                     {
                         IdentityFlow = IdentityFlow.ManagedIdentity,
-                    }
+                    },
+                    TestContext.Current.CancellationToken
                 )
         );
 
@@ -230,6 +270,22 @@ public sealed class AuthPhase14VerticalSliceServiceTests
         {
             InvocationCount++;
             throw new InvalidOperationException("Credential cache must not execute.");
+        }
+
+    }
+
+    private sealed class BlockingCredentialAcquisitionService : ICredentialAcquisitionService
+    {
+        public TaskCompletionSource Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default)
+        {
+            Started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("Unreachable.");
         }
     }
 }

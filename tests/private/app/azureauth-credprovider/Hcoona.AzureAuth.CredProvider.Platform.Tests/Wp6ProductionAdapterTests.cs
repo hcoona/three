@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics;
 using System.Text;
 using System.Runtime.InteropServices;
 using Hcoona.AzureAuth.CredProvider.Contracts;
@@ -823,7 +824,9 @@ public sealed class Wp6ProductionAdapterTests
                     EnvironmentVariableReader = _ => throw new InvalidOperationException(),
                 });
 
-            WindowsArtifactProbeResult result = probe.Probe(config.DeploymentConfig!);
+            WindowsArtifactProbeResult result = probe.Probe(
+                config.DeploymentConfig!,
+                TestContext.Current.CancellationToken);
 
             Assert.Equal(AzureAuthArtifactTrustStatus.Trusted, result.Status);
             Assert.Equal(powerShellPath, runner.StartSpec!.FileName);
@@ -877,6 +880,47 @@ public sealed class Wp6ProductionAdapterTests
             Assert.Equal(@"C:\Windows\System32", result.Evidence.TrustedSystemDirectory);
             Assert.Equal(@"C:\Windows\System32", result.Evidence.TrustedWorkingDirectory);
             Assert.Equal([@"C:\Windows\System32"], result.Evidence.TrustedPathEntries);
+        }
+        finally
+        {
+            Directory.Delete(mountRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task WindowsProbePassesCancellationToProcessRunner()
+    {
+        string mountRoot = CreateTestDirectory();
+        try
+        {
+            string powerShellPath = Path.Combine(
+                mountRoot,
+                "Windows",
+                "System32",
+                "WindowsPowerShell",
+                "v1.0",
+                "powershell.exe");
+            Directory.CreateDirectory(Path.GetDirectoryName(powerShellPath)!);
+            File.WriteAllText(powerShellPath, string.Empty);
+            var runner = new CancelableProbeProcessRunner();
+            var probe = new SystemWindowsArtifactProbe(
+                runner,
+                new SystemWindowsArtifactProbeOptions
+                {
+                    WindowsMountRoot = mountRoot,
+                    WslInterop = "/run/WSL/123_interop",
+                    Timeout = TimeSpan.FromSeconds(15),
+                });
+            using var cancellation = new CancellationTokenSource();
+            Task<WindowsArtifactProbeResult> probing = Task.Run(
+                () => probe.Probe(CreateConfig().DeploymentConfig!, cancellation.Token));
+            await runner.Started.Task.WaitAsync(TestContext.Current.CancellationToken);
+            Stopwatch stopwatch = Stopwatch.StartNew();
+
+            cancellation.Cancel();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await probing);
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1), stopwatch.Elapsed.ToString());
         }
         finally
         {
@@ -1076,7 +1120,9 @@ public sealed class Wp6ProductionAdapterTests
 
             Assert.Equal(
                 AzureAuthArtifactTrustStatus.Deferred,
-                probe.Probe(CreateConfig().DeploymentConfig!).Status);
+                probe.Probe(
+                    CreateConfig().DeploymentConfig!,
+                    TestContext.Current.CancellationToken).Status);
             Assert.Equal(0, runner.CallCount);
         }
         finally
@@ -1115,7 +1161,9 @@ public sealed class Wp6ProductionAdapterTests
 
             Assert.Equal(
                 AzureAuthArtifactTrustStatus.Untrusted,
-                probe.Probe(CreateConfig().DeploymentConfig!).Status);
+                probe.Probe(
+                    CreateConfig().DeploymentConfig!,
+                    TestContext.Current.CancellationToken).Status);
         }
         finally
         {
@@ -1150,7 +1198,9 @@ public sealed class Wp6ProductionAdapterTests
 
             Assert.Equal(
                 AzureAuthArtifactTrustStatus.Untrusted,
-                probe.Probe(config.DeploymentConfig!).Status);
+                probe.Probe(
+                    config.DeploymentConfig!,
+                    TestContext.Current.CancellationToken).Status);
         }
         finally
         {
@@ -1169,7 +1219,8 @@ public sealed class Wp6ProductionAdapterTests
 
         AzureAuthTrustResult result = AzureAuthTrustPolicy.Evaluate(
             config.DeploymentConfig!,
-            new WslWindowsArtifactTrustInspector(new EvidenceProbe(evidence)));
+            new WslWindowsArtifactTrustInspector(new EvidenceProbe(evidence)),
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(AzureAuthArtifactTrustStatus.Untrusted, result.Status);
     }
@@ -1190,7 +1241,8 @@ public sealed class Wp6ProductionAdapterTests
 
         AzureAuthTrustResult result = AzureAuthTrustPolicy.Evaluate(
             config.DeploymentConfig!,
-            new WslWindowsArtifactTrustInspector(new EvidenceProbe(evidence)));
+            new WslWindowsArtifactTrustInspector(new EvidenceProbe(evidence)),
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(AzureAuthArtifactTrustStatus.Untrusted, result.Status);
     }
@@ -1212,7 +1264,8 @@ public sealed class Wp6ProductionAdapterTests
             var inspector = new WslWindowsArtifactTrustInspector(probe);
             AzureAuthTrustResult trust = AzureAuthTrustPolicy.Evaluate(
                 config.DeploymentConfig!,
-                inspector);
+                inspector,
+                TestContext.Current.CancellationToken);
             AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
                 config,
                 "user@example.invalid",
@@ -1253,11 +1306,33 @@ public sealed class Wp6ProductionAdapterTests
                 CreateRequest(),
                 TestContext.Current.CancellationToken);
 
-            Assert.False(root.Readiness.Interactive.IsReady);
-            Assert.Equal("AccountEnforcementUnavailable", root.Readiness.Interactive.Code);
-            Assert.Equal(CredentialResultStatus.CredentialUnavailable, acquired.Status);
-            Assert.Equal("AccountEnforcementUnavailable", acquired.Error?.Code);
-            Assert.Equal(0, processRunner.CallCount);
+            Assert.True(root.Readiness.Interactive.IsReady);
+            Assert.Equal("AzureAuthInteractiveReady", root.Readiness.Interactive.Code);
+            Assert.False(root.Readiness.Silent.IsReady);
+            Assert.Equal(CredentialResultStatus.Success, acquired.Status);
+            Assert.Equal(1, processRunner.CallCount);
+            Assert.NotNull(processRunner.StartSpec);
+            Assert.Equal("/mnt/c/Tools/AzureAuth.exe", processRunner.StartSpec.FileName);
+            Assert.Equal(
+                [
+                    "aad",
+                    "--client",
+                    AzureAuthIdentityProvider.AzureDevOpsPublicClientId,
+                    "--tenant",
+                    "tenant-1",
+                    "--scope",
+                    AzureAuthIdentityProvider.AzureDevOpsDefaultScope,
+                    "--mode",
+                    "web",
+                    "--output",
+                    "token",
+                ],
+                processRunner.StartSpec.Arguments
+            );
+            Assert.Equal(
+                "/run/WSL/123_interop",
+                processRunner.StartSpec.Environment["WSL_INTEROP"]
+            );
         }
         finally
         {
@@ -1378,13 +1453,17 @@ public sealed class Wp6ProductionAdapterTests
 
     private sealed class TrustedProbe(AzureAuthDeploymentConfig config) : IWindowsArtifactProbe
     {
-        public WindowsArtifactProbeResult Probe(AzureAuthDeploymentConfig _) =>
+        public WindowsArtifactProbeResult Probe(
+            AzureAuthDeploymentConfig _,
+            CancellationToken cancellationToken = default) =>
             WindowsArtifactProbeResult.Trusted(CreateEvidence(config));
     }
 
     private sealed class EvidenceProbe(AzureAuthArtifactEvidence evidence) : IWindowsArtifactProbe
     {
-        public WindowsArtifactProbeResult Probe(AzureAuthDeploymentConfig _) =>
+        public WindowsArtifactProbeResult Probe(
+            AzureAuthDeploymentConfig _,
+            CancellationToken cancellationToken = default) =>
             WindowsArtifactProbeResult.Trusted(evidence);
     }
 
@@ -1442,6 +1521,21 @@ public sealed class Wp6ProductionAdapterTests
             ProcessStartSpec startSpec,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new ProcessResult(0, json, string.Empty));
+    }
+
+    private sealed class CancelableProbeProcessRunner : IProcessRunner
+    {
+        public TaskCompletionSource Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<ProcessResult> RunAsync(
+            ProcessStartSpec startSpec,
+            CancellationToken cancellationToken = default)
+        {
+            Started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("The probe runner must be canceled.");
+        }
     }
 
     private sealed class RecordingDirectoryDurability(bool isSupported = true)

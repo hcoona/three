@@ -162,7 +162,6 @@ public sealed class YarnPhase13VerticalSliceService
     {
         ValidateCredentialPlanRequest(request);
         ThrowIfCiTemporaryPlanWouldHideRegistryDeclaration(request.Declaration);
-        ThrowIfCiTemporaryPlanWouldBeBypassedByYarnRcFilenameOverride();
         string temporaryHomePath =
             NullIfWhiteSpace(request.TemporaryHomePath)
             ?? throw new ArgumentException(
@@ -288,17 +287,6 @@ public sealed class YarnPhase13VerticalSliceService
         }
 
         return declarations.ToArray();
-    }
-
-    private void ThrowIfCiTemporaryPlanWouldBeBypassedByYarnRcFilenameOverride()
-    {
-        if (GetYarnRcFilenameOverride() is not null)
-        {
-            throw new InvalidOperationException(
-                "CI temporary Yarn plans do not support YARN_RC_FILENAME because Yarn would "
-                    + "bypass the product-owned temporary HOME/.yarnrc.yml target."
-            );
-        }
     }
 
     private void ThrowIfCiTemporaryPlanWouldHideRegistryDeclaration(
@@ -471,7 +459,7 @@ public sealed class YarnPhase13VerticalSliceService
                     ["USERPROFILE"] = temporaryHomePath,
                     ["HOME"] = temporaryHomePath,
                 },
-                ClearVariables = ["HOMEDRIVE", "HOMEPATH"],
+                ClearVariables = ["HOMEDRIVE", "HOMEPATH", "YARN_RC_FILENAME"],
             };
         }
 
@@ -482,7 +470,7 @@ public sealed class YarnPhase13VerticalSliceService
             {
                 ["HOME"] = temporaryHomePath,
             },
-            ClearVariables = [],
+            ClearVariables = ["YARN_RC_FILENAME"],
         };
     }
 

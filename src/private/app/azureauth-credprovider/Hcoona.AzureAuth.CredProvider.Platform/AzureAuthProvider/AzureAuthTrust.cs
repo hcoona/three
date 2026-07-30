@@ -16,15 +16,20 @@ namespace Hcoona.AzureAuth.CredProvider.Platform.AzureAuthProvider;
 /// </summary>
 public interface IAzureAuthArtifactTrustInspector
 {
-    AzureAuthArtifactInspection Inspect(AzureAuthDeploymentConfig config);
+    AzureAuthArtifactInspection Inspect(
+        AzureAuthDeploymentConfig config,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>Explicit WP2 placeholder until WP3 ships a real inspector.</summary>
 public sealed class DeferredAzureAuthArtifactTrustInspector : IAzureAuthArtifactTrustInspector
 {
-    public AzureAuthArtifactInspection Inspect(AzureAuthDeploymentConfig config)
+    public AzureAuthArtifactInspection Inspect(
+        AzureAuthDeploymentConfig config,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(config);
+        cancellationToken.ThrowIfCancellationRequested();
         return AzureAuthArtifactInspection.Deferred();
     }
 }
@@ -183,12 +188,19 @@ public static class AzureAuthTrustPolicy
     public static AzureAuthTrustResult Evaluate(
         AzureAuthDeploymentConfig config,
         IAzureAuthArtifactTrustInspector inspector
+    ) => Evaluate(config, inspector, CancellationToken.None);
+
+    public static AzureAuthTrustResult Evaluate(
+        AzureAuthDeploymentConfig config,
+        IAzureAuthArtifactTrustInspector inspector,
+        CancellationToken cancellationToken
     )
     {
         ArgumentNullException.ThrowIfNull(inspector);
         AzureAuthDeploymentConfigPolicy.EnsureValid(config);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        AzureAuthArtifactInspection? inspection = inspector.Inspect(config);
+        AzureAuthArtifactInspection? inspection = inspector.Inspect(config, cancellationToken);
         return inspection is null ? AzureAuthTrustResult.Untrusted() : EvaluateCore(config, inspection);
     }
 

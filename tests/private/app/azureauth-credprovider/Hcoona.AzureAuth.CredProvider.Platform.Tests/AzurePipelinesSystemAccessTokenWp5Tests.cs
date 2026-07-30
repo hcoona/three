@@ -23,11 +23,14 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
     [InlineData("token\u0000injection", AzurePipelinesSystemAccessTokenResultStatus.InvalidToken)]
     public void TokenValidationReturnsStableSecretFreeFailures(
         string? value,
-        AzurePipelinesSystemAccessTokenResultStatus expectedStatus)
+        AzurePipelinesSystemAccessTokenResultStatus expectedStatus
+    )
     {
         AzurePipelinesSystemAccessTokenResult result =
-            AzurePipelinesSystemAccessTokenService.Handle(CreateV1Request(
-                CredentialEcosystem.Git), value);
+            AzurePipelinesSystemAccessTokenService.Handle(
+                CreateV1Request(CredentialEcosystem.Git),
+                value
+            );
 
         Assert.Equal(expectedStatus, result.Status);
         Assert.Null(result.Password);
@@ -46,7 +49,8 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
         AzurePipelinesSystemAccessTokenResult result =
             AzurePipelinesSystemAccessTokenService.Handle(
                 CreateV1Request(CredentialEcosystem.Git),
-                overlong);
+                overlong
+            );
 
         Assert.Equal(AzurePipelinesSystemAccessTokenResultStatus.InvalidToken, result.Status);
         Assert.DoesNotContain(overlong, result.ToString(), StringComparison.Ordinal);
@@ -60,22 +64,17 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
     public void ProtocolMatrixMaterializesOnlyEvidenceBackedForm(
         CredentialEcosystem ecosystem,
         string? expectedUsername,
-        bool bearer)
+        bool bearer
+    )
     {
         AzurePipelinesSystemAccessTokenResult result =
             AzurePipelinesSystemAccessTokenService.Handle(CreateV1Request(ecosystem), Secret);
 
         Assert.True(result.Succeeded);
         Assert.Equal(expectedUsername, result.Username);
-        Assert.Equal(
-            bearer ? Secret : null,
-            result.BearerToken?.Value);
-        Assert.Equal(
-            bearer ? null : Secret,
-            result.Password?.Value);
-        Assert.Equal(
-            AzurePipelinesCredentialLifetime.JobScopedUnknownExpiry,
-            result.Lifetime);
+        Assert.Equal(bearer ? Secret : null, result.BearerToken?.Value);
+        Assert.Equal(bearer ? null : Secret, result.Password?.Value);
+        Assert.Equal(AzurePipelinesCredentialLifetime.JobScopedUnknownExpiry, result.Lifetime);
 
         CredentialResult protocolResult = result.CreateProtocolResult("wp5-test");
         Assert.Null(protocolResult.ExpiresAt);
@@ -89,12 +88,10 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
     public void EveryEcosystemAndFormFailsClosedUnlessExplicitlyMapped(
         CredentialEcosystem ecosystem,
         CredentialKind kind,
-        bool expectedSuccess)
+        bool expectedSuccess
+    )
     {
-        CredentialRequest request = CreateV1Request(ecosystem) with
-        {
-            CredentialKind = kind,
-        };
+        CredentialRequest request = CreateV1Request(ecosystem) with { CredentialKind = kind };
 
         AzurePipelinesSystemAccessTokenResult result =
             AzurePipelinesSystemAccessTokenService.Handle(request, Secret);
@@ -112,33 +109,40 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
         get
         {
             var data = new TheoryData<CredentialEcosystem, CredentialKind, bool>();
-            foreach (CredentialEcosystem ecosystem in new[]
-                     {
-                         CredentialEcosystem.Git,
-                         CredentialEcosystem.NuGet,
-                         CredentialEcosystem.Python,
-                         CredentialEcosystem.Npm,
-                         CredentialEcosystem.Pnpm,
-                         CredentialEcosystem.Yarn,
-                     })
-            {
-                foreach (CredentialKind kind in new[]
-                         {
-                             CredentialKind.BasicPassword,
-                             CredentialKind.BearerToken,
-                             CredentialKind.NpmAuthToken,
-                             CredentialKind.NuGetPluginCredential,
-                             CredentialKind.PatCompatibility,
-                         })
+            foreach (
+                CredentialEcosystem ecosystem in new[]
                 {
-                    bool expectedSuccess = (ecosystem, kind) is
-                        (CredentialEcosystem.Git, CredentialKind.BearerToken)
-                        or (
-                            CredentialEcosystem.Npm
-                                or CredentialEcosystem.Pnpm
-                                or CredentialEcosystem.Yarn,
-                            CredentialKind.NpmAuthToken
-                        );
+                    CredentialEcosystem.Git,
+                    CredentialEcosystem.NuGet,
+                    CredentialEcosystem.Python,
+                    CredentialEcosystem.Npm,
+                    CredentialEcosystem.Pnpm,
+                    CredentialEcosystem.Yarn,
+                }
+            )
+            {
+                foreach (
+                    CredentialKind kind in new[]
+                    {
+                        CredentialKind.BasicPassword,
+                        CredentialKind.BearerToken,
+                        CredentialKind.NpmAuthToken,
+                        CredentialKind.NuGetPluginCredential,
+                        CredentialKind.PatCompatibility,
+                    }
+                )
+                {
+                    bool expectedSuccess =
+                        (ecosystem, kind)
+                        is
+                            (CredentialEcosystem.Git, CredentialKind.BearerToken)
+                            or
+                            (
+                                CredentialEcosystem.Npm
+                                    or CredentialEcosystem.Pnpm
+                                    or CredentialEcosystem.Yarn,
+                                CredentialKind.NpmAuthToken
+                            );
                     data.Add(ecosystem, kind, expectedSuccess);
                 }
             }
@@ -158,15 +162,16 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
             AdapterHostResultMapper.TryMapGitCredentialHelperBasicMaterial(
                 protocolResult,
                 out string? username,
-                out string? password));
+                out string? password
+            )
+        );
         Assert.Equal("AzureDevOps", username);
         Assert.Equal(Secret, password);
     }
 
     [Theory]
     [MemberData(nameof(InvalidRequestCases))]
-    public void RequestPolicyRejectsInvalidContextWithoutCredentialOutput(
-        CredentialRequest request)
+    public void RequestPolicyRejectsInvalidContextWithoutCredentialOutput(CredentialRequest request)
     {
         AzurePipelinesSystemAccessTokenResult result =
             AzurePipelinesSystemAccessTokenService.Handle(request, Secret);
@@ -185,13 +190,34 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
             CredentialRequest valid = CreateV1Request(CredentialEcosystem.Git);
             return new TheoryData<CredentialRequest>
             {
-                valid with { Operation = CredentialOperation.Configure },
-                valid with { IdentityFlow = IdentityFlow.InteractiveBrowser },
-                valid with { InteractivePolicy = InteractivePolicy.UserAllowed },
-                valid with { CachePolicy = CachePolicyMode.NoCache },
-                valid with { AccountHint = "account" },
-                valid with { TenantHint = "tenant" },
-                valid with { CiContext = null },
+                valid with
+                {
+                    Operation = CredentialOperation.Configure,
+                },
+                valid with
+                {
+                    IdentityFlow = IdentityFlow.InteractiveBrowser,
+                },
+                valid with
+                {
+                    InteractivePolicy = InteractivePolicy.UserAllowed,
+                },
+                valid with
+                {
+                    CachePolicy = CachePolicyMode.NoCache,
+                },
+                valid with
+                {
+                    AccountHint = "account",
+                },
+                valid with
+                {
+                    TenantHint = "tenant",
+                },
+                valid with
+                {
+                    CiContext = null,
+                },
                 valid with
                 {
                     CiContext = valid.CiContext! with { ExplicitCiMode = false },
@@ -211,8 +237,14 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
                 {
                     CiContext = valid.CiContext! with { AllowsPersistentWrites = true },
                 },
-                valid with { CredentialKind = CredentialKind.BasicPassword },
-                valid with { CredentialKind = CredentialKind.PatCompatibility },
+                valid with
+                {
+                    CredentialKind = CredentialKind.BasicPassword,
+                },
+                valid with
+                {
+                    CredentialKind = CredentialKind.PatCompatibility,
+                },
             };
         }
     }
@@ -253,18 +285,19 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
         Assert.Contains(
             "\"identityFlow\":\"azurePipelinesSystemAccessToken\"",
             v1Json,
-            StringComparison.Ordinal);
+            StringComparison.Ordinal
+        );
     }
 
     [Fact]
     public void SecretBearingTypesAndProtocolProjectionRedactAndNeverInventIdentity()
     {
-        Assert.True(
-            AzurePipelinesSystemAccessToken.TryCreate(Secret, out var token, out _));
+        Assert.True(AzurePipelinesSystemAccessToken.TryCreate(Secret, out var token, out _));
         AzurePipelinesSystemAccessTokenResult result =
             AzurePipelinesSystemAccessTokenService.Handle(
                 CreateV1Request(CredentialEcosystem.Git),
-                Secret);
+                Secret
+            );
         CredentialResult projection = result.CreateProtocolResult("wp5-test");
 
         Assert.DoesNotContain(Secret, token!.ToString(), StringComparison.Ordinal);
@@ -281,17 +314,22 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
     {
         Task<AzurePipelinesSystemAccessTokenResult>[] calls = Enumerable
             .Range(0, 16)
-            .Select(index => Task.Run(
-                () => AzurePipelinesSystemAccessTokenService.Handle(
-                    CreateV1Request(CredentialEcosystem.Npm),
-                    "caller-token-" + index)))
+            .Select(index =>
+                Task.Run(() =>
+                    AzurePipelinesSystemAccessTokenService.Handle(
+                        CreateV1Request(CredentialEcosystem.Npm),
+                        "caller-token-" + index
+                    )
+                )
+            )
             .ToArray();
 
         AzurePipelinesSystemAccessTokenResult[] results = await Task.WhenAll(calls);
 
         Assert.Equal(
             Enumerable.Range(0, 16).Select(index => "caller-token-" + index),
-            results.Select(result => result.BearerToken?.Value));
+            results.Select(result => result.BearerToken?.Value)
+        );
     }
 
     [Fact]
@@ -308,46 +346,56 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
                 CredentialCoreService = new CredentialCoreService(identityProvider),
                 RegistryUrls = CreateTestRegistryUrls(),
                 EnvironmentVariableReader = name =>
-                    name == AuthPhase14VerticalSliceService
-                        .AzurePipelinesSystemAccessTokenVariable
+                    name == AuthPhase14VerticalSliceService.AzurePipelinesSystemAccessTokenVariable
                         ? Secret
                         : null,
-            });
+            }
+        );
 
-        foreach (CredentialEcosystem ecosystem in new[]
-                 {
-                     CredentialEcosystem.Npm,
-                     CredentialEcosystem.Pnpm,
-                     CredentialEcosystem.Yarn,
-                 })
+        foreach (
+            CredentialEcosystem ecosystem in new[]
+            {
+                CredentialEcosystem.Npm,
+                CredentialEcosystem.Pnpm,
+                CredentialEcosystem.Yarn,
+            }
+        )
         {
             ConfigurationPhase14PlanResult result = await service.ConfigureAsync(
                 ecosystem,
                 ConfigurationPhase14Scope.CiTemporary,
-                TestContext.Current.CancellationToken);
+                TestContext.Current.CancellationToken
+            );
 
             Assert.Equal(ConfigurationScope.CiTemporary, result.PlanResult.Plan.Scope);
-            Assert.True(result.PlanResult.Plan.ContainsCredentialMaterial);
             Assert.Null(result.PlanResult.Plan.ExpiresAt);
             Assert.NotNull(result.PlanResult.Plan.TemporaryContainer);
+            if (ecosystem == CredentialEcosystem.Pnpm)
+            {
+                Assert.False(result.PlanResult.Plan.ContainsCredentialMaterial);
+                Assert.Empty(result.PlanResult.Changes);
+                continue;
+            }
+
+            Assert.True(result.PlanResult.Plan.ContainsCredentialMaterial);
             ConfigurationPlannedChange secretChange = Assert.Single(
                 result.PlanResult.Changes,
-                change => change.IsSecretValue);
+                change => change.IsSecretValue
+            );
             Assert.True(secretChange.HasPlannedValue);
             Assert.Null(secretChange.PlannedValueSha256);
-            Assert.DoesNotContain(
-                Secret,
-                result.PlanResult.ToString(),
-                StringComparison.Ordinal);
+            Assert.DoesNotContain(Secret, result.PlanResult.ToString(), StringComparison.Ordinal);
 
             string manifestPath = Path.Combine(
                 service.Paths.CiTemporaryManifestDirectoryPath,
-                ecosystem.ToString().ToLowerInvariant()
-                    + "-ci-temporary-ownership-manifest.json");
+                (ecosystem == CredentialEcosystem.Npm ? "npm-compatible" : "yarn")
+                    + "-ci-temporary-ownership-manifest.json"
+            );
             Assert.DoesNotContain(
                 Secret,
                 fileSystem.ReadAllText(manifestPath),
-                StringComparison.Ordinal);
+                StringComparison.Ordinal
+            );
         }
 
         Assert.Equal(0, identityProvider.CallCount);
@@ -365,20 +413,22 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
                 AzurePipelinesJobScopeId = "job-cleanup",
                 RegistryUrls = CreateTestRegistryUrls(),
                 EnvironmentVariableReader = name =>
-                    name == AuthPhase14VerticalSliceService
-                        .AzurePipelinesSystemAccessTokenVariable
+                    name == AuthPhase14VerticalSliceService.AzurePipelinesSystemAccessTokenVariable
                         ? Secret
                         : null,
-            });
+            }
+        );
         await service.ConfigureAsync(
             CredentialEcosystem.Npm,
             ConfigurationPhase14Scope.CiTemporary,
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken
+        );
 
         ConfigurationPhase14CleanupResult cleanup = await service.CleanupAsync(
             CredentialEcosystem.Npm,
             ConfigurationPhase14Scope.CiTemporary,
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken
+        );
 
         ConfigurationPhase14CleanupEcosystemResult ecosystem = Assert.Single(cleanup.Ecosystems);
         Assert.Equal("removed", ecosystem.State);
@@ -399,34 +449,48 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
                 AzurePipelinesJobScopeId = "job-logout",
                 RegistryUrls = CreateTestRegistryUrls(),
                 EnvironmentVariableReader = name =>
-                    name == AuthPhase14VerticalSliceService
-                        .AzurePipelinesSystemAccessTokenVariable
+                    name == AuthPhase14VerticalSliceService.AzurePipelinesSystemAccessTokenVariable
                         ? Secret
                         : null,
-            });
-        foreach (CredentialEcosystem ecosystem in new[]
-                 {
-                     CredentialEcosystem.Npm,
-                     CredentialEcosystem.Pnpm,
-                     CredentialEcosystem.Yarn,
-                 })
+            }
+        );
+        foreach (
+            CredentialEcosystem ecosystem in new[]
+            {
+                CredentialEcosystem.Npm,
+                CredentialEcosystem.Pnpm,
+                CredentialEcosystem.Yarn,
+            }
+        )
         {
             await service.ConfigureAsync(
                 ecosystem,
                 ConfigurationPhase14Scope.CiTemporary,
-                TestContext.Current.CancellationToken);
+                TestContext.Current.CancellationToken
+            );
         }
 
         ConfigurationPhase14CleanupResult logout = await service.LogoutAsync(
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken
+        );
 
-        Assert.Equal(3, logout.Ecosystems.Count);
-        Assert.All(logout.Ecosystems, result =>
-        {
-            Assert.Equal("removed", result.State);
-            Assert.False(result.OwnershipManifestPresent);
-            Assert.False(result.TemporaryContainerPresent);
-        });
+        Assert.Equal(6, logout.Ecosystems.Count);
+        Assert.Equal(
+            ["removed", "not-needed", "removed"],
+            logout
+                .Ecosystems.Where(result => result.Scope == ConfigurationPhase14Scope.CiTemporary)
+                .Select(static result => result.State)
+        );
+        Assert.All(
+            logout.Ecosystems.Where(result =>
+                result.Scope == ConfigurationPhase14Scope.CiTemporary
+            ),
+            result =>
+            {
+                Assert.False(result.OwnershipManifestPresent);
+                Assert.False(result.TemporaryContainerPresent);
+            }
+        );
     }
 
     [Fact]
@@ -459,7 +523,8 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
     [InlineData("job/other")]
     [InlineData("job\\other")]
     public async Task CiTemporaryMaterializationRejectsMissingOrInvalidJobScopeBeforeWriting(
-        string? jobScopeId)
+        string? jobScopeId
+    )
     {
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         var service = new ConfigurationPhase14VerticalSliceService(
@@ -470,17 +535,19 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
                 AzurePipelinesJobScopeId = jobScopeId,
                 RegistryUrls = CreateTestRegistryUrls(),
                 EnvironmentVariableReader = name =>
-                    name == AuthPhase14VerticalSliceService
-                        .AzurePipelinesSystemAccessTokenVariable
+                    name == AuthPhase14VerticalSliceService.AzurePipelinesSystemAccessTokenVariable
                         ? Secret
                         : null,
-            });
+            }
+        );
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            async () => await service.ConfigureAsync(
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await service.ConfigureAsync(
                 CredentialEcosystem.Npm,
                 ConfigurationPhase14Scope.CiTemporary,
-                TestContext.Current.CancellationToken));
+                TestContext.Current.CancellationToken
+            )
+        );
 
         Assert.False(fileSystem.DirectoryExists("/state/wp5-job-validation"));
     }
@@ -495,11 +562,13 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
         await jobA.ConfigureAsync(
             CredentialEcosystem.Npm,
             ConfigurationPhase14Scope.CiTemporary,
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken
+        );
         await jobB.ConfigureAsync(
             CredentialEcosystem.Npm,
             ConfigurationPhase14Scope.CiTemporary,
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken
+        );
 
         Assert.NotEqual(jobA.Paths.CiTemporaryRootPath, jobB.Paths.CiTemporaryRootPath);
         await jobA.LogoutAsync(TestContext.Current.CancellationToken);
@@ -509,35 +578,41 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
         Assert.StartsWith(
             "/product-temp/azureauth-credprovider/ci-jobs/job-b",
             jobB.Paths.NpmCiTemporaryNpmrcPath,
-            StringComparison.Ordinal);
+            StringComparison.Ordinal
+        );
     }
 
     private static ConfigurationPhase14VerticalSliceService CreateJobService(
         InMemoryFileSystem fileSystem,
-        string jobScopeId) =>
-        new(new ConfigurationPhase14VerticalSliceOptions
-        {
-            FileSystem = fileSystem,
-            StateDirectoryPath = "/state/wp5-isolation",
-            CiTemporaryProductRootPath = "/product-temp/azureauth-credprovider/ci-jobs",
-            AzurePipelinesJobScopeId = jobScopeId,
-            RegistryUrls = CreateTestRegistryUrls(),
-            EnvironmentVariableReader = name =>
-                name == AuthPhase14VerticalSliceService
-                    .AzurePipelinesSystemAccessTokenVariable
-                    ? Secret
-                    : null,
-        });
+        string jobScopeId
+    ) =>
+        new(
+            new ConfigurationPhase14VerticalSliceOptions
+            {
+                FileSystem = fileSystem,
+                StateDirectoryPath = "/state/wp5-isolation",
+                CiTemporaryProductRootPath = "/product-temp/azureauth-credprovider/ci-jobs",
+                AzurePipelinesJobScopeId = jobScopeId,
+                RegistryUrls = CreateTestRegistryUrls(),
+                EnvironmentVariableReader = name =>
+                    name == AuthPhase14VerticalSliceService.AzurePipelinesSystemAccessTokenVariable
+                        ? Secret
+                        : null,
+            }
+        );
 
     private static Dictionary<CredentialEcosystem, Uri> CreateTestRegistryUrls() =>
         new()
         {
             [CredentialEcosystem.Npm] = new(
-                "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"),
+                "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"
+            ),
             [CredentialEcosystem.Pnpm] = new(
-                "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"),
+                "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"
+            ),
             [CredentialEcosystem.Yarn] = new(
-                "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"),
+                "https://pkgs.dev.azure.com/test-org/_packaging/test-feed/npm/registry/"
+            ),
         };
 
     private static CredentialRequest CreateV1Request(CredentialEcosystem ecosystem)
@@ -546,10 +621,12 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
         Uri endpoint = ecosystem switch
         {
             CredentialEcosystem.Git => new("https://dev.azure.com/org/project/_git/repo"),
-            CredentialEcosystem.NuGet =>
-                new("https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json"),
-            CredentialEcosystem.Python =>
-                new("https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"),
+            CredentialEcosystem.NuGet => new(
+                "https://pkgs.dev.azure.com/org/_packaging/feed/nuget/v3/index.json"
+            ),
+            CredentialEcosystem.Python => new(
+                "https://pkgs.dev.azure.com/org/_packaging/feed/pypi/simple/"
+            ),
             _ => new("https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/"),
         };
         CredentialKind kind = ecosystem switch
@@ -569,7 +646,8 @@ public sealed class AzurePipelinesSystemAccessTokenWp5Tests
                 endpoint,
                 project: git ? "project" : null,
                 feed: git ? null : "feed",
-                repository: git ? "repo" : null),
+                repository: git ? "repo" : null
+            ),
             ServiceIdentity = "default",
             RequestedAudience = git ? TokenAudience.AzureDevOps : TokenAudience.AzureArtifacts,
             CredentialKind = kind,

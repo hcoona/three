@@ -1842,7 +1842,7 @@ public static class ConfigurationChangePlanPolicy
             }
 
             string? activationEnvironmentViolation =
-                GetTemporaryContainerActivationEnvironmentViolation(plan.TemporaryContainer);
+                GetTemporaryContainerActivationEnvironmentViolation(plan);
             if (activationEnvironmentViolation is not null)
             {
                 return activationEnvironmentViolation;
@@ -1877,15 +1877,21 @@ public static class ConfigurationChangePlanPolicy
     }
 
     private static string? GetTemporaryContainerActivationEnvironmentViolation(
-        ConfigurationTemporaryContainer container
+        ConfigurationChangePlan plan
     )
     {
+        ConfigurationTemporaryContainer container = plan.TemporaryContainer!;
         return container.Kind switch
         {
             ConfigurationTemporaryContainerKind.NpmrcFile =>
                 GetNpmrcFileActivationEnvironmentViolation(container),
             ConfigurationTemporaryContainerKind.TemporaryHome =>
-                GetTemporaryHomeActivationEnvironmentViolation(container),
+                GetTemporaryHomeActivationEnvironmentViolation(
+                    container,
+                    plan.Changes.Any(change =>
+                        change.TargetKind == ConfigurationTargetKind.Yarnrc
+                    )
+                ),
             _ => container.ActivationEnvironment is null
                 ? null
                 : "Protocol violation: activation environment metadata is valid only for CI "
@@ -2029,7 +2035,8 @@ public static class ConfigurationChangePlanPolicy
     }
 
     private static string? GetTemporaryHomeActivationEnvironmentViolation(
-        ConfigurationTemporaryContainer container
+        ConfigurationTemporaryContainer container,
+        bool isYarnConfiguration
     )
     {
         string? shapeViolation = GetActivationEnvironmentShapeViolation(
@@ -2050,32 +2057,44 @@ public static class ConfigurationChangePlanPolicy
             ? GetWindowsTemporaryHomeActivationEnvironmentViolation(
                 container.ProductOwnedPath,
                 setVariables,
-                clearVariables
+                clearVariables,
+                isYarnConfiguration
             )
             : GetPosixTemporaryHomeActivationEnvironmentViolation(
                 container.ProductOwnedPath,
                 setVariables,
-                clearVariables
+                clearVariables,
+                isYarnConfiguration
             );
     }
 
     private static string? GetWindowsTemporaryHomeActivationEnvironmentViolation(
         string productOwnedPath,
         IReadOnlyDictionary<string, string> setVariables,
-        IReadOnlyList<string> clearVariables
+        IReadOnlyList<string> clearVariables,
+        bool isYarnConfiguration
     )
     {
+        int expectedClearVariableCount = isYarnConfiguration ? 3 : 2;
         if (
             setVariables.Count != 2
             || !HasVariableValue(setVariables, "USERPROFILE", productOwnedPath)
             || !HasVariableValue(setVariables, "HOME", productOwnedPath)
-            || clearVariables.Count != 2
+            || clearVariables.Count != expectedClearVariableCount
             || !ContainsVariable(clearVariables, "HOMEDRIVE")
             || !ContainsVariable(clearVariables, "HOMEPATH")
+            || (
+                isYarnConfiguration
+                && !ContainsVariable(clearVariables, "YARN_RC_FILENAME")
+            )
         )
         {
-            return "Protocol violation: Windows CI temporary HOME activation must set USERPROFILE "
-                + "and HOME to the product-owned path and clear HOMEDRIVE and HOMEPATH.";
+            return isYarnConfiguration
+                ? "Protocol violation: Windows CI temporary HOME activation must set USERPROFILE "
+                    + "and HOME to the product-owned path and clear HOMEDRIVE, HOMEPATH, and "
+                    + "YARN_RC_FILENAME."
+                : "Protocol violation: Windows CI temporary HOME activation must set USERPROFILE "
+                    + "and HOME to the product-owned path and clear HOMEDRIVE and HOMEPATH.";
         }
 
         return null;
@@ -2084,17 +2103,26 @@ public static class ConfigurationChangePlanPolicy
     private static string? GetPosixTemporaryHomeActivationEnvironmentViolation(
         string productOwnedPath,
         IReadOnlyDictionary<string, string> setVariables,
-        IReadOnlyList<string> clearVariables
+        IReadOnlyList<string> clearVariables,
+        bool isYarnConfiguration
     )
     {
+        int expectedClearVariableCount = isYarnConfiguration ? 1 : 0;
         if (
             setVariables.Count != 1
             || !HasVariableValue(setVariables, "HOME", productOwnedPath)
-            || clearVariables.Count != 0
+            || clearVariables.Count != expectedClearVariableCount
+            || (
+                isYarnConfiguration
+                && !ContainsVariable(clearVariables, "YARN_RC_FILENAME")
+            )
         )
         {
-            return "Protocol violation: POSIX CI temporary HOME activation must set only HOME to "
-                + "the product-owned path.";
+            return isYarnConfiguration
+                ? "Protocol violation: POSIX CI temporary HOME activation must set only HOME to "
+                    + "the product-owned path and clear YARN_RC_FILENAME."
+                : "Protocol violation: POSIX CI temporary HOME activation must set only HOME to "
+                    + "the product-owned path.";
         }
 
         return null;

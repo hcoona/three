@@ -48,8 +48,8 @@ in-memory stores, fake runners, or synthetic secrets.
 providers. Its mode and doctor readiness are always `TestScaffold` and not ready.
 
 AzureAuth is opt-in. It requires complete deployment pins, trusted inspection, a matching bound
-account and tenant, and explicit validated Windows desktop or WSL Windows-interoperability launch
-context with browser support. `WSL_INTEROP` is read once, accepted only as a canonical,
+account and tenant, and a validated WSL Windows-interoperability launch context with browser
+support. `WSL_INTEROP` is read once, accepted only as a canonical,
 control-free absolute path below `/run/WSL/`, snapshotted, and copied into the explicit-only probe
 and launch environments; missing or invalid values make WSL readiness unavailable. On WSL,
 production uses the fixed Windows PowerShell path below `/mnt/c` to verify the exact canonical path,
@@ -63,25 +63,31 @@ ownership-takeover grants remain disallowed. The raw security descriptor for the
 every checked directory must contain a present, non-null DACL; a null or absent DACL fails closed,
 while an empty present DACL is not itself a write grant. This aggregate result is required in the
 strict probe evidence. The probe receives the target through an explicit environment and emits
-bounded, case-sensitive JSON with unknown and duplicate members rejected.
+bounded, case-sensitive JSON with unknown and duplicate members rejected. Non-WSL production
+hosts report AzureAuth launch as unsupported.
 The executable directory is never added to `PATH`; working directory and `PATH` are the attested
-`C:\Windows\System32` only. Probe and launch environments clear CLR/CoreCLR profiler controls,
-architecture-specific profiler paths, and .NET startup hooks; WSL launches bridge those empty
-values explicitly.
+`C:\Windows\System32` only. WSL production discovery supplies `SystemRoot`, `WINDIR`, the
+snapshotted `WSL_INTEROP` endpoint, trusted `PATH`, fixed `PATHEXT`, and cache controls. It does not
+derive or require `TEMP`, `TMP`, `LOCALAPPDATA`, or `USERPROFILE`; normal Windows-host values may
+flow to the Windows process so browser and MSAL integration use the host user. Explicit-only
+filtering applies to the representative Linux launcher environment, not the complete environment
+that WSL creates for a Windows process.
 
-Production composition is side-effect free with respect to Windows trust probing and launch
-discovery. Shared request preflight rejects invalid, device-code, and unsupported silent requests
-before evaluating trust. A valid browser request evaluates current trust once; readiness and doctor
-run their own explicit probes when requested. WSL executable and working-directory host paths are
+Root construction is side-effect free with respect to Windows trust probing and launch discovery.
+Shared request preflight rejects invalid, device-code, and unsupported silent requests before
+evaluating trust. Valid browser acquisition, immediate pre-launch validation, readiness, and doctor
+perform their required current trust checks. WSL executable and working-directory host paths are
 derived only from the configured Windows executable, attested working-directory evidence, and the
 fixed `/mnt/c` mount. Production options cannot override either host path.
 
 Interactive and silent readiness are separate. Inspection of pinned upstream commit
-`de20930c34b3b86c8a0ed7bbdeeca3f662dae918` confirms that `aad` has `--tenant` and the
-cache-filtering `--domain`, but no exact-account enforcement option. A bound production AzureAuth
-composition therefore fails closed as `AccountEnforcementUnavailable`; it does not launch or claim
-interactive readiness based on tenant binding or unauthenticated token claims. Protocol/silent
-acquisition remains `silent-unavailable` until a proven silent cache or other source exists.
+`de20930c34b3b86c8a0ed7bbdeeca3f662dae918` confirms that `aad` has `--tenant` but no exact-account
+selection option. Production therefore treats the bound account as a best-effort preference:
+request hints must match the binding, but AzureAuth may present its own account chooser. The bound
+tenant is passed to `aad`, and returned Azure DevOps JWTs must pass audience, tenant, issued-at,
+not-before, and expiry consistency validation. Interactive readiness is reported when deployment
+trust, binding, and WSL host-launch prerequisites pass. Protocol/silent acquisition
+remains `silent-unavailable` until a proven silent cache or other source exists.
 
 npm, pnpm, and Yarn configuration requires an explicit canonical Azure Artifacts npm registry URL
 from command or configuration input. For example:
@@ -94,9 +100,8 @@ registry targets are permitted only in explicit test fixtures.
 
 CI unconfigure dry-runs validate and report the same job-scoped removal plan as execution without
 requiring its filesystem postconditions to have occurred. If an ownership manifest is malformed,
-both modes report the known temporary-container removal action and the incomplete-manifest
-diagnostic. Execution deletes only that known job container; dry-run changes nothing, and both
-preserve the malformed manifest for diagnosis.
+both modes report the incomplete-manifest diagnostic without deleting anything. The malformed
+manifest and its known job container remain untouched for diagnosis.
 
 Git and NuGet unconfigure execution and dry-run use configuration-only services. They do not load
 provider configuration or construct the production credential acquisition root, so malformed or
@@ -109,14 +114,16 @@ unsafe provider state cannot block removal of product-owned configuration.
 | Git helper                       | `SilentOnly`         | fail closed         |
 | NuGet plugin                     | `SilentOnly`         | fail closed         |
 | Python keyring helper            | `SilentOnly`         | fail closed         |
-| npm/pnpm/Yarn configuration      | `SilentOnly`         | fail closed         |
+| npm/pnpm/Yarn user configuration | `InteractionAllowed` | browser allowed     |
+| npm/pnpm/Yarn CI configuration   | `Unspecified`        | separate CI service |
 | CLI interactive-browser login    | `InteractionAllowed` | user allowed        |
 | Azure Pipelines opaque job token | `Unspecified`        | separate CI service |
 
 Frozen v1 input is translated once into an explicit internal v2 request. The v1 wire contract is
-unchanged. Protocol and package builders produce contract-valid `SilentOnly` requests with
-interaction set to `Never`. These are valid acquisition requests, not unsupported policy, but
-currently return `SilentAcquisitionUnavailable` because no proven silent source exists.
+unchanged. Protocol builders produce contract-valid `SilentOnly` requests with interaction set to
+`Never`. These are valid acquisition requests, not unsupported policy, but currently return
+`SilentAcquisitionUnavailable` because no proven silent source exists. User package configuration
+allows browser interaction; CI package configuration consumes the separate opaque job token.
 
 The synchronous boundary invokes the provider inside a `Task.Run` worker and applies
 `Task.WaitAsync` to that hard timed boundary. This bounds the caller even when a provider blocks
@@ -133,9 +140,8 @@ noncooperative blocked worker may remain after the bounded caller returns.
 | `DirectMsalNotImplemented`                                        | Select a fully configured AzureAuth deployment or wait for Direct MSAL.                                                                                  |
 | `AzureAuthTrustDeferred` / `AzureAuthTrustRejected`               | Install and validate the pinned artifact.                                                                                                                |
 | `AzureAuthBindingRequired` and binding mismatch codes             | Bind or rebind the intended account and tenant.                                                                                                          |
-| `AccountEnforcementUnavailable`                                   | The pinned AzureAuth `aad` CLI cannot constrain acquisition to the bound canonical account; no production launch occurs.                                 |
 | `SilentAcquisitionUnavailable`                                    | Silent AzureAuth acquisition is not implemented; explicit interactive login affects interactive operations only, with no automatic protocol remediation. |
-| `AzureAuthLaunchContextRequired` and launch-context codes         | Supply a validated supported Windows or WSL interop launch context with browser evidence.                                                                |
+| `AzureAuthLaunchContextRequired` and launch-context codes         | Run from WSL with a validated Windows host-interoperability launch context and browser evidence.                                                         |
 | `CredentialAcquisitionCanceled` / `CredentialAcquisitionTimedOut` | Retry after cancellation or timeout.                                                                                                                     |
 
 Status and doctor print the actual provider, composition mode, separate interactive and silent

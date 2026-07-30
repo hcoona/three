@@ -415,7 +415,10 @@ internal sealed class NpmrcPhysicalTargetWriter(IFileSystem fileSystem)
             );
         }
 
-        ValidateProofAgainstEntry(existingEntries[0], proof);
+        if (change.Operation != ConfigurationChangeOperation.Remove)
+        {
+            ValidateProofAgainstEntry(existingEntries[0], proof);
+        }
     }
 
     private static void ValidateProofAgainstCurrentState(

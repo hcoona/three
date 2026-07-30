@@ -61,6 +61,7 @@ public sealed class CredentialProviderCompositionRoot
 
     private readonly BoundedCredentialAcquisitionAdapter boundary;
     private readonly Lazy<CredentialProviderReadiness> readiness;
+    private readonly Func<CancellationToken, CredentialProviderReadiness> readinessFactory;
 
     private CredentialProviderCompositionRoot(
         CredentialProviderCompositionMode mode,
@@ -68,7 +69,7 @@ public sealed class CredentialProviderCompositionRoot
         AzureAuthPersistedRecord<AzureAuthBinding> bindingRecord,
         IAzureAuthArtifactTrustInspector trustInspector,
         ICredentialAcquisitionService acquisitionService,
-        Func<CredentialProviderReadiness> readinessFactory,
+        Func<CancellationToken, CredentialProviderReadiness> readinessFactory,
         CredentialProviderProductionOptions options)
     {
         Mode = mode;
@@ -76,8 +77,9 @@ public sealed class CredentialProviderCompositionRoot
         BindingRecord = bindingRecord;
         TrustInspector = trustInspector;
         AcquisitionService = acquisitionService;
+        this.readinessFactory = readinessFactory;
         readiness = new Lazy<CredentialProviderReadiness>(
-            readinessFactory,
+            () => readinessFactory(CancellationToken.None),
             LazyThreadSafetyMode.ExecutionAndPublication);
         ProductionOptions = options;
         boundary = new BoundedCredentialAcquisitionAdapter(acquisitionService);
@@ -91,6 +93,14 @@ public sealed class CredentialProviderCompositionRoot
     public CredentialProviderReadiness Readiness => readiness.Value;
     public CredentialProviderProductionOptions ProductionOptions { get; }
     public BoundedCredentialAcquisitionAdapter Boundary => boundary;
+
+    public CredentialProviderReadiness GetReadiness(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return cancellationToken.CanBeCanceled
+            ? readinessFactory(cancellationToken)
+            : readiness.Value;
+    }
 
     public static CredentialProviderCompositionRoot CreateProduction(
         CredentialProviderProductionOptions? options = null)
@@ -163,7 +173,15 @@ public sealed class CredentialProviderCompositionRoot
             effectiveOptions.HttpClient,
             effectiveOptions.TimeProvider);
         ICredentialAcquisitionService service = new ComposedCredentialAcquisitionService(
-            () => CreateIdentityProvider(config, bindingRecord, inspector),
+            cancellationToken => CreateIdentityProvider(
+                config,
+                bindingRecord,
+                inspector,
+                processRunner,
+                options.TimeProvider,
+                wslInterop,
+                isWsl,
+                cancellationToken),
             new CredentialMaterializationService(exchange, options.TimeProvider),
             applyAzureAuthRequestPreflight:
                 config.Selection == AzureAuthProviderSelection.AzureAuth);
@@ -173,13 +191,16 @@ public sealed class CredentialProviderCompositionRoot
             bindingRecord,
             inspector,
             service,
-            () => GetReadiness(
+            cancellationToken => GetReadiness(
                 config,
                 bindingRecord,
                 inspector,
                 options.ProviderConfig is null
                     ? configRecord.Status
-                    : AzureAuthPersistedRecordStatus.Present),
+                    : AzureAuthPersistedRecordStatus.Present,
+                wslInterop,
+                isWsl,
+                cancellationToken),
             effectiveOptions);
     }
 
@@ -208,7 +229,7 @@ public sealed class CredentialProviderCompositionRoot
             binding,
             options.TrustInspector ?? new DeferredAzureAuthArtifactTrustInspector(),
             acquisitionService,
-            () => new CredentialProviderReadiness
+            _ => new CredentialProviderReadiness
             {
                 Provider = config.Selection,
                 Interactive = Unavailable(
@@ -263,10 +284,15 @@ public sealed class CredentialProviderCompositionRoot
         });
     }
 
-    public AzureAuthDoctorReport RunProviderDoctor()
+    public AzureAuthDoctorReport RunProviderDoctor(
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         AzureAuthTrustResult trust = ProviderConfig.Selection == AzureAuthProviderSelection.AzureAuth
-            ? AzureAuthTrustPolicy.Evaluate(ProviderConfig.DeploymentConfig!, TrustInspector)
+            ? AzureAuthTrustPolicy.Evaluate(
+                ProviderConfig.DeploymentConfig!,
+                TrustInspector,
+                cancellationToken)
             : AzureAuthTrustResult.Unspecified();
         return AzureAuthDoctor.Run(ProviderConfig, BindingRecord, trust);
     }
@@ -275,8 +301,12 @@ public sealed class CredentialProviderCompositionRoot
         AzureAuthProviderConfig config,
         AzureAuthPersistedRecord<AzureAuthBinding> bindingRecord,
         IAzureAuthArtifactTrustInspector inspector,
-        AzureAuthPersistedRecordStatus configStatus)
+        AzureAuthPersistedRecordStatus configStatus,
+        string? wslInterop,
+        bool isWsl,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (config.Selection == AzureAuthProviderSelection.DirectMsal)
         {
             CredentialProviderCapabilityReadiness unavailable = Unavailable(
@@ -300,20 +330,44 @@ public sealed class CredentialProviderCompositionRoot
         }
 
         AzureAuthProductionPrerequisiteFailure? failure =
-            AzureAuthProductionPrerequisitePolicy.Evaluate(
+            AzureAuthProductionPrerequisitePolicy.EvaluateWithTrust(
                 config,
                 bindingRecord,
-                inspector);
+                inspector,
+                out AzureAuthTrustResult trust,
+                cancellationToken: cancellationToken);
         if (failure is not null)
         {
             return CreateAzureAuthReadiness(
                 Unavailable(failure.Code, failure.SafeMessage));
         }
 
+        AzureAuthProcessLaunchOptions? launchOptions = CreateProductionLaunchOptions(
+            config,
+            trust,
+            wslInterop,
+            isWsl);
+        if (launchOptions is null)
+        {
+            return CreateAzureAuthReadiness(
+                Unavailable(
+                    isWsl
+                        ? "AzureAuthLaunchContextInvalid"
+                        : "AzureAuthLaunchHostUnsupported",
+                    isWsl
+                        ? "The trusted AzureAuth WSL launch context could not be derived."
+                        : "The current host does not support AzureAuth process launch."));
+        }
+
+        if (!launchOptions.TryValidateInteractiveContext(out string code, out string safeMessage))
+        {
+            return CreateAzureAuthReadiness(Unavailable(code, safeMessage));
+        }
+
         return CreateAzureAuthReadiness(
-            Unavailable(
-                "AccountEnforcementUnavailable",
-                "The pinned AzureAuth aad command cannot enforce the bound account."));
+            Ready(
+                "AzureAuthInteractiveReady",
+                "AzureAuth interactive acquisition prerequisites are validated."));
     }
 
     private static CredentialProviderReadiness CreateAzureAuthReadiness(
@@ -338,11 +392,27 @@ public sealed class CredentialProviderCompositionRoot
             IsReady = false,
         };
 
+    private static CredentialProviderCapabilityReadiness Ready(
+        string code,
+        string safeMessage) =>
+        new()
+        {
+            Code = code,
+            SafeMessage = safeMessage,
+            IsReady = true,
+        };
+
     private static IAccessTokenIdentityProvider CreateIdentityProvider(
         AzureAuthProviderConfig config,
         AzureAuthPersistedRecord<AzureAuthBinding> bindingRecord,
-        IAzureAuthArtifactTrustInspector inspector)
+        IAzureAuthArtifactTrustInspector inspector,
+        IProcessRunner processRunner,
+        TimeProvider? timeProvider,
+        string? wslInterop,
+        bool isWsl,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (config.Selection == AzureAuthProviderSelection.DirectMsal)
         {
             return new DirectMsalUnavailableAccessTokenProvider();
@@ -353,10 +423,60 @@ public sealed class CredentialProviderCompositionRoot
             throw new InvalidOperationException("Unsupported provider selection.");
         }
 
-        return new AzureAuthAccountEnforcementUnavailableAccessTokenProvider(
+        AzureAuthProductionPrerequisiteFailure? failure =
+            AzureAuthProductionPrerequisitePolicy.EvaluateWithTrust(
+                config,
+                bindingRecord,
+                inspector,
+                out AzureAuthTrustResult trust,
+                cancellationToken: cancellationToken);
+        if (failure is not null)
+        {
+            return new PrerequisiteUnavailableAccessTokenProvider(
+                failure.Code,
+                failure.SafeMessage);
+        }
+
+        AzureAuthProcessLaunchOptions? launchOptions = CreateProductionLaunchOptions(
             config,
-            bindingRecord,
-            inspector);
+            trust,
+            wslInterop,
+            isWsl);
+        if (launchOptions is null)
+        {
+            return new PrerequisiteUnavailableAccessTokenProvider(
+                isWsl
+                    ? "AzureAuthLaunchContextInvalid"
+                    : "AzureAuthLaunchHostUnsupported",
+                isWsl
+                    ? "The trusted AzureAuth WSL launch context could not be derived."
+                    : "The current host does not support AzureAuth process launch.");
+        }
+
+        if (!launchOptions.TryValidateInteractiveContext(out string code, out string safeMessage))
+        {
+            return new PrerequisiteUnavailableAccessTokenProvider(code, safeMessage);
+        }
+
+        return new AzureAuthIdentityProvider(
+            config,
+            bindingRecord.Value!,
+            launchOptions,
+            inspector,
+            processRunner,
+            timeProvider,
+            trust);
+    }
+
+    private static AzureAuthProcessLaunchOptions? CreateProductionLaunchOptions(
+        AzureAuthProviderConfig config,
+        AzureAuthTrustResult trust,
+        string? wslInterop,
+        bool isWsl)
+    {
+        return isWsl
+            ? AzureAuthProcessLaunchDiscovery.DiscoverWsl(config, trust, wslInterop)
+            : null;
     }
 
     private static IAzureAuthArtifactTrustInspector CreateProductionTrustInspector(

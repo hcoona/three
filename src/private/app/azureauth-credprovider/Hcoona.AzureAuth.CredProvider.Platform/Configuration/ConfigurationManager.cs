@@ -7302,6 +7302,11 @@ public sealed class ConfigurationManager : IConfigurationManager
             return;
         }
 
+        if (fileSystem.FileExists(containerSnapshot.Path))
+        {
+            return;
+        }
+
         if (
             !EnsureSafeTemporaryContainerForCleanup(
                 fileSystem,

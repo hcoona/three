@@ -117,7 +117,9 @@ public sealed class CredentialProviderCompositionRootWp6Tests
     public void SynchronousBoundaryKeepsCallerCancellationDistinct()
     {
         var provider = new NeverCompletingAcquisitionService();
-        var boundary = new BoundedCredentialAcquisitionAdapter(provider, TimeSpan.FromSeconds(5));
+        var boundary = new BoundedCredentialAcquisitionAdapter(
+            provider,
+            TimeSpan.FromSeconds(5));
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
 
         CredentialResult result = boundary.Acquire(
@@ -127,6 +129,23 @@ public sealed class CredentialProviderCompositionRootWp6Tests
         Assert.Equal(CredentialResultStatus.CredentialUnavailable, result.Status);
         Assert.Equal("CredentialAcquisitionCanceled", result.Error?.Code);
         provider.Complete();
+    }
+
+    [Fact]
+    public void SynchronousBoundaryDisposesCancellationAfterLateProviderCleanup()
+    {
+        var provider = new LateTokenRegistrationAcquisitionService();
+        var boundary = new BoundedCredentialAcquisitionAdapter(
+            provider,
+            TimeSpan.FromMilliseconds(50));
+
+        CredentialResult result = boundary.Acquire(
+            CreateGitRequest(AcquisitionMode.SilentOnly),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("CredentialAcquisitionTimedOut", result.Error?.Code);
+        Assert.True(SpinWait.SpinUntil(() => provider.Completed, TimeSpan.FromSeconds(1)));
+        Assert.True(provider.RegistrationSucceeded);
     }
 
     [Fact]
@@ -156,6 +175,44 @@ public sealed class CredentialProviderCompositionRootWp6Tests
 
         Assert.Equal(1, wslInteropReadCount);
         Assert.False(Directory.Exists(missingRoot));
+    }
+
+    [Fact]
+    public async Task ProductionReadinessHonorsCancellationDuringTrustInspection()
+    {
+        AzureAuthProviderConfig config = CreateAzureAuthConfig();
+        var trustedInspector = new TrustedInspector(config.DeploymentConfig!);
+        AzureAuthTrustResult trust = AzureAuthTrustPolicy.Evaluate(
+            config.DeploymentConfig!,
+            trustedInspector,
+            TestContext.Current.CancellationToken);
+        AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
+            config,
+            "user@example.invalid",
+            "tenant-1",
+            DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds()),
+            trust);
+        var inspector = new CancelableTrustInspector();
+        CredentialProviderCompositionRoot root =
+            CredentialProviderCompositionRoot.CreateProduction(
+                new CredentialProviderProductionOptions
+                {
+                    ProviderConfig = config,
+                    Binding = binding,
+                    TrustInspector = inspector,
+                    IsWslEnvironment = true,
+                    EnvironmentVariableReader = ReadWslEnvironment,
+                });
+        using var cancellation = new CancellationTokenSource();
+        Task<CredentialProviderReadiness> readiness = Task.Run(
+            () => root.GetReadiness(cancellation.Token));
+        await inspector.Started.Task.WaitAsync(TestContext.Current.CancellationToken);
+        Stopwatch stopwatch = Stopwatch.StartNew();
+
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await readiness);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1), stopwatch.Elapsed.ToString());
     }
 
     [Fact]
@@ -247,8 +304,12 @@ public sealed class CredentialProviderCompositionRootWp6Tests
             "tenant-1",
             DateTimeOffset.FromUnixTimeSeconds(
                 DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeSeconds()),
-            AzureAuthTrustPolicy.Evaluate(config.DeploymentConfig!, trustedInspector));
+            AzureAuthTrustPolicy.Evaluate(
+                config.DeploymentConfig!,
+                trustedInspector,
+                TestContext.Current.CancellationToken));
         var inspector = new CountingTrustInspector(trustedInspector);
+        var runner = new SuccessfulProcessRunner();
         CredentialProviderCompositionRoot root =
             CredentialProviderCompositionRoot.CreateProduction(
                 new CredentialProviderProductionOptions
@@ -256,7 +317,9 @@ public sealed class CredentialProviderCompositionRootWp6Tests
                     ProviderConfig = config,
                     Binding = binding,
                     TrustInspector = inspector,
-                    IsWslEnvironment = false,
+                    ProcessRunner = runner,
+                    IsWslEnvironment = true,
+                    EnvironmentVariableReader = ReadWslEnvironment,
                 });
         Assert.Equal(0, inspector.CallCount);
         (CredentialRequestV2 Request, string Code)[] cases =
@@ -324,12 +387,13 @@ public sealed class CredentialProviderCompositionRootWp6Tests
         CredentialResult browser = root.Boundary.Acquire(
             CreateGitRequest(AcquisitionMode.InteractionAllowed),
             TestContext.Current.CancellationToken);
-        Assert.Equal("AccountEnforcementUnavailable", browser.Error?.Code);
+        Assert.Equal(CredentialResultStatus.Success, browser.Status);
+        Assert.Equal(1, runner.CallCount);
         Assert.Equal(1, inspector.CallCount);
 
         _ = root.Readiness;
         Assert.Equal(2, inspector.CallCount);
-        _ = root.RunProviderDoctor();
+        _ = root.RunProviderDoctor(TestContext.Current.CancellationToken);
         Assert.Equal(3, inspector.CallCount);
     }
 
@@ -353,7 +417,8 @@ public sealed class CredentialProviderCompositionRootWp6Tests
         _ = ExecuteKeyring(root.CreateKeyringHelperAdapter());
         Assert.NotNull(root.CreateGitService());
         Assert.NotNull(root.CreateNuGetService());
-        AzureAuthDoctorReport doctor = root.RunProviderDoctor();
+        AzureAuthDoctorReport doctor = root.RunProviderDoctor(
+            TestContext.Current.CancellationToken);
         var fileSystem = new InMemoryFileSystem(InMemoryPathSemantics.Posix);
         ConfigurationPhase14VerticalSliceService configuration =
             root.CreateConfigurationService(
@@ -376,7 +441,8 @@ public sealed class CredentialProviderCompositionRootWp6Tests
             new AuthPhase14LoginRequest
             {
                 IdentityFlow = IdentityFlow.InteractiveBrowser,
-            }).CredentialResult;
+            },
+            TestContext.Current.CancellationToken).CredentialResult;
         Assert.Equal(CredentialResultStatus.Success, interactive.Status);
         Assert.Equal(1, identityProvider.InteractionCount);
     }
@@ -401,13 +467,14 @@ public sealed class CredentialProviderCompositionRootWp6Tests
     }
 
     [Fact]
-    public void ComposedAzureAuthFailsClosedWhenBoundAccountCannotBeEnforced()
+    public void ComposedAzureAuthRunsInteractiveProviderWithBestEffortAccountSelection()
     {
         AzureAuthProviderConfig config = CreateAzureAuthConfig();
         var inspector = new TrustedInspector(config.DeploymentConfig!);
         AzureAuthTrustResult trust = AzureAuthTrustPolicy.Evaluate(
             config.DeploymentConfig!,
-            inspector);
+            inspector,
+            TestContext.Current.CancellationToken);
         AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
             config,
             "user@example.invalid",
@@ -424,6 +491,8 @@ public sealed class CredentialProviderCompositionRootWp6Tests
                     Binding = binding,
                     TrustInspector = inspector,
                     ProcessRunner = runner,
+                    IsWslEnvironment = true,
+                    EnvironmentVariableReader = ReadWslEnvironment,
                 });
 
         CredentialResult interactive = root.Boundary.Acquire(
@@ -432,15 +501,16 @@ public sealed class CredentialProviderCompositionRootWp6Tests
         AdapterHostExecutionOutcome protocol = ExecuteGit(
             root.CreateGitCredentialHelperAdapter());
 
-        Assert.False(root.Readiness.Interactive.IsReady);
-        Assert.Equal("AccountEnforcementUnavailable", root.Readiness.Interactive.Code);
+        Assert.True(root.Readiness.Interactive.IsReady);
+        Assert.Equal("AzureAuthInteractiveReady", root.Readiness.Interactive.Code);
         Assert.False(root.Readiness.Silent.IsReady);
         Assert.Equal("SilentAcquisitionUnavailable", root.Readiness.Silent.Code);
-        Assert.Equal("AccountEnforcementUnavailable", interactive.Error?.Code);
-        Assert.Equal(CredentialResultStatus.CredentialUnavailable, interactive.Status);
+        Assert.Equal(CredentialResultStatus.Success, interactive.Status);
+        Assert.Equal("tenant-1", interactive.Tenant);
+        Assert.Null(interactive.Account);
         Assert.Equal(AdapterHostExitCode.InteractionRequired, protocol.Result.ExitCode);
         Assert.Equal("SilentAcquisitionUnavailable", protocol.Result.SafeDiagnosticCode);
-        Assert.Equal(0, runner.CallCount);
+        Assert.Equal(1, runner.CallCount);
     }
 
     [Fact]
@@ -450,7 +520,8 @@ public sealed class CredentialProviderCompositionRootWp6Tests
         var trustedInspector = new TrustedInspector(config.DeploymentConfig!);
         AzureAuthTrustResult trust = AzureAuthTrustPolicy.Evaluate(
             config.DeploymentConfig!,
-            trustedInspector);
+            trustedInspector,
+            TestContext.Current.CancellationToken);
         DateTimeOffset recordedAt = DateTimeOffset.FromUnixTimeSeconds(
             DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeSeconds());
         AzureAuthBinding validBinding = AzureAuthBindingPolicy.CreateBound(
@@ -527,6 +598,39 @@ public sealed class CredentialProviderCompositionRootWp6Tests
     }
 
     [Fact]
+    public void ProductionNonWslAzureAuthReportsUnsupportedHost()
+    {
+        AzureAuthProviderConfig config = CreateAzureAuthConfig();
+        var inspector = new TrustedInspector(config.DeploymentConfig!);
+        AzureAuthBinding binding = AzureAuthBindingPolicy.CreateBound(
+            config,
+            "user@example.invalid",
+            "tenant-1",
+            DateTimeOffset.FromUnixTimeSeconds(
+                DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeSeconds()),
+            AzureAuthTrustPolicy.Evaluate(
+                config.DeploymentConfig!,
+                inspector,
+                TestContext.Current.CancellationToken));
+        CredentialProviderCompositionRoot root =
+            CredentialProviderCompositionRoot.CreateProduction(
+                new CredentialProviderProductionOptions
+                {
+                    ProviderConfig = config,
+                    Binding = binding,
+                    TrustInspector = inspector,
+                    IsWslEnvironment = false,
+                });
+
+        CredentialResult result = root.Boundary.Acquire(
+            CreateGitRequest(AcquisitionMode.InteractionAllowed),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("AzureAuthLaunchHostUnsupported", root.Readiness.Interactive.Code);
+        Assert.Equal(root.Readiness.Interactive.Code, result.Error?.Code);
+    }
+
+    [Fact]
     public void ProductionAzureAuthHintMismatchesPrecedeValidBindingBlocker()
     {
         AzureAuthProviderConfig config = CreateAzureAuthConfig();
@@ -537,7 +641,10 @@ public sealed class CredentialProviderCompositionRootWp6Tests
             "tenant-1",
             DateTimeOffset.FromUnixTimeSeconds(
                 DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeSeconds()),
-            AzureAuthTrustPolicy.Evaluate(config.DeploymentConfig!, inspector));
+            AzureAuthTrustPolicy.Evaluate(
+                config.DeploymentConfig!,
+                inspector,
+                TestContext.Current.CancellationToken));
         CredentialProviderCompositionRoot root =
             CredentialProviderCompositionRoot.CreateProduction(
                 new CredentialProviderProductionOptions
@@ -545,7 +652,9 @@ public sealed class CredentialProviderCompositionRootWp6Tests
                     ProviderConfig = config,
                     Binding = binding,
                     TrustInspector = inspector,
-                    IsWslEnvironment = false,
+                    ProcessRunner = new SuccessfulProcessRunner(),
+                    IsWslEnvironment = true,
+                    EnvironmentVariableReader = ReadWslEnvironment,
                 });
 
         CredentialResult accountMismatch = root.Boundary.Acquire(
@@ -574,15 +683,9 @@ public sealed class CredentialProviderCompositionRootWp6Tests
         Assert.Equal(
             "AzureAuthBindingTenantMismatch",
             tenantMismatch.Error?.Code);
-        Assert.Equal(
-            "AccountEnforcementUnavailable",
-            root.Readiness.Interactive.Code);
-        Assert.Equal(
-            root.Readiness.Interactive.Code,
-            validBound.Error?.Code);
-        Assert.Equal(
-            root.Readiness.Interactive.SafeMessage,
-            validBound.Error?.SafeMessage);
+        Assert.Equal("AzureAuthInteractiveReady", root.Readiness.Interactive.Code);
+        Assert.Equal(CredentialResultStatus.Success, validBound.Status);
+        Assert.Null(validBound.Account);
     }
 
     [Fact]
@@ -690,6 +793,9 @@ public sealed class CredentialProviderCompositionRootWp6Tests
 
     private static DiagnosticRouter CreateDiagnostics() =>
         new([], SecretRedactor.Empty);
+
+    private static string? ReadWslEnvironment(string name) =>
+        name == "WSL_INTEROP" ? "/run/WSL/123_interop" : null;
 
     private static AzureAuthProviderConfig CreateAzureAuthConfig() =>
         AzureAuthProviderConfig.CreateAzureAuth(
@@ -817,6 +923,33 @@ public sealed class CredentialProviderCompositionRootWp6Tests
         }
     }
 
+    private sealed class LateTokenRegistrationAcquisitionService : ICredentialAcquisitionService
+    {
+        public bool Completed { get; private set; }
+        public bool RegistrationSucceeded { get; private set; }
+
+        public async ValueTask<CredentialResult> AcquireAsync(
+            CredentialRequestV2 request,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(100, CancellationToken.None);
+                using CancellationTokenRegistration registration =
+                    cancellationToken.Register(static () => { });
+                RegistrationSucceeded = true;
+                Completed = true;
+                throw;
+            }
+
+            throw new InvalidOperationException("The test provider must be canceled.");
+        }
+    }
+
     private sealed class InteractionCountingIdentityProvider : IIdentityProvider
     {
         public int InteractionCount { get; private set; }
@@ -837,7 +970,9 @@ public sealed class CredentialProviderCompositionRootWp6Tests
     private sealed class TrustedInspector(AzureAuthDeploymentConfig deployment)
         : IAzureAuthArtifactTrustInspector
     {
-        public AzureAuthArtifactInspection Inspect(AzureAuthDeploymentConfig config) =>
+        public AzureAuthArtifactInspection Inspect(
+            AzureAuthDeploymentConfig config,
+            CancellationToken cancellationToken = default) =>
             AzureAuthArtifactInspection.Trusted(
                 new AzureAuthArtifactEvidence
                 {
@@ -865,8 +1000,20 @@ public sealed class CredentialProviderCompositionRootWp6Tests
 
     private sealed class DeferredInspector : IAzureAuthArtifactTrustInspector
     {
-        public AzureAuthArtifactInspection Inspect(AzureAuthDeploymentConfig config) =>
+        public AzureAuthArtifactInspection Inspect(
+            AzureAuthDeploymentConfig config,
+            CancellationToken cancellationToken = default) =>
             AzureAuthArtifactInspection.Deferred();
+    }
+
+    private sealed class TrustedWindowsProbe(AzureAuthDeploymentConfig deployment)
+        : IWindowsArtifactProbe
+    {
+        public WindowsArtifactProbeResult Probe(
+            AzureAuthDeploymentConfig config,
+            CancellationToken cancellationToken = default) =>
+            WindowsArtifactProbeResult.Trusted(
+                new TrustedInspector(deployment).Inspect(config, cancellationToken).Evidence!);
     }
 
     private sealed class CountingTrustInspector(IAzureAuthArtifactTrustInspector inner)
@@ -874,10 +1021,28 @@ public sealed class CredentialProviderCompositionRootWp6Tests
     {
         public int CallCount { get; private set; }
 
-        public AzureAuthArtifactInspection Inspect(AzureAuthDeploymentConfig config)
+        public AzureAuthArtifactInspection Inspect(
+            AzureAuthDeploymentConfig config,
+            CancellationToken cancellationToken = default)
         {
             CallCount++;
-            return inner.Inspect(config);
+            return inner.Inspect(config, cancellationToken);
+        }
+    }
+
+    private sealed class CancelableTrustInspector : IAzureAuthArtifactTrustInspector
+    {
+        public TaskCompletionSource Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public AzureAuthArtifactInspection Inspect(
+            AzureAuthDeploymentConfig config,
+            CancellationToken cancellationToken = default)
+        {
+            Started.TrySetResult();
+            cancellationToken.WaitHandle.WaitOne();
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new InvalidOperationException("The trust inspection must be canceled.");
         }
     }
 

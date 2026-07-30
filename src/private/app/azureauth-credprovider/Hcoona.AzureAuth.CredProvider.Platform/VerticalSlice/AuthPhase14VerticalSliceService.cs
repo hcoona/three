@@ -64,7 +64,9 @@ public sealed class AuthPhase14VerticalSliceService
             options?.EnvironmentVariableReader ?? Environment.GetEnvironmentVariable;
     }
 
-    public AuthPhase14LoginResult Login(AuthPhase14LoginRequest request)
+    public AuthPhase14LoginResult Login(
+        AuthPhase14LoginRequest request,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateLoginRequest(request);
@@ -74,7 +76,9 @@ public sealed class AuthPhase14VerticalSliceService
             ? ExecuteCredentialRequest(CreateCiCredentialRequest(request))
             : request.IdentityFlow == IdentityFlow.PatCompatibility
                 ? CreatePatDeferredResult(CreateCiCredentialRequest(request))
-                : credentialAcquisition.Value.Acquire(CreateCredentialRequest(request));
+                : credentialAcquisition.Value.Acquire(
+                    CreateCredentialRequest(request),
+                    cancellationToken);
         return new AuthPhase14LoginResult
         {
             CredentialResult = credentialResult,

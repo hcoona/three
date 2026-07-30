@@ -60,9 +60,9 @@ Notes:
 - `ado token` is intentionally not used here.
 - `--output token` is required; WP3 does not consume AzureAuth JSON output.
 - secrets are never placed in argv.
-- The pinned upstream `aad` options contain no exact-account enforcement switch. This argv is
-  retained as the WP3 provider contract, but WP6 production composition does not invoke it for a
-  bound account and reports `AccountEnforcementUnavailable`.
+- The pinned upstream `aad` options contain no exact-account enforcement switch. Production uses
+  best-effort account selection: request hints must match the binding, the tenant is passed
+  explicitly, and returned Azure DevOps JWT audience, tenant, and time claims are validated.
 
 ## Request Matrix
 
@@ -92,9 +92,9 @@ Before each launch, WP3:
 The inspector owns filesystem ownership and writability checks. WP3 validates
 only basic nonblank absolute Windows shapes for its attested launch context. The
 inspector contract still provides inspection evidence, not a retained launch
-lease. WP3 narrows the handoff window by re-running trust preflight immediately
-before `Process.Start`, but it does not claim to eliminate the remaining
-path-based TOCTOU window.
+lease. Production evaluates trust once per acquisition and reuses that result
+for launch; it does not claim to eliminate the remaining path-based TOCTOU
+window.
 
 Default behavior remains fail closed:
 
@@ -122,17 +122,16 @@ variables such as `ADO_TOKEN`, `HTTP_PROXY`, `DOTNET_ROOT`, `NODE_OPTIONS`,
 `COMPLUS_*`, `COREHOST_*`, CLR/CoreCLR profiler controls,
 `DOTNET_STARTUP_HOOKS`, `LD_*`, `DYLD_*`, and `PYTHON*`.
 
-For WSL interoperability launches, clearing the Linux
-`ProcessStartInfo.Environment` is not sufficient because WSL creates the
-Windows environment. The launcher therefore builds an explicit `WSLENV` from
-the product-controlled Windows variables. Required system, profile, temporary,
-`PATH`, `PATHEXT`, and cache-policy values are bridged exactly. Representative
-Windows credential, proxy, .NET/COREHOST/COMPlus, and module-loader overrides
-are also included with explicit empty product values so an inherited Windows
-value cannot reappear across the WSL boundary. This includes both CLR profiler
-families, their 32-bit and 64-bit path variants, and .NET startup hooks. The
-PowerShell trust probe uses the same bridge and additionally bridges its
-target-path variable.
+For WSL interoperability launches, the explicit Linux process environment
+carries the snapshotted `WSL_INTEROP` endpoint and bridges the launch controls
+selected by production: `SystemRoot`, `WINDIR`, the trusted `PATH`, fixed
+`PATHEXT`, and cache policy. Production discovery does not derive or require
+`TEMP`, `TMP`, `LOCALAPPDATA`, or `USERPROFILE`; the Windows process may receive
+the normal Windows-host values so browser and MSAL integration use the host
+user. The representative filtering above describes the Linux launcher process,
+not replacement of the complete environment that WSL creates for a Windows
+process. The PowerShell trust probe additionally bridges its target-path
+variable.
 
 Additional launch rules:
 
@@ -194,10 +193,11 @@ before returning the acquired token and derives `iat`, `nbf`, and `exp`
 metadata. This is not local signature authentication; see
 [`phase-wp4-token-materialization.md`](phase-wp4-token-materialization.md).
 The tenant and deployment key still come from constraints enforced for launch,
-not from JWT claims. AzureAuth `aad --tenant` does not constrain the bound
-account, so account identity remains unknown (`null`). WP6 consequently fails
-closed before production launch rather than treating claims as account-binding
-evidence. Ecosystem credential exchange remains outside the WP3 provider.
+not from JWT claims. AzureAuth cannot force exact account selection, so account
+identity remains unknown (`null`). Interactive production launch is allowed
+after trust, deployment, and binding prerequisites pass; the returned JWT's
+audience, tenant, and time claims remain validated. Ecosystem credential exchange
+remains outside the WP3 provider.
 
 All currently accepted cache policies disable AzureAuth's upstream MSAL file
 cache with the explicit product-controlled value above. A

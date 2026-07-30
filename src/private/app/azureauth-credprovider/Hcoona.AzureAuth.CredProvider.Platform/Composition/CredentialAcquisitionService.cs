@@ -55,7 +55,7 @@ public sealed class BoundedCredentialAcquisitionAdapter
         catch (TimeoutException)
         {
             cancellationOwnershipTransferred = true;
-            CancelAndObserve(providerCancellation, acquisitionTask);
+            CancelAndDisposeWhenComplete(providerCancellation, acquisitionTask);
             return CredentialAcquisitionResultFactory.Failure(
                 CredentialResultStatus.CredentialUnavailable,
                 CredentialErrorKind.CredentialUnavailable,
@@ -65,7 +65,7 @@ public sealed class BoundedCredentialAcquisitionAdapter
         catch (OperationCanceledException)
         {
             cancellationOwnershipTransferred = true;
-            CancelAndObserve(providerCancellation, acquisitionTask);
+            CancelAndDisposeWhenComplete(providerCancellation, acquisitionTask);
             return CredentialAcquisitionResultFactory.Failure(
                 CredentialResultStatus.CredentialUnavailable,
                 CredentialErrorKind.CredentialUnavailable,
@@ -81,7 +81,7 @@ public sealed class BoundedCredentialAcquisitionAdapter
         }
     }
 
-    private static void CancelAndObserve(
+    private static void CancelAndDisposeWhenComplete(
         CancellationTokenSource providerCancellation,
         Task? acquisitionTask)
     {
@@ -102,32 +102,38 @@ public sealed class BoundedCredentialAcquisitionAdapter
             ObserveFault(acquisitionTask);
         }
 
-        _ = cancellationTask.ContinueWith(
-            static (_, state) => ((CancellationTokenSource)state!).Dispose(),
+        Task cleanupTask =
+            acquisitionTask is null
+                ? cancellationTask
+                : Task.WhenAll(cancellationTask, acquisitionTask);
+        _ = cleanupTask.ContinueWith(
+            static (completed, state) =>
+            {
+                _ = completed.Exception;
+                ((CancellationTokenSource)state!).Dispose();
+            },
             providerCancellation,
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
     }
 
-    private static void ObserveFault(Task task)
-    {
+    private static void ObserveFault(Task task) =>
         _ = task.ContinueWith(
             static completed => _ = completed.Exception,
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously | TaskContinuationOptions.OnlyOnFaulted,
             TaskScheduler.Default);
-    }
 }
 
 internal sealed class ComposedCredentialAcquisitionService : ICredentialAcquisitionService
 {
-    private readonly Func<IAccessTokenIdentityProvider> identityProviderFactory;
+    private readonly Func<CancellationToken, IAccessTokenIdentityProvider> identityProviderFactory;
     private readonly CredentialMaterializationService materializationService;
     private readonly bool applyAzureAuthRequestPreflight;
 
     internal ComposedCredentialAcquisitionService(
-        Func<IAccessTokenIdentityProvider> identityProviderFactory,
+        Func<CancellationToken, IAccessTokenIdentityProvider> identityProviderFactory,
         CredentialMaterializationService materializationService,
         bool applyAzureAuthRequestPreflight = false)
     {
@@ -172,7 +178,7 @@ internal sealed class ComposedCredentialAcquisitionService : ICredentialAcquisit
                 "The credential acquisition request is invalid.");
         }
 
-        IAccessTokenIdentityProvider identityProvider = identityProviderFactory();
+        IAccessTokenIdentityProvider identityProvider = identityProviderFactory(cancellationToken);
         AcquiredAccessTokenResult acquired = await identityProvider
             .AcquireAccessTokenAsync(request, cancellationToken)
             .ConfigureAwait(false);
@@ -332,6 +338,25 @@ internal static class AzureAuthProductionPrerequisitePolicy
         IAzureAuthArtifactTrustInspector inspector,
         CredentialRequestV2? request = null)
     {
+        return EvaluateWithTrust(
+            config,
+            bindingRecord,
+            inspector,
+            out _,
+            request,
+            CancellationToken.None);
+    }
+
+    internal static AzureAuthProductionPrerequisiteFailure? EvaluateWithTrust(
+        AzureAuthProviderConfig config,
+        AzureAuthPersistedRecord<AzureAuthBinding> bindingRecord,
+        IAzureAuthArtifactTrustInspector inspector,
+        out AzureAuthTrustResult trust,
+        CredentialRequestV2? request = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        trust = AzureAuthTrustResult.Unspecified();
         if (config.Selection != AzureAuthProviderSelection.AzureAuth
             || config.DeploymentConfig is null)
         {
@@ -340,8 +365,10 @@ internal static class AzureAuthProductionPrerequisitePolicy
                 "AzureAuth is not the selected provider for this binding.");
         }
 
-        AzureAuthTrustResult trust =
-            AzureAuthTrustPolicy.Evaluate(config.DeploymentConfig, inspector);
+        trust = AzureAuthTrustPolicy.Evaluate(
+            config.DeploymentConfig,
+            inspector,
+            cancellationToken);
         if (!trust.IsReady || string.IsNullOrWhiteSpace(trust.DeploymentKey))
         {
             return trust.Status == AzureAuthArtifactTrustStatus.Deferred
@@ -437,56 +464,6 @@ internal static class AzureAuthProductionPrerequisitePolicy
         string code,
         string safeMessage) =>
         new(AcquiredAccessTokenStatus.PrerequisiteFailed, code, safeMessage);
-}
-
-internal sealed class AzureAuthAccountEnforcementUnavailableAccessTokenProvider(
-    AzureAuthProviderConfig config,
-    AzureAuthPersistedRecord<AzureAuthBinding> bindingRecord,
-    IAzureAuthArtifactTrustInspector inspector)
-    : IAccessTokenIdentityProvider
-{
-    public ValueTask<AcquiredAccessTokenResult> AcquireAccessTokenAsync(
-        CredentialRequestV2 request,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        AcquiredAccessTokenResult result;
-        if (cancellationToken.IsCancellationRequested)
-        {
-            result = AcquiredAccessTokenResult.Failure(
-                AcquiredAccessTokenStatus.Canceled,
-                "CredentialAcquisitionCanceled",
-                "Credential acquisition was canceled.");
-        }
-        else
-        {
-            AzureAuthRequestPreflightFailure? requestFailure =
-                AzureAuthRequestPreflightPolicy.Evaluate(request);
-            if (requestFailure is not null)
-            {
-                result = requestFailure.ToAcquisitionResult();
-                return ValueTask.FromResult(result);
-            }
-
-            AzureAuthProductionPrerequisiteFailure? failure =
-                AzureAuthProductionPrerequisitePolicy.Evaluate(
-                    config,
-                    bindingRecord,
-                    inspector,
-                    request);
-            result = failure is null
-                ? AcquiredAccessTokenResult.Failure(
-                    AcquiredAccessTokenStatus.PrerequisiteFailed,
-                    "AccountEnforcementUnavailable",
-                    "The pinned AzureAuth aad command cannot enforce the bound account.")
-                : AcquiredAccessTokenResult.Failure(
-                    failure.Status,
-                    failure.Code,
-                    failure.SafeMessage);
-        }
-
-        return ValueTask.FromResult(result);
-    }
 }
 
 internal sealed class LegacyV1CredentialAcquisitionService(CredentialCoreService credentialCore)

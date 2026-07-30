@@ -495,7 +495,7 @@ public sealed class AzureAuthIdentityProviderTests
                 TestContext.Current.CancellationToken
             );
 
-            Assert.Equal(2, inspector.CallCount);
+            Assert.Equal(1, inspector.CallCount);
             ProcessStartSpec startSpec = Assert.Single(runner.RecordedStartSpecs);
             Assert.Equal(@"C:\Tools\AzureAuth.exe", startSpec.FileName);
             Assert.Equal(
@@ -841,7 +841,7 @@ public sealed class AzureAuthIdentityProviderTests
         string secondToken = Assert.IsType<AcquiredAccessToken>(results[1].AccessToken).Token.Value;
         Assert.NotEqual(firstToken, secondToken);
         Assert.Equal(2, runner.StartSpecs.Count);
-        Assert.Equal(4, inspector.CallCount);
+        Assert.Equal(2, inspector.CallCount);
     }
 
     private static AzureAuthIdentityProvider CreateProvider(
@@ -997,7 +997,9 @@ public sealed class AzureAuthIdentityProviderTests
 
         public int CallCount => _callCount;
 
-        public AzureAuthArtifactInspection Inspect(AzureAuthDeploymentConfig config)
+        public AzureAuthArtifactInspection Inspect(
+            AzureAuthDeploymentConfig config,
+            CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(config);
             Interlocked.Increment(ref _callCount);
