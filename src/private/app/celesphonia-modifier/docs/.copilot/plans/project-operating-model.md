@@ -11,7 +11,11 @@
 > event, `atlas-v0-a6-private-gold-editor.md` supersedes only the requirement that comprehensive Atlas
 > v0 and broader value selection precede the first private Gold UI. Released A6R1-A6R4 already bound
 > the selected Gold read, validation, mutation, and single-slot application path. Broader domain
-> selection, external exposure, and distribution remain deferred.
+> selection, external exposure, and distribution remain deferred. After verified shared `G6R5`,
+> that plan also replaces E3 and automatic fingerprint qualification only for one owner's
+> experimental use of the declared Celesphonia v1.05 Steam build 13624401 baseline. The app discloses
+> that it cannot verify the installation or save version; this narrow exception creates no E3 claim
+> and does not apply to another user, build, capability, external test, or distribution.
 
 ## 1. Role of this document
 

@@ -5,7 +5,7 @@
 **Base:** Verified shared `G6R4`
 `3ef99ae7e23c3e88795308848f080e1203903cbf`
 
-**Product posture:** Personal, private, single-user Windows utility
+**Product posture:** Experimental, personal, private, single-user Windows utility
 
 **Threat model:** Accidental local save loss, stale previews, misunderstood outcomes, and ordinary
 filesystem failures; not a hostile local owner, compromised administrator, or adversarial checkout
@@ -19,9 +19,11 @@ the exact classified result
 Presence of this plan grants no implementation or private-run authority.
 
 Only verified shared `R6R5` activates the bounded synthetic implementation described here. Only
-verified shared `G6R5` releases the resulting executable for deliberate owner-operated private use.
-Agents, automated tests, reviewers, and release procedures remain prohibited from selecting,
-opening, or modifying private or Git-ignored saves.
+verified shared `G6R5` releases the resulting executable for experimental, deliberate
+owner-operated private use of a save that the owner identifies as belonging to Celesphonia v1.05
+Steam build 13624401. The application cannot verify that version and the release does not claim E3
+or automatic compatibility qualification. Agents, automated tests, reviewers, and release
+procedures remain prohibited from selecting, opening, or modifying private or Git-ignored saves.
 
 This increment follows the persisted-plan, independent-review, exact-candidate, and release-gate
 rules in `project-operating-model.md`.
@@ -43,6 +45,12 @@ The following older assumptions are not prerequisites for A6R5:
   localization; and
 - gameplay-range policy beyond the released `Int64` representation contract.
 
+For this owner's experimental private slice only, verified G6R5 also supersedes the older automatic
+fingerprint and E3 prerequisites for original-data writes. The replacement is explicit disclosure,
+owner affirmation of the declared Celesphonia v1.05 Steam build 13624401 baseline, released G6R4
+archive-first behavior, and conservative result classification. It is not evidence that the app
+identified the installation, save version, semantic compatibility, or E3 status.
+
 Released G6R4 is the authoritative write protocol for this slice: one canonical slot, one fixed
 archive backup, one candidate stage, one `File.Replace`, conservative outcome classification, and
 no automatic cleanup or rollback.
@@ -63,8 +71,10 @@ The released application provides one single-purpose window:
    `party._gold` and `variables._data[215]` are both present and equal.
 4. The user enters one invariant decimal value representable by `Int64`.
 5. **Apply Gold** opens one confirmation dialog showing the exact slot path, current Gold, requested
-   Gold, adjacent archive path, and the requirement that the game be closed.
-6. The dialog's primary action remains disabled until the user checks **I closed the game**.
+   Gold, adjacent archive path, the declared supported baseline, the absence of automatic version
+   verification, and the requirement that the game be closed.
+6. The dialog's primary action remains disabled until the user checks **This is a Celesphonia v1.05
+   Steam build 13624401 save, the game is closed, and no other tool is editing this slot**.
 7. After confirmation, the application verifies that the live slot still exactly matches the
    displayed preview, then invokes released G6R4.
 8. The application presents `Unchanged`, `AppliedWithBackupCreated`, or
@@ -72,8 +82,9 @@ The released application provides one single-purpose window:
 9. After an applied result, it reloads the live slot and displays the new consistent Gold.
 10. Classified failures preserve their distinction and never appear as success.
 
-The application does not claim that every `Int64` value is gameplay-valid. It performs no automatic
-cleanup, rollback, artifact deletion, restore, or retry without a new confirmation.
+The application labels the capability **Experimental** and does not claim that the selected file
+belongs to the declared baseline or that every `Int64` value is gameplay-valid. It performs no
+automatic cleanup, rollback, artifact deletion, restore, or retry without a new confirmation.
 
 ## 4. In-scope documents
 
@@ -252,7 +263,7 @@ Load failures map to fixed local UI categories:
 The local UI may display the exact user-selected path. Repository records and test names use only
 synthetic paths.
 
-## 10. Confirmation and stale-preview protocol
+## 10. Confirmation and stale-preview narrowing
 
 The confirmation dialog is not security authorization. It prevents an accidental write and makes
 the backup and game-closed assumptions visible.
@@ -269,8 +280,12 @@ Immediately after confirmation, `ApplyAsync`:
 6. reloads the live path after an applied result.
 
 Retaining the converged handle denies new write-sharing opens while still allowing G6R4's
-same-path replacement through `FileShare.Delete`. This closes the UI preview-to-application gap
-without adding a new persistent protocol or modifying G6R4.
+same-path replacement through `FileShare.Delete`. It narrows ordinary write races but does not bind
+G6R4 to the previewed file identity: another process may replace the path after comparison and
+before G6R4 opens it. Under that accepted residual race, G6R4 may apply to the replacement document.
+The UI must not claim that the preview-to-application gap is closed. The owner confirmation that the
+game is closed and no other tool is editing the slot is the proportional operational assumption;
+the release adds no new Atlas protocol solely for this narrow private-use race.
 
 If preview reread is malformed, inaccessible, or over limit, G6R4 is not invoked. The current
 document becomes blocked until a successful explicit reload or a different file is selected.
@@ -307,8 +322,10 @@ The window opens at approximately `720 x 680` DIPs, converted to physical pixels
 The main window contains:
 
 - a heading and short explanation;
-- a persistent `InfoBar` explaining that the game must be closed and the first changed write creates
-  an adjacent archive;
+- a persistent warning `InfoBar` labelling the editor **Experimental**, naming the declared
+  Celesphonia v1.05 Steam build 13624401 baseline, stating that the app cannot verify the version,
+  requiring the game and other editors to be closed, and explaining that the first changed write
+  creates an adjacent archive;
 - a visible **Save slot** label, read-only path `TextBox`, and **Browse...** button;
 - a visible **Current Gold** label and value;
 - a visible **New Gold** label and editable `TextBox`;
@@ -328,8 +345,10 @@ The `ContentDialog`:
 
 - sets the window content's `XamlRoot`;
 - uses **Apply Gold** as the primary verb and **Cancel** as the close verb;
-- shows the exact slot path, current value, normalized requested value, and archive path;
-- contains **I closed the game** as a visible `CheckBox`;
+- shows the exact slot path, current value, normalized requested value, archive path, declared
+  baseline, and no-version-verification warning;
+- contains **This is a Celesphonia v1.05 Steam build 13624401 save, the game is closed, and no other
+  tool is editing this slot** as a visible `CheckBox`;
 - disables the primary action until checked; and
 - restores focus to **Apply Gold** after cancellation or a recoverable result.
 
@@ -420,6 +439,8 @@ Cover:
 - exact owned baseline bytes and mutation resistance;
 - preview unchanged, preview changed, preview unreadable, and cancellation before G6R4 invocation;
 - retained convergence handle behavior;
+- a forced replace-by-path race between preview comparison and G6R4 invocation, proving the
+  implementation and UI do not claim identity binding or silently reinterpret the result;
 - semantic no-op with no artifact access;
 - first changed apply and archive creation;
 - later apply and archive preservation;
@@ -476,11 +497,36 @@ Exact C6R5 must pass:
 8. exact cumulative implementation inventory;
 9. a local launch smoke that starts the built executable with no selected file, observes a main
    window, closes that exact process by PID, and leaves no child process;
-10. no lock-file change after a second locked restore; and
-11. fresh independent review of the complete exact candidate until `No findings`.
+10. the synthetic runtime interaction matrix in Section 15.1;
+11. no lock-file change after a second locked restore; and
+12. fresh independent review of the complete exact candidate until `No findings`.
 
 The launch smoke must not supply a path, command-line operation, private file, or persisted setting.
 Functional file application evidence comes from the synthetic operation tests.
+
+### 15.1 Synthetic runtime interaction matrix
+
+Using only a generated temporary `file1.rpgsave`, the Windows validation owner manually exercises
+the built executable and records pass/fail for:
+
+1. initial `720 x 680` sizing and keyboard traversal;
+2. resize to `640 x 480` with no lost command and no horizontal scrollbar;
+3. 225% text scaling with wrapping labels and reachable commands;
+4. one Windows Contrast theme with visible status and focus;
+5. `Ctrl+O`, picker cancellation, and preserved empty/current state;
+6. synthetic slot selection, current Gold display, invalid input, and full-range `Int64` input;
+7. `Ctrl+S`, disabled primary confirmation until the full baseline/game-closed checkbox is checked,
+   dialog cancellation, and focus restoration;
+8. synthetic no-op and changed apply, exact result text, archive-path text, and reloaded current Gold;
+9. a deliberately delayed synthetic operation proving visible busy state, `Escape` cancellation,
+   close deferral, and final classified presentation; and
+10. live-region announcements inspected through Windows accessibility tooling or an equivalent UI
+    Automation event observer.
+
+The delayed operation uses the internal operation seam in a test-owned launch or debugger session;
+it does not add a command-line mode, environment switch, production delay, or persistent setting.
+The temporary synthetic slot and any generated UI evidence are deleted after validation and never
+committed.
 
 ## 16. Gates
 
@@ -523,12 +569,14 @@ After exact C6R5 passes validation and review, create only:
 `src\private\app\celesphonia-modifier\docs\.copilot\reviews\atlas-v0-a6-private-gold-editor-release-gate.md`
 
 The release record binds R6R5, final C6R5, the exact implementation inventory, validation, review,
-residual risks, exclusions, and the personal-use release decision. G6R5 must be the direct child of
-final C6R5 and add exactly that record.
+residual risks, exclusions, experimental compatibility exception, and personal-use release
+decision. G6R5 must be the direct child of final C6R5 and add exactly that record.
 
-Verified shared G6R5 releases the executable for deliberate owner-operated selection of one private
-canonical slot. It grants no Agent private-data access, automated private execution, installation
-discovery, catalog, broader editor, cleanup, restore, or distribution authority.
+Verified shared G6R5 releases the executable for experimental, deliberate owner-operated selection
+of one private canonical slot that the owner identifies as belonging to Celesphonia v1.05 Steam
+build 13624401. It establishes no E3 or automatic compatibility claim and grants no Agent
+private-data access, automated private execution, installation discovery, catalog, broader editor,
+cleanup, restore, or distribution authority.
 
 ## 17. Residual risks
 
@@ -537,9 +585,12 @@ discovery, catalog, broader editor, cleanup, restore, or distribution authority.
 - Storage or operating-system failures may leave an unknown outcome requiring manual inspection.
 - The app cannot prove the game is closed; it relies on the user's confirmation and G6R4 sharing
   behavior.
-- Steam or another local process may change the slot outside the application's held-handle window.
+- The app cannot identify the installation, game build, or save version; the owner may select a
+  wrong-version or unrelated structurally similar file.
+- Because the retained handle allows deletion/replacement, Steam or another local process may
+  replace the path after preview comparison and before G6R4 opens it; G6R4 may then apply to a
+  document different from the preview.
 - Any `Int64` may be accepted even if the game treats some values poorly.
-- The app targets one known format interpretation and does not perform installation fingerprinting.
 - A successful write followed by reload failure leaves the app unable to display the new value until
   the file is reopened.
 

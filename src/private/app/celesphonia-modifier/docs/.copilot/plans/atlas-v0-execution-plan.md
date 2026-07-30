@@ -46,7 +46,9 @@
 > authority. After that event, `atlas-v0-a6-private-gold-editor.md` supersedes historical A7/A8
 > sequencing only as a prerequisite for the first bounded Gold editor. Historical generated Atlas
 > views and broader value selection remain supporting future-domain work, not blockers for the
-> released A6R1-A6R4 Gold path.
+> released A6R1-A6R4 Gold path. Verified `G6R5` may release only experimental owner-operated use of
+> the declared Celesphonia v1.05 Steam build 13624401 baseline with explicit disclosure that the app
+> performs no fingerprint verification and establishes no E3 status.
 
 **Status:** Confirmed execution baseline
 

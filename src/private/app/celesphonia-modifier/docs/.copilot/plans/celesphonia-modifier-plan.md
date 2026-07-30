@@ -15,8 +15,11 @@ Steam build 13624401, database `versionId` 2444532
 > and supersedes, only for that slice, installation/catalog/global-pair prerequisites, the rich
 > transaction/recovery design, full shell and workspace IA, four-layer decomposition, localization,
 > packaging, and distribution requirements. Released G6R4 supplies the proportional one-slot
-> archive-first write protocol. The requirements below remain active hypotheses for broader future
-> product work unless separately superseded.
+> archive-first write protocol. Verified G6R5 may replace automatic fingerprint and E3 prerequisites
+> only for one owner's experimental use of the declared Celesphonia v1.05 Steam build 13624401
+> baseline, with an explicit warning that the app cannot verify the version. It creates no E3 claim.
+> The requirements below remain active hypotheses for broader future product work unless separately
+> superseded.
 
 <!-- Separate independent authority notices. -->
 
