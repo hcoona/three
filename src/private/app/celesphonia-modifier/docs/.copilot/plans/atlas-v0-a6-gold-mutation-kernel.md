@@ -197,9 +197,9 @@ Keep limit classification and post-read verification as small internal pure help
 complete fixed-failure evidence for branches that a valid source plus two number replacements cannot
 produce, without adding a production fault-injection seam or general mutation facility.
 
-Check cancellation at entry, during inspection, span normalization, every chunked copy, every strict
-decode chunk, compression, re-read, every byte-comparison chunk, verification inspection, result
-creation, and every chunk of `GetCompressedBytes`.
+Check cancellation at entry, during inspection, span normalization, every chunked copy, immediately
+before and after the single strict decode, compression, re-read, every byte-comparison chunk,
+verification inspection, result creation, and every chunk of `GetCompressedBytes`.
 
 The kernel must not mutate or retain mutable access to the source graph, lossless JSON, compressed
 bytes, semantic no-op bytes, members, arrays, identities, or references. No logging or diagnostics
@@ -291,8 +291,9 @@ These gates establish provenance and bounded authority; runtime never inspects G
 
 ### P6R3 - plan candidate
 
-`P6R3` is the direct child of exact `X6R2`
-`85db738d466dbaa918683bb8e4c56775c5e7544f` and changes exactly:
+The initial `P6R3` is the direct child of exact `X6R2`
+`85db738d466dbaa918683bb8e4c56775c5e7544f`. Accepted review corrections may descend from that
+candidate while the cumulative diff from `X6R2` changes exactly:
 
 ```text
 src/private/app/celesphonia-modifier/docs/.copilot/README.md
@@ -301,11 +302,12 @@ src/private/app/celesphonia-modifier/docs/.copilot/plans/
 ```
 
 A fresh independent general-purpose GPT-5.6 reviewer examines the exact two-document candidate
-holistically until `No findings`. It is then committed and pushed unchanged.
+holistically until `No findings`. The exact final corrected P6R3 is then committed, pushed, and
+verified before activation-record authoring.
 
 ### R6R3 - activation record
 
-`R6R3` is the direct child of exact `P6R3` and adds only:
+`R6R3` is the direct child of exact final reviewed `P6R3` and adds only:
 
 ```text
 src/private/app/celesphonia-modifier/docs/.copilot/reviews/
