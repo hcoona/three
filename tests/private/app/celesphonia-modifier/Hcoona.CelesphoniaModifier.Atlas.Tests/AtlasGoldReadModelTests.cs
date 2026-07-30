@@ -274,6 +274,8 @@ public sealed class AtlasGoldReadModelTests
     [Fact]
     public void CancellationIsObservedDuringALargeBoundedMemberScan()
     {
+        const int calibrationReadCount = 5;
+        const int schedulingAttemptCount = 5;
         const int unrelatedMemberCount = 950_000;
         StringBuilder party = new(unrelatedMemberCount * 10 + 32);
         party.Append('{');
@@ -290,35 +292,105 @@ public sealed class AtlasGoldReadModelTests
         party.Append(",\"_gold\":1}");
         AtlasSaveReadResult source = ReadSource(
             Root(Property("party", party.ToString()), Variables("1")));
-        using CancellationTokenSource cancellation = new();
-        using ManualResetEventSlim cancellationReady = new();
-        using ManualResetEventSlim beginScan = new();
-        Thread cancellationThread = new(() =>
+        AtlasSaveReadResult smallSource = ReadSource(
+            Root(Party("1"), Variables("1")));
+        CancellationToken testCancellation = TestContext.Current.CancellationToken;
+
+        AtlasGoldReadModel.Read(smallSource, testCancellation);
+        AtlasGoldReadModel.Read(source, testCancellation);
+        long fastestSmallReadTicks = long.MaxValue;
+        long fastestLargeReadTicks = long.MaxValue;
+        for (int index = 0; index < calibrationReadCount; index++)
         {
-            cancellationReady.Set();
-            beginScan.Wait();
-            long cancelAt = Stopwatch.GetTimestamp() + (Stopwatch.Frequency / 1_000);
-            while (Stopwatch.GetTimestamp() < cancelAt)
+            fastestSmallReadTicks = Math.Min(
+                fastestSmallReadTicks,
+                MeasureReadTicks(smallSource, testCancellation));
+            fastestLargeReadTicks = Math.Min(
+                fastestLargeReadTicks,
+                MeasureReadTicks(source, testCancellation));
+        }
+
+        long calibratedScanTicks = fastestLargeReadTicks - fastestSmallReadTicks;
+        long preScanSchedulingMarginTicks = fastestSmallReadTicks * 8;
+        long cancellationDelayTicks =
+            preScanSchedulingMarginTicks + (calibratedScanTicks / 8);
+        long latestUsefulCancellationTicks =
+            preScanSchedulingMarginTicks + (calibratedScanTicks / 3);
+        long promptObservationLimitTicks = calibratedScanTicks / 2;
+        // No public progress seam exists, so calibrate fixed overhead separately and
+        // require cancellation well before a post-scan-only check could observe it.
+        Assert.True(
+            calibratedScanTicks > preScanSchedulingMarginTicks * 4,
+            "The bounded fixture must make member scanning dominate fixed read overhead.");
+
+        for (int attempt = 0; attempt < schedulingAttemptCount; attempt++)
+        {
+            using CancellationTokenSource cancellation =
+                CancellationTokenSource.CreateLinkedTokenSource(testCancellation);
+            using ManualResetEventSlim cancellationReady = new();
+            using ManualResetEventSlim beginRead = new();
+            Exception? observedException = null;
+            long readStartedAt = 0;
+            long readCompletedAt = 0;
+            long cancellationRequestedAt = 0;
+            Thread cancellationThread = new(() =>
             {
-                Thread.SpinWait(64);
+                cancellationReady.Set();
+                beginRead.Wait();
+                long cancelAt = readStartedAt + cancellationDelayTicks;
+                while (Stopwatch.GetTimestamp() < cancelAt)
+                {
+                    Thread.Yield();
+                }
+
+                cancellationRequestedAt = Stopwatch.GetTimestamp();
+                cancellation.Cancel();
+            });
+
+            cancellationThread.Start();
+            try
+            {
+                cancellationReady.Wait(testCancellation);
+                readStartedAt = Stopwatch.GetTimestamp();
+                beginRead.Set();
+                try
+                {
+                    AtlasGoldReadModel.Read(source, cancellation.Token);
+                }
+                catch (Exception exception)
+                {
+                    observedException = exception;
+                }
+                finally
+                {
+                    readCompletedAt = Stopwatch.GetTimestamp();
+                }
+            }
+            finally
+            {
+                beginRead.Set();
+                cancellationThread.Join();
             }
 
-            cancellation.Cancel();
-        });
+            long cancellationOffsetTicks = cancellationRequestedAt - readStartedAt;
+            if (cancellationRequestedAt > readCompletedAt
+                || cancellationOffsetTicks > latestUsefulCancellationTicks)
+            {
+                continue;
+            }
 
-        cancellationThread.Start();
-        cancellationReady.Wait(TestContext.Current.CancellationToken);
-        Assert.False(cancellation.IsCancellationRequested);
-        beginScan.Set();
-        try
-        {
-            Assert.ThrowsAny<OperationCanceledException>(
-                () => AtlasGoldReadModel.Read(source, cancellation.Token));
+            Assert.IsAssignableFrom<OperationCanceledException>(observedException);
+            long cancellationObservationTicks =
+                readCompletedAt - cancellationRequestedAt;
+            Assert.True(
+                cancellationObservationTicks < promptObservationLimitTicks,
+                "Cancellation requested during the first third of the calibrated "
+                    + "member scan was not observed within half of that scan time.");
+            return;
         }
-        finally
-        {
-            cancellationThread.Join();
-        }
+
+        Assert.Fail(
+            "Could not schedule cancellation inside the calibrated early member-scan window.");
     }
 
     [Fact]
@@ -536,6 +608,15 @@ public sealed class AtlasGoldReadModelTests
                 json,
                 cancellationToken: TestContext.Current.CancellationToken),
             cancellationToken: TestContext.Current.CancellationToken);
+
+    private static long MeasureReadTicks(
+        AtlasSaveReadResult source,
+        CancellationToken cancellationToken)
+    {
+        long startedAt = Stopwatch.GetTimestamp();
+        AtlasGoldReadModel.Read(source, cancellationToken);
+        return Stopwatch.GetTimestamp() - startedAt;
+    }
 
     private static string Root(params string[] properties) =>
         $"{{{string.Join(",", properties)}}}";
